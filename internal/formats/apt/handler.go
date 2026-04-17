@@ -1,0 +1,217 @@
+// Package apt implements the Debian APT repository protocol.
+//
+// Layout under /repository/:repoName/:
+//   GET  /dists/:dist/:component/binary-:arch/Packages[.gz] → packages index
+//   GET  /dists/:dist/Release                               → Release file
+//   GET  /pool/:component/:prefix/:name_ver_arch.deb        → deb download
+//   PUT  /pool/:component/:name_ver_arch.deb                → upload .deb
+//   DELETE /pool/:component/:name_ver_arch.deb              → delete .deb
+package apt
+
+import (
+	"bytes"
+	"compress/gzip"
+	"fmt"
+	"net/http"
+	"path"
+	"strings"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/nexspence-oss/nexspence/internal/domain"
+	"github.com/nexspence-oss/nexspence/internal/formats"
+	"github.com/nexspence-oss/nexspence/internal/formats/base"
+	"github.com/nexspence-oss/nexspence/internal/formats/repoproxy"
+)
+
+type Handler struct{ deps formats.Deps }
+
+func New(deps formats.Deps) *Handler { return &Handler{deps: deps} }
+func (h *Handler) Name() string      { return "apt" }
+
+func (h *Handler) ServeHTTP(c *gin.Context) {
+	p := normPath(c.Param("path"))
+	repoName := c.Param("repoName")
+
+	repo, _ := h.deps.Repos.Get(c.Request.Context(), repoName)
+
+	// Proxy: block uploads/deletes, pass reads through to upstream (e.g. archive.ubuntu.com)
+	if repo != nil && repo.Type == domain.TypeProxy {
+		if repoproxy.RejectMutation(c, repo) {
+			return
+		}
+		ct := "application/octet-stream"
+		if strings.HasSuffix(p, "/Release") || strings.HasSuffix(p, "/InRelease") {
+			ct = "text/plain"
+		} else if strings.Contains(p, "/Packages") {
+			ct = "text/plain"
+		}
+		coords := base.Coords{}
+		if err := repoproxy.ServeGET(c, h.deps, repo, p, "", coords, ct); err != nil {
+			c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		}
+		return
+	}
+
+	switch {
+	// Packages index (plain or gzip)
+	case c.Request.Method == http.MethodGet && strings.HasPrefix(p, "/dists/") && strings.Contains(p, "/Packages"):
+		h.servePackagesIndex(c, repoName, p)
+
+	// Release file
+	case c.Request.Method == http.MethodGet && strings.HasSuffix(p, "/Release"):
+		h.serveRelease(c, repoName, p)
+
+	// InRelease (signed — serve same as Release for compatibility)
+	case c.Request.Method == http.MethodGet && strings.HasSuffix(p, "/InRelease"):
+		h.serveRelease(c, repoName, p)
+
+	// Download .deb
+	case (c.Request.Method == http.MethodGet || c.Request.Method == http.MethodHead) && strings.HasPrefix(p, "/pool/"):
+		h.serveFile(c, repoName, p)
+
+	// Upload .deb: PUT /pool/:component/:file.deb
+	case c.Request.Method == http.MethodPut && strings.HasPrefix(p, "/pool/"):
+		h.handleUpload(c, repoName, p)
+
+	// Delete .deb
+	case c.Request.Method == http.MethodDelete && strings.HasPrefix(p, "/pool/"):
+		if err := base.DeleteArtifact(c.Request.Context(), h.deps, repoName, p); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.Status(http.StatusNoContent)
+
+	default:
+		c.Status(http.StatusMethodNotAllowed)
+	}
+}
+
+func (h *Handler) servePackagesIndex(c *gin.Context, repoName, p string) {
+	gzipped := strings.HasSuffix(p, ".gz")
+
+	// Parse: /dists/:dist/:component/binary-:arch/Packages[.gz]
+	// We use all components regardless of the specific path for now
+	page, err := h.deps.Components.Search(c.Request.Context(), domain.SearchParams{
+		Repository: repoName, Limit: 1000,
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// List assets to get file details
+	assetPage, err := h.deps.Assets.List(c.Request.Context(), repoName, 1000, 0)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Build component → asset map
+	compMap := map[string]*domain.Component{}
+	for i := range page.Items {
+		compMap[page.Items[i].ID] = &page.Items[i]
+	}
+
+	var sb strings.Builder
+	for _, a := range assetPage.Items {
+		if !strings.HasSuffix(a.Path, ".deb") {
+			continue
+		}
+		comp := compMap[a.ComponentID]
+		if comp == nil {
+			continue
+		}
+		// Minimal Packages stanza
+		pkgName := comp.Name
+		version := comp.Version
+		arch := "amd64" // default; ideally parsed from filename
+		filename := path.Base(a.Path)
+		if parts := strings.Split(strings.TrimSuffix(filename, ".deb"), "_"); len(parts) >= 3 {
+			arch = parts[len(parts)-1]
+		}
+		sb.WriteString(fmt.Sprintf("Package: %s\n", pkgName))
+		sb.WriteString(fmt.Sprintf("Version: %s\n", version))
+		sb.WriteString(fmt.Sprintf("Architecture: %s\n", arch))
+		sb.WriteString(fmt.Sprintf("Filename: %s\n", a.Path))
+		sb.WriteString(fmt.Sprintf("Size: %d\n", a.SizeBytes))
+		if a.SHA256 != "" {
+			sb.WriteString(fmt.Sprintf("SHA256: %s\n", a.SHA256))
+		}
+		if a.MD5 != "" {
+			sb.WriteString(fmt.Sprintf("MD5sum: %s\n", a.MD5))
+		}
+		sb.WriteString("\n")
+	}
+
+	data := []byte(sb.String())
+	if gzipped {
+		var buf bytes.Buffer
+		gw := gzip.NewWriter(&buf)
+		_, _ = gw.Write(data)
+		_ = gw.Close()
+		c.Data(http.StatusOK, "application/x-gzip", buf.Bytes())
+		return
+	}
+	c.Data(http.StatusOK, "text/plain; charset=utf-8", data)
+}
+
+func (h *Handler) serveRelease(c *gin.Context, repoName, p string) {
+	// Parse distribution from path: /dists/:dist/Release
+	parts := strings.Split(strings.TrimPrefix(p, "/dists/"), "/")
+	dist := "stable"
+	if len(parts) > 0 {
+		dist = parts[0]
+	}
+
+	now := time.Now().UTC().Format("Mon, 02 Jan 2006 15:04:05 UTC")
+	release := fmt.Sprintf(`Origin: Nexspence
+Label: Nexspence
+Suite: %s
+Codename: %s
+Date: %s
+Architectures: amd64 arm64 all
+Components: main contrib non-free
+Description: Nexspence APT Repository
+`, dist, dist, now)
+	c.Data(http.StatusOK, "text/plain; charset=utf-8", []byte(release))
+}
+
+func (h *Handler) handleUpload(c *gin.Context, repoName, p string) {
+	filename := path.Base(p)
+	// Parse: name_version_arch.deb
+	parts := strings.Split(strings.TrimSuffix(filename, ".deb"), "_")
+	pkgName, version := filename, "0.0.0"
+	if len(parts) >= 2 {
+		pkgName = parts[0]
+		version = parts[1]
+	}
+
+	coords := base.Coords{Name: pkgName, Version: version}
+	if _, err := base.StoreArtifact(c.Request.Context(), h.deps,
+		repoName, p, "application/vnd.debian.binary-package",
+		coords, c.Request.Body, c.Request.ContentLength); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.Status(http.StatusCreated)
+}
+
+func (h *Handler) serveFile(c *gin.Context, repoName, p string) {
+	rc, asset, err := base.FetchArtifact(c.Request.Context(), h.deps, repoName, p)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	defer rc.Close()
+	if c.Request.Method == http.MethodHead {
+		c.Header("Content-Length", fmt.Sprintf("%d", asset.SizeBytes))
+		c.Status(http.StatusOK)
+		return
+	}
+	c.DataFromReader(http.StatusOK, asset.SizeBytes, asset.ContentType, rc, nil)
+}
+
+func normPath(p string) string {
+	return path.Clean("/" + strings.TrimPrefix(p, "/"))
+}

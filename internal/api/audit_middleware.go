@@ -1,0 +1,126 @@
+package api
+
+import (
+	"strings"
+
+	"github.com/gin-gonic/gin"
+	"github.com/nexspence-oss/nexspence/internal/domain"
+	"github.com/nexspence-oss/nexspence/internal/repository"
+)
+
+// AuditMiddleware writes an audit event after each mutating request completes.
+// It only records PUT/POST/DELETE on key management paths.
+func AuditMiddleware(auditRepo repository.AuditRepo) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Next() // run handler first
+
+		method := c.Request.Method
+		if method != "PUT" && method != "POST" && method != "DELETE" && method != "PATCH" {
+			return
+		}
+
+		path := c.Request.URL.Path
+		if !isAuditablePath(path) {
+			return
+		}
+
+		userID, _ := c.Get("userID")
+		username, _ := c.Get("username")
+		userIDStr, _ := userID.(string)
+		usernameStr, _ := username.(string)
+		if usernameStr == "" {
+			usernameStr = "anonymous"
+		}
+
+		status := c.Writer.Status()
+		result := "success"
+		if status >= 400 && status < 500 {
+			result = "denied"
+		} else if status >= 500 {
+			result = "failure"
+		}
+
+		domainStr, action, entityType, entityName := classifyPath(method, path, c)
+
+		e := &domain.AuditEvent{
+			UserID:     strPtr(userIDStr),
+			Username:   usernameStr,
+			RemoteIP:   c.ClientIP(),
+			UserAgent:  c.Request.UserAgent(),
+			Domain:     domainStr,
+			Action:     action,
+			EntityType: entityType,
+			EntityName: entityName,
+			Result:     result,
+		}
+		go func() { _ = auditRepo.Write(c.Request.Context(), e) }()
+	}
+}
+
+func isAuditablePath(path string) bool {
+	prefixes := []string{
+		"/service/rest/v1/repositories",
+		"/service/rest/v1/security/users",
+		"/service/rest/v1/blobstores",
+		"/service/rest/v1/cleanup-policies",
+		"/api/v1/login",
+		"/repository/",
+	}
+	for _, p := range prefixes {
+		if strings.HasPrefix(path, p) {
+			return true
+		}
+	}
+	return false
+}
+
+func classifyPath(method, path string, c *gin.Context) (domainStr, action, entityType, entityName string) {
+	switch {
+	case strings.HasPrefix(path, "/service/rest/v1/security/users"):
+		domainStr = "SECURITY"
+		entityType = "USER"
+		entityName = c.Param("userId")
+	case strings.HasPrefix(path, "/service/rest/v1/repositories"):
+		domainStr = "REPOSITORY"
+		entityType = "REPOSITORY"
+		entityName = c.Param("name")
+	case strings.HasPrefix(path, "/service/rest/v1/blobstores"):
+		domainStr = "BLOBSTORE"
+		entityType = "BLOBSTORE"
+		entityName = c.Param("name")
+	case strings.HasPrefix(path, "/service/rest/v1/cleanup-policies"):
+		domainStr = "CLEANUP"
+		entityType = "CLEANUP_POLICY"
+		entityName = c.Param("id")
+	case strings.HasPrefix(path, "/api/v1/login"):
+		domainStr = "SECURITY"
+		entityType = "USER"
+	case strings.HasPrefix(path, "/repository/"):
+		domainStr = "REPOSITORY"
+		entityType = "ARTIFACT"
+		entityName = c.Param("repoName")
+	default:
+		domainStr = "SYSTEM"
+	}
+
+	switch method {
+	case "POST":
+		action = "CREATE"
+	case "PUT":
+		action = "UPDATE"
+	case "DELETE":
+		action = "DELETE"
+	case "PATCH":
+		action = "UPDATE"
+	default:
+		action = method
+	}
+	return
+}
+
+func strPtr(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}

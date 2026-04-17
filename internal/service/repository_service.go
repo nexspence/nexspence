@@ -1,0 +1,138 @@
+package service
+
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	"github.com/nexspence-oss/nexspence/internal/domain"
+	"github.com/nexspence-oss/nexspence/internal/repository"
+	"github.com/nexspence-oss/nexspence/internal/storage"
+)
+
+var (
+	ErrNotFound      = errors.New("not found")
+	ErrAlreadyExists = errors.New("already exists")
+	ErrInvalidInput  = errors.New("invalid input")
+)
+
+// RepositoryService handles business logic for Nexus-compatible repository management.
+type RepositoryService struct {
+	repos     repository.RepositoryRepo
+	blobs     repository.BlobStoreRepo
+	blobStore storage.BlobStore
+}
+
+func NewRepositoryService(
+	repos repository.RepositoryRepo,
+	blobs repository.BlobStoreRepo,
+	blobStore storage.BlobStore,
+) *RepositoryService {
+	return &RepositoryService{repos: repos, blobs: blobs, blobStore: blobStore}
+}
+
+func (s *RepositoryService) List(ctx context.Context, format, repoType string) ([]domain.Repository, error) {
+	return s.repos.List(ctx, format, repoType)
+}
+
+func (s *RepositoryService) Get(ctx context.Context, name string) (*domain.Repository, error) {
+	r, err := s.repos.Get(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	if r == nil {
+		return nil, fmt.Errorf("%w: repository %q", ErrNotFound, name)
+	}
+	return r, nil
+}
+
+func (s *RepositoryService) Create(ctx context.Context, r *domain.Repository) error {
+	// Validate
+	if r.Name == "" {
+		return fmt.Errorf("%w: name is required", ErrInvalidInput)
+	}
+	if r.Format == "" {
+		return fmt.Errorf("%w: format is required", ErrInvalidInput)
+	}
+	if r.Type == "" {
+		return fmt.Errorf("%w: type is required", ErrInvalidInput)
+	}
+
+	// Check duplicate
+	existing, err := s.repos.Get(ctx, r.Name)
+	if err != nil {
+		return err
+	}
+	if existing != nil {
+		return fmt.Errorf("%w: repository %q", ErrAlreadyExists, r.Name)
+	}
+
+	if r.Type == domain.TypeProxy {
+		if r.ProxyConfig == nil {
+			return fmt.Errorf("%w: proxy repositories require proxy_config with remote_url", ErrInvalidInput)
+		}
+		raw, ok := r.ProxyConfig["remote_url"]
+		s, strOK := raw.(string)
+		if !ok || !strOK || s == "" {
+			return fmt.Errorf("%w: proxy_config.remote_url must be a non-empty string", ErrInvalidInput)
+		}
+	}
+
+	// Validate blob store exists (for hosted/proxy)
+	if r.BlobStoreID != nil && *r.BlobStoreID != "" {
+		bs, err := s.blobs.Get(ctx, *r.BlobStoreID)
+		if err != nil {
+			return err
+		}
+		if bs == nil {
+			return fmt.Errorf("%w: blob store %q", ErrNotFound, *r.BlobStoreID)
+		}
+	}
+
+	r.Online = true
+	return s.repos.Create(ctx, r)
+}
+
+func (s *RepositoryService) Update(ctx context.Context, name string, updates *domain.Repository) (*domain.Repository, error) {
+	r, err := s.Get(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+
+	// Apply allowed updates
+	if updates.Online != r.Online {
+		r.Online = updates.Online
+	}
+	if updates.Description != "" {
+		r.Description = updates.Description
+	}
+	if updates.FormatConfig != nil {
+		r.FormatConfig = updates.FormatConfig
+	}
+	if updates.HTTPConfig != nil {
+		r.HTTPConfig = updates.HTTPConfig
+	}
+	if updates.ProxyConfig != nil {
+		r.ProxyConfig = updates.ProxyConfig
+	}
+	if updates.QuotaBytes != nil {
+		r.QuotaBytes = updates.QuotaBytes
+	}
+	if updates.CleanupPolicyIDs != nil {
+		r.CleanupPolicyIDs = updates.CleanupPolicyIDs
+	}
+
+	if err := s.repos.Update(ctx, r); err != nil {
+		return nil, err
+	}
+	return r, nil
+}
+
+func (s *RepositoryService) Delete(ctx context.Context, name string) error {
+	r, err := s.Get(ctx, name)
+	if err != nil {
+		return err
+	}
+	_ = r
+	return s.repos.Delete(ctx, name)
+}

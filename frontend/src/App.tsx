@@ -1,0 +1,48 @@
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import Layout from '@/components/Layout'
+import LoginPage from '@/pages/LoginPage'
+import RepositoriesPage from '@/pages/RepositoriesPage'
+import BrowsePage from '@/pages/BrowsePage'
+import SearchPage from '@/pages/SearchPage'
+import UsersPage from '@/pages/UsersPage'
+import CleanupPage from '@/pages/CleanupPage'
+import AdminPage from '@/pages/AdminPage'
+import MigrationPage from '@/pages/MigrationPage'
+import SecurityPage from '@/pages/SecurityPage'
+import AuditPage from '@/pages/AuditPage'
+import { useAuthStore } from '@/store/authStore'
+
+function PrivateRoute({ children }: { children: React.ReactNode }) {
+  const token = useAuthStore(s => s.token)
+  if (!token) return <Navigate to="/login" replace />
+  return <>{children}</>
+}
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route
+          path="/"
+          element={
+            <PrivateRoute>
+              <Layout />
+            </PrivateRoute>
+          }
+        >
+          <Route index element={<Navigate to="/repositories" replace />} />
+          <Route path="repositories" element={<RepositoriesPage />} />
+          <Route path="browse" element={<BrowsePage />} />
+          <Route path="search" element={<SearchPage />} />
+          <Route path="users" element={<UsersPage />} />
+          <Route path="cleanup" element={<CleanupPage />} />
+          <Route path="admin" element={<AdminPage />} />
+          <Route path="migration" element={<MigrationPage />} />
+          <Route path="security" element={<SecurityPage />} />
+          <Route path="audit" element={<AuditPage />} />
+        </Route>
+      </Routes>
+    </BrowserRouter>
+  )
+}

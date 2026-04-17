@@ -1,0 +1,112 @@
+package handlers
+
+import (
+	"context"
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+	"github.com/nexspence-oss/nexspence/internal/domain"
+	"github.com/nexspence-oss/nexspence/internal/repository"
+)
+
+// cleanupRunner is the minimal interface CleanupHandler needs from CleanupService.
+type cleanupRunner interface {
+	RunPolicy(ctx context.Context, id string) error
+	RunAll(ctx context.Context) error
+}
+
+type CleanupHandler struct {
+	repo    repository.CleanupPolicyRepo
+	runner  cleanupRunner
+}
+
+func NewCleanupHandler(repo repository.CleanupPolicyRepo, runner cleanupRunner) *CleanupHandler {
+	return &CleanupHandler{repo: repo, runner: runner}
+}
+
+// List GET /service/rest/v1/cleanup-policies
+func (h *CleanupHandler) List(c *gin.Context) {
+	policies, err := h.repo.List(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if policies == nil {
+		policies = []domain.CleanupPolicy{}
+	}
+	c.JSON(http.StatusOK, policies)
+}
+
+// Get GET /service/rest/v1/cleanup-policies/:id
+func (h *CleanupHandler) Get(c *gin.Context) {
+	p, err := h.repo.Get(c.Request.Context(), c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if p == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+		return
+	}
+	c.JSON(http.StatusOK, p)
+}
+
+// Create POST /service/rest/v1/cleanup-policies
+func (h *CleanupHandler) Create(c *gin.Context) {
+	var p domain.CleanupPolicy
+	if err := c.ShouldBindJSON(&p); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if p.Name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "name is required"})
+		return
+	}
+	if p.Format == "" {
+		p.Format = "*"
+	}
+	if p.Criteria == nil {
+		p.Criteria = map[string]any{}
+	}
+	if err := h.repo.Create(c.Request.Context(), &p); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, p)
+}
+
+// Update PUT /service/rest/v1/cleanup-policies/:id
+func (h *CleanupHandler) Update(c *gin.Context) {
+	var p domain.CleanupPolicy
+	if err := c.ShouldBindJSON(&p); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	p.ID = c.Param("id")
+	if err := h.repo.Update(c.Request.Context(), &p); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, p)
+}
+
+// Delete DELETE /service/rest/v1/cleanup-policies/:id
+func (h *CleanupHandler) Delete(c *gin.Context) {
+	if err := h.repo.Delete(c.Request.Context(), c.Param("id")); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+// Run POST /service/rest/v1/cleanup-policies/:id/run — trigger policy immediately
+func (h *CleanupHandler) Run(c *gin.Context) {
+	id := c.Param("id")
+	if id == "_all" {
+		go func() { _ = h.runner.RunAll(context.Background()) }()
+		c.JSON(http.StatusAccepted, gin.H{"status": "running all policies"})
+		return
+	}
+	go func() { _ = h.runner.RunPolicy(context.Background(), id) }()
+	c.JSON(http.StatusAccepted, gin.H{"status": "running", "id": id})
+}

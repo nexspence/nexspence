@@ -1,0 +1,59 @@
+/* ============================================================
+   Nexspence UI — VMSManager K3S Dark Glassmorphism Design System
+   ============================================================ */
+:root {
+  --bg: #070b14;
+  --panel: #0b1426;
+  --border: rgba(255, 255, 255, 0.08);
+  --text: #e5e7eb;
+  --muted: rgba(229, 231, 235, 0.62);
+  --brand: #3b82f6;
+  --brand-dim: rgba(59, 130, 246, 0.18);
+  --brand-hover: rgba(59, 130, 246, 0.15);
+  --brand-active: rgba(59, 130, 246, 0.22);
+  --ok: #22c55e;
+  --warn: #f59e0b;
+  --danger: #ef4444;
+  --shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+  --radius: 14px;
+  --radius-sm: 10px;
+  --ease: cubic-bezier(0.23, 1, 0.32, 1);
+  --dur: 200ms;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  color: var(--text);
+  background:
+    radial-gradient(1200px 800px at 15% 10%, rgba(59, 130, 246, 0.13), transparent 55%),
+    radial-gradient(900px 600px at 85% 15%, rgba(96, 165, 250, 0.10), transparent 50%),
+    var(--bg);
+  color-scheme: dark;
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(96, 165, 250, 0.5) rgba(255, 255, 255, 0.05);
+}
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-track { background: rgba(255,255,255,0.03); border-radius: 99px; }
+*::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(59,130,246,0.75), rgba(96,165,250,0.42));
+  border: 2px solid rgba(8,14,26,0.9);
+  border-radius: 99px;
+}
+
+button { cursor: pointer; font-family: inherit; }
+input, select, textarea { font-family: inherit; }
+a { color: inherit; text-decoration: none; }

@@ -1,0 +1,138 @@
+.root {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  min-height: 100vh;
+}
+
+.sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  background: linear-gradient(180deg, rgba(11,20,38,0.82), rgba(11,20,38,0.58));
+  backdrop-filter: blur(12px);
+  border-right: 1px solid var(--border);
+  padding: 14px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  z-index: 20;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 8px 6px;
+}
+
+.brandLogo {
+  width: 180px;
+  height: auto;
+  display: block;
+}
+
+.sectionLabel {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 0 4px;
+  margin-top: 4px;
+}
+
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.navBtn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 11px;
+  border-radius: 11px;
+  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.03);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease), color var(--dur) var(--ease);
+  text-decoration: none;
+}
+
+.navBtn:hover {
+  background: var(--brand-hover);
+  border-color: rgba(59,130,246,0.35);
+  color: #dbeafe;
+}
+
+.navBtn.active {
+  background: var(--brand-active);
+  border-color: rgba(59,130,246,0.5);
+  color: #eff6ff;
+  font-weight: 600;
+}
+
+.divider {
+  border: none;
+  border-top: 1px solid rgba(255,255,255,0.07);
+  margin: 2px 0;
+}
+
+.footer {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255,255,255,0.07);
+}
+
+.danger:hover {
+  background: rgba(239,68,68,0.12) !important;
+  border-color: rgba(239,68,68,0.35) !important;
+  color: #fca5a5 !important;
+}
+
+.userInfo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.07);
+}
+
+.userName {
+  font-size: 12px;
+  font-weight: 600;
+  color: #dbeafe;
+}
+
+.userRole {
+  font-size: 10px;
+  font-weight: 500;
+  color: rgba(59,130,246,0.9);
+  background: rgba(59,130,246,0.12);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.version {
+  text-align: center;
+  font-size: 10px;
+  color: var(--muted);
+  padding: 4px 0 0;
+}
+
+.main {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  overflow: hidden;
+}

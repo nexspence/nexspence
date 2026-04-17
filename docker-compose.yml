@@ -1,0 +1,72 @@
+services:
+
+  # ── PostgreSQL ────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: nexspence
+      POSTGRES_PASSWORD: nexspence
+      POSTGRES_DB: nexspence
+    ports:
+      - "5437:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nexspence"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── Nexspence backend ─────────────────────────────────────────────
+  nexspence:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NEXSPENCE_DATABASE_DSN: "postgres://nexspence:nexspence@postgres:5432/nexspence?sslmode=disable"
+      NEXSPENCE_AUTH_JWT_SECRET: "change-me-in-production-min-32-chars"
+      NEXSPENCE_HTTP_ADDR: ":8081"
+      NEXSPENCE_HTTP_BASE_URL: "http://localhost:8081"
+      NEXSPENCE_STORAGE_DEFAULT_TYPE: "local"
+      NEXSPENCE_STORAGE_LOCAL_BASE_PATH: "/data/blobs"
+      NEXSPENCE_LOG_LEVEL: "info"
+      NEXSPENCE_LOG_FORMAT: "json"
+    ports:
+      - "8081:8081"
+      - "5000:5000"   # Docker registry HTTP port
+    volumes:
+      - nexspence_blobs:/data/blobs
+      - ./config.yaml:/app/config.yaml:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8081/service/rest/v1/status/check"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Frontend dev server (Vite) ────────────────────────────────
+  # Only used during development — production build is embedded in nexspence binary
+  frontend-dev:
+    image: node:20-alpine
+    working_dir: /app
+    command: sh -c "npm install && npm run dev -- --host"
+    profiles:
+      - dev
+    depends_on:
+      - nexspence
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
+    environment:
+      VITE_API_BASE: "http://localhost:8081"
+
+volumes:
+  postgres_data:
+  nexspence_blobs:
+  frontend_node_modules:

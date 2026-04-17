@@ -1,0 +1,110 @@
+package storage
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"io/fs"
+	"os"
+	"path/filepath"
+)
+
+// LocalBlobStore stores blobs as files under a base directory.
+// Key "ab/cd/abcdef123..." maps to <basePath>/ab/cd/abcdef123...
+type LocalBlobStore struct {
+	basePath string
+}
+
+func NewLocalBlobStore(basePath string) (*LocalBlobStore, error) {
+	if err := os.MkdirAll(basePath, 0o755); err != nil {
+		return nil, fmt.Errorf("create blob store dir %s: %w", basePath, err)
+	}
+	return &LocalBlobStore{basePath: basePath}, nil
+}
+
+func (s *LocalBlobStore) keyPath(key string) string {
+	// Shard by first 4 chars to avoid huge flat directories
+	if len(key) >= 4 {
+		return filepath.Join(s.basePath, key[:2], key[2:4], key)
+	}
+	return filepath.Join(s.basePath, key)
+}
+
+func (s *LocalBlobStore) Put(_ context.Context, key string, r io.Reader, _ int64) error {
+	dst := s.keyPath(key)
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return err
+	}
+	// Write to a temp file first, then rename (atomic on same filesystem)
+	tmp := dst + ".tmp"
+	f, err := os.Create(tmp)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(f, r); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return os.Rename(tmp, dst)
+}
+
+func (s *LocalBlobStore) Get(_ context.Context, key string) (io.ReadCloser, int64, error) {
+	f, err := os.Open(s.keyPath(key))
+	if err != nil {
+		return nil, 0, err
+	}
+	info, err := f.Stat()
+	if err != nil {
+		f.Close()
+		return nil, 0, err
+	}
+	return f, info.Size(), nil
+}
+
+func (s *LocalBlobStore) Delete(_ context.Context, key string) error {
+	err := os.Remove(s.keyPath(key))
+	if os.IsNotExist(err) {
+		return nil
+	}
+	return err
+}
+
+func (s *LocalBlobStore) Exists(_ context.Context, key string) (bool, error) {
+	_, err := os.Stat(s.keyPath(key))
+	if err == nil {
+		return true, nil
+	}
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	return false, err
+}
+
+func (s *LocalBlobStore) Size(_ context.Context, key string) (int64, error) {
+	info, err := os.Stat(s.keyPath(key))
+	if err != nil {
+		return 0, err
+	}
+	return info.Size(), nil
+}
+
+func (s *LocalBlobStore) UsedBytes(_ context.Context) (int64, error) {
+	var total int64
+	err := filepath.WalkDir(s.basePath, func(_ string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		total += info.Size()
+		return nil
+	})
+	return total, err
+}

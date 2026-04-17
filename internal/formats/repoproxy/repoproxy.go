@@ -1,0 +1,272 @@
+// Package repoproxy implements read-through caching for proxy-type repositories.
+package repoproxy
+
+import (
+	"crypto/md5"
+	"crypto/sha1"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"path"
+	"strings"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/nexspence-oss/nexspence/internal/domain"
+	"github.com/nexspence-oss/nexspence/internal/formats"
+	"github.com/nexspence-oss/nexspence/internal/formats/base"
+)
+
+var httpUpstream = &http.Client{
+	Transport: &http.Transport{
+		MaxIdleConns:        128,
+		IdleConnTimeout:     90 * time.Second,
+		TLSHandshakeTimeout: 15 * time.Second,
+	},
+	Timeout: 5 * time.Minute,
+	CheckRedirect: func(_ *http.Request, via []*http.Request) error {
+		if len(via) >= 12 {
+			return fmt.Errorf("stopped after 12 redirects")
+		}
+		return nil
+	},
+}
+
+var hopHeaders = map[string]bool{
+	"connection":          true,
+	"keep-alive":          true,
+	"proxy-authenticate":  true,
+	"proxy-authorization": true,
+	"te":                  true,
+	"trailers":            true,
+	"transfer-encoding":   true,
+	"upgrade":             true,
+}
+
+// RejectMutation responds 405 for mutating methods on a proxy repository.
+func RejectMutation(c *gin.Context, repo *domain.Repository) bool {
+	if repo == nil || repo.Type != domain.TypeProxy {
+		return false
+	}
+	switch c.Request.Method {
+	case http.MethodPut, http.MethodPost, http.MethodPatch, http.MethodDelete:
+		c.JSON(http.StatusMethodNotAllowed, gin.H{
+			"error": "proxy repository is read-only (use a hosted repository to publish)",
+		})
+		return true
+	default:
+		return false
+	}
+}
+
+// RemoteURL extracts proxy_config.remote_url.
+func RemoteURL(repo *domain.Repository) (string, error) {
+	if repo.ProxyConfig == nil {
+		return "", fmt.Errorf("proxy_config.remote_url is required for proxy repositories")
+	}
+	raw, ok := repo.ProxyConfig["remote_url"]
+	if !ok {
+		return "", fmt.Errorf("proxy_config.remote_url is required for proxy repositories")
+	}
+	s, ok := raw.(string)
+	if !ok || strings.TrimSpace(s) == "" {
+		return "", fmt.Errorf("proxy_config.remote_url must be a non-empty string")
+	}
+	return strings.TrimRight(s, "/"), nil
+}
+
+// JoinURL joins the remote base URL with the repository-relative artifact path.
+func JoinURL(remoteBase, repoRelativePath string) (string, error) {
+	u, err := url.Parse(remoteBase)
+	if err != nil {
+		return "", fmt.Errorf("invalid remote_url: %w", err)
+	}
+	suffix := strings.Trim(repoRelativePath, "/")
+	merged := path.Join(strings.TrimSuffix(u.Path, "/"), suffix)
+	u.Path = "/" + strings.TrimPrefix(merged, "/")
+	return u.String(), nil
+}
+
+func copyRespHeaders(dst http.Header, src http.Header) {
+	for k, vv := range src {
+		if hopHeaders[strings.ToLower(k)] {
+			continue
+		}
+		for _, v := range vv {
+			dst.Add(k, v)
+		}
+	}
+}
+
+func applyChecksumHeaders(c *gin.Context, a *domain.Asset) {
+	if a.SHA256 != "" {
+		c.Header("X-Checksum-SHA256", a.SHA256)
+		c.Header("ETag", `"`+a.SHA256+`"`)
+	}
+	if a.SHA1 != "" {
+		c.Header("X-Checksum-SHA1", a.SHA1)
+	}
+	if a.MD5 != "" {
+		c.Header("X-Checksum-MD5", a.MD5)
+	}
+}
+
+// ServeGET serves a cached asset or fetches upstream, streaming to the client
+// and persisting to the blob store on success. repo must be TypeProxy.
+// upstreamPath, when non-empty, is used only for the upstream URL (e.g. npm scoped metadata);
+// the cache key and DB asset path remain repoRelativePath.
+func ServeGET(c *gin.Context, d formats.Deps, repo *domain.Repository, repoRelativePath, upstreamPath string,
+	coords base.Coords, defaultContentType string,
+) error {
+	ctx := c.Request.Context()
+	if repo.Type != domain.TypeProxy {
+		return fmt.Errorf("repoproxy: repository %q is not a proxy", repo.Name)
+	}
+
+	upJoin := upstreamPath
+	if upJoin == "" {
+		upJoin = repoRelativePath
+	}
+
+	switch c.Request.Method {
+	case http.MethodGet, http.MethodHead:
+	default:
+		return fmt.Errorf("repoproxy: unsupported method %s", c.Request.Method)
+	}
+
+	asset, err := d.Assets.GetByPath(ctx, repo.Name, repoRelativePath)
+	if err != nil {
+		return fmt.Errorf("repoproxy: asset lookup: %w", err)
+	}
+	if asset != nil {
+		rc, _, err := d.BlobStore.Get(ctx, asset.BlobKey)
+		if err != nil {
+			return fmt.Errorf("repoproxy: blob get: %w", err)
+		}
+		defer rc.Close()
+		go func() { _ = d.Assets.IncrementDownload(ctx, asset.ID) }()
+		applyChecksumHeaders(c, asset)
+		if c.Request.Method == http.MethodHead {
+			c.Header("Content-Type", asset.ContentType)
+			if asset.SizeBytes > 0 {
+				c.Header("Content-Length", fmt.Sprintf("%d", asset.SizeBytes))
+			}
+			c.Status(http.StatusOK)
+			return nil
+		}
+		c.DataFromReader(http.StatusOK, asset.SizeBytes, asset.ContentType, rc, nil)
+		return nil
+	}
+
+	baseRemote, err := RemoteURL(repo)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return nil
+	}
+	upstream, err := JoinURL(baseRemote, upJoin)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return nil
+	}
+
+	req, err := http.NewRequestWithContext(ctx, c.Request.Method, upstream, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("User-Agent", "Nexspence/1.0 (proxy)")
+	if ac := c.GetHeader("Accept"); ac != "" {
+		req.Header.Set("Accept", ac)
+	}
+	if inm := c.GetHeader("If-None-Match"); inm != "" {
+		req.Header.Set("If-None-Match", inm)
+	}
+
+	resp, err := httpUpstream.Do(req)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "upstream fetch failed: " + err.Error()})
+		return nil
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotModified {
+		copyRespHeaders(c.Writer.Header(), resp.Header)
+		c.Status(http.StatusNotModified)
+		return nil
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		copyRespHeaders(c.Writer.Header(), resp.Header)
+		c.Status(resp.StatusCode)
+		_, _ = io.Copy(c.Writer, resp.Body)
+		return nil
+	}
+
+	if c.Request.Method == http.MethodHead {
+		copyRespHeaders(c.Writer.Header(), resp.Header)
+		c.Status(resp.StatusCode)
+		return nil
+	}
+
+	ct := resp.Header.Get("Content-Type")
+	if ct == "" {
+		ct = defaultContentType
+	}
+
+	copyRespHeaders(c.Writer.Header(), resp.Header)
+	c.Header("Content-Type", ct)
+	c.Status(resp.StatusCode)
+
+	blobKey := base.BlobKey(repo.Name, repoRelativePath)
+	sha256h := sha256.New()
+	sha1h := sha1.New()
+	md5h := md5.New()
+
+	pr, pw := io.Pipe()
+	putErrCh := make(chan error, 1)
+	go func() {
+		putErrCh <- d.BlobStore.Put(ctx, blobKey, pr, resp.ContentLength)
+	}()
+
+	hashes := io.MultiWriter(sha256h, sha1h, md5h)
+	mw := io.MultiWriter(pw, hashes, c.Writer)
+
+	written, copyErr := io.Copy(mw, resp.Body)
+	_ = pw.CloseWithError(copyErr)
+	putErr := <-putErrCh
+
+	if copyErr != nil || putErr != nil {
+		_ = d.BlobStore.Delete(ctx, blobKey)
+		return fmt.Errorf("proxy cache write: copyErr=%v putErr=%v", copyErr, putErr)
+	}
+
+	sha256sum := hex.EncodeToString(sha256h.Sum(nil))
+	sha1sum := hex.EncodeToString(sha1h.Sum(nil))
+	md5sum := hex.EncodeToString(md5h.Sum(nil))
+
+	size := written
+	if size <= 0 {
+		if s, e := d.BlobStore.Size(ctx, blobKey); e == nil {
+			size = s
+		}
+	}
+
+	if _, regErr := base.RegisterStoredBlob(ctx, d, repo, repoRelativePath, ct, coords, blobKey, sha256sum, sha1sum, md5sum, size); regErr != nil {
+		return regErr
+	}
+	return nil
+}
+
+// NPMMetadataPath returns the path segment npmjs.org uses for metadata (scoped packages use %2F).
+func NPMMetadataPath(pkgPath string) string {
+	pkg := strings.Trim(strings.TrimPrefix(pkgPath, "/"), "/")
+	if strings.HasPrefix(pkg, "@") {
+		slash := strings.Index(pkg, "/")
+		if slash > 0 {
+			return pkg[:slash] + "%2F" + pkg[slash+1:]
+		}
+	}
+	return pkg
+}

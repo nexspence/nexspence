@@ -1,0 +1,42 @@
+# Binary
+bin/
+*.exe
+
+# Config with secrets (use config.yaml as template)
+config.local.yaml
+.env
+.env.local
+
+# Data
+data/
+*.tmp
+
+# Go
+vendor/
+*.test
+coverage.out
+coverage.html
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Docker
+.dockerignore
+
+# OS
+.DS_Store
+Thumbs.db
+
+#LLM
+CLAUDE.md
+findings.md
+progress.md
+task_plan.md
+.qwen/
+.claude/
