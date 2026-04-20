@@ -54,28 +54,108 @@ const S = {
 
 /* ─── Sub-components ────────────────────────────────────── */
 
-function RolesTab({ roles, loading }: { roles: Role[]; loading: boolean }) {
+function RolesTab({ roles, loading, onRefresh }: { roles: Role[]; loading: boolean; onRefresh: () => void }) {
+  const qc = useQueryClient()
+  const [editRole, setEditRole] = useState<Role | null>(null)
+  const [form, setForm] = useState({ name: '', description: '' })
+  const [allPrivs, setAllPrivs] = useState<Privilege[]>([])
+  const [selectedPrivIds, setSelectedPrivIds] = useState<string[]>([])
+  const [loadingPrivs, setLoadingPrivs] = useState(false)
+
+  async function openEdit(r: Role) {
+    setEditRole(r)
+    setForm({ name: r.name, description: r.description })
+    setLoadingPrivs(true)
+    try {
+      const [privList, rolePrivs] = await Promise.all([
+        nexusApi.listPrivileges().then(res => res.data as Privilege[]),
+        nexusApi.listRolePrivileges(r.id).then(res => res.data as Privilege[]),
+      ])
+      setAllPrivs(privList)
+      setSelectedPrivIds(rolePrivs.map(p => p.id))
+    } finally { setLoadingPrivs(false) }
+  }
+
+  const save = useMutation({
+    mutationFn: async () => {
+      if (!editRole) return
+      await nexusApi.updateRole(editRole.id, form)
+      await nexusApi.setRolePrivileges(editRole.id, selectedPrivIds)
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['roles'] }); onRefresh(); setEditRole(null) },
+  })
+
+  const del = useMutation({
+    mutationFn: (id: string) => nexusApi.deleteRole(id),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['roles'] }); onRefresh() },
+  })
+
   if (loading) return <div style={S.empty}>Loading…</div>
   if (!roles.length) return <div style={S.empty}>No roles found</div>
+
   return (
-    <div style={S.grid}>
-      {roles.map(r => (
-        <div key={r.id} style={S.card}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-            <Shield size={15} style={{ color: '#3b82f6' }} />
-            <span style={{ fontSize: 14, fontWeight: 600, color: '#dbeafe', flex: 1 }}>{r.name}</span>
-            {r.readOnly && <span style={S.badge('#6b7280')}>built-in</span>}
+    <>
+      <div style={S.grid}>
+        {roles.map(r => (
+          <div key={r.id} style={S.card}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <Shield size={15} style={{ color: '#3b82f6' }} />
+              <span style={{ fontSize: 14, fontWeight: 600, color: '#dbeafe', flex: 1 }}>{r.name}</span>
+              {r.readOnly && <span style={S.badge('#6b7280')}>built-in</span>}
+              {!r.readOnly && (
+                <button style={{ ...S.btn('ghost'), padding: '3px 8px', fontSize: 12 }} onClick={() => openEdit(r)}>Edit</button>
+              )}
+            </div>
+            {r.description && <p style={{ fontSize: 12, color: 'rgba(229,231,235,0.5)', margin: '0 0 8px' }}>{r.description}</p>}
+            <div style={{ display: 'flex', flexWrap: 'wrap' as const, gap: 4 }}>
+              {(r.privileges ?? []).slice(0, 6).map(p => (
+                <span key={p} style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: 'rgba(99,102,241,0.12)', color: '#a5b4fc', fontFamily: 'monospace' }}>{p}</span>
+              ))}
+              {(r.privileges ?? []).length > 6 && <span style={{ fontSize: 10, color: 'rgba(229,231,235,0.4)' }}>+{(r.privileges ?? []).length - 6}</span>}
+            </div>
           </div>
-          {r.description && <p style={{ fontSize: 12, color: 'rgba(229,231,235,0.5)', margin: '0 0 8px' }}>{r.description}</p>}
-          <div style={{ display: 'flex', flexWrap: 'wrap' as const, gap: 4 }}>
-            {(r.privileges ?? []).slice(0, 6).map(p => (
-              <span key={p} style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: 'rgba(99,102,241,0.12)', color: '#a5b4fc', fontFamily: 'monospace' }}>{p}</span>
-            ))}
-            {(r.privileges ?? []).length > 6 && <span style={{ fontSize: 10, color: 'rgba(229,231,235,0.4)' }}>+{(r.privileges ?? []).length - 6}</span>}
+        ))}
+      </div>
+
+      {editRole && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ background: '#0f172a', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 14, padding: 24, width: 520, maxHeight: '80vh', overflowY: 'auto' as const, display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#dbeafe' }}>Edit Role: {editRole.name}</h3>
+            <input style={S.input} placeholder="Name" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
+            <input style={S.input} placeholder="Description" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
+
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'rgba(229,231,235,0.7)', marginTop: 4 }}>Privileges</div>
+            {loadingPrivs ? <div style={S.empty}>Loading privileges…</div> : (
+              <div style={{ maxHeight: 220, overflowY: 'auto' as const, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {allPrivs.map(p => (
+                  <label key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', padding: '4px 0' }}>
+                    <input
+                      type="checkbox"
+                      checked={selectedPrivIds.includes(p.id)}
+                      onChange={e => setSelectedPrivIds(prev =>
+                        e.target.checked ? [...prev, p.id] : prev.filter(id => id !== p.id)
+                      )}
+                    />
+                    <span style={{ fontSize: 13, color: '#dbeafe' }}>{p.name}</span>
+                    <span style={S.badge(PRIV_TYPE_COLOR[p.type as PrivType] ?? '#6b7280')}>{p.type}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'space-between', marginTop: 4 }}>
+              <button style={S.btn('danger')} onClick={() => { if (confirm(`Delete role ${editRole.name}?`)) { del.mutate(editRole.id); setEditRole(null) } }}>Delete</button>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button style={S.btn('ghost')} onClick={() => setEditRole(null)}>Cancel</button>
+                <button style={S.btn('primary')} onClick={() => save.mutate()} disabled={save.isPending || !form.name.trim()}>
+                  {save.isPending ? 'Saving…' : 'Save'}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
-      ))}
-    </div>
+      )}
+    </>
   )
 }
 
@@ -673,7 +753,7 @@ export default function SecurityPage() {
         ))}
       </div>
 
-      {tab === 'roles'      && <RolesTab roles={roles} loading={isLoading} />}
+      {tab === 'roles'      && <RolesTab roles={roles} loading={isLoading} onRefresh={refetch} />}
       {tab === 'privileges' && <PrivilegesTab />}
       {tab === 'selectors'  && <ContentSelectorsTab />}
       {tab === 'scan'       && <ScanTab />}
