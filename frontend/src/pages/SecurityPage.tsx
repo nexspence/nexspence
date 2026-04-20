@@ -631,6 +631,9 @@ function ContentSelectorsTab() {
   const [repoSearch, setRepoSearch] = useState('')
   const [pathSearch, setPathSearch] = useState('')
   const [saveError, setSaveError] = useState('')
+  const [repoOpen, setRepoOpen] = useState(false)
+  const [pathOpen, setPathOpen] = useState(false)
+  const [legacyExpr, setLegacyExpr] = useState('')
 
   const { data: pathTree, isLoading: pathsLoading } = useQuery<{ paths: string[] }>({
     queryKey: ['path-tree', form.repo, pathSearch],
@@ -667,20 +670,24 @@ function ContentSelectorsTab() {
     setEditing(null)
     setForm({ name: '', description: '', repo: '', path: '' })
     setRepoSearch(''); setPathSearch(''); setSaveError('')
+    setRepoOpen(false); setPathOpen(false); setLegacyExpr('')
     setShowModal(true)
   }
 
   function openEdit(s: { id: string; name: string; description: string; expression: string }) {
     setEditing(s)
     const { repo, path } = parseExpression(s.expression)
+    const isLegacy = !repo && !path && !!s.expression
+    setLegacyExpr(isLegacy ? s.expression : '')
     setForm({ name: s.name, description: s.description, repo, path })
     setRepoSearch(repo); setPathSearch(path); setSaveError('')
+    setRepoOpen(false); setPathOpen(false)
     setShowModal(true)
   }
 
   const save = useMutation({
     mutationFn: async () => {
-      const expression = buildExpression(form.repo, form.path)
+      const expression = legacyExpr || buildExpression(form.repo, form.path)
       if (!expression) throw new Error('Select a repository or path')
       const payload = { name: form.name, description: form.description, expression }
       if (editing) return nexusApi.updateContentSelector(editing.id, payload)
@@ -707,7 +714,7 @@ function ContentSelectorsTab() {
   )
 
   const paths = pathTree?.paths ?? []
-  const canSave = !!form.name.trim() && (!!form.repo || !!form.path)
+  const canSave = !!form.name.trim() && (!!form.repo || !!form.path || !!legacyExpr)
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -764,14 +771,15 @@ function ContentSelectorsTab() {
                 style={S.input}
                 placeholder="Search repositories…"
                 value={repoSearch}
-                onChange={e => { setRepoSearch(e.target.value); setForm(f => ({ ...f, repo: '', path: '' })) }}
+                onFocus={() => setRepoOpen(true)}
+                onChange={e => { setRepoSearch(e.target.value); setForm(f => ({ ...f, repo: '', path: '' })); setRepoOpen(true) }}
               />
-              {(repoSearch || form.repo) && (
+              {repoOpen && (
                 <div style={{ maxHeight: 160, overflowY: 'auto', background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, marginTop: 4 }}>
                   <div
                     style={{ padding: '7px 12px', fontSize: 13, cursor: 'pointer', color: 'rgba(229,231,235,0.5)',
                       background: !form.repo ? 'rgba(59,130,246,0.12)' : 'transparent' }}
-                    onClick={() => { setForm(f => ({ ...f, repo: '', path: '' })); setRepoSearch('') }}
+                    onClick={() => { setForm(f => ({ ...f, repo: '', path: '' })); setRepoSearch(''); setRepoOpen(false) }}
                   >
                     Any repository
                   </div>
@@ -781,7 +789,7 @@ function ContentSelectorsTab() {
                       style={{ padding: '7px 12px', fontSize: 13, cursor: 'pointer',
                         color: form.repo === r.name ? '#3b82f6' : '#dbeafe',
                         background: form.repo === r.name ? 'rgba(59,130,246,0.12)' : 'transparent' }}
-                      onClick={() => { setForm(f => ({ ...f, repo: r.name, path: '' })); setRepoSearch(r.name); setPathSearch('') }}
+                      onClick={() => { setForm(f => ({ ...f, repo: r.name, path: '' })); setRepoSearch(r.name); setPathSearch(''); setRepoOpen(false) }}
                     >
                       {r.name}
                       <span style={{ fontSize: 11, color: 'rgba(229,231,235,0.4)', marginLeft: 8 }}>{r.format}</span>
@@ -804,14 +812,15 @@ function ContentSelectorsTab() {
                 placeholder="Search paths…"
                 disabled={!form.repo}
                 value={pathSearch}
-                onChange={e => { setPathSearch(e.target.value); setForm(f => ({ ...f, path: '' })) }}
+                onFocus={() => setPathOpen(true)}
+                onChange={e => { setPathSearch(e.target.value); setForm(f => ({ ...f, path: '' })); setPathOpen(true) }}
               />
-              {form.repo && (pathSearch || form.path !== '') && (
+              {form.repo && pathOpen && (
                 <div style={{ maxHeight: 180, overflowY: 'auto', background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, marginTop: 4 }}>
                   <div
                     style={{ padding: '7px 12px', fontSize: 13, cursor: 'pointer', color: 'rgba(229,231,235,0.5)',
                       background: !form.path ? 'rgba(59,130,246,0.12)' : 'transparent' }}
-                    onClick={() => { setForm(f => ({ ...f, path: '' })); setPathSearch('') }}
+                    onClick={() => { setForm(f => ({ ...f, path: '' })); setPathSearch(''); setPathOpen(false) }}
                   >
                     Any path
                   </div>
@@ -828,7 +837,7 @@ function ContentSelectorsTab() {
                           color: form.path === p ? '#3b82f6' : '#dbeafe',
                           background: form.path === p ? 'rgba(59,130,246,0.12)' : 'transparent',
                           fontFamily: 'monospace' }}
-                        onClick={() => { setForm(f => ({ ...f, path: p })); setPathSearch(p) }}
+                        onClick={() => { setForm(f => ({ ...f, path: p })); setPathSearch(p); setPathOpen(false) }}
                       >
                         {p}
                       </div>
@@ -842,6 +851,19 @@ function ContentSelectorsTab() {
             {(form.repo || form.path) && (
               <div style={{ padding: '6px 10px', background: 'rgba(59,130,246,0.08)', borderRadius: 8, fontSize: 12, color: '#93c5fd', fontFamily: 'monospace' }}>
                 {buildExpression(form.repo, form.path)}
+              </div>
+            )}
+
+            {legacyExpr !== undefined && editing && !form.repo && !form.path && editing.expression && (
+              <div>
+                <div style={{ fontSize: 12, color: 'rgba(229,231,235,0.5)', marginBottom: 4 }}>
+                  CEL Expression (legacy — not parseable as simple selector)
+                </div>
+                <textarea
+                  style={{ ...S.input, fontFamily: 'monospace', fontSize: 12, height: 64, resize: 'vertical' as const }}
+                  value={legacyExpr}
+                  onChange={e => setLegacyExpr(e.target.value)}
+                />
               </div>
             )}
 

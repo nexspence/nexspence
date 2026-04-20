@@ -38,7 +38,7 @@ export const nexusApi = {
 
   // Repositories
   listRepositories: (params?: { format?: string; type?: string }) =>
-    apiClient.get('/service/rest/v1/repositories', { params }),
+    apiClient.get<{ name: string; format: string; type: string; url: string }[]>('/service/rest/v1/repositories', { params }),
   getRepository: (name: string) =>
     apiClient.get(`/service/rest/v1/repositories/${name}`),
   createRepository: (format: string, type: string, data: unknown) =>
