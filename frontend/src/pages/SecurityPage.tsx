@@ -534,8 +534,121 @@ function PrivilegesTab() {
   )
 }
 
+function ContentSelectorsTab() {
+  const qc = useQueryClient()
+  const { data: selectors = [], isLoading } = useQuery<{ id: string; name: string; description: string; expression: string }[]>({
+    queryKey: ['content-selectors'],
+    queryFn: () => nexusApi.listContentSelectors().then(r => r.data),
+  })
+  const [showModal, setShowModal] = useState(false)
+  const [editing, setEditing] = useState<{ id: string; name: string; description: string; expression: string } | null>(null)
+  const [form, setForm] = useState({ name: '', description: '', expression: '' })
+  const [saveError, setSaveError] = useState('')
+
+  function openCreate() {
+    setEditing(null)
+    setForm({ name: '', description: '', expression: 'format == "maven2"' })
+    setSaveError('')
+    setShowModal(true)
+  }
+
+  function openEdit(s: { id: string; name: string; description: string; expression: string }) {
+    setEditing(s)
+    setForm({ name: s.name, description: s.description, expression: s.expression })
+    setSaveError('')
+    setShowModal(true)
+  }
+
+  const save = useMutation({
+    mutationFn: async () => {
+      if (editing) return nexusApi.updateContentSelector(editing.id, form)
+      return nexusApi.createContentSelector(form)
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['content-selectors'] }); setShowModal(false) },
+    onError: (e: unknown) => {
+      let msg = 'Error'
+      if (axios.isAxiosError(e)) {
+        const d = e.response?.data
+        if (typeof d === 'object' && d !== null && 'error' in d) msg = String((d as { error: unknown }).error)
+      } else if (e instanceof Error) { msg = e.message }
+      setSaveError(msg)
+    },
+  })
+
+  const del = useMutation({
+    mutationFn: (id: string) => nexusApi.deleteContentSelector(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['content-selectors'] }),
+  })
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <button style={S.btn('primary')} onClick={openCreate}><Plus size={14} /> New Selector</button>
+      </div>
+
+      {isLoading ? <div style={S.empty}>Loading…</div> : selectors.length === 0 ? <div style={S.empty}>No content selectors</div> : (
+        <div style={S.card}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: 13 }}>
+            <thead>
+              <tr style={{ color: 'rgba(229,231,235,0.5)', textAlign: 'left' as const }}>
+                <th style={{ padding: '0 0 10px', fontWeight: 600 }}>Name</th>
+                <th style={{ padding: '0 8px 10px', fontWeight: 600 }}>Expression</th>
+                <th style={{ padding: '0 8px 10px', fontWeight: 600 }}>Description</th>
+                <th style={{ padding: '0 0 10px', width: 80 }}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {selectors.map(s => (
+                <tr key={s.id} style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                  <td style={{ padding: '9px 0', color: '#dbeafe', fontWeight: 600 }}>{s.name}</td>
+                  <td style={{ padding: '9px 8px' }}>
+                    <code style={{ ...S.mono, fontSize: 12, color: '#a5b4fc' }}>{s.expression}</code>
+                  </td>
+                  <td style={{ padding: '9px 8px', color: 'rgba(229,231,235,0.55)' }}>{s.description || '—'}</td>
+                  <td style={{ padding: '9px 0', display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                    <button style={{ ...S.btn('ghost'), padding: '4px 8px' }} onClick={() => openEdit(s)}>Edit</button>
+                    <button style={{ ...S.btn('danger'), padding: '4px 8px' }} onClick={() => { if (confirm(`Delete ${s.name}?`)) del.mutate(s.id) }}><Trash2 size={13} /></button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {showModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ background: '#0f172a', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 14, padding: 24, width: 520, display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#dbeafe' }}>{editing ? 'Edit Content Selector' : 'New Content Selector'}</h3>
+            <input style={S.input} placeholder="Name" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
+            <input style={S.input} placeholder="Description (optional)" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
+            <div>
+              <div style={{ fontSize: 12, color: 'rgba(229,231,235,0.5)', marginBottom: 4 }}>CEL Expression — variables: <code>format</code>, <code>path</code>, <code>repository</code></div>
+              <textarea
+                style={{ ...S.input, fontFamily: 'monospace', fontSize: 12, height: 80, resize: 'vertical' as const }}
+                placeholder='format == "maven2" && path.startsWith("/com/acme")'
+                value={form.expression}
+                onChange={e => setForm(f => ({ ...f, expression: e.target.value }))}
+              />
+            </div>
+            {saveError && (
+              <div style={{ padding: '8px 12px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, color: '#ef4444', fontSize: 12 }}>{saveError}</div>
+            )}
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button style={S.btn('ghost')} onClick={() => setShowModal(false)}>Cancel</button>
+              <button style={S.btn('primary')} onClick={() => save.mutate()} disabled={save.isPending || !form.name.trim() || !form.expression.trim()}>
+                {save.isPending ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 /* ─── Main page ──────────────────────────────────────────── */
-type Tab = 'roles' | 'privileges' | 'scan' | 'tokens' | 'webhooks'
+type Tab = 'roles' | 'privileges' | 'selectors' | 'scan' | 'tokens' | 'webhooks'
 
 export default function SecurityPage() {
   const [tab, setTab] = useState<Tab>('roles')
@@ -555,13 +668,14 @@ export default function SecurityPage() {
       </div>
 
       <div style={S.tabs}>
-        {([['roles', 'Roles'], ['privileges', 'Privileges'], ['scan', 'CVE Scan'], ['tokens', 'API Tokens'], ['webhooks', 'Webhooks']] as [Tab, string][]).map(([id, label]) => (
+        {([['roles', 'Roles'], ['privileges', 'Privileges'], ['selectors', 'Content Selectors'], ['scan', 'CVE Scan'], ['tokens', 'API Tokens'], ['webhooks', 'Webhooks']] as [Tab, string][]).map(([id, label]) => (
           <button key={id} style={S.tab(tab === id)} onClick={() => setTab(id)}>{label}</button>
         ))}
       </div>
 
       {tab === 'roles'      && <RolesTab roles={roles} loading={isLoading} />}
       {tab === 'privileges' && <PrivilegesTab />}
+      {tab === 'selectors'  && <ContentSelectorsTab />}
       {tab === 'scan'       && <ScanTab />}
       {tab === 'tokens'     && <TokensTab />}
       {tab === 'webhooks'   && <WebhooksTab />}
