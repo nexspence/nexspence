@@ -58,6 +58,10 @@ type AssetRepo interface {
 	ListAllBlobKeys(ctx context.Context) ([]string, error)
 	// SumSizeByRepo returns total size_bytes of all assets in the repository.
 	SumSizeByRepo(ctx context.Context, repoName string) (int64, error)
+	// ListPathsByRepo returns unique directory-level path prefixes from assets
+	// in the given repository. If q is non-empty, only paths containing q
+	// (case-insensitive) are returned. Limit caps the result at 500 entries.
+	ListPathsByRepo(ctx context.Context, repoName, q string) ([]string, error)
 }
 
 // ContentSelectorRepo manages content selector definitions (privilege-scoped paths).

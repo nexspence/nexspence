@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 	"sync"
 
@@ -387,6 +388,36 @@ func (a *AssetRepo) SumSizeByRepo(_ context.Context, repoName string) (int64, er
 		}
 	}
 	return total, nil
+}
+
+func (a *AssetRepo) ListPathsByRepo(_ context.Context, repoName, q string) ([]string, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	seen := make(map[string]struct{})
+	for _, asset := range a.byID {
+		if asset.Repository != repoName {
+			continue
+		}
+		// extract all directory prefixes from path
+		p := asset.Path
+		for {
+			idx := strings.LastIndex(p, "/")
+			if idx <= 0 {
+				break
+			}
+			p = p[:idx+1]
+			if q == "" || strings.Contains(strings.ToLower(p), strings.ToLower(q)) {
+				seen[p] = struct{}{}
+			}
+			p = p[:idx]
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for k := range seen {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out, nil
 }
 
 // ── CleanupPolicyRepo ─────────────────────────────────────────
