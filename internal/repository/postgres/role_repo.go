@@ -19,7 +19,7 @@ func NewRoleRepo(db *pgxpool.Pool) *roleRepo {
 
 func (r *roleRepo) List(ctx context.Context) ([]domain.Role, error) {
 	rows, err := r.db.Query(ctx, `
-		SELECT id, name, description, source, read_only, created_at, updated_at
+		SELECT id, name, description, source, builtin, created_at, updated_at
 		FROM roles ORDER BY name`)
 	if err != nil {
 		return nil, err
@@ -39,7 +39,7 @@ func (r *roleRepo) List(ctx context.Context) ([]domain.Role, error) {
 
 func (r *roleRepo) Get(ctx context.Context, id string) (*domain.Role, error) {
 	row := r.db.QueryRow(ctx, `
-		SELECT id, name, description, source, read_only, created_at, updated_at
+		SELECT id, name, description, source, builtin, created_at, updated_at
 		FROM roles WHERE id = $1`, id)
 	ro, err := scanRole(row)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -50,7 +50,7 @@ func (r *roleRepo) Get(ctx context.Context, id string) (*domain.Role, error) {
 
 func (r *roleRepo) Create(ctx context.Context, ro *domain.Role) error {
 	return r.db.QueryRow(ctx, `
-		INSERT INTO roles (name, description, source, read_only)
+		INSERT INTO roles (name, description, source, builtin)
 		VALUES ($1, $2, $3, $4)
 		RETURNING id, created_at, updated_at`,
 		ro.Name, ro.Description, ro.Source, ro.ReadOnly,
@@ -73,7 +73,7 @@ func (r *roleRepo) Delete(ctx context.Context, id string) error {
 
 func (r *roleRepo) GetUserRoles(ctx context.Context, userID string) ([]domain.Role, error) {
 	rows, err := r.db.Query(ctx, `
-		SELECT ro.id, ro.name, ro.description, ro.source, ro.read_only, ro.created_at, ro.updated_at
+		SELECT ro.id, ro.name, ro.description, ro.source, ro.builtin, ro.created_at, ro.updated_at
 		FROM roles ro
 		JOIN user_roles ur ON ur.role_id = ro.id
 		WHERE ur.user_id = $1`, userID)
@@ -114,6 +114,48 @@ func (r *roleRepo) SetUserRoles(ctx context.Context, userID string, roleIDs []st
 	return tx.Commit(ctx)
 }
 
+func (r *roleRepo) SetPrivileges(ctx context.Context, roleID string, privilegeIDs []string) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	if _, err := tx.Exec(ctx, `DELETE FROM role_privileges WHERE role_id = $1`, roleID); err != nil {
+		return err
+	}
+	for _, pid := range privilegeIDs {
+		if _, err := tx.Exec(ctx,
+			`INSERT INTO role_privileges (role_id, privilege_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+			roleID, pid,
+		); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
+}
+
+func (r *roleRepo) ListPrivilegeIDsByRole(ctx context.Context, roleID string) ([]string, error) {
+	rows, err := r.db.Query(ctx,
+		`SELECT privilege_id FROM role_privileges WHERE role_id = $1`, roleID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	if ids == nil {
+		ids = []string{}
+	}
+	return ids, rows.Err()
+}
+
 func scanRole(row scanner) (*domain.Role, error) {
 	var ro domain.Role
 	err := row.Scan(&ro.ID, &ro.Name, &ro.Description, &ro.Source, &ro.ReadOnly,
@@ -121,5 +163,7 @@ func scanRole(row scanner) (*domain.Role, error) {
 	if err != nil {
 		return nil, err
 	}
+	ro.Privileges = []string{}
+	ro.Roles = []string{}
 	return &ro, nil
 }
