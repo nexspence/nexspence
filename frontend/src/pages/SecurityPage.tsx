@@ -620,29 +620,71 @@ function ContentSelectorsTab() {
     queryKey: ['content-selectors'],
     queryFn: () => nexusApi.listContentSelectors().then(r => r.data),
   })
+  const { data: allRepos = [] } = useQuery<{ name: string; format: string; type: string }[]>({
+    queryKey: ['repositories'],
+    queryFn: () => nexusApi.listRepositories().then(r => r.data),
+  })
+
   const [showModal, setShowModal] = useState(false)
   const [editing, setEditing] = useState<{ id: string; name: string; description: string; expression: string } | null>(null)
-  const [form, setForm] = useState({ name: '', description: '', expression: '' })
+  const [form, setForm] = useState({ name: '', description: '', repo: '', path: '' })
+  const [repoSearch, setRepoSearch] = useState('')
+  const [pathSearch, setPathSearch] = useState('')
   const [saveError, setSaveError] = useState('')
+
+  const { data: pathTree, isLoading: pathsLoading } = useQuery<{ paths: string[] }>({
+    queryKey: ['path-tree', form.repo, pathSearch],
+    queryFn: () => nexusApi.listPathTree(form.repo, pathSearch || undefined).then(r => r.data),
+    enabled: !!form.repo,
+  })
+
+  function buildExpression(repo: string, path: string): string {
+    if (repo && path) return `repository == "${repo}" && path.startsWith("${path}")`
+    if (repo)         return `repository == "${repo}"`
+    if (path)         return `path.startsWith("${path}")`
+    return ''
+  }
+
+  function parseExpression(expr: string): { repo: string; path: string } {
+    const full = expr.match(/^repository == "([^"]+)" && path\.startsWith\("([^"]+)"\)$/)
+    if (full) return { repo: full[1], path: full[2] }
+    const repoOnly = expr.match(/^repository == "([^"]+)"$/)
+    if (repoOnly) return { repo: repoOnly[1], path: '' }
+    const pathOnly = expr.match(/^path\.startsWith\("([^"]+)"\)$/)
+    if (pathOnly) return { repo: '', path: pathOnly[1] }
+    return { repo: '', path: '' }
+  }
+
+  function selectorSummary(expr: string): string {
+    const { repo, path } = parseExpression(expr)
+    if (repo && path) return `${path}* in ${repo}`
+    if (repo)         return `all paths in ${repo}`
+    if (path)         return `${path}* in all repos`
+    return expr
+  }
 
   function openCreate() {
     setEditing(null)
-    setForm({ name: '', description: '', expression: 'format == "maven2"' })
-    setSaveError('')
+    setForm({ name: '', description: '', repo: '', path: '' })
+    setRepoSearch(''); setPathSearch(''); setSaveError('')
     setShowModal(true)
   }
 
   function openEdit(s: { id: string; name: string; description: string; expression: string }) {
     setEditing(s)
-    setForm({ name: s.name, description: s.description, expression: s.expression })
-    setSaveError('')
+    const { repo, path } = parseExpression(s.expression)
+    setForm({ name: s.name, description: s.description, repo, path })
+    setRepoSearch(repo); setPathSearch(path); setSaveError('')
     setShowModal(true)
   }
 
   const save = useMutation({
     mutationFn: async () => {
-      if (editing) return nexusApi.updateContentSelector(editing.id, form)
-      return nexusApi.createContentSelector(form)
+      const expression = buildExpression(form.repo, form.path)
+      if (!expression) throw new Error('Select a repository or path')
+      const payload = { name: form.name, description: form.description, expression }
+      if (editing) return nexusApi.updateContentSelector(editing.id, payload)
+      return nexusApi.createContentSelector(payload)
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['content-selectors'] }); setShowModal(false) },
     onError: (e: unknown) => {
@@ -660,6 +702,13 @@ function ContentSelectorsTab() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['content-selectors'] }),
   })
 
+  const filteredRepos = allRepos.filter(r =>
+    !repoSearch || r.name.toLowerCase().includes(repoSearch.toLowerCase())
+  )
+
+  const paths = pathTree?.paths ?? []
+  const canSave = !!form.name.trim() && (!!form.repo || !!form.path)
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
@@ -672,7 +721,7 @@ function ContentSelectorsTab() {
             <thead>
               <tr style={{ color: 'rgba(229,231,235,0.5)', textAlign: 'left' as const }}>
                 <th style={{ padding: '0 0 10px', fontWeight: 600 }}>Name</th>
-                <th style={{ padding: '0 8px 10px', fontWeight: 600 }}>Expression</th>
+                <th style={{ padding: '0 8px 10px', fontWeight: 600 }}>Scope</th>
                 <th style={{ padding: '0 8px 10px', fontWeight: 600 }}>Description</th>
                 <th style={{ padding: '0 0 10px', width: 80 }}></th>
               </tr>
@@ -682,7 +731,7 @@ function ContentSelectorsTab() {
                 <tr key={s.id} style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
                   <td style={{ padding: '9px 0', color: '#dbeafe', fontWeight: 600 }}>{s.name}</td>
                   <td style={{ padding: '9px 8px' }}>
-                    <code style={{ ...S.mono, fontSize: 12, color: '#a5b4fc' }}>{s.expression}</code>
+                    <code style={{ ...S.mono, fontSize: 12, color: '#a5b4fc' }}>{selectorSummary(s.expression)}</code>
                   </td>
                   <td style={{ padding: '9px 8px', color: 'rgba(229,231,235,0.55)' }}>{s.description || '—'}</td>
                   <td style={{ padding: '9px 0', display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
@@ -699,24 +748,110 @@ function ContentSelectorsTab() {
       {showModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
           <div style={{ background: '#0f172a', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 14, padding: 24, width: 520, display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#dbeafe' }}>{editing ? 'Edit Content Selector' : 'New Content Selector'}</h3>
-            <input style={S.input} placeholder="Name" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
-            <input style={S.input} placeholder="Description (optional)" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
+            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#dbeafe' }}>
+              {editing ? 'Edit Content Selector' : 'New Content Selector'}
+            </h3>
+
+            <input style={S.input} placeholder="Name *" value={form.name}
+              onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
+            <input style={S.input} placeholder="Description (optional)" value={form.description}
+              onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
+
+            {/* Repository dropdown */}
             <div>
-              <div style={{ fontSize: 12, color: 'rgba(229,231,235,0.5)', marginBottom: 4 }}>CEL Expression — variables: <code>format</code>, <code>path</code>, <code>repository</code></div>
-              <textarea
-                style={{ ...S.input, fontFamily: 'monospace', fontSize: 12, height: 80, resize: 'vertical' as const }}
-                placeholder='format == "maven2" && path.startsWith("/com/acme")'
-                value={form.expression}
-                onChange={e => setForm(f => ({ ...f, expression: e.target.value }))}
+              <div style={{ fontSize: 12, color: 'rgba(229,231,235,0.5)', marginBottom: 4 }}>Repository</div>
+              <input
+                style={S.input}
+                placeholder="Search repositories…"
+                value={repoSearch}
+                onChange={e => { setRepoSearch(e.target.value); setForm(f => ({ ...f, repo: '', path: '' })) }}
               />
+              {(repoSearch || form.repo) && (
+                <div style={{ maxHeight: 160, overflowY: 'auto', background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, marginTop: 4 }}>
+                  <div
+                    style={{ padding: '7px 12px', fontSize: 13, cursor: 'pointer', color: 'rgba(229,231,235,0.5)',
+                      background: !form.repo ? 'rgba(59,130,246,0.12)' : 'transparent' }}
+                    onClick={() => { setForm(f => ({ ...f, repo: '', path: '' })); setRepoSearch('') }}
+                  >
+                    Any repository
+                  </div>
+                  {filteredRepos.map(r => (
+                    <div
+                      key={r.name}
+                      style={{ padding: '7px 12px', fontSize: 13, cursor: 'pointer',
+                        color: form.repo === r.name ? '#3b82f6' : '#dbeafe',
+                        background: form.repo === r.name ? 'rgba(59,130,246,0.12)' : 'transparent' }}
+                      onClick={() => { setForm(f => ({ ...f, repo: r.name, path: '' })); setRepoSearch(r.name); setPathSearch('') }}
+                    >
+                      {r.name}
+                      <span style={{ fontSize: 11, color: 'rgba(229,231,235,0.4)', marginLeft: 8 }}>{r.format}</span>
+                    </div>
+                  ))}
+                  {filteredRepos.length === 0 && (
+                    <div style={{ padding: '7px 12px', fontSize: 13, color: 'rgba(229,231,235,0.35)' }}>No repositories found</div>
+                  )}
+                </div>
+              )}
             </div>
+
+            {/* Path dropdown */}
+            <div>
+              <div style={{ fontSize: 12, color: 'rgba(229,231,235,0.5)', marginBottom: 4 }}>
+                Path prefix {!form.repo && <span style={{ color: 'rgba(229,231,235,0.3)' }}>(select a repository first)</span>}
+              </div>
+              <input
+                style={{ ...S.input, opacity: !form.repo ? 0.4 : 1 }}
+                placeholder="Search paths…"
+                disabled={!form.repo}
+                value={pathSearch}
+                onChange={e => { setPathSearch(e.target.value); setForm(f => ({ ...f, path: '' })) }}
+              />
+              {form.repo && (pathSearch || form.path !== '') && (
+                <div style={{ maxHeight: 180, overflowY: 'auto', background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, marginTop: 4 }}>
+                  <div
+                    style={{ padding: '7px 12px', fontSize: 13, cursor: 'pointer', color: 'rgba(229,231,235,0.5)',
+                      background: !form.path ? 'rgba(59,130,246,0.12)' : 'transparent' }}
+                    onClick={() => { setForm(f => ({ ...f, path: '' })); setPathSearch('') }}
+                  >
+                    Any path
+                  </div>
+                  {pathsLoading ? (
+                    <div style={{ padding: '7px 12px', fontSize: 13, color: 'rgba(229,231,235,0.35)' }}>Loading…</div>
+                  ) : paths.length === 0 ? (
+                    <div style={{ padding: '7px 12px', fontSize: 13, color: 'rgba(229,231,235,0.35)' }}>No paths found</div>
+                  ) : paths.map(p => {
+                    const depth = (p.match(/\//g) ?? []).length - 1
+                    return (
+                      <div
+                        key={p}
+                        style={{ padding: '6px 12px', paddingLeft: 12 + depth * 14, fontSize: 13, cursor: 'pointer',
+                          color: form.path === p ? '#3b82f6' : '#dbeafe',
+                          background: form.path === p ? 'rgba(59,130,246,0.12)' : 'transparent',
+                          fontFamily: 'monospace' }}
+                        onClick={() => { setForm(f => ({ ...f, path: p })); setPathSearch(p) }}
+                      >
+                        {p}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* CEL preview */}
+            {(form.repo || form.path) && (
+              <div style={{ padding: '6px 10px', background: 'rgba(59,130,246,0.08)', borderRadius: 8, fontSize: 12, color: '#93c5fd', fontFamily: 'monospace' }}>
+                {buildExpression(form.repo, form.path)}
+              </div>
+            )}
+
             {saveError && (
               <div style={{ padding: '8px 12px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, color: '#ef4444', fontSize: 12 }}>{saveError}</div>
             )}
+
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button style={S.btn('ghost')} onClick={() => setShowModal(false)}>Cancel</button>
-              <button style={S.btn('primary')} onClick={() => save.mutate()} disabled={save.isPending || !form.name.trim() || !form.expression.trim()}>
+              <button style={S.btn('primary')} onClick={() => save.mutate()} disabled={save.isPending || !canSave}>
                 {save.isPending ? 'Saving…' : 'Save'}
               </button>
             </div>
