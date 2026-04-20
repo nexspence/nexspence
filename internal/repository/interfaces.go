@@ -16,15 +16,25 @@ type RepositoryRepo interface {
 	Create(ctx context.Context, r *domain.Repository) error
 	Update(ctx context.Context, r *domain.Repository) error
 	Delete(ctx context.Context, name string) error
+	// ListNamesByCleanupPolicyID returns repository names that reference the policy.
+	ListNamesByCleanupPolicyID(ctx context.Context, policyID string) ([]string, error)
+	// DetachCleanupPolicyID removes policyID from every repositories.cleanup_policy_ids array.
+	DetachCleanupPolicyID(ctx context.Context, policyID string) error
 }
 
 // ComponentRepo manages component metadata.
 type ComponentRepo interface {
 	List(ctx context.Context, repoName string, limit int, offset int) (*domain.Page[domain.Component], error)
+	// ListByRepoNames returns components from any of the given repositories (used for group repo browse/search).
+	ListByRepoNames(ctx context.Context, repoNames []string, limit int, offset int) (*domain.Page[domain.Component], error)
 	Get(ctx context.Context, id string) (*domain.Component, error)
 	Search(ctx context.Context, p domain.SearchParams) (*domain.Page[domain.Component], error)
+	// ListDockerBrowseRows returns Docker-format components with one asset path per row (for Tags vs Manifests vs Blobs).
+	ListDockerBrowseRows(ctx context.Context, repoNames []string, maxRows int) ([]domain.DockerBrowseRow, error)
 	Create(ctx context.Context, c *domain.Component) error
 	Delete(ctx context.Context, id string) error
+	// UpdateExtra merges JSON into components.extra (e.g. scan_result).
+	UpdateExtra(ctx context.Context, id string, extra map[string]any) error
 }
 
 // AssetRepo manages artifact file records.
@@ -35,10 +45,74 @@ type AssetRepo interface {
 	SearchAssets(ctx context.Context, p domain.SearchParams) (*domain.Page[domain.Asset], error)
 	// ListStale returns assets matching cleanup criteria:
 	//   format "*" matches all; lastDownloadedDays/artifactAgeDays 0 = no filter.
-	ListStale(ctx context.Context, format string, lastDownloadedDays, artifactAgeDays int, limit int) ([]domain.Asset, error)
+	//   repoNames non-empty restricts to those repositories; empty = any repository (use with care).
+	//   pathPrefix filters assets whose path starts with that prefix (empty = no filter).
+	//   nameGlob is a glob pattern matched against the full asset path (* = any chars, ? = one char).
+	ListStale(ctx context.Context, format string, repoNames []string, lastDownloadedDays, artifactAgeDays int, pathPrefix, nameGlob string, limit int) ([]domain.Asset, error)
 	Create(ctx context.Context, a *domain.Asset) error
 	Delete(ctx context.Context, id string) error
 	IncrementDownload(ctx context.Context, id string) error
+	// ListByComponentID returns all assets for a component (ordered by path).
+	ListByComponentID(ctx context.Context, componentID string) ([]domain.Asset, error)
+	// ListAllBlobKeys returns distinct blob_key values referenced by assets (for GC).
+	ListAllBlobKeys(ctx context.Context) ([]string, error)
+	// SumSizeByRepo returns total size_bytes of all assets in the repository.
+	SumSizeByRepo(ctx context.Context, repoName string) (int64, error)
+}
+
+// ContentSelectorRepo manages content selector definitions (privilege-scoped paths).
+type ContentSelectorRepo interface {
+	List(ctx context.Context) ([]domain.ContentSelector, error)
+	Get(ctx context.Context, id string) (*domain.ContentSelector, error)
+	GetByName(ctx context.Context, name string) (*domain.ContentSelector, error)
+	Create(ctx context.Context, s *domain.ContentSelector) error
+	Update(ctx context.Context, s *domain.ContentSelector) error
+	Delete(ctx context.Context, id string) error
+	ListForUser(ctx context.Context, userID string) ([]domain.ContentSelector, error)
+	AttachToPrivilege(ctx context.Context, privilegeName, selectorID string) error
+	DetachFromPrivilege(ctx context.Context, privilegeName string) error
+}
+
+// PrivilegeRepo manages privilege definitions.
+type PrivilegeRepo interface {
+	List(ctx context.Context) ([]domain.Privilege, error)
+	Get(ctx context.Context, id string) (*domain.Privilege, error)
+	GetByName(ctx context.Context, name string) (*domain.Privilege, error)
+	Create(ctx context.Context, p *domain.Privilege) error
+	Update(ctx context.Context, p *domain.Privilege) error
+	Delete(ctx context.Context, id string) error
+	// ListByRole returns privileges assigned to a role via role_privileges.
+	ListByRole(ctx context.Context, roleID string) ([]domain.Privilege, error)
+}
+
+// RoutingRuleRepo manages request routing rules.
+type RoutingRuleRepo interface {
+	List(ctx context.Context) ([]domain.RoutingRule, error)
+	Get(ctx context.Context, id string) (*domain.RoutingRule, error)
+	GetByName(ctx context.Context, name string) (*domain.RoutingRule, error)
+	Create(ctx context.Context, rr *domain.RoutingRule) error
+	Update(ctx context.Context, rr *domain.RoutingRule) error
+	Delete(ctx context.Context, id string) error
+}
+
+// UserTokenRepo manages per-user API tokens.
+type UserTokenRepo interface {
+	ListByUser(ctx context.Context, userID string) ([]domain.UserToken, error)
+	Get(ctx context.Context, id string) (*domain.UserToken, error)
+	GetByHash(ctx context.Context, tokenHash string) (*domain.UserToken, error)
+	Create(ctx context.Context, t *domain.UserToken) error
+	Delete(ctx context.Context, id string) error
+	TouchLastUsed(ctx context.Context, id string) error
+}
+
+// WebhookRepo manages outbound webhooks.
+type WebhookRepo interface {
+	List(ctx context.Context) ([]domain.Webhook, error)
+	Get(ctx context.Context, id string) (*domain.Webhook, error)
+	ListByEvent(ctx context.Context, event domain.WebhookEvent) ([]domain.Webhook, error)
+	Create(ctx context.Context, w *domain.Webhook) error
+	Update(ctx context.Context, w *domain.Webhook) error
+	Delete(ctx context.Context, id string) error
 }
 
 // UserRepo manages user accounts.
@@ -62,6 +136,10 @@ type RoleRepo interface {
 	Delete(ctx context.Context, id string) error
 	GetUserRoles(ctx context.Context, userID string) ([]domain.Role, error)
 	SetUserRoles(ctx context.Context, userID string, roleIDs []string) error
+	// SetPrivileges replaces all role_privileges rows for the role.
+	SetPrivileges(ctx context.Context, roleID string, privilegeIDs []string) error
+	// ListPrivilegeIDsByRole returns privilege IDs for a role (lightweight, for JWT building).
+	ListPrivilegeIDsByRole(ctx context.Context, roleID string) ([]string, error)
 }
 
 // CleanupPolicyRepo manages cleanup policies.
@@ -83,6 +161,7 @@ type AuditRepo interface {
 type BlobStoreRepo interface {
 	List(ctx context.Context) ([]domain.BlobStore, error)
 	Get(ctx context.Context, name string) (*domain.BlobStore, error)
+	GetByID(ctx context.Context, id string) (*domain.BlobStore, error)
 	Create(ctx context.Context, b *domain.BlobStore) error
 	Update(ctx context.Context, b *domain.BlobStore) error
 	Delete(ctx context.Context, name string) error
