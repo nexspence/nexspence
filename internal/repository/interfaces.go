@@ -60,7 +60,8 @@ type AssetRepo interface {
 	SumSizeByRepo(ctx context.Context, repoName string) (int64, error)
 	// ListPathsByRepo returns unique directory-level path prefixes from assets
 	// in the given repository. If q is non-empty, only paths containing q
-	// (case-insensitive) are returned. Limit caps the result at 500 entries.
+	// (case-insensitive) are returned. Fetches up to 5000 raw paths from the DB
+	// then expands directory prefixes in Go.
 	ListPathsByRepo(ctx context.Context, repoName, q string) ([]string, error)
 }
 
