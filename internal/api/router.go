@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -29,6 +30,7 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/formats/yum"
 	"github.com/nexspence-oss/nexspence/internal/logger"
 	"github.com/nexspence-oss/nexspence/internal/repository/postgres"
+	"github.com/nexspence-oss/nexspence/internal/requestctx"
 	"github.com/nexspence-oss/nexspence/internal/service"
 	"github.com/nexspence-oss/nexspence/internal/storage"
 )
@@ -48,6 +50,14 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 	assetRepo     := postgres.NewAssetRepo(pool)
 	cleanupRepo   := postgres.NewCleanupPolicyRepo(pool)
 	auditRepo     := postgres.NewAuditRepo(pool)
+	userTokenRepo := postgres.NewUserTokenRepo(pool)
+	webhookRepo   := postgres.NewWebhookRepo(pool)
+	privilegeRepo := postgres.NewPrivilegeRepo(pool)
+	csRepo        := postgres.NewContentSelectorRepo(pool)
+	selectorSvc, svcErr := service.NewContentSelectorService(csRepo)
+	if svcErr != nil {
+		panic("content selector service init: " + svcErr.Error())
+	}
 
 	authSvc := auth.NewService(
 		cfg.Auth.JWTSecret,
@@ -60,9 +70,14 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 		panic("failed to init blob store: " + err.Error())
 	}
 
-	repoSvc    := service.NewRepositoryService(repoRepo, blobRepo, localBlob)
-	userSvc    := service.NewUserService(userRepo, roleRepo, authSvc)
-	cleanupSvc := service.NewCleanupService(cleanupRepo, assetRepo, localBlob, log)
+	repoSvc    := service.NewRepositoryService(repoRepo, blobRepo, localBlob, cleanupRepo)
+	userSvc    := service.NewUserService(userRepo, roleRepo, authSvc, log)
+	if ldapSvc := auth.NewLDAPService(cfg.LDAP); ldapSvc != nil {
+		userSvc.WithLDAP(ldapSvc, cfg.LDAP.AdminGroup)
+	}
+	tokenSvc   := service.NewTokenService(userTokenRepo, userRepo)
+	webhookSvc := service.NewWebhookService(webhookRepo)
+	cleanupSvc := service.NewCleanupService(cleanupRepo, repoRepo, assetRepo, localBlob, log)
 
 	// Start cleanup scheduler in background (every 6 hours).
 	go cleanupSvc.StartScheduler(context.Background(), 6*time.Hour)
@@ -94,13 +109,21 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 	groupHandler := group.New(formatDeps, formatRegistry)
 
 	// ── Handlers ──────────────────────────────────────────────
-	authH      := handlers.NewAuthHandler(userSvc)
+	authH      := handlers.NewAuthHandler(userSvc, log)
 	repoH      := handlers.NewRepositoryHandler(repoSvc)
 	userH      := handlers.NewUserHandler(userSvc)
 	blobH      := handlers.NewBlobStoreHandler(blobRepo)
-	componentH := handlers.NewComponentHandler(componentRepo, assetRepo, cfg.HTTP.BaseURL)
-	cleanupH   := handlers.NewCleanupHandler(cleanupRepo, cleanupSvc)
+	componentH := handlers.NewComponentHandler(componentRepo, assetRepo, repoRepo, cfg.HTTP.BaseURL)
+	browseH    := handlers.NewBrowseHandler(repoRepo, componentRepo)
+	cleanupH   := handlers.NewCleanupHandler(cleanupRepo, repoRepo, cleanupSvc)
 	auditH     := handlers.NewAuditHandler(auditRepo)
+	scanSvc    := service.NewScanService(componentRepo, cfg.HTTP.BaseURL)
+	scanH      := handlers.NewScanHandler(scanSvc)
+	tokenH     := handlers.NewTokenHandler(tokenSvc, userSvc)
+	webhookH   := handlers.NewWebhookHandler(webhookSvc)
+	roleH      := handlers.NewRoleHandler(roleRepo)
+	privH := handlers.NewPrivilegeHandler(privilegeRepo, roleRepo)
+	csH   := handlers.NewContentSelectorHandler(selectorSvc)
 
 	// ── Gin engine ────────────────────────────────────────────
 	r := gin.New()
@@ -110,7 +133,8 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 	r.Use(handlers.MetricsMiddleware())
 	r.Use(AuditMiddleware(auditRepo))
 
-	authMW := handlers.AuthMiddleware(userSvc)
+	authMW  := handlers.AuthMiddleware(userSvc, tokenSvc)
+	adminMW := handlers.AdminRequired()
 
 	// ── Public endpoints ──────────────────────────────────────
 	r.GET("/service/rest/v1/status/check", func(c *gin.Context) {
@@ -125,68 +149,34 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 	// Metrics (public — useful for monitoring without auth)
 	r.GET("/api/v1/metrics", handlers.MetricsHandler)
 
-	// ── Authenticated endpoints ───────────────────────────────
-	auth := r.Group("", authMW)
+	// ── Authenticated endpoints (all valid users) ────────────
+	authed := r.Group("", authMW)
 	{
-		auth.GET("/service/rest/v1/status", func(c *gin.Context) {
+		authed.GET("/service/rest/v1/status", func(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{"status": "ok", "edition": "OSS"})
 		})
-		auth.GET("/service/rest/v1/status/writable", func(c *gin.Context) {
+		authed.GET("/service/rest/v1/status/writable", func(c *gin.Context) {
 			c.Status(http.StatusOK)
 		})
 
 		// ── My profile ────────────────────────────────────────
-		auth.GET("/api/v1/me", authH.Me)
+		authed.GET("/api/v1/me", authH.Me)
 
-		// ── Repositories ──────────────────────────────────────
-		auth.GET("/service/rest/v1/repositories", repoH.List)
-		auth.GET("/service/rest/v1/repositories/:name", repoH.Get)
-		auth.POST("/service/rest/v1/repositories/:format/:type", repoH.Create)
-		auth.PUT("/service/rest/v1/repositories/:format/:type/:name", repoH.Update)
-		auth.DELETE("/service/rest/v1/repositories/:name", repoH.Delete)
+		// ── Repositories (read) ───────────────────────────────
+		authed.GET("/service/rest/v1/repositories", repoH.List)
+		authed.GET("/service/rest/v1/repositories/:name", repoH.Get)
+		authed.GET("/api/v1/repositories", repoH.List)
 
-		// Nexspence native repos API
-		auth.GET("/api/v1/repositories", repoH.List)
-		auth.POST("/api/v1/repositories", func(c *gin.Context) {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "use /service/rest/v1/repositories/:format/:type"})
-		})
+		// ── Browse ────────────────────────────────────────────
+		authed.GET("/api/v1/browse/repositories/:name/docker-tree", browseH.DockerTree)
 
-		// ── Blob stores ───────────────────────────────────────
-		auth.GET("/service/rest/v1/blobstores", blobH.List)
-		auth.GET("/service/rest/v1/blobstores/:name", blobH.Get)
-		auth.POST("/service/rest/v1/blobstores/:type", blobH.Create)
-		auth.PUT("/service/rest/v1/blobstores/:type/:name", blobH.Update)
-		auth.DELETE("/service/rest/v1/blobstores/:name", blobH.Delete)
-
-		// ── Users ─────────────────────────────────────────────
-		auth.GET("/service/rest/v1/security/users", userH.List)
-		auth.GET("/service/rest/v1/security/users/:userId", userH.Get)
-		auth.POST("/service/rest/v1/security/users", userH.Create)
-		auth.PUT("/service/rest/v1/security/users/:userId", userH.Update)
-		auth.DELETE("/service/rest/v1/security/users/:userId", userH.Delete)
-		auth.PUT("/service/rest/v1/security/users/:userId/change-password", userH.ChangePassword)
-
-		// ── Roles ─────────────────────────────────────────────
-		auth.GET("/service/rest/v1/security/roles", func(c *gin.Context) {
-			roles, err := roleRepo.List(c.Request.Context())
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
-			}
-			if roles == nil {
-				roles = []domain.Role{}
-			}
-			c.JSON(http.StatusOK, roles)
-		})
-
-		// ── Components & Assets ───────────────────────────────
-		auth.GET("/service/rest/v1/components", componentH.List)
-		auth.GET("/service/rest/v1/components/:id", componentH.Get)
-		auth.DELETE("/service/rest/v1/components/:id", componentH.Delete)
-		auth.GET("/service/rest/v1/assets", func(c *gin.Context) {
+		// ── Components & Assets (read + search) ───────────────
+		authed.GET("/service/rest/v1/components", componentH.List)
+		authed.GET("/service/rest/v1/components/:id", componentH.Get)
+		authed.GET("/service/rest/v1/assets", func(c *gin.Context) {
 			componentH.SearchAssets(c)
 		})
-		auth.GET("/service/rest/v1/assets/:id", func(c *gin.Context) {
+		authed.GET("/service/rest/v1/assets/:id", func(c *gin.Context) {
 			id := c.Param("id")
 			a, err := assetRepo.Get(c.Request.Context(), id)
 			if err != nil {
@@ -200,7 +190,68 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 			a.DownloadURL = cfg.HTTP.BaseURL + "/repository/" + a.Repository + a.Path
 			c.JSON(http.StatusOK, a)
 		})
-		auth.DELETE("/service/rest/v1/assets/:id", func(c *gin.Context) {
+
+		// ── Search ────────────────────────────────────────────
+		authed.GET("/service/rest/v1/search", componentH.Search)
+		authed.GET("/service/rest/v1/search/assets", componentH.SearchAssets)
+		authed.GET("/service/rest/v1/search/assets/download", stubHandler("search-download"))
+
+		// ── API tokens (current user) ─────────────────────────
+		authed.GET("/api/v1/tokens", tokenH.List)
+		authed.POST("/api/v1/tokens", tokenH.Create)
+		authed.DELETE("/api/v1/tokens/:id", tokenH.Delete)
+
+		// ── Vulnerability scan (read) ─────────────────────────
+		authed.GET("/api/v1/components/:id/scan", scanH.GetScanResult)
+
+		// ── Blob stores (read) ────────────────────────────────
+		authed.GET("/service/rest/v1/blobstores", blobH.List)
+		authed.GET("/service/rest/v1/blobstores/:name", blobH.Get)
+
+		// ── Cleanup policies (read) ───────────────────────────
+		authed.GET("/service/rest/v1/cleanup-policies", cleanupH.List)
+		authed.GET("/service/rest/v1/cleanup-policies/:id", cleanupH.Get)
+
+		// ── Roles (read) ──────────────────────────────────────
+		authed.GET("/service/rest/v1/security/roles", roleH.List)
+
+		// ── Privileges (read) ─────────────────────────────────
+		authed.GET("/service/rest/v1/security/privileges", privH.List)
+		authed.GET("/service/rest/v1/security/privileges/:id", privH.Get)
+		authed.GET("/service/rest/v1/security/roles/:id/privileges", privH.ListRolePrivileges)
+
+		// ── Content Selectors (read) ──────────────────────────
+		authed.GET("/service/rest/v1/security/content-selectors", csH.List)
+		authed.GET("/service/rest/v1/security/content-selectors/:id", csH.Get)
+	}
+
+	// ── Admin-only endpoints (nx-admin role required) ─────────
+	admin := r.Group("", authMW, adminMW)
+	{
+		// ── Repositories (write) ──────────────────────────────
+		admin.POST("/service/rest/v1/repositories/:format/:type", repoH.Create)
+		admin.PUT("/service/rest/v1/repositories/:format/:type/:name", repoH.Update)
+		admin.DELETE("/service/rest/v1/repositories/:name", repoH.Delete)
+		admin.POST("/api/v1/repositories", func(c *gin.Context) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "use /service/rest/v1/repositories/:format/:type"})
+		})
+
+		// ── Blob stores (write) ───────────────────────────────
+		admin.POST("/service/rest/v1/blobstores/:type", blobH.Create)
+		admin.PUT("/service/rest/v1/blobstores/:type/:name", blobH.Update)
+		admin.DELETE("/service/rest/v1/blobstores/:name", blobH.Delete)
+
+		// ── Users ─────────────────────────────────────────────
+		admin.GET("/service/rest/v1/security/users", userH.List)
+		admin.GET("/service/rest/v1/security/users/:userId", userH.Get)
+		admin.POST("/service/rest/v1/security/users", userH.Create)
+		admin.PUT("/service/rest/v1/security/users/:userId", userH.Update)
+		admin.DELETE("/service/rest/v1/security/users/:userId", userH.Delete)
+		admin.PUT("/service/rest/v1/security/users/:userId/change-password", userH.ChangePassword)
+
+		// ── Components & Assets (delete) ──────────────────────
+		admin.DELETE("/service/rest/v1/components/:id", componentH.Delete)
+		admin.DELETE("/service/rest/v1/assets/:id", func(c *gin.Context) {
 			if err := assetRepo.Delete(c.Request.Context(), c.Param("id")); err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
@@ -208,36 +259,58 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 			c.Status(http.StatusNoContent)
 		})
 
-		// ── Search ────────────────────────────────────────────
-		auth.GET("/service/rest/v1/search", componentH.Search)
-		auth.GET("/service/rest/v1/search/assets", componentH.SearchAssets)
-		auth.GET("/service/rest/v1/search/assets/download", stubHandler("search-download"))
+		// ── Cleanup policies (write + run) ────────────────────
+		admin.POST("/service/rest/v1/cleanup-policies", cleanupH.Create)
+		admin.PUT("/service/rest/v1/cleanup-policies/:id", cleanupH.Update)
+		admin.DELETE("/service/rest/v1/cleanup-policies/:id", cleanupH.Delete)
+		admin.POST("/service/rest/v1/cleanup-policies/:id/run", cleanupH.Run)
 
-		// ── Cleanup policies ──────────────────────────────────
-		auth.GET("/service/rest/v1/cleanup-policies", cleanupH.List)
-		auth.GET("/service/rest/v1/cleanup-policies/:id", cleanupH.Get)
-		auth.POST("/service/rest/v1/cleanup-policies", cleanupH.Create)
-		auth.PUT("/service/rest/v1/cleanup-policies/:id", cleanupH.Update)
-		auth.DELETE("/service/rest/v1/cleanup-policies/:id", cleanupH.Delete)
-		auth.POST("/service/rest/v1/cleanup-policies/:id/run", cleanupH.Run)
+		// ── Roles (write) ─────────────────────────────────────
+		admin.POST("/service/rest/v1/security/roles", roleH.Create)
+		admin.PUT("/service/rest/v1/security/roles/:id", roleH.Update)
+		admin.DELETE("/service/rest/v1/security/roles/:id", roleH.Delete)
+		admin.PUT("/service/rest/v1/security/users/:userId/roles", roleH.SetUserRoles)
+
+		// ── Privileges (write) ────────────────────────────────
+		admin.POST("/service/rest/v1/security/privileges", privH.Create)
+		admin.PUT("/service/rest/v1/security/privileges/:id", privH.Update)
+		admin.DELETE("/service/rest/v1/security/privileges/:id", privH.Delete)
+		admin.PUT("/service/rest/v1/security/roles/:id/privileges", privH.SetRolePrivileges)
+
+		// ── Content Selectors (write) ─────────────────────────
+		admin.POST("/service/rest/v1/security/content-selectors", csH.Create)
+		admin.PUT("/service/rest/v1/security/content-selectors/:id", csH.Update)
+		admin.DELETE("/service/rest/v1/security/content-selectors/:id", csH.Delete)
+		admin.PUT("/service/rest/v1/security/privileges/:name/content-selector/:selectorId", csH.AttachToPrivilege)
+		admin.DELETE("/service/rest/v1/security/privileges/:name/content-selector", csH.DetachFromPrivilege)
+
+		// ── Webhooks (admin) ──────────────────────────────────
+		admin.GET("/api/v1/webhooks", webhookH.List)
+		admin.POST("/api/v1/webhooks", webhookH.Create)
+		admin.PUT("/api/v1/webhooks/:id", webhookH.Update)
+		admin.DELETE("/api/v1/webhooks/:id", webhookH.Delete)
 
 		// ── Audit log ─────────────────────────────────────────
-		auth.GET("/service/rest/v1/audit", auditH.List)
+		admin.GET("/service/rest/v1/audit", auditH.List)
 
-		auth.GET("/service/rest/v1/tasks", stubHandler("tasks"))
-		auth.POST("/service/rest/v1/tasks/:id/run", stubHandler("tasks"))
-		auth.GET("/service/rest/v1/security/ldap", stubHandler("ldap"))
-		auth.GET("/service/rest/v1/routing-rules", stubHandler("routing"))
+		// ── Vulnerability scan (trigger) ──────────────────────
+		admin.POST("/api/v1/components/:id/scan", scanH.Scan)
+
+		// ── System ────────────────────────────────────────────
+		admin.GET("/service/rest/v1/tasks", stubHandler("tasks"))
+		admin.POST("/service/rest/v1/tasks/:id/run", stubHandler("tasks"))
+		admin.GET("/service/rest/v1/security/ldap", stubHandler("ldap"))
+		admin.GET("/service/rest/v1/routing-rules", stubHandler("routing"))
 
 		// Migration
-		auth.GET("/api/v1/migration/jobs", stubHandler("migration"))
-		auth.POST("/api/v1/migration/jobs", stubHandler("migration"))
-		auth.POST("/api/v1/migration/jobs/:id/pause", stubHandler("migration"))
-		auth.POST("/api/v1/migration/jobs/:id/resume", stubHandler("migration"))
-		auth.DELETE("/api/v1/migration/jobs/:id", stubHandler("migration"))
+		admin.GET("/api/v1/migration/jobs", stubHandler("migration"))
+		admin.POST("/api/v1/migration/jobs", stubHandler("migration"))
+		admin.POST("/api/v1/migration/jobs/:id/pause", stubHandler("migration"))
+		admin.POST("/api/v1/migration/jobs/:id/resume", stubHandler("migration"))
+		admin.DELETE("/api/v1/migration/jobs/:id", stubHandler("migration"))
 
 		// System info
-		auth.GET("/api/v1/system/info", func(c *gin.Context) {
+		admin.GET("/api/v1/system/info", func(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{
 				"version": "1.0.0",
 				"edition": "OSS",
@@ -249,11 +322,19 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 	// ── Artifact protocol endpoints ───────────────────────────
 	// Route /repository/:repoName/* to the appropriate format handler.
 	// The format is looked up from the repository record in the DB.
-	repo := r.Group("/repository/:repoName", handlers.OptionalAuth(userSvc))
+	repo := r.Group("/repository/:repoName", handlers.OptionalAuth(userSvc, tokenSvc))
 	{
 		repo.Any("/*path", func(c *gin.Context) {
 			repoName := c.Param("repoName")
 			ctx := c.Request.Context()
+			if uid, ok := c.Get("userID"); ok {
+				if id, ok2 := uid.(string); ok2 && id != "" {
+					uname, _ := c.Get("username")
+					uStr, _ := uname.(string)
+					ctx = requestctx.WithUser(ctx, id, uStr)
+				}
+			}
+			c.Request = c.Request.WithContext(ctx)
 
 			repoDef, err := repoRepo.Get(ctx, repoName)
 			if err != nil || repoDef == nil {
@@ -296,11 +377,19 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 		c.Status(http.StatusOK)
 	})
 
-	v2docker := r.Group("/v2/repository", handlers.OptionalAuth(userSvc))
+	v2docker := r.Group("/v2/repository", handlers.OptionalAuth(userSvc, tokenSvc))
 	v2docker.Any("/:repoName/*dockerpath", func(c *gin.Context) {
 		repoName := c.Param("repoName")
 		dockerPath := c.Param("dockerpath") // e.g. /da/devops/alpine/manifests/3.22.1
 		ctx := c.Request.Context()
+		if uid, ok := c.Get("userID"); ok {
+			if id, ok2 := uid.(string); ok2 && id != "" {
+				uname, _ := c.Get("username")
+				uStr, _ := uname.(string)
+				ctx = requestctx.WithUser(ctx, id, uStr)
+			}
+		}
+		c.Request = c.Request.WithContext(ctx)
 
 		repoDef, err := repoRepo.Get(ctx, repoName)
 		if err != nil || repoDef == nil {
@@ -311,6 +400,26 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "repository is offline"})
 			return
 		}
+
+		if repoDef.Type == domain.TypeGroup {
+			if c.Request.Method != http.MethodGet && c.Request.Method != http.MethodHead {
+				c.JSON(http.StatusMethodNotAllowed, gin.H{
+					"error": "group repository is read-only — publish to a member hosted repository",
+				})
+				return
+			}
+			if string(repoDef.Format) != "docker" {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "repository is not a docker registry"})
+				return
+			}
+			c.Params = gin.Params{
+				{Key: "repoName", Value: repoName},
+				{Key: "path", Value: "/v2" + dockerPath},
+			}
+			groupHandler.ServeHTTP(c)
+			return
+		}
+
 		if string(repoDef.Format) != "docker" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "repository is not a docker registry"})
 			return
@@ -327,7 +436,26 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 	})
 
 	// ── Frontend static (production build) ────────────────────
-	r.NoRoute(serveUI(cfg))
+	ui := serveUI(cfg)
+	r.NoRoute(func(c *gin.Context) {
+		// Docker pull localhost:8081/dockerproxy/... → /v2/dockerproxy/... (no "repository/" segment)
+		// would otherwise fall through to the SPA (text/html) and break layer unpack.
+		p := c.Request.URL.Path
+		if strings.HasPrefix(p, "/v2/") && p != "/v2/" && !strings.HasPrefix(p, "/v2/repository/") {
+			c.Header("Content-Type", "application/json")
+			c.JSON(http.StatusNotFound, gin.H{
+				"errors": []gin.H{{
+					"code": "NAME_UNKNOWN",
+					"message": "Nexspence Docker v2 API is only at /v2/repository/<repoName>/... " +
+						"— the image reference must contain the literal segment `repository` after the host. " +
+						"Example: docker pull " + strings.TrimSuffix(cfg.HTTP.BaseURL, "/") +
+						"/repository/dockerproxy/library/alpine:latest",
+				}},
+			})
+			return
+		}
+		ui(c)
+	})
 
 	return r
 }
