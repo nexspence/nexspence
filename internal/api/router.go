@@ -114,7 +114,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 	userH      := handlers.NewUserHandler(userSvc)
 	blobH      := handlers.NewBlobStoreHandler(blobRepo)
 	componentH := handlers.NewComponentHandler(componentRepo, assetRepo, repoRepo, cfg.HTTP.BaseURL)
-	browseH    := handlers.NewBrowseHandler(repoRepo, componentRepo)
+	browseH    := handlers.NewBrowseHandler(repoRepo, componentRepo, assetRepo)
 	cleanupH   := handlers.NewCleanupHandler(cleanupRepo, repoRepo, cleanupSvc)
 	auditH     := handlers.NewAuditHandler(auditRepo)
 	scanSvc    := service.NewScanService(componentRepo, cfg.HTTP.BaseURL)
@@ -169,6 +169,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 
 		// ── Browse ────────────────────────────────────────────
 		authed.GET("/api/v1/browse/repositories/:name/docker-tree", browseH.DockerTree)
+		authed.GET("/api/v1/browse/repositories/:name/path-tree", browseH.PathTree)
 
 		// ── Components & Assets (read + search) ───────────────
 		authed.GET("/service/rest/v1/components", componentH.List)
@@ -281,8 +282,8 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 		admin.POST("/service/rest/v1/security/content-selectors", csH.Create)
 		admin.PUT("/service/rest/v1/security/content-selectors/:id", csH.Update)
 		admin.DELETE("/service/rest/v1/security/content-selectors/:id", csH.Delete)
-		admin.PUT("/service/rest/v1/security/privileges/:name/content-selector/:selectorId", csH.AttachToPrivilege)
-		admin.DELETE("/service/rest/v1/security/privileges/:name/content-selector", csH.DetachFromPrivilege)
+		admin.PUT("/service/rest/v1/security/privileges/:id/content-selector/:selectorId", csH.AttachToPrivilege)
+		admin.DELETE("/service/rest/v1/security/privileges/:id/content-selector", csH.DetachFromPrivilege)
 
 		// ── Webhooks (admin) ──────────────────────────────────
 		admin.GET("/api/v1/webhooks", webhookH.List)
