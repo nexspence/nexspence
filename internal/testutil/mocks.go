@@ -17,12 +17,20 @@ import (
 
 // ── compile-time interface assertions ────────────────────────
 var (
-	_ repository.RepositoryRepo    = (*RepoRepo)(nil)
-	_ repository.BlobStoreRepo     = (*BlobStoreRepo)(nil)
-	_ repository.ComponentRepo     = (*ComponentRepo)(nil)
-	_ repository.AssetRepo         = (*AssetRepo)(nil)
-	_ repository.CleanupPolicyRepo = (*CleanupPolicyRepo)(nil)
-	_ storage.BlobStore            = (*BlobStore)(nil)
+	_ repository.RepositoryRepo      = (*RepoRepo)(nil)
+	_ repository.BlobStoreRepo       = (*BlobStoreRepo)(nil)
+	_ repository.ComponentRepo       = (*ComponentRepo)(nil)
+	_ repository.AssetRepo           = (*AssetRepo)(nil)
+	_ repository.CleanupPolicyRepo   = (*CleanupPolicyRepo)(nil)
+	_ repository.AuditRepo           = (*AuditRepo)(nil)
+	_ repository.UserRepo            = (*UserRepo)(nil)
+	_ repository.RoleRepo            = (*RoleRepo)(nil)
+	_ repository.ContentSelectorRepo = (*ContentSelectorRepo)(nil)
+	_ repository.UserTokenRepo       = (*UserTokenRepo)(nil)
+	_ repository.WebhookRepo         = (*WebhookRepo)(nil)
+	_ repository.RoutingRuleRepo     = (*RoutingRuleRepo)(nil)
+	_ repository.PrivilegeRepo       = (*PrivilegeRepo)(nil)
+	_ storage.BlobStore              = (*BlobStore)(nil)
 )
 
 // ── RepositoryRepo ────────────────────────────────────────────
@@ -83,6 +91,36 @@ func (r *RepoRepo) Delete(_ context.Context, name string) error {
 	return nil
 }
 
+func (r *RepoRepo) ListNamesByCleanupPolicyID(_ context.Context, policyID string) ([]string, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var names []string
+	for _, v := range r.repos {
+		for _, id := range v.CleanupPolicyIDs {
+			if id == policyID {
+				names = append(names, v.Name)
+				break
+			}
+		}
+	}
+	return names, nil
+}
+
+func (r *RepoRepo) DetachCleanupPolicyID(_ context.Context, policyID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, v := range r.repos {
+		var next []string
+		for _, id := range v.CleanupPolicyIDs {
+			if id != policyID {
+				next = append(next, id)
+			}
+		}
+		v.CleanupPolicyIDs = next
+	}
+	return nil
+}
+
 // ── BlobStoreRepo ─────────────────────────────────────────────
 
 type BlobStoreRepo struct {
@@ -94,6 +132,13 @@ func NewBlobStoreRepo(stores ...*domain.BlobStore) *BlobStoreRepo {
 	b := &BlobStoreRepo{stores: make(map[string]*domain.BlobStore)}
 	for _, s := range stores {
 		b.stores[s.Name] = s
+	}
+	if len(b.stores) == 0 {
+		b.stores["default"] = &domain.BlobStore{
+			ID:   "00000000-0000-0000-0000-000000000001",
+			Name: "default",
+			Type: "local",
+		}
 	}
 	return b
 }
@@ -112,6 +157,19 @@ func (b *BlobStoreRepo) Get(_ context.Context, name string) (*domain.BlobStore, 
 	defer b.mu.Unlock()
 	return b.stores[name], nil
 }
+
+func (b *BlobStoreRepo) GetByID(_ context.Context, id string) (*domain.BlobStore, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for _, s := range b.stores {
+		if s.ID == id {
+			cp := *s
+			return &cp, nil
+		}
+	}
+	return nil, nil
+}
+
 func (b *BlobStoreRepo) Create(_ context.Context, s *domain.BlobStore) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -151,7 +209,11 @@ func NewComponentRepo() *ComponentRepo {
 	return &ComponentRepo{components: make(map[string]*domain.Component)}
 }
 
-func (c *ComponentRepo) List(_ context.Context, _ string, _, _ int) (*domain.Page[domain.Component], error) {
+func (c *ComponentRepo) List(ctx context.Context, repoName string, limit, offset int) (*domain.Page[domain.Component], error) {
+	return c.ListByRepoNames(ctx, []string{repoName}, limit, offset)
+}
+
+func (c *ComponentRepo) ListByRepoNames(_ context.Context, _ []string, _, _ int) (*domain.Page[domain.Component], error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	items := make([]domain.Component, 0, len(c.components))
@@ -168,6 +230,11 @@ func (c *ComponentRepo) Get(_ context.Context, id string) (*domain.Component, er
 func (c *ComponentRepo) Search(_ context.Context, _ domain.SearchParams) (*domain.Page[domain.Component], error) {
 	return &domain.Page[domain.Component]{Items: []domain.Component{}}, nil
 }
+
+func (c *ComponentRepo) ListDockerBrowseRows(_ context.Context, _ []string, _ int) ([]domain.DockerBrowseRow, error) {
+	return nil, nil
+}
+
 func (c *ComponentRepo) Create(_ context.Context, comp *domain.Component) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -180,6 +247,22 @@ func (c *ComponentRepo) Delete(_ context.Context, id string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	delete(c.components, id)
+	return nil
+}
+
+func (c *ComponentRepo) UpdateExtra(_ context.Context, id string, extra map[string]any) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	comp := c.components[id]
+	if comp == nil {
+		return nil
+	}
+	if comp.Extra == nil {
+		comp.Extra = make(map[string]any)
+	}
+	for k, v := range extra {
+		comp.Extra[k] = v
+	}
 	return nil
 }
 
@@ -222,10 +305,24 @@ func (a *AssetRepo) GetByPath(_ context.Context, repoName, path string) (*domain
 func (a *AssetRepo) SearchAssets(_ context.Context, _ domain.SearchParams) (*domain.Page[domain.Asset], error) {
 	return &domain.Page[domain.Asset]{Items: []domain.Asset{}}, nil
 }
-func (a *AssetRepo) ListStale(_ context.Context, _ string, _, _ int, _ int) ([]domain.Asset, error) {
+func (a *AssetRepo) ListStale(_ context.Context, _ string, _ []string, _, _ int, _, _ string, limit int) ([]domain.Asset, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	return a.Stale, nil
+	if len(a.Stale) == 0 {
+		return nil, nil
+	}
+	n := limit
+	if n <= 0 {
+		n = 500
+	}
+	if len(a.Stale) > n {
+		batch := append([]domain.Asset(nil), a.Stale[:n]...)
+		a.Stale = a.Stale[n:]
+		return batch, nil
+	}
+	out := append([]domain.Asset(nil), a.Stale...)
+	a.Stale = nil
+	return out, nil
 }
 func (a *AssetRepo) Create(_ context.Context, asset *domain.Asset) error {
 	a.mu.Lock()
@@ -250,6 +347,47 @@ func (a *AssetRepo) Delete(_ context.Context, id string) error {
 	return nil
 }
 func (a *AssetRepo) IncrementDownload(_ context.Context, _ string) error { return nil }
+
+func (a *AssetRepo) ListByComponentID(_ context.Context, componentID string) ([]domain.Asset, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	var out []domain.Asset
+	for _, v := range a.byID {
+		if v.ComponentID == componentID {
+			cp := *v
+			out = append(out, cp)
+		}
+	}
+	return out, nil
+}
+
+func (a *AssetRepo) ListAllBlobKeys(_ context.Context) ([]string, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	seen := make(map[string]struct{})
+	for _, v := range a.byID {
+		if v.BlobKey != "" {
+			seen[v.BlobKey] = struct{}{}
+		}
+	}
+	keys := make([]string, 0, len(seen))
+	for k := range seen {
+		keys = append(keys, k)
+	}
+	return keys, nil
+}
+
+func (a *AssetRepo) SumSizeByRepo(_ context.Context, repoName string) (int64, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	var total int64
+	for _, v := range a.byID {
+		if v.Repository == repoName {
+			total += v.SizeBytes
+		}
+	}
+	return total, nil
+}
 
 // ── CleanupPolicyRepo ─────────────────────────────────────────
 
@@ -366,6 +504,15 @@ func (b *BlobStore) UsedBytes(_ context.Context) (int64, error) {
 	}
 	return total, nil
 }
+func (b *BlobStore) ListKeys(_ context.Context) ([]string, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	keys := make([]string, 0, len(b.blobs))
+	for k := range b.blobs {
+		keys = append(keys, k)
+	}
+	return keys, nil
+}
 func (b *BlobStore) Has(key string) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -397,3 +544,560 @@ func SimpleRepo(name, format string) *domain.Repository {
 
 // MakeReader returns an io.Reader wrapping the given string.
 func MakeReader(s string) io.Reader { return strings.NewReader(s) }
+
+// ── AuditRepo ─────────────────────────────────────────────────
+
+type AuditRepo struct {
+	mu     sync.Mutex
+	Events []domain.AuditEvent
+}
+
+func NewAuditRepo() *AuditRepo { return &AuditRepo{} }
+
+func (a *AuditRepo) Write(_ context.Context, e *domain.AuditEvent) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.Events = append(a.Events, *e)
+	return nil
+}
+
+func (a *AuditRepo) List(_ context.Context, domainFilter, actionFilter string, limit, offset int) ([]domain.AuditEvent, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	var out []domain.AuditEvent
+	for _, e := range a.Events {
+		if domainFilter != "" && e.Domain != domainFilter {
+			continue
+		}
+		if actionFilter != "" && e.Action != actionFilter {
+			continue
+		}
+		out = append(out, e)
+	}
+	if offset >= len(out) {
+		return nil, nil
+	}
+	out = out[offset:]
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+// ── UserRepo ──────────────────────────────────────────────────
+
+type UserRepo struct {
+	mu     sync.Mutex
+	users  map[string]*domain.User // key: username
+	byID   map[string]*domain.User
+	nextID int
+}
+
+func NewUserRepo(users ...*domain.User) *UserRepo {
+	r := &UserRepo{
+		users: make(map[string]*domain.User),
+		byID:  make(map[string]*domain.User),
+	}
+	for _, u := range users {
+		r.users[u.Username] = u
+		r.byID[u.ID] = u
+	}
+	return r
+}
+
+func (r *UserRepo) List(_ context.Context, _ string) ([]domain.User, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]domain.User, 0, len(r.users))
+	for _, u := range r.users {
+		out = append(out, *u)
+	}
+	return out, nil
+}
+func (r *UserRepo) Get(_ context.Context, username string) (*domain.User, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.users[username], nil
+}
+func (r *UserRepo) GetByID(_ context.Context, id string) (*domain.User, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.byID[id], nil
+}
+func (r *UserRepo) Create(_ context.Context, u *domain.User) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.nextID++
+	if u.ID == "" {
+		u.ID = fmt.Sprintf("user-%d", r.nextID)
+	}
+	r.users[u.Username] = u
+	r.byID[u.ID] = u
+	return nil
+}
+func (r *UserRepo) Update(_ context.Context, u *domain.User) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.users[u.Username] = u
+	r.byID[u.ID] = u
+	return nil
+}
+func (r *UserRepo) UpdatePassword(_ context.Context, username, hash string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if u, ok := r.users[username]; ok {
+		u.PasswordHash = hash
+	}
+	return nil
+}
+func (r *UserRepo) Delete(_ context.Context, username string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if u, ok := r.users[username]; ok {
+		delete(r.byID, u.ID)
+		delete(r.users, username)
+	}
+	return nil
+}
+func (r *UserRepo) UpdateLastLogin(_ context.Context, _ string) error { return nil }
+
+// ── RoleRepo ──────────────────────────────────────────────────
+
+type RoleRepo struct {
+	mu         sync.Mutex
+	roles      map[string]*domain.Role
+	userRoles  map[string][]string // userID → roleIDs
+	nextID     int
+}
+
+func NewRoleRepo(roles ...*domain.Role) *RoleRepo {
+	r := &RoleRepo{
+		roles:     make(map[string]*domain.Role),
+		userRoles: make(map[string][]string),
+	}
+	for _, role := range roles {
+		r.roles[role.ID] = role
+	}
+	return r
+}
+
+func (r *RoleRepo) List(_ context.Context) ([]domain.Role, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]domain.Role, 0, len(r.roles))
+	for _, v := range r.roles {
+		out = append(out, *v)
+	}
+	return out, nil
+}
+func (r *RoleRepo) Get(_ context.Context, id string) (*domain.Role, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.roles[id], nil
+}
+func (r *RoleRepo) Create(_ context.Context, role *domain.Role) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.nextID++
+	if role.ID == "" {
+		role.ID = fmt.Sprintf("role-%d", r.nextID)
+	}
+	r.roles[role.ID] = role
+	return nil
+}
+func (r *RoleRepo) Update(_ context.Context, role *domain.Role) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.roles[role.ID] = role
+	return nil
+}
+func (r *RoleRepo) Delete(_ context.Context, id string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.roles, id)
+	return nil
+}
+func (r *RoleRepo) GetUserRoles(_ context.Context, userID string) ([]domain.Role, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []domain.Role
+	for _, rid := range r.userRoles[userID] {
+		if role, ok := r.roles[rid]; ok {
+			out = append(out, *role)
+		}
+	}
+	return out, nil
+}
+func (r *RoleRepo) SetUserRoles(_ context.Context, userID string, roleIDs []string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.userRoles[userID] = append([]string(nil), roleIDs...)
+	return nil
+}
+
+func (r *RoleRepo) SetPrivileges(_ context.Context, roleID string, privilegeIDs []string) error {
+	return nil
+}
+
+func (r *RoleRepo) ListPrivilegeIDsByRole(_ context.Context, roleID string) ([]string, error) {
+	return []string{}, nil
+}
+
+// ── ContentSelectorRepo ───────────────────────────────────────
+
+type ContentSelectorRepo struct {
+	mu                sync.Mutex
+	selectors         map[string]*domain.ContentSelector
+	nextID            int
+	PrivilegeSelector map[string]string   // privilegeName → selectorID
+	UserSelectors     map[string][]string // userID → []selectorID
+}
+
+func NewContentSelectorRepo() *ContentSelectorRepo {
+	return &ContentSelectorRepo{
+		selectors:         make(map[string]*domain.ContentSelector),
+		PrivilegeSelector: make(map[string]string),
+		UserSelectors:     make(map[string][]string),
+	}
+}
+
+func (r *ContentSelectorRepo) List(_ context.Context) ([]domain.ContentSelector, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]domain.ContentSelector, 0, len(r.selectors))
+	for _, v := range r.selectors {
+		out = append(out, *v)
+	}
+	return out, nil
+}
+func (r *ContentSelectorRepo) Get(_ context.Context, id string) (*domain.ContentSelector, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.selectors[id], nil
+}
+func (r *ContentSelectorRepo) GetByName(_ context.Context, name string) (*domain.ContentSelector, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, v := range r.selectors {
+		if v.Name == name {
+			cp := *v
+			return &cp, nil
+		}
+	}
+	return nil, nil
+}
+func (r *ContentSelectorRepo) Create(_ context.Context, s *domain.ContentSelector) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.nextID++
+	s.ID = fmt.Sprintf("cs-%d", r.nextID)
+	cp := *s
+	r.selectors[s.ID] = &cp
+	return nil
+}
+func (r *ContentSelectorRepo) Update(_ context.Context, s *domain.ContentSelector) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	cp := *s
+	r.selectors[s.ID] = &cp
+	return nil
+}
+func (r *ContentSelectorRepo) Delete(_ context.Context, id string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.selectors, id)
+	return nil
+}
+func (r *ContentSelectorRepo) ListForUser(_ context.Context, userID string) ([]domain.ContentSelector, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []domain.ContentSelector
+	for _, id := range r.UserSelectors[userID] {
+		if s, ok := r.selectors[id]; ok {
+			out = append(out, *s)
+		}
+	}
+	return out, nil
+}
+func (r *ContentSelectorRepo) AttachToPrivilege(_ context.Context, privilegeName, selectorID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.PrivilegeSelector[privilegeName] = selectorID
+	return nil
+}
+func (r *ContentSelectorRepo) DetachFromPrivilege(_ context.Context, privilegeName string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.PrivilegeSelector, privilegeName)
+	return nil
+}
+
+// ── UserTokenRepo ─────────────────────────────────────────────
+
+type UserTokenRepo struct {
+	mu     sync.Mutex
+	tokens map[string]*domain.UserToken // key: ID
+	byHash map[string]*domain.UserToken // key: TokenHash
+	nextID int
+}
+
+func NewUserTokenRepo() *UserTokenRepo {
+	return &UserTokenRepo{
+		tokens: make(map[string]*domain.UserToken),
+		byHash: make(map[string]*domain.UserToken),
+	}
+}
+
+func (r *UserTokenRepo) ListByUser(_ context.Context, userID string) ([]domain.UserToken, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []domain.UserToken
+	for _, t := range r.tokens {
+		if t.UserID == userID {
+			out = append(out, *t)
+		}
+	}
+	return out, nil
+}
+func (r *UserTokenRepo) Get(_ context.Context, id string) (*domain.UserToken, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.tokens[id], nil
+}
+func (r *UserTokenRepo) GetByHash(_ context.Context, hash string) (*domain.UserToken, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.byHash[hash], nil
+}
+func (r *UserTokenRepo) Create(_ context.Context, t *domain.UserToken) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.nextID++
+	if t.ID == "" {
+		t.ID = fmt.Sprintf("tok-%d", r.nextID)
+	}
+	cp := *t
+	r.tokens[t.ID] = &cp
+	if t.TokenHash != "" {
+		r.byHash[t.TokenHash] = &cp
+	}
+	return nil
+}
+func (r *UserTokenRepo) Delete(_ context.Context, id string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if t, ok := r.tokens[id]; ok {
+		delete(r.byHash, t.TokenHash)
+		delete(r.tokens, id)
+	}
+	return nil
+}
+func (r *UserTokenRepo) TouchLastUsed(_ context.Context, _ string) error { return nil }
+
+// ── WebhookRepo ───────────────────────────────────────────────
+
+type WebhookRepo struct {
+	mu       sync.Mutex
+	webhooks map[string]*domain.Webhook
+	nextID   int
+}
+
+func NewWebhookRepo() *WebhookRepo {
+	return &WebhookRepo{webhooks: make(map[string]*domain.Webhook)}
+}
+
+func (r *WebhookRepo) List(_ context.Context) ([]domain.Webhook, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]domain.Webhook, 0, len(r.webhooks))
+	for _, v := range r.webhooks {
+		out = append(out, *v)
+	}
+	return out, nil
+}
+func (r *WebhookRepo) Get(_ context.Context, id string) (*domain.Webhook, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.webhooks[id], nil
+}
+func (r *WebhookRepo) ListByEvent(_ context.Context, event domain.WebhookEvent) ([]domain.Webhook, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []domain.Webhook
+	for _, v := range r.webhooks {
+		for _, e := range v.Events {
+			if e == event {
+				out = append(out, *v)
+				break
+			}
+		}
+	}
+	return out, nil
+}
+func (r *WebhookRepo) Create(_ context.Context, w *domain.Webhook) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.nextID++
+	if w.ID == "" {
+		w.ID = fmt.Sprintf("wh-%d", r.nextID)
+	}
+	cp := *w
+	r.webhooks[w.ID] = &cp
+	return nil
+}
+func (r *WebhookRepo) Update(_ context.Context, w *domain.Webhook) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	cp := *w
+	r.webhooks[w.ID] = &cp
+	return nil
+}
+func (r *WebhookRepo) Delete(_ context.Context, id string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.webhooks, id)
+	return nil
+}
+
+// ── RoutingRuleRepo ───────────────────────────────────────────
+
+type RoutingRuleRepo struct {
+	mu     sync.Mutex
+	rules  map[string]*domain.RoutingRule
+	nextID int
+}
+
+func NewRoutingRuleRepo() *RoutingRuleRepo {
+	return &RoutingRuleRepo{rules: make(map[string]*domain.RoutingRule)}
+}
+
+func (r *RoutingRuleRepo) List(_ context.Context) ([]domain.RoutingRule, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]domain.RoutingRule, 0, len(r.rules))
+	for _, v := range r.rules {
+		out = append(out, *v)
+	}
+	return out, nil
+}
+func (r *RoutingRuleRepo) Get(_ context.Context, id string) (*domain.RoutingRule, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.rules[id], nil
+}
+func (r *RoutingRuleRepo) GetByName(_ context.Context, name string) (*domain.RoutingRule, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, v := range r.rules {
+		if v.Name == name {
+			cp := *v
+			return &cp, nil
+		}
+	}
+	return nil, nil
+}
+func (r *RoutingRuleRepo) Create(_ context.Context, rr *domain.RoutingRule) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.nextID++
+	if rr.ID == "" {
+		rr.ID = fmt.Sprintf("rr-%d", r.nextID)
+	}
+	cp := *rr
+	r.rules[rr.ID] = &cp
+	return nil
+}
+func (r *RoutingRuleRepo) Update(_ context.Context, rr *domain.RoutingRule) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	cp := *rr
+	r.rules[rr.ID] = &cp
+	return nil
+}
+func (r *RoutingRuleRepo) Delete(_ context.Context, id string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.rules, id)
+	return nil
+}
+
+// ── PrivilegeRepo ─────────────────────────────────────────────
+
+type PrivilegeRepo struct {
+	mu   sync.Mutex
+	data map[string]*domain.Privilege
+}
+
+func NewPrivilegeRepo(items ...*domain.Privilege) *PrivilegeRepo {
+	r := &PrivilegeRepo{data: make(map[string]*domain.Privilege)}
+	for _, p := range items {
+		r.data[p.ID] = p
+	}
+	return r
+}
+
+func (r *PrivilegeRepo) List(_ context.Context) ([]domain.Privilege, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]domain.Privilege, 0, len(r.data))
+	for _, p := range r.data {
+		out = append(out, *p)
+	}
+	return out, nil
+}
+
+func (r *PrivilegeRepo) Get(_ context.Context, id string) (*domain.Privilege, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	p, ok := r.data[id]
+	if !ok {
+		return nil, nil
+	}
+	cp := *p
+	return &cp, nil
+}
+
+func (r *PrivilegeRepo) GetByName(_ context.Context, name string) (*domain.Privilege, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, p := range r.data {
+		if p.Name == name {
+			cp := *p
+			return &cp, nil
+		}
+	}
+	return nil, nil
+}
+
+func (r *PrivilegeRepo) Create(_ context.Context, p *domain.Privilege) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if p.ID == "" {
+		p.ID = fmt.Sprintf("priv-%d", len(r.data)+1)
+	}
+	cp := *p
+	r.data[p.ID] = &cp
+	return nil
+}
+
+func (r *PrivilegeRepo) Update(_ context.Context, p *domain.Privilege) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.data[p.ID]; !ok {
+		return fmt.Errorf("privilege not found: %s", p.ID)
+	}
+	cp := *p
+	r.data[p.ID] = &cp
+	return nil
+}
+
+func (r *PrivilegeRepo) Delete(_ context.Context, id string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.data, id)
+	return nil
+}
+
+func (r *PrivilegeRepo) ListByRole(_ context.Context, _ string) ([]domain.Privilege, error) {
+	return []domain.Privilege{}, nil
+}
