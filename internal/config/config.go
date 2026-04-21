@@ -12,9 +12,11 @@ type Config struct {
 	Database  DatabaseConfig  `mapstructure:"database"`
 	Storage   StorageConfig   `mapstructure:"storage"`
 	Auth      AuthConfig      `mapstructure:"auth"`
+	LDAP      LDAPConfig      `mapstructure:"ldap"`
 	Bootstrap BootstrapConfig `mapstructure:"bootstrap"`
 	Log       LogConfig       `mapstructure:"log"`
 	Search    SearchConfig    `mapstructure:"search"`
+	Cleanup   CleanupConfig   `mapstructure:"cleanup"`
 }
 
 type BootstrapConfig struct {
@@ -79,10 +81,43 @@ type LogConfig struct {
 	Format string `mapstructure:"format"` // json, text
 }
 
+// LDAPConfig configures LDAP/Active Directory authentication.
+type LDAPConfig struct {
+	Enabled          bool              `mapstructure:"enabled"`
+	Host             string            `mapstructure:"host"`
+	Port             int               `mapstructure:"port"`
+	UseTLS           bool              `mapstructure:"use_tls"`    // LDAPS (port 636)
+	StartTLS         bool              `mapstructure:"start_tls"`  // STARTTLS on plain conn
+	InsecureSkipVerify bool            `mapstructure:"insecure_skip_verify"`
+	BindDN           string            `mapstructure:"bind_dn"`
+	BindPassword     string            `mapstructure:"bind_password"`
+	SearchBase       string            `mapstructure:"search_base"`
+	SearchFilter     string            `mapstructure:"search_filter"`   // {0} → username
+	UserAttributes   LDAPUserAttrMap   `mapstructure:"user_attributes"`
+	GroupBase        string            `mapstructure:"group_base"`
+	GroupFilter      string            `mapstructure:"group_filter"`    // {dn} → user DN
+	GroupAttribute   string            `mapstructure:"group_attribute"` // attr holding group name
+	AutoCreateUsers  bool              `mapstructure:"auto_create_users"`
+	TimeoutSec       int               `mapstructure:"timeout_sec"`
+	// AdminGroup, when set, automatically grants the nx-admin role to any LDAP user
+	// whose group membership includes this group name.
+	AdminGroup       string            `mapstructure:"admin_group"`
+}
+
+type LDAPUserAttrMap struct {
+	Email     string `mapstructure:"email"`
+	FirstName string `mapstructure:"first_name"`
+	LastName  string `mapstructure:"last_name"`
+}
+
 type SearchConfig struct {
 	// Full-text search is built into PostgreSQL — no external deps
 	// MinQueryLen is the minimum characters before trigram search kicks in
 	MinQueryLen int `mapstructure:"min_query_len"`
+}
+
+type CleanupConfig struct {
+	DefaultSchedule string `mapstructure:"default_schedule"`
 }
 
 func Load(path string) (*Config, error) {
@@ -106,6 +141,16 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("log.level", "info")
 	v.SetDefault("log.format", "json")
 	v.SetDefault("search.min_query_len", 2)
+	v.SetDefault("cleanup.default_schedule", "0 */6 * * *")
+	v.SetDefault("ldap.enabled", false)
+	v.SetDefault("ldap.port", 389)
+	v.SetDefault("ldap.search_filter", "(uid={0})")
+	v.SetDefault("ldap.user_attributes.email", "mail")
+	v.SetDefault("ldap.user_attributes.first_name", "givenName")
+	v.SetDefault("ldap.user_attributes.last_name", "sn")
+	v.SetDefault("ldap.group_attribute", "cn")
+	v.SetDefault("ldap.auto_create_users", true)
+	v.SetDefault("ldap.timeout_sec", 10)
 	v.SetDefault("bootstrap.admin_username", "admin")
 	v.SetDefault("bootstrap.admin_password", "admin123")
 	v.SetDefault("bootstrap.admin_email", "admin@example.com")
