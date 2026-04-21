@@ -79,7 +79,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 	webhookSvc := service.NewWebhookService(webhookRepo)
 	cleanupSvc := service.NewCleanupService(cleanupRepo, repoRepo, assetRepo, localBlob, log)
 
-	// Start cleanup scheduler in background (every 6 hours).
+	// Start per-policy cron scheduler in background (default: cfg.Cleanup.DefaultSchedule).
 	go cleanupSvc.StartCronScheduler(context.Background(), cfg.Cleanup.DefaultSchedule)
 
 	// ── Format handlers ───────────────────────────────────────
