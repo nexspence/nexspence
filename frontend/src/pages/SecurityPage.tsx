@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
 import { Shield, RefreshCw, Webhook, AlertTriangle, CheckCircle, Loader, Trash2, Plus, Bug } from 'lucide-react'
@@ -771,6 +771,14 @@ function ContentSelectorsTab({ admin }: { admin: boolean }) {
     queryKey: ['repositories'],
     queryFn: () => nexusApi.listRepositories().then(r => r.data),
   })
+  const { data: privs = [] } = useQuery<Privilege[]>({
+    queryKey: ['privileges'],
+    queryFn: () => nexusApi.listPrivileges().then(r => r.data),
+  })
+  const selectorToPriv = useMemo(
+    () => new Map(privs.filter(p => !!p.contentSelectorId).map(p => [p.contentSelectorId!, p.name])),
+    [privs]
+  )
 
   const [showModal, setShowModal] = useState(false)
   const [editing, setEditing] = useState<{ id: string; name: string; description: string; expression: string } | null>(null)
@@ -879,6 +887,7 @@ function ContentSelectorsTab({ admin }: { admin: boolean }) {
               <tr style={{ color: 'rgba(229,231,235,0.5)', textAlign: 'left' as const }}>
                 <th style={{ padding: '0 0 10px', fontWeight: 600 }}>Name</th>
                 <th style={{ padding: '0 8px 10px', fontWeight: 600 }}>Scope</th>
+                <th style={{ padding: '0 8px 10px', fontWeight: 600 }}>Privilege</th>
                 <th style={{ padding: '0 8px 10px', fontWeight: 600 }}>Description</th>
                 {admin && <th style={{ padding: '0 0 10px', width: 80 }}></th>}
               </tr>
@@ -889,6 +898,14 @@ function ContentSelectorsTab({ admin }: { admin: boolean }) {
                   <td style={{ padding: '9px 0', color: '#dbeafe', fontWeight: 600 }}>{s.name}</td>
                   <td style={{ padding: '9px 8px' }}>
                     <code style={{ ...S.mono, fontSize: 12, color: '#a5b4fc' }}>{selectorSummary(s.expression)}</code>
+                  </td>
+                  <td style={{ padding: '8px 12px' }}>
+                    {selectorToPriv.has(s.id) && selectorToPriv.get(s.id)
+                      ? <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 4, background: 'rgba(6,182,212,0.12)', color: '#67e8f9' }}>
+                          {selectorToPriv.get(s.id)}
+                        </span>
+                      : <span style={{ color: 'rgba(229,231,235,0.3)', fontSize: 12 }}>—</span>
+                    }
                   </td>
                   <td style={{ padding: '9px 8px', color: 'rgba(229,231,235,0.55)' }}>{s.description || '—'}</td>
                   {admin && (
