@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
@@ -16,6 +17,7 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/db"
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/logger"
+	"github.com/nexspence-oss/nexspence/internal/metrics"
 	"github.com/nexspence-oss/nexspence/internal/repository/postgres"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/spf13/cobra"
@@ -61,6 +63,37 @@ func cmdServe() *cobra.Command {
 				return err
 			}
 			defer pool.Close()
+			log.Info("database connected", "host", dbHost(cfg.Database.DSN))
+
+			// Storage
+			if cfg.Storage.DefaultType == "s3" {
+				log.Info("storage", "type", "s3", "bucket", cfg.Storage.S3.Bucket, "endpoint", cfg.Storage.S3.Endpoint)
+			} else {
+				log.Info("storage", "type", "local", "path", cfg.Storage.Local.BasePath)
+			}
+
+			// LDAP
+			if cfg.LDAP.Enabled {
+				log.Info("ldap enabled", "host", cfg.LDAP.Host, "port", cfg.LDAP.Port, "use_tls", cfg.LDAP.UseTLS || cfg.LDAP.Port == 636, "insecure_skip_verify", cfg.LDAP.InsecureSkipVerify, "admin_group", cfg.LDAP.AdminGroup)
+				if ldapSvc := auth.NewLDAPService(cfg.LDAP); ldapSvc != nil {
+					if err := ldapSvc.TestConnection(cmd.Context()); err != nil {
+						log.Warn("ldap connection test FAILED", "err", err)
+					} else {
+						log.Info("ldap connection OK")
+					}
+				}
+			} else {
+				log.Info("ldap disabled")
+			}
+
+			// Seed cumulative metrics from DB so counters survive restarts.
+			var assetCount, sumBytes, sumDownloads int64
+			_ = pool.QueryRow(cmd.Context(),
+				`SELECT COUNT(*), COALESCE(SUM(size_bytes),0), COALESCE(SUM(download_count),0) FROM assets`).
+				Scan(&assetCount, &sumBytes, &sumDownloads)
+			metrics.ArtifactsStored.Store(assetCount)
+			metrics.BytesStored.Store(sumBytes)
+			metrics.DownloadsTotal.Store(sumDownloads)
 
 			if err := bootstrapAdmin(cmd.Context(), pool, cfg, log); err != nil {
 				log.Error("bootstrap admin failed", "err", err)
@@ -200,3 +233,12 @@ func findRoleByName(ctx context.Context, repo interface {
 
 // Version is injected at build time via -ldflags
 var Version = "dev"
+
+// dbHost extracts the host from a postgres DSN URL for safe log display.
+func dbHost(dsn string) string {
+	u, err := url.Parse(dsn)
+	if err != nil || u.Host == "" {
+		return dsn
+	}
+	return u.Host
+}

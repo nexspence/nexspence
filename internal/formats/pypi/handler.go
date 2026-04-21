@@ -43,8 +43,8 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 		}
 		h.handleUpload(c, repoName)
 
-	// Package simple index: GET /simple/
-	case c.Request.Method == http.MethodGet && p == "/simple/":
+	// Package simple index: GET /simple/ (path.Clean strips trailing slash → "/simple")
+	case c.Request.Method == http.MethodGet && (p == "/simple" || p == "/simple/"):
 		if repo != nil && repo.Type == domain.TypeProxy {
 			coords := base.Coords{Name: "_simple", Version: "index"}
 			if err := repoproxy.ServeGET(c, h.deps, repo, p, "", coords, "text/html; charset=utf-8"); err != nil {

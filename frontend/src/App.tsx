@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import Layout from '@/components/Layout'
 import LoginPage from '@/pages/LoginPage'
@@ -10,6 +11,7 @@ import AdminPage from '@/pages/AdminPage'
 import MigrationPage from '@/pages/MigrationPage'
 import SecurityPage from '@/pages/SecurityPage'
 import AuditPage from '@/pages/AuditPage'
+import MonitoringPage from '@/pages/MonitoringPage'
 import { useAuthStore } from '@/store/authStore'
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
@@ -19,6 +21,9 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
+  const init = useAuthStore(s => s.init)
+  useEffect(() => { init() }, [init])
+
   return (
     <BrowserRouter>
       <Routes>
@@ -41,6 +46,7 @@ export default function App() {
           <Route path="migration" element={<MigrationPage />} />
           <Route path="security" element={<SecurityPage />} />
           <Route path="audit" element={<AuditPage />} />
+          <Route path="monitoring" element={<MonitoringPage />} />
         </Route>
       </Routes>
     </BrowserRouter>

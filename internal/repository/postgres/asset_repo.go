@@ -474,3 +474,12 @@ func (r *assetRepo) ListByRepoAndPath(ctx context.Context, repoName, pathPrefix 
 	}
 	return out, rows.Err()
 }
+
+func (r *assetRepo) CountByBlobKey(ctx context.Context, blobKey, excludeID string) (int, error) {
+	var count int
+	err := r.db.QueryRow(ctx,
+		`SELECT COUNT(*) FROM assets WHERE blob_key = $1 AND id != $2`,
+		blobKey, excludeID,
+	).Scan(&count)
+	return count, err
+}

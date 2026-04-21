@@ -41,6 +41,7 @@ type Repository struct {
 	CleanupPolicyIDs []string          `json:"cleanupPolicyIds,omitempty"`
 	QuotaBytes       *int64            `json:"quotaBytes,omitempty"`
 	RoutingRuleID    *string           `json:"routingRuleId,omitempty"`
+	AllowAnonymous   bool              `json:"allowAnonymous"`
 	Description      string            `json:"description,omitempty"`
 	URL              string            `json:"url,omitempty"` // computed
 	CreatedAt        time.Time         `json:"createdAt"`
@@ -254,7 +255,7 @@ const (
 )
 
 type User struct {
-	ID           string     `json:"userId"`
+	ID           string     `json:"id"`
 	Username     string     `json:"userId"` // Nexus API uses "userId" as the identifier field
 	Email        string     `json:"emailAddress"`
 	PasswordHash string     `json:"-"`
@@ -309,11 +310,12 @@ type Role struct {
 type PrivilegeType string
 
 const (
-	PrivilegeTypeWildcard        PrivilegeType = "wildcard"
-	PrivilegeTypeRepositoryView  PrivilegeType = "repository-view"
-	PrivilegeTypeRepositoryAdmin PrivilegeType = "repository-admin"
-	PrivilegeTypeApplication     PrivilegeType = "application"
-	PrivilegeTypeScript          PrivilegeType = "script"
+	PrivilegeTypeWildcard                  PrivilegeType = "wildcard"
+	PrivilegeTypeRepositoryView            PrivilegeType = "repository-view"
+	PrivilegeTypeRepositoryAdmin           PrivilegeType = "repository-admin"
+	PrivilegeTypeApplication               PrivilegeType = "application"
+	PrivilegeTypeScript                    PrivilegeType = "script"
+	PrivilegeTypeRepositoryContentSelector PrivilegeType = "repository-content-selector"
 )
 
 // Privilege grants a user (via a Role) access to a set of actions.

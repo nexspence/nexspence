@@ -1,5 +1,5 @@
-APP       := nexor
-MODULE    := github.com/nexor-oss/nexor
+APP       := nexspence
+MODULE    := github.com/nexspence-oss/nexspence
 VERSION   := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS   := -s -w -X main.Version=$(VERSION)
 BUILD_DIR := ./bin
@@ -40,7 +40,7 @@ build-frontend: ## Build React frontend
 
 .PHONY: docker-build
 docker-build: ## Build Docker image
-	docker build --build-arg VERSION=$(VERSION) -t nexor-oss/nexor:$(VERSION) -t nexor-oss/nexor:latest .
+	docker build --build-arg VERSION=$(VERSION) -t nexspence-oss/nexspence:$(VERSION) -t nexspence-oss/nexspence:latest .
 
 # ── Database ──────────────────────────────────────────────────
 
@@ -62,7 +62,7 @@ db-up: ## Start only PostgreSQL via Docker Compose
 
 .PHONY: db-shell
 db-shell: ## Open psql shell
-	docker compose exec postgres psql -U nexor nexor
+	docker compose exec postgres psql -U nexspence nexspence
 
 # ── Docker Compose ────────────────────────────────────────────
 
@@ -80,7 +80,7 @@ down: ## Stop all services
 
 .PHONY: logs
 logs: ## Follow logs
-	docker compose logs -f nexor
+	docker compose logs -f nexspence
 
 # ── Quality ───────────────────────────────────────────────────
 

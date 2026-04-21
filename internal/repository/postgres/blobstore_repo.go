@@ -49,6 +49,17 @@ func (r *blobStoreRepo) Get(ctx context.Context, name string) (*domain.BlobStore
 	return bs, err
 }
 
+func (r *blobStoreRepo) GetByID(ctx context.Context, id string) (*domain.BlobStore, error) {
+	row := r.db.QueryRow(ctx, `
+		SELECT id, name, type, config, quota_bytes, used_bytes, created_at, updated_at
+		FROM blob_stores WHERE id = $1`, id)
+	bs, err := scanBlobStore(row)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	return bs, err
+}
+
 func (r *blobStoreRepo) Create(ctx context.Context, b *domain.BlobStore) error {
 	cfg, _ := json.Marshal(b.Config)
 	return r.db.QueryRow(ctx, `

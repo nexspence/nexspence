@@ -1,6 +1,7 @@
 package formats
 
 import (
+	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/storage"
 )
@@ -13,4 +14,6 @@ type Deps struct {
 	Blobs      repository.BlobStoreRepo
 	BlobStore  storage.BlobStore
 	BaseURL    string
+	// Webhooks is optional — nil disables event delivery.
+	Webhooks domain.WebhookDispatcher
 }

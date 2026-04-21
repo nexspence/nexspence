@@ -5,10 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
@@ -18,6 +21,7 @@ import (
 // Compatible with AWS S3, MinIO, Ceph S3, and any S3-compatible API.
 type S3BlobStore struct {
 	client         *s3.Client
+	uploader       *manager.Uploader
 	bucket         string
 	forcePathStyle bool
 }
@@ -66,9 +70,15 @@ func NewS3BlobStore(ctx context.Context, opts S3Options) (*S3BlobStore, error) {
 	}
 
 	client := s3.NewFromConfig(awsCfg, s3Opts...)
+	uploader := manager.NewUploader(client, func(u *manager.Uploader) {
+		// 10 MB per part; AWS minimum is 5 MB; max concurrent parts = 5.
+		u.PartSize = 10 * 1024 * 1024
+		u.Concurrency = 5
+	})
 
 	return &S3BlobStore{
 		client:         client,
+		uploader:       uploader,
 		bucket:         opts.Bucket,
 		forcePathStyle: opts.ForcePathStyle,
 	}, nil
@@ -82,16 +92,14 @@ func (s *S3BlobStore) objectKey(key string) string {
 	return key
 }
 
-func (s *S3BlobStore) Put(ctx context.Context, key string, r io.Reader, size int64) error {
-	input := &s3.PutObjectInput{
+// Put uploads a blob using the S3 multipart manager.
+// Files larger than PartSize (10 MB) are uploaded in parallel parts automatically.
+func (s *S3BlobStore) Put(ctx context.Context, key string, r io.Reader, _ int64) error {
+	_, err := s.uploader.Upload(ctx, &s3.PutObjectInput{
 		Bucket: aws.String(s.bucket),
 		Key:    aws.String(s.objectKey(key)),
 		Body:   r,
-	}
-	if size > 0 {
-		input.ContentLength = aws.Int64(size)
-	}
-	_, err := s.client.PutObject(ctx, input)
+	})
 	if err != nil {
 		return fmt.Errorf("s3 put %s: %w", key, err)
 	}
@@ -158,6 +166,33 @@ func (s *S3BlobStore) Size(ctx context.Context, key string) (int64, error) {
 	return 0, nil
 }
 
+// ListKeys returns all blob keys in the bucket by stripping the two-level shard prefix.
+func (s *S3BlobStore) ListKeys(ctx context.Context) ([]string, error) {
+	var keys []string
+	paginator := s3.NewListObjectsV2Paginator(s.client, &s3.ListObjectsV2Input{
+		Bucket: aws.String(s.bucket),
+	})
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
+		if err != nil {
+			return keys, fmt.Errorf("s3 list keys: %w", err)
+		}
+		for _, obj := range page.Contents {
+			if obj.Key == nil {
+				continue
+			}
+			// Object key = "ab/cd/abcdef..." → blob key = "abcdef..."
+			parts := strings.SplitN(*obj.Key, "/", 3)
+			if len(parts) == 3 {
+				keys = append(keys, parts[2])
+			} else {
+				keys = append(keys, *obj.Key)
+			}
+		}
+	}
+	return keys, nil
+}
+
 // UsedBytes sums the size of all objects in the bucket.
 // This iterates all objects and may be slow on large buckets.
 // For production, prefer S3 Storage Lens metrics or a cached counter.
@@ -178,6 +213,65 @@ func (s *S3BlobStore) UsedBytes(ctx context.Context) (int64, error) {
 		}
 	}
 	return total, nil
+}
+
+// PresignGetURL returns a time-limited URL that allows direct GET of the blob from S3.
+func (s *S3BlobStore) PresignGetURL(ctx context.Context, key string, ttl time.Duration) (string, error) {
+	pc := s3.NewPresignClient(s.client)
+	req, err := pc.PresignGetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(s.objectKey(key)),
+	}, s3.WithPresignExpires(ttl))
+	if err != nil {
+		return "", fmt.Errorf("s3 presign get %s: %w", key, err)
+	}
+	return req.URL, nil
+}
+
+// PresignPutURL returns a time-limited URL that allows direct PUT of a blob to S3.
+func (s *S3BlobStore) PresignPutURL(ctx context.Context, key string, ttl time.Duration) (string, error) {
+	pc := s3.NewPresignClient(s.client)
+	req, err := pc.PresignPutObject(ctx, &s3.PutObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(s.objectKey(key)),
+	}, s3.WithPresignExpires(ttl))
+	if err != nil {
+		return "", fmt.Errorf("s3 presign put %s: %w", key, err)
+	}
+	return req.URL, nil
+}
+
+// ConfigureLifecycle sets a bucket lifecycle rule that expires objects after expirationDays.
+// Pass 0 to remove all lifecycle rules.
+func (s *S3BlobStore) ConfigureLifecycle(ctx context.Context, expirationDays int32) error {
+	if expirationDays == 0 {
+		_, err := s.client.DeleteBucketLifecycle(ctx, &s3.DeleteBucketLifecycleInput{
+			Bucket: aws.String(s.bucket),
+		})
+		if err != nil && !isNotFound(err) {
+			return fmt.Errorf("s3 delete lifecycle: %w", err)
+		}
+		return nil
+	}
+	_, err := s.client.PutBucketLifecycleConfiguration(ctx, &s3.PutBucketLifecycleConfigurationInput{
+		Bucket: aws.String(s.bucket),
+		LifecycleConfiguration: &types.BucketLifecycleConfiguration{
+			Rules: []types.LifecycleRule{
+				{
+					ID:     aws.String("nexspense-blob-expiration"),
+					Status: types.ExpirationStatusEnabled,
+					Filter: &types.LifecycleRuleFilter{Prefix: aws.String("")},
+					Expiration: &types.LifecycleExpiration{
+						Days: aws.Int32(expirationDays),
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("s3 put lifecycle: %w", err)
+	}
+	return nil
 }
 
 // isNotFound returns true when err represents a 404/NoSuchKey from S3.

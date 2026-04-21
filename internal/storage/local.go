@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // LocalBlobStore stores blobs as files under a base directory.
@@ -91,6 +92,26 @@ func (s *LocalBlobStore) Size(_ context.Context, key string) (int64, error) {
 		return 0, err
 	}
 	return info.Size(), nil
+}
+
+func (s *LocalBlobStore) ListKeys(_ context.Context) ([]string, error) {
+	var keys []string
+	err := filepath.WalkDir(s.basePath, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		// Strip basePath prefix and the two shard dirs to recover the raw key.
+		rel, _ := filepath.Rel(s.basePath, path)
+		// rel = "ab/cd/abcdef..." → key = "abcdef..."
+		parts := strings.SplitN(filepath.ToSlash(rel), "/", 3)
+		if len(parts) == 3 {
+			keys = append(keys, parts[2])
+		} else {
+			keys = append(keys, rel)
+		}
+		return nil
+	})
+	return keys, err
 }
 
 func (s *LocalBlobStore) UsedBytes(_ context.Context) (int64, error) {

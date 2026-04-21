@@ -115,7 +115,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 	userH      := handlers.NewUserHandler(userSvc)
 	blobH      := handlers.NewBlobStoreHandler(blobRepo)
 	componentH := handlers.NewComponentHandler(componentRepo, assetRepo, repoRepo, cfg.HTTP.BaseURL).WithRBAC(rbacSvc)
-	browseH    := handlers.NewBrowseHandler(repoRepo, componentRepo, assetRepo, rbacSvc)
+	browseH    := handlers.NewBrowseHandler(repoRepo, componentRepo, assetRepo, localBlob, rbacSvc)
 	cleanupH   := handlers.NewCleanupHandler(cleanupRepo, repoRepo, cleanupSvc)
 	auditH     := handlers.NewAuditHandler(auditRepo)
 	scanSvc    := service.NewScanService(componentRepo, cfg.HTTP.BaseURL)
@@ -175,6 +175,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 		authed.GET("/api/v1/browse/repositories/:name/docker-tree", browseH.DockerTree)
 		authed.GET("/api/v1/browse/repositories/:name/path-tree", browseH.PathTree)
 		authed.DELETE("/api/v1/browse/repositories/:name/path", browseH.DeleteByPath)
+		authed.DELETE("/api/v1/browse/repositories/:name/docker-tag", browseH.DeleteDockerTag)
 
 		// ── Components & Assets (read + search) ───────────────
 		authed.GET("/service/rest/v1/components", componentH.List)

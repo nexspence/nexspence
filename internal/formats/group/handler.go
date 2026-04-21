@@ -1,8 +1,9 @@
 // Package group implements the "group" repository type.
 //
 // A group repository aggregates multiple hosted/proxy repositories under one URL.
-// Requests are fanned out to member repositories in order; the first successful
-// response (2xx) is returned to the client.
+// GET/HEAD are delegated to each member's format handler in order; the first
+// non-404 response is returned (so hosted, proxy cache-miss upstream fetch, and
+// generated metadata all work).
 //
 // Members are stored in repo.FormatConfig["member_names"] as []interface{} (JSON array of strings).
 //
@@ -12,12 +13,13 @@ package group
 
 import (
 	"fmt"
+	"io"
 	"net/http"
+	"net/http/httptest"
 
 	"github.com/gin-gonic/gin"
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/formats"
-	"github.com/nexspence-oss/nexspence/internal/formats/base"
 )
 
 // Handler implements the group repository type.
@@ -58,40 +60,57 @@ func (h *Handler) serveGet(c *gin.Context) {
 		return
 	}
 
-	members := memberNames(repoDef)
+	members := domain.GroupMemberNames(repoDef)
 	if len(members) == 0 {
 		c.JSON(http.StatusNotFound, gin.H{"error": "group repository has no members configured"})
 		return
 	}
 
-	// Fan-out: try each member in order, return first hit.
+	// Fan-out: delegate to each member's format handler until one returns not-404.
 	for _, memberName := range members {
-		rc, asset, err := base.FetchArtifact(ctx, h.deps, memberName, filePath)
-		if err != nil {
-			continue // not in this member, try next
+		memberRepo, err := h.deps.Repos.Get(ctx, memberName)
+		if err != nil || memberRepo == nil || !memberRepo.Online {
+			continue
 		}
-		defer rc.Close()
+		if memberRepo.Type == domain.TypeGroup {
+			continue
+		}
+		if string(memberRepo.Format) != string(repoDef.Format) {
+			continue
+		}
+		handler, ok := h.formatRegistry[string(memberRepo.Format)]
+		if !ok {
+			continue
+		}
 
-		// Forward checksum headers if available.
-		if asset.SHA256 != "" {
-			c.Header("X-Checksum-SHA256", asset.SHA256)
-			c.Header("ETag", `"`+asset.SHA256+`"`)
+		rec := httptest.NewRecorder()
+		sub, _ := gin.CreateTestContext(rec)
+		sub.Request = c.Request.Clone(ctx)
+		sub.Params = gin.Params{
+			{Key: "repoName", Value: memberName},
+			{Key: "path", Value: filePath},
 		}
-		if asset.SHA1 != "" {
-			c.Header("X-Checksum-SHA1", asset.SHA1)
-		}
-		if asset.MD5 != "" {
-			c.Header("X-Checksum-MD5", asset.MD5)
-		}
-		c.Header("X-Nexspence-Source", memberName)
 
-		if c.Request.Method == http.MethodHead {
-			c.Header("Content-Length", fmt.Sprintf("%d", asset.SizeBytes))
-			c.Header("Content-Type", asset.ContentType)
-			c.Status(http.StatusOK)
-			return
+		handler.ServeHTTP(sub)
+
+		code := rec.Code
+		if code == 0 {
+			code = http.StatusOK
 		}
-		c.DataFromReader(http.StatusOK, asset.SizeBytes, asset.ContentType, rc, nil)
+		if code == http.StatusNotFound {
+			continue
+		}
+
+		for k, vals := range rec.Header() {
+			for _, v := range vals {
+				c.Writer.Header().Add(k, v)
+			}
+		}
+		c.Writer.Header().Set("X-Nexspence-Source", memberName)
+		c.Status(code)
+		if c.Request.Method != http.MethodHead && rec.Body.Len() > 0 {
+			_, _ = io.Copy(c.Writer, rec.Body)
+		}
 		return
 	}
 
@@ -100,27 +119,3 @@ func (h *Handler) serveGet(c *gin.Context) {
 	})
 }
 
-// memberNames extracts the ordered member repository names from the repository's
-// FormatConfig["member_names"] field (JSON array of strings).
-func memberNames(repo *domain.Repository) []string {
-	if repo.FormatConfig == nil {
-		return nil
-	}
-	raw, ok := repo.FormatConfig["member_names"]
-	if !ok {
-		return nil
-	}
-	switch v := raw.(type) {
-	case []string:
-		return v
-	case []interface{}:
-		result := make([]string, 0, len(v))
-		for _, item := range v {
-			if s, ok := item.(string); ok && s != "" {
-				result = append(result, s)
-			}
-		}
-		return result
-	}
-	return nil
-}

@@ -1,5 +1,5 @@
 -- ============================================================
--- Nexor — PostgreSQL 16 Database Schema
+-- Nexspence — PostgreSQL 16 Database Schema
 -- Migration tool: goose
 -- ============================================================
 
@@ -277,7 +277,7 @@ CREATE TABLE cleanup_policies (
     --  "asset_regex": null, "retain_versions": null,
     --  "release_type": "releases|prereleases|*"}
     criteria        JSONB NOT NULL DEFAULT '{}',
-    -- Cron expression for automatic runs (Nexor extension)
+    -- Cron expression for automatic runs (Nexspence extension)
     -- Nexus only runs nightly; we allow custom schedule
     schedule_cron   TEXT NOT NULL DEFAULT '0 2 * * *',
     enabled         BOOLEAN NOT NULL DEFAULT TRUE,
@@ -378,7 +378,7 @@ CREATE TABLE ldap_servers (
     group_filter    TEXT NOT NULL DEFAULT '(objectClass=groupOfUniqueNames)',
     group_member_attr TEXT NOT NULL DEFAULT 'uniqueMember',
     group_name_attr TEXT NOT NULL DEFAULT 'cn',
-    -- Nexor maps LDAP groups → Nexor roles by name
+    -- Nexspence maps LDAP groups → Nexspence roles by name
     connection_timeout_sec INT NOT NULL DEFAULT 30,
     retry_delay_sec INT NOT NULL DEFAULT 300,
     max_retries     INT NOT NULL DEFAULT 3,
@@ -433,7 +433,7 @@ INSERT INTO system_config (key, value, description) VALUES
 
 -- ============================================================
 -- MIGRATION JOBS
--- Track Nexus → Nexor migration progress
+-- Track Nexus → Nexspence migration progress
 -- ============================================================
 CREATE TABLE migration_jobs (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -7,13 +7,29 @@ import (
 	"crypto/sha1"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
+	"net/http"
+	"strings"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/formats"
 	"github.com/nexspence-oss/nexspence/internal/metrics"
+	"github.com/nexspence-oss/nexspence/internal/requestctx"
 )
+
+// ErrQuotaExceeded is returned by StoreArtifact when a blob store or repository quota would be exceeded.
+var ErrQuotaExceeded = errors.New("storage quota exceeded")
+
+// HTTPStatusForError maps known storage errors to appropriate HTTP status codes.
+// Returns 507 Insufficient Storage for quota errors, 500 for everything else.
+func HTTPStatusForError(err error) int {
+	if errors.Is(err, ErrQuotaExceeded) {
+		return http.StatusInsufficientStorage
+	}
+	return http.StatusInternalServerError
+}
 
 // StoreResult holds checksums and metadata after a successful store.
 type StoreResult struct {
@@ -41,16 +57,10 @@ func StoreArtifact(ctx context.Context, d formats.Deps,
 		return nil, fmt.Errorf("repository %q is offline", repoName)
 	}
 
-	// ── Quota check ───────────────────────────────────────────
-	if repo.QuotaBytes != nil && *repo.QuotaBytes > 0 && declaredSize > 0 {
-		bsName := resolveBlobStore(ctx, d, repo)
-		if bs, err2 := d.Blobs.Get(ctx, bsName); err2 == nil && bs != nil {
-			if bs.QuotaBytes != nil && *bs.QuotaBytes > 0 {
-				if bs.UsedBytes+declaredSize > *bs.QuotaBytes {
-					return nil, fmt.Errorf("storage quota exceeded for blob store %q (%d / %d bytes)",
-						bsName, bs.UsedBytes, *bs.QuotaBytes)
-				}
-			}
+	// Early quota reject when declared size is known.
+	if declaredSize > 0 {
+		if err := checkQuota(ctx, d, repo, declaredSize); err != nil {
+			return nil, err
 		}
 	}
 
@@ -83,13 +93,37 @@ func StoreArtifact(ctx context.Context, d formats.Deps,
 		}
 	}
 
+	// Post-write quota check covers streaming uploads where size wasn't declared.
+	if size > 0 && declaredSize <= 0 {
+		if err := checkQuota(ctx, d, repo, size); err != nil {
+			_ = d.BlobStore.Delete(ctx, blobKey)
+			return nil, err
+		}
+	}
+
 	asset, err := RegisterStoredBlob(ctx, d, repo, filePath, contentType, coords, blobKey, sha256sum, sha1sum, md5sum, size)
 	if err != nil {
 		return nil, err
 	}
 
-	metrics.ArtifactsStored.Add(1)
-	metrics.BytesStored.Add(size)
+	if d.Webhooks != nil {
+		d.Webhooks.Dispatch(domain.WebhookPayload{
+			Event:      domain.EventArtifactPublished,
+			Timestamp:  asset.CreatedAt,
+			Repository: repoName,
+			Component: map[string]any{
+				"group":   coords.Group,
+				"name":    coords.Name,
+				"version": coords.Version,
+				"format":  string(repo.Format),
+			},
+			Asset: map[string]any{
+				"path":        filePath,
+				"contentType": contentType,
+				"size":        size,
+			},
+		})
+	}
 
 	return &StoreResult{
 		Asset:  asset,
@@ -107,13 +141,9 @@ func RegisterStoredBlob(ctx context.Context, d formats.Deps, repo *domain.Reposi
 	sha256sum, sha1sum, md5sum string,
 	size int64,
 ) (*domain.Asset, error) {
-	blobStoreName := resolveBlobStore(ctx, d, repo)
-
-	// Resolve UUID for the assets.blob_store_id FK (column type uuid).
-	// resolveBlobStore returns a name; look up the actual UUID here.
-	blobStoreID := ""
-	if bs, err := d.Blobs.Get(ctx, blobStoreName); err == nil && bs != nil {
-		blobStoreID = bs.ID
+	blobStoreID, blobStoreName, err := resolveBlobStoreRef(ctx, d, repo)
+	if err != nil {
+		return nil, err
 	}
 
 	version := coords.Version
@@ -122,6 +152,7 @@ func RegisterStoredBlob(ctx context.Context, d formats.Deps, repo *domain.Reposi
 	}
 	comp := &domain.Component{
 		RepositoryID: repo.ID,
+		Repository:   repo.Name,
 		Format:       string(repo.Format),
 		Group:        coords.Group,
 		Name:         coords.Name,
@@ -144,11 +175,16 @@ func RegisterStoredBlob(ctx context.Context, d formats.Deps, repo *domain.Reposi
 		SHA1:         sha1sum,
 		MD5:          md5sum,
 	}
+	if uid := requestctx.UserID(ctx); uid != "" {
+		asset.UploaderID = uid
+	}
 	if err := d.Assets.Create(ctx, asset); err != nil {
 		return nil, fmt.Errorf("upsert asset: %w", err)
 	}
 
 	_ = d.Blobs.UpdateUsedBytes(ctx, blobStoreName, size)
+	metrics.ArtifactsStored.Add(1)
+	metrics.BytesStored.Add(size)
 	return asset, nil
 }
 
@@ -169,7 +205,10 @@ func FetchArtifact(ctx context.Context, d formats.Deps, repoName, filePath strin
 		return nil, nil, fmt.Errorf("blob missing: %w", err)
 	}
 
-	go func() { _ = d.Assets.IncrementDownload(ctx, asset.ID) }()
+	go func(assetID string) {
+		_ = d.Assets.IncrementDownload(context.Background(), assetID)
+	}(asset.ID)
+	metrics.DownloadsTotal.Add(1)
 	return rc, asset, nil
 }
 
@@ -183,7 +222,23 @@ func DeleteArtifact(ctx context.Context, d formats.Deps, repoName, filePath stri
 		return nil // idempotent
 	}
 	_ = d.BlobStore.Delete(ctx, asset.BlobKey)
-	return d.Assets.Delete(ctx, asset.ID)
+	if err := d.Assets.Delete(ctx, asset.ID); err != nil {
+		return err
+	}
+	metrics.ArtifactsDeleted.Add(1)
+	if d.Webhooks != nil {
+		d.Webhooks.Dispatch(domain.WebhookPayload{
+			Event:      domain.EventArtifactDeleted,
+			Timestamp:  asset.LastModified,
+			Repository: repoName,
+			Asset: map[string]any{
+				"path":        filePath,
+				"contentType": asset.ContentType,
+				"size":        asset.SizeBytes,
+			},
+		})
+	}
+	return nil
 }
 
 // BlobKey returns a deterministic content-addressed storage key for a path.
@@ -204,11 +259,77 @@ type Coords struct {
 	Version string // semantic version
 }
 
-func resolveBlobStore(ctx context.Context, d formats.Deps, repo *domain.Repository) string {
-	if repo.BlobStoreID != nil {
-		if bs, err := d.Blobs.Get(ctx, *repo.BlobStoreID); err == nil && bs != nil {
-			return bs.Name
+// checkQuota verifies that writing `size` bytes won't exceed either the blob store
+// quota or the repository-level quota. Returns ErrQuotaExceeded if either is breached.
+func checkQuota(ctx context.Context, d formats.Deps, repo *domain.Repository, size int64) error {
+	bs, err := resolveBlobStoreObj(ctx, d, repo)
+	if err != nil {
+		return err
+	}
+	if bs.QuotaBytes != nil && bs.UsedBytes+size > *bs.QuotaBytes {
+		return fmt.Errorf("%w: blob store %q usage %d + %d > limit %d",
+			ErrQuotaExceeded, bs.Name, bs.UsedBytes, size, *bs.QuotaBytes)
+	}
+	if repo.QuotaBytes != nil {
+		used, err := d.Assets.SumSizeByRepo(ctx, repo.Name)
+		if err != nil {
+			return fmt.Errorf("quota check: %w", err)
+		}
+		if used+size > *repo.QuotaBytes {
+			return fmt.Errorf("%w: repository %q usage %d + %d > limit %d",
+				ErrQuotaExceeded, repo.Name, used, size, *repo.QuotaBytes)
 		}
 	}
-	return "default"
+	return nil
+}
+
+// resolveBlobStoreObj returns the full BlobStore record for a repository.
+func resolveBlobStoreObj(ctx context.Context, d formats.Deps, repo *domain.Repository) (*domain.BlobStore, error) {
+	if repo.BlobStoreID != nil {
+		ref := strings.TrimSpace(*repo.BlobStoreID)
+		if ref != "" {
+			bs, err := d.Blobs.GetByID(ctx, ref)
+			if err != nil {
+				return nil, fmt.Errorf("blob store: %w", err)
+			}
+			if bs != nil {
+				return bs, nil
+			}
+			return nil, fmt.Errorf("blob store id %q not found", ref)
+		}
+	}
+	bs, err := d.Blobs.Get(ctx, "default")
+	if err != nil {
+		return nil, fmt.Errorf("blob store: %w", err)
+	}
+	if bs == nil {
+		return nil, fmt.Errorf("default blob store not found")
+	}
+	return bs, nil
+}
+
+// resolveBlobStoreRef returns the blob store UUID for assets.blob_store_id (FK)
+// and the store name for BlobStoreRepo.UpdateUsedBytes (keyed by name).
+func resolveBlobStoreRef(ctx context.Context, d formats.Deps, repo *domain.Repository) (id string, name string, err error) {
+	if repo.BlobStoreID != nil {
+		ref := strings.TrimSpace(*repo.BlobStoreID)
+		if ref != "" {
+			bs, err := d.Blobs.GetByID(ctx, ref)
+			if err != nil {
+				return "", "", fmt.Errorf("blob store: %w", err)
+			}
+			if bs != nil {
+				return bs.ID, bs.Name, nil
+			}
+			return "", "", fmt.Errorf("blob store id %q not found", ref)
+		}
+	}
+	bs, err := d.Blobs.Get(ctx, "default")
+	if err != nil {
+		return "", "", fmt.Errorf("blob store: %w", err)
+	}
+	if bs == nil {
+		return "", "", fmt.Errorf("default blob store not found (seed blob_stores or assign repository.blobStoreId)")
+	}
+	return bs.ID, bs.Name, nil
 }

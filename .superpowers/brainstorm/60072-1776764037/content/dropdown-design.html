@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Select Component — Design Mockup</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #070b14;
+    color: #e5e7eb;
+    font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+    padding: 32px;
+    min-height: 100vh;
+  }
+
+  h1 { font-size: 20px; font-weight: 700; color: #dbeafe; margin-bottom: 6px; }
+  .subtitle { font-size: 13px; color: rgba(229,231,235,0.5); margin-bottom: 36px; }
+
+  .section-title {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgba(229,231,235,0.4);
+    margin-bottom: 16px;
+  }
+
+  .section { margin-bottom: 40px; }
+
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; }
+  .cols3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+
+  .panel {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 12px;
+    padding: 24px;
+  }
+
+  .panel-label {
+    font-size: 12px;
+    color: rgba(229,231,235,0.45);
+    margin-bottom: 12px;
+  }
+
+  /* ─── SELECT COMPONENT STYLES ─── */
+  .sel-wrap { position: relative; }
+
+  .sel-trigger {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 10px 14px;
+    background: rgba(15,20,40,0.8);
+    border: 1.5px solid rgba(255,255,255,0.1);
+    border-radius: 8px;
+    color: #e5e7eb;
+    font-size: 13px;
+    cursor: pointer;
+    outline: none;
+    text-align: left;
+    transition: border-color 0.15s, background 0.15s;
+    user-select: none;
+  }
+
+  .sel-trigger:hover {
+    border-color: rgba(59,130,246,0.35);
+    background: rgba(20,30,60,0.85);
+  }
+
+  .sel-trigger.open {
+    border-color: #3b82f6;
+    border-radius: 8px 8px 0 0;
+    background: rgba(20,35,70,0.9);
+    box-shadow: 0 0 0 3px rgba(59,130,246,0.12);
+  }
+
+  .sel-trigger-text { flex: 1; }
+  .sel-trigger-placeholder { color: rgba(229,231,235,0.35); }
+
+  .chevron {
+    width: 16px; height: 16px;
+    flex-shrink: 0;
+    color: rgba(229,231,235,0.4);
+    transition: transform 0.2s;
+  }
+  .chevron.up { transform: rotate(180deg); }
+
+  .sel-dropdown {
+    position: absolute;
+    top: 100%; left: 0; right: 0;
+    background: rgba(8,13,28,0.98);
+    border: 1.5px solid #3b82f6;
+    border-top: none;
+    border-radius: 0 0 8px 8px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.6);
+    z-index: 200;
+    max-height: 260px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: #3b82f6 rgba(255,255,255,0.03);
+  }
+
+  .sel-dropdown::-webkit-scrollbar { width: 6px; }
+  .sel-dropdown::-webkit-scrollbar-track { background: rgba(255,255,255,0.03); }
+  .sel-dropdown::-webkit-scrollbar-thumb { background: linear-gradient(#3b82f6, #1d4ed8); border-radius: 3px; }
+
+  .sel-option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: background 0.1s;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+  }
+
+  .sel-option:last-child { border-bottom: none; }
+
+  .sel-option:hover {
+    background: rgba(59,130,246,0.1);
+  }
+
+  .sel-option.selected {
+    background: rgba(59,130,246,0.15);
+    color: #93c5fd;
+  }
+
+  /* Badge for format in Browse */
+  .badge {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 4px;
+    flex-shrink: 0;
+  }
+
+  /* Format badge colors */
+  .badge-docker { background: rgba(14,165,233,0.18); color: #38bdf8; }
+  .badge-maven  { background: rgba(239,68,68,0.15);  color: #f87171; }
+  .badge-npm    { background: rgba(202,138,4,0.18);   color: #facc15; }
+  .badge-pypi   { background: rgba(59,130,246,0.18);  color: #60a5fa; }
+  .badge-helm   { background: rgba(139,92,246,0.18);  color: #a78bfa; }
+  .badge-raw    { background: rgba(107,114,128,0.25); color: #9ca3af; }
+
+  /* Type badges */
+  .tag-hosted { background: rgba(34,197,94,0.12); color: #4ade80; font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 4px; }
+  .tag-proxy  { background: rgba(59,130,246,0.12); color: #60a5fa; font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 4px; }
+  .tag-group  { background: rgba(168,85,247,0.12); color: #c084fc; font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 4px; }
+
+  .spacer { height: 24px; }
+
+  .note {
+    font-size: 12px;
+    color: rgba(229,231,235,0.4);
+    padding: 8px 12px;
+    background: rgba(59,130,246,0.06);
+    border-left: 2px solid rgba(59,130,246,0.4);
+    border-radius: 0 6px 6px 0;
+    margin-top: 20px;
+  }
+</style>
+</head>
+<body>
+
+<h1>Select Component — Дизайн</h1>
+<p class="subtitle">Единый кастомный дропдаун для всего приложения. Эталон: example_drop_down.jpg</p>
+
+<!-- ═══════════════ ROW 1: States ═══════════════ -->
+<div class="section">
+  <div class="section-title">Состояния компонента</div>
+  <div class="cols3">
+
+    <!-- Closed -->
+    <div class="panel">
+      <div class="panel-label">Closed (default)</div>
+      <div class="sel-wrap">
+        <div class="sel-trigger">
+          <span class="sel-trigger-text sel-trigger-placeholder">— Select repository —</span>
+          <svg class="chevron" viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"/>
+          </svg>
+        </div>
+      </div>
+    </div>
+
+    <!-- Open -->
+    <div class="panel">
+      <div class="panel-label">Open (with selection)</div>
+      <div class="sel-wrap" style="position:relative">
+        <div class="sel-trigger open">
+          <span class="sel-trigger-text">my-docker-repo</span>
+          <span class="badge badge-docker">docker</span>
+          <svg class="chevron up" viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"/>
+          </svg>
+        </div>
+        <div class="sel-dropdown" style="position:relative; border-top: 1.5px solid #3b82f6; border-radius: 0 0 8px 8px;">
+          <div class="sel-option" style="border-top:none">
+            <span style="flex:1">central-maven</span>
+            <span class="badge badge-maven">maven2</span>
+            <span class="tag-hosted">hosted</span>
+          </div>
+          <div class="sel-option selected">
+            <span style="flex:1">my-docker-repo</span>
+            <span class="badge badge-docker">docker</span>
+            <span class="tag-hosted">hosted</span>
+          </div>
+          <div class="sel-option">
+            <span style="flex:1">npm-proxy</span>
+            <span class="badge badge-npm">npm</span>
+            <span class="tag-proxy">proxy</span>
+          </div>
+          <div class="sel-option">
+            <span style="flex:1">pypi-hosted</span>
+            <span class="badge badge-pypi">pypi</span>
+            <span class="tag-hosted">hosted</span>
+          </div>
+          <div class="sel-option">
+            <span style="flex:1">helm-charts</span>
+            <span class="badge badge-helm">helm</span>
+            <span class="tag-hosted">hosted</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Selected + closed -->
+    <div class="panel">
+      <div class="panel-label">Closed (value selected)</div>
+      <div class="sel-wrap">
+        <div class="sel-trigger">
+          <span class="sel-trigger-text">my-docker-repo</span>
+          <span class="badge badge-docker">docker</span>
+          <svg class="chevron" viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"/>
+          </svg>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ═══════════════ ROW 2: Use cases ═══════════════ -->
+<div class="section">
+  <div class="section-title">Применение в приложении</div>
+  <div class="cols">
+
+    <!-- Simple select (form) -->
+    <div class="panel">
+      <div class="panel-label">В форме — простые опции (без бейджей)</div>
+      <p style="font-size:12px; color:rgba(229,231,235,0.4); margin-bottom:16px">
+        Используется в: CleanupPage (Format), AuditPage (Domain, Action), UsersPage (Status), SecurityPage (Content Selector)
+      </p>
+
+      <div style="display:flex; flex-direction:column; gap:14px">
+        <div>
+          <div style="font-size:12px; color:rgba(229,231,235,0.5); margin-bottom:5px">Format</div>
+          <div class="sel-wrap" style="position:relative">
+            <div class="sel-trigger open">
+              <span class="sel-trigger-text">maven2</span>
+              <svg class="chevron up" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"/>
+              </svg>
+            </div>
+            <div class="sel-dropdown" style="position:relative; border-top: 1.5px solid #3b82f6; border-radius: 0 0 8px 8px;">
+              <div class="sel-option">All formats (*)</div>
+              <div class="sel-option selected">maven2</div>
+              <div class="sel-option">npm</div>
+              <div class="sel-option">docker</div>
+              <div class="sel-option">pypi</div>
+              <div class="sel-option">go</div>
+              <div class="sel-option">helm</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Filter bar selects -->
+    <div class="panel">
+      <div class="panel-label">В фильтр-баре страниц (компактный вид)</div>
+      <p style="font-size:12px; color:rgba(229,231,235,0.4); margin-bottom:16px">
+        Используется в: RepositoriesPage (Format filter), SearchPage (Format)
+      </p>
+
+      <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap">
+        <div class="sel-wrap" style="min-width:160px; position:relative">
+          <div class="sel-trigger">
+            <span class="sel-trigger-text" style="color:rgba(229,231,235,0.4)">All formats</span>
+            <svg class="chevron" viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"/>
+            </svg>
+          </div>
+        </div>
+        <div class="sel-wrap" style="min-width:140px; position:relative">
+          <div class="sel-trigger">
+            <span class="sel-trigger-text" style="color:rgba(229,231,235,0.4)">All types</span>
+            <svg class="chevron" viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"/>
+            </svg>
+          </div>
+        </div>
+        <input style="
+          flex:1; min-width:160px;
+          padding: 10px 14px;
+          background: rgba(15,20,40,0.8);
+          border: 1.5px solid rgba(255,255,255,0.1);
+          border-radius: 8px;
+          color: #e5e7eb;
+          font-size: 13px;
+          outline: none;
+        " placeholder="Search repositories…" />
+      </div>
+
+      <div class="spacer"></div>
+
+      <div style="position:relative">
+        <div class="sel-trigger open" style="max-width:200px">
+          <span class="sel-trigger-text" style="color:rgba(229,231,235,0.4)">All formats</span>
+          <svg class="chevron up" viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"/>
+          </svg>
+        </div>
+        <div class="sel-dropdown" style="position:absolute; max-width:200px; border-top: 1.5px solid #3b82f6; border-radius: 0 0 8px 8px;">
+          <div class="sel-option selected">All formats</div>
+          <div class="sel-option">maven2</div>
+          <div class="sel-option">npm</div>
+          <div class="sel-option">docker</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ═══════════════ ROW 3: Browse (with badges) ═══════════════ -->
+<div class="section">
+  <div class="section-title">Browse page — дропдаун с format + type бейджами</div>
+  <div class="cols">
+
+    <div class="panel">
+      <div class="panel-label">Полный вид с бейджами (BrowsePage)</div>
+      <div style="position:relative">
+        <div class="sel-trigger open">
+          <span class="sel-trigger-text">my-docker-repo</span>
+          <span class="badge badge-docker">docker</span>
+          <span class="tag-hosted">hosted</span>
+          <svg class="chevron up" viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"/>
+          </svg>
+        </div>
+        <div class="sel-dropdown" style="position:absolute; border-top: 1.5px solid #3b82f6; border-radius: 0 0 8px 8px;">
+          <div class="sel-option">
+            <span style="flex:1">central-maven</span>
+            <span class="badge badge-maven">maven2</span>
+            <span class="tag-proxy">proxy</span>
+          </div>
+          <div class="sel-option selected">
+            <span style="flex:1">my-docker-repo</span>
+            <span class="badge badge-docker">docker</span>
+            <span class="tag-hosted">hosted</span>
+          </div>
+          <div class="sel-option">
+            <span style="flex:1">npm-group</span>
+            <span class="badge badge-npm">npm</span>
+            <span class="tag-group">group</span>
+          </div>
+          <div class="sel-option">
+            <span style="flex:1">pypi-hosted</span>
+            <span class="badge badge-pypi">pypi</span>
+            <span class="tag-hosted">hosted</span>
+          </div>
+          <div class="sel-option">
+            <span style="flex:1">helm-charts</span>
+            <span class="badge badge-helm">helm</span>
+            <span class="tag-hosted">hosted</span>
+          </div>
+          <div class="sel-option">
+            <span style="flex:1">raw-files</span>
+            <span class="badge badge-raw">raw</span>
+            <span class="tag-hosted">hosted</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-label">API компонента</div>
+      <div style="font-family: 'Courier New', monospace; font-size: 12px; color: #93c5fd; background: rgba(0,0,50,0.4); border-radius: 8px; padding: 16px; line-height: 1.7;">
+        <span style="color:#a78bfa">&lt;Select</span><br>
+        &nbsp;&nbsp;<span style="color:#fde68a">options</span>=<span style="color:#6ee7b7">{[{value, label, badge?, tag?}]}</span><br>
+        &nbsp;&nbsp;<span style="color:#fde68a">value</span>=<span style="color:#6ee7b7">{string}</span><br>
+        &nbsp;&nbsp;<span style="color:#fde68a">onChange</span>=<span style="color:#6ee7b7">{(v) =&gt; void}</span><br>
+        &nbsp;&nbsp;<span style="color:#fde68a">placeholder</span>=<span style="color:#6ee7b7">"— Select —"</span><br>
+        &nbsp;&nbsp;<span style="color:#fde68a">disabled</span>=<span style="color:#6ee7b7">{false}</span><br>
+        <span style="color:#a78bfa">/&gt;</span>
+        <br><br>
+        <span style="color:rgba(229,231,235,0.4)">// badge и tag — опциональные слоты</span><br>
+        <span style="color:rgba(229,231,235,0.4)">// рендерятся как JSX рядом с label</span>
+      </div>
+      <div class="note">
+        Один файл: <strong>components/Select.tsx</strong><br>
+        Используется везде. BrowsePage передаёт badge+tag через options[].badge / options[].tag.
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// Make dropdowns in states section interactive for demo
+document.querySelectorAll('.sel-trigger').forEach(t => {
+  t.addEventListener('click', () => {
+    // visual demo only
+  });
+});
+</script>
+
+</body>
+</html>

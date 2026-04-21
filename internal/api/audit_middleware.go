@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -53,7 +54,7 @@ func AuditMiddleware(auditRepo repository.AuditRepo) gin.HandlerFunc {
 			EntityName: entityName,
 			Result:     result,
 		}
-		go func() { _ = auditRepo.Write(c.Request.Context(), e) }()
+		go func() { _ = auditRepo.Write(context.Background(), e) }()
 	}
 }
 
@@ -75,6 +76,11 @@ func isAuditablePath(path string) bool {
 }
 
 func classifyPath(method, path string, c *gin.Context) (domainStr, action, entityType, entityName string) {
+	// Login is classified specially: action=LOGIN, entityName=username attempted.
+	if strings.HasPrefix(path, "/api/v1/login") {
+		return "SECURITY", "LOGIN", "USER", c.GetString("username")
+	}
+
 	switch {
 	case strings.HasPrefix(path, "/service/rest/v1/security/users"):
 		domainStr = "SECURITY"
@@ -92,9 +98,6 @@ func classifyPath(method, path string, c *gin.Context) (domainStr, action, entit
 		domainStr = "CLEANUP"
 		entityType = "CLEANUP_POLICY"
 		entityName = c.Param("id")
-	case strings.HasPrefix(path, "/api/v1/login"):
-		domainStr = "SECURITY"
-		entityType = "USER"
 	case strings.HasPrefix(path, "/repository/"):
 		domainStr = "REPOSITORY"
 		entityType = "ARTIFACT"

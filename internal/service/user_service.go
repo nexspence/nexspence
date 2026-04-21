@@ -3,33 +3,65 @@ package service
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/nexspence-oss/nexspence/internal/auth"
 	"github.com/nexspence-oss/nexspence/internal/domain"
+	"github.com/nexspence-oss/nexspence/internal/logger"
 	"github.com/nexspence-oss/nexspence/internal/repository"
 )
 
 // UserService handles user management and authentication.
 type UserService struct {
-	users repository.UserRepo
-	roles repository.RoleRepo
-	auth  *auth.Service
+	users          repository.UserRepo
+	roles          repository.RoleRepo
+	auth           *auth.Service
+	ldap           auth.LDAPAuthenticator // nil when LDAP is disabled
+	ldapAdminGroup string                 // LDAP group name that maps to nx-admin role
+	log            logger.Logger
 }
 
 func NewUserService(
 	users repository.UserRepo,
 	roles repository.RoleRepo,
 	auth *auth.Service,
+	log logger.Logger,
 ) *UserService {
-	return &UserService{users: users, roles: roles, auth: auth}
+	return &UserService{users: users, roles: roles, auth: auth, log: log}
+}
+
+// WithLDAP attaches an LDAP authenticator. adminGroup, when non-empty, grants the
+// nx-admin role to any LDAP user whose groups include that name.
+// Returns the same service for chaining.
+func (s *UserService) WithLDAP(l auth.LDAPAuthenticator, adminGroup string) *UserService {
+	s.ldap = l
+	s.ldapAdminGroup = adminGroup
+	return s
 }
 
 // Login validates credentials and returns a JWT token.
+// If LDAP is enabled, users with source=ldap (or unknown users) are authenticated
+// against the LDAP server; on success their local record is created/updated.
 func (s *UserService) Login(ctx context.Context, username, password string) (string, *domain.User, error) {
 	u, err := s.users.Get(ctx, username)
 	if err != nil {
 		return "", nil, err
 	}
+
+	// Route to LDAP when: user is unknown and LDAP is on, or user has source=ldap.
+	if s.ldap != nil && (u == nil || u.Source == domain.UserSourceLDAP) {
+		// Normalize username to lowercase for LDAP to prevent duplicate rows
+		// caused by different capitalizations (e.g. "svcDevOps" vs "svcdevops").
+		normalized := strings.ToLower(username)
+		if u == nil && normalized != username {
+			u, err = s.users.Get(ctx, normalized)
+			if err != nil {
+				return "", nil, err
+			}
+		}
+		return s.loginLDAP(ctx, normalized, password, u)
+	}
+
 	if u == nil {
 		return "", nil, fmt.Errorf("%w: user %q", ErrNotFound, username)
 	}
@@ -44,9 +76,128 @@ func (s *UserService) Login(ctx context.Context, username, password string) (str
 	if err != nil {
 		return "", nil, err
 	}
-
 	_ = s.users.UpdateLastLogin(ctx, username)
 	return token, u, nil
+}
+
+// loginLDAP authenticates via LDAP and upserts the local user record.
+func (s *UserService) loginLDAP(ctx context.Context, username, password string, existing *domain.User) (string, *domain.User, error) {
+	lu, err := s.ldap.Authenticate(ctx, username, password)
+	if err != nil {
+		return "", nil, fmt.Errorf("LDAP authentication failed: %w", err)
+	}
+
+	if existing == nil {
+		// Auto-create local record for the LDAP user.
+		existing = &domain.User{
+			Username:  username,
+			Email:     lu.Email,
+			FirstName: lu.FirstName,
+			LastName:  lu.LastName,
+			Status:    domain.UserStatusActive,
+			Source:    domain.UserSourceLDAP,
+			Roles:     lu.Groups,
+		}
+		if err := s.users.Create(ctx, existing); err != nil {
+			return "", nil, fmt.Errorf("create ldap user: %w", err)
+		}
+	} else {
+		// Keep profile in sync with LDAP directory.
+		if lu.Email != "" {
+			existing.Email = lu.Email
+		}
+		if lu.FirstName != "" {
+			existing.FirstName = lu.FirstName
+		}
+		if lu.LastName != "" {
+			existing.LastName = lu.LastName
+		}
+		_ = s.users.Update(ctx, existing)
+	}
+
+	if existing.Status != domain.UserStatusActive {
+		return "", nil, fmt.Errorf("%w: user account is not active", ErrInvalidInput)
+	}
+
+	if lu.GroupSearchErr != "" {
+		s.log.Warnw("ldap group search failed", "username", username, "err", lu.GroupSearchErr)
+	}
+	s.log.Infow("ldap user authenticated", "username", username, "ldap_groups", lu.Groups, "user_dn", lu.DN)
+
+	// Best-effort: grant nx-admin if user is in the configured admin LDAP group.
+	if err := s.syncLDAPAdminRole(ctx, existing.ID, lu.Groups); err != nil {
+		s.log.Warnw("syncLDAPAdminRole failed", "username", username, "err", err)
+	}
+
+	// Reload roles so the JWT reflects any just-granted nx-admin role.
+	if fresh, err2 := s.roles.GetUserRoles(ctx, existing.ID); err2 == nil {
+		names := make([]string, 0, len(fresh))
+		for _, r := range fresh {
+			names = append(names, r.Name)
+		}
+		existing.Roles = names
+	}
+
+	s.log.Infow("ldap login complete", "username", username, "roles", existing.Roles)
+
+	token, err := s.auth.GenerateToken(existing.ID, existing.Username, existing.Roles)
+	if err != nil {
+		return "", nil, err
+	}
+	_ = s.users.UpdateLastLogin(ctx, username)
+	return token, existing, nil
+}
+
+// syncLDAPAdminRole grants the nx-admin role to the user when their LDAP groups
+// contain the configured admin group. It is best-effort; errors are returned but
+// do not block login.
+func (s *UserService) syncLDAPAdminRole(ctx context.Context, userID string, ldapGroups []string) error {
+	if s.ldapAdminGroup == "" {
+		return nil
+	}
+	isAdmin := false
+	for _, g := range ldapGroups {
+		if ldapGroupMatch(g, s.ldapAdminGroup) {
+			isAdmin = true
+			break
+		}
+	}
+	s.log.Infow("ldap admin group check", "user", userID, "admin_group", s.ldapAdminGroup, "ldap_groups", ldapGroups, "is_admin", isAdmin)
+	if !isAdmin {
+		return nil
+	}
+
+	allRoles, err := s.roles.List(ctx)
+	if err != nil {
+		return err
+	}
+	adminRoleID := ""
+	for _, r := range allRoles {
+		if r.Name == "nx-admin" {
+			adminRoleID = r.ID
+			break
+		}
+	}
+	if adminRoleID == "" {
+		return nil
+	}
+
+	userRoles, err := s.roles.GetUserRoles(ctx, userID)
+	if err != nil {
+		return err
+	}
+	for _, r := range userRoles {
+		if r.ID == adminRoleID {
+			return nil // already has admin
+		}
+	}
+
+	ids := make([]string, 0, len(userRoles)+1)
+	for _, r := range userRoles {
+		ids = append(ids, r.ID)
+	}
+	ids = append(ids, adminRoleID)
+	return s.roles.SetUserRoles(ctx, userID, ids)
 }
 
 // ValidateToken validates a JWT and returns the embedded claims.
@@ -177,4 +328,27 @@ func (s *UserService) GetUserRoles(ctx context.Context, userID string) ([]domain
 
 func (s *UserService) SetUserRoles(ctx context.Context, userID string, roleIDs []string) error {
 	return s.roles.SetUserRoles(ctx, userID, roleIDs)
+}
+
+// ldapGroupMatch compares a group name returned by LDAP against the configured
+// admin_group value. It handles two forms:
+//   - plain name:  "nexus-administrators"
+//   - full LDAP DN: "CN=nexus-administrators,OU=…,DC=…" — only the first RDN value is used
+//
+// Comparison is case-insensitive in both cases.
+func ldapGroupMatch(name, configured string) bool {
+	if strings.EqualFold(name, configured) {
+		return true
+	}
+	// Extract value of the first RDN attribute from a DN (e.g. "CN=foo,OU=bar" → "foo").
+	if idx := strings.IndexByte(configured, '='); idx >= 0 {
+		val := configured[idx+1:]
+		if end := strings.IndexByte(val, ','); end >= 0 {
+			val = val[:end]
+		}
+		if strings.EqualFold(name, val) {
+			return true
+		}
+	}
+	return false
 }

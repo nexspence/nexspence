@@ -13,6 +13,7 @@ interface User {
 interface AuthState {
   token: string | null
   user: User | null
+  init: () => Promise<void>
   login: (username: string, password: string) => Promise<void>
   logout: () => void
   isAdmin: () => boolean
@@ -21,6 +22,19 @@ interface AuthState {
 export const useAuthStore = create<AuthState>((set, get) => ({
   token: localStorage.getItem('nexspence_token'),
   user: null,
+
+  // Rehydrate user from server after page refresh (token is in localStorage but user is null).
+  init: async () => {
+    if (!get().token || get().user) return
+    try {
+      const res = await apiClient.get('/api/v1/me')
+      set({ user: res.data })
+    } catch {
+      // Token is invalid/expired — clear it
+      localStorage.removeItem('nexspence_token')
+      set({ token: null, user: null })
+    }
+  },
 
   login: async (username, password) => {
     const res = await apiClient.post('/api/v1/login', { username, password })

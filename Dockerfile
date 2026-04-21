@@ -1,5 +1,5 @@
 # ── Build stage ───────────────────────────────────────────────
-FROM golang:1.25-alpine AS builder
+FROM nexus.da.lan/golang:1.25-alpine AS builder
 
 RUN apk add --no-cache git ca-certificates
 
@@ -20,7 +20,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
     ./cmd/server
 
 # ── Frontend build stage ──────────────────────────────────────
-FROM node:22-alpine AS frontend-builder
+FROM nexus.da.lan/node:22-alpine AS frontend-builder
 
 WORKDIR /frontend
 COPY frontend/package*.json ./
@@ -29,9 +29,22 @@ COPY frontend/ .
 RUN npm run build
 
 # ── Final image ───────────────────────────────────────────────
-FROM alpine:3.21
+FROM nexus.da.lan/alpine:3.21
 
 RUN apk add --no-cache ca-certificates tzdata wget
+
+# Trivy (optional CVE scans from Security UI / ScanService)
+ARG TRIVY_VERSION=0.70.0
+ARG TARGETARCH=amd64
+RUN set -eu; \
+  case "$TARGETARCH" in \
+    amd64) TRIVY_ARCH=64bit ;; \
+    arm64) TRIVY_ARCH=ARM64 ;; \
+    *) echo "unsupported TARGETARCH=$TARGETARCH" >&2; exit 1 ;; \
+  esac; \
+  wget -qO- "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-${TRIVY_ARCH}.tar.gz" \
+    | tar -xzf - -C /usr/local/bin trivy; \
+  chmod +x /usr/local/bin/trivy
 
 WORKDIR /app
 

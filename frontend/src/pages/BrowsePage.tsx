@@ -724,7 +724,7 @@ export default function BrowsePage() {
   const [page, setPage] = useState(0)
   const [treeCollapsed, setTreeCollapsed] = useState<Record<string, boolean>>({})
   const [dockerSelection, setDockerSelection] = useState<DockerLeafSelection | null>(null)
-  const [deleteTarget, setDeleteTarget] = useState<{ path: string; repo: string } | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<{ path: string; repo: string; dockerImage?: string; dockerRef?: string } | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const limit = 25
@@ -746,7 +746,11 @@ export default function BrowsePage() {
     setDeleting(true)
     setDeleteError(null)
     try {
-      await nexspenceApi.deleteByPath(deleteTarget.repo, deleteTarget.path)
+      if (deleteTarget.dockerImage && deleteTarget.dockerRef) {
+        await nexspenceApi.deleteDockerTag(deleteTarget.repo, deleteTarget.dockerImage, deleteTarget.dockerRef)
+      } else {
+        await nexspenceApi.deleteByPath(deleteTarget.repo, deleteTarget.path)
+      }
       const repo = deleteTarget.repo
       setDeleteTarget(null)
       void queryClient.invalidateQueries({ queryKey: ['components', repo] })
@@ -910,6 +914,8 @@ export default function BrowsePage() {
                   onDelete={node => setDeleteTarget({
                     path: `/manifests/${node.imageRef}/${node.version ?? node.label}`,
                     repo: repoName,
+                    dockerImage: node.imageRef,
+                    dockerRef: node.version ?? node.label,
                   })}
                 />
               ))}

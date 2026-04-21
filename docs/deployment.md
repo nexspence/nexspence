@@ -20,8 +20,8 @@ The backend automatically runs database migrations on startup — no manual step
 
 | Dependency | Version  | Notes |
 |------------|----------|-------|
-| Go         | 1.22+    | Backend build |
-| Node.js    | 20+      | Frontend build |
+| Go         | 1.22+    | Backend build (`go build -o nexspence ./cmd/server`) |
+| Node.js    | 20+      | Frontend build (`npm run build` in `frontend/`) |
 | PostgreSQL | 16+      | Primary datastore |
 | Docker     | 24+      | Container builds (optional) |
 
@@ -44,6 +44,8 @@ go build -o nexspence ./cmd/server
 ```
 
 The binary serves both the REST API and the frontend SPA from `./frontend/dist`.
+
+**Docker / CI:** The multi-stage `Dockerfile` runs `go build ./cmd/server` with `CGO_ENABLED=0`. Ensure the tree includes full `internal/repository/interfaces.go` and `router.go` middleware wiring (`UserTokenRepo`, `TokenService` passed into `AuthMiddleware` / `OptionalAuth`) or the image build will fail.
 
 ---
 

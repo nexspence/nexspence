@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/storage"
@@ -21,14 +22,16 @@ type RepositoryService struct {
 	repos     repository.RepositoryRepo
 	blobs     repository.BlobStoreRepo
 	blobStore storage.BlobStore
+	policies  repository.CleanupPolicyRepo
 }
 
 func NewRepositoryService(
 	repos repository.RepositoryRepo,
 	blobs repository.BlobStoreRepo,
 	blobStore storage.BlobStore,
+	policies repository.CleanupPolicyRepo,
 ) *RepositoryService {
-	return &RepositoryService{repos: repos, blobs: blobs, blobStore: blobStore}
+	return &RepositoryService{repos: repos, blobs: blobs, blobStore: blobStore, policies: policies}
 }
 
 func (s *RepositoryService) List(ctx context.Context, format, repoType string) ([]domain.Repository, error) {
@@ -78,6 +81,16 @@ func (s *RepositoryService) Create(ctx context.Context, r *domain.Repository) er
 		}
 	}
 
+	if r.Type == domain.TypeGroup {
+		if err := s.validateGroupMembers(ctx, r); err != nil {
+			return err
+		}
+	}
+
+	if err := s.validateCleanupPolicies(ctx, r.Format, r.CleanupPolicyIDs); err != nil {
+		return err
+	}
+
 	// Validate blob store exists (for hosted/proxy)
 	if r.BlobStoreID != nil && *r.BlobStoreID != "" {
 		bs, err := s.blobs.Get(ctx, *r.BlobStoreID)
@@ -121,11 +134,69 @@ func (s *RepositoryService) Update(ctx context.Context, name string, updates *do
 	if updates.CleanupPolicyIDs != nil {
 		r.CleanupPolicyIDs = updates.CleanupPolicyIDs
 	}
+	r.AllowAnonymous = updates.AllowAnonymous
+
+	if err := s.validateCleanupPolicies(ctx, r.Format, r.CleanupPolicyIDs); err != nil {
+		return nil, err
+	}
+
+	if r.Type == domain.TypeGroup {
+		if err := s.validateGroupMembers(ctx, r); err != nil {
+			return nil, err
+		}
+	}
 
 	if err := s.repos.Update(ctx, r); err != nil {
 		return nil, err
 	}
 	return r, nil
+}
+
+func (s *RepositoryService) validateCleanupPolicies(ctx context.Context, repoFormat domain.RepoFormat, ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	for _, id := range ids {
+		p, err := s.policies.Get(ctx, id)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return fmt.Errorf("%w: cleanup policy %q does not exist", ErrInvalidInput, id)
+			}
+			return err
+		}
+		if p == nil {
+			return fmt.Errorf("%w: cleanup policy %q does not exist", ErrInvalidInput, id)
+		}
+		pf := p.Format
+		if pf != "" && pf != "*" && pf != string(repoFormat) {
+			return fmt.Errorf("%w: cleanup policy %q targets format %s but repository is %s",
+				ErrInvalidInput, p.Name, pf, repoFormat)
+		}
+	}
+	return nil
+}
+
+func (s *RepositoryService) validateGroupMembers(ctx context.Context, group *domain.Repository) error {
+	names := domain.GroupMemberNames(group)
+	if len(names) == 0 {
+		return fmt.Errorf("%w: group repositories require formatConfig.member_names with at least one member", ErrInvalidInput)
+	}
+	for _, name := range names {
+		m, err := s.repos.Get(ctx, name)
+		if err != nil {
+			return err
+		}
+		if m == nil {
+			return fmt.Errorf("%w: group member repository %q does not exist", ErrInvalidInput, name)
+		}
+		if m.Type == domain.TypeGroup {
+			return fmt.Errorf("%w: group member %q cannot be a group repository", ErrInvalidInput, name)
+		}
+		if m.Format != group.Format {
+			return fmt.Errorf("%w: group member %q has format %q, expected %q", ErrInvalidInput, name, m.Format, group.Format)
+		}
+	}
+	return nil
 }
 
 func (s *RepositoryService) Delete(ctx context.Context, name string) error {

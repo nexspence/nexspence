@@ -4,6 +4,11 @@
 
 Supports 12 package formats out of the box, hosted and proxy repositories, RBAC, cleanup policies, audit log, S3-compatible storage, and a dark glassmorphism web UI.
 
+### Authentication
+
+- **Login UI / REST:** JWT bearer tokens (`POST /api/v1/login`, `Authorization: Bearer <jwt>`).
+- **User API tokens:** Random **`nxs_…`** tokens (hashed in DB). Use as **`Authorization: Bearer nxs_…`** or **HTTP Basic** with username + token as password. Implemented by **`TokenService`** and enforced together with JWT in **`AuthMiddleware`** / **`OptionalAuth`** (`internal/api/handlers/auth.go`, wired in `internal/api/router.go`).
+
 ---
 
 ## Supported formats
@@ -265,6 +270,8 @@ docker pull localhost:8081/repository/my-docker/myimage:latest
 > **Note**: The Docker client sends API requests to `/v2/repository/<repoName>/...`.
 > Nexspence registers these routes automatically — no extra configuration needed.
 
+> **Common mistake:** `docker pull localhost:8081/dockerproxy/library/alpine:latest` is **wrong** — the client calls `/v2/dockerproxy/...` (without `repository`), hits the web UI, and you get errors like `unexpected media type text/html` when a layer is actually HTML. Always include **`repository`** in the image name: `docker pull localhost:8081/repository/dockerproxy/library/alpine:latest`.
+
 ---
 
 ### NuGet
@@ -426,6 +433,7 @@ POST /api/v1/login                           # JWT login
 GET  /service/rest/v1/repositories           # List repos
 POST /service/rest/v1/repositories/:format/hosted  # Create hosted repo
 POST /service/rest/v1/repositories/:format/proxy   # Create proxy repo
+POST /service/rest/v1/repositories/:format/group   # Create group repo (formatConfig.member_names)
 
 GET  /service/rest/v1/search?name=foo        # Search components
 GET  /service/rest/v1/search/assets          # Search assets
@@ -450,6 +458,8 @@ A proxy repository caches artifacts from an upstream registry on first request. 
 2. Cache hit → served immediately from local blob store
 3. Cache miss → Nexspence fetches from `remote_url`, streams to client, and persists to blob store simultaneously (zero-copy, no memory buffering)
 4. Mutations (push, upload, delete) are rejected with `405 Method Not Allowed`
+
+**Docker Hub:** the public registry answers with **401** and a `WWW-Authenticate` Bearer challenge. Nexspence resolves that server-side (anonymous token from `https://auth.docker.io/token`) and retries upstream. Credentials from `docker login <nexspence-host>` are **not** forwarded to Docker Hub — forwarding them caused Docker to report *“authentication required - incorrect username or password”* when it tried Hub’s token flow with Nexspence users.
 
 ### Create a proxy repository (UI)
 
@@ -631,6 +641,62 @@ helm install my-release nexspence-proxy/nginx
 | conan | ✓ | `https://center2.conan.io/` |
 
 > **Note:** Docker Hub requires authentication for most images beyond the free pull rate limit. For authenticated proxy use a registry mirror (e.g. your own ECR pull-through cache) as the `remote_url`.
+
+---
+
+## Group repositories
+
+A **group** repository exposes a single URL that aggregates **hosted** and/or **proxy** repositories of the **same format**. Members are tried in **order**; the first successful response (anything other than **404**) is returned. This matches Nexus-style “group” merges (e.g. Maven releases + snapshots + Maven Central proxy behind one URL).
+
+### Configuration
+
+- **API / UI:** `type: "group"` and **`formatConfig.member_names`**: ordered JSON array of repository **names** (the UI checklist on Repositories → New Repository writes the same field).
+- **Validation:** On create/update, every member must exist, must **not** be another group, and must use the **same** `format` as the group.
+- **Read-only:** **GET** and **HEAD** only. **PUT** / **POST** / **PATCH** / **DELETE** return **405** — publish to a **hosted** member (or use a member proxy as usual).
+
+### Behaviour
+
+- **HTTP artifacts:** `http://localhost:8081/repository/<group-name>/<same-path-as-member>` — each member’s `FormatHandler` runs in order; proxy members can still fetch upstream on cache miss.
+- **Docker:** `docker pull localhost:8081/repository/<group-name>/…` — uses `/v2/repository/<group-name>/…` internally; same ordering rules.
+- **Tracing:** Responses may include **`X-Nexspence-Source`** with the member repository name that satisfied the request.
+
+### Example (API): npm group over hosted + proxy
+
+```bash
+# Assume repos "npm-private" (hosted) and "npmjs" (proxy) already exist (same format npm).
+curl -u admin:admin123 -X POST \
+  http://localhost:8081/service/rest/v1/repositories/npm/group \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "name": "npm-all",
+    "type": "group",
+    "format": "npm",
+    "formatConfig": { "member_names": ["npm-private", "npmjs"] }
+  }'
+
+npm install lodash --registry http://localhost:8081/repository/npm-all/
+```
+
+### Browse, Search, and Docker tree with groups
+
+Group URLs are for **reads** (GET/HEAD). **Component metadata** in PostgreSQL is stored per **member** repository, not per group.
+
+- **Implemented:** When you select a **group** on **Browse** or filter **Search** by a group name, the backend expands the group to **`member_names`** and queries **`components` / `assets` across those members** (`ListByRepoNames`, `SearchParams.RepositoryNames`, aggregated **docker-tree**). You should see the **union** of artifacts from all members (same image may appear twice if present in multiple members).
+- **Column “Repository”** in API/UI responses typically shows the **member** repository that owns the row — that is expected.
+- **What to verify:** After `docker pull` (or other clients) through **members** so the DB has rows, open Browse → choose the **group** — the tree/table should **not** be empty. If members are empty, the group browse will be empty too.
+
+### Roadmap
+
+| Phase | Feature | Status |
+|-------|---------|--------|
+| 6 | Cleanup policies, quotas, audit log, backup/restore, metrics | ✓ complete |
+| 7 | Tests (>80% coverage), API docs, deployment guides | pending |
+| 8 | CVE scanning (Trivy), SBOM generation, cosign, OIDC/SSO, LDAP, rate limiting | planned |
+| 9 | `nexctl` CLI, config-as-code, k8s SA token auth, OTel traces, analytics, badges | planned |
+| 10 | Multi-node HA, replication, blob GC, Prometheus metrics, soft delete, cache TTL | planned |
+| 15D | Docker uploader + `last_downloaded` in browse UI | deferred |
+
+See [`task_plan.md`](task_plan.md) for detailed task lists per phase.
 
 ---
 

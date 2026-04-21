@@ -18,7 +18,7 @@ func NewUserRepo(db *pgxpool.Pool) *userRepo {
 }
 
 const userSelect = `
-	SELECT id, username, email, COALESCE(password_hash,''), first_name, last_name,
+	SELECT id, username, COALESCE(email,''), COALESCE(password_hash,''), first_name, last_name,
 	       status, source, COALESCE(external_id,''), last_login, created_at, updated_at
 	FROM users`
 
@@ -83,7 +83,7 @@ func (r *userRepo) Create(ctx context.Context, u *domain.User) error {
 		INSERT INTO users (username, email, password_hash, first_name, last_name, status, source)
 		VALUES ($1,$2,$3,$4,$5,$6,$7)
 		RETURNING id, created_at, updated_at`,
-		u.Username, u.Email, nilIfEmpty(u.PasswordHash),
+		u.Username, nilIfEmpty(u.Email), nilIfEmpty(u.PasswordHash),
 		u.FirstName, u.LastName, u.Status, u.Source,
 	).Scan(&u.ID, &u.CreatedAt, &u.UpdatedAt)
 }
@@ -92,7 +92,7 @@ func (r *userRepo) Update(ctx context.Context, u *domain.User) error {
 	_, err := r.db.Exec(ctx, `
 		UPDATE users SET email=$1, first_name=$2, last_name=$3, status=$4, updated_at=NOW()
 		WHERE username=$5`,
-		u.Email, u.FirstName, u.LastName, u.Status, u.Username,
+		nilIfEmpty(u.Email), u.FirstName, u.LastName, u.Status, u.Username,
 	)
 	return err
 }

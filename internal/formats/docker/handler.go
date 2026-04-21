@@ -29,6 +29,7 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/formats"
 	"github.com/nexspence-oss/nexspence/internal/formats/base"
 	"github.com/nexspence-oss/nexspence/internal/formats/repoproxy"
+	"github.com/nexspence-oss/nexspence/internal/requestctx"
 )
 
 // uploadSession stores an in-progress blob upload.
@@ -186,6 +187,9 @@ func (h *Handler) pullManifest(c *gin.Context, repoName, imageName, reference st
 }
 
 func (h *Handler) pushManifest(c *gin.Context, repoName, imageName, reference string) {
+	if !requireDockerAuth(c) {
+		return
+	}
 	ct := c.GetHeader("Content-Type")
 	if ct == "" {
 		ct = "application/vnd.docker.distribution.manifest.v2+json"
@@ -266,7 +270,11 @@ func (h *Handler) pullBlob(c *gin.Context, repoName, imageName, digest string) {
 	fp := blobPath(imageName, digest)
 	rc, asset, err := base.FetchArtifact(c.Request.Context(), h.deps, repoName, fp)
 	if err != nil {
-		dockerError(c, http.StatusNotFound, "BLOB_UNKNOWN", "blob unknown")
+		if c.Request.Method == http.MethodHead {
+			c.Status(http.StatusNotFound)
+		} else {
+			dockerError(c, http.StatusNotFound, "BLOB_UNKNOWN", "blob unknown")
+		}
 		return
 	}
 	defer rc.Close()
@@ -332,6 +340,9 @@ func (h *Handler) handleBlobUploads(c *gin.Context, repoName, imageName, uuid st
 }
 
 func (h *Handler) initiateUpload(c *gin.Context, repoName, imageName string) {
+	if !requireDockerAuth(c) {
+		return
+	}
 	// Cross-repo mount shortcut: ?mount=<digest>&from=<repo>
 	// We ignore mount for now and always start a fresh upload
 	uuid := newUUID()
@@ -409,6 +420,20 @@ func (h *Handler) finalizeUpload(c *gin.Context, repoName, imageName, uuid strin
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
+
+// requireDockerAuth returns true if the request carries a recognized user identity
+// (set by OptionalAuth / AuthMiddleware upstream). When the identity is absent it
+// challenges the Docker client with 401 + WWW-Authenticate: Basic so the client
+// retries the request with credentials from its credential store.
+func requireDockerAuth(c *gin.Context) bool {
+	if requestctx.UserID(c.Request.Context()) != "" {
+		return true
+	}
+	c.Header("Docker-Distribution-API-Version", "registry/2.0")
+	c.Header("WWW-Authenticate", `Basic realm="Nexspence"`)
+	dockerError(c, http.StatusUnauthorized, "UNAUTHORIZED", "authentication required")
+	return false
+}
 
 func dockerError(c *gin.Context, status int, code, message string) {
 	c.JSON(status, gin.H{

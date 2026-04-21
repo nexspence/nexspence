@@ -436,6 +436,10 @@ func (a *AssetRepo) ListByRepoAndPath(_ context.Context, _, _ string) ([]domain.
 	return nil, nil
 }
 
+func (a *AssetRepo) CountByBlobKey(_ context.Context, _, _ string) (int, error) {
+	return 0, nil
+}
+
 func (a *AssetRepo) ListRawAssetPaths(_ context.Context, repoName string) ([]string, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()

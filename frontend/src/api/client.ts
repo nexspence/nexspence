@@ -219,10 +219,16 @@ export const nexspenceApi = {
   myPrivileges: () =>
     apiClient.get<Privilege[]>('/api/v1/me/privileges').then(r => r.data),
 
-  // Delete artifact by path
+  // Delete artifact by path (non-docker)
   deleteByPath: (repoName: string, path: string) =>
     apiClient.delete(`/api/v1/browse/repositories/${encodeURIComponent(repoName)}/path`, {
       params: { path },
+    }),
+
+  // Delete Docker tag: cascades manifest + digest alias + unreferenced blobs
+  deleteDockerTag: (repoName: string, image: string, ref: string) =>
+    apiClient.delete(`/api/v1/browse/repositories/${encodeURIComponent(repoName)}/docker-tag`, {
+      params: { image, ref },
     }),
 
   // Vulnerability scan (Trivy) — Docker components

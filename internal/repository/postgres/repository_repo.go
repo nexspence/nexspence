@@ -23,7 +23,7 @@ func NewRepositoryRepo(db *pgxpool.Pool) *repositoryRepo {
 func (r *repositoryRepo) List(ctx context.Context, format, repoType string) ([]domain.Repository, error) {
 	query := `SELECT id, name, format, type, blob_store_id, online,
 	                 format_config, http_config, proxy_config, cleanup_policy_ids,
-	                 quota_bytes, routing_rule_id, description, created_at, updated_at
+	                 quota_bytes, routing_rule_id, allow_anonymous, description, created_at, updated_at
 	          FROM repositories WHERE 1=1`
 	args := []any{}
 	i := 1
@@ -61,7 +61,7 @@ func (r *repositoryRepo) Get(ctx context.Context, name string) (*domain.Reposito
 	row := r.db.QueryRow(ctx, `
 		SELECT id, name, format, type, blob_store_id, online,
 		       format_config, http_config, proxy_config, cleanup_policy_ids,
-		       quota_bytes, routing_rule_id, description, created_at, updated_at
+		       quota_bytes, routing_rule_id, allow_anonymous, description, created_at, updated_at
 		FROM repositories WHERE name = $1`, name)
 	repo, err := scanRepository(row)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -74,7 +74,7 @@ func (r *repositoryRepo) GetByID(ctx context.Context, id string) (*domain.Reposi
 	row := r.db.QueryRow(ctx, `
 		SELECT id, name, format, type, blob_store_id, online,
 		       format_config, http_config, proxy_config, cleanup_policy_ids,
-		       quota_bytes, routing_rule_id, description, created_at, updated_at
+		       quota_bytes, routing_rule_id, allow_anonymous, description, created_at, updated_at
 		FROM repositories WHERE id = $1`, id)
 	repo, err := scanRepository(row)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -91,13 +91,13 @@ func (r *repositoryRepo) Create(ctx context.Context, repo *domain.Repository) er
 	return r.db.QueryRow(ctx, `
 		INSERT INTO repositories
 		  (name, format, type, blob_store_id, online, format_config, http_config,
-		   proxy_config, cleanup_policy_ids, quota_bytes, routing_rule_id, description)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+		   proxy_config, cleanup_policy_ids, quota_bytes, routing_rule_id, allow_anonymous, description)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
 		RETURNING id, created_at, updated_at`,
 		repo.Name, repo.Format, repo.Type, repo.BlobStoreID, repo.Online,
 		fmtCfg, httpCfg, proxyCfg,
 		policyIDsToStrings(repo.CleanupPolicyIDs),
-		repo.QuotaBytes, repo.RoutingRuleID, repo.Description,
+		repo.QuotaBytes, repo.RoutingRuleID, repo.AllowAnonymous, repo.Description,
 	).Scan(&repo.ID, &repo.CreatedAt, &repo.UpdatedAt)
 }
 
@@ -110,11 +110,11 @@ func (r *repositoryRepo) Update(ctx context.Context, repo *domain.Repository) er
 		UPDATE repositories SET
 		  online=$1, format_config=$2, http_config=$3, proxy_config=$4,
 		  cleanup_policy_ids=$5, quota_bytes=$6, routing_rule_id=$7,
-		  description=$8, updated_at=NOW()
-		WHERE name=$9`,
+		  allow_anonymous=$8, description=$9, updated_at=NOW()
+		WHERE name=$10`,
 		repo.Online, fmtCfg, httpCfg, proxyCfg,
 		policyIDsToStrings(repo.CleanupPolicyIDs),
-		repo.QuotaBytes, repo.RoutingRuleID, repo.Description,
+		repo.QuotaBytes, repo.RoutingRuleID, repo.AllowAnonymous, repo.Description,
 		repo.Name,
 	)
 	return err
@@ -122,6 +122,35 @@ func (r *repositoryRepo) Update(ctx context.Context, repo *domain.Repository) er
 
 func (r *repositoryRepo) Delete(ctx context.Context, name string) error {
 	_, err := r.db.Exec(ctx, `DELETE FROM repositories WHERE name = $1`, name)
+	return err
+}
+
+func (r *repositoryRepo) ListNamesByCleanupPolicyID(ctx context.Context, policyID string) ([]string, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT name FROM repositories
+		WHERE $1::uuid = ANY(cleanup_policy_ids)
+		ORDER BY name`, policyID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var names []string
+	for rows.Next() {
+		var n string
+		if err := rows.Scan(&n); err != nil {
+			return nil, err
+		}
+		names = append(names, n)
+	}
+	return names, rows.Err()
+}
+
+func (r *repositoryRepo) DetachCleanupPolicyID(ctx context.Context, policyID string) error {
+	_, err := r.db.Exec(ctx, `
+		UPDATE repositories SET
+		  cleanup_policy_ids = array_remove(cleanup_policy_ids, $1::uuid),
+		  updated_at = NOW()
+		WHERE $1::uuid = ANY(cleanup_policy_ids)`, policyID)
 	return err
 }
 
@@ -142,7 +171,7 @@ func scanRepository(row scanner) (*domain.Repository, error) {
 		&repo.BlobStoreID, &repo.Online,
 		&fmtCfgRaw, &httpCfgRaw, &proxyCfgRaw,
 		&cleanupIDs,
-		&repo.QuotaBytes, &repo.RoutingRuleID, &repo.Description,
+		&repo.QuotaBytes, &repo.RoutingRuleID, &repo.AllowAnonymous, &repo.Description,
 		&repo.CreatedAt, &updatedAt,
 	)
 	if err != nil {

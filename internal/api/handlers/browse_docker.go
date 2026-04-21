@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"encoding/json"
+	"io"
 	"net/http"
 	"sort"
 	"strings"
@@ -9,6 +11,7 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/service"
+	"github.com/nexspence-oss/nexspence/internal/storage"
 )
 
 // BrowseHandler serves Nexspence-native browse APIs.
@@ -16,11 +19,12 @@ type BrowseHandler struct {
 	repos      repository.RepositoryRepo
 	components repository.ComponentRepo
 	assets     repository.AssetRepo
+	blobStore  storage.BlobStore
 	rbac       *service.RBACService
 }
 
-func NewBrowseHandler(repos repository.RepositoryRepo, components repository.ComponentRepo, assets repository.AssetRepo, rbac *service.RBACService) *BrowseHandler {
-	return &BrowseHandler{repos: repos, components: components, assets: assets, rbac: rbac}
+func NewBrowseHandler(repos repository.RepositoryRepo, components repository.ComponentRepo, assets repository.AssetRepo, blobStore storage.BlobStore, rbac *service.RBACService) *BrowseHandler {
+	return &BrowseHandler{repos: repos, components: components, assets: assets, blobStore: blobStore, rbac: rbac}
 }
 
 // dockerBrowseNode is a Nexus-style folder or leaf in the Docker browse tree.
@@ -303,5 +307,87 @@ func (h *BrowseHandler) DeleteByPath(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	c.Status(http.StatusNoContent)
+}
+
+// DeleteDockerTag handles DELETE /api/v1/browse/repositories/:name/docker-tag
+// Query params: image=da/rbi/python&ref=3.15-rc-alpine3.22
+// Deletes the tag manifest, its digest alias, and any unreferenced layer/config blobs.
+func (h *BrowseHandler) DeleteDockerTag(c *gin.Context) {
+	repoName := c.Param("name")
+	imageName := c.Query("image")
+	ref := c.Query("ref")
+	if imageName == "" || ref == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "image and ref query params required"})
+		return
+	}
+
+	ctx := c.Request.Context()
+
+	// 1. Load the tag manifest asset.
+	tagPath := "/manifests/" + imageName + "/" + ref
+	tagAsset, err := h.assets.GetByPath(ctx, repoName, tagPath)
+	if err != nil || tagAsset == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "manifest not found"})
+		return
+	}
+
+	// 2. Read manifest content to discover referenced layer/config digests.
+	var digests []string
+	if rc, _, rerr := h.blobStore.Get(ctx, tagAsset.BlobKey); rerr == nil {
+		data, _ := io.ReadAll(rc)
+		rc.Close()
+		var manifest struct {
+			Config struct{ Digest string `json:"digest"` } `json:"config"`
+			Layers []struct{ Digest string `json:"digest"` } `json:"layers"`
+		}
+		if json.Unmarshal(data, &manifest) == nil {
+			if manifest.Config.Digest != "" {
+				digests = append(digests, manifest.Config.Digest)
+			}
+			for _, l := range manifest.Layers {
+				if l.Digest != "" {
+					digests = append(digests, l.Digest)
+				}
+			}
+		}
+	}
+
+	// 3. Delete tag manifest: asset + physical blob (if no other asset shares the blob_key).
+	tagBlobKey := tagAsset.BlobKey
+	tagAssetID := tagAsset.ID
+	if n, cerr := h.assets.CountByBlobKey(ctx, tagBlobKey, tagAssetID); cerr == nil && n == 0 {
+		_ = h.blobStore.Delete(ctx, tagBlobKey)
+	}
+	if err := h.assets.Delete(ctx, tagAssetID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 4. Delete digest alias manifest asset (shares same blob_key — physical file already handled above).
+	digestAliasPath := "/manifests/" + imageName + "/sha256:" + tagAsset.SHA256
+	if digestAliasPath != tagPath {
+		if aliasAsset, aerr := h.assets.GetByPath(ctx, repoName, digestAliasPath); aerr == nil && aliasAsset != nil {
+			_ = h.assets.Delete(ctx, aliasAsset.ID)
+		}
+	}
+
+	// 5. Delete unreferenced layer/config blob assets.
+	for _, digest := range digests {
+		blobPath := "/blobs/" + imageName + "/" + digest
+		blobAsset, berr := h.assets.GetByPath(ctx, repoName, blobPath)
+		if berr != nil || blobAsset == nil {
+			continue
+		}
+		// Only delete the physical blob if no other asset references this blob_key.
+		if n, cerr := h.assets.CountByBlobKey(ctx, blobAsset.BlobKey, blobAsset.ID); cerr == nil && n == 0 {
+			_ = h.blobStore.Delete(ctx, blobAsset.BlobKey)
+		}
+		_ = h.assets.Delete(ctx, blobAsset.ID)
+	}
+
+	// 6. Remove orphaned component records.
+	_ = h.components.DeleteOrphans(ctx, repoName)
+
 	c.Status(http.StatusNoContent)
 }

@@ -17,6 +17,8 @@ func TestSnapshot_ContainsExpectedKeys(t *testing.T) {
 		"request_errors",
 		"artifacts_stored",
 		"bytes_stored",
+		"downloads_total",
+		"artifacts_deleted",
 		"goroutines",
 		"memory",
 	}

@@ -1,3 +1,6 @@
+# Лимиты CPU/RAM для сервисов здесь не задаём — каждый контейнер может расти до лимита,
+# который выставляет демон Docker (на Docker Desktop это RAM/CPU всей Linux-ВМ:
+# Settings → Resources → Memory / CPUs).
 services:
 
   # ── PostgreSQL ────────────────────────────────────────────────
@@ -24,6 +27,12 @@ services:
       context: .
       dockerfile: Dockerfile
     restart: unless-stopped
+    # Не cgroup-лимит памяти/CPU, а снятие узких мест по умолчанию у Docker:
+    shm_size: "2gb"
+    ulimits:
+      nofile:
+        soft: 1048576
+        hard: 1048576
     depends_on:
       postgres:
         condition: service_healthy

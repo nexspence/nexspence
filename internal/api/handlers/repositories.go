@@ -10,11 +10,12 @@ import (
 
 // RepositoryHandler handles repository management endpoints.
 type RepositoryHandler struct {
-	svc *service.RepositoryService
+	svc     *service.RepositoryService
+	rbacSvc *service.RBACService
 }
 
-func NewRepositoryHandler(svc *service.RepositoryService) *RepositoryHandler {
-	return &RepositoryHandler{svc: svc}
+func NewRepositoryHandler(svc *service.RepositoryService, rbacSvc *service.RBACService) *RepositoryHandler {
+	return &RepositoryHandler{svc: svc, rbacSvc: rbacSvc}
 }
 
 // List handles GET /service/rest/v1/repositories and GET /api/v1/repositories
@@ -30,8 +31,17 @@ func (h *RepositoryHandler) List(c *gin.Context) {
 	if repos == nil {
 		repos = []domain.Repository{}
 	}
+
+	userID, _ := c.Get("userID")
+	roles, _ := c.Get("roles")
+	repos = h.rbacSvc.FilterRepos(c.Request.Context(),
+		stringVal(userID), stringSliceVal(roles), repos)
+
 	c.JSON(http.StatusOK, repos)
 }
+
+func stringVal(v any) string      { s, _ := v.(string); return s }
+func stringSliceVal(v any) []string { s, _ := v.([]string); return s }
 
 // Get handles GET /service/rest/v1/repositories/:name
 func (h *RepositoryHandler) Get(c *gin.Context) {

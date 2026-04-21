@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"io"
+	"time"
 )
 
 // BlobStore is the interface every storage backend must implement.
@@ -25,6 +26,22 @@ type BlobStore interface {
 
 	// UsedBytes returns total bytes stored in this blob store.
 	UsedBytes(ctx context.Context) (int64, error)
+
+	// ListKeys returns all blob keys present in the store.
+	// Used by GC to find orphaned blobs not referenced by any asset.
+	ListKeys(ctx context.Context) ([]string, error)
+}
+
+// PresignableStore is an optional extension of BlobStore for S3-backed stores.
+// Check with a type assertion: ps, ok := store.(storage.PresignableStore)
+type PresignableStore interface {
+	// PresignGetURL returns a time-limited URL for direct client download.
+	PresignGetURL(ctx context.Context, key string, ttl time.Duration) (string, error)
+	// PresignPutURL returns a time-limited URL for direct client upload.
+	PresignPutURL(ctx context.Context, key string, ttl time.Duration) (string, error)
+	// ConfigureLifecycle sets a bucket lifecycle expiration rule.
+	// Pass 0 to remove all rules.
+	ConfigureLifecycle(ctx context.Context, expirationDays int32) error
 }
 
 // Meta holds blob content metadata returned alongside the data stream.

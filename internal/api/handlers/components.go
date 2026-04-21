@@ -1,23 +1,49 @@
 package handlers
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/repository"
+	"github.com/nexspence-oss/nexspence/internal/service"
 )
 
 // ComponentHandler handles /service/rest/v1/components endpoints.
 type ComponentHandler struct {
 	components repository.ComponentRepo
 	assets     repository.AssetRepo
+	repos      repository.RepositoryRepo
+	rbacSvc    *service.RBACService
 	baseURL    string
 }
 
-func NewComponentHandler(components repository.ComponentRepo, assets repository.AssetRepo, baseURL string) *ComponentHandler {
-	return &ComponentHandler{components: components, assets: assets, baseURL: baseURL}
+func NewComponentHandler(components repository.ComponentRepo, assets repository.AssetRepo, repos repository.RepositoryRepo, baseURL string) *ComponentHandler {
+	return &ComponentHandler{components: components, assets: assets, repos: repos, baseURL: baseURL}
+}
+
+// WithRBAC attaches the RBAC service so search/list results are filtered by
+// content-selector privileges.
+func (h *ComponentHandler) WithRBAC(rbac *service.RBACService) *ComponentHandler {
+	h.rbacSvc = rbac
+	return h
+}
+
+// allowAnonMap loads AllowAnonymous for each unique repository name in the
+// result set. One DB call per distinct repo name, called at most once per request.
+func (h *ComponentHandler) allowAnonMap(ctx context.Context, repoNames []string) map[string]bool {
+	m := make(map[string]bool, len(repoNames))
+	for _, name := range repoNames {
+		if _, ok := m[name]; ok {
+			continue
+		}
+		if r, err := h.repos.Get(ctx, name); err == nil && r != nil {
+			m[name] = r.AllowAnonymous
+		}
+	}
+	return m
 }
 
 // List handles GET /service/rest/v1/components?repository=X
@@ -41,16 +67,35 @@ func (h *ComponentHandler) List(c *gin.Context) {
 		}
 	}
 
-	page, err := h.components.List(c.Request.Context(), repoName, limit, offset)
+	names, err := expandGroupMemberRepoNames(c.Request.Context(), h.repos, repoName)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if len(names) == 0 {
+		c.JSON(http.StatusOK, gin.H{
+			"items":             []domain.Component{},
+			"continuationToken": nil,
+		})
+		return
+	}
+
+	page, err := h.components.ListByRepoNames(c.Request.Context(), names, limit, offset)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	// Attach download URLs to assets
 	items := page.Items
 	if items == nil {
 		items = []domain.Component{}
+	}
+	if h.rbacSvc != nil {
+		anonMap := h.allowAnonMap(c.Request.Context(), names)
+		userID, _ := c.Get("userID")
+		roles, _ := c.Get("roles")
+		items = h.rbacSvc.FilterComponents(c.Request.Context(),
+			stringVal(userID), stringSliceVal(roles), items, anonMap)
 	}
 	for i := range items {
 		h.enrichComponent(c, &items[i])
@@ -74,6 +119,12 @@ func (h *ComponentHandler) Get(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "component not found"})
 		return
 	}
+	assets, err := h.assets.ListByComponentID(c.Request.Context(), id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	comp.Assets = assets
 	h.enrichComponent(c, comp)
 	c.JSON(http.StatusOK, comp)
 }
@@ -110,6 +161,23 @@ func (h *ComponentHandler) Search(c *gin.Context) {
 		}
 	}
 
+	if p.Repository != "" {
+		names, err := expandGroupMemberRepoNames(c.Request.Context(), h.repos, p.Repository)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if len(names) == 0 {
+			c.JSON(http.StatusOK, gin.H{
+				"items":             []domain.Component{},
+				"continuationToken": nil,
+			})
+			return
+		}
+		p.RepositoryNames = names
+		p.Repository = ""
+	}
+
 	page, err := h.components.Search(c.Request.Context(), p)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -119,6 +187,22 @@ func (h *ComponentHandler) Search(c *gin.Context) {
 	items := page.Items
 	if items == nil {
 		items = []domain.Component{}
+	}
+	if h.rbacSvc != nil && len(items) > 0 {
+		// Collect unique repo names from results (may span group members).
+		repoSet := make(map[string]struct{}, 4)
+		for _, comp := range items {
+			repoSet[comp.Repository] = struct{}{}
+		}
+		repoList := make([]string, 0, len(repoSet))
+		for n := range repoSet {
+			repoList = append(repoList, n)
+		}
+		anonMap := h.allowAnonMap(c.Request.Context(), repoList)
+		userID, _ := c.Get("userID")
+		roles, _ := c.Get("roles")
+		items = h.rbacSvc.FilterComponents(c.Request.Context(),
+			stringVal(userID), stringSliceVal(roles), items, anonMap)
 	}
 	for i := range items {
 		h.enrichComponent(c, &items[i])
@@ -145,6 +229,23 @@ func (h *ComponentHandler) SearchAssets(c *gin.Context) {
 		}
 	}
 
+	if p.Repository != "" {
+		names, err := expandGroupMemberRepoNames(c.Request.Context(), h.repos, p.Repository)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if len(names) == 0 {
+			c.JSON(http.StatusOK, gin.H{
+				"items":             []domain.Asset{},
+				"continuationToken": nil,
+			})
+			return
+		}
+		p.RepositoryNames = names
+		p.Repository = ""
+	}
+
 	page, err := h.assets.SearchAssets(c.Request.Context(), p)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -154,6 +255,21 @@ func (h *ComponentHandler) SearchAssets(c *gin.Context) {
 	items := page.Items
 	if items == nil {
 		items = []domain.Asset{}
+	}
+	if h.rbacSvc != nil && len(items) > 0 {
+		repoSet := make(map[string]struct{}, 4)
+		for _, a := range items {
+			repoSet[a.Repository] = struct{}{}
+		}
+		repoList := make([]string, 0, len(repoSet))
+		for n := range repoSet {
+			repoList = append(repoList, n)
+		}
+		anonMap := h.allowAnonMap(c.Request.Context(), repoList)
+		userID, _ := c.Get("userID")
+		roles, _ := c.Get("roles")
+		items = h.rbacSvc.FilterAssets(c.Request.Context(),
+			stringVal(userID), stringSliceVal(roles), items, anonMap)
 	}
 	for i := range items {
 		items[i].DownloadURL = h.baseURL + "/repository/" + items[i].Repository + items[i].Path
@@ -169,4 +285,37 @@ func (h *ComponentHandler) enrichComponent(_ *gin.Context, comp *domain.Componen
 	for i := range comp.Assets {
 		comp.Assets[i].DownloadURL = h.baseURL + "/repository/" + comp.Repository + comp.Assets[i].Path
 	}
+}
+
+// GetQuota handles GET /api/v1/repositories/:name/quota
+// Returns current storage usage and quota limit for the repository.
+func (h *ComponentHandler) GetQuota(c *gin.Context) {
+	name := c.Param("name")
+	repo, err := h.repos.Get(c.Request.Context(), name)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if repo == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "repository not found"})
+		return
+	}
+
+	used, err := h.assets.SumSizeByRepo(c.Request.Context(), name)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	resp := gin.H{
+		"repository": name,
+		"usedBytes":  used,
+		"quotaBytes": repo.QuotaBytes,
+	}
+	if repo.QuotaBytes != nil && *repo.QuotaBytes > 0 {
+		resp["percentUsed"] = float64(used) / float64(*repo.QuotaBytes) * 100
+	} else {
+		resp["percentUsed"] = nil
+	}
+	c.JSON(http.StatusOK, resp)
 }

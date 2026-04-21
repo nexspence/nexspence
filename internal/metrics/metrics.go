@@ -9,10 +9,12 @@ import (
 )
 
 var (
-	RequestsTotal   atomic.Int64
-	RequestErrors   atomic.Int64
-	ArtifactsStored atomic.Int64
-	BytesStored     atomic.Int64
+	RequestsTotal    atomic.Int64
+	RequestErrors    atomic.Int64
+	ArtifactsStored  atomic.Int64
+	BytesStored      atomic.Int64
+	DownloadsTotal   atomic.Int64
+	ArtifactsDeleted atomic.Int64
 
 	startTime = time.Now()
 )
@@ -23,10 +25,12 @@ func Snapshot() Map {
 	runtime.ReadMemStats(&mem)
 	return Map{
 		"uptime_seconds":   time.Since(startTime).Seconds(),
-		"requests_total":   RequestsTotal.Load(),
-		"request_errors":   RequestErrors.Load(),
-		"artifacts_stored": ArtifactsStored.Load(),
-		"bytes_stored":     BytesStored.Load(),
+		"requests_total":    RequestsTotal.Load(),
+		"request_errors":    RequestErrors.Load(),
+		"artifacts_stored":  ArtifactsStored.Load(),
+		"bytes_stored":      BytesStored.Load(),
+		"downloads_total":   DownloadsTotal.Load(),
+		"artifacts_deleted": ArtifactsDeleted.Load(),
 		"goroutines":       runtime.NumGoroutine(),
 		"memory": Map{
 			"alloc_bytes":       mem.Alloc,

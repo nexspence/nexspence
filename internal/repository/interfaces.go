@@ -71,6 +71,9 @@ type AssetRepo interface {
 	// ListByRepoAndPath returns all assets in repoName whose path starts with pathPrefix.
 	// Use pathPrefix="" to list all assets in the repo.
 	ListByRepoAndPath(ctx context.Context, repoName, pathPrefix string) ([]domain.Asset, error)
+	// CountByBlobKey returns the number of assets that reference blobKey, excluding the asset with excludeID.
+	// Used to decide whether the physical blob file can be deleted.
+	CountByBlobKey(ctx context.Context, blobKey, excludeID string) (int, error)
 }
 
 // ContentSelectorRepo manages content selector definitions (privilege-scoped paths).
