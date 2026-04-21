@@ -35,6 +35,8 @@ type ComponentRepo interface {
 	Delete(ctx context.Context, id string) error
 	// UpdateExtra merges JSON into components.extra (e.g. scan_result).
 	UpdateExtra(ctx context.Context, id string, extra map[string]any) error
+	// DeleteOrphans removes components in repoName that have no remaining assets.
+	DeleteOrphans(ctx context.Context, repoName string) error
 }
 
 // AssetRepo manages artifact file records.
@@ -66,6 +68,9 @@ type AssetRepo interface {
 	// ListRawAssetPaths returns raw asset paths (not directory-expanded) for
 	// the given repository. Used by format-specific path transformations (e.g. Docker).
 	ListRawAssetPaths(ctx context.Context, repoName string) ([]string, error)
+	// ListByRepoAndPath returns all assets in repoName whose path starts with pathPrefix.
+	// Use pathPrefix="" to list all assets in the repo.
+	ListByRepoAndPath(ctx context.Context, repoName, pathPrefix string) ([]domain.Asset, error)
 }
 
 // ContentSelectorRepo manages content selector definitions (privilege-scoped paths).

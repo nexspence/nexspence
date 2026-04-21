@@ -174,6 +174,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 		// ── Browse ────────────────────────────────────────────
 		authed.GET("/api/v1/browse/repositories/:name/docker-tree", browseH.DockerTree)
 		authed.GET("/api/v1/browse/repositories/:name/path-tree", browseH.PathTree)
+		authed.DELETE("/api/v1/browse/repositories/:name/path", browseH.DeleteByPath)
 
 		// ── Components & Assets (read + search) ───────────────
 		authed.GET("/service/rest/v1/components", componentH.List)

@@ -259,6 +259,10 @@ func (c *ComponentRepo) Delete(_ context.Context, id string) error {
 	return nil
 }
 
+func (c *ComponentRepo) DeleteOrphans(_ context.Context, _ string) error {
+	return nil
+}
+
 func (c *ComponentRepo) UpdateExtra(_ context.Context, id string, extra map[string]any) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -426,6 +430,10 @@ func (a *AssetRepo) ListPathsByRepo(_ context.Context, repoName, q string) ([]st
 	}
 	sort.Strings(out)
 	return out, nil
+}
+
+func (a *AssetRepo) ListByRepoAndPath(_ context.Context, _, _ string) ([]domain.Asset, error) {
+	return nil, nil
 }
 
 func (a *AssetRepo) ListRawAssetPaths(_ context.Context, repoName string) ([]string, error) {

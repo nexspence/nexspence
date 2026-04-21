@@ -421,3 +421,56 @@ func (r *assetRepo) ListPathsByRepo(ctx context.Context, repoName, q string) ([]
 	sort.Strings(out)
 	return out, nil
 }
+
+func (r *assetRepo) ListRawAssetPaths(ctx context.Context, repoName string) ([]string, error) {
+	rows, err := r.db.Query(ctx,
+		`SELECT DISTINCT a.path
+		 FROM assets a
+		 JOIN repositories rep ON rep.id = a.repository_id
+		 WHERE rep.name = $1
+		 ORDER BY a.path
+		 LIMIT 5000`,
+		repoName,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var p string
+		if err := rows.Scan(&p); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+func (r *assetRepo) ListByRepoAndPath(ctx context.Context, repoName, pathPrefix string) ([]domain.Asset, error) {
+	var q string
+	var args []any
+	if pathPrefix == "" {
+		q = fmt.Sprintf(`SELECT %s %s WHERE rep.name = $1 ORDER BY a.path`,
+			assetSelectCols, assetFromJoin)
+		args = []any{repoName}
+	} else {
+		q = fmt.Sprintf(`SELECT %s %s WHERE rep.name = $1 AND a.path LIKE $2 ORDER BY a.path`,
+			assetSelectCols, assetFromJoin)
+		args = []any{repoName, pathPrefix + "%"}
+	}
+	rows, err := r.db.Query(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []domain.Asset
+	for rows.Next() {
+		a, err := scanAsset(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *a)
+	}
+	return out, rows.Err()
+}
