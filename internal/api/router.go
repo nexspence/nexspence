@@ -163,6 +163,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 
 		// ── My profile ────────────────────────────────────────
 		authed.GET("/api/v1/me", authH.Me)
+		authed.GET("/api/v1/me/privileges", privH.MyPrivileges)
 
 		// ── Repositories (read) ───────────────────────────────
 		authed.GET("/service/rest/v1/repositories", repoH.List)

@@ -131,3 +131,42 @@ func (h *PrivilegeHandler) ListRolePrivileges(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, items)
 }
+
+// MyPrivileges handles GET /api/v1/me/privileges
+// Returns the current user's effective privileges (via their roles).
+func (h *PrivilegeHandler) MyPrivileges(c *gin.Context) {
+	var userID string
+	if uid, ok := c.Get("userID"); ok {
+		userID, _ = uid.(string)
+	}
+	if userID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "not authenticated"})
+		return
+	}
+
+	roles, err := h.roleRepo.GetUserRoles(c.Request.Context(), userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	seen := make(map[string]struct{})
+	var result []domain.Privilege
+	for _, role := range roles {
+		privs, err := h.repo.ListByRole(c.Request.Context(), role.ID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		for _, p := range privs {
+			if _, dup := seen[p.ID]; !dup {
+				seen[p.ID] = struct{}{}
+				result = append(result, p)
+			}
+		}
+	}
+	if result == nil {
+		result = []domain.Privilege{}
+	}
+	c.JSON(http.StatusOK, result)
+}
