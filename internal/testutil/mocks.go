@@ -228,8 +228,16 @@ func (c *ComponentRepo) Get(_ context.Context, id string) (*domain.Component, er
 	defer c.mu.Unlock()
 	return c.components[id], nil
 }
-func (c *ComponentRepo) Search(_ context.Context, _ domain.SearchParams) (*domain.Page[domain.Component], error) {
-	return &domain.Page[domain.Component]{Items: []domain.Component{}}, nil
+func (c *ComponentRepo) Search(_ context.Context, params domain.SearchParams) (*domain.Page[domain.Component], error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	items := make([]domain.Component, 0, len(c.components))
+	for _, v := range c.components {
+		if params.Repository == "" || v.Repository == params.Repository {
+			items = append(items, *v)
+		}
+	}
+	return &domain.Page[domain.Component]{Items: items}, nil
 }
 
 func (c *ComponentRepo) ListDockerBrowseRows(_ context.Context, _ []string, _ int) ([]domain.DockerBrowseRow, error) {

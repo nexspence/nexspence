@@ -220,8 +220,11 @@ func (h *Handler) fetchAndRewriteHelmIndex(c *gin.Context, repo *domain.Reposito
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
 	defer cancel()
 
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet,
-		strings.TrimRight(remoteBase, "/")+"/index.yaml", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, remoteBase+"/index.yaml", nil)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid upstream URL: " + err.Error()})
+		return
+	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "upstream fetch failed: " + err.Error()})
@@ -268,6 +271,11 @@ func (h *Handler) fetchAndRewriteHelmIndex(c *gin.Context, repo *domain.Reposito
 	data, err := yaml.Marshal(index)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if c.Request.Method == http.MethodHead {
+		c.Header("Content-Length", fmt.Sprintf("%d", len(data)))
+		c.Status(http.StatusOK)
 		return
 	}
 	c.Data(http.StatusOK, "application/yaml", data)
