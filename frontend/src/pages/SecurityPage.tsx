@@ -1,16 +1,17 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
-import { Shield, RefreshCw, Key, Webhook, AlertTriangle, CheckCircle, Loader, Trash2, Plus, Bug } from 'lucide-react'
+import { Shield, RefreshCw, Webhook, AlertTriangle, CheckCircle, Loader, Trash2, Plus, Bug } from 'lucide-react'
 import { nexusApi, apiClient } from '@/api/client'
+import { UsersTab } from './UsersPage'
+import { useAuthStore } from '@/store/authStore'
+import { Select } from '../components/Select'
 
 /* ─── Types ─────────────────────────────────────────────── */
 interface Role { id: string; name: string; description: string; privileges: string[]; roles: string[]; readOnly: boolean; source?: string }
 interface CVEFinding { id: string; severity: string; pkgName: string; installedVersion: string; fixedVersion?: string; title?: string }
 interface ScanSummary { critical: number; high: number; medium: number; low: number; unknown: number; total: number }
 interface ScanResult { scannedAt: string; imageRef: string; status: string; error?: string; summary: ScanSummary; findings: CVEFinding[] }
-interface UserToken { id: string; name: string; scopes: string[]; createdAt: string; lastUsedAt?: string; expiresAt?: string }
-interface NewToken extends UserToken { token: string }
 interface WebhookDef { id: string; name: string; url: string; events: string[]; active: boolean; secret?: string }
 interface Privilege {
   id: string
@@ -52,19 +53,108 @@ const S = {
   summCard: { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 10, padding: '12px 16px', textAlign: 'center' as const },
 }
 
+const PRIV_TYPE_COLOR: Record<string, string> = {
+  'wildcard': '#3b82f6',
+  'repository-view': '#22c55e',
+  'repository-admin': '#f59e0b',
+  'application': '#a78bfa',
+  'script': '#f97316',
+  'repository-content-selector': '#06b6d4',
+}
+
 /* ─── Sub-components ────────────────────────────────────── */
 
-function RolesTab({ roles, loading, onRefresh }: { roles: Role[]; loading: boolean; onRefresh: () => void }) {
+function RoleModal({
+  title,
+  form,
+  onFormChange,
+  allPrivs,
+  selectedPrivIds,
+  onPrivToggle,
+  loadingPrivs,
+  onSave,
+  saving,
+  saveDisabled,
+  onCancel,
+  onDelete,
+}: {
+  title: string
+  form: { name: string; description: string }
+  onFormChange: (f: { name: string; description: string }) => void
+  allPrivs: Privilege[]
+  selectedPrivIds: string[]
+  onPrivToggle: (id: string, checked: boolean) => void
+  loadingPrivs: boolean
+  onSave: () => void
+  saving: boolean
+  saveDisabled: boolean
+  onCancel: () => void
+  onDelete?: () => void
+}) {
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+      <div style={{ background: '#0f172a', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 14, padding: 24, width: 520, maxHeight: '80vh', overflowY: 'auto' as const, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#dbeafe' }}>{title}</h3>
+        <input style={S.input} placeholder="Name *" value={form.name} onChange={e => onFormChange({ ...form, name: e.target.value })} />
+        <input style={S.input} placeholder="Description (optional)" value={form.description} onChange={e => onFormChange({ ...form, description: e.target.value })} />
+
+        <div style={{ fontSize: 13, fontWeight: 600, color: 'rgba(229,231,235,0.7)', marginTop: 4 }}>Privileges</div>
+        {loadingPrivs ? <div style={S.empty}>Loading privileges…</div> : allPrivs.length === 0 ? (
+          <div style={{ fontSize: 13, color: 'rgba(229,231,235,0.35)' }}>No privileges defined</div>
+        ) : (
+          <div style={{ maxHeight: 220, overflowY: 'auto' as const, display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {allPrivs.map(p => (
+              <label key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', padding: '4px 0' }}>
+                <input
+                  type="checkbox"
+                  checked={selectedPrivIds.includes(p.id)}
+                  onChange={e => onPrivToggle(p.id, e.target.checked)}
+                />
+                <span style={{ fontSize: 13, color: '#dbeafe', flex: 1 }}>{p.name}</span>
+                <span style={S.badge(PRIV_TYPE_COLOR[p.type] ?? '#6b7280')}>{p.type}</span>
+              </label>
+            ))}
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'space-between', marginTop: 4 }}>
+          <div>{onDelete && <button style={S.btn('danger')} onClick={onDelete}>Delete</button>}</div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button style={S.btn('ghost')} onClick={onCancel}>Cancel</button>
+            <button style={S.btn('primary')} onClick={onSave} disabled={saving || saveDisabled}>
+              {saving ? 'Saving…' : 'Save'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function RolesTab({ roles, loading, onRefresh, admin }: { roles: Role[]; loading: boolean; onRefresh: () => void; admin: boolean }) {
   const qc = useQueryClient()
+
   const [editRole, setEditRole] = useState<Role | null>(null)
-  const [form, setForm] = useState({ name: '', description: '' })
+  const [editForm, setEditForm] = useState({ name: '', description: '' })
+  const [editPrivIds, setEditPrivIds] = useState<string[]>([])
+
+  const [showCreate, setShowCreate] = useState(false)
+  const [createForm, setCreateForm] = useState({ name: '', description: '' })
+  const [createPrivIds, setCreatePrivIds] = useState<string[]>([])
+
   const [allPrivs, setAllPrivs] = useState<Privilege[]>([])
-  const [selectedPrivIds, setSelectedPrivIds] = useState<string[]>([])
   const [loadingPrivs, setLoadingPrivs] = useState(false)
+
+  async function loadPrivs() {
+    setLoadingPrivs(true)
+    try {
+      setAllPrivs(await nexusApi.listPrivileges().then(r => r.data as Privilege[]))
+    } finally { setLoadingPrivs(false) }
+  }
 
   async function openEdit(r: Role) {
     setEditRole(r)
-    setForm({ name: r.name, description: r.description })
+    setEditForm({ name: r.name, description: r.description })
     setLoadingPrivs(true)
     try {
       const [privList, rolePrivs] = await Promise.all([
@@ -72,17 +162,32 @@ function RolesTab({ roles, loading, onRefresh }: { roles: Role[]; loading: boole
         nexusApi.listRolePrivileges(r.id).then(res => res.data as Privilege[]),
       ])
       setAllPrivs(privList)
-      setSelectedPrivIds(rolePrivs.map(p => p.id))
+      setEditPrivIds(rolePrivs.map(p => p.id))
     } finally { setLoadingPrivs(false) }
   }
 
-  const save = useMutation({
+  async function openCreate() {
+    setCreateForm({ name: '', description: '' })
+    setCreatePrivIds([])
+    setShowCreate(true)
+    await loadPrivs()
+  }
+
+  const saveEdit = useMutation({
     mutationFn: async () => {
       if (!editRole) return
-      await nexusApi.updateRole(editRole.id, form)
-      await nexusApi.setRolePrivileges(editRole.id, selectedPrivIds)
+      await nexusApi.updateRole(editRole.id, editForm)
+      await nexusApi.setRolePrivileges(editRole.id, editPrivIds)
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['roles'] }); onRefresh(); setEditRole(null) },
+  })
+
+  const create = useMutation({
+    mutationFn: async () => {
+      const res = await apiClient.post<Role>('/service/rest/v1/security/roles', createForm)
+      if (createPrivIds.length > 0) await nexusApi.setRolePrivileges(res.data.id, createPrivIds)
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['roles'] }); onRefresh(); setShowCreate(false) },
   })
 
   const del = useMutation({
@@ -91,69 +196,70 @@ function RolesTab({ roles, loading, onRefresh }: { roles: Role[]; loading: boole
   })
 
   if (loading) return <div style={S.empty}>Loading…</div>
-  if (!roles.length) return <div style={S.empty}>No roles found</div>
 
   return (
     <>
-      <div style={S.grid}>
-        {roles.map(r => (
-          <div key={r.id} style={S.card}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-              <Shield size={15} style={{ color: '#3b82f6' }} />
-              <span style={{ fontSize: 14, fontWeight: 600, color: '#dbeafe', flex: 1 }}>{r.name}</span>
-              {r.readOnly && <span style={S.badge('#6b7280')}>built-in</span>}
-              {!r.readOnly && (
-                <button style={{ ...S.btn('ghost'), padding: '3px 8px', fontSize: 12 }} onClick={() => openEdit(r)}>Edit</button>
-              )}
+      {admin && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+          <button style={S.btn('primary')} onClick={openCreate}><Plus size={14} /> New Role</button>
+        </div>
+      )}
+
+      {!roles.length ? <div style={S.empty}>No roles found</div> : (
+        <div style={S.grid}>
+          {roles.map(r => (
+            <div key={r.id} style={S.card}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                <Shield size={15} style={{ color: '#3b82f6' }} />
+                <span style={{ fontSize: 14, fontWeight: 600, color: '#dbeafe', flex: 1 }}>{r.name}</span>
+                {r.readOnly && <span style={S.badge('#6b7280')}>built-in</span>}
+                {!r.readOnly && admin && (
+                  <button style={{ ...S.btn('ghost'), padding: '3px 8px', fontSize: 12 }} onClick={() => openEdit(r)}>Edit</button>
+                )}
+              </div>
+              {r.description && <p style={{ fontSize: 12, color: 'rgba(229,231,235,0.5)', margin: '0 0 8px' }}>{r.description}</p>}
+              <div style={{ display: 'flex', flexWrap: 'wrap' as const, gap: 4 }}>
+                {(r.privileges ?? []).slice(0, 6).map(p => (
+                  <span key={p} style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: 'rgba(99,102,241,0.12)', color: '#a5b4fc', fontFamily: 'monospace' }}>{p}</span>
+                ))}
+                {(r.privileges ?? []).length > 6 && <span style={{ fontSize: 10, color: 'rgba(229,231,235,0.4)' }}>+{(r.privileges ?? []).length - 6}</span>}
+              </div>
             </div>
-            {r.description && <p style={{ fontSize: 12, color: 'rgba(229,231,235,0.5)', margin: '0 0 8px' }}>{r.description}</p>}
-            <div style={{ display: 'flex', flexWrap: 'wrap' as const, gap: 4 }}>
-              {(r.privileges ?? []).slice(0, 6).map(p => (
-                <span key={p} style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: 'rgba(99,102,241,0.12)', color: '#a5b4fc', fontFamily: 'monospace' }}>{p}</span>
-              ))}
-              {(r.privileges ?? []).length > 6 && <span style={{ fontSize: 10, color: 'rgba(229,231,235,0.4)' }}>+{(r.privileges ?? []).length - 6}</span>}
-            </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
 
       {editRole && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div style={{ background: '#0f172a', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 14, padding: 24, width: 520, maxHeight: '80vh', overflowY: 'auto' as const, display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#dbeafe' }}>Edit Role: {editRole.name}</h3>
-            <input style={S.input} placeholder="Name" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
-            <input style={S.input} placeholder="Description" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
+        <RoleModal
+          title={`Edit Role: ${editRole.name}`}
+          form={editForm}
+          onFormChange={setEditForm}
+          allPrivs={allPrivs}
+          selectedPrivIds={editPrivIds}
+          onPrivToggle={(id, checked) => setEditPrivIds(prev => checked ? [...prev, id] : prev.filter(x => x !== id))}
+          loadingPrivs={loadingPrivs}
+          onSave={() => saveEdit.mutate()}
+          saving={saveEdit.isPending}
+          saveDisabled={!editForm.name.trim()}
+          onCancel={() => setEditRole(null)}
+          onDelete={() => { if (confirm(`Delete role ${editRole.name}?`)) { del.mutate(editRole.id); setEditRole(null) } }}
+        />
+      )}
 
-            <div style={{ fontSize: 13, fontWeight: 600, color: 'rgba(229,231,235,0.7)', marginTop: 4 }}>Privileges</div>
-            {loadingPrivs ? <div style={S.empty}>Loading privileges…</div> : (
-              <div style={{ maxHeight: 220, overflowY: 'auto' as const, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                {allPrivs.map(p => (
-                  <label key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', padding: '4px 0' }}>
-                    <input
-                      type="checkbox"
-                      checked={selectedPrivIds.includes(p.id)}
-                      onChange={e => setSelectedPrivIds(prev =>
-                        e.target.checked ? [...prev, p.id] : prev.filter(id => id !== p.id)
-                      )}
-                    />
-                    <span style={{ fontSize: 13, color: '#dbeafe' }}>{p.name}</span>
-                    <span style={S.badge(PRIV_TYPE_COLOR[p.type as PrivType] ?? '#6b7280')}>{p.type}</span>
-                  </label>
-                ))}
-              </div>
-            )}
-
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'space-between', marginTop: 4 }}>
-              <button style={S.btn('danger')} onClick={() => { if (confirm(`Delete role ${editRole.name}?`)) { del.mutate(editRole.id); setEditRole(null) } }}>Delete</button>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button style={S.btn('ghost')} onClick={() => setEditRole(null)}>Cancel</button>
-                <button style={S.btn('primary')} onClick={() => save.mutate()} disabled={save.isPending || !form.name.trim()}>
-                  {save.isPending ? 'Saving…' : 'Save'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+      {showCreate && (
+        <RoleModal
+          title="New Role"
+          form={createForm}
+          onFormChange={setCreateForm}
+          allPrivs={allPrivs}
+          selectedPrivIds={createPrivIds}
+          onPrivToggle={(id, checked) => setCreatePrivIds(prev => checked ? [...prev, id] : prev.filter(x => x !== id))}
+          loadingPrivs={loadingPrivs}
+          onSave={() => create.mutate()}
+          saving={create.isPending}
+          saveDisabled={!createForm.name.trim()}
+          onCancel={() => setShowCreate(false)}
+        />
       )}
     </>
   )
@@ -310,76 +416,6 @@ function ScanTab() {
   )
 }
 
-function TokensTab() {
-  const qc = useQueryClient()
-  const { data: tokens = [], isLoading } = useQuery<UserToken[]>({
-    queryKey: ['my-tokens'],
-    queryFn: () => apiClient.get<UserToken[]>('/api/v1/tokens').then(r => r.data),
-  })
-  const [name, setName] = useState('')
-  const [newToken, setNewToken] = useState<NewToken | null>(null)
-  const [creating, setCreating] = useState(false)
-
-  async function create() {
-    if (!name.trim()) return
-    setCreating(true)
-    try {
-      const res = await apiClient.post<NewToken>('/api/v1/tokens', { name: name.trim() })
-      setNewToken(res.data); setName('')
-      qc.invalidateQueries({ queryKey: ['my-tokens'] })
-    } finally { setCreating(false) }
-  }
-
-  const del = useMutation({
-    mutationFn: (id: string) => apiClient.delete(`/api/v1/tokens/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['my-tokens'] }),
-  })
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div style={S.card}>
-        <div style={{ fontSize: 14, fontWeight: 600, color: '#dbeafe', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Key size={15} style={{ color: '#3b82f6' }} /> Create API Token
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <input style={S.input} placeholder="Token name" value={name} onChange={e => setName(e.target.value)} onKeyDown={e => e.key === 'Enter' && create()} />
-          <button style={S.btn('primary')} onClick={create} disabled={creating || !name.trim()}>
-            <Plus size={14} />{creating ? 'Creating…' : 'Create'}
-          </button>
-        </div>
-      </div>
-
-      {newToken && (
-        <div style={{ ...S.card, background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.3)' }}>
-          <div style={{ fontSize: 13, color: '#22c55e', fontWeight: 600, marginBottom: 8 }}>Token created — copy it now, it will not be shown again</div>
-          <code style={{ ...S.mono, fontSize: 13, background: 'rgba(0,0,0,0.3)', padding: '8px 12px', borderRadius: 8, display: 'block', wordBreak: 'break-all' as const, color: '#a5b4fc' }}>{newToken.token}</code>
-          <button style={{ ...S.btn('ghost'), marginTop: 8, fontSize: 12 }} onClick={() => setNewToken(null)}>Dismiss</button>
-        </div>
-      )}
-
-      <div style={S.card}>
-        <div style={{ fontSize: 14, fontWeight: 600, color: '#dbeafe', marginBottom: 12 }}>Your API Tokens</div>
-        {isLoading ? <div style={S.empty}>Loading…</div> : tokens.length === 0 ? <div style={S.empty}>No tokens yet</div> : (
-          tokens.map(t => (
-            <div key={t.id} style={S.row}>
-              <Key size={14} style={{ color: '#3b82f6', flexShrink: 0 }} />
-              <div style={{ flex: 1 }}>
-                <div style={{ color: '#dbeafe', fontWeight: 600 }}>{t.name}</div>
-                <div style={{ fontSize: 11, color: 'rgba(229,231,235,0.4)' }}>
-                  Created {new Date(t.createdAt).toLocaleDateString()}
-                  {t.lastUsedAt && ` · Last used ${new Date(t.lastUsedAt).toLocaleDateString()}`}
-                  {t.expiresAt && ` · Expires ${new Date(t.expiresAt).toLocaleDateString()}`}
-                </div>
-              </div>
-              <button style={S.btn('danger')} onClick={() => del.mutate(t.id)}><Trash2 size={13} /></button>
-            </div>
-          ))
-        )}
-      </div>
-    </div>
-  )
-}
-
 const WEBHOOK_EVENTS = ['artifact.published', 'artifact.deleted', 'repo.created', 'proxy.error']
 
 function WebhooksTab() {
@@ -467,74 +503,66 @@ function WebhooksTab() {
   )
 }
 
-const PRIV_TYPES = ['wildcard', 'repository-view', 'repository-admin', 'application', 'script'] as const
-type PrivType = typeof PRIV_TYPES[number]
+interface ContentSelector { id: string; name: string; description: string; expression: string }
 
-const PRIV_TYPE_COLOR: Record<PrivType, string> = {
-  'wildcard': '#3b82f6',
-  'repository-view': '#22c55e',
-  'repository-admin': '#f59e0b',
-  'application': '#a78bfa',
-  'script': '#f97316',
-}
-
-function PrivilegeAttrFields({ type, attrs, onChange }: {
-  type: PrivType
-  attrs: Record<string, unknown>
-  onChange: (key: string, value: unknown) => void
-}) {
-  const inp = (key: string, placeholder: string) => (
-    <input
-      key={key}
-      style={{ ...S.input, flex: 1 }}
-      placeholder={placeholder}
-      value={(attrs[key] as string) ?? ''}
-      onChange={e => onChange(key, e.target.value)}
-    />
-  )
-  if (type === 'wildcard') return inp('pattern', 'Pattern (e.g. nexus:*:read)')
-  if (type === 'repository-view' || type === 'repository-admin') return (
-    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' as const }}>
-      {inp('format', 'Format (e.g. maven2 or *)')}
-      {inp('repository', 'Repository name or *')}
-    </div>
-  )
-  if (type === 'application') return inp('domain', 'Domain (e.g. users)')
-  if (type === 'script') return inp('name', 'Script name')
-  return null
-}
-
-function PrivilegesTab() {
+function PrivilegesTab({ admin }: { admin: boolean }) {
   const qc = useQueryClient()
   const { data: privs = [], isLoading } = useQuery<Privilege[]>({
     queryKey: ['privileges'],
     queryFn: () => nexusApi.listPrivileges().then(r => r.data),
   })
+  const { data: selectors = [] } = useQuery<ContentSelector[]>({
+    queryKey: ['content-selectors'],
+    queryFn: () => nexusApi.listContentSelectors().then(r => r.data),
+  })
+  const PRIV_ACTIONS = ['read', 'browse', 'write', 'delete'] as const
+
   const [showModal, setShowModal] = useState(false)
   const [editing, setEditing] = useState<Privilege | null>(null)
-  const [form, setForm] = useState<{ name: string; description: string; type: PrivType; attrs: Record<string, unknown> }>({
-    name: '', description: '', type: 'wildcard', attrs: {},
-  })
+  const [form, setForm] = useState({ name: '', description: '', contentSelectorId: '', actions: [] as string[] })
+  const [saveError, setSaveError] = useState('')
 
   function openCreate() {
     setEditing(null)
-    setForm({ name: '', description: '', type: 'wildcard', attrs: {} })
+    setForm({ name: '', description: '', contentSelectorId: '', actions: [] })
+    setSaveError('')
     setShowModal(true)
   }
 
   function openEdit(p: Privilege) {
     setEditing(p)
-    setForm({ name: p.name, description: p.description, type: p.type, attrs: { ...p.attrs } })
+    setForm({
+      name: p.name,
+      description: p.description,
+      contentSelectorId: p.contentSelectorId ?? '',
+      actions: (p.attrs?.actions as string[] | undefined) ?? [],
+    })
+    setSaveError('')
     setShowModal(true)
   }
 
   const save = useMutation({
     mutationFn: async () => {
-      const payload = { name: form.name, description: form.description, type: form.type, attrs: form.attrs }
+      if (!form.contentSelectorId) throw new Error('Select a content selector')
+      const payload = {
+        name: form.name,
+        description: form.description,
+        type: 'repository-content-selector',
+        contentSelectorId: form.contentSelectorId,
+        attrs: { actions: form.actions },
+      }
       if (editing) return nexusApi.updatePrivilege(editing.id, payload)
       return nexusApi.createPrivilege(payload)
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['privileges'] }); setShowModal(false) },
+    onError: (e: unknown) => {
+      let msg = 'Error'
+      if (axios.isAxiosError(e)) {
+        const d = e.response?.data
+        if (typeof d === 'object' && d !== null && 'error' in d) msg = String((d as { error: unknown }).error)
+      } else if (e instanceof Error) { msg = e.message }
+      setSaveError(msg)
+    },
   })
 
   const del = useMutation({
@@ -542,11 +570,15 @@ function PrivilegesTab() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['privileges'] }),
   })
 
+  const selectedSelector = selectors.find(s => s.id === form.contentSelectorId)
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-        <button style={S.btn('primary')} onClick={openCreate}><Plus size={14} /> New Privilege</button>
-      </div>
+      {admin && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <button style={S.btn('primary')} onClick={openCreate}><Plus size={14} /> New Privilege</button>
+        </div>
+      )}
 
       {isLoading ? <div style={S.empty}>Loading…</div> : privs.length === 0 ? <div style={S.empty}>No privileges</div> : (
         <div style={S.card}>
@@ -555,29 +587,42 @@ function PrivilegesTab() {
               <tr style={{ color: 'rgba(229,231,235,0.5)', textAlign: 'left' as const }}>
                 <th style={{ padding: '0 0 10px', fontWeight: 600 }}>Name</th>
                 <th style={{ padding: '0 8px 10px', fontWeight: 600 }}>Type</th>
+                <th style={{ padding: '0 8px 10px', fontWeight: 600 }}>Actions</th>
                 <th style={{ padding: '0 8px 10px', fontWeight: 600 }}>Description</th>
-                <th style={{ padding: '0 0 10px', fontWeight: 600, width: 80 }}></th>
+                {admin && <th style={{ padding: '0 0 10px', fontWeight: 600, width: 80 }}></th>}
               </tr>
             </thead>
             <tbody>
-              {privs.map(p => (
-                <tr key={p.id} style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-                  <td style={{ padding: '9px 0', color: '#dbeafe', fontWeight: 600 }}>{p.name}</td>
-                  <td style={{ padding: '9px 8px' }}>
-                    <span style={S.badge(PRIV_TYPE_COLOR[p.type] ?? '#6b7280')}>{p.type}</span>
-                    {p.readOnly && <span style={{ ...S.badge('#6b7280'), marginLeft: 4 }}>built-in</span>}
-                  </td>
-                  <td style={{ padding: '9px 8px', color: 'rgba(229,231,235,0.55)' }}>{p.description || '—'}</td>
-                  <td style={{ padding: '9px 0', display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                    {!p.readOnly && (
-                      <>
-                        <button style={{ ...S.btn('ghost'), padding: '4px 8px' }} onClick={() => openEdit(p)}>Edit</button>
-                        <button style={{ ...S.btn('danger'), padding: '4px 8px' }} onClick={() => { if (confirm(`Delete ${p.name}?`)) del.mutate(p.id) }}><Trash2 size={13} /></button>
-                      </>
+              {privs.map(p => {
+                const actions = (p.attrs?.actions as string[] | undefined) ?? []
+                return (
+                  <tr key={p.id} style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                    <td style={{ padding: '9px 0', color: '#dbeafe', fontWeight: 600 }}>{p.name}</td>
+                    <td style={{ padding: '9px 8px' }}>
+                      <span style={S.badge(PRIV_TYPE_COLOR[p.type] ?? '#6b7280')}>{p.type}</span>
+                      {p.readOnly && <span style={{ ...S.badge('#6b7280'), marginLeft: 4 }}>built-in</span>}
+                    </td>
+                    <td style={{ padding: '9px 8px' }}>
+                      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' as const }}>
+                        {actions.length > 0 ? actions.map(a => (
+                          <span key={a} style={S.badge(a === 'write' || a === 'delete' ? '#f59e0b' : '#22c55e')}>{a}</span>
+                        )) : <span style={{ color: 'rgba(229,231,235,0.3)', fontSize: 12 }}>—</span>}
+                      </div>
+                    </td>
+                    <td style={{ padding: '9px 8px', color: 'rgba(229,231,235,0.55)' }}>{p.description || '—'}</td>
+                    {admin && (
+                      <td style={{ padding: '9px 0', display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                        {!p.readOnly && (
+                          <>
+                            <button style={{ ...S.btn('ghost'), padding: '4px 8px' }} onClick={() => openEdit(p)}>Edit</button>
+                            <button style={{ ...S.btn('danger'), padding: '4px 8px' }} onClick={() => { if (confirm(`Delete ${p.name}?`)) del.mutate(p.id) }}><Trash2 size={13} /></button>
+                          </>
+                        )}
+                      </td>
                     )}
-                  </td>
-                </tr>
-              ))}
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>
@@ -587,23 +632,58 @@ function PrivilegesTab() {
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
           <div style={{ background: '#0f172a', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 14, padding: 24, width: 480, display: 'flex', flexDirection: 'column', gap: 12 }}>
             <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#dbeafe' }}>{editing ? 'Edit Privilege' : 'New Privilege'}</h3>
-            <input style={S.input} placeholder="Name" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
-            <input style={S.input} placeholder="Description" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
-            <select
-              style={{ ...S.input }}
-              value={form.type}
-              onChange={e => setForm(f => ({ ...f, type: e.target.value as PrivType, attrs: {} }))}
-            >
-              {PRIV_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-            </select>
-            <PrivilegeAttrFields
-              type={form.type}
-              attrs={form.attrs}
-              onChange={(k, v) => setForm(f => ({ ...f, attrs: { ...f.attrs, [k]: v } }))}
-            />
+
+            <input style={S.input} placeholder="Name *" value={form.name}
+              onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
+            <input style={S.input} placeholder="Description (optional)" value={form.description}
+              onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
+
+            <div>
+              <div style={{ fontSize: 12, color: 'rgba(229,231,235,0.5)', marginBottom: 6 }}>Actions</div>
+              <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' as const }}>
+                {PRIV_ACTIONS.map(a => (
+                  <label key={a} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13, color: form.actions.includes(a) ? '#dbeafe' : 'rgba(229,231,235,0.5)' }}>
+                    <input
+                      type="checkbox"
+                      checked={form.actions.includes(a)}
+                      onChange={e => setForm(f => ({ ...f, actions: e.target.checked ? [...f.actions, a] : f.actions.filter(x => x !== a) }))}
+                      style={{ accentColor: '#3b82f6' }}
+                    />
+                    {a}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <div style={{ fontSize: 12, color: 'rgba(229,231,235,0.5)', marginBottom: 4 }}>Content Selector *</div>
+              <Select
+                options={[
+                  { value: '', label: '— select a content selector —' },
+                  ...selectors.map(s => ({ value: s.id, label: s.name })),
+                ]}
+                value={form.contentSelectorId}
+                onChange={v => setForm(f => ({ ...f, contentSelectorId: v }))}
+              />
+              {selectedSelector && (
+                <div style={{ marginTop: 6, padding: '6px 10px', background: 'rgba(6,182,212,0.08)', borderRadius: 8, fontSize: 12, color: '#67e8f9', fontFamily: 'monospace' }}>
+                  {selectedSelector.expression}
+                </div>
+              )}
+              {selectors.length === 0 && (
+                <div style={{ marginTop: 6, fontSize: 12, color: 'rgba(239,68,68,0.7)' }}>
+                  No content selectors defined — create one in the Content Selectors tab first.
+                </div>
+              )}
+            </div>
+
+            {saveError && (
+              <div style={{ padding: '8px 12px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, color: '#ef4444', fontSize: 12 }}>{saveError}</div>
+            )}
+
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 4 }}>
               <button style={S.btn('ghost')} onClick={() => setShowModal(false)}>Cancel</button>
-              <button style={S.btn('primary')} onClick={() => save.mutate()} disabled={save.isPending || !form.name.trim()}>
+              <button style={S.btn('primary')} onClick={() => save.mutate()} disabled={save.isPending || !form.name.trim() || !form.contentSelectorId}>
                 {save.isPending ? 'Saving…' : 'Save'}
               </button>
             </div>
@@ -614,7 +694,7 @@ function PrivilegesTab() {
   )
 }
 
-function ContentSelectorsTab() {
+function ContentSelectorsTab({ admin }: { admin: boolean }) {
   const qc = useQueryClient()
   const { data: selectors = [], isLoading } = useQuery<{ id: string; name: string; description: string; expression: string }[]>({
     queryKey: ['content-selectors'],
@@ -660,9 +740,10 @@ function ContentSelectorsTab() {
 
   function selectorSummary(expr: string): string {
     const { repo, path } = parseExpression(expr)
-    if (repo && path) return `${path}* in ${repo}`
+    const displayPath = path.replace(/^\//, '').replace(/\/$/, '') // "/da/bas/" → "da/bas"
+    if (repo && path) return `${displayPath}/* in ${repo}`
     if (repo)         return `all paths in ${repo}`
-    if (path)         return `${path}* in all repos`
+    if (path)         return `${displayPath}/* in all repos`
     return expr
   }
 
@@ -718,9 +799,11 @@ function ContentSelectorsTab() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-        <button style={S.btn('primary')} onClick={openCreate}><Plus size={14} /> New Selector</button>
-      </div>
+      {admin && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <button style={S.btn('primary')} onClick={openCreate}><Plus size={14} /> New Selector</button>
+        </div>
+      )}
 
       {isLoading ? <div style={S.empty}>Loading…</div> : selectors.length === 0 ? <div style={S.empty}>No content selectors</div> : (
         <div style={S.card}>
@@ -730,7 +813,7 @@ function ContentSelectorsTab() {
                 <th style={{ padding: '0 0 10px', fontWeight: 600 }}>Name</th>
                 <th style={{ padding: '0 8px 10px', fontWeight: 600 }}>Scope</th>
                 <th style={{ padding: '0 8px 10px', fontWeight: 600 }}>Description</th>
-                <th style={{ padding: '0 0 10px', width: 80 }}></th>
+                {admin && <th style={{ padding: '0 0 10px', width: 80 }}></th>}
               </tr>
             </thead>
             <tbody>
@@ -741,10 +824,12 @@ function ContentSelectorsTab() {
                     <code style={{ ...S.mono, fontSize: 12, color: '#a5b4fc' }}>{selectorSummary(s.expression)}</code>
                   </td>
                   <td style={{ padding: '9px 8px', color: 'rgba(229,231,235,0.55)' }}>{s.description || '—'}</td>
-                  <td style={{ padding: '9px 0', display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                    <button style={{ ...S.btn('ghost'), padding: '4px 8px' }} onClick={() => openEdit(s)}>Edit</button>
-                    <button style={{ ...S.btn('danger'), padding: '4px 8px' }} onClick={() => { if (confirm(`Delete ${s.name}?`)) del.mutate(s.id) }}><Trash2 size={13} /></button>
-                  </td>
+                  {admin && (
+                    <td style={{ padding: '9px 0', display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                      <button style={{ ...S.btn('ghost'), padding: '4px 8px' }} onClick={() => openEdit(s)}>Edit</button>
+                      <button style={{ ...S.btn('danger'), padding: '4px 8px' }} onClick={() => { if (confirm(`Delete ${s.name}?`)) del.mutate(s.id) }}><Trash2 size={13} /></button>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -829,7 +914,9 @@ function ContentSelectorsTab() {
                   ) : paths.length === 0 ? (
                     <div style={{ padding: '7px 12px', fontSize: 13, color: 'rgba(229,231,235,0.35)' }}>No paths found</div>
                   ) : paths.map(p => {
-                    const depth = (p.match(/\//g) ?? []).length - 1
+                    // strip leading/trailing slashes for display: "/da/bas/" → "da/bas"
+                    const label = p.replace(/^\//, '').replace(/\/$/, '')
+                    const depth = (label.match(/\//g) ?? []).length
                     return (
                       <div
                         key={p}
@@ -837,9 +924,9 @@ function ContentSelectorsTab() {
                           color: form.path === p ? '#3b82f6' : '#dbeafe',
                           background: form.path === p ? 'rgba(59,130,246,0.12)' : 'transparent',
                           fontFamily: 'monospace' }}
-                        onClick={() => { setForm(f => ({ ...f, path: p })); setPathSearch(p); setPathOpen(false) }}
+                        onClick={() => { setForm(f => ({ ...f, path: p })); setPathSearch(label); setPathOpen(false) }}
                       >
-                        {p}
+                        {label}
                       </div>
                     )
                   })}
@@ -885,37 +972,50 @@ function ContentSelectorsTab() {
 }
 
 /* ─── Main page ──────────────────────────────────────────── */
-type Tab = 'roles' | 'privileges' | 'selectors' | 'scan' | 'tokens' | 'webhooks'
+type Tab = 'roles' | 'privileges' | 'selectors' | 'users' | 'scan' | 'webhooks'
 
 export default function SecurityPage() {
+  const { isAdmin } = useAuthStore()
+  const admin = isAdmin()
   const [tab, setTab] = useState<Tab>('roles')
   const { data: roles = [], isLoading, refetch } = useQuery<Role[]>({
     queryKey: ['roles'],
     queryFn: () => nexusApi.listRoles().then(r => r.data),
   })
 
+  const allTabs: [Tab, string][] = [
+    ['roles',      'Roles'],
+    ['privileges', 'Privileges'],
+    ['selectors',  'Content Selectors'],
+    ...(admin ? [['users', 'Users'], ['scan', 'CVE Scan'], ['webhooks', 'Webhooks']] as [Tab, string][] : []),
+  ]
+
   return (
     <div style={S.page}>
       <div style={S.header}>
         <div>
           <h1 style={S.title}>Security</h1>
-          <p style={S.subtitle}>Roles, vulnerability scanning, API tokens and webhooks</p>
+          <p style={S.subtitle}>
+            {admin
+              ? 'Roles, users, privileges, content selectors and webhooks'
+              : 'View roles and privileges. Content Selector → Privilege → Role defines what each user can access.'}
+          </p>
         </div>
         {tab === 'roles' && <button style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, padding: 8, color: 'rgba(229,231,235,0.7)', cursor: 'pointer', display: 'flex', alignItems: 'center' }} onClick={() => refetch()}><RefreshCw size={16} /></button>}
       </div>
 
       <div style={S.tabs}>
-        {([['roles', 'Roles'], ['privileges', 'Privileges'], ['selectors', 'Content Selectors'], ['scan', 'CVE Scan'], ['tokens', 'API Tokens'], ['webhooks', 'Webhooks']] as [Tab, string][]).map(([id, label]) => (
+        {allTabs.map(([id, label]) => (
           <button key={id} style={S.tab(tab === id)} onClick={() => setTab(id)}>{label}</button>
         ))}
       </div>
 
-      {tab === 'roles'      && <RolesTab roles={roles} loading={isLoading} onRefresh={refetch} />}
-      {tab === 'privileges' && <PrivilegesTab />}
-      {tab === 'selectors'  && <ContentSelectorsTab />}
-      {tab === 'scan'       && <ScanTab />}
-      {tab === 'tokens'     && <TokensTab />}
-      {tab === 'webhooks'   && <WebhooksTab />}
+      {tab === 'roles'      && <RolesTab roles={roles} loading={isLoading} onRefresh={refetch} admin={admin} />}
+      {tab === 'privileges' && <PrivilegesTab admin={admin} />}
+      {tab === 'selectors'  && <ContentSelectorsTab admin={admin} />}
+      {tab === 'users'      && admin && <UsersTab />}
+      {tab === 'scan'       && admin && <ScanTab />}
+      {tab === 'webhooks'   && admin && <WebhooksTab />}
     </div>
   )
 }
