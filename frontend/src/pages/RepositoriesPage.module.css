@@ -93,40 +93,6 @@
   color: rgba(229, 231, 235, 0.35);
 }
 
-.selectWrapper {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-
-.select {
-  appearance: none;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-  padding: 9px 32px 9px 12px;
-  color: #e5e7eb;
-  font-size: 13px;
-  outline: none;
-  cursor: pointer;
-  transition: border-color 0.15s;
-  min-width: 140px;
-}
-
-.select:focus {
-  border-color: #3b82f6;
-}
-
-.select option {
-  background: #1e2433;
-}
-
-.selectIcon {
-  position: absolute;
-  right: 10px;
-  color: rgba(229, 231, 235, 0.5);
-  pointer-events: none;
-}
 
 .grid {
   display: grid;
@@ -196,12 +162,56 @@
   line-height: 1.4;
 }
 
+.quotaBar {
+  margin-top: 8px;
+}
+
+.quotaText {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: rgba(229, 231, 235, 0.5);
+  margin-bottom: 4px;
+}
+
+.quotaTrack {
+  height: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.quotaFill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
 .cardFooter {
   display: flex;
   justify-content: flex-end;
+  gap: 8px;
   margin-top: 12px;
   padding-top: 10px;
   border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.settingsBtn {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  padding: 5px;
+  color: rgba(229, 231, 235, 0.55);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.settingsBtn:hover {
+  background: rgba(59, 130, 246, 0.1);
+  border-color: rgba(59, 130, 246, 0.35);
+  color: #93c5fd;
 }
 
 .deleteBtn {
@@ -246,6 +256,13 @@
   align-items: center;
   justify-content: center;
   z-index: 100;
+  transition: opacity 180ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modalOverlay {
+    transition: none;
+  }
 }
 
 .modal {
@@ -299,6 +316,11 @@
 
 .input:focus {
   border-color: #3b82f6;
+}
+
+.inputDisabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .input option {
