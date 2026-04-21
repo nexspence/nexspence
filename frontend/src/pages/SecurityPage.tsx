@@ -227,11 +227,11 @@ function RolesTab({ roles, loading, onRefresh, admin }: { roles: Role[]; loading
                   <div style={{ fontSize: 12, color: 'rgba(229,231,235,0.45)', marginTop: 2 }}>{r.description}</div>
                 )}
                 <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' as const, marginTop: 4 }}>
-                  {(r.privileges ?? []).slice(0, 4).map(p => (
+                  {(r.privileges ?? []).slice(0, 3).map(p => (
                     <span key={p} style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, background: 'rgba(99,102,241,0.12)', color: '#a5b4fc', fontFamily: 'monospace' }}>{p}</span>
                   ))}
-                  {(r.privileges ?? []).length > 4 && (
-                    <span style={{ fontSize: 10, color: 'rgba(229,231,235,0.35)' }}>+{(r.privileges ?? []).length - 4} more</span>
+                  {(r.privileges ?? []).length > 3 && (
+                    <span style={{ fontSize: 10, color: 'rgba(229,231,235,0.35)' }}>+{(r.privileges ?? []).length - 3} more</span>
                   )}
                 </div>
               </div>
