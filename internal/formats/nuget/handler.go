@@ -13,8 +13,12 @@
 package nuget
 
 import (
+	"context"
+	"encoding/json"
 	"encoding/xml"
+	"fmt"
 	"net/http"
+	"net/url"
 	"path"
 	"strings"
 	"time"
@@ -37,9 +41,13 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 
 	repo, _ := h.deps.Repos.Get(c.Request.Context(), repoName)
 
-	// Proxy: block mutations, proxy reads through to upstream (e.g. nuget.org)
+	// Proxy: block mutations; rewrite service index; cache packages.
 	if repo != nil && repo.Type == domain.TypeProxy {
 		if repoproxy.RejectMutation(c, repo) {
+			return
+		}
+		if (c.Request.Method == http.MethodGet || c.Request.Method == http.MethodHead) && p == "/index.json" {
+			h.fetchAndRewriteNuGetIndex(c, repo)
 			return
 		}
 		coords := base.Coords{}
@@ -267,6 +275,73 @@ func (h *Handler) handlePush(c *gin.Context, repoName string) {
 		return
 	}
 	c.Status(http.StatusCreated)
+}
+
+// fetchAndRewriteNuGetIndex fetches the NuGet v3 service index from upstream,
+// rewrites all resource @id URLs to point to this proxy, and returns the result.
+// Not cached — fetched live so new resource endpoints appear promptly.
+func (h *Handler) fetchAndRewriteNuGetIndex(c *gin.Context, repo *domain.Repository) {
+	remoteBase, err := repoproxy.RemoteURL(repo)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, remoteBase+"/index.json", nil)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid upstream URL: " + err.Error()})
+		return
+	}
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "upstream fetch failed: " + err.Error()})
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		c.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("upstream returned %d", resp.StatusCode)})
+		return
+	}
+
+	var index map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&index); err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "invalid upstream index.json: " + err.Error()})
+		return
+	}
+
+	// Rewrite each resource's @id to point through this proxy.
+	// Parse the upstream @id URL, keep only its path, prepend our local base.
+	localBase := strings.TrimRight(h.deps.BaseURL, "/") + "/repository/" + repo.Name
+
+	if resources, ok := index["resources"].([]any); ok {
+		for _, r := range resources {
+			res, ok := r.(map[string]any)
+			if !ok {
+				continue
+			}
+			id, ok := res["@id"].(string)
+			if !ok {
+				continue
+			}
+			parsed, err := url.Parse(id)
+			if err != nil {
+				continue
+			}
+			res["@id"] = localBase + parsed.RequestURI()
+		}
+	}
+
+	if c.Request.Method == http.MethodHead {
+		c.Status(http.StatusOK)
+		return
+	}
+	c.JSON(http.StatusOK, index)
 }
 
 func normPath(p string) string {
