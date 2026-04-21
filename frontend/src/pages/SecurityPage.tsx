@@ -6,6 +6,7 @@ import { nexusApi, apiClient } from '@/api/client'
 import { UsersTab } from './UsersPage'
 import { useAuthStore } from '@/store/authStore'
 import { Select } from '../components/Select'
+import { MultiSelect } from '../components/MultiSelect'
 
 /* ─── Types ─────────────────────────────────────────────── */
 interface Role { id: string; name: string; description: string; privileges: string[]; roles: string[]; readOnly: boolean; source?: string }
@@ -83,7 +84,7 @@ function RoleModal({
   onFormChange: (f: { name: string; description: string }) => void
   allPrivs: Privilege[]
   selectedPrivIds: string[]
-  onPrivToggle: (id: string, checked: boolean) => void
+  onPrivToggle: (ids: string[]) => void
   loadingPrivs: boolean
   onSave: () => void
   saving: boolean
@@ -99,22 +100,15 @@ function RoleModal({
         <input style={S.input} placeholder="Description (optional)" value={form.description} onChange={e => onFormChange({ ...form, description: e.target.value })} />
 
         <div style={{ fontSize: 13, fontWeight: 600, color: 'rgba(229,231,235,0.7)', marginTop: 4 }}>Privileges</div>
-        {loadingPrivs ? <div style={S.empty}>Loading privileges…</div> : allPrivs.length === 0 ? (
-          <div style={{ fontSize: 13, color: 'rgba(229,231,235,0.35)' }}>No privileges defined</div>
+        {loadingPrivs ? (
+          <div style={S.empty}>Loading privileges…</div>
         ) : (
-          <div style={{ maxHeight: 220, overflowY: 'auto' as const, display: 'flex', flexDirection: 'column', gap: 4 }}>
-            {allPrivs.map(p => (
-              <label key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', padding: '4px 0' }}>
-                <input
-                  type="checkbox"
-                  checked={selectedPrivIds.includes(p.id)}
-                  onChange={e => onPrivToggle(p.id, e.target.checked)}
-                />
-                <span style={{ fontSize: 13, color: '#dbeafe', flex: 1 }}>{p.name}</span>
-                <span style={S.badge(PRIV_TYPE_COLOR[p.type] ?? '#6b7280')}>{p.type}</span>
-              </label>
-            ))}
-          </div>
+          <MultiSelect
+            options={allPrivs.map(p => ({ value: p.id, label: p.name }))}
+            value={selectedPrivIds}
+            onChange={onPrivToggle}
+            placeholder="Search and select privileges…"
+          />
         )}
 
         <div style={{ display: 'flex', gap: 8, justifyContent: 'space-between', marginTop: 4 }}>
@@ -144,6 +138,11 @@ function RolesTab({ roles, loading, onRefresh, admin }: { roles: Role[]; loading
 
   const [allPrivs, setAllPrivs] = useState<Privilege[]>([])
   const [loadingPrivs, setLoadingPrivs] = useState(false)
+
+  const [roleSearch, setRoleSearch] = useState('')
+  const filtered = roles.filter(r =>
+    r.name.toLowerCase().includes(roleSearch.toLowerCase())
+  )
 
   async function loadPrivs() {
     setLoadingPrivs(true)
@@ -205,25 +204,40 @@ function RolesTab({ roles, loading, onRefresh, admin }: { roles: Role[]; loading
         </div>
       )}
 
-      {!roles.length ? <div style={S.empty}>No roles found</div> : (
-        <div style={S.grid}>
-          {roles.map(r => (
-            <div key={r.id} style={S.card}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                <Shield size={15} style={{ color: '#3b82f6' }} />
-                <span style={{ fontSize: 14, fontWeight: 600, color: '#dbeafe', flex: 1 }}>{r.name}</span>
-                {r.readOnly && <span style={S.badge('#6b7280')}>built-in</span>}
-                {!r.readOnly && admin && (
-                  <button style={{ ...S.btn('ghost'), padding: '3px 8px', fontSize: 12 }} onClick={() => openEdit(r)}>Edit</button>
+      <input
+        style={{ ...S.input, marginBottom: 12 }}
+        placeholder="Search roles…"
+        value={roleSearch}
+        onChange={e => setRoleSearch(e.target.value)}
+      />
+      {!filtered.length ? <div style={S.empty}>No roles found</div> : (
+        <div style={S.card}>
+          {filtered.map((r, idx) => (
+            <div key={r.id} style={{
+              display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0',
+              borderBottom: idx < filtered.length - 1 ? '1px solid rgba(255,255,255,0.06)' : 'none',
+            }}>
+              <Shield size={15} style={{ color: '#3b82f6', flexShrink: 0 }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' as const }}>
+                  <span style={{ fontSize: 14, fontWeight: 600, color: '#dbeafe' }}>{r.name}</span>
+                  {r.readOnly && <span style={S.badge('#6b7280')}>built-in</span>}
+                </div>
+                {r.description && (
+                  <div style={{ fontSize: 12, color: 'rgba(229,231,235,0.45)', marginTop: 2 }}>{r.description}</div>
                 )}
+                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' as const, marginTop: 4 }}>
+                  {(r.privileges ?? []).slice(0, 4).map(p => (
+                    <span key={p} style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, background: 'rgba(99,102,241,0.12)', color: '#a5b4fc', fontFamily: 'monospace' }}>{p}</span>
+                  ))}
+                  {(r.privileges ?? []).length > 4 && (
+                    <span style={{ fontSize: 10, color: 'rgba(229,231,235,0.35)' }}>+{(r.privileges ?? []).length - 4} more</span>
+                  )}
+                </div>
               </div>
-              {r.description && <p style={{ fontSize: 12, color: 'rgba(229,231,235,0.5)', margin: '0 0 8px' }}>{r.description}</p>}
-              <div style={{ display: 'flex', flexWrap: 'wrap' as const, gap: 4 }}>
-                {(r.privileges ?? []).slice(0, 6).map(p => (
-                  <span key={p} style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: 'rgba(99,102,241,0.12)', color: '#a5b4fc', fontFamily: 'monospace' }}>{p}</span>
-                ))}
-                {(r.privileges ?? []).length > 6 && <span style={{ fontSize: 10, color: 'rgba(229,231,235,0.4)' }}>+{(r.privileges ?? []).length - 6}</span>}
-              </div>
+              {!r.readOnly && admin && (
+                <button style={{ ...S.btn('ghost'), padding: '4px 10px', fontSize: 12 }} onClick={() => openEdit(r)}>Edit</button>
+              )}
             </div>
           ))}
         </div>
@@ -236,7 +250,7 @@ function RolesTab({ roles, loading, onRefresh, admin }: { roles: Role[]; loading
           onFormChange={setEditForm}
           allPrivs={allPrivs}
           selectedPrivIds={editPrivIds}
-          onPrivToggle={(id, checked) => setEditPrivIds(prev => checked ? [...prev, id] : prev.filter(x => x !== id))}
+          onPrivToggle={setEditPrivIds}
           loadingPrivs={loadingPrivs}
           onSave={() => saveEdit.mutate()}
           saving={saveEdit.isPending}
@@ -253,7 +267,7 @@ function RolesTab({ roles, loading, onRefresh, admin }: { roles: Role[]; loading
           onFormChange={setCreateForm}
           allPrivs={allPrivs}
           selectedPrivIds={createPrivIds}
-          onPrivToggle={(id, checked) => setCreatePrivIds(prev => checked ? [...prev, id] : prev.filter(x => x !== id))}
+          onPrivToggle={setCreatePrivIds}
           loadingPrivs={loadingPrivs}
           onSave={() => create.mutate()}
           saving={create.isPending}
