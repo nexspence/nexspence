@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Trash2, RefreshCw, Plus, Play, Pencil, X, Check, Clock, AlertCircle } from 'lucide-react'
 import { nexusApi } from '@/api/client'
+import { Select } from '../components/Select'
 
 interface CleanupPolicy {
   id: string
@@ -9,6 +10,7 @@ interface CleanupPolicy {
   description?: string
   format: string
   criteria: Record<string, number | string>
+  scheduleCron?: string
   enabled: boolean
   dryRun: boolean
   lastRunAt?: string
@@ -24,6 +26,9 @@ interface PolicyForm {
   dryRun: boolean
   lastDownloadedDays: string
   artifactAgeDays: string
+  pathPrefix: string
+  nameGlob: string
+  scheduleCron: string
 }
 
 const FORMATS = ['*', 'maven2', 'npm', 'docker', 'pypi', 'go', 'nuget', 'helm', 'raw', 'apt', 'yum', 'cargo', 'conan']
@@ -39,6 +44,8 @@ const emptyForm = (): PolicyForm => ({
   name: '', description: '', format: '*',
   enabled: true, dryRun: false,
   lastDownloadedDays: '', artifactAgeDays: '',
+  pathPrefix: '', nameGlob: '',
+  scheduleCron: '',
 })
 
 function fmtBytes(b: number) {
@@ -87,7 +94,6 @@ const S = {
   field:   { display: 'flex', flexDirection: 'column' as const, gap: 6 },
   label:   { fontSize: 12, fontWeight: 600, color: 'rgba(229,231,235,0.55)', textTransform: 'uppercase' as const, letterSpacing: '0.04em' },
   input:   { background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, padding: '8px 12px', color: '#e5e7eb', fontSize: 13, outline: 'none', width: '100%', boxSizing: 'border-box' as const },
-  select:  { background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, padding: '8px 12px', color: '#e5e7eb', fontSize: 13, outline: 'none', width: '100%', boxSizing: 'border-box' as const },
   row2:    { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 },
   toggle:  { display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'rgba(229,231,235,0.7)', cursor: 'pointer' },
   modalFooter:{ display: 'flex', gap: 10, justifyContent: 'flex-end' },
@@ -109,6 +115,9 @@ function PolicyModal({
       dryRun: initial.dryRun,
       lastDownloadedDays: String(initial.criteria?.lastDownloadedDays ?? ''),
       artifactAgeDays: String(initial.criteria?.artifactAgeDays ?? ''),
+      pathPrefix: String(initial.criteria?.pathPrefix ?? ''),
+      nameGlob: String(initial.criteria?.nameGlob ?? ''),
+      scheduleCron: initial.scheduleCron ?? '',
     }
   })
   const [err, setErr] = useState('')
@@ -119,9 +128,12 @@ function PolicyModal({
     format: form.format,
     enabled: form.enabled,
     dryRun: form.dryRun,
+    scheduleCron: form.scheduleCron.trim(),
     criteria: {
       ...(form.lastDownloadedDays ? { lastDownloadedDays: Number(form.lastDownloadedDays) } : {}),
       ...(form.artifactAgeDays ? { artifactAgeDays: Number(form.artifactAgeDays) } : {}),
+      ...(form.pathPrefix.trim() ? { pathPrefix: form.pathPrefix.trim() } : {}),
+      ...(form.nameGlob.trim() ? { nameGlob: form.nameGlob.trim() } : {}),
     },
   })
 
@@ -164,9 +176,11 @@ function PolicyModal({
         <div style={S.row2}>
           <div style={S.field}>
             <label style={S.label}>Format</label>
-            <select style={S.select} value={form.format} onChange={set('format')}>
-              {FORMATS.map(f => <option key={f} value={f}>{f === '*' ? 'All formats' : f}</option>)}
-            </select>
+            <Select
+              options={FORMATS.map(f => ({ value: f, label: f === '*' ? 'All formats' : f }))}
+              value={form.format}
+              onChange={v => setForm(f => ({ ...f, format: v }))}
+            />
           </div>
           <div style={S.field}>
             <label style={S.label}>Options</label>
@@ -185,6 +199,15 @@ function PolicyModal({
           </div>
         </div>
 
+        <div style={S.field}>
+          <label style={S.label}>Schedule (cron)</label>
+          <input style={S.input} value={form.scheduleCron} onChange={set('scheduleCron')}
+            placeholder="e.g. 0 2 * * * (default: every 6 hours)" />
+          <span style={{ fontSize: 11, color: 'rgba(229,231,235,0.35)' }}>
+            Leave blank to use the global default schedule. Format: minute hour day month weekday
+          </span>
+        </div>
+
         <div style={S.row2}>
           <div style={S.field}>
             <label style={S.label}>Not downloaded for (days)</label>
@@ -195,6 +218,19 @@ function PolicyModal({
             <label style={S.label}>Artifact age (days)</label>
             <input style={S.input} type="number" min="1" value={form.artifactAgeDays}
               onChange={set('artifactAgeDays')} placeholder="e.g. 90" />
+          </div>
+        </div>
+
+        <div style={S.row2}>
+          <div style={S.field}>
+            <label style={S.label}>Path prefix</label>
+            <input style={S.input} value={form.pathPrefix}
+              onChange={set('pathPrefix')} placeholder="e.g. com/example/" />
+          </div>
+          <div style={S.field}>
+            <label style={S.label}>Name glob</label>
+            <input style={S.input} value={form.nameGlob}
+              onChange={set('nameGlob')} placeholder="e.g. *.jar or *-SNAPSHOT*" />
           </div>
         </div>
 
@@ -248,7 +284,10 @@ export default function CleanupPage() {
       <div style={S.header}>
         <div>
           <h1 style={S.title}>Cleanup Policies</h1>
-          <p style={S.subtitle}>Automate deletion of old, unused artifacts by criteria</p>
+          <p style={S.subtitle}>
+            Automate deletion of old, unused artifacts by criteria. Attach each policy to one or more
+            repositories under Repositories → repository settings — unattached policies do not delete anything.
+          </p>
         </div>
         <div style={S.actions}>
           <button style={S.iconBtn} onClick={() => refetch()} title="Refresh"><RefreshCw size={16} /></button>
@@ -297,6 +336,12 @@ export default function CleanupPage() {
                     ))}
                   </div>
                 )}
+
+                <div style={S.lastRun}>
+                  {p.scheduleCron
+                    ? <span style={{ color: '#93c5fd' }}>Schedule: {p.scheduleCron}</span>
+                    : <span>Schedule: global default</span>}
+                </div>
 
                 {(p.lastRunAt || p.lastRunCount != null) && (
                   <div style={S.lastRun}>
