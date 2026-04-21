@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Database, Plus, Trash2, RefreshCw, Settings2 } from 'lucide-react'
 import { nexusApi, nexspenceApi, apiClient } from '@/api/client'
@@ -49,6 +50,7 @@ const TYPE_LABELS: Record<string, string> = {
 
 export default function RepositoriesPage() {
   const qc = useQueryClient()
+  const navigate = useNavigate()
   const isAdmin = useAuthStore(s => s.isAdmin())
   const [filter, setFilter] = useState('')
   const [formatFilter, setFormatFilter] = useState('')
@@ -143,6 +145,7 @@ export default function RepositoriesPage() {
               key={repo.id}
               repo={repo}
               isAdmin={isAdmin}
+              onClick={() => navigate(`/browse?repo=${repo.name}`)}
               onEdit={() => setEditRepo(repo)}
               onDelete={() => {
                 if (confirm(`Delete repository "${repo.name}"?`)) {
@@ -189,11 +192,13 @@ function formatBytes(bytes: number): string {
 function RepoCard({
   repo,
   isAdmin,
+  onClick,
   onEdit,
   onDelete,
 }: {
   repo: Repository
   isAdmin: boolean
+  onClick?: () => void
   onEdit: () => void
   onDelete: () => void
 }) {
@@ -209,7 +214,7 @@ function RepoCard({
   const quotaColor = pct == null ? '#3b82f6' : pct >= 90 ? '#ef4444' : pct >= 70 ? '#f59e0b' : '#22c55e'
 
   return (
-    <div className={styles.card}>
+    <div className={styles.card} onClick={onClick} style={{ cursor: 'pointer' }}>
       <div className={styles.cardHeader}>
         <span className={styles.formatBadge} style={{ background: color + '22', color }}>
           {repo.format}
@@ -249,10 +254,10 @@ function RepoCard({
       )}
       {isAdmin && (
         <div className={styles.cardFooter}>
-          <button type="button" className={styles.settingsBtn} onClick={onEdit} title="Settings">
+          <button type="button" className={styles.settingsBtn} onClick={e => { e.stopPropagation(); onEdit() }} title="Settings">
             <Settings2 size={14} />
           </button>
-          <button type="button" className={styles.deleteBtn} onClick={onDelete} title="Delete">
+          <button type="button" className={styles.deleteBtn} onClick={e => { e.stopPropagation(); onDelete() }} title="Delete">
             <Trash2 size={14} />
           </button>
         </div>
