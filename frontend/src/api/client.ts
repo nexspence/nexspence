@@ -202,6 +202,10 @@ export const nexspenceApi = {
   getDockerBrowseTree: (repository: string) =>
     apiClient.get(`/api/v1/browse/repositories/${encodeURIComponent(repository)}/docker-tree`),
 
+  // Security — privilege → role membership map
+  privilegeRoleMap: () =>
+    apiClient.get<Record<string, string[]>>('/api/v1/security/privilege-role-map').then(r => r.data),
+
   // Vulnerability scan (Trivy) — Docker components
   // GET returns 204 No Content when no cached scan yet (not an error); we map that to data: null.
   getScanResult: (componentId: string) =>

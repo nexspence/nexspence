@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
 import { Shield, RefreshCw, Webhook, AlertTriangle, CheckCircle, Loader, Trash2, Plus, Bug } from 'lucide-react'
-import { nexusApi, apiClient } from '@/api/client'
+import { nexusApi, nexspenceApi, apiClient } from '@/api/client'
 import { UsersTab } from './UsersPage'
 import { useAuthStore } from '@/store/authStore'
 import { Select } from '../components/Select'
@@ -556,6 +556,10 @@ function PrivilegesTab({ admin }: { admin: boolean }) {
     queryKey: ['content-selectors'],
     queryFn: () => nexusApi.listContentSelectors().then(r => r.data),
   })
+  const { data: privRoleMap = {} } = useQuery<Record<string, string[]>>({
+    queryKey: ['privilege-role-map'],
+    queryFn: () => nexspenceApi.privilegeRoleMap(),
+  })
   const PRIV_ACTIONS = ['read', 'browse', 'write', 'delete'] as const
 
   const [showModal, setShowModal] = useState(false)
@@ -630,6 +634,7 @@ function PrivilegesTab({ admin }: { admin: boolean }) {
                 <th style={{ padding: '0 8px 10px', fontWeight: 600 }}>Type</th>
                 <th style={{ padding: '0 8px 10px', fontWeight: 600 }}>Actions</th>
                 <th style={{ padding: '0 8px 10px', fontWeight: 600 }}>Description</th>
+                <th style={{ padding: '0 8px 10px', fontWeight: 600 }}>Used in Roles</th>
                 {admin && <th style={{ padding: '0 0 10px', fontWeight: 600, width: 80 }}></th>}
               </tr>
             </thead>
@@ -651,6 +656,16 @@ function PrivilegesTab({ admin }: { admin: boolean }) {
                       </div>
                     </td>
                     <td style={{ padding: '9px 8px', color: 'rgba(229,231,235,0.55)' }}>{p.description || '—'}</td>
+                    <td style={{ padding: '8px 12px' }}>
+                      {(privRoleMap[p.id] ?? []).length === 0
+                        ? <span style={{ color: 'rgba(229,231,235,0.3)', fontSize: 12 }}>—</span>
+                        : (privRoleMap[p.id] ?? []).map(roleName => (
+                            <span key={roleName} style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, background: 'rgba(6,182,212,0.12)', color: '#67e8f9', marginRight: 4, display: 'inline-block' }}>
+                              {roleName}
+                            </span>
+                          ))
+                      }
+                    </td>
                     {admin && (
                       <td style={{ padding: '9px 0', display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
                         {!p.readOnly && (
@@ -680,7 +695,18 @@ function PrivilegesTab({ admin }: { admin: boolean }) {
               onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
 
             <div>
-              <div style={{ fontSize: 12, color: 'rgba(229,231,235,0.5)', marginBottom: 6 }}>Actions</div>
+              <div style={{ fontSize: 12, color: 'rgba(229,231,235,0.5)', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
+                Actions
+                <button
+                  onClick={() => {
+                    const allSelected = PRIV_ACTIONS.every(a => form.actions.includes(a))
+                    setForm(f => ({ ...f, actions: allSelected ? [] : [...PRIV_ACTIONS] }))
+                  }}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#3b82f6', fontSize: 12, padding: '0 4px' }}
+                >
+                  {PRIV_ACTIONS.every(a => form.actions.includes(a)) ? 'Deselect all' : 'Select all'}
+                </button>
+              </div>
               <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' as const }}>
                 {PRIV_ACTIONS.map(a => (
                   <label key={a} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13, color: form.actions.includes(a) ? '#dbeafe' : 'rgba(229,231,235,0.5)' }}>
