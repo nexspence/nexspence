@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { FileText, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react'
 import { nexusApi } from '@/api/client'
+import { Select } from '../components/Select'
 
 interface AuditEvent {
   id: number
@@ -48,7 +49,6 @@ const S = {
   title:   { fontSize: 20, fontWeight: 700, color: '#dbeafe', margin: '0 0 4px' },
   subtitle:{ fontSize: 13, color: 'rgba(229,231,235,0.5)', margin: 0 },
   filters: { display: 'flex', gap: 10, flexWrap: 'wrap' as const, alignItems: 'center' },
-  select:  { background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, padding: '6px 10px', color: '#e5e7eb', fontSize: 13, outline: 'none', cursor: 'pointer' },
   iconBtn: { background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, padding: 8, color: 'rgba(229,231,235,0.7)', cursor: 'pointer', display: 'flex', alignItems: 'center' },
   table:   { width: '100%', borderCollapse: 'collapse' as const, fontSize: 13 },
   th:      { textAlign: 'left' as const, padding: '8px 12px', color: 'rgba(229,231,235,0.45)', fontWeight: 600, fontSize: 11, textTransform: 'uppercase' as const, letterSpacing: '0.05em', borderBottom: '1px solid rgba(255,255,255,0.06)' },
@@ -81,17 +81,12 @@ export default function AuditPage() {
     queryFn: () =>
       nexusApi
         .listAuditEvents({ domain: domain || undefined, action: action || undefined, limit: PAGE_SIZE, offset })
-        .then(r => r.data),
+        .then(r => (r.data as { items: AuditEvent[] }).items ?? []),
   })
 
   const events = data ?? []
   const hasPrev = offset > 0
   const hasNext = events.length === PAGE_SIZE
-
-  const handleFilter = (setter: (v: string) => void) => (e: React.ChangeEvent<HTMLSelectElement>) => {
-    setter(e.target.value)
-    setOffset(0)
-  }
 
   return (
     <div style={S.page}>
@@ -101,12 +96,18 @@ export default function AuditPage() {
           <p style={S.subtitle}>All system mutations — repository, user, and security events</p>
         </div>
         <div style={S.filters}>
-          <select style={S.select} value={domain} onChange={handleFilter(setDomain)}>
-            {DOMAINS.map(d => <option key={d} value={d}>{d || 'All domains'}</option>)}
-          </select>
-          <select style={S.select} value={action} onChange={handleFilter(setAction)}>
-            {ACTIONS.map(a => <option key={a} value={a}>{a || 'All actions'}</option>)}
-          </select>
+          <Select
+            options={DOMAINS.map(d => ({ value: d, label: d || 'All domains' }))}
+            value={domain}
+            onChange={v => { setDomain(v); setOffset(0) }}
+            style={{ minWidth: 160 }}
+          />
+          <Select
+            options={ACTIONS.map(a => ({ value: a, label: a || 'All actions' }))}
+            value={action}
+            onChange={v => { setAction(v); setOffset(0) }}
+            style={{ minWidth: 140 }}
+          />
           <button style={S.iconBtn} onClick={() => refetch()} title="Refresh">
             <RefreshCw size={15} />
           </button>
