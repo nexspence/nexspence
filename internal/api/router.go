@@ -223,6 +223,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 		authed.GET("/service/rest/v1/security/privileges", privH.List)
 		authed.GET("/service/rest/v1/security/privileges/:id", privH.Get)
 		authed.GET("/service/rest/v1/security/roles/:id/privileges", privH.ListRolePrivileges)
+		authed.GET("/api/v1/security/privilege-role-map", privH.RoleMap)
 
 		// ── Content Selectors (read) ──────────────────────────
 		authed.GET("/service/rest/v1/security/content-selectors", csH.List)

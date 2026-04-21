@@ -428,6 +428,23 @@ func (a *AssetRepo) ListPathsByRepo(_ context.Context, repoName, q string) ([]st
 	return out, nil
 }
 
+func (a *AssetRepo) ListRawAssetPaths(_ context.Context, repoName string) ([]string, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	seen := make(map[string]struct{})
+	for _, asset := range a.byID {
+		if asset.Repository == repoName {
+			seen[asset.Path] = struct{}{}
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for k := range seen {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
 // ── CleanupPolicyRepo ─────────────────────────────────────────
 
 type CleanupPolicyRepo struct {
@@ -1139,4 +1156,8 @@ func (r *PrivilegeRepo) Delete(_ context.Context, id string) error {
 
 func (r *PrivilegeRepo) ListByRole(_ context.Context, _ string) ([]domain.Privilege, error) {
 	return []domain.Privilege{}, nil
+}
+
+func (r *PrivilegeRepo) PrivilegeRoleMap(_ context.Context) (map[string][]string, error) {
+	return map[string][]string{}, nil
 }

@@ -108,6 +108,17 @@ func (h *PrivilegeHandler) SetRolePrivileges(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
+// RoleMap handles GET /api/v1/security/privilege-role-map
+// Returns map of privilege ID → role names that include it.
+func (h *PrivilegeHandler) RoleMap(c *gin.Context) {
+	m, err := h.repo.PrivilegeRoleMap(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, m)
+}
+
 // ListRolePrivileges handles GET /service/rest/v1/security/roles/:id/privileges
 func (h *PrivilegeHandler) ListRolePrivileges(c *gin.Context) {
 	items, err := h.repo.ListByRole(c.Request.Context(), c.Param("id"))

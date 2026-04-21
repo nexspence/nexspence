@@ -63,6 +63,9 @@ type AssetRepo interface {
 	// (case-insensitive) are returned. Fetches up to 5000 raw paths from the DB
 	// then expands directory prefixes in Go.
 	ListPathsByRepo(ctx context.Context, repoName, q string) ([]string, error)
+	// ListRawAssetPaths returns raw asset paths (not directory-expanded) for
+	// the given repository. Used by format-specific path transformations (e.g. Docker).
+	ListRawAssetPaths(ctx context.Context, repoName string) ([]string, error)
 }
 
 // ContentSelectorRepo manages content selector definitions (privilege-scoped paths).
@@ -88,6 +91,9 @@ type PrivilegeRepo interface {
 	Delete(ctx context.Context, id string) error
 	// ListByRole returns privileges assigned to a role via role_privileges.
 	ListByRole(ctx context.Context, roleID string) ([]domain.Privilege, error)
+	// PrivilegeRoleMap returns a map of privilege ID → role names that include it.
+	// Used by the UI to display "Used in Roles" for each privilege.
+	PrivilegeRoleMap(ctx context.Context) (map[string][]string, error)
 }
 
 // RoutingRuleRepo manages request routing rules.
@@ -160,6 +166,17 @@ type CleanupPolicyRepo interface {
 type AuditRepo interface {
 	Write(ctx context.Context, e *domain.AuditEvent) error
 	List(ctx context.Context, domain, action string, limit, offset int) ([]domain.AuditEvent, error)
+}
+
+// PrivilegeWithSelector is returned by RBACRepo — one row per privilege attached to the user.
+type PrivilegeWithSelector struct {
+	Actions    []string // from privilege attrs.actions; empty = all actions
+	Expression string   // CEL expression from content_selector
+}
+
+// RBACRepo resolves a user's effective privileges for access checks.
+type RBACRepo interface {
+	GetUserPrivilegesWithSelectors(ctx context.Context, userID string) ([]PrivilegeWithSelector, error)
 }
 
 // BlobStoreRepo manages blob store configuration.

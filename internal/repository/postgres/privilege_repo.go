@@ -63,10 +63,10 @@ func (r *privilegeRepo) Create(ctx context.Context, p *domain.Privilege) error {
 		return err
 	}
 	return r.db.QueryRow(ctx, `
-		INSERT INTO privileges (name, description, type, attrs)
-		VALUES ($1, $2, $3, $4)
+		INSERT INTO privileges (name, description, type, attrs, content_selector_id)
+		VALUES ($1, $2, $3, $4, $5)
 		RETURNING id, created_at`,
-		p.Name, p.Description, string(p.Type), attrsJSON,
+		p.Name, p.Description, string(p.Type), attrsJSON, p.ContentSelectorID,
 	).Scan(&p.ID, &p.CreatedAt)
 }
 
@@ -76,9 +76,9 @@ func (r *privilegeRepo) Update(ctx context.Context, p *domain.Privilege) error {
 		return err
 	}
 	_, err = r.db.Exec(ctx, `
-		UPDATE privileges SET name=$1, description=$2, type=$3, attrs=$4
-		WHERE id=$5`,
-		p.Name, p.Description, string(p.Type), attrsJSON, p.ID,
+		UPDATE privileges SET name=$1, description=$2, type=$3, attrs=$4, content_selector_id=$5
+		WHERE id=$6`,
+		p.Name, p.Description, string(p.Type), attrsJSON, p.ContentSelectorID, p.ID,
 	)
 	return err
 }
@@ -108,6 +108,26 @@ func (r *privilegeRepo) ListByRole(ctx context.Context, roleID string) ([]domain
 		out = append(out, *p)
 	}
 	return out, rows.Err()
+}
+
+func (r *privilegeRepo) PrivilegeRoleMap(ctx context.Context) (map[string][]string, error) {
+	rows, err := r.db.Query(ctx,
+		`SELECT rp.privilege_id, ro.name
+		 FROM role_privileges rp
+		 JOIN roles ro ON ro.id = rp.role_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	m := make(map[string][]string)
+	for rows.Next() {
+		var privID, roleName string
+		if err := rows.Scan(&privID, &roleName); err != nil {
+			return nil, err
+		}
+		m[privID] = append(m[privID], roleName)
+	}
+	return m, rows.Err()
 }
 
 func scanPrivilege(row scanner) (*domain.Privilege, error) {
