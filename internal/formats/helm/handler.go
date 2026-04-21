@@ -8,6 +8,7 @@ package helm
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"net/http"
 	"path"
@@ -33,9 +34,13 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 
 	repo, _ := h.deps.Repos.Get(c.Request.Context(), repoName)
 
-	// Proxy: block mutations, proxy reads
+	// Proxy: block mutations; rewrite index.yaml; cache chart binaries.
 	if repo != nil && repo.Type == domain.TypeProxy {
 		if repoproxy.RejectMutation(c, repo) {
+			return
+		}
+		if (c.Request.Method == http.MethodGet || c.Request.Method == http.MethodHead) && p == "/index.yaml" {
+			h.fetchAndRewriteHelmIndex(c, repo)
 			return
 		}
 		coords := base.Coords{Name: strings.TrimSuffix(strings.TrimPrefix(p, "/"), ".tgz")}
@@ -200,6 +205,72 @@ func (h *Handler) serveFile(c *gin.Context, repoName, filePath string) {
 		return
 	}
 	c.DataFromReader(http.StatusOK, asset.SizeBytes, "application/x-tar", rc, nil)
+}
+
+// fetchAndRewriteHelmIndex fetches index.yaml from upstream, rewrites chart download
+// URLs to point to this proxy, and returns the patched YAML to the client.
+// The index is not cached — it is always fetched live so new upstream charts appear promptly.
+func (h *Handler) fetchAndRewriteHelmIndex(c *gin.Context, repo *domain.Repository) {
+	remoteBase, err := repoproxy.RemoteURL(repo)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
+	defer cancel()
+
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet,
+		strings.TrimRight(remoteBase, "/")+"/index.yaml", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "upstream fetch failed: " + err.Error()})
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		c.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("upstream returned %d", resp.StatusCode)})
+		return
+	}
+
+	var index map[string]any
+	if err := yaml.NewDecoder(resp.Body).Decode(&index); err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "invalid upstream index.yaml: " + err.Error()})
+		return
+	}
+
+	// Rewrite each chart's download URLs to point through this proxy.
+	localBase := strings.TrimRight(h.deps.BaseURL, "/") + "/repository/" + repo.Name + "/"
+	if entries, ok := index["entries"].(map[string]any); ok {
+		for _, v := range entries {
+			charts, ok := v.([]any)
+			if !ok {
+				continue
+			}
+			for _, cv := range charts {
+				chart, ok := cv.(map[string]any)
+				if !ok {
+					continue
+				}
+				if urls, ok := chart["urls"].([]any); ok {
+					for i, u := range urls {
+						if us, ok := u.(string); ok {
+							urls[i] = localBase + path.Base(us)
+						}
+					}
+					chart["urls"] = urls
+				}
+			}
+		}
+	}
+
+	data, err := yaml.Marshal(index)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.Data(http.StatusOK, "application/yaml", data)
 }
 
 func normPath(p string) string {
