@@ -13,20 +13,26 @@ import (
 type cleanupRunner interface {
 	RunPolicy(ctx context.Context, id string) error
 	RunAll(ctx context.Context) error
+	ReloadPolicy(ctx context.Context, id string)
 }
 
 type CleanupHandler struct {
-	repo    repository.CleanupPolicyRepo
-	runner  cleanupRunner
+	policies repository.CleanupPolicyRepo
+	repos    repository.RepositoryRepo
+	runner   cleanupRunner
 }
 
-func NewCleanupHandler(repo repository.CleanupPolicyRepo, runner cleanupRunner) *CleanupHandler {
-	return &CleanupHandler{repo: repo, runner: runner}
+func NewCleanupHandler(
+	policies repository.CleanupPolicyRepo,
+	repos repository.RepositoryRepo,
+	runner cleanupRunner,
+) *CleanupHandler {
+	return &CleanupHandler{policies: policies, repos: repos, runner: runner}
 }
 
 // List GET /service/rest/v1/cleanup-policies
 func (h *CleanupHandler) List(c *gin.Context) {
-	policies, err := h.repo.List(c.Request.Context())
+	policies, err := h.policies.List(c.Request.Context())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -39,7 +45,7 @@ func (h *CleanupHandler) List(c *gin.Context) {
 
 // Get GET /service/rest/v1/cleanup-policies/:id
 func (h *CleanupHandler) Get(c *gin.Context) {
-	p, err := h.repo.Get(c.Request.Context(), c.Param("id"))
+	p, err := h.policies.Get(c.Request.Context(), c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -68,10 +74,11 @@ func (h *CleanupHandler) Create(c *gin.Context) {
 	if p.Criteria == nil {
 		p.Criteria = map[string]any{}
 	}
-	if err := h.repo.Create(c.Request.Context(), &p); err != nil {
+	if err := h.policies.Create(c.Request.Context(), &p); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	h.runner.ReloadPolicy(c.Request.Context(), p.ID)
 	c.JSON(http.StatusCreated, p)
 }
 
@@ -83,19 +90,27 @@ func (h *CleanupHandler) Update(c *gin.Context) {
 		return
 	}
 	p.ID = c.Param("id")
-	if err := h.repo.Update(c.Request.Context(), &p); err != nil {
+	if err := h.policies.Update(c.Request.Context(), &p); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	h.runner.ReloadPolicy(c.Request.Context(), p.ID)
 	c.JSON(http.StatusOK, p)
 }
 
 // Delete DELETE /service/rest/v1/cleanup-policies/:id
 func (h *CleanupHandler) Delete(c *gin.Context) {
-	if err := h.repo.Delete(c.Request.Context(), c.Param("id")); err != nil {
+	id := c.Param("id")
+	if err := h.repos.DetachCleanupPolicyID(c.Request.Context(), id); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	if err := h.policies.Delete(c.Request.Context(), id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	// Policy is deleted; ReloadPolicy sees it's gone and removes the cron entry.
+	h.runner.ReloadPolicy(c.Request.Context(), id)
 	c.Status(http.StatusNoContent)
 }
 

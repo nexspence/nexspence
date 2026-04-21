@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -54,6 +53,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 	webhookRepo   := postgres.NewWebhookRepo(pool)
 	privilegeRepo := postgres.NewPrivilegeRepo(pool)
 	csRepo        := postgres.NewContentSelectorRepo(pool)
+	rbacRepo      := postgres.NewRBACRepo(pool)
 	selectorSvc, svcErr := service.NewContentSelectorService(csRepo)
 	if svcErr != nil {
 		panic("content selector service init: " + svcErr.Error())
@@ -80,7 +80,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 	cleanupSvc := service.NewCleanupService(cleanupRepo, repoRepo, assetRepo, localBlob, log)
 
 	// Start cleanup scheduler in background (every 6 hours).
-	go cleanupSvc.StartScheduler(context.Background(), 6*time.Hour)
+	go cleanupSvc.StartCronScheduler(context.Background(), cfg.Cleanup.DefaultSchedule)
 
 	// ── Format handlers ───────────────────────────────────────
 	formatDeps := formats.Deps{
@@ -110,7 +110,8 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 
 	// ── Handlers ──────────────────────────────────────────────
 	authH      := handlers.NewAuthHandler(userSvc, log)
-	repoH      := handlers.NewRepositoryHandler(repoSvc)
+	rbacSvc    := service.NewRBACService(rbacRepo, repoRepo)
+	repoH      := handlers.NewRepositoryHandler(repoSvc, rbacSvc)
 	userH      := handlers.NewUserHandler(userSvc)
 	blobH      := handlers.NewBlobStoreHandler(blobRepo)
 	componentH := handlers.NewComponentHandler(componentRepo, assetRepo, repoRepo, cfg.HTTP.BaseURL)
@@ -121,9 +122,10 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 	scanH      := handlers.NewScanHandler(scanSvc)
 	tokenH     := handlers.NewTokenHandler(tokenSvc, userSvc)
 	webhookH   := handlers.NewWebhookHandler(webhookSvc)
-	roleH      := handlers.NewRoleHandler(roleRepo)
-	privH := handlers.NewPrivilegeHandler(privilegeRepo, roleRepo)
-	csH   := handlers.NewContentSelectorHandler(selectorSvc)
+	roleH      := handlers.NewRoleHandler(roleRepo, userRepo)
+	privH      := handlers.NewPrivilegeHandler(privilegeRepo, roleRepo)
+	csH        := handlers.NewContentSelectorHandler(selectorSvc)
+	rbacMW     := handlers.RBACMiddleware(rbacSvc, repoRepo)
 
 	// ── Gin engine ────────────────────────────────────────────
 	r := gin.New()
@@ -323,7 +325,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 	// ── Artifact protocol endpoints ───────────────────────────
 	// Route /repository/:repoName/* to the appropriate format handler.
 	// The format is looked up from the repository record in the DB.
-	repo := r.Group("/repository/:repoName", handlers.OptionalAuth(userSvc, tokenSvc))
+	repo := r.Group("/repository/:repoName", handlers.OptionalAuth(userSvc, tokenSvc), rbacMW)
 	{
 		repo.Any("/*path", func(c *gin.Context) {
 			repoName := c.Param("repoName")
@@ -378,7 +380,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 		c.Status(http.StatusOK)
 	})
 
-	v2docker := r.Group("/v2/repository", handlers.OptionalAuth(userSvc, tokenSvc))
+	v2docker := r.Group("/v2/repository", handlers.OptionalAuth(userSvc, tokenSvc), handlers.RBACMiddleware(rbacSvc, repoRepo))
 	v2docker.Any("/:repoName/*dockerpath", func(c *gin.Context) {
 		repoName := c.Param("repoName")
 		dockerPath := c.Param("dockerpath") // e.g. /da/devops/alpine/manifests/3.22.1
