@@ -20,7 +20,10 @@ export function MultiSelect({ options, value, onChange, placeholder = '— Selec
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false)
+        setSearch('')
+      }
     }
     document.addEventListener('mousedown', handleClick)
     return () => document.removeEventListener('mousedown', handleClick)
@@ -42,9 +45,10 @@ export function MultiSelect({ options, value, onChange, placeholder = '— Selec
     }
   }
 
-  const selectedLabels = value
-    .map(v => options.find(o => o.value === v)?.label)
-    .filter(Boolean) as string[]
+  const selectedEntries = value.map(v => ({
+    value: v,
+    label: options.find(o => o.value === v)?.label ?? v,
+  }))
 
   const dropStyle: React.CSSProperties = {
     position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 999, marginTop: 4,
@@ -63,19 +67,18 @@ export function MultiSelect({ options, value, onChange, placeholder = '— Selec
           flexWrap: 'wrap', gap: 4, color: '#e5e7eb', fontSize: 13,
         }}
       >
-        {selectedLabels.length === 0 ? (
+        {selectedEntries.length === 0 ? (
           <span style={{ color: 'rgba(229,231,235,0.35)', lineHeight: '22px' }}>{placeholder}</span>
         ) : (
-          selectedLabels.map(label => (
-            <span key={label} style={{
+          selectedEntries.map(entry => (
+            <span key={entry.value} style={{
               display: 'flex', alignItems: 'center', gap: 4, padding: '1px 6px',
               background: 'rgba(59,130,246,0.15)', borderRadius: 4, fontSize: 12, color: '#93c5fd',
             }}>
-              {label}
+              {entry.label}
               <X size={10} style={{ cursor: 'pointer' }} onClick={e => {
                 e.stopPropagation()
-                const opt = options.find(o => o.label === label)
-                if (opt) toggle(opt.value)
+                toggle(entry.value)
               }} />
             </span>
           ))

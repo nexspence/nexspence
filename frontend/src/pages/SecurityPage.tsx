@@ -78,6 +78,7 @@ function RoleModal({
   saveDisabled,
   onCancel,
   onDelete,
+  error,
 }: {
   title: string
   form: { name: string; description: string }
@@ -91,6 +92,7 @@ function RoleModal({
   saveDisabled: boolean
   onCancel: () => void
   onDelete?: () => void
+  error?: string | null
 }) {
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
@@ -109,6 +111,10 @@ function RoleModal({
             onChange={onPrivToggle}
             placeholder="Search and select privileges…"
           />
+        )}
+
+        {error && (
+          <div style={{ padding: '8px 12px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, color: '#ef4444', fontSize: 12 }}>{error}</div>
         )}
 
         <div style={{ display: 'flex', gap: 8, justifyContent: 'space-between', marginTop: 4 }}>
@@ -138,6 +144,8 @@ function RolesTab({ roles, loading, onRefresh, admin }: { roles: Role[]; loading
 
   const [allPrivs, setAllPrivs] = useState<Privilege[]>([])
   const [loadingPrivs, setLoadingPrivs] = useState(false)
+
+  const [editError, setEditError] = useState<string | null>(null)
 
   const [roleSearch, setRoleSearch] = useState('')
   const filtered = roles.filter(r =>
@@ -179,6 +187,15 @@ function RolesTab({ roles, loading, onRefresh, admin }: { roles: Role[]; loading
       await nexusApi.setRolePrivileges(editRole.id, editPrivIds)
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['roles'] }); onRefresh(); setEditRole(null) },
+    onError: (e: unknown) => {
+      let msg = 'Error saving role'
+      if (axios.isAxiosError(e)) {
+        const d = e.response?.data
+        if (typeof d === 'object' && d !== null && 'error' in d) msg = String((d as { error: unknown }).error)
+        else msg = e.message
+      } else if (e instanceof Error) { msg = e.message }
+      setEditError(msg)
+    },
   })
 
   const create = useMutation({
@@ -192,6 +209,15 @@ function RolesTab({ roles, loading, onRefresh, admin }: { roles: Role[]; loading
   const del = useMutation({
     mutationFn: (id: string) => nexusApi.deleteRole(id),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['roles'] }); onRefresh() },
+    onError: (e: unknown) => {
+      let msg = 'Error deleting role'
+      if (axios.isAxiosError(e)) {
+        const d = e.response?.data
+        if (typeof d === 'object' && d !== null && 'error' in d) msg = String((d as { error: unknown }).error)
+        else msg = e.message
+      } else if (e instanceof Error) { msg = e.message }
+      setEditError(msg)
+    },
   })
 
   if (loading) return <div style={S.empty}>Loading…</div>
@@ -255,8 +281,9 @@ function RolesTab({ roles, loading, onRefresh, admin }: { roles: Role[]; loading
           onSave={() => saveEdit.mutate()}
           saving={saveEdit.isPending}
           saveDisabled={!editForm.name.trim()}
-          onCancel={() => setEditRole(null)}
+          onCancel={() => { setEditRole(null); setEditError(null) }}
           onDelete={() => { if (confirm(`Delete role ${editRole.name}?`)) { del.mutate(editRole.id); setEditRole(null) } }}
+          error={editError}
         />
       )}
 
