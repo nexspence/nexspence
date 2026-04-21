@@ -606,6 +606,8 @@ function DockerTreeRows({
   toggle,
   selectedPath,
   onSelectLeaf,
+  showDelete,
+  onDelete,
 }: {
   node: DockerTreeNode
   depth: number
@@ -613,6 +615,8 @@ function DockerTreeRows({
   toggle: (p: string) => void
   selectedPath: string | null
   onSelectLeaf?: (node: DockerTreeNode) => void
+  showDelete?: boolean
+  onDelete?: (node: DockerTreeNode) => void
 }) {
   const hasKids = !!(node.children && node.children.length > 0)
   const isFolder = node.kind === 'folder'
@@ -658,6 +662,15 @@ function DockerTreeRows({
         {icon}
         <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{node.label}</span>
         {node.imageRef && <span style={S.muted}>— {node.imageRef}</span>}
+        {showDelete && node.kind === 'tag' && onDelete && (
+          <button
+            onClick={e => { e.stopPropagation(); onDelete(node) }}
+            style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(239,68,68,0.6)', padding: '2px 4px', display: 'flex', alignItems: 'center', flexShrink: 0 }}
+            title="Delete tag"
+          >
+            <Trash2 size={12} />
+          </button>
+        )}
       </div>
     )
   }
@@ -697,6 +710,8 @@ function DockerTreeRows({
           toggle={toggle}
           selectedPath={selectedPath}
           onSelectLeaf={onSelectLeaf}
+          showDelete={showDelete}
+          onDelete={onDelete}
         />
       ))}
     </div>
@@ -722,13 +737,9 @@ export default function BrowsePage() {
     queryFn: () => nexspenceApi.myPrivileges(),
   })
 
-  const canDelete = useCallback((repo: string): boolean => {
-    void repo
-    if (isAdmin()) return true
-    return myPrivs.some(p =>
-      (p.attrs?.actions as string[] | undefined)?.includes('delete')
-    )
-  }, [myPrivs, isAdmin])
+  const canDeleteRepo = isAdmin() || myPrivs.some(p =>
+    (p.attrs?.actions as string[] | undefined)?.includes('delete')
+  )
 
   async function confirmDelete() {
     if (!deleteTarget) return
@@ -893,6 +904,8 @@ export default function BrowsePage() {
                   toggle={toggleTree}
                   selectedPath={dockerSelection?.path ?? null}
                   onSelectLeaf={onSelectDockerLeaf}
+                  showDelete={canDeleteRepo}
+                  onDelete={node => setDeleteTarget({ path: node.path, repo: repoName })}
                 />
               ))}
             </div>
@@ -951,7 +964,7 @@ export default function BrowsePage() {
                       : '—'}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    {canDelete(repoName) && (
+                    {canDeleteRepo && (
                       <button
                         onClick={() => setDeleteTarget({ path: assetPath, repo: repoName })}
                         style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(239,68,68,0.6)', padding: '2px 4px', display: 'flex', alignItems: 'center' }}
