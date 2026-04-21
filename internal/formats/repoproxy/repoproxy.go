@@ -2,6 +2,7 @@
 package repoproxy
 
 import (
+	"context"
 	"crypto/md5"
 	"crypto/sha1"
 	"crypto/sha256"
@@ -20,7 +21,7 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/formats/base"
 )
 
-var httpUpstream = &http.Client{
+var UpstreamClient = &http.Client{
 	Transport: &http.Transport{
 		MaxIdleConns:        128,
 		IdleConnTimeout:     90 * time.Second,
@@ -147,7 +148,13 @@ func ServeGET(c *gin.Context, d formats.Deps, repo *domain.Repository, repoRelat
 			return fmt.Errorf("repoproxy: blob get: %w", err)
 		}
 		defer rc.Close()
-		go func() { _ = d.Assets.IncrementDownload(ctx, asset.ID) }()
+		// Count only real GETs so HEAD probe + GET pulls don't double-count.
+		// Use context.Background so the UPDATE survives request cancellation after streaming.
+		if c.Request.Method == http.MethodGet {
+			go func(assetID string) {
+				_ = d.Assets.IncrementDownload(context.Background(), assetID)
+			}(asset.ID)
+		}
 		applyChecksumHeaders(c, asset)
 		if c.Request.Method == http.MethodHead {
 			c.Header("Content-Type", asset.ContentType)
@@ -172,20 +179,37 @@ func ServeGET(c *gin.Context, d formats.Deps, repo *domain.Repository, repoRelat
 		return nil
 	}
 
-	req, err := http.NewRequestWithContext(ctx, c.Request.Method, upstream, nil)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("User-Agent", "Nexspence/1.0 (proxy)")
+	upHdr := http.Header{}
 	if ac := c.GetHeader("Accept"); ac != "" {
-		req.Header.Set("Accept", ac)
+		upHdr.Set("Accept", ac)
 	}
 	if inm := c.GetHeader("If-None-Match"); inm != "" {
-		req.Header.Set("If-None-Match", inm)
+		upHdr.Set("If-None-Match", inm)
+	}
+	// Do not forward client Authorization to Docker Hub — Docker sends Nexspence Basic
+	// credentials; Hub would reject them. Docker Hub anonymous pulls use auth.docker.io token.
+
+	// Docker/registry clients often probe with HEAD. Upstream HEAD has no body, so we cannot
+	// cache — always use GET upstream when we need to populate the blob (HEAD or GET miss).
+	upstreamMethod := c.Request.Method
+	if upstreamMethod == http.MethodHead {
+		upstreamMethod = http.MethodGet
 	}
 
-	resp, err := httpUpstream.Do(req)
+	resp, err := fetchUpstreamWithDockerHubAuth(ctx, upstreamMethod, upstream, baseRemote, upHdr)
 	if err != nil {
+		if d.Webhooks != nil {
+			d.Webhooks.Dispatch(domain.WebhookPayload{
+				Event:      domain.EventProxyError,
+				Timestamp:  time.Now(),
+				Repository: repo.Name,
+				Asset: map[string]any{
+					"path":     repoRelativePath,
+					"upstream": upstream,
+					"error":    err.Error(),
+				},
+			})
+		}
 		c.JSON(http.StatusBadGateway, gin.H{"error": "upstream fetch failed: " + err.Error()})
 		return nil
 	}
@@ -201,12 +225,6 @@ func ServeGET(c *gin.Context, d formats.Deps, repo *domain.Repository, repoRelat
 		copyRespHeaders(c.Writer.Header(), resp.Header)
 		c.Status(resp.StatusCode)
 		_, _ = io.Copy(c.Writer, resp.Body)
-		return nil
-	}
-
-	if c.Request.Method == http.MethodHead {
-		copyRespHeaders(c.Writer.Header(), resp.Header)
-		c.Status(resp.StatusCode)
 		return nil
 	}
 
@@ -231,7 +249,11 @@ func ServeGET(c *gin.Context, d formats.Deps, repo *domain.Repository, repoRelat
 	}()
 
 	hashes := io.MultiWriter(sha256h, sha1h, md5h)
-	mw := io.MultiWriter(pw, hashes, c.Writer)
+	clientSink := io.Writer(c.Writer)
+	if c.Request.Method == http.MethodHead {
+		clientSink = io.Discard
+	}
+	mw := io.MultiWriter(pw, hashes, clientSink)
 
 	written, copyErr := io.Copy(mw, resp.Body)
 	_ = pw.CloseWithError(copyErr)
@@ -253,8 +275,16 @@ func ServeGET(c *gin.Context, d formats.Deps, repo *domain.Repository, repoRelat
 		}
 	}
 
-	if _, regErr := base.RegisterStoredBlob(ctx, d, repo, repoRelativePath, ct, coords, blobKey, sha256sum, sha1sum, md5sum, size); regErr != nil {
+	regAsset, regErr := base.RegisterStoredBlob(ctx, d, repo, repoRelativePath, ct, coords, blobKey, sha256sum, sha1sum, md5sum, size)
+	if regErr != nil {
 		return regErr
+	}
+	// Count a download only for GET (see HEAD branch above). Otherwise a HEAD probe + GET
+	// hit would double-count the same pull.
+	if regAsset != nil && regAsset.ID != "" && c.Request.Method == http.MethodGet {
+		go func(assetID string) {
+			_ = d.Assets.IncrementDownload(context.Background(), assetID)
+		}(regAsset.ID)
 	}
 	return nil
 }
