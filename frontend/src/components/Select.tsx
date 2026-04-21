@@ -51,7 +51,7 @@ export function Select({
       <button
         type="button"
         disabled={disabled}
-        onClick={() => !disabled && setOpen(v => !v)}
+        onClick={() => setOpen(v => !v)}
         style={{
           display: 'flex',
           alignItems: 'center',
