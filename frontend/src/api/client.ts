@@ -28,6 +28,15 @@ apiClient.interceptors.response.use(
   },
 )
 
+// ── Domain types ─────────────────────────────────────────────
+
+export interface Privilege {
+  id: string
+  type?: string
+  contentSelectorId?: string
+  attrs?: { actions?: string[] }
+}
+
 // ── API helpers ──────────────────────────────────────────────
 
 export const nexusApi = {
@@ -205,6 +214,16 @@ export const nexspenceApi = {
   // Security — privilege → role membership map
   privilegeRoleMap: () =>
     apiClient.get<Record<string, string[]>>('/api/v1/security/privilege-role-map').then(r => r.data),
+
+  // Current user's effective privileges
+  myPrivileges: () =>
+    apiClient.get<Privilege[]>('/api/v1/me/privileges').then(r => r.data),
+
+  // Delete artifact by path
+  deleteByPath: (repoName: string, path: string) =>
+    apiClient.delete(`/api/v1/browse/repositories/${encodeURIComponent(repoName)}/path`, {
+      params: { path },
+    }),
 
   // Vulnerability scan (Trivy) — Docker components
   // GET returns 204 No Content when no cached scan yet (not an error); we map that to data: null.

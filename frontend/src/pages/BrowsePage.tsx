@@ -11,9 +11,12 @@ import {
   RefreshCw,
   ShieldAlert,
   Tag,
+  Trash2,
 } from 'lucide-react'
-import { nexusApi, nexspenceApi, apiClient } from '@/api/client'
+import axios from 'axios'
+import { nexusApi, nexspenceApi, apiClient, Privilege } from '@/api/client'
 import { Select, SelectOption } from '../components/Select'
+import { useAuthStore } from '@/store/authStore'
 
 interface Repository {
   id: string
@@ -437,7 +440,7 @@ const S = {
   },
   thead: {
     display: 'grid',
-    gridTemplateColumns: '2fr 1.5fr 1fr 1fr 2fr',
+    gridTemplateColumns: '2fr 1.5fr 1fr 1fr 2fr 32px',
     padding: '10px 16px',
     background: 'rgba(255,255,255,0.03)',
     borderBottom: '1px solid rgba(255,255,255,0.07)',
@@ -449,7 +452,7 @@ const S = {
   },
   trow: {
     display: 'grid',
-    gridTemplateColumns: '2fr 1.5fr 1fr 1fr 2fr',
+    gridTemplateColumns: '2fr 1.5fr 1fr 1fr 2fr 32px',
     padding: '11px 16px',
     borderBottom: '1px solid rgba(255,255,255,0.05)',
     fontSize: 13,
@@ -706,7 +709,42 @@ export default function BrowsePage() {
   const [page, setPage] = useState(0)
   const [treeCollapsed, setTreeCollapsed] = useState<Record<string, boolean>>({})
   const [dockerSelection, setDockerSelection] = useState<DockerLeafSelection | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<{ path: string; repo: string } | null>(null)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
   const limit = 25
+
+  const { isAdmin } = useAuthStore()
+  const queryClient = useQueryClient()
+
+  const { data: myPrivs = [] } = useQuery<Privilege[]>({
+    queryKey: ['me-privileges'],
+    queryFn: () => nexspenceApi.myPrivileges(),
+  })
+
+  const canDelete = useCallback((repo: string): boolean => {
+    void repo
+    if (isAdmin()) return true
+    return myPrivs.some(p =>
+      (p.attrs?.actions as string[] | undefined)?.includes('delete')
+    )
+  }, [myPrivs, isAdmin])
+
+  async function confirmDelete() {
+    if (!deleteTarget) return
+    setDeleting(true)
+    setDeleteError(null)
+    try {
+      await nexspenceApi.deleteByPath(deleteTarget.repo, deleteTarget.path)
+      setDeleteTarget(null)
+      void queryClient.invalidateQueries({ queryKey: ['components', deleteTarget.repo] })
+    } catch (err: unknown) {
+      const msg = axios.isAxiosError(err) ? err.response?.data?.message ?? err.message : String(err)
+      setDeleteError(msg)
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   const { data: repos = [] } = useQuery<Repository[]>({
     queryKey: ['repositories'],
@@ -893,10 +931,12 @@ export default function BrowsePage() {
               <div>Version</div>
               <div>Format</div>
               <div>Assets</div>
+              <div />
             </div>
             {items.map((c) => {
               const color = FORMAT_COLORS[c.format] ?? '#6b7280'
               const firstAsset = c.assets?.[0]
+              const assetPath = firstAsset?.path ?? c.name
               return (
                 <div key={c.id} style={S.trow}>
                   <div style={{ fontWeight: 600, color: '#dbeafe' }}>{c.name}</div>
@@ -909,6 +949,17 @@ export default function BrowsePage() {
                     {firstAsset
                       ? `${firstAsset.path}${c.assets!.length > 1 ? ` +${c.assets!.length - 1}` : ''}`
                       : '—'}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {canDelete(repoName) && (
+                      <button
+                        onClick={() => setDeleteTarget({ path: assetPath, repo: repoName })}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(239,68,68,0.6)', padding: '2px 4px', display: 'flex', alignItems: 'center' }}
+                        title="Delete"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    )}
                   </div>
                 </div>
               )
@@ -925,6 +976,37 @@ export default function BrowsePage() {
             </button>
           </div>
         </>
+      )}
+
+      {deleteTarget && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ background: '#0f172a', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 14, padding: 24, width: 440, display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#dbeafe' }}>Delete artifact?</h3>
+            <p style={{ margin: 0, fontSize: 13, color: 'rgba(229,231,235,0.7)' }}>
+              <span style={{ fontFamily: 'monospace', color: '#fca5a5' }}>{deleteTarget.path}</span>
+              <br />This action cannot be undone.
+            </p>
+            {deleteError && (
+              <div style={{ padding: '8px 12px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, color: '#ef4444', fontSize: 12 }}>{deleteError}</div>
+            )}
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button
+                style={{ padding: '7px 14px', borderRadius: 8, border: 'none', cursor: 'pointer', background: 'rgba(255,255,255,0.06)', color: '#fff', fontSize: 13 }}
+                onClick={() => { setDeleteTarget(null); setDeleteError(null) }}
+                disabled={deleting}
+              >
+                Cancel
+              </button>
+              <button
+                style={{ padding: '7px 14px', borderRadius: 8, border: 'none', cursor: 'pointer', background: 'rgba(239,68,68,0.15)', color: '#ef4444', fontSize: 13, fontWeight: 600 }}
+                onClick={confirmDelete}
+                disabled={deleting}
+              >
+                {deleting ? 'Deleting…' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
