@@ -3,6 +3,7 @@ package service_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/service"
@@ -23,8 +24,9 @@ func TestRunAll_SkipsDisabledPolicies(t *testing.T) {
 	)
 	assets := testutil.NewAssetRepo()
 	blobs := testutil.NewBlobStore()
+	repos := testutil.NewRepoRepo()
 
-	svc := service.NewCleanupService(policies, assets, blobs, nopLog())
+	svc := service.NewCleanupService(policies, repos, assets, blobs, nopLog())
 	require.NoError(t, svc.RunAll(context.Background()))
 
 	// No update should have been recorded — policy was disabled
@@ -40,8 +42,9 @@ func TestRunAll_SkipsNoCriteriaPolicies(t *testing.T) {
 	)
 	assets := testutil.NewAssetRepo()
 	blobs := testutil.NewBlobStore()
+	repos := testutil.NewRepoRepo()
 
-	svc := service.NewCleanupService(policies, assets, blobs, nopLog())
+	svc := service.NewCleanupService(policies, repos, assets, blobs, nopLog())
 	require.NoError(t, svc.RunAll(context.Background()))
 
 	// Policy has no useful criteria — nothing to run, no update expected
@@ -68,7 +71,12 @@ func TestRunAll_DeletesStaleAssets(t *testing.T) {
 	_ = blobs.Put(context.Background(), "bk1", testutil.MakeReader("data1"), 5)
 	_ = blobs.Put(context.Background(), "bk2", testutil.MakeReader("data2"), 5)
 
-	svc := service.NewCleanupService(policies, assets, blobs, nopLog())
+	repos := testutil.NewRepoRepo(&domain.Repository{
+		Name: "maven-hosted", ID: "r1", Format: domain.FormatMaven2,
+		CleanupPolicyIDs: []string{"p3"},
+	})
+
+	svc := service.NewCleanupService(policies, repos, assets, blobs, nopLog())
 	require.NoError(t, svc.RunAll(context.Background()))
 
 	// Both blobs should be deleted
@@ -97,8 +105,12 @@ func TestRunAll_DryRun_DoesNotDelete(t *testing.T) {
 	assets := testutil.NewAssetRepo()
 	assets.Stale = staleAssets
 	blobs := testutil.NewBlobStore()
+	repos := testutil.NewRepoRepo(&domain.Repository{
+		Name: "hosted", ID: "r1", Format: domain.FormatRaw,
+		CleanupPolicyIDs: []string{"p4"},
+	})
 
-	svc := service.NewCleanupService(policies, assets, blobs, nopLog())
+	svc := service.NewCleanupService(policies, repos, assets, blobs, nopLog())
 	require.NoError(t, svc.RunAll(context.Background()))
 
 	// Dry-run: blob must NOT be deleted
@@ -115,11 +127,31 @@ func TestRunPolicy_NotFound(t *testing.T) {
 	policies := testutil.NewCleanupPolicyRepo()
 	assets := testutil.NewAssetRepo()
 	blobs := testutil.NewBlobStore()
+	repos := testutil.NewRepoRepo()
 
-	svc := service.NewCleanupService(policies, assets, blobs, nopLog())
+	svc := service.NewCleanupService(policies, repos, assets, blobs, nopLog())
 	err := svc.RunPolicy(context.Background(), "nonexistent-id")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "not found")
+}
+
+func TestRunPolicy_SkipsWhenNoRepositoriesAttached(t *testing.T) {
+	policies := testutil.NewCleanupPolicyRepo(
+		&domain.CleanupPolicy{
+			ID: "p6", Name: "unattached", Enabled: true, Format: "*",
+			Criteria: map[string]any{"lastDownloadedDays": float64(1)},
+		},
+	)
+	assets := testutil.NewAssetRepo()
+	assets.Stale = []domain.Asset{{ID: "x", BlobKey: "k", SizeBytes: 1, Path: "/p"}}
+	blobs := testutil.NewBlobStore()
+	repos := testutil.NewRepoRepo()
+
+	svc := service.NewCleanupService(policies, repos, assets, blobs, nopLog())
+	require.NoError(t, svc.RunPolicy(context.Background(), "p6"))
+
+	assert.Empty(t, blobs.Deleted)
+	assert.Empty(t, policies.Updates)
 }
 
 func TestRunPolicy_ByID(t *testing.T) {
@@ -138,8 +170,65 @@ func TestRunPolicy_ByID(t *testing.T) {
 	blobs := testutil.NewBlobStore()
 	_ = blobs.Put(context.Background(), "bk5", testutil.MakeReader("x"), 1)
 
-	svc := service.NewCleanupService(policies, assets, blobs, nopLog())
+	repos := testutil.NewRepoRepo(&domain.Repository{
+		Name: "hosted", ID: "r1", Format: domain.FormatRaw,
+		CleanupPolicyIDs: []string{"p5"},
+	})
+
+	svc := service.NewCleanupService(policies, repos, assets, blobs, nopLog())
 	require.NoError(t, svc.RunPolicy(context.Background(), "p5"))
 
 	assert.Contains(t, blobs.Deleted, "bk5")
+}
+
+func TestReloadPolicy_NoopWhenSchedulerNotStarted(t *testing.T) {
+	policies := testutil.NewCleanupPolicyRepo(
+		&domain.CleanupPolicy{
+			ID: "p10", Name: "policy", Enabled: true, Format: "*",
+			ScheduleCron: "* * * * *",
+			Criteria:     map[string]any{"artifactAgeDays": float64(1)},
+		},
+	)
+	svc := service.NewCleanupService(policies, testutil.NewRepoRepo(), testutil.NewAssetRepo(), testutil.NewBlobStore(), nopLog())
+
+	// Must not panic before StartCronScheduler is called
+	svc.ReloadPolicy(context.Background(), "p10")
+	svc.ReloadPolicy(context.Background(), "nonexistent")
+}
+
+func TestReloadPolicy_RemovesEntryForDeletedPolicy(t *testing.T) {
+	p := &domain.CleanupPolicy{
+		ID: "p11", Name: "removable", Enabled: true, Format: "*",
+		ScheduleCron: "@yearly", // won't fire during test
+		Criteria:     map[string]any{"artifactAgeDays": float64(365)},
+	}
+	policies := testutil.NewCleanupPolicyRepo(p)
+	svc := service.NewCleanupService(policies, testutil.NewRepoRepo(), testutil.NewAssetRepo(), testutil.NewBlobStore(), nopLog())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go svc.StartCronScheduler(ctx, "@yearly")
+	time.Sleep(50 * time.Millisecond) // wait for cron to start
+
+	// Simulate deletion: remove from mock repo, then reload
+	policies.Delete(context.Background(), "p11")
+	// Should not panic — entry removed, policy not found
+	svc.ReloadPolicy(context.Background(), "p11")
+}
+
+func TestStartCronScheduler_InvalidCronFallsBackToDefault(t *testing.T) {
+	p := &domain.CleanupPolicy{
+		ID: "p12", Name: "bad-cron", Enabled: true, Format: "*",
+		ScheduleCron: "NOT_A_VALID_CRON",
+		Criteria:     map[string]any{"artifactAgeDays": float64(1)},
+	}
+	policies := testutil.NewCleanupPolicyRepo(p)
+	svc := service.NewCleanupService(policies, testutil.NewRepoRepo(), testutil.NewAssetRepo(), testutil.NewBlobStore(), nopLog())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Must not panic — falls back to default schedule
+	go svc.StartCronScheduler(ctx, "@yearly")
+	time.Sleep(50 * time.Millisecond)
 }
