@@ -110,12 +110,12 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 
 	// ── Handlers ──────────────────────────────────────────────
 	authH      := handlers.NewAuthHandler(userSvc, log)
-	rbacSvc    := service.NewRBACService(rbacRepo, repoRepo)
+	rbacSvc    := service.NewRBACService(rbacRepo, repoRepo, log)
 	repoH      := handlers.NewRepositoryHandler(repoSvc, rbacSvc)
 	userH      := handlers.NewUserHandler(userSvc)
 	blobH      := handlers.NewBlobStoreHandler(blobRepo)
-	componentH := handlers.NewComponentHandler(componentRepo, assetRepo, repoRepo, cfg.HTTP.BaseURL)
-	browseH    := handlers.NewBrowseHandler(repoRepo, componentRepo, assetRepo)
+	componentH := handlers.NewComponentHandler(componentRepo, assetRepo, repoRepo, cfg.HTTP.BaseURL).WithRBAC(rbacSvc)
+	browseH    := handlers.NewBrowseHandler(repoRepo, componentRepo, assetRepo, rbacSvc)
 	cleanupH   := handlers.NewCleanupHandler(cleanupRepo, repoRepo, cleanupSvc)
 	auditH     := handlers.NewAuditHandler(auditRepo)
 	scanSvc    := service.NewScanService(componentRepo, cfg.HTTP.BaseURL)
@@ -168,6 +168,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 		authed.GET("/service/rest/v1/repositories", repoH.List)
 		authed.GET("/service/rest/v1/repositories/:name", repoH.Get)
 		authed.GET("/api/v1/repositories", repoH.List)
+		authed.GET("/api/v1/repositories/:name/quota", componentH.GetQuota)
 
 		// ── Browse ────────────────────────────────────────────
 		authed.GET("/api/v1/browse/repositories/:name/docker-tree", browseH.DockerTree)
