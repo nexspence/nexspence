@@ -747,8 +747,10 @@ export default function BrowsePage() {
     setDeleteError(null)
     try {
       await nexspenceApi.deleteByPath(deleteTarget.repo, deleteTarget.path)
+      const repo = deleteTarget.repo
       setDeleteTarget(null)
-      void queryClient.invalidateQueries({ queryKey: ['components', deleteTarget.repo] })
+      void queryClient.invalidateQueries({ queryKey: ['components', repo] })
+      void queryClient.invalidateQueries({ queryKey: ['dockerBrowseTree', repo] })
     } catch (err: unknown) {
       const msg = axios.isAxiosError(err) ? err.response?.data?.message ?? err.message : String(err)
       setDeleteError(msg)
@@ -905,7 +907,10 @@ export default function BrowsePage() {
                   selectedPath={dockerSelection?.path ?? null}
                   onSelectLeaf={onSelectDockerLeaf}
                   showDelete={canDeleteRepo}
-                  onDelete={node => setDeleteTarget({ path: node.path, repo: repoName })}
+                  onDelete={node => setDeleteTarget({
+                    path: `/manifests/${node.imageRef}/${node.version ?? node.label}`,
+                    repo: repoName,
+                  })}
                 />
               ))}
             </div>
