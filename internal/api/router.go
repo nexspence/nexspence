@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -391,25 +390,15 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 	v2docker := r.Group("/v2/repository", handlers.OptionalAuth(userSvc, tokenSvc), handlers.RBACMiddleware(rbacSvc, repoRepo))
 	v2docker.Any("/:repoName/*dockerpath", dockerV2H)
 
+	// Short-path Docker: /v2/:repoName/* — no "repository/" segment required.
+	// Gin static segments take priority, so /v2/repository/:repoName/... still
+	// matches v2docker above; this group catches everything else under /v2/.
+	v2short := r.Group("/v2", handlers.OptionalAuth(userSvc, tokenSvc), handlers.RBACMiddleware(rbacSvc, repoRepo))
+	v2short.Any("/:repoName/*dockerpath", dockerV2H)
+
 	// ── Frontend static (production build) ────────────────────
 	ui := serveUI(cfg)
 	r.NoRoute(func(c *gin.Context) {
-		// Docker pull localhost:8081/dockerproxy/... → /v2/dockerproxy/... (no "repository/" segment)
-		// would otherwise fall through to the SPA (text/html) and break layer unpack.
-		p := c.Request.URL.Path
-		if strings.HasPrefix(p, "/v2/") && p != "/v2/" && !strings.HasPrefix(p, "/v2/repository/") {
-			c.Header("Content-Type", "application/json")
-			c.JSON(http.StatusNotFound, gin.H{
-				"errors": []gin.H{{
-					"code": "NAME_UNKNOWN",
-					"message": "Nexspence Docker v2 API is only at /v2/repository/<repoName>/... " +
-						"— the image reference must contain the literal segment `repository` after the host. " +
-						"Example: docker pull " + strings.TrimSuffix(cfg.HTTP.BaseURL, "/") +
-						"/repository/dockerproxy/library/alpine:latest",
-				}},
-			})
-			return
-		}
 		ui(c)
 	})
 
