@@ -1467,7 +1467,6 @@ export default function BrowsePage() {
       {uploadOpen && isRaw && (
         <RawUploadModal
           repoName={repoName}
-          initialPath={rawSelection?.node.kind === 'file' ? rawSelection.node.path : ''}
           onClose={() => setUploadOpen(false)}
           onSuccess={() => {
             void queryClient.invalidateQueries({ queryKey: ['rawBrowseTree', repoName] })
@@ -1481,17 +1480,15 @@ export default function BrowsePage() {
 
 function RawUploadModal({
   repoName,
-  initialPath,
   onClose,
   onSuccess,
 }: {
   repoName: string
-  initialPath: string
   onClose: () => void
   onSuccess: () => void
 }) {
   const [file, setFile] = useState<File | null>(null)
-  const [destPath, setDestPath] = useState(initialPath.replace(/^\//, ''))
+  const [destPath, setDestPath] = useState('')
   const [uploadState, setUploadState] = useState<'idle' | 'uploading' | 'done' | 'error'>('idle')
   const [progress, setProgress] = useState(0)
   const [uploadError, setUploadError] = useState<string | null>(null)
@@ -1604,7 +1601,7 @@ function RawUploadModal({
               value={destPath}
               onChange={(e) => setDestPath(e.target.value)}
               disabled={uploadState === 'uploading'}
-              placeholder="path/to/file.ext"
+              placeholder="e.g. releases/myapp/1.0.0/myapp.tar.gz"
               style={{
                 width: '100%',
                 background: 'rgba(255,255,255,0.05)',
