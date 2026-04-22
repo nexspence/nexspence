@@ -17,8 +17,9 @@ import (
 	"go.uber.org/zap"
 )
 
-// allowAllRBACRepo grants full access by returning no privileges.
-// Repos with AllowAnonymous=true allow anonymous reads without privilege checks.
+// allowAllRBACRepo returns no privileges from the DB.
+// Access in these tests is granted via AllowAnonymous=true on the test repos,
+// not via privilege matching (which would fail for an authenticated user with empty privileges).
 type allowAllRBACRepo struct{}
 
 func (a *allowAllRBACRepo) GetUserPrivilegesWithSelectors(_ context.Context, _ string) ([]repository.PrivilegeWithSelector, error) {
@@ -43,6 +44,12 @@ func buildDockerRouter(repos ...*domain.Repository) *gin.Engine {
 	fmtRegistry := map[string]formats.FormatHandler{"docker": stub}
 
 	dockerV2H := serveDockerV2(repoRepo, stub, fmtRegistry)
+
+	// OptionalAuth is intentionally omitted from this test router.
+	// These tests cover routing behavior and RBAC access control, not authentication.
+	// All repos use AllowAnonymous=true so RBAC passes for unauthenticated GET requests —
+	// exactly as production does for public repos. Tests of the authenticated path
+	// belong in an integration test that starts the full server.
 
 	// v2 discovery — public, no auth needed
 	r.GET("/v2/", func(c *gin.Context) {
@@ -132,6 +139,12 @@ func TestDockerRouting(t *testing.T) {
 			path:       "/v2/repository/no-such-repo/tags/list",
 			repos:      []*domain.Repository{dockerRepo},
 			wantStatus: http.StatusUnauthorized,
+		},
+		{
+			name:       "long path: offline docker repo returns 503",
+			path:       "/v2/repository/offlinerepo/tags/list",
+			repos:      []*domain.Repository{offlineRepo},
+			wantStatus: http.StatusServiceUnavailable,
 		},
 		// Discovery endpoint
 		{
