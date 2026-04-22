@@ -275,7 +275,9 @@ func ServeGET(c *gin.Context, d formats.Deps, repo *domain.Repository, repoRelat
 		}
 	}
 
-	regAsset, regErr := base.RegisterStoredBlob(ctx, d, repo, repoRelativePath, ct, coords, blobKey, sha256sum, sha1sum, md5sum, size)
+	// Use context.Background so DB registration survives request context cancellation
+	// after streaming (client closes connection once all bytes are received).
+	regAsset, regErr := base.RegisterStoredBlob(context.Background(), d, repo, repoRelativePath, ct, coords, blobKey, sha256sum, sha1sum, md5sum, size)
 	if regErr != nil {
 		return regErr
 	}
