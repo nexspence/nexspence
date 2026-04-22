@@ -1,3 +1,6 @@
+# Worktrees
+.worktrees/
+
 # Binary
 bin/
 *.exe
