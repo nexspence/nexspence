@@ -28,6 +28,7 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/formats/raw"
 	"github.com/nexspence-oss/nexspence/internal/formats/yum"
 	"github.com/nexspence-oss/nexspence/internal/logger"
+	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/repository/postgres"
 	"github.com/nexspence-oss/nexspence/internal/requestctx"
 	"github.com/nexspence-oss/nexspence/internal/service"
@@ -386,8 +387,43 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 		c.Status(http.StatusOK)
 	})
 
+	dockerV2H := serveDockerV2(repoRepo, groupHandler, formatRegistry)
 	v2docker := r.Group("/v2/repository", handlers.OptionalAuth(userSvc, tokenSvc), handlers.RBACMiddleware(rbacSvc, repoRepo))
-	v2docker.Any("/:repoName/*dockerpath", func(c *gin.Context) {
+	v2docker.Any("/:repoName/*dockerpath", dockerV2H)
+
+	// ── Frontend static (production build) ────────────────────
+	ui := serveUI(cfg)
+	r.NoRoute(func(c *gin.Context) {
+		// Docker pull localhost:8081/dockerproxy/... → /v2/dockerproxy/... (no "repository/" segment)
+		// would otherwise fall through to the SPA (text/html) and break layer unpack.
+		p := c.Request.URL.Path
+		if strings.HasPrefix(p, "/v2/") && p != "/v2/" && !strings.HasPrefix(p, "/v2/repository/") {
+			c.Header("Content-Type", "application/json")
+			c.JSON(http.StatusNotFound, gin.H{
+				"errors": []gin.H{{
+					"code": "NAME_UNKNOWN",
+					"message": "Nexspence Docker v2 API is only at /v2/repository/<repoName>/... " +
+						"— the image reference must contain the literal segment `repository` after the host. " +
+						"Example: docker pull " + strings.TrimSuffix(cfg.HTTP.BaseURL, "/") +
+						"/repository/dockerproxy/library/alpine:latest",
+				}},
+			})
+			return
+		}
+		ui(c)
+	})
+
+	return r
+}
+
+// serveDockerV2 handles Docker OCI v2 API requests for both
+// /v2/repository/:repoName/*dockerpath and /v2/:repoName/*dockerpath routes.
+func serveDockerV2(
+	repoRepo repository.RepositoryRepo,
+	groupH formats.FormatHandler,
+	fmtRegistry map[string]formats.FormatHandler,
+) gin.HandlerFunc {
+	return func(c *gin.Context) {
 		repoName := c.Param("repoName")
 		dockerPath := c.Param("dockerpath") // e.g. /da/devops/alpine/manifests/3.22.1
 		ctx := c.Request.Context()
@@ -425,7 +461,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 				{Key: "repoName", Value: repoName},
 				{Key: "path", Value: "/v2" + dockerPath},
 			}
-			groupHandler.ServeHTTP(c)
+			groupH.ServeHTTP(c)
 			return
 		}
 
@@ -441,32 +477,8 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 			{Key: "repoName", Value: repoName},
 			{Key: "path", Value: "/v2" + dockerPath},
 		}
-		formatRegistry["docker"].ServeHTTP(c)
-	})
-
-	// ── Frontend static (production build) ────────────────────
-	ui := serveUI(cfg)
-	r.NoRoute(func(c *gin.Context) {
-		// Docker pull localhost:8081/dockerproxy/... → /v2/dockerproxy/... (no "repository/" segment)
-		// would otherwise fall through to the SPA (text/html) and break layer unpack.
-		p := c.Request.URL.Path
-		if strings.HasPrefix(p, "/v2/") && p != "/v2/" && !strings.HasPrefix(p, "/v2/repository/") {
-			c.Header("Content-Type", "application/json")
-			c.JSON(http.StatusNotFound, gin.H{
-				"errors": []gin.H{{
-					"code": "NAME_UNKNOWN",
-					"message": "Nexspence Docker v2 API is only at /v2/repository/<repoName>/... " +
-						"— the image reference must contain the literal segment `repository` after the host. " +
-						"Example: docker pull " + strings.TrimSuffix(cfg.HTTP.BaseURL, "/") +
-						"/repository/dockerproxy/library/alpine:latest",
-				}},
-			})
-			return
-		}
-		ui(c)
-	})
-
-	return r
+		fmtRegistry["docker"].ServeHTTP(c)
+	}
 }
 
 func stubHandler(name string) gin.HandlerFunc {
