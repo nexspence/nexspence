@@ -259,16 +259,22 @@ curl -u admin:admin123 -X PUT \
 # Login
 docker login localhost:8081 -u admin -p admin123
 
-# Tag — include the full repository path after the host:port
+# Tag and push — both URL styles work:
+# Long form (traditional):
 docker tag myimage:latest localhost:8081/repository/my-docker/myimage:latest
 docker push localhost:8081/repository/my-docker/myimage:latest
 
-# Pull
-docker pull localhost:8081/repository/my-docker/myimage:latest
+# Short form (Phase 16+):
+docker tag myimage:latest localhost:8081/my-docker/myimage:latest
+docker push localhost:8081/my-docker/myimage:latest
+
+# Pull — both styles also supported
+docker pull localhost:8081/repository/my-docker/myimage:latest   # long form
+docker pull localhost:8081/my-docker/myimage:latest              # short form
 ```
 
-> **Note**: The Docker client sends API requests to `/v2/repository/<repoName>/...`.
-> Nexspence registers these routes automatically — no extra configuration needed.
+> **Note**: The Docker client sends API requests to `/v2/repository/<repoName>/...` (long form) or `/v2/<repoName>/...` (short form).
+> Nexspence registers both routes automatically — no extra configuration needed.
 
 > **Common mistake:** `docker pull localhost:8081/dockerproxy/library/alpine:latest` is **wrong** — the client calls `/v2/dockerproxy/...` (without `repository`), hits the web UI, and you get errors like `unexpected media type text/html` when a layer is actually HTML. Always include **`repository`** in the image name: `docker pull localhost:8081/repository/dockerproxy/library/alpine:latest`.
 

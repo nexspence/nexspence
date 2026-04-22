@@ -374,9 +374,14 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 	}
 
 	// ── Docker registry v2 API ────────────────────────────────
-	// Docker clients tag images as localhost:8081/repository/<repoName>/<image>:<tag>
-	// and send all API requests to /v2/repository/<repoName>/...
-	// The version check must be public (Docker does GET /v2/ before sending credentials).
+	// Two URL styles are supported (both fully functional):
+	//   Long:  docker tag <image> localhost:8081/repository/<repoName>/<image>:<tag>
+	//          API at /v2/repository/:repoName/*
+	//   Short: docker tag <image> localhost:8081/<repoName>/<image>:<tag>
+	//          API at /v2/:repoName/*
+	// Gin static-segment priority ensures /v2/repository/... always matches the long-path
+	// group first; the short-path group catches everything else under /v2/.
+	// GET /v2/ is public — Docker checks this before sending credentials.
 	r.GET("/v2/", func(c *gin.Context) {
 		c.Header("Docker-Distribution-API-Version", "registry/2.0")
 		c.Status(http.StatusOK)
@@ -405,8 +410,10 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 	return r
 }
 
-// serveDockerV2 handles Docker OCI v2 API requests for both
-// /v2/repository/:repoName/*dockerpath and /v2/:repoName/*dockerpath routes.
+// serveDockerV2 returns a gin.HandlerFunc that dispatches Docker OCI v2 API
+// requests for a named repository. Registered on both the long-path route
+// (/v2/repository/:repoName/*dockerpath) and the short-path route
+// (/v2/:repoName/*dockerpath) so they share identical dispatch logic.
 func serveDockerV2(
 	repoRepo repository.RepositoryRepo,
 	groupH formats.FormatHandler,
