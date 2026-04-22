@@ -381,6 +381,17 @@ type DockerBrowseRow struct {
 	SamplePath  string `json:"samplePath"`
 }
 
+// RawBrowseAsset is a flat asset record used to build the raw browse tree.
+type RawBrowseAsset struct {
+	Path        string
+	SizeBytes   int64
+	SHA256      string
+	ContentType string
+	UpdatedAt   time.Time
+	ComponentID string
+	RepoName    string
+}
+
 // ── Pagination ───────────────────────────────────────────────
 
 type Page[T any] struct {

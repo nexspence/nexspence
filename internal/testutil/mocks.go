@@ -436,6 +436,10 @@ func (a *AssetRepo) ListByRepoAndPath(_ context.Context, _, _ string) ([]domain.
 	return nil, nil
 }
 
+func (a *AssetRepo) ListRawBrowseAssets(_ context.Context, _ []string) ([]domain.RawBrowseAsset, error) {
+	return nil, nil
+}
+
 func (a *AssetRepo) CountByBlobKey(_ context.Context, _, _ string) (int, error) {
 	return 0, nil
 }

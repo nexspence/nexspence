@@ -211,6 +211,10 @@ export const nexspenceApi = {
   getDockerBrowseTree: (repository: string) =>
     apiClient.get(`/api/v1/browse/repositories/${encodeURIComponent(repository)}/docker-tree`),
 
+  // Browse — Raw file tree (path hierarchy from assets)
+  getRawBrowseTree: (repository: string) =>
+    apiClient.get(`/api/v1/browse/repositories/${encodeURIComponent(repository)}/raw-tree`),
+
   // Security — privilege → role membership map
   privilegeRoleMap: () =>
     apiClient.get<Record<string, string[]>>('/api/v1/security/privilege-role-map').then(r => r.data),

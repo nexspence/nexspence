@@ -447,6 +447,33 @@ func (r *assetRepo) ListRawAssetPaths(ctx context.Context, repoName string) ([]s
 	return out, rows.Err()
 }
 
+func (r *assetRepo) ListRawBrowseAssets(ctx context.Context, repoNames []string) ([]domain.RawBrowseAsset, error) {
+	rows, err := r.db.Query(ctx,
+		`SELECT a.path, a.size_bytes, COALESCE(a.sha256, ''), COALESCE(a.content_type, ''),
+		        a.updated_at, COALESCE(a.component_id::text, ''), rep.name
+		 FROM assets a
+		 JOIN components c ON c.id = a.component_id
+		 JOIN repositories rep ON rep.id = c.repository_id
+		 WHERE rep.name = ANY($1)
+		   AND lower(trim(rep.format)) = 'raw'
+		 ORDER BY a.path`,
+		repoNames,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []domain.RawBrowseAsset
+	for rows.Next() {
+		var a domain.RawBrowseAsset
+		if err := rows.Scan(&a.Path, &a.SizeBytes, &a.SHA256, &a.ContentType, &a.UpdatedAt, &a.ComponentID, &a.RepoName); err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
 func (r *assetRepo) ListByRepoAndPath(ctx context.Context, repoName, pathPrefix string) ([]domain.Asset, error) {
 	var q string
 	var args []any

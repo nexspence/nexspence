@@ -74,6 +74,8 @@ type AssetRepo interface {
 	// CountByBlobKey returns the number of assets that reference blobKey, excluding the asset with excludeID.
 	// Used to decide whether the physical blob file can be deleted.
 	CountByBlobKey(ctx context.Context, blobKey, excludeID string) (int, error)
+	// ListRawBrowseAssets returns all assets for the given raw-format repos with metadata for tree building.
+	ListRawBrowseAssets(ctx context.Context, repoNames []string) ([]domain.RawBrowseAsset, error)
 }
 
 // ContentSelectorRepo manages content selector definitions (privilege-scoped paths).
@@ -185,6 +187,13 @@ type PrivilegeWithSelector struct {
 // RBACRepo resolves a user's effective privileges for access checks.
 type RBACRepo interface {
 	GetUserPrivilegesWithSelectors(ctx context.Context, userID string) ([]PrivilegeWithSelector, error)
+}
+
+// BlobRefRepo manages reference counts for deduplicated blobs in global_blobs.
+type BlobRefRepo interface {
+	Increment(ctx context.Context, blobKey string, sizeBytes int64) error
+	Decrement(ctx context.Context, blobKey string) (bool, error)
+	Get(ctx context.Context, blobKey string) (int, error)
 }
 
 // BlobStoreRepo manages blob store configuration.
