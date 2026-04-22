@@ -807,10 +807,16 @@ function RawTreeRows({
     const copyUrl = `${window.location.origin}/repository/${repoName}/${cleanPath}`
 
     function doDownload() {
-      const a = document.createElement('a')
-      a.href = downloadUrl
-      a.download = node.label
-      a.click()
+      void apiClient.get(downloadUrl, { responseType: 'blob' }).then((res) => {
+        const url = window.URL.createObjectURL(res.data as Blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = node.label
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        window.URL.revokeObjectURL(url)
+      })
     }
 
     function doCopy() {
@@ -1297,10 +1303,16 @@ export default function BrowsePage() {
                       <button
                         style={S.btnDl}
                         onClick={() => {
-                          const a = document.createElement('a')
-                          a.href = downloadUrl
-                          a.download = node.label
-                          a.click()
+                          void apiClient.get(downloadUrl, { responseType: 'blob' }).then((res) => {
+                            const url = window.URL.createObjectURL(res.data as Blob)
+                            const a = document.createElement('a')
+                            a.href = url
+                            a.download = node.label
+                            document.body.appendChild(a)
+                            a.click()
+                            document.body.removeChild(a)
+                            window.URL.revokeObjectURL(url)
+                          })
                         }}
                       >
                         <Download size={13} /> Download
@@ -1488,9 +1500,11 @@ function RawUploadModal({
 
   function handleFileChange(f: File) {
     setFile(f)
-    if (!destPath) {
-      setDestPath(f.name)
-    }
+    setDestPath(prev => {
+      const lastSlash = prev.lastIndexOf('/')
+      const dir = lastSlash >= 0 ? prev.slice(0, lastSlash + 1) : ''
+      return dir + f.name
+    })
   }
 
   function doUpload() {
