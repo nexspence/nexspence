@@ -450,7 +450,7 @@ func (r *assetRepo) ListRawAssetPaths(ctx context.Context, repoName string) ([]s
 func (r *assetRepo) ListRawBrowseAssets(ctx context.Context, repoNames []string) ([]domain.RawBrowseAsset, error) {
 	rows, err := r.db.Query(ctx,
 		`SELECT a.path, a.size_bytes, COALESCE(a.sha256, ''), COALESCE(a.content_type, ''),
-		        a.updated_at, COALESCE(a.component_id::text, ''), rep.name
+		        c.updated_at, COALESCE(a.component_id::text, ''), rep.name
 		 FROM assets a
 		 JOIN components c ON c.id = a.component_id
 		 JOIN repositories rep ON rep.id = c.repository_id
