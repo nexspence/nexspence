@@ -403,3 +403,35 @@ func parseManifestDigests(rc io.ReadCloser, size int64, err error) []string {
 	}
 	return out
 }
+
+// DeleteDockerImage handles DELETE /api/v1/browse/repositories/:name/docker-image
+// Query param: image=da/devops/python (image name or namespace prefix).
+// Deletes ALL manifests and blobs under the given image/namespace path.
+func (h *BrowseHandler) DeleteDockerImage(c *gin.Context) {
+	repoName := c.Param("name")
+	imageName := strings.Trim(c.Query("image"), "/")
+	if imageName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "image query param required"})
+		return
+	}
+
+	ctx := c.Request.Context()
+	prefix := imageName + "/"
+
+	// Delete all manifest blobs and asset records.
+	manifests, _ := h.assets.ListByRepoAndPath(ctx, repoName, "/manifests/"+prefix)
+	for _, a := range manifests {
+		_ = h.blobStore.Delete(ctx, a.BlobKey)
+		_ = h.assets.Delete(ctx, a.ID)
+	}
+
+	// Delete all layer/config blobs and asset records.
+	blobs, _ := h.assets.ListByRepoAndPath(ctx, repoName, "/blobs/"+prefix)
+	for _, a := range blobs {
+		_ = h.blobStore.Delete(ctx, a.BlobKey)
+		_ = h.assets.Delete(ctx, a.ID)
+	}
+
+	_ = h.components.DeleteOrphans(ctx, repoName)
+	c.Status(http.StatusNoContent)
+}

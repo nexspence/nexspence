@@ -662,7 +662,7 @@ function DockerTreeRows({
         {icon}
         <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{node.label}</span>
         {node.imageRef && <span style={S.muted}>— {node.imageRef}</span>}
-        {showDelete && node.kind === 'tag' && onDelete && (
+        {showDelete && (node.kind === 'tag') && onDelete && (
           <button
             onClick={e => { e.stopPropagation(); onDelete(node) }}
             style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(239,68,68,0.6)', padding: '2px 4px', display: 'flex', alignItems: 'center', flexShrink: 0 }}
@@ -700,6 +700,15 @@ function DockerTreeRows({
         )}
         <FolderOpen size={14} style={{ color: '#60a5fa', flexShrink: 0 }} />
         <span style={{ fontWeight: depth === 0 ? 600 : 500 }}>{node.label}</span>
+        {showDelete && onDelete && !['Tags', 'Manifests', 'Blobs'].includes(node.label) && (
+          <button
+            onClick={e => { e.stopPropagation(); onDelete(node) }}
+            style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(239,68,68,0.5)', padding: '2px 4px', display: 'flex', alignItems: 'center', flexShrink: 0 }}
+            title={`Delete all in ${node.label}`}
+          >
+            <Trash2 size={12} />
+          </button>
+        )}
       </div>
       {hasKids && !folded && node.children!.map((ch) => (
         <DockerTreeRows
@@ -724,7 +733,11 @@ export default function BrowsePage() {
   const [page, setPage] = useState(0)
   const [treeCollapsed, setTreeCollapsed] = useState<Record<string, boolean>>({})
   const [dockerSelection, setDockerSelection] = useState<DockerLeafSelection | null>(null)
-  const [deleteTarget, setDeleteTarget] = useState<{ path: string; repo: string; dockerImage?: string; dockerRef?: string } | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<{
+    path: string; repo: string;
+    dockerImage?: string; dockerRef?: string;
+    label?: string;
+  } | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const limit = 25
@@ -748,6 +761,8 @@ export default function BrowsePage() {
     try {
       if (deleteTarget.dockerImage && deleteTarget.dockerRef) {
         await nexspenceApi.deleteDockerTag(deleteTarget.repo, deleteTarget.dockerImage, deleteTarget.dockerRef)
+      } else if (deleteTarget.dockerImage) {
+        await nexspenceApi.deleteDockerImage(deleteTarget.repo, deleteTarget.dockerImage)
       } else {
         await nexspenceApi.deleteByPath(deleteTarget.repo, deleteTarget.path)
       }
@@ -911,12 +926,26 @@ export default function BrowsePage() {
                   selectedPath={dockerSelection?.path ?? null}
                   onSelectLeaf={onSelectDockerLeaf}
                   showDelete={canDeleteRepo}
-                  onDelete={node => setDeleteTarget({
-                    path: `/manifests/${node.imageRef}/${node.version ?? node.label}`,
-                    repo: repoName,
-                    dockerImage: node.imageRef,
-                    dockerRef: node.version ?? node.label,
-                  })}
+                  onDelete={node => {
+                    if (node.kind === 'tag') {
+                      setDeleteTarget({
+                        path: `/manifests/${node.imageRef}/${node.version ?? node.label}`,
+                        repo: repoName,
+                        dockerImage: node.imageRef,
+                        dockerRef: node.version ?? node.label,
+                        label: `${node.imageRef}:${node.version ?? node.label}`,
+                      })
+                    } else {
+                      // folder node — path is like /da/devops/python, strip leading slash
+                      const imagePath = node.path.replace(/^\//, '')
+                      setDeleteTarget({
+                        path: node.path,
+                        repo: repoName,
+                        dockerImage: imagePath,
+                        label: imagePath,
+                      })
+                    }
+                  }}
                 />
               ))}
             </div>

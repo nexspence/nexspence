@@ -231,6 +231,12 @@ export const nexspenceApi = {
       params: { image, ref },
     }),
 
+  // Delete all tags/manifests/blobs for a Docker image or namespace prefix
+  deleteDockerImage: (repoName: string, image: string) =>
+    apiClient.delete(`/api/v1/browse/repositories/${encodeURIComponent(repoName)}/docker-image`, {
+      params: { image },
+    }),
+
   // Vulnerability scan (Trivy) — Docker components
   // GET returns 204 No Content when no cached scan yet (not an error); we map that to data: null.
   getScanResult: (componentId: string) =>
