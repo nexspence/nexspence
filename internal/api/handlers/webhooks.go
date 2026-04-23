@@ -78,3 +78,18 @@ func (h *WebhookHandler) Delete(c *gin.Context) {
 	}
 	c.Status(http.StatusNoContent)
 }
+
+// Test handles POST /api/v1/webhooks/:id/test
+// Sends a synchronous test ping and returns the remote HTTP status + latency.
+func (h *WebhookHandler) Test(c *gin.Context) {
+	res, err := h.svc.Test(c.Request.Context(), c.Param("id"))
+	if err != nil {
+		if err.Error() == "webhook \""+c.Param("id")+"\" not found" {
+			c.JSON(http.StatusNotFound, gin.H{"error": "webhook not found"})
+			return
+		}
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, res)
+}
