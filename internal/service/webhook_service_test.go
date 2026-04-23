@@ -186,9 +186,14 @@ func TestWebhookService_Dispatch_SkipsWrongEvent(t *testing.T) {
 }
 
 func TestWebhookService_Dispatch_HMACSignature(t *testing.T) {
-	var sigHeader string
+	var (
+		mu        sync.Mutex
+		sigHeader string
+	)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
 		sigHeader = r.Header.Get("X-Nexspence-Signature")
+		mu.Unlock()
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
@@ -206,16 +211,96 @@ func TestWebhookService_Dispatch_HMACSignature(t *testing.T) {
 
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		if sigHeader != "" {
+		mu.Lock()
+		h := sigHeader
+		mu.Unlock()
+		if h != "" {
 			break
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
 
-	if sigHeader == "" {
+	mu.Lock()
+	h := sigHeader
+	mu.Unlock()
+	if h == "" {
 		t.Fatal("expected X-Nexspence-Signature header")
 	}
-	if len(sigHeader) < 8 || sigHeader[:7] != "sha256=" {
-		t.Errorf("unexpected signature format: %s", sigHeader)
+	if len(h) < 8 || h[:7] != "sha256=" {
+		t.Errorf("unexpected signature format: %s", h)
+	}
+}
+
+func TestWebhookService_Deliver_CorrectEventHeader(t *testing.T) {
+	var (
+		mu        sync.Mutex
+		gotHeader string
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		gotHeader = r.Header.Get("X-Nexspence-Event")
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	svc, _ := newWebhookSvc()
+	ctx := context.Background()
+	_ = svc.Create(ctx, &domain.Webhook{
+		Name:   "hook2",
+		URL:    srv.URL,
+		Events: []domain.WebhookEvent{domain.EventArtifactPublished},
+	})
+	svc.Dispatch(domain.WebhookPayload{Event: domain.EventArtifactPublished})
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		mu.Lock()
+		h := gotHeader
+		mu.Unlock()
+		if h != "" {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	mu.Lock()
+	h := gotHeader
+	mu.Unlock()
+	if h != "artifact.published" {
+		t.Errorf("X-Nexspence-Event = %q, want %q", h, "artifact.published")
+	}
+}
+
+func TestWebhookService_Test_ReturnsStatus(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	svc, _ := newWebhookSvc()
+	ctx := context.Background()
+	wh := &domain.Webhook{
+		Name:   "h",
+		URL:    srv.URL,
+		Events: []domain.WebhookEvent{domain.EventArtifactPublished},
+	}
+	_ = svc.Create(ctx, wh)
+
+	res, err := svc.Test(ctx, wh.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Status != http.StatusNoContent {
+		t.Errorf("status = %d, want 204", res.Status)
+	}
+	if res.LatencyMs < 0 {
+		t.Errorf("latency must be >= 0")
+	}
+}
+
+func TestWebhookService_Test_NotFound(t *testing.T) {
+	svc, _ := newWebhookSvc()
+	_, err := svc.Test(context.Background(), "nonexistent-id")
+	if err == nil {
+		t.Fatal("expected error for unknown webhook id")
 	}
 }

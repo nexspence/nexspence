@@ -71,6 +71,40 @@ func (s *WebhookService) Delete(ctx context.Context, id string) error {
 	return s.repo.Delete(ctx, id)
 }
 
+// TestResult holds the outcome of a synchronous test delivery.
+type TestResult struct {
+	Status    int   `json:"status"`
+	LatencyMs int64 `json:"latency_ms"`
+}
+
+// Test sends a ping payload to the webhook identified by id and returns the
+// HTTP status + round-trip latency. Returns an error if the webhook is not
+// found or the HTTP request cannot be made.
+func (s *WebhookService) Test(ctx context.Context, id string) (*TestResult, error) {
+	wh, err := s.repo.Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if wh == nil {
+		return nil, fmt.Errorf("webhook %q not found", id)
+	}
+	payload := domain.WebhookPayload{
+		Event:      "webhook.test",
+		Timestamp:  time.Now().UTC(),
+		Repository: "test",
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+	start := time.Now()
+	status, err := s.deliverWithStatus(*wh, body, "webhook.test")
+	if err != nil {
+		return nil, err
+	}
+	return &TestResult{Status: status, LatencyMs: time.Since(start).Milliseconds()}, nil
+}
+
 // Dispatch fires the payload to all active webhooks subscribed to payload.Event.
 // Delivery is asynchronous — errors are silently dropped.
 func (s *WebhookService) Dispatch(payload domain.WebhookPayload) {
@@ -87,18 +121,22 @@ func (s *WebhookService) Dispatch(payload domain.WebhookPayload) {
 			if !wh.Active {
 				continue
 			}
-			s.deliver(wh, body)
+			s.deliver(wh, body, payload.Event)
 		}
 	}()
 }
 
-func (s *WebhookService) deliver(wh domain.Webhook, body []byte) {
+func (s *WebhookService) deliver(wh domain.Webhook, body []byte, event domain.WebhookEvent) {
+	_, _ = s.deliverWithStatus(wh, body, string(event))
+}
+
+func (s *WebhookService) deliverWithStatus(wh domain.Webhook, body []byte, event string) (int, error) {
 	req, err := http.NewRequest(http.MethodPost, wh.URL, bytes.NewReader(body))
 	if err != nil {
-		return
+		return 0, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Nexspence-Event", string(wh.Events[0]))
+	req.Header.Set("X-Nexspence-Event", event)
 	if wh.Secret != "" {
 		mac := hmac.New(sha256.New, []byte(wh.Secret))
 		mac.Write(body)
@@ -106,7 +144,8 @@ func (s *WebhookService) deliver(wh domain.Webhook, body []byte) {
 	}
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return
+		return 0, err
 	}
 	resp.Body.Close()
+	return resp.StatusCode, nil
 }
