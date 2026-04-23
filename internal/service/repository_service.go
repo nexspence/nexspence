@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/nexspence-oss/nexspence/internal/domain"
@@ -23,6 +24,7 @@ type RepositoryService struct {
 	blobs     repository.BlobStoreRepo
 	blobStore storage.BlobStore
 	policies  repository.CleanupPolicyRepo
+	webhooks  domain.WebhookDispatcher
 }
 
 func NewRepositoryService(
@@ -32,6 +34,11 @@ func NewRepositoryService(
 	policies repository.CleanupPolicyRepo,
 ) *RepositoryService {
 	return &RepositoryService{repos: repos, blobs: blobs, blobStore: blobStore, policies: policies}
+}
+
+func (s *RepositoryService) WithWebhooks(d domain.WebhookDispatcher) *RepositoryService {
+	s.webhooks = d
+	return s
 }
 
 func (s *RepositoryService) List(ctx context.Context, format, repoType string) ([]domain.Repository, error) {
@@ -103,7 +110,17 @@ func (s *RepositoryService) Create(ctx context.Context, r *domain.Repository) er
 	}
 
 	r.Online = true
-	return s.repos.Create(ctx, r)
+	if err := s.repos.Create(ctx, r); err != nil {
+		return err
+	}
+	if s.webhooks != nil {
+		s.webhooks.Dispatch(domain.WebhookPayload{
+			Event:      domain.EventRepoCreated,
+			Timestamp:  time.Now().UTC(),
+			Repository: r.Name,
+		})
+	}
+	return nil
 }
 
 func (s *RepositoryService) Update(ctx context.Context, name string, updates *domain.Repository) (*domain.Repository, error) {
