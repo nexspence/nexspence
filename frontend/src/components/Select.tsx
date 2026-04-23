@@ -15,6 +15,7 @@ interface SelectProps {
   onChange: (value: string) => void
   placeholder?: string
   disabled?: boolean
+  searchable?: boolean
   style?: CSSProperties
 }
 
@@ -24,14 +25,16 @@ export function Select({
   onChange,
   placeholder = '— Select —',
   disabled,
+  searchable,
   style,
 }: SelectProps) {
   const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
   const ref = useRef<HTMLDivElement>(null)
   const selected = options.find(o => o.value === value)
 
   useEffect(() => {
-    if (!open) return
+    if (!open) { setSearch(''); return }
     const onDown = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
     }
@@ -45,6 +48,10 @@ export function Select({
       document.removeEventListener('keydown', onKey)
     }
   }, [open])
+
+  const visibleOptions = searchable && search.trim()
+    ? options.filter(o => o.label.toLowerCase().includes(search.toLowerCase()))
+    : options
 
   return (
     <div ref={ref} style={{ position: 'relative', ...style }}>
@@ -102,12 +109,23 @@ export function Select({
             overflowY: 'auto' as const,
           }}
         >
-          {options.length === 0 && (
-            <div style={{ padding: '10px 14px', fontSize: 13, color: 'rgba(229,231,235,0.35)' }}>
-              No options
+          {searchable && (
+            <div style={{ padding: '6px 8px', borderBottom: '1px solid rgba(255,255,255,0.06)', position: 'sticky', top: 0, background: 'rgba(8,13,28,0.98)', zIndex: 1 }}>
+              <input
+                autoFocus
+                placeholder="Filter…"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                style={{ width: '100%', background: 'rgba(15,20,40,0.6)', border: '1px solid rgba(255,255,255,0.08)', outline: 'none', color: '#e5e7eb', fontSize: 13, padding: '6px 10px', borderRadius: 6, boxSizing: 'border-box' as const }}
+              />
             </div>
           )}
-          {options.map(opt => {
+          {visibleOptions.length === 0 && (
+            <div style={{ padding: '10px 14px', fontSize: 13, color: 'rgba(229,231,235,0.35)' }}>
+              {searchable && search.trim() ? 'No matches' : 'No options'}
+            </div>
+          )}
+          {visibleOptions.map(opt => {
             const isSelected = opt.value === value
             return (
               <div

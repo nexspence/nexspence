@@ -146,6 +146,7 @@ function RolesTab({ roles, loading, onRefresh, admin }: { roles: Role[]; loading
   const [loadingPrivs, setLoadingPrivs] = useState(false)
 
   const [editError, setEditError] = useState<string | null>(null)
+  const [createError, setCreateError] = useState<string | null>(null)
 
   const [roleSearch, setRoleSearch] = useState('')
   const filtered = roles.filter(r =>
@@ -176,6 +177,7 @@ function RolesTab({ roles, loading, onRefresh, admin }: { roles: Role[]; loading
   async function openCreate() {
     setCreateForm({ name: '', description: '' })
     setCreatePrivIds([])
+    setCreateError(null)
     setShowCreate(true)
     await loadPrivs()
   }
@@ -204,6 +206,15 @@ function RolesTab({ roles, loading, onRefresh, admin }: { roles: Role[]; loading
       if (createPrivIds.length > 0) await nexusApi.setRolePrivileges(res.data.id, createPrivIds)
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['roles'] }); onRefresh(); setShowCreate(false) },
+    onError: (e: unknown) => {
+      let msg = 'Error creating role'
+      if (axios.isAxiosError(e)) {
+        const d = e.response?.data
+        if (typeof d === 'object' && d !== null && 'error' in d) msg = String((d as { error: unknown }).error)
+        else msg = e.message
+      } else if (e instanceof Error) { msg = e.message }
+      setCreateError(msg)
+    },
   })
 
   const del = useMutation({
@@ -299,7 +310,8 @@ function RolesTab({ roles, loading, onRefresh, admin }: { roles: Role[]; loading
           onSave={() => create.mutate()}
           saving={create.isPending}
           saveDisabled={!createForm.name.trim()}
-          onCancel={() => setShowCreate(false)}
+          onCancel={() => { setShowCreate(false); setCreateError(null) }}
+          error={createError}
         />
       )}
     </>
@@ -660,6 +672,13 @@ function PrivilegesTab({ admin }: { admin: boolean }) {
   const [editing, setEditing] = useState<Privilege | null>(null)
   const [form, setForm] = useState({ name: '', description: '', contentSelectorId: '', actions: [] as string[] })
   const [saveError, setSaveError] = useState('')
+  const [privSearch, setPrivSearch] = useState('')
+
+  const filteredPrivs = privs.filter(p => {
+    if (!privSearch.trim()) return true
+    const q = privSearch.toLowerCase()
+    return p.name.toLowerCase().includes(q) || (p.description ?? '').toLowerCase().includes(q)
+  })
 
   function openCreate() {
     setEditing(null)
@@ -719,7 +738,14 @@ function PrivilegesTab({ admin }: { admin: boolean }) {
         </div>
       )}
 
-      {isLoading ? <div style={S.empty}>Loading…</div> : privs.length === 0 ? <div style={S.empty}>No privileges</div> : (
+      <input
+        style={S.input}
+        placeholder="Search privileges…"
+        value={privSearch}
+        onChange={e => setPrivSearch(e.target.value)}
+      />
+
+      {isLoading ? <div style={S.empty}>Loading…</div> : privs.length === 0 ? <div style={S.empty}>No privileges</div> : filteredPrivs.length === 0 ? <div style={S.empty}>No matches</div> : (
         <div style={S.card}>
           <table style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: 13 }}>
             <thead>
@@ -733,7 +759,7 @@ function PrivilegesTab({ admin }: { admin: boolean }) {
               </tr>
             </thead>
             <tbody>
-              {privs.map(p => {
+              {filteredPrivs.map(p => {
                 const actions = (p.attrs?.actions as string[] | undefined) ?? []
                 return (
                   <tr key={p.id} style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
@@ -819,6 +845,7 @@ function PrivilegesTab({ admin }: { admin: boolean }) {
             <div>
               <div style={{ fontSize: 12, color: 'rgba(229,231,235,0.5)', marginBottom: 4 }}>Content Selector *</div>
               <Select
+                searchable
                 options={[
                   { value: '', label: '— select a content selector —' },
                   ...selectors.map(s => ({ value: s.id, label: s.name })),
@@ -883,6 +910,15 @@ function ContentSelectorsTab({ admin }: { admin: boolean }) {
   const [repoOpen, setRepoOpen] = useState(false)
   const [pathOpen, setPathOpen] = useState(false)
   const [legacyExpr, setLegacyExpr] = useState('')
+  const [csSearch, setCsSearch] = useState('')
+
+  const filteredSelectors = selectors.filter(s => {
+    if (!csSearch.trim()) return true
+    const q = csSearch.toLowerCase()
+    return s.name.toLowerCase().includes(q)
+      || (s.description ?? '').toLowerCase().includes(q)
+      || s.expression.toLowerCase().includes(q)
+  })
 
   const { data: pathTree, isLoading: pathsLoading } = useQuery<{ paths: string[] }>({
     queryKey: ['path-tree', form.repo, pathSearch],
@@ -974,7 +1010,14 @@ function ContentSelectorsTab({ admin }: { admin: boolean }) {
         </div>
       )}
 
-      {isLoading ? <div style={S.empty}>Loading…</div> : selectors.length === 0 ? <div style={S.empty}>No content selectors</div> : (
+      <input
+        style={S.input}
+        placeholder="Search content selectors…"
+        value={csSearch}
+        onChange={e => setCsSearch(e.target.value)}
+      />
+
+      {isLoading ? <div style={S.empty}>Loading…</div> : selectors.length === 0 ? <div style={S.empty}>No content selectors</div> : filteredSelectors.length === 0 ? <div style={S.empty}>No matches</div> : (
         <div style={S.card}>
           <table style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: 13 }}>
             <thead>
@@ -987,7 +1030,7 @@ function ContentSelectorsTab({ admin }: { admin: boolean }) {
               </tr>
             </thead>
             <tbody>
-              {selectors.map(s => (
+              {filteredSelectors.map(s => (
                 <tr key={s.id} style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
                   <td style={{ padding: '9px 0', color: '#dbeafe', fontWeight: 600 }}>{s.name}</td>
                   <td style={{ padding: '9px 8px' }}>
