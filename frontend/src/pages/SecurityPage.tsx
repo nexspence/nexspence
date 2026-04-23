@@ -484,11 +484,12 @@ function WebhooksTab() {
       const res = await apiClient.post<{ status: number; latency_ms: number }>(`/api/v1/webhooks/${id}/test`)
       const ok = res.data.status >= 200 && res.data.status < 300
       setTestResults(r => ({ ...r, [id]: { ok, msg: `${ok ? '✓' : '✗'} ${res.data.status} (${res.data.latency_ms}ms)` } }))
-    } catch (e: any) {
-      const msg = e?.response?.data?.error ?? e?.message ?? 'error'
+    } catch (e: unknown) {
+      const err = e as any
+      const msg = err?.response?.data?.error ?? err?.message ?? 'error'
       setTestResults(r => ({ ...r, [id]: { ok: false, msg: `✗ ${msg}` } }))
     }
-    setTimeout(() => setTestResults(r => ({ ...r, [id]: undefined as any })), 5000)
+    setTimeout(() => setTestResults(r => { const next = { ...r }; delete next[id]; return next }), 5000)
   }
 
   const [editingId, setEditingId] = useState<string | null>(null)
