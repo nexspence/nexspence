@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
-import { Shield, RefreshCw, Webhook, AlertTriangle, CheckCircle, Loader, Trash2, Plus, Bug } from 'lucide-react'
+import { Shield, RefreshCw, Webhook, AlertTriangle, CheckCircle, Loader, Trash2, Plus, Bug, Zap, Pencil } from 'lucide-react'
 import { nexusApi, nexspenceApi, apiClient } from '@/api/client'
 import { UsersTab } from './UsersPage'
 import { useAuthStore } from '@/store/authStore'
@@ -459,6 +459,13 @@ function ScanTab() {
 
 const WEBHOOK_EVENTS = ['artifact.published', 'artifact.deleted', 'repo.created', 'proxy.error']
 
+const WEBHOOK_TEMPLATES = [
+  { label: 'Slack',         events: ['artifact.published'],                                                         urlHint: 'https://hooks.slack.com/services/…' },
+  { label: 'CI/CD Trigger', events: ['artifact.published', 'artifact.deleted'],                                     urlHint: '' },
+  { label: 'Audit Logger',  events: ['artifact.published', 'artifact.deleted', 'repo.created', 'proxy.error'],      urlHint: '' },
+  { label: 'Proxy Monitor', events: ['proxy.error'],                                                                urlHint: '' },
+] as const
+
 function WebhooksTab() {
   const qc = useQueryClient()
   const { data: hooks = [], isLoading, refetch } = useQuery<WebhookDef[]>({
@@ -468,6 +475,43 @@ function WebhooksTab() {
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({ name: '', url: '', events: WEBHOOK_EVENTS, secret: '', active: true })
   const [saving, setSaving] = useState(false)
+
+  const [testResults, setTestResults] = useState<Record<string, { ok: boolean; msg: string } | null>>({})
+
+  async function testHook(id: string) {
+    setTestResults(r => ({ ...r, [id]: null })) // null = loading
+    try {
+      const res = await apiClient.post<{ status: number; latency_ms: number }>(`/api/v1/webhooks/${id}/test`)
+      const ok = res.data.status >= 200 && res.data.status < 300
+      setTestResults(r => ({ ...r, [id]: { ok, msg: `${ok ? '✓' : '✗'} ${res.data.status} (${res.data.latency_ms}ms)` } }))
+    } catch (e: any) {
+      const msg = e?.response?.data?.error ?? e?.message ?? 'error'
+      setTestResults(r => ({ ...r, [id]: { ok: false, msg: `✗ ${msg}` } }))
+    }
+    setTimeout(() => setTestResults(r => ({ ...r, [id]: undefined as any })), 5000)
+  }
+
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editForm, setEditForm] = useState({ name: '', url: '', events: WEBHOOK_EVENTS, secret: '', active: true })
+
+  function startEdit(h: WebhookDef) {
+    setEditingId(h.id)
+    setEditForm({ name: h.name, url: h.url, events: h.events, secret: h.secret ?? '', active: h.active })
+  }
+
+  async function saveEdit() {
+    if (!editingId) return
+    setSaving(true)
+    try {
+      await apiClient.put(`/api/v1/webhooks/${editingId}`, editForm)
+      qc.invalidateQueries({ queryKey: ['webhooks'] })
+      setEditingId(null)
+    } finally { setSaving(false) }
+  }
+
+  const toggleEditEvent = (ev: string) => setEditForm(f => ({
+    ...f, events: f.events.includes(ev) ? f.events.filter(e => e !== ev) : [...f.events, ev]
+  }))
 
   async function save() {
     setSaving(true)
@@ -502,6 +546,21 @@ function WebhooksTab() {
         <div style={S.card}>
           <div style={{ fontSize: 14, fontWeight: 600, color: '#dbeafe', marginBottom: 12 }}>New Webhook</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ marginBottom: 4 }}>
+              <div style={{ fontSize: 12, color: 'rgba(229,231,235,0.5)', marginBottom: 6 }}>Quick start:</div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' as const }}>
+                {WEBHOOK_TEMPLATES.map(t => (
+                  <button key={t.label} style={{ ...S.btn('ghost'), fontSize: 11, padding: '3px 10px' }}
+                    onClick={() => setForm(f => ({
+                      ...f,
+                      events: [...t.events],
+                      url: t.urlHint || f.url,
+                    }))}>
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            </div>
             <input style={S.input} placeholder="Name" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
             <input style={S.input} placeholder="URL (https://...)" value={form.url} onChange={e => setForm(f => ({ ...f, url: e.target.value }))} />
             <input style={S.input} placeholder="HMAC secret (optional)" value={form.secret} onChange={e => setForm(f => ({ ...f, secret: e.target.value }))} />
@@ -522,24 +581,58 @@ function WebhooksTab() {
         </div>
       )}
 
-      <div style={S.card}>
-        {isLoading ? <div style={S.empty}>Loading…</div> : hooks.length === 0 ? <div style={S.empty}>No webhooks configured</div> : (
-          hooks.map(h => (
-            <div key={h.id} style={S.row}>
-              <Webhook size={14} style={{ color: h.active ? '#22c55e' : '#6b7280', flexShrink: 0 }} />
-              <div style={{ flex: 1 }}>
-                <div style={{ color: '#dbeafe', fontWeight: 600 }}>{h.name}</div>
-                <div style={{ color: 'rgba(229,231,235,0.4)', ...S.mono }}>{h.url}</div>
-                <div style={{ display: 'flex', gap: 4, marginTop: 4, flexWrap: 'wrap' as const }}>
-                  {h.events.map(ev => <span key={ev} style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, background: 'rgba(59,130,246,0.12)', color: '#93c5fd', fontFamily: 'monospace' }}>{ev}</span>)}
+      {isLoading ? <div style={S.empty}>Loading…</div> : hooks.length === 0 ? <div style={{ ...S.card, ...S.empty }}>No webhooks configured</div> : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {hooks.map(h => (
+            <div key={h.id} style={S.card}>
+              {editingId === h.id ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: '#dbeafe' }}>Edit Webhook</div>
+                  <input style={S.input} placeholder="Name" value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))} />
+                  <input style={S.input} placeholder="URL" value={editForm.url} onChange={e => setEditForm(f => ({ ...f, url: e.target.value }))} />
+                  <input style={S.input} placeholder="HMAC secret (leave blank to keep)" value={editForm.secret} onChange={e => setEditForm(f => ({ ...f, secret: e.target.value }))} />
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#dbeafe', cursor: 'pointer' }}>
+                    <input type="checkbox" checked={editForm.active} onChange={e => setEditForm(f => ({ ...f, active: e.target.checked }))} style={{ accentColor: '#3b82f6' }} />
+                    Active
+                  </label>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' as const }}>
+                    {WEBHOOK_EVENTS.map(ev => (
+                      <label key={ev} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: editForm.events.includes(ev) ? '#dbeafe' : 'rgba(229,231,235,0.4)', cursor: 'pointer' }}>
+                        <input type="checkbox" checked={editForm.events.includes(ev)} onChange={() => toggleEditEvent(ev)} style={{ accentColor: '#3b82f6' }} />
+                        <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{ev}</span>
+                      </label>
+                    ))}
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                    <button style={S.btn('ghost')} onClick={() => setEditingId(null)}>Cancel</button>
+                    <button style={S.btn('primary')} onClick={saveEdit} disabled={saving || !editForm.name || !editForm.url}>{saving ? 'Saving…' : 'Save'}</button>
+                  </div>
                 </div>
-              </div>
-              <span style={S.badge(h.active ? '#22c55e' : '#6b7280')}>{h.active ? 'active' : 'inactive'}</span>
-              <button style={S.btn('danger')} onClick={() => del.mutate(h.id)}><Trash2 size={13} /></button>
+              ) : (
+                <div style={S.row}>
+                  <Webhook size={14} style={{ color: h.active ? '#22c55e' : '#6b7280', flexShrink: 0 }} />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ color: '#dbeafe', fontWeight: 600 }}>{h.name}</div>
+                    <div style={{ color: 'rgba(229,231,235,0.4)', ...S.mono }}>{h.url}</div>
+                    <div style={{ display: 'flex', gap: 4, marginTop: 4, flexWrap: 'wrap' as const }}>
+                      {h.events.map(ev => <span key={ev} style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, background: 'rgba(59,130,246,0.12)', color: '#93c5fd', fontFamily: 'monospace' }}>{ev}</span>)}
+                    </div>
+                  </div>
+                  <span style={S.badge(h.active ? '#22c55e' : '#6b7280')}>{h.active ? 'active' : 'inactive'}</span>
+                  {testResults[h.id] !== undefined && (
+                    <span style={{ fontSize: 12, fontFamily: 'monospace', color: testResults[h.id]?.ok ? '#22c55e' : '#ef4444' }}>
+                      {testResults[h.id] === null ? '…' : testResults[h.id]?.msg}
+                    </span>
+                  )}
+                  <button style={S.btn('ghost')} onClick={() => testHook(h.id)} title="Send test event"><Zap size={13} /></button>
+                  <button style={S.btn('ghost')} onClick={() => startEdit(h)} title="Edit"><Pencil size={13} /></button>
+                  <button style={S.btn('danger')} onClick={() => del.mutate(h.id)}><Trash2 size={13} /></button>
+                </div>
+              )}
             </div>
-          ))
-        )}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
