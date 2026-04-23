@@ -2,8 +2,8 @@ package service_test
 
 import (
 	"context"
+	"sync"
 	"testing"
-	"time"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/service"
@@ -11,11 +11,20 @@ import (
 )
 
 type capturingDispatcher struct {
+	mu     sync.Mutex
 	events []domain.WebhookPayload
 }
 
 func (c *capturingDispatcher) Dispatch(p domain.WebhookPayload) {
+	c.mu.Lock()
 	c.events = append(c.events, p)
+	c.mu.Unlock()
+}
+
+func (c *capturingDispatcher) snapshot() []domain.WebhookPayload {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]domain.WebhookPayload(nil), c.events...)
 }
 
 func newRepoSvc() *service.RepositoryService {
@@ -41,18 +50,11 @@ func TestRepositoryService_Create_DispatchesRepoCreated(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	deadline := time.Now().Add(200 * time.Millisecond)
-	for time.Now().Before(deadline) {
-		if len(d.events) > 0 {
-			break
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-
-	if len(d.events) == 0 {
+	events := d.snapshot()
+	if len(events) == 0 {
 		t.Fatal("expected repo.created event to be dispatched")
 	}
-	got := d.events[0]
+	got := events[0]
 	if got.Event != domain.EventRepoCreated {
 		t.Errorf("event = %q, want %q", got.Event, domain.EventRepoCreated)
 	}
