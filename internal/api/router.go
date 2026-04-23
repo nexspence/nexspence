@@ -77,6 +77,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 	}
 	tokenSvc   := service.NewTokenService(userTokenRepo, userRepo)
 	webhookSvc := service.NewWebhookService(webhookRepo)
+	repoSvc.WithWebhooks(webhookSvc)
 	cleanupSvc := service.NewCleanupService(cleanupRepo, repoRepo, assetRepo, localBlob, log)
 
 	// Start per-policy cron scheduler in background (default: cfg.Cleanup.DefaultSchedule).
@@ -90,6 +91,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 		Blobs:      blobRepo,
 		BlobStore:  localBlob,
 		BaseURL:    cfg.HTTP.BaseURL,
+		Webhooks:   webhookSvc,
 	}
 	formatRegistry := map[string]formats.FormatHandler{
 		"raw":    raw.New(formatDeps),
@@ -296,9 +298,11 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 
 		// ── Webhooks (admin) ──────────────────────────────────
 		admin.GET("/api/v1/webhooks", webhookH.List)
+		admin.GET("/api/v1/webhooks/:id", webhookH.Get)
 		admin.POST("/api/v1/webhooks", webhookH.Create)
 		admin.PUT("/api/v1/webhooks/:id", webhookH.Update)
 		admin.DELETE("/api/v1/webhooks/:id", webhookH.Delete)
+		admin.POST("/api/v1/webhooks/:id/test", webhookH.Test)
 
 		// ── Audit log ─────────────────────────────────────────
 		admin.GET("/service/rest/v1/audit", auditH.List)
