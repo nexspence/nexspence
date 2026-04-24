@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/nexspence-oss/nexspence/internal/api/handlers"
 	"github.com/nexspence-oss/nexspence/internal/auth"
+	"github.com/nexspence-oss/nexspence/internal/config"
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/service"
 	"github.com/nexspence-oss/nexspence/internal/testutil"
@@ -174,6 +175,51 @@ func TestLogin_ValidCredentials(t *testing.T) {
 	r.ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
 	assert.Contains(t, w.Body.String(), `"token"`)
+}
+
+// ── AuthHandler.Config ────────────────────────────────────────
+
+func TestAuthConfig_ReturnsOIDCEnabled(t *testing.T) {
+	cfg := config.Config{
+		OIDC: config.OIDCConfig{
+			Enabled: true, DisplayName: "Keycloak", ShowLoginButton: true,
+		},
+		LDAP: config.LDAPConfig{Enabled: false},
+	}
+	h := handlers.NewAuthHandler(nil, zap.NewNop().Sugar()).WithConfig(cfg)
+
+	r := gin.New()
+	r.GET("/api/v1/auth/config", h.Config)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/config", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	body := w.Body.String()
+	assert.Contains(t, body, `"oidcEnabled":true`)
+	assert.Contains(t, body, `"oidcDisplayName":"Keycloak"`)
+	assert.Contains(t, body, `"oidcLoginUrl":"/api/v1/auth/oidc/login"`)
+	assert.Contains(t, body, `"ldapEnabled":false`)
+}
+
+func TestAuthConfig_OIDCDisabled_WhenButtonHidden(t *testing.T) {
+	cfg := config.Config{
+		OIDC: config.OIDCConfig{
+			Enabled: true, DisplayName: "Keycloak", ShowLoginButton: false,
+		},
+	}
+	h := handlers.NewAuthHandler(nil, zap.NewNop().Sugar()).WithConfig(cfg)
+
+	r := gin.New()
+	r.GET("/api/v1/auth/config", h.Config)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/config", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), `"oidcEnabled":false`)
 }
 
 func TestLogin_WrongPassword_Returns401(t *testing.T) {
