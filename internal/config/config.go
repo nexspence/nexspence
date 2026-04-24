@@ -144,6 +144,13 @@ type OIDCConfig struct {
 	CookieSecure       bool   `mapstructure:"cookie_secure"`
 	CookieKey          string `mapstructure:"cookie_key"`           // base64 32 bytes
 	AllowedSkewSeconds int    `mapstructure:"allowed_skew_seconds"`
+
+	// PublicIssuerURL, when set, replaces the internal Issuer URL in auth redirect
+	// and SLO URLs sent to the browser. Needed when the IdP is reachable inside the
+	// container network under a different hostname than in the browser (e.g., Keycloak
+	// in Docker: internal=http://keycloak:8080/realms/x, public=http://localhost:8180/realms/x).
+	// Token validation always uses the internal Issuer so iss-claim checks still pass.
+	PublicIssuerURL string `mapstructure:"public_issuer_url"`
 }
 
 // ValidateOIDC returns nil when the OIDC config is usable.

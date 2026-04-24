@@ -1,0 +1,91 @@
+{
+  "realm": "nexspense",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": false,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": false,
+
+  "clients": [
+    {
+      "clientId": "nexspense",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "dev-oidc-secret-nexspense",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [
+        "http://localhost:8081/api/v1/auth/oidc/callback",
+        "http://localhost:5173/oidc/callback"
+      ],
+      "webOrigins": [
+        "http://localhost:8081",
+        "http://localhost:5173"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      },
+      "defaultClientScopes": [
+        "openid",
+        "profile",
+        "email",
+        "groups"
+      ],
+      "optionalClientScopes": []
+    }
+  ],
+
+  "clientScopes": [
+    {
+      "name": "groups",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true"
+      },
+      "protocolMappers": [
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "config": {
+            "full.path": "false",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "claim.name": "groups"
+          }
+        }
+      ]
+    }
+  ],
+
+  "groups": [
+    {
+      "name": "nexspense-admins"
+    }
+  ],
+
+  "users": [
+    {
+      "username": "testuser",
+      "enabled": true,
+      "email": "testuser@example.com",
+      "firstName": "Test",
+      "lastName": "User",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "testpass",
+          "temporary": false
+        }
+      ],
+      "groups": [
+        "nexspense-admins"
+      ]
+    }
+  ]
+}
