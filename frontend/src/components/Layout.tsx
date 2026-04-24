@@ -142,7 +142,7 @@ function ProfileModal({ onClose }: { onClose: () => void }) {
 }
 
 export default function Layout() {
-  const { user, logout, isAdmin } = useAuthStore()
+  const { user, logout, isAdmin, isOIDC } = useAuthStore()
   const admin = isAdmin()
   const [profileOpen, setProfileOpen] = useState(false)
 
@@ -218,7 +218,22 @@ export default function Layout() {
               </button>
             </div>
           )}
-          <button className={`${styles.navBtn} ${styles.danger}`} onClick={logout}>
+          <button
+            className={`${styles.navBtn} ${styles.danger}`}
+            onClick={async () => {
+              if (isOIDC()) {
+                try {
+                  const res = await apiClient.get('/api/v1/auth/oidc/logout')
+                  logout()
+                  window.location.href = res.data.logout_url
+                } catch {
+                  logout()
+                }
+              } else {
+                logout()
+              }
+            }}
+          >
             <LogOut size={16} />
             <span>Sign Out</span>
           </button>

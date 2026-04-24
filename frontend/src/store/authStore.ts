@@ -17,6 +17,7 @@ interface AuthState {
   login: (username: string, password: string) => Promise<void>
   logout: () => void
   isAdmin: () => boolean
+  isOIDC: () => boolean
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
@@ -52,5 +53,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   isAdmin: () => {
     const user = get().user
     return user?.roles?.includes('nx-admin') ?? false
+  },
+
+  isOIDC: () => {
+    const token = get().token
+    if (!token) return false
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]))
+      return payload.auth_method === 'oidc'
+    } catch {
+      return false
+    }
   },
 }))
