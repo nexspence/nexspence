@@ -108,7 +108,7 @@ export default function AuditPage() {
   const hasPrev = offset > 0
   const hasNext = offset + events.length < total
 
-  const onExport = () => {
+  const onExport = async () => {
     const url = nexusApi.auditExportUrl({
       domain:   domain   || undefined,
       action:   action   || undefined,
@@ -116,7 +116,23 @@ export default function AuditPage() {
       from:     from     || undefined,
       to:       to       || undefined,
     })
-    window.location.href = url
+    const token = localStorage.getItem('nexspence_token')
+    const res = await fetch(url, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+    if (!res.ok) {
+      alert(`Export failed: ${res.status} ${res.statusText}`)
+      return
+    }
+    const blob = await res.blob()
+    const objectUrl = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = objectUrl
+    a.download = `audit-${new Date().toISOString().slice(0, 10)}.ndjson`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(objectUrl)
   }
 
   const resetOffset = () => setOffset(0)
