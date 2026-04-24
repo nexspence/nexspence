@@ -60,6 +60,52 @@ func TestAuditList_FromTo_Filtering(t *testing.T) {
 	assert.Equal(t, "b", body.Items[0].Username)
 }
 
+func TestAuditList_BareTo_IsInclusiveOfThatDay(t *testing.T) {
+	r, repo := mountAudit(t)
+	seed(t, repo, []domain.AuditEvent{
+		{EventTime: time.Date(2026, 4, 24, 0, 0, 1, 0, time.UTC), Username: "early", Domain: "X", Action: "CREATE", Result: "success"},
+		{EventTime: time.Date(2026, 4, 24, 23, 59, 59, 0, time.UTC), Username: "late", Domain: "X", Action: "CREATE", Result: "success"},
+		{EventTime: time.Date(2026, 4, 25, 0, 0, 1, 0, time.UTC), Username: "next", Domain: "X", Action: "CREATE", Result: "success"},
+	})
+
+	req := httptest.NewRequest(http.MethodGet,
+		"/service/rest/v1/audit?to=2026-04-24", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	var body struct {
+		Items []domain.AuditEvent `json:"items"`
+		Total int                 `json:"total"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	assert.Equal(t, 2, body.Total, "to=2026-04-24 must include events anywhere on April 24")
+	gotUsers := []string{body.Items[0].Username, body.Items[1].Username}
+	assert.Contains(t, gotUsers, "early")
+	assert.Contains(t, gotUsers, "late")
+	assert.NotContains(t, gotUsers, "next")
+}
+
+func TestAuditList_RFC3339To_StaysExclusive(t *testing.T) {
+	r, repo := mountAudit(t)
+	seed(t, repo, []domain.AuditEvent{
+		{EventTime: time.Date(2026, 4, 24, 11, 59, 59, 0, time.UTC), Username: "before", Domain: "X", Action: "CREATE", Result: "success"},
+		{EventTime: time.Date(2026, 4, 24, 12, 0, 0, 0, time.UTC), Username: "at", Domain: "X", Action: "CREATE", Result: "success"},
+	})
+
+	req := httptest.NewRequest(http.MethodGet,
+		"/service/rest/v1/audit?to=2026-04-24T12:00:00Z", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	var body struct {
+		Items []domain.AuditEvent `json:"items"`
+		Total int                 `json:"total"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	assert.Equal(t, 1, body.Total, "RFC3339 to= remains strictly exclusive")
+	assert.Equal(t, "before", body.Items[0].Username)
+}
+
 func TestAuditList_UsernameFilter(t *testing.T) {
 	r, repo := mountAudit(t)
 	seed(t, repo, []domain.AuditEvent{

@@ -41,6 +41,13 @@ func parseAuditQuery(c *gin.Context) (repository.AuditQuery, error) {
 		if err != nil {
 			return q, fmt.Errorf("invalid 'to' value: %w", err)
 		}
+		// AuditQuery.To is exclusive. A bare YYYY-MM-DD from the UI is parsed
+		// to 00:00 UTC of that day, but users mean "include this day too" —
+		// bump by 24h so `to=2026-04-24` matches events through 23:59:59 UTC
+		// on April 24. For RFC3339 inputs we trust the caller's intent.
+		if isBareDate(v) {
+			t = t.Add(24 * time.Hour)
+		}
 		q.To = &t
 	}
 	q.Limit, _ = strconv.Atoi(c.DefaultQuery("limit", "100"))
@@ -54,6 +61,12 @@ func parseDate(s string) (time.Time, error) {
 		return t, nil
 	}
 	return time.Parse(time.RFC3339, s)
+}
+
+// isBareDate reports whether s parses as YYYY-MM-DD (no time component).
+func isBareDate(s string) bool {
+	_, err := time.Parse("2006-01-02", s)
+	return err == nil && len(s) == 10
 }
 
 // List GET /service/rest/v1/audit
