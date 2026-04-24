@@ -15,6 +15,7 @@ var (
 	BytesStored      atomic.Int64
 	DownloadsTotal   atomic.Int64
 	ArtifactsDeleted atomic.Int64
+	AuditEventsCount atomic.Int64
 
 	startTime = time.Now()
 )
@@ -31,6 +32,7 @@ func Snapshot() Map {
 		"bytes_stored":      BytesStored.Load(),
 		"downloads_total":   DownloadsTotal.Load(),
 		"artifacts_deleted": ArtifactsDeleted.Load(),
+		"audit_events_count": AuditEventsCount.Load(),
 		"goroutines":       runtime.NumGoroutine(),
 		"memory": Map{
 			"alloc_bytes":       mem.Alloc,
