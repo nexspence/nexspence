@@ -87,13 +87,14 @@ type mockOIDCAuthenticator struct {
 func (m *mockOIDCAuthenticator) AuthCodeURL(state, nonce, cc string) string {
 	return "https://idp/authorize?state=" + state
 }
-func (m *mockOIDCAuthenticator) ExchangeAndVerify(ctx context.Context, code, v, n string) (*auth.OIDCClaims, error) {
+func (m *mockOIDCAuthenticator) ExchangeAndVerify(ctx context.Context, code, v, n string) (*auth.OIDCClaims, string, error) {
 	if m.err != nil {
-		return nil, m.err
+		return nil, "", m.err
 	}
-	return m.claims, nil
+	return m.claims, "fake-id-token", nil
 }
 func (m *mockOIDCAuthenticator) TestConnection(ctx context.Context) error { return nil }
+func (m *mockOIDCAuthenticator) EndSessionEndpoint() string                { return "" }
 
 func mustDecodeB64(s string) []byte {
 	b, _ := base64.StdEncoding.DecodeString(s)

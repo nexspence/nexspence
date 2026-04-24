@@ -108,7 +108,7 @@ func (h *OIDCHandler) Callback(c *gin.Context) {
 		return
 	}
 
-	claims, err := h.oidc.ExchangeAndVerify(c.Request.Context(),
+	claims, rawIDToken, err := h.oidc.ExchangeAndVerify(c.Request.Context(),
 		c.Query("code"), payload.CodeVerifier, payload.Nonce)
 	if err != nil {
 		h.log.Warnw("oidc verify failed", "err", err)
@@ -116,7 +116,7 @@ func (h *OIDCHandler) Callback(c *gin.Context) {
 		return
 	}
 
-	token, user, err := h.users.LoginOIDC(c.Request.Context(), claims)
+	token, user, err := h.users.LoginOIDC(c.Request.Context(), claims, rawIDToken)
 	if err != nil {
 		h.log.Warnw("oidc login failed", "err", err, "username", claims.Username)
 		switch {

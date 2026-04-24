@@ -31,7 +31,8 @@ type OIDCClaims struct {
 // OIDCAuthenticator is the interface for OIDC operations (enables mocking).
 type OIDCAuthenticator interface {
 	AuthCodeURL(state, nonce, codeChallenge string) string
-	ExchangeAndVerify(ctx context.Context, code, codeVerifier, expectedNonce string) (*OIDCClaims, error)
+	// ExchangeAndVerify now also returns the raw id_token string (needed for SLO).
+	ExchangeAndVerify(ctx context.Context, code, codeVerifier, expectedNonce string) (*OIDCClaims, string, error)
 	TestConnection(ctx context.Context) error
 	// EndSessionEndpoint returns the IdP's end_session_endpoint URL from OIDC
 	// discovery metadata, or "" if the IdP does not publish it.
@@ -84,31 +85,32 @@ func (s *OIDCService) AuthCodeURL(state, nonce, codeChallenge string) string {
 }
 
 // ExchangeAndVerify exchanges the authorization code for tokens, validates
-// the id_token (sig / iss / aud / exp / nonce), and returns normalized claims.
-func (s *OIDCService) ExchangeAndVerify(ctx context.Context, code, codeVerifier, expectedNonce string) (*OIDCClaims, error) {
+// the id_token (sig / iss / aud / exp / nonce), and returns normalized claims
+// plus the raw id_token string (needed for SLO).
+func (s *OIDCService) ExchangeAndVerify(ctx context.Context, code, codeVerifier, expectedNonce string) (*OIDCClaims, string, error) {
 	tok, err := s.oauth.Exchange(ctx, code,
 		oauth2.SetAuthURLParam("code_verifier", codeVerifier),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("%w: token exchange: %v", ErrOIDCVerification, err)
+		return nil, "", fmt.Errorf("%w: token exchange: %v", ErrOIDCVerification, err)
 	}
 	rawID, ok := tok.Extra("id_token").(string)
 	if !ok || rawID == "" {
-		return nil, fmt.Errorf("%w: missing id_token", ErrOIDCVerification)
+		return nil, "", fmt.Errorf("%w: missing id_token", ErrOIDCVerification)
 	}
 	idTok, err := s.verifier.Verify(ctx, rawID)
 	if err != nil {
-		return nil, fmt.Errorf("%w: id_token verify: %v", ErrOIDCVerification, err)
+		return nil, "", fmt.Errorf("%w: id_token verify: %v", ErrOIDCVerification, err)
 	}
 	if idTok.Nonce != expectedNonce {
-		return nil, fmt.Errorf("%w: nonce mismatch", ErrOIDCVerification)
+		return nil, "", fmt.Errorf("%w: nonce mismatch", ErrOIDCVerification)
 	}
 
 	var raw map[string]any
 	if err := idTok.Claims(&raw); err != nil {
-		return nil, fmt.Errorf("%w: claims decode: %v", ErrOIDCVerification, err)
+		return nil, "", fmt.Errorf("%w: claims decode: %v", ErrOIDCVerification, err)
 	}
-	return s.extractClaims(idTok.Subject, raw), nil
+	return s.extractClaims(idTok.Subject, raw), rawID, nil
 }
 
 func (s *OIDCService) extractClaims(subject string, raw map[string]any) *OIDCClaims {

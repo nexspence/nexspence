@@ -19,8 +19,12 @@ import (
 type mockOIDC struct{}
 
 func (m *mockOIDC) AuthCodeURL(state, nonce, cc string) string { return "" }
-func (m *mockOIDC) ExchangeAndVerify(ctx context.Context, code, v, n string) (*auth.OIDCClaims, error) {
-	return nil, nil
+func (m *mockOIDC) ExchangeAndVerify(ctx context.Context, code, v, n string) (*auth.OIDCClaims, string, error) {
+	return &auth.OIDCClaims{
+		Subject:  "sub-1",
+		Username: "alice",
+		Email:    "alice@example.com",
+	}, "fake-id-token", nil
 }
 func (m *mockOIDC) TestConnection(ctx context.Context) error { return nil }
 func (m *mockOIDC) EndSessionEndpoint() string { return "" }
@@ -56,7 +60,7 @@ func TestLoginOIDC_NewUser_JIT_AutoCreatesWithRoles(t *testing.T) {
 		LastName:  "Example",
 		Groups:    []string{"developers", "nexspense-admins"},
 	}
-	tok, u, err := s.LoginOIDC(context.Background(), claims)
+	tok, u, err := s.LoginOIDC(context.Background(), claims, "fake-id-token")
 	require.NoError(t, err)
 	assert.NotEmpty(t, tok)
 	assert.Equal(t, "alice", u.Username)
@@ -72,7 +76,7 @@ func TestLoginOIDC_NewUser_Allowlist_EmailMatch_Created(t *testing.T) {
 	_, u, err := s.LoginOIDC(context.Background(), &auth.OIDCClaims{
 		Username: "bob", Email: "bob@company.com",
 		Groups: []string{"developers"},
-	})
+	}, "fake-id-token")
 	require.NoError(t, err)
 	assert.Equal(t, "bob", u.Username)
 	assert.Contains(t, u.Roles, "release-manager")
@@ -85,7 +89,7 @@ func TestLoginOIDC_NewUser_Allowlist_EmailMiss_Rejected(t *testing.T) {
 	s := newUserSvcOIDC(t, cfg)
 	_, _, err := s.LoginOIDC(context.Background(), &auth.OIDCClaims{
 		Username: "mallory", Email: "mallory@evil.io",
-	})
+	}, "fake-id-token")
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrProvisioningRejected))
 }
@@ -96,7 +100,7 @@ func TestLoginOIDC_NewUser_Manual_Rejected(t *testing.T) {
 	s := newUserSvcOIDC(t, cfg)
 	_, _, err := s.LoginOIDC(context.Background(), &auth.OIDCClaims{
 		Username: "alice", Email: "alice@ex.com",
-	})
+	}, "fake-id-token")
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrProvisioningRejected))
 }
@@ -112,7 +116,7 @@ func TestLoginOIDC_ExistingUser_SourceMismatch_Rejected(t *testing.T) {
 	s := newUserSvcOIDC(t, baseOIDCSvcCfg(), existing)
 	_, _, err := s.LoginOIDC(context.Background(), &auth.OIDCClaims{
 		Username: "alice", Email: "alice@ex.com",
-	})
+	}, "fake-id-token")
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrProvisioningConflict))
 }
@@ -132,7 +136,7 @@ func TestLoginOIDC_ExistingOIDCUser_SyncRoles_Replaces(t *testing.T) {
 	_, u, err := s.LoginOIDC(context.Background(), &auth.OIDCClaims{
 		Username: "alice", Email: "alice@ex.com",
 		Groups: []string{"developers"}, // no nexspense-admins → nx-admin must drop
-	})
+	}, "fake-id-token")
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []string{"release-manager"}, u.Roles)
 }
@@ -144,7 +148,7 @@ func TestLoginOIDC_MissingRoleInDB_Warns_NoFail(t *testing.T) {
 	_, u, err := s.LoginOIDC(context.Background(), &auth.OIDCClaims{
 		Username: "alice", Email: "alice@ex.com",
 		Groups: []string{"developers"},
-	})
+	}, "fake-id-token")
 	require.NoError(t, err)
 	assert.Empty(t, u.Roles)
 }
@@ -160,7 +164,7 @@ func TestLoginOIDC_InactiveUser_Rejected(t *testing.T) {
 	s := newUserSvcOIDC(t, baseOIDCSvcCfg(), existing)
 	_, _, err := s.LoginOIDC(context.Background(), &auth.OIDCClaims{
 		Username: "alice", Email: "alice@ex.com",
-	})
+	}, "fake-id-token")
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrInvalidInput))
 }
@@ -169,7 +173,7 @@ func TestLoginOIDC_EmptyUsername_Rejected(t *testing.T) {
 	s := newUserSvcOIDC(t, baseOIDCSvcCfg())
 	_, _, err := s.LoginOIDC(context.Background(), &auth.OIDCClaims{
 		Username: "", Email: "alice@ex.com",
-	})
+	}, "fake-id-token")
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrInvalidInput))
 }
@@ -179,7 +183,7 @@ func TestLoginOIDC_DNFormatGroup_MatchesAdminGroup(t *testing.T) {
 	_, u, err := s.LoginOIDC(context.Background(), &auth.OIDCClaims{
 		Username: "alice", Email: "alice@ex.com",
 		Groups: []string{"CN=nexspense-admins,OU=Groups,DC=ex,DC=com"},
-	})
+	}, "fake-id-token")
 	require.NoError(t, err)
 	assert.Contains(t, u.Roles, "nx-admin")
 }
@@ -192,7 +196,7 @@ func TestLoginOIDC_OIDCDisabled_Fails(t *testing.T) {
 	// Not calling WithOIDC.
 	_, _, err := s.LoginOIDC(context.Background(), &auth.OIDCClaims{
 		Username: "a", Email: "a@b.com",
-	})
+	}, "fake-id-token")
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrInvalidInput))
 }

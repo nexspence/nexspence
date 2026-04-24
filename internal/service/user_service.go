@@ -344,7 +344,7 @@ func (s *UserService) SetUserRoles(ctx context.Context, userID string, roleIDs [
 
 // LoginOIDC upserts the user and assigns roles based on OIDC claims.
 // Roles are REPLACED (not merged) on every login — IdP is source of truth.
-func (s *UserService) LoginOIDC(ctx context.Context, claims *auth.OIDCClaims) (string, *domain.User, error) {
+func (s *UserService) LoginOIDC(ctx context.Context, claims *auth.OIDCClaims, rawIDToken string) (string, *domain.User, error) {
 	if s.oidc == nil {
 		return "", nil, fmt.Errorf("%w: oidc not configured", ErrInvalidInput)
 	}
@@ -404,9 +404,12 @@ func (s *UserService) LoginOIDC(ctx context.Context, claims *auth.OIDCClaims) (s
 
 	s.log.Infow("oidc login complete", "username", username, "roles", existing.Roles)
 
-	token, err := s.auth.GenerateToken(existing.ID, existing.Username, existing.Roles)
+	token, err := s.auth.GenerateTokenWithMethod(existing.ID, existing.Username, existing.Roles, "oidc")
 	if err != nil {
 		return "", nil, err
+	}
+	if err2 := s.users.SetOIDCTokens(ctx, existing.ID, rawIDToken, ""); err2 != nil {
+		s.log.Warnw("SetOIDCTokens failed", "username", username, "err", err2)
 	}
 	_ = s.users.UpdateLastLogin(ctx, username)
 	return token, existing, nil

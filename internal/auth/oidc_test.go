@@ -128,7 +128,7 @@ func TestOIDCService_HappyPath(t *testing.T) {
 	svc, err := NewOIDCService(context.Background(), baseOIDCTestCfg(idp))
 	require.NoError(t, err)
 
-	claims, err := svc.ExchangeAndVerify(context.Background(), "code-abc", "verifier-xyz", nonce)
+	claims, _, err := svc.ExchangeAndVerify(context.Background(), "code-abc", "verifier-xyz", nonce)
 	require.NoError(t, err)
 
 	assert.Equal(t, "alice", claims.Username)
@@ -148,7 +148,7 @@ func TestOIDCService_NonceMismatch(t *testing.T) {
 
 	svc, err := NewOIDCService(context.Background(), baseOIDCTestCfg(idp))
 	require.NoError(t, err)
-	_, err = svc.ExchangeAndVerify(context.Background(), "code", "verifier", "n-expected")
+	_, _, err = svc.ExchangeAndVerify(context.Background(), "code", "verifier", "n-expected")
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrOIDCVerification)
 }
@@ -162,7 +162,7 @@ func TestOIDCService_ExpiredToken(t *testing.T) {
 
 	svc, err := NewOIDCService(context.Background(), baseOIDCTestCfg(idp))
 	require.NoError(t, err)
-	_, err = svc.ExchangeAndVerify(context.Background(), "code", "verifier", "n")
+	_, _, err = svc.ExchangeAndVerify(context.Background(), "code", "verifier", "n")
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrOIDCVerification)
 }
@@ -176,7 +176,7 @@ func TestOIDCService_WrongAudience(t *testing.T) {
 
 	svc, err := NewOIDCService(context.Background(), baseOIDCTestCfg(idp))
 	require.NoError(t, err)
-	_, err = svc.ExchangeAndVerify(context.Background(), "code", "verifier", "n")
+	_, _, err = svc.ExchangeAndVerify(context.Background(), "code", "verifier", "n")
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrOIDCVerification)
 }
@@ -192,7 +192,7 @@ func TestOIDCService_WrongSignature(t *testing.T) {
 
 	svc, err := NewOIDCService(context.Background(), baseOIDCTestCfg(idp))
 	require.NoError(t, err)
-	_, err = svc.ExchangeAndVerify(context.Background(), "code", "verifier", "n")
+	_, _, err = svc.ExchangeAndVerify(context.Background(), "code", "verifier", "n")
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrOIDCVerification)
 }
@@ -209,7 +209,7 @@ func TestOIDCService_ClaimCustomization_GooglePattern(t *testing.T) {
 	cfg.UsernameClaim = "email" // Google has no preferred_username
 	svc, err := NewOIDCService(context.Background(), cfg)
 	require.NoError(t, err)
-	claims, err := svc.ExchangeAndVerify(context.Background(), "code", "verifier", "n")
+	claims, _, err := svc.ExchangeAndVerify(context.Background(), "code", "verifier", "n")
 	require.NoError(t, err)
 	assert.Equal(t, "bob@example.com", claims.Username)
 }
