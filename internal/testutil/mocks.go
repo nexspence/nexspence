@@ -645,27 +645,58 @@ func (a *AuditRepo) Write(_ context.Context, e *domain.AuditEvent) error {
 	return nil
 }
 
-func (a *AuditRepo) List(_ context.Context, domainFilter, actionFilter string, limit, offset int) ([]domain.AuditEvent, error) {
+func (a *AuditRepo) match(e domain.AuditEvent, q repository.AuditQuery) bool {
+	if q.Domain != "" && e.Domain != q.Domain {
+		return false
+	}
+	if q.Action != "" && e.Action != q.Action {
+		return false
+	}
+	if q.Username != "" && e.Username != q.Username {
+		return false
+	}
+	if q.From != nil && e.EventTime.Before(*q.From) {
+		return false
+	}
+	if q.To != nil && !e.EventTime.Before(*q.To) {
+		return false
+	}
+	return true
+}
+
+func (a *AuditRepo) List(_ context.Context, q repository.AuditQuery) ([]domain.AuditEvent, int, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	var out []domain.AuditEvent
+	var matched []domain.AuditEvent
 	for _, e := range a.Events {
-		if domainFilter != "" && e.Domain != domainFilter {
+		if a.match(e, q) {
+			matched = append(matched, e)
+		}
+	}
+	total := len(matched)
+	if q.Offset >= total {
+		return nil, total, nil
+	}
+	matched = matched[q.Offset:]
+	if q.Limit > 0 && len(matched) > q.Limit {
+		matched = matched[:q.Limit]
+	}
+	return matched, total, nil
+}
+
+func (a *AuditRepo) Stream(_ context.Context, q repository.AuditQuery, fn func(domain.AuditEvent) error) error {
+	a.mu.Lock()
+	snapshot := append([]domain.AuditEvent(nil), a.Events...)
+	a.mu.Unlock()
+	for _, e := range snapshot {
+		if !a.match(e, q) {
 			continue
 		}
-		if actionFilter != "" && e.Action != actionFilter {
-			continue
+		if err := fn(e); err != nil {
+			return err
 		}
-		out = append(out, e)
 	}
-	if offset >= len(out) {
-		return nil, nil
-	}
-	out = out[offset:]
-	if limit > 0 && len(out) > limit {
-		out = out[:limit]
-	}
-	return out, nil
+	return nil
 }
 
 // ── UserRepo ──────────────────────────────────────────────────
