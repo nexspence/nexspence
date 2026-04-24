@@ -112,6 +112,28 @@ func (r *userRepo) UpdateLastLogin(ctx context.Context, username string) error {
 	return err
 }
 
+func (r *userRepo) SetOIDCTokens(ctx context.Context, userID, idToken, refreshToken string) error {
+	_, err := r.db.Exec(ctx,
+		`UPDATE users SET oidc_id_token=$1, oidc_refresh_token=$2, updated_at=NOW() WHERE id=$3`,
+		nilIfEmpty(idToken), nilIfEmpty(refreshToken), userID,
+	)
+	return err
+}
+
+func (r *userRepo) GetOIDCIDToken(ctx context.Context, userID string) (string, error) {
+	var tok *string
+	err := r.db.QueryRow(ctx,
+		`SELECT oidc_id_token FROM users WHERE id=$1`, userID,
+	).Scan(&tok)
+	if err != nil {
+		return "", err
+	}
+	if tok == nil {
+		return "", nil
+	}
+	return *tok, nil
+}
+
 // ── Helpers ──────────────────────────────────────────────────
 
 func scanUser(row scanner) (*domain.User, error) {

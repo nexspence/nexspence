@@ -713,16 +713,18 @@ func (a *AuditRepo) Stream(_ context.Context, q repository.AuditQuery, fn func(d
 // ── UserRepo ──────────────────────────────────────────────────
 
 type UserRepo struct {
-	mu     sync.Mutex
-	users  map[string]*domain.User // key: username
-	byID   map[string]*domain.User
-	nextID int
+	mu          sync.Mutex
+	users       map[string]*domain.User // key: username
+	byID        map[string]*domain.User
+	nextID      int
+	oidcTokens  map[string]string // userID → id_token
 }
 
 func NewUserRepo(users ...*domain.User) *UserRepo {
 	r := &UserRepo{
-		users: make(map[string]*domain.User),
-		byID:  make(map[string]*domain.User),
+		users:      make(map[string]*domain.User),
+		byID:       make(map[string]*domain.User),
+		oidcTokens: make(map[string]string),
 	}
 	for _, u := range users {
 		r.users[u.Username] = u
@@ -786,6 +788,23 @@ func (r *UserRepo) Delete(_ context.Context, username string) error {
 	return nil
 }
 func (r *UserRepo) UpdateLastLogin(_ context.Context, _ string) error { return nil }
+
+func (r *UserRepo) SetOIDCTokens(_ context.Context, userID, idToken, _ string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if idToken == "" {
+		delete(r.oidcTokens, userID)
+	} else {
+		r.oidcTokens[userID] = idToken
+	}
+	return nil
+}
+
+func (r *UserRepo) GetOIDCIDToken(_ context.Context, userID string) (string, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.oidcTokens[userID], nil
+}
 
 // ── RoleRepo ──────────────────────────────────────────────────
 

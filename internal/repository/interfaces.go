@@ -153,6 +153,11 @@ type UserRepo interface {
 	UpdatePassword(ctx context.Context, username, hash string) error
 	Delete(ctx context.Context, username string) error
 	UpdateLastLogin(ctx context.Context, username string) error
+	// SetOIDCTokens stores id_token and refresh_token for an OIDC user.
+	// Pass empty strings to clear both columns (e.g. on logout).
+	SetOIDCTokens(ctx context.Context, userID string, idToken, refreshToken string) error
+	// GetOIDCIDToken returns the stored id_token for userID, or "" if unset.
+	GetOIDCIDToken(ctx context.Context, userID string) (string, error)
 }
 
 // RoleRepo manages roles and privileges.
