@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/spf13/viper"
 )
@@ -17,6 +18,7 @@ type Config struct {
 	Log       LogConfig       `mapstructure:"log"`
 	Search    SearchConfig    `mapstructure:"search"`
 	Cleanup   CleanupConfig   `mapstructure:"cleanup"`
+	Audit     AuditConfig     `mapstructure:"audit"`
 }
 
 type BootstrapConfig struct {
@@ -120,6 +122,13 @@ type CleanupConfig struct {
 	DefaultSchedule string `mapstructure:"default_schedule"`
 }
 
+type AuditConfig struct {
+	RetentionDays    int           `mapstructure:"retention_days"`
+	SoftCap          int64         `mapstructure:"soft_cap"`
+	RotationInterval time.Duration `mapstructure:"rotation_interval"`
+	LookaheadMonths  int           `mapstructure:"lookahead_months"`
+}
+
 func Load(path string) (*Config, error) {
 	v := viper.New()
 
@@ -142,6 +151,10 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("log.format", "json")
 	v.SetDefault("search.min_query_len", 2)
 	v.SetDefault("cleanup.default_schedule", "0 */6 * * *")
+	v.SetDefault("audit.retention_days", 90)
+	v.SetDefault("audit.soft_cap", int64(1_000_000))
+	v.SetDefault("audit.rotation_interval", "24h")
+	v.SetDefault("audit.lookahead_months", 2)
 	v.SetDefault("ldap.enabled", false)
 	v.SetDefault("ldap.port", 389)
 	v.SetDefault("ldap.search_filter", "(uid={0})")
