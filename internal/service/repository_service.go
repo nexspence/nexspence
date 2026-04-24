@@ -14,9 +14,11 @@ import (
 )
 
 var (
-	ErrNotFound      = errors.New("not found")
-	ErrAlreadyExists = errors.New("already exists")
-	ErrInvalidInput  = errors.New("invalid input")
+	ErrNotFound              = errors.New("not found")
+	ErrAlreadyExists         = errors.New("already exists")
+	ErrInvalidInput          = errors.New("invalid input")
+	ErrProvisioningRejected  = errors.New("provisioning rejected")
+	ErrProvisioningConflict  = errors.New("user source conflict")
 )
 
 // RepositoryService handles business logic for Nexus-compatible repository management.
