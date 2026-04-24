@@ -116,7 +116,7 @@ func newOIDCHandlerRig(t *testing.T, mock *mockOIDCAuthenticator) *gin.Engine {
 
 	sealer, err := auth.NewCookieSealer(mustDecodeB64(cfg.CookieKey))
 	require.NoError(t, err)
-	h := handlers.NewOIDCHandler(mock, userSvc, sealer, cfg, zap.NewNop().Sugar())
+	h := handlers.NewOIDCHandler(mock, userSvc, users, sealer, cfg, zap.NewNop().Sugar())
 
 	r := gin.New()
 	r.GET("/api/v1/auth/oidc/login", h.Login)
@@ -255,7 +255,7 @@ func TestOIDCHandler_Callback_ProvisioningRejected_Redirects(t *testing.T) {
 
 	sealer, err := auth.NewCookieSealer(mustDecodeB64(cfg.CookieKey))
 	require.NoError(t, err)
-	h := handlers.NewOIDCHandler(mock, userSvc, sealer, cfg, zap.NewNop().Sugar())
+	h := handlers.NewOIDCHandler(mock, userSvc, users, sealer, cfg, zap.NewNop().Sugar())
 
 	r := gin.New()
 	r.GET("/api/v1/auth/oidc/login", h.Login)

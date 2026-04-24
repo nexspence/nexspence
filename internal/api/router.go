@@ -179,8 +179,9 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 	// OIDC redirect flow — only registered when oidc.enabled=true.
 	// Audit events fire via the global AuditMiddleware above (callback GET
 	// whitelisted). Routes are public so the pre-auth redirect flow works.
+	var oidcH *handlers.OIDCHandler
 	if oidcSvc != nil && oidcSealer != nil {
-		oidcH := handlers.NewOIDCHandler(oidcSvc, userSvc, oidcSealer, cfg.OIDC, log)
+		oidcH = handlers.NewOIDCHandler(oidcSvc, userSvc, userRepo, oidcSealer, cfg.OIDC, log)
 		r.GET("/api/v1/auth/oidc/login", oidcH.Login)
 		r.GET("/api/v1/auth/oidc/callback", oidcH.Callback)
 	}
@@ -246,6 +247,11 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 		authed.GET("/api/v1/tokens", tokenH.List)
 		authed.POST("/api/v1/tokens", tokenH.Create)
 		authed.DELETE("/api/v1/tokens/:id", tokenH.Delete)
+
+		// ── OIDC logout (authenticated users only) ────────────
+		if oidcH != nil {
+			authed.GET("/api/v1/auth/oidc/logout", oidcH.Logout)
+		}
 
 		// ── Vulnerability scan (read) ─────────────────────────
 		authed.GET("/api/v1/components/:id/scan", scanH.GetScanResult)

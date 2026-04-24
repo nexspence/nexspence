@@ -15,6 +15,7 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/auth"
 	"github.com/nexspence-oss/nexspence/internal/config"
 	"github.com/nexspence-oss/nexspence/internal/logger"
+	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/service"
 )
 
@@ -28,6 +29,7 @@ const (
 type OIDCHandler struct {
 	oidc   auth.OIDCAuthenticator
 	users  *service.UserService
+	repo   repository.UserRepo
 	sealer *auth.CookieSealer
 	cfg    config.OIDCConfig
 	log    logger.Logger
@@ -36,11 +38,12 @@ type OIDCHandler struct {
 func NewOIDCHandler(
 	oidc auth.OIDCAuthenticator,
 	users *service.UserService,
+	repo repository.UserRepo,
 	sealer *auth.CookieSealer,
 	cfg config.OIDCConfig,
 	log logger.Logger,
 ) *OIDCHandler {
-	return &OIDCHandler{oidc: oidc, users: users, sealer: sealer, cfg: cfg, log: log}
+	return &OIDCHandler{oidc: oidc, users: users, repo: repo, sealer: sealer, cfg: cfg, log: log}
 }
 
 // Login starts the OIDC authorization code + PKCE flow.
@@ -141,6 +144,49 @@ func (h *OIDCHandler) Callback(c *gin.Context) {
 		strings.TrimRight(h.cfg.FrontendBaseURL, "/"),
 		url.QueryEscape(token),
 		url.QueryEscape(payload.ReturnTo)))
+}
+
+// Logout implements RP-initiated Single Logout.
+// GET /api/v1/auth/oidc/logout  (RequireAuth)
+// Returns {"logout_url":"..."} for the SPA to navigate to.
+func (h *OIDCHandler) Logout(c *gin.Context) {
+	userID, _ := c.Get("userID")
+	uid, _ := userID.(string)
+	if uid == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
+		return
+	}
+
+	idToken, err := h.repo.GetOIDCIDToken(c.Request.Context(), uid)
+	if err != nil {
+		h.log.Errorw("GetOIDCIDToken failed", "err", err, "userID", uid)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+	if idToken == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "not an OIDC session"})
+		return
+	}
+
+	endpointURL := h.oidc.EndSessionEndpoint()
+	frontendLogin := strings.TrimRight(h.cfg.FrontendBaseURL, "/") + "/login"
+
+	var logoutURL string
+	if endpointURL == "" {
+		logoutURL = frontendLogin
+	} else {
+		params := url.Values{}
+		params.Set("id_token_hint", idToken)
+		params.Set("post_logout_redirect_uri", frontendLogin)
+		params.Set("client_id", h.cfg.ClientID)
+		logoutURL = endpointURL + "?" + params.Encode()
+	}
+
+	if err2 := h.repo.SetOIDCTokens(c.Request.Context(), uid, "", ""); err2 != nil {
+		h.log.Warnw("SetOIDCTokens clear failed", "err", err2, "userID", uid)
+	}
+
+	c.JSON(http.StatusOK, gin.H{"logout_url": logoutURL})
 }
 
 func (h *OIDCHandler) fail(c *gin.Context, reason string) {
