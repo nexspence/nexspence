@@ -4,6 +4,7 @@ package repository
 
 import (
 	"context"
+	"time"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
 )
@@ -174,10 +175,22 @@ type CleanupPolicyRepo interface {
 	Delete(ctx context.Context, id string) error
 }
 
+// AuditQuery holds filter and pagination parameters for AuditRepo.List/Stream.
+type AuditQuery struct {
+	Domain   string     // empty = any
+	Action   string     // empty = any
+	Username string     // empty = any (exact match)
+	From     *time.Time // inclusive lower bound; nil = no lower bound
+	To       *time.Time // exclusive upper bound; nil = no upper bound
+	Limit    int        // ignored by Stream. List impl applies its own default and cap.
+	Offset   int        // ignored by Stream
+}
+
 // AuditRepo writes and reads audit log events.
 type AuditRepo interface {
 	Write(ctx context.Context, e *domain.AuditEvent) error
-	List(ctx context.Context, domain, action string, limit, offset int) ([]domain.AuditEvent, error)
+	List(ctx context.Context, q AuditQuery) (items []domain.AuditEvent, total int, err error)
+	Stream(ctx context.Context, q AuditQuery, fn func(domain.AuditEvent) error) error
 }
 
 // PrivilegeWithSelector is returned by RBACRepo — one row per privilege attached to the user.
