@@ -2,8 +2,10 @@ package auth
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/coreos/go-oidc/v3/oidc"
@@ -51,15 +53,34 @@ type OIDCService struct {
 // NewOIDCService performs OIDC discovery against cfg.Issuer and prepares
 // the oauth2.Config + id_token verifier. Returns an error if discovery fails
 // — callers (main.go) should fail startup so misconfig is loud, not lazy.
+//
+// When cfg.PublicIssuerURL is set (split-horizon Docker setup), discovery uses
+// the internal Issuer URL but the resulting provider is constructed via
+// ProviderConfig to bypass go-oidc's issuer-equality check. The verifier uses
+// SkipIssuerCheck because the token's iss claim will contain the public URL
+// while we discovered via the internal URL.
 func NewOIDCService(ctx context.Context, cfg config.OIDCConfig) (*OIDCService, error) {
-	provider, err := oidc.NewProvider(ctx, cfg.Issuer)
-	if err != nil {
-		return nil, fmt.Errorf("oidc discovery: %w", err)
+	var (
+		provider        *oidc.Provider
+		skipIssuerCheck bool
+	)
+	if cfg.PublicIssuerURL != "" {
+		var err error
+		provider, err = newProviderViaConfig(ctx, cfg.Issuer)
+		if err != nil {
+			return nil, fmt.Errorf("oidc discovery: %w", err)
+		}
+		skipIssuerCheck = true
+	} else {
+		var err error
+		provider, err = oidc.NewProvider(ctx, cfg.Issuer)
+		if err != nil {
+			return nil, fmt.Errorf("oidc discovery: %w", err)
+		}
 	}
 	verifier := provider.Verifier(&oidc.Config{
-		ClientID: cfg.ClientID,
-		// Library defaults cover standard skew (5min). cfg.AllowedSkewSeconds is
-		// reserved for future use if a custom Now-based tolerance becomes needed.
+		ClientID:        cfg.ClientID,
+		SkipIssuerCheck: skipIssuerCheck,
 	})
 	return &OIDCService{
 		cfg:      cfg,
@@ -73,6 +94,51 @@ func NewOIDCService(ctx context.Context, cfg config.OIDCConfig) (*OIDCService, e
 			Scopes:       cfg.Scopes,
 		},
 	}, nil
+}
+
+// newProviderViaConfig fetches OIDC discovery manually and constructs a Provider
+// via ProviderConfig, bypassing go-oidc's strict issuer-URL equality check.
+// This is necessary for split-horizon setups where the internal discovery URL
+// (e.g. keycloak:8080) differs from the issuer in the discovery doc
+// (e.g. localhost:8180). Endpoint URLs are rewritten from the public issuer
+// to the internal issuer so token exchange stays on the internal network.
+func newProviderViaConfig(ctx context.Context, internalIssuer string) (*oidc.Provider, error) {
+	wellKnown := strings.TrimSuffix(internalIssuer, "/") + "/.well-known/openid-configuration"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, wellKnown, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetch discovery doc: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var doc struct {
+		Issuer   string `json:"issuer"`
+		AuthURL  string `json:"authorization_endpoint"`
+		TokenURL string `json:"token_endpoint"`
+		JWKSURL  string `json:"jwks_uri"`
+		UserInfo string `json:"userinfo_endpoint"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&doc); err != nil {
+		return nil, fmt.Errorf("decode discovery doc: %w", err)
+	}
+
+	// Rewrite the public hostname back to the internal hostname in all endpoints
+	// so nexspence calls token/JWKS endpoints via the internal Docker network.
+	rewrite := func(u string) string {
+		return strings.Replace(u, doc.Issuer, internalIssuer, 1)
+	}
+
+	p := oidc.ProviderConfig{
+		IssuerURL:   internalIssuer,
+		AuthURL:     rewrite(doc.AuthURL),
+		TokenURL:    rewrite(doc.TokenURL),
+		UserInfoURL: rewrite(doc.UserInfo),
+		JWKSURL:     rewrite(doc.JWKSURL),
+	}
+	return p.NewProvider(ctx), nil
 }
 
 // publicURL rewrites an internal IdP URL to the browser-accessible public URL

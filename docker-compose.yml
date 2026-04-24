@@ -32,14 +32,14 @@ services:
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: admin
       KC_HTTP_PORT: "8080"
-      # Fix split-horizon issuer mismatch: nexspence discovers at keycloak:8080
-      # (internal), but the browser hits localhost:8180. Without KC_HOSTNAME set,
-      # Keycloak derives the issuer from the request host — so auth-session issuer
-      # becomes "localhost" (no port) and token exchange returns iss="localhost"
-      # while go-oidc expects iss="keycloak:8080" → verification failed.
-      # Setting KC_HOSTNAME=keycloak forces a single fixed issuer for all paths.
-      KC_HOSTNAME: "keycloak"
-      KC_HOSTNAME_PORT: "8080"
+      # Split-horizon fix: browser must reach Keycloak's HTML pages (form POSTs,
+      # redirects) at localhost:8180. Setting KC_HOSTNAME=localhost:8180 makes
+      # Keycloak generate all URLs with localhost:8180 so the browser can follow
+      # them. The token's iss claim will also be http://localhost:8180/…
+      # OIDCService.NewOIDCService handles the resulting iss mismatch via
+      # ProviderConfig (bypasses go-oidc issuer check) + SkipIssuerCheck: true.
+      KC_HOSTNAME: "localhost"
+      KC_HOSTNAME_PORT: "8180"
       KC_HOSTNAME_STRICT: "false"
       KC_HOSTNAME_STRICT_HTTPS: "false"
       KC_HTTP_ENABLED: "true"
