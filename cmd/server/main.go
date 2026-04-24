@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/nexspence-oss/nexspence/internal/api"
+	"github.com/nexspence-oss/nexspence/internal/audit"
 	"github.com/nexspence-oss/nexspence/internal/auth"
 	"github.com/nexspence-oss/nexspence/internal/config"
 	"github.com/nexspence-oss/nexspence/internal/db"
@@ -94,6 +95,19 @@ func cmdServe() *cobra.Command {
 			metrics.ArtifactsStored.Store(assetCount)
 			metrics.BytesStored.Store(sumBytes)
 			metrics.DownloadsTotal.Store(sumDownloads)
+
+			// Audit retention — pre-create future partitions, drop expired,
+			// observe row count. Synchronous first tick guarantees the
+			// current month's partition exists before we accept traffic.
+			rotator := audit.NewRotator(audit.NewPgPartitionStore(pool), cfg.Audit, log)
+			rotator.RunOnce(cmd.Context())
+			go rotator.Run(cmd.Context())
+			log.Info("audit rotator started",
+				"retention_days", cfg.Audit.RetentionDays,
+				"soft_cap", cfg.Audit.SoftCap,
+				"rotation_interval", cfg.Audit.RotationInterval.String(),
+				"lookahead_months", cfg.Audit.LookaheadMonths,
+			)
 
 			if err := bootstrapAdmin(cmd.Context(), pool, cfg, log); err != nil {
 				log.Error("bootstrap admin failed", "err", err)
