@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/base64"
 	"fmt"
 	"strings"
 	"time"
@@ -14,6 +15,7 @@ type Config struct {
 	Storage   StorageConfig   `mapstructure:"storage"`
 	Auth      AuthConfig      `mapstructure:"auth"`
 	LDAP      LDAPConfig      `mapstructure:"ldap"`
+	OIDC      OIDCConfig      `mapstructure:"oidc"`
 	Bootstrap BootstrapConfig `mapstructure:"bootstrap"`
 	Log       LogConfig       `mapstructure:"log"`
 	Search    SearchConfig    `mapstructure:"search"`
@@ -112,6 +114,63 @@ type LDAPUserAttrMap struct {
 	LastName  string `mapstructure:"last_name"`
 }
 
+// OIDCConfig configures OIDC / OAuth2 SSO authentication.
+// One provider per deployment; coexists with local + LDAP.
+type OIDCConfig struct {
+	Enabled         bool     `mapstructure:"enabled"`
+	DisplayName     string   `mapstructure:"display_name"` // button text: "Sign in with {DisplayName}"
+	Issuer          string   `mapstructure:"issuer"`
+	ClientID        string   `mapstructure:"client_id"`
+	ClientSecret    string   `mapstructure:"client_secret"`
+	RedirectURL     string   `mapstructure:"redirect_url"`
+	FrontendBaseURL string   `mapstructure:"frontend_base_url"`
+	Scopes          []string `mapstructure:"scopes"`
+
+	// Provisioning: jit (default) | allowlist | manual.
+	Provisioning   string   `mapstructure:"provisioning"`
+	EmailAllowlist []string `mapstructure:"email_allowlist"` // glob patterns (path.Match)
+
+	// Role resolution.
+	GroupsClaim  string            `mapstructure:"groups_claim"`   // default "groups"
+	AdminGroup   string            `mapstructure:"admin_group"`    // claim value → nx-admin
+	RoleMappings map[string]string `mapstructure:"role_mappings"`  // claim value → Nexspense role name
+
+	// Claim name overrides (provider-specific).
+	UsernameClaim string `mapstructure:"username_claim"`
+	EmailClaim    string `mapstructure:"email_claim"`
+	NameClaim     string `mapstructure:"name_claim"`
+
+	ShowLoginButton    bool   `mapstructure:"show_login_button"`
+	CookieSecure       bool   `mapstructure:"cookie_secure"`
+	CookieKey          string `mapstructure:"cookie_key"`           // base64 32 bytes
+	AllowedSkewSeconds int    `mapstructure:"allowed_skew_seconds"`
+}
+
+// ValidateOIDC returns nil when the OIDC config is usable.
+// Called from Load() after unmarshal; exported for unit tests.
+func ValidateOIDC(c OIDCConfig) error {
+	if !c.Enabled {
+		return nil
+	}
+	if c.Issuer == "" {
+		return fmt.Errorf("oidc.issuer is required when oidc.enabled=true")
+	}
+	if c.ClientID == "" || c.ClientSecret == "" {
+		return fmt.Errorf("oidc.client_id and oidc.client_secret are required when oidc.enabled=true")
+	}
+	if c.RedirectURL == "" || c.FrontendBaseURL == "" {
+		return fmt.Errorf("oidc.redirect_url and oidc.frontend_base_url are required when oidc.enabled=true")
+	}
+	if c.Provisioning == "allowlist" && len(c.EmailAllowlist) == 0 {
+		return fmt.Errorf("oidc.email_allowlist must be non-empty when oidc.provisioning=allowlist")
+	}
+	keyBytes, err := base64.StdEncoding.DecodeString(c.CookieKey)
+	if err != nil || len(keyBytes) != 32 {
+		return fmt.Errorf("oidc.cookie_key must be base64-encoded 32 bytes")
+	}
+	return nil
+}
+
 type SearchConfig struct {
 	// Full-text search is built into PostgreSQL — no external deps
 	// MinQueryLen is the minimum characters before trigram search kicks in
@@ -155,6 +214,17 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("audit.soft_cap", int64(1_000_000))
 	v.SetDefault("audit.rotation_interval", "24h")
 	v.SetDefault("audit.lookahead_months", 2)
+	v.SetDefault("oidc.enabled", false)
+	v.SetDefault("oidc.display_name", "SSO")
+	v.SetDefault("oidc.scopes", []string{"openid", "profile", "email", "groups"})
+	v.SetDefault("oidc.provisioning", "jit")
+	v.SetDefault("oidc.groups_claim", "groups")
+	v.SetDefault("oidc.username_claim", "preferred_username")
+	v.SetDefault("oidc.email_claim", "email")
+	v.SetDefault("oidc.name_claim", "name")
+	v.SetDefault("oidc.show_login_button", true)
+	v.SetDefault("oidc.cookie_secure", true)
+	v.SetDefault("oidc.allowed_skew_seconds", 60)
 	v.SetDefault("ldap.enabled", false)
 	v.SetDefault("ldap.port", 389)
 	v.SetDefault("ldap.search_filter", "(uid={0})")
@@ -195,6 +265,9 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.Auth.JWTSecret == "" {
 		return nil, fmt.Errorf("auth.jwt_secret is required (or set NEXSPENCE_AUTH_JWT_SECRET)")
+	}
+	if err := ValidateOIDC(cfg.OIDC); err != nil {
+		return nil, err
 	}
 
 	return &cfg, nil
