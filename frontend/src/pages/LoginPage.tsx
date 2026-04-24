@@ -1,6 +1,8 @@
-import { useState, FormEvent } from 'react'
+import { useState, useEffect, FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { KeyRound } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
+import { nexusApi, type AuthConfig } from '@/api/client'
 import styles from './LoginPage.module.css'
 import logo from '@/assets/logo.png'
 
@@ -9,8 +11,18 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [authConfig, setAuthConfig] = useState<AuthConfig | null>(null)
+  const [oidcError, setOidcError] = useState<string | null>(null)
   const { login } = useAuthStore()
   const navigate = useNavigate()
+
+  useEffect(() => {
+    // Read OIDC redirect-error from URL.
+    const params = new URLSearchParams(window.location.search)
+    const err = params.get('oidc_error')
+    if (err) setOidcError(err)
+    nexusApi.getAuthConfig().then(setAuthConfig).catch(() => setAuthConfig(null))
+  }, [])
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -24,6 +36,12 @@ export default function LoginPage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleOIDC = () => {
+    if (!authConfig?.oidcLoginUrl) return
+    const returnTo = encodeURIComponent('/repositories')
+    window.location.href = `${authConfig.oidcLoginUrl}?return_to=${returnTo}`
   }
 
   return (
@@ -59,10 +77,28 @@ export default function LoginPage() {
           </div>
 
           {error && <div className={styles.error}>{error}</div>}
+          {oidcError && (
+            <div className={styles.error} role="alert">
+              SSO login failed: {oidcError}
+            </div>
+          )}
 
           <button className={styles.button} type="submit" disabled={loading}>
             {loading ? 'Signing in…' : 'Sign in'}
           </button>
+
+          {authConfig?.oidcEnabled && (
+            <>
+              <div className={styles.divider}>or</div>
+              <button
+                type="button"
+                className={styles.oidcButton}
+                onClick={handleOIDC}
+              >
+                <KeyRound size={16} /> Sign in with {authConfig.oidcDisplayName}
+              </button>
+            </>
+          )}
         </form>
       </div>
     </div>

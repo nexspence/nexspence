@@ -11,6 +11,7 @@ import AdminPage from '@/pages/AdminPage'
 import MigrationPage from '@/pages/MigrationPage'
 import SecurityPage from '@/pages/SecurityPage'
 import AuditPage from '@/pages/AuditPage'
+import OIDCCallbackPage from '@/pages/OIDCCallbackPage'
 import { useAuthStore } from '@/store/authStore'
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
@@ -27,6 +28,7 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/oidc/callback" element={<OIDCCallbackPage />} />
         <Route
           path="/"
           element={
