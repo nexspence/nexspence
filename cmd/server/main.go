@@ -87,6 +87,23 @@ func cmdServe() *cobra.Command {
 				log.Info("ldap disabled")
 			}
 
+			// OIDC — startup discovery log. NewRouter will rebuild the service
+			// at router construction; this is diagnostic-only.
+			if cfg.OIDC.Enabled {
+				log.Info("oidc enabled",
+					"display", cfg.OIDC.DisplayName,
+					"issuer", cfg.OIDC.Issuer,
+					"provisioning", cfg.OIDC.Provisioning,
+				)
+				if _, err := auth.NewOIDCService(cmd.Context(), cfg.OIDC); err != nil {
+					log.Warn("oidc discovery test FAILED", "err", err)
+				} else {
+					log.Info("oidc discovery OK")
+				}
+			} else {
+				log.Info("oidc disabled")
+			}
+
 			// Seed cumulative metrics from DB so counters survive restarts.
 			var assetCount, sumBytes, sumDownloads int64
 			_ = pool.QueryRow(cmd.Context(),
