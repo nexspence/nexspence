@@ -17,7 +17,11 @@ func AuditMiddleware(auditRepo repository.AuditRepo) gin.HandlerFunc {
 
 		method := c.Request.Method
 		if method != "PUT" && method != "POST" && method != "DELETE" && method != "PATCH" {
-			return
+			// Also audit OIDC callback GET as a LOGIN event (no mutation on
+			// our side, but it is a security-relevant user-identification event).
+			if !(method == "GET" && strings.HasPrefix(c.Request.URL.Path, "/api/v1/auth/oidc/callback")) {
+				return
+			}
 		}
 
 		path := c.Request.URL.Path
@@ -42,6 +46,16 @@ func AuditMiddleware(auditRepo repository.AuditRepo) gin.HandlerFunc {
 		}
 
 		domainStr, action, entityType, entityName, ctxData := classifyPath(method, path, c)
+
+		// Merge audit_source (set by LoginOIDC handler path) into Context.
+		// Allows UI/SIEM to distinguish oidc / ldap / local logins without
+		// special-casing the action or path.
+		if src, ok := c.Get("audit_source"); ok {
+			if ctxData == nil {
+				ctxData = map[string]any{}
+			}
+			ctxData["source"] = src
+		}
 
 		e := &domain.AuditEvent{
 			UserID:     strPtr(userIDStr),
@@ -70,6 +84,7 @@ func isAuditablePath(path string) bool {
 		"/service/rest/v1/cleanup-policies",
 		"/api/v1/webhooks",
 		"/api/v1/login",
+		"/api/v1/auth/oidc/callback",
 		"/repository/",
 		"/v2/",
 	}
@@ -95,7 +110,8 @@ func classifyPath(method, path string, c *gin.Context) (domainStr, action, entit
 	ctxData = map[string]any{}
 
 	// Login is classified specially: action=LOGIN, entityName=username attempted.
-	if strings.HasPrefix(path, "/api/v1/login") {
+	if strings.HasPrefix(path, "/api/v1/login") ||
+		strings.HasPrefix(path, "/api/v1/auth/oidc/callback") {
 		return "SECURITY", "LOGIN", "USER", c.GetString("username"), ctxData
 	}
 

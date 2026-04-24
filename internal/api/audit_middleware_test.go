@@ -196,6 +196,41 @@ func TestAuditMiddleware_Roles_PrefixIsAudited(t *testing.T) {
 	assert.Equal(t, "ROLE", repo.Events[0].EntityType)
 }
 
+func TestAuditMiddleware_OIDCCallback_WritesLoginEvent(t *testing.T) {
+	repo := testutil.NewAuditRepo()
+	r := gin.New()
+	// Pre-middleware: simulate OIDCHandler.Callback setting audit hooks.
+	r.Use(func(c *gin.Context) {
+		c.Set("username", "alice")
+		c.Set("userID", "u1")
+		c.Set("audit_source", "oidc")
+		c.Next()
+	})
+	r.Use(api.AuditMiddleware(repo))
+	r.GET("/api/v1/auth/oidc/callback", func(c *gin.Context) { c.Status(http.StatusFound) })
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/oidc/callback?code=x&state=s", nil)
+	r.ServeHTTP(httptest.NewRecorder(), req)
+	waitForAudit()
+
+	require.Len(t, repo.Events, 1)
+	ev := repo.Events[0]
+	assert.Equal(t, "LOGIN", ev.Action)
+	assert.Equal(t, "alice", ev.Username)
+	assert.Equal(t, "SECURITY", ev.Domain)
+	assert.Equal(t, "oidc", ev.Context["source"])
+}
+
+func TestAuditMiddleware_NonOIDC_GET_NotAudited(t *testing.T) {
+	repo := testutil.NewAuditRepo()
+	r := buildAuditRouter(repo)
+	// Plain GET on repositories list — must NOT create audit event.
+	req := httptest.NewRequest(http.MethodGet, "/service/rest/v1/repositories", nil)
+	r.ServeHTTP(httptest.NewRecorder(), req)
+	waitForAudit()
+	assert.Empty(t, repo.Events, "GET requests outside OIDC callback must not be audited")
+}
+
 func TestAuditMiddleware_RemoteIP_NonEmpty(t *testing.T) {
 	repo := testutil.NewAuditRepo()
 	r := gin.New()
