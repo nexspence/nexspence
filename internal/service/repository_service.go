@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -98,14 +99,23 @@ func (s *RepositoryService) Create(ctx context.Context, r *domain.Repository) er
 		return err
 	}
 
-	// Validate blob store exists (for hosted/proxy)
-	if r.BlobStoreID != nil && *r.BlobStoreID != "" {
-		bs, err := s.blobs.Get(ctx, *r.BlobStoreID)
-		if err != nil {
-			return err
-		}
-		if bs == nil {
-			return fmt.Errorf("%w: blob store %q", ErrNotFound, *r.BlobStoreID)
+	// Validate blob store exists (for hosted/proxy) and enforce quota <= store quota.
+	if r.BlobStoreID != nil {
+		ref := strings.TrimSpace(*r.BlobStoreID)
+		if ref == "" {
+			r.BlobStoreID = nil
+		} else {
+			bs, err := s.blobs.GetByID(ctx, ref)
+			if err != nil {
+				return err
+			}
+			if bs == nil {
+				return fmt.Errorf("%w: blob store %q", ErrNotFound, ref)
+			}
+			r.BlobStoreID = &bs.ID
+			if err := validateRepoQuotaAgainstStore(r.QuotaBytes, bs); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -151,6 +161,21 @@ func (s *RepositoryService) Update(ctx context.Context, name string, updates *do
 	if updates.CleanupPolicyIDs != nil {
 		r.CleanupPolicyIDs = updates.CleanupPolicyIDs
 	}
+	if updates.BlobStoreID != nil {
+		id := strings.TrimSpace(*updates.BlobStoreID)
+		if id == "" {
+			r.BlobStoreID = nil
+		} else {
+			bs, err := s.blobs.GetByID(ctx, id)
+			if err != nil {
+				return nil, err
+			}
+			if bs == nil {
+				return nil, fmt.Errorf("%w: blob store %q", ErrNotFound, id)
+			}
+			r.BlobStoreID = &bs.ID
+		}
+	}
 	r.AllowAnonymous = updates.AllowAnonymous
 
 	if err := s.validateCleanupPolicies(ctx, r.Format, r.CleanupPolicyIDs); err != nil {
@@ -163,10 +188,36 @@ func (s *RepositoryService) Update(ctx context.Context, name string, updates *do
 		}
 	}
 
+	// Enforce repository quota <= blob store quota whenever quota or store changed.
+	if r.QuotaBytes != nil && r.BlobStoreID != nil {
+		bs, err := s.blobs.GetByID(ctx, *r.BlobStoreID)
+		if err != nil {
+			return nil, err
+		}
+		if bs != nil {
+			if err := validateRepoQuotaAgainstStore(r.QuotaBytes, bs); err != nil {
+				return nil, err
+			}
+		}
+	}
+
 	if err := s.repos.Update(ctx, r); err != nil {
 		return nil, err
 	}
 	return r, nil
+}
+
+// validateRepoQuotaAgainstStore rejects a repository quota that exceeds the
+// owning blob store's quota. Either quota being nil (unlimited) passes.
+func validateRepoQuotaAgainstStore(repoQuota *int64, bs *domain.BlobStore) error {
+	if repoQuota == nil || bs == nil || bs.QuotaBytes == nil {
+		return nil
+	}
+	if *repoQuota > *bs.QuotaBytes {
+		return fmt.Errorf("%w: repository quota %d bytes exceeds blob store %q quota %d bytes",
+			ErrInvalidInput, *repoQuota, bs.Name, *bs.QuotaBytes)
+	}
+	return nil
 }
 
 func (s *RepositoryService) validateCleanupPolicies(ctx context.Context, repoFormat domain.RepoFormat, ids []string) error {

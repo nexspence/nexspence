@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { UserPlus, Trash2, RefreshCw, Shield, User, AlertTriangle, Plus, Edit2 } from 'lucide-react'
+import { UserPlus, Trash2, RefreshCw, Shield, User, AlertTriangle, Plus, Edit2, X, Search } from 'lucide-react'
 import { nexusApi, apiClient } from '@/api/client'
 import styles from './UsersPage.module.css'
 import { Select } from '../components/Select'
@@ -60,11 +60,20 @@ export function AssignRolesModal({ user, roles, onClose, onSaved }: {
   const userRoles = user.roles ?? []
   const userRoleIds = roles.filter(r => userRoles.includes(r.name)).map(r => r.id)
   const [selected, setSelected] = useState<string[]>(userRoleIds)
+  const [roleFilter, setRoleFilter] = useState('')
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
 
   const toggle = (id: string) =>
     setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
+
+  const q = roleFilter.trim().toLowerCase()
+  const filteredRoles = q
+    ? roles.filter(r => r.name.toLowerCase().includes(q))
+    : roles
+  const selectedRoles = selected
+    .map(id => roles.find(r => r.id === id))
+    .filter((r): r is RoleItem => !!r)
 
   const save = async () => {
     setSaving(true); setErr('')
@@ -85,10 +94,40 @@ export function AssignRolesModal({ user, roles, onClose, onSaved }: {
         style={{ background: '#0f172a', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 14, padding: 28, width: 460, maxWidth: '90vw', maxHeight: '80vh', overflowY: 'auto' as const, display: 'flex', flexDirection: 'column', gap: 0 }}
         onClick={e => e.stopPropagation()}
       >
-        <h2 style={{ margin: '0 0 20px', fontSize: 16, fontWeight: 700, color: '#dbeafe' }}>Assign Roles — {user.userId}</h2>
+        <h2 style={{ margin: '0 0 16px', fontSize: 16, fontWeight: 700, color: '#dbeafe' }}>Assign Roles — {user.userId}</h2>
+
+        {selectedRoles.length > 0 && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12, paddingBottom: 12, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+            {selectedRoles.map(r => (
+              <span key={r.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 4px 4px 10px', borderRadius: 999, background: 'rgba(59,130,246,0.15)', border: '1px solid rgba(59,130,246,0.35)', color: '#93c5fd', fontSize: 12, fontWeight: 600 }}>
+                <Shield size={11} />
+                {r.name}
+                <button
+                  type="button"
+                  onClick={() => toggle(r.id)}
+                  title={`Remove ${r.name}`}
+                  style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 18, height: 18, borderRadius: 999, background: 'rgba(59,130,246,0.2)', border: 'none', color: '#93c5fd', cursor: 'pointer', padding: 0 }}
+                >
+                  <X size={11} />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+
+        <div style={{ position: 'relative', marginBottom: 10 }}>
+          <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'rgba(229,231,235,0.4)', pointerEvents: 'none' }} />
+          <input
+            type="text"
+            value={roleFilter}
+            onChange={e => setRoleFilter(e.target.value)}
+            placeholder="Filter roles…"
+            style={{ ...S.input, paddingLeft: 32 }}
+          />
+        </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 0, marginBottom: 16 }}>
-          {roles.map(r => (
+          {filteredRoles.map(r => (
             <label key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
               <input type="checkbox" checked={selected.includes(r.id)} onChange={() => toggle(r.id)} style={{ accentColor: '#3b82f6', width: 16, height: 16, flexShrink: 0 }} />
               <div style={{ flex: 1 }}>
@@ -99,6 +138,9 @@ export function AssignRolesModal({ user, roles, onClose, onSaved }: {
             </label>
           ))}
           {roles.length === 0 && <div style={{ color: 'rgba(229,231,235,0.4)', fontSize: 13, padding: '12px 0' }}>No roles available</div>}
+          {roles.length > 0 && filteredRoles.length === 0 && (
+            <div style={{ color: 'rgba(229,231,235,0.4)', fontSize: 13, padding: '12px 0' }}>No roles match “{roleFilter}”</div>
+          )}
         </div>
 
         {err && <div style={{ marginBottom: 12, padding: '8px 12px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, fontSize: 13, color: '#fca5a5' }}>{err}</div>}

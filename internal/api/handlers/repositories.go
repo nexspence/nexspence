@@ -76,7 +76,7 @@ func (h *RepositoryHandler) Create(c *gin.Context) {
 			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 			return
 		}
-		if isInvalidInput(err) {
+		if isInvalidInput(err) || isNotFound(err) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
@@ -100,6 +100,10 @@ func (h *RepositoryHandler) Update(c *gin.Context) {
 	if err != nil {
 		if isNotFound(err) {
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		if isInvalidInput(err) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

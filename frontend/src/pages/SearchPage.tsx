@@ -1,7 +1,7 @@
-import { useState, useMemo, FormEvent } from 'react'
+import { useState, useMemo, useEffect, useRef, FormEvent } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
-import { Search, Package, ChevronDown, ChevronUp, ChevronsUpDown, ChevronRight, ExternalLink } from 'lucide-react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Search, Package, ChevronDown, ChevronUp, ChevronsUpDown, ChevronRight, ExternalLink, HelpCircle } from 'lucide-react'
 import { nexusApi } from '@/api/client'
 import { Select } from '../components/Select'
 
@@ -126,14 +126,49 @@ function SortIcon({ col, sortKey, sortDir }: { col: SortKey; sortKey: SortKey; s
 }
 
 const EMPTY_FILTERS = { repository: '', format: '', name: '', group: '', version: '' }
+type Filters = typeof EMPTY_FILTERS
+
+// URL param keys kept short and stable so Browse-back restores state.
+const URL_KEYS: Record<keyof Filters, string> = {
+  name: 'q', format: 'format', repository: 'repo', version: 'version', group: 'group',
+}
+
+function filtersFromURL(sp: URLSearchParams): Filters {
+  return {
+    name:       sp.get(URL_KEYS.name)       ?? '',
+    format:     sp.get(URL_KEYS.format)     ?? '',
+    repository: sp.get(URL_KEYS.repository) ?? '',
+    version:    sp.get(URL_KEYS.version)    ?? '',
+    group:      sp.get(URL_KEYS.group)      ?? '',
+  }
+}
+
+function filtersToURL(f: Filters): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const k of Object.keys(URL_KEYS) as (keyof Filters)[]) {
+    if (f[k]) out[URL_KEYS[k]] = f[k]
+  }
+  return out
+}
+
+// sessionStorage key used to restore scroll/highlight when Back-navigating from Browse.
+const RETURN_KEY = 'search:lastClickedComponentId'
 
 export default function SearchPage() {
   const navigate = useNavigate()
-  const [filters, setFilters] = useState(EMPTY_FILTERS)
-  const [submitted, setSubmitted] = useState<typeof EMPTY_FILTERS | null>(null)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [filters, setFilters] = useState<Filters>(() => filtersFromURL(searchParams))
   const [sortKey, setSortKey] = useState<SortKey>('name')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [returnHighlight, setReturnHighlight] = useState<string | null>(null)
+  const returnRowRef = useRef<HTMLDivElement | null>(null)
+
+  // Submitted state is derived from the URL so browser Back (from Browse) restores it.
+  const submitted = useMemo<Filters | null>(() => {
+    const f = filtersFromURL(searchParams)
+    return Object.values(f).some(v => v !== '') ? f : null
+  }, [searchParams])
 
   const { data, isLoading } = useQuery<SearchResult>({
     queryKey: ['search', submitted],
@@ -148,6 +183,27 @@ export default function SearchPage() {
     },
     enabled: !!submitted,
   })
+
+  // Back-from-Browse: if sessionStorage holds a component ID and it's in the current results,
+  // highlight and scroll it into view. Clear the key so it fires only once per navigation.
+  useEffect(() => {
+    if (!data?.items?.length) return
+    let cid: string | null = null
+    try { cid = sessionStorage.getItem(RETURN_KEY) } catch { /* ignore */ }
+    if (!cid) return
+    const hit = data.items.find(c => c.id === cid)
+    if (!hit) { try { sessionStorage.removeItem(RETURN_KEY) } catch {}; return }
+    setReturnHighlight(cid)
+    try { sessionStorage.removeItem(RETURN_KEY) } catch {}
+    // Fade out highlight after a couple of seconds.
+    const t = setTimeout(() => setReturnHighlight(null), 2500)
+    return () => clearTimeout(t)
+  }, [data])
+
+  useEffect(() => {
+    if (!returnHighlight) return
+    returnRowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, [returnHighlight])
 
   const allItems = data?.items ?? []
 
@@ -203,8 +259,8 @@ export default function SearchPage() {
     })
   }
 
-  const handleSubmit = (e: FormEvent) => { e.preventDefault(); setSubmitted({ ...filters }) }
-  const handleClear  = () => { setFilters(EMPTY_FILTERS); setSubmitted(null); setExpanded(new Set()) }
+  const handleSubmit = (e: FormEvent) => { e.preventDefault(); setSearchParams(filtersToURL(filters)) }
+  const handleClear  = () => { setFilters(EMPTY_FILTERS); setSearchParams({}); setExpanded(new Set()) }
   const set = (key: keyof typeof EMPTY_FILTERS) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setFilters(f => ({ ...f, [key]: e.target.value }))
 
@@ -221,8 +277,8 @@ export default function SearchPage() {
       <form style={S.filterCard} onSubmit={handleSubmit}>
         <div style={S.filterGrid}>
           <div style={S.field}>
-            <label style={S.label}>Repository</label>
-            <input style={S.input} placeholder="any" value={filters.repository} onChange={set('repository')} />
+            <label style={S.label}>Name</label>
+            <input style={S.input} placeholder="e.g. spring-core" value={filters.name} onChange={set('name')} />
           </div>
           <div style={S.field}>
             <label style={S.label}>Format</label>
@@ -236,16 +292,31 @@ export default function SearchPage() {
             />
           </div>
           <div style={S.field}>
-            <label style={S.label}>Name</label>
-            <input style={S.input} placeholder="e.g. spring-core" value={filters.name} onChange={set('name')} />
-          </div>
-          <div style={S.field}>
-            <label style={S.label}>Group</label>
-            <input style={S.input} placeholder="e.g. org.springframework" value={filters.group} onChange={set('group')} />
+            <label style={S.label}>Repository</label>
+            <input style={S.input} placeholder="any" value={filters.repository} onChange={set('repository')} />
           </div>
           <div style={S.field}>
             <label style={S.label}>Version</label>
             <input style={S.input} placeholder="e.g. 1.2.3" value={filters.version} onChange={set('version')} />
+          </div>
+          <div style={S.field}>
+            <label style={{ ...S.label, display: 'flex', alignItems: 'center', gap: 4 }}>
+              Group
+              <span
+                title="Maven groupId / npm scope. Leave blank to search across all groups."
+                style={{ display: 'inline-flex', cursor: 'help', opacity: 0.55 }}
+                aria-label="Group hint"
+              >
+                <HelpCircle size={11} />
+              </span>
+            </label>
+            <input
+              style={S.input}
+              placeholder="e.g. org.springframework"
+              title="Maven groupId / npm scope. Leave blank to search across all groups."
+              value={filters.group}
+              onChange={set('group')}
+            />
           </div>
         </div>
         <div style={S.filterFooter}>
@@ -307,11 +378,34 @@ export default function SearchPage() {
                   const firstAsset = c.assets?.[0]
                   const isOpen = expanded.has(c.id)
                   const hasMulti = (c.assets?.length ?? 0) > 1
+                  const isReturnRow = returnHighlight === c.id
+                  const openInBrowse = () => {
+                    // Remember where we were so Back-navigation can scroll here.
+                    try { sessionStorage.setItem(RETURN_KEY, c.id) } catch { /* ignore */ }
+                    const qp = new URLSearchParams({ repo: c.repository, cid: c.id })
+                    if (firstAsset?.path) qp.set('asset', firstAsset.path)
+                    navigate(`/browse?${qp.toString()}`)
+                  }
                   return (
-                    <div key={c.id}>
-                      <div style={trowStyle} onClick={() => toggleExpand(c.id)}>
+                    <div key={c.id} ref={isReturnRow ? returnRowRef : undefined}>
+                      <div
+                        style={{
+                          ...trowStyle,
+                          ...(isReturnRow
+                            ? { outline: '1px solid rgba(59,130,246,0.6)', background: 'rgba(59,130,246,0.08)', transition: 'background 0.6s, outline 0.6s' }
+                            : {}),
+                        }}
+                        title="Open in Browse"
+                        onClick={openInBrowse}
+                      >
                         <div style={{ fontWeight: 500, color: '#dbeafe', display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <ChevronRight size={12} style={{ color: 'rgba(229,231,235,0.3)', transform: isOpen ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s', flexShrink: 0 }} />
+                          <span
+                            onClick={e => { e.stopPropagation(); toggleExpand(c.id) }}
+                            title={isOpen ? 'Collapse' : 'Expand assets'}
+                            style={{ display: 'inline-flex', alignItems: 'center', cursor: 'pointer', padding: 2, margin: -2, borderRadius: 3 }}
+                          >
+                            <ChevronRight size={12} style={{ color: 'rgba(229,231,235,0.6)', transform: isOpen ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s', flexShrink: 0 }} />
+                          </span>
                           {c.name || '—'}
                         </div>
                         <div style={S.muted}>{c.group || '—'}</div>

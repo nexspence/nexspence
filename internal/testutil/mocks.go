@@ -107,6 +107,18 @@ func (r *RepoRepo) ListNamesByCleanupPolicyID(_ context.Context, policyID string
 	return names, nil
 }
 
+func (r *RepoRepo) ListByBlobStoreID(_ context.Context, blobStoreID string) ([]domain.Repository, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []domain.Repository
+	for _, v := range r.repos {
+		if v.BlobStoreID != nil && *v.BlobStoreID == blobStoreID {
+			out = append(out, *v)
+		}
+	}
+	return out, nil
+}
+
 func (r *RepoRepo) DetachCleanupPolicyID(_ context.Context, policyID string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()

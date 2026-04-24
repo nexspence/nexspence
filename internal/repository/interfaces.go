@@ -20,6 +20,8 @@ type RepositoryRepo interface {
 	ListNamesByCleanupPolicyID(ctx context.Context, policyID string) ([]string, error)
 	// DetachCleanupPolicyID removes policyID from every repositories.cleanup_policy_ids array.
 	DetachCleanupPolicyID(ctx context.Context, policyID string) error
+	// ListByBlobStoreID returns repositories that use the given blob_store_id.
+	ListByBlobStoreID(ctx context.Context, blobStoreID string) ([]domain.Repository, error)
 }
 
 // ComponentRepo manages component metadata.

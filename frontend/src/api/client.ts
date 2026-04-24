@@ -135,8 +135,14 @@ export const nexusApi = {
 
   // Blob stores
   listBlobStores: () => apiClient.get('/service/rest/v1/blobstores'),
+  createBlobStore: (type: string, data: unknown) =>
+    apiClient.post(`/service/rest/v1/blobstores/${type}`, data),
   updateBlobStore: (type: string, name: string, data: unknown) =>
     apiClient.put(`/service/rest/v1/blobstores/${type}/${name}`, data),
+  deleteBlobStore: (name: string) =>
+    apiClient.delete(`/service/rest/v1/blobstores/${name}`),
+  getBlobStoreUsage: (name: string) =>
+    apiClient.get(`/api/v1/blob-stores/${name}/usage`),
 
   // Cleanup policies
   listCleanupPolicies: () => apiClient.get('/service/rest/v1/cleanup-policies'),

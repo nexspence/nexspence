@@ -7,7 +7,9 @@ import (
 	"time"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
+	"github.com/nexspence-oss/nexspence/internal/formats/base"
 	"github.com/nexspence-oss/nexspence/internal/logger"
+	"github.com/nexspence-oss/nexspence/internal/metrics"
 	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/storage"
 	"github.com/robfig/cron/v3"
@@ -18,6 +20,7 @@ type CleanupService struct {
 	policies  repository.CleanupPolicyRepo
 	repos     repository.RepositoryRepo
 	assets    repository.AssetRepo
+	blobs     repository.BlobStoreRepo
 	blobStore storage.BlobStore
 	log       logger.Logger
 
@@ -31,6 +34,7 @@ func NewCleanupService(
 	policies repository.CleanupPolicyRepo,
 	repos repository.RepositoryRepo,
 	assets repository.AssetRepo,
+	blobs repository.BlobStoreRepo,
 	blobStore storage.BlobStore,
 	log logger.Logger,
 ) *CleanupService {
@@ -38,6 +42,7 @@ func NewCleanupService(
 		policies:  policies,
 		repos:     repos,
 		assets:    assets,
+		blobs:     blobs,
 		blobStore: blobStore,
 		log:       log,
 		entryIDs:  make(map[string]cron.EntryID),
@@ -192,6 +197,9 @@ func (s *CleanupService) runPolicy(ctx context.Context, p domain.CleanupPolicy) 
 				s.log.Warn("cleanup: asset delete failed", "id", a.ID, "err", err)
 				continue
 			}
+			asset := a
+			_ = base.DecrementBlobStoreUsage(ctx, s.blobs, &asset)
+			metrics.ArtifactsDeleted.Add(1)
 			freed += a.SizeBytes
 			deleted++
 		}

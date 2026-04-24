@@ -9,6 +9,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/nexspence-oss/nexspence/internal/domain"
+	"github.com/nexspence-oss/nexspence/internal/formats/base"
+	"github.com/nexspence-oss/nexspence/internal/metrics"
 	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/service"
 	"github.com/nexspence-oss/nexspence/internal/storage"
@@ -19,12 +21,13 @@ type BrowseHandler struct {
 	repos      repository.RepositoryRepo
 	components repository.ComponentRepo
 	assets     repository.AssetRepo
+	blobs      repository.BlobStoreRepo
 	blobStore  storage.BlobStore
 	rbac       *service.RBACService
 }
 
-func NewBrowseHandler(repos repository.RepositoryRepo, components repository.ComponentRepo, assets repository.AssetRepo, blobStore storage.BlobStore, rbac *service.RBACService) *BrowseHandler {
-	return &BrowseHandler{repos: repos, components: components, assets: assets, blobStore: blobStore, rbac: rbac}
+func NewBrowseHandler(repos repository.RepositoryRepo, components repository.ComponentRepo, assets repository.AssetRepo, blobs repository.BlobStoreRepo, blobStore storage.BlobStore, rbac *service.RBACService) *BrowseHandler {
+	return &BrowseHandler{repos: repos, components: components, assets: assets, blobs: blobs, blobStore: blobStore, rbac: rbac}
 }
 
 // dockerBrowseNode is a Nexus-style folder or leaf in the Docker browse tree.
@@ -302,6 +305,9 @@ func (h *BrowseHandler) DeleteByPath(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+		asset := a
+		_ = base.DecrementBlobStoreUsage(ctx, h.blobs, &asset)
+		metrics.ArtifactsDeleted.Add(1)
 	}
 	if err := h.components.DeleteOrphans(ctx, repoName); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -337,12 +343,18 @@ func (h *BrowseHandler) DeleteDockerTag(c *gin.Context) {
 	// 2. Delete tag manifest asset record and its digest alias.
 	// Both share the same physical blob — delete it once after removing both records.
 	manifestBlobKey := tagAsset.BlobKey
-	_ = h.assets.Delete(ctx, tagAsset.ID)
+	if err := h.assets.Delete(ctx, tagAsset.ID); err == nil {
+		_ = base.DecrementBlobStoreUsage(ctx, h.blobs, tagAsset)
+		metrics.ArtifactsDeleted.Add(1)
+	}
 
 	digestAliasPath := "/manifests/" + imageName + "/sha256:" + tagAsset.SHA256
 	if digestAliasPath != tagPath {
 		if aliasAsset, aerr := h.assets.GetByPath(ctx, repoName, digestAliasPath); aerr == nil && aliasAsset != nil {
-			_ = h.assets.Delete(ctx, aliasAsset.ID)
+			if err := h.assets.Delete(ctx, aliasAsset.ID); err == nil {
+				_ = base.DecrementBlobStoreUsage(ctx, h.blobs, aliasAsset)
+				metrics.ArtifactsDeleted.Add(1)
+			}
 		}
 	}
 	// Physical manifest blob: safe to delete now that both asset records are gone.
@@ -369,7 +381,10 @@ func (h *BrowseHandler) DeleteDockerTag(c *gin.Context) {
 			continue
 		}
 		_ = h.blobStore.Delete(ctx, blobAsset.BlobKey)
-		_ = h.assets.Delete(ctx, blobAsset.ID)
+		if err := h.assets.Delete(ctx, blobAsset.ID); err == nil {
+			_ = base.DecrementBlobStoreUsage(ctx, h.blobs, blobAsset)
+			metrics.ArtifactsDeleted.Add(1)
+		}
 	}
 
 	// 5. Remove orphaned component records.
@@ -422,14 +437,22 @@ func (h *BrowseHandler) DeleteDockerImage(c *gin.Context) {
 	manifests, _ := h.assets.ListByRepoAndPath(ctx, repoName, "/manifests/"+prefix)
 	for _, a := range manifests {
 		_ = h.blobStore.Delete(ctx, a.BlobKey)
-		_ = h.assets.Delete(ctx, a.ID)
+		if err := h.assets.Delete(ctx, a.ID); err == nil {
+			asset := a
+			_ = base.DecrementBlobStoreUsage(ctx, h.blobs, &asset)
+			metrics.ArtifactsDeleted.Add(1)
+		}
 	}
 
 	// Delete all layer/config blobs and asset records.
 	blobs, _ := h.assets.ListByRepoAndPath(ctx, repoName, "/blobs/"+prefix)
 	for _, a := range blobs {
 		_ = h.blobStore.Delete(ctx, a.BlobKey)
-		_ = h.assets.Delete(ctx, a.ID)
+		if err := h.assets.Delete(ctx, a.ID); err == nil {
+			asset := a
+			_ = base.DecrementBlobStoreUsage(ctx, h.blobs, &asset)
+			metrics.ArtifactsDeleted.Add(1)
+		}
 	}
 
 	_ = h.components.DeleteOrphans(ctx, repoName)

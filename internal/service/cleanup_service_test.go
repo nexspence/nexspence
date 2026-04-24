@@ -24,9 +24,10 @@ func TestRunAll_SkipsDisabledPolicies(t *testing.T) {
 	)
 	assets := testutil.NewAssetRepo()
 	blobs := testutil.NewBlobStore()
+	blobRepo := testutil.NewBlobStoreRepo()
 	repos := testutil.NewRepoRepo()
 
-	svc := service.NewCleanupService(policies, repos, assets, blobs, nopLog())
+	svc := service.NewCleanupService(policies, repos, assets, blobRepo, blobs, nopLog())
 	require.NoError(t, svc.RunAll(context.Background()))
 
 	// No update should have been recorded — policy was disabled
@@ -42,9 +43,10 @@ func TestRunAll_SkipsNoCriteriaPolicies(t *testing.T) {
 	)
 	assets := testutil.NewAssetRepo()
 	blobs := testutil.NewBlobStore()
+	blobRepo := testutil.NewBlobStoreRepo()
 	repos := testutil.NewRepoRepo()
 
-	svc := service.NewCleanupService(policies, repos, assets, blobs, nopLog())
+	svc := service.NewCleanupService(policies, repos, assets, blobRepo, blobs, nopLog())
 	require.NoError(t, svc.RunAll(context.Background()))
 
 	// Policy has no useful criteria — nothing to run, no update expected
@@ -67,6 +69,7 @@ func TestRunAll_DeletesStaleAssets(t *testing.T) {
 	assets.Stale = staleAssets
 
 	blobs := testutil.NewBlobStore()
+	blobRepo := testutil.NewBlobStoreRepo()
 	// Pre-populate blobs so Delete can "succeed"
 	_ = blobs.Put(context.Background(), "bk1", testutil.MakeReader("data1"), 5)
 	_ = blobs.Put(context.Background(), "bk2", testutil.MakeReader("data2"), 5)
@@ -76,7 +79,7 @@ func TestRunAll_DeletesStaleAssets(t *testing.T) {
 		CleanupPolicyIDs: []string{"p3"},
 	})
 
-	svc := service.NewCleanupService(policies, repos, assets, blobs, nopLog())
+	svc := service.NewCleanupService(policies, repos, assets, blobRepo, blobs, nopLog())
 	require.NoError(t, svc.RunAll(context.Background()))
 
 	// Both blobs should be deleted
@@ -105,12 +108,13 @@ func TestRunAll_DryRun_DoesNotDelete(t *testing.T) {
 	assets := testutil.NewAssetRepo()
 	assets.Stale = staleAssets
 	blobs := testutil.NewBlobStore()
+	blobRepo := testutil.NewBlobStoreRepo()
 	repos := testutil.NewRepoRepo(&domain.Repository{
 		Name: "hosted", ID: "r1", Format: domain.FormatRaw,
 		CleanupPolicyIDs: []string{"p4"},
 	})
 
-	svc := service.NewCleanupService(policies, repos, assets, blobs, nopLog())
+	svc := service.NewCleanupService(policies, repos, assets, blobRepo, blobs, nopLog())
 	require.NoError(t, svc.RunAll(context.Background()))
 
 	// Dry-run: blob must NOT be deleted
@@ -127,9 +131,10 @@ func TestRunPolicy_NotFound(t *testing.T) {
 	policies := testutil.NewCleanupPolicyRepo()
 	assets := testutil.NewAssetRepo()
 	blobs := testutil.NewBlobStore()
+	blobRepo := testutil.NewBlobStoreRepo()
 	repos := testutil.NewRepoRepo()
 
-	svc := service.NewCleanupService(policies, repos, assets, blobs, nopLog())
+	svc := service.NewCleanupService(policies, repos, assets, blobRepo, blobs, nopLog())
 	err := svc.RunPolicy(context.Background(), "nonexistent-id")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "not found")
@@ -145,9 +150,10 @@ func TestRunPolicy_SkipsWhenNoRepositoriesAttached(t *testing.T) {
 	assets := testutil.NewAssetRepo()
 	assets.Stale = []domain.Asset{{ID: "x", BlobKey: "k", SizeBytes: 1, Path: "/p"}}
 	blobs := testutil.NewBlobStore()
+	blobRepo := testutil.NewBlobStoreRepo()
 	repos := testutil.NewRepoRepo()
 
-	svc := service.NewCleanupService(policies, repos, assets, blobs, nopLog())
+	svc := service.NewCleanupService(policies, repos, assets, blobRepo, blobs, nopLog())
 	require.NoError(t, svc.RunPolicy(context.Background(), "p6"))
 
 	assert.Empty(t, blobs.Deleted)
@@ -168,6 +174,7 @@ func TestRunPolicy_ByID(t *testing.T) {
 	assets := testutil.NewAssetRepo()
 	assets.Stale = staleAssets
 	blobs := testutil.NewBlobStore()
+	blobRepo := testutil.NewBlobStoreRepo()
 	_ = blobs.Put(context.Background(), "bk5", testutil.MakeReader("x"), 1)
 
 	repos := testutil.NewRepoRepo(&domain.Repository{
@@ -175,7 +182,7 @@ func TestRunPolicy_ByID(t *testing.T) {
 		CleanupPolicyIDs: []string{"p5"},
 	})
 
-	svc := service.NewCleanupService(policies, repos, assets, blobs, nopLog())
+	svc := service.NewCleanupService(policies, repos, assets, blobRepo, blobs, nopLog())
 	require.NoError(t, svc.RunPolicy(context.Background(), "p5"))
 
 	assert.Contains(t, blobs.Deleted, "bk5")
@@ -189,7 +196,7 @@ func TestReloadPolicy_NoopWhenSchedulerNotStarted(t *testing.T) {
 			Criteria:     map[string]any{"artifactAgeDays": float64(1)},
 		},
 	)
-	svc := service.NewCleanupService(policies, testutil.NewRepoRepo(), testutil.NewAssetRepo(), testutil.NewBlobStore(), nopLog())
+	svc := service.NewCleanupService(policies, testutil.NewRepoRepo(), testutil.NewAssetRepo(), testutil.NewBlobStoreRepo(), testutil.NewBlobStore(), nopLog())
 
 	// Must not panic before StartCronScheduler is called
 	svc.ReloadPolicy(context.Background(), "p10")
@@ -203,7 +210,7 @@ func TestReloadPolicy_RemovesEntryForDeletedPolicy(t *testing.T) {
 		Criteria:     map[string]any{"artifactAgeDays": float64(365)},
 	}
 	policies := testutil.NewCleanupPolicyRepo(p)
-	svc := service.NewCleanupService(policies, testutil.NewRepoRepo(), testutil.NewAssetRepo(), testutil.NewBlobStore(), nopLog())
+	svc := service.NewCleanupService(policies, testutil.NewRepoRepo(), testutil.NewAssetRepo(), testutil.NewBlobStoreRepo(), testutil.NewBlobStore(), nopLog())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -223,7 +230,7 @@ func TestStartCronScheduler_InvalidCronFallsBackToDefault(t *testing.T) {
 		Criteria:     map[string]any{"artifactAgeDays": float64(1)},
 	}
 	policies := testutil.NewCleanupPolicyRepo(p)
-	svc := service.NewCleanupService(policies, testutil.NewRepoRepo(), testutil.NewAssetRepo(), testutil.NewBlobStore(), nopLog())
+	svc := service.NewCleanupService(policies, testutil.NewRepoRepo(), testutil.NewAssetRepo(), testutil.NewBlobStoreRepo(), testutil.NewBlobStore(), nopLog())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

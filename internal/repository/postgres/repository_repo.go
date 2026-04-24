@@ -110,11 +110,11 @@ func (r *repositoryRepo) Update(ctx context.Context, repo *domain.Repository) er
 		UPDATE repositories SET
 		  online=$1, format_config=$2, http_config=$3, proxy_config=$4,
 		  cleanup_policy_ids=$5, quota_bytes=$6, routing_rule_id=$7,
-		  allow_anonymous=$8, description=$9, updated_at=NOW()
-		WHERE name=$10`,
+		  allow_anonymous=$8, description=$9, blob_store_id=$10, updated_at=NOW()
+		WHERE name=$11`,
 		repo.Online, fmtCfg, httpCfg, proxyCfg,
 		policyIDsToStrings(repo.CleanupPolicyIDs),
-		repo.QuotaBytes, repo.RoutingRuleID, repo.AllowAnonymous, repo.Description,
+		repo.QuotaBytes, repo.RoutingRuleID, repo.AllowAnonymous, repo.Description, repo.BlobStoreID,
 		repo.Name,
 	)
 	return err
@@ -143,6 +143,28 @@ func (r *repositoryRepo) ListNamesByCleanupPolicyID(ctx context.Context, policyI
 		names = append(names, n)
 	}
 	return names, rows.Err()
+}
+
+func (r *repositoryRepo) ListByBlobStoreID(ctx context.Context, blobStoreID string) ([]domain.Repository, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT id, name, format, type, blob_store_id, online,
+		       format_config, http_config, proxy_config, cleanup_policy_ids,
+		       quota_bytes, routing_rule_id, allow_anonymous, description, created_at, updated_at
+		FROM repositories WHERE blob_store_id = $1
+		ORDER BY name`, blobStoreID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var repos []domain.Repository
+	for rows.Next() {
+		repo, err := scanRepository(rows)
+		if err != nil {
+			return nil, err
+		}
+		repos = append(repos, *repo)
+	}
+	return repos, rows.Err()
 }
 
 func (r *repositoryRepo) DetachCleanupPolicyID(ctx context.Context, policyID string) error {

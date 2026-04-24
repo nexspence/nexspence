@@ -11,7 +11,6 @@ import AdminPage from '@/pages/AdminPage'
 import MigrationPage from '@/pages/MigrationPage'
 import SecurityPage from '@/pages/SecurityPage'
 import AuditPage from '@/pages/AuditPage'
-import MonitoringPage from '@/pages/MonitoringPage'
 import { useAuthStore } from '@/store/authStore'
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
@@ -46,7 +45,7 @@ export default function App() {
           <Route path="migration" element={<MigrationPage />} />
           <Route path="security" element={<SecurityPage />} />
           <Route path="audit" element={<AuditPage />} />
-          <Route path="monitoring" element={<MonitoringPage />} />
+          <Route path="monitoring" element={<Navigate to="/admin?tab=monitoring" replace />} />
         </Route>
       </Routes>
     </BrowserRouter>

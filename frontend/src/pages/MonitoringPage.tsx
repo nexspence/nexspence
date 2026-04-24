@@ -22,7 +22,7 @@ interface MetricsSnapshot {
 }
 
 const S = {
-  page:       { padding: 24, display: 'flex', flexDirection: 'column' as const, gap: 20 },
+  page:       { display: 'flex', flexDirection: 'column' as const, gap: 20 },
   header:     { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap' as const, gap: 12 },
   title:      { fontSize: 20, fontWeight: 700, color: '#dbeafe', margin: '0 0 4px' },
   subtitle:   { fontSize: 13, color: 'rgba(229,231,235,0.5)', margin: 0 },
@@ -78,7 +78,7 @@ function StatCard({ icon: Icon, color, title, value, sub }: {
   )
 }
 
-export default function MonitoringPage() {
+export function MonitoringView() {
   const { data, isLoading, dataUpdatedAt, refetch } = useQuery<MetricsSnapshot>({
     queryKey: ['metrics'],
     queryFn: () => nexusApi.getMetrics().then(r => r.data),

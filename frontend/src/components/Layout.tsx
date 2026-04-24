@@ -3,7 +3,7 @@ import { Outlet, NavLink } from 'react-router-dom'
 import {
   Home, Search, FolderOpen, Trash2,
   Settings, Shield, FileText, LogOut,
-  ArrowRightLeft, Activity, Key, Plus, X,
+  ArrowRightLeft, Key, Plus, X,
 } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import styles from './Layout.module.css'
@@ -20,7 +20,6 @@ const navItems = [
 const systemItems = [
   { to: '/security',   icon: Shield,         label: 'Security' },
   { to: '/admin',      icon: Settings,       label: 'System Admin' },
-  { to: '/monitoring', icon: Activity,       label: 'Monitoring' },
   { to: '/audit',      icon: FileText,       label: 'Audit Log' },
   { to: '/cleanup',    icon: Trash2,         label: 'Cleanup Policies' },
   { to: '/migration',  icon: ArrowRightLeft, label: 'Migration' },

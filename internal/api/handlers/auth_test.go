@@ -195,3 +195,56 @@ func TestLogin_WrongPassword_Returns401(t *testing.T) {
 func stringReader(s string) *strings.Reader { return strings.NewReader(s) }
 
 var _ = stringReader // used in Login tests above
+
+// ── DockerV2Auth ──────────────────────────────────────────────
+
+func buildDockerV2AuthRouter(svc *service.UserService) *gin.Engine {
+	r := gin.New()
+	h := handlers.DockerV2Auth(svc, nil)
+	r.GET("/v2/", h)
+	r.HEAD("/v2/", h)
+	return r
+}
+
+func TestDockerV2Auth_NoAuth_Returns401WithBasicChallenge(t *testing.T) {
+	svc := newUserSvc()
+	r := buildDockerV2AuthRouter(svc)
+
+	req := httptest.NewRequest(http.MethodGet, "/v2/", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+	assert.Contains(t, w.Header().Get("WWW-Authenticate"), "Basic")
+	assert.Equal(t, "registry/2.0", w.Header().Get("Docker-Distribution-API-Version"))
+}
+
+func TestDockerV2Auth_ValidBasicAuth_Returns200(t *testing.T) {
+	user := activeUser("admin", "secret")
+	svc := newUserSvc(user)
+	r := buildDockerV2AuthRouter(svc)
+
+	creds := base64.StdEncoding.EncodeToString([]byte("admin:secret"))
+	req := httptest.NewRequest(http.MethodGet, "/v2/", nil)
+	req.Header.Set("Authorization", "Basic "+creds)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "registry/2.0", w.Header().Get("Docker-Distribution-API-Version"))
+}
+
+func TestDockerV2Auth_WrongBasicPassword_Returns401(t *testing.T) {
+	user := activeUser("admin", "correct")
+	svc := newUserSvc(user)
+	r := buildDockerV2AuthRouter(svc)
+
+	creds := base64.StdEncoding.EncodeToString([]byte("admin:wrong"))
+	req := httptest.NewRequest(http.MethodGet, "/v2/", nil)
+	req.Header.Set("Authorization", "Basic "+creds)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+	assert.Contains(t, w.Header().Get("WWW-Authenticate"), "Basic")
+}

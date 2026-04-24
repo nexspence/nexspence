@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -949,9 +949,32 @@ function RawTreeRows({
   )
 }
 
+// Depth-first walk that returns [leaf, ...ancestors] when a node matches `want`, else null.
+// `ancestors` excludes the root (unnamed) and excludes the leaf itself.
+function findWithAncestors<N extends { children?: N[] }>(
+  root: N,
+  want: (n: N) => boolean,
+  trail: N[] = [],
+): { leaf: N; ancestors: N[] } | null {
+  if (want(root)) return { leaf: root, ancestors: trail }
+  if (!root.children) return null
+  const next = [...trail, root]
+  for (const ch of root.children) {
+    const hit = findWithAncestors(ch, want, next)
+    if (hit) return hit
+  }
+  return null
+}
+
 export default function BrowsePage() {
   const [searchParams] = useSearchParams()
   const [repoName, setRepoName] = useState(searchParams.get('repo') ?? '')
+  const highlightAssetPath = searchParams.get('asset') ?? ''
+  const highlightComponentId = searchParams.get('cid') ?? ''
+  const highlightRowRef = useRef<HTMLDivElement | null>(null)
+  // Tracks which (repo, cid) pair we've already auto-drilled, so the effect
+  // fires once per navigation even as tree data arrives asynchronously.
+  const drilledRef = useRef<string>('')
   const [page, setPage] = useState(0)
   const [treeCollapsed, setTreeCollapsed] = useState<Record<string, boolean>>({})
   const [dockerSelection, setDockerSelection] = useState<DockerLeafSelection | null>(null)
@@ -1095,6 +1118,59 @@ export default function BrowsePage() {
 
   const items = components?.items ?? []
   const hasNext = !!components?.continuationToken
+
+  // When arriving from Search with ?asset=/?cid=, scroll the matching row into view.
+  useEffect(() => {
+    if (!highlightAssetPath && !highlightComponentId) return
+    if (!highlightRowRef.current) return
+    highlightRowRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, [highlightAssetPath, highlightComponentId, items])
+
+  // Auto-drill Docker tree: walk to leaf with matching componentId, expand ancestors, select it.
+  useEffect(() => {
+    if (!highlightComponentId || !isDocker || !dockerTree?.root) return
+    const key = `docker:${repoName}:${highlightComponentId}`
+    if (drilledRef.current === key) return
+    const hit = findWithAncestors(
+      dockerTree.root,
+      (n) => n.componentId === highlightComponentId,
+    )
+    if (!hit) return
+    drilledRef.current = key
+    setTreeCollapsed((prev) => {
+      const next = { ...prev }
+      for (const a of hit.ancestors) if (a.path) next[a.path] = false
+      return next
+    })
+    if (hit.leaf.componentId) {
+      setDockerSelection({
+        path: hit.leaf.path,
+        kind: hit.leaf.kind,
+        componentId: hit.leaf.componentId,
+        imageRef: hit.leaf.imageRef,
+        version: hit.leaf.version ?? hit.leaf.label,
+      })
+    }
+  }, [highlightComponentId, isDocker, dockerTree, repoName])
+
+  // Auto-drill Raw tree by componentId.
+  useEffect(() => {
+    if (!highlightComponentId || !isRaw || !rawTree?.root) return
+    const key = `raw:${repoName}:${highlightComponentId}`
+    if (drilledRef.current === key) return
+    const hit = findWithAncestors(
+      rawTree.root,
+      (n) => n.componentId === highlightComponentId,
+    )
+    if (!hit) return
+    drilledRef.current = key
+    setTreeCollapsed((prev) => {
+      const next = { ...prev }
+      for (const a of hit.ancestors) if (a.path) next[a.path] = false
+      return next
+    })
+    setRawSelection({ path: hit.leaf.path, node: hit.leaf })
+  }, [highlightComponentId, isRaw, rawTree, repoName])
 
   const subtitle = !repoName
     ? 'Select a repository to browse'
@@ -1359,8 +1435,19 @@ export default function BrowsePage() {
               const color = FORMAT_COLORS[c.format] ?? '#6b7280'
               const firstAsset = c.assets?.[0]
               const assetPath = firstAsset?.path ?? c.name
+              const isHighlighted = (!!highlightComponentId && c.id === highlightComponentId) ||
+                (!!highlightAssetPath && !!c.assets?.some((a) => a.path === highlightAssetPath))
               return (
-                <div key={c.id} style={S.trow}>
+                <div
+                  key={c.id}
+                  ref={isHighlighted ? highlightRowRef : undefined}
+                  style={{
+                    ...S.trow,
+                    ...(isHighlighted
+                      ? { outline: '1px solid rgba(59,130,246,0.6)', background: 'rgba(59,130,246,0.08)' }
+                      : {}),
+                  }}
+                >
                   <div style={{ fontWeight: 600, color: '#dbeafe' }}>{c.name}</div>
                   <div style={S.muted}>{c.group || '—'}</div>
                   <div>{c.version}</div>

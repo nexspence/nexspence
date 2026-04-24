@@ -204,7 +204,17 @@ func (h *ComponentHandler) Search(c *gin.Context) {
 		items = h.rbacSvc.FilterComponents(c.Request.Context(),
 			stringVal(userID), stringSliceVal(roles), items, anonMap)
 	}
+	// Preload assets so the UI gets path/lastModified for each component.
+	// Search response caps at 50 items, so N+1 is acceptable here.
 	for i := range items {
+		if len(items[i].Assets) == 0 {
+			assets, err := h.assets.ListByComponentID(c.Request.Context(), items[i].ID)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			items[i].Assets = assets
+		}
 		h.enrichComponent(c, &items[i])
 	}
 

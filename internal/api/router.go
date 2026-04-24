@@ -78,7 +78,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 	tokenSvc   := service.NewTokenService(userTokenRepo, userRepo)
 	webhookSvc := service.NewWebhookService(webhookRepo)
 	repoSvc.WithWebhooks(webhookSvc)
-	cleanupSvc := service.NewCleanupService(cleanupRepo, repoRepo, assetRepo, localBlob, log)
+	cleanupSvc := service.NewCleanupService(cleanupRepo, repoRepo, assetRepo, blobRepo, localBlob, log)
 
 	// Start per-policy cron scheduler in background (default: cfg.Cleanup.DefaultSchedule).
 	go cleanupSvc.StartCronScheduler(context.Background(), cfg.Cleanup.DefaultSchedule)
@@ -115,9 +115,9 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 	rbacSvc    := service.NewRBACService(rbacRepo, repoRepo, log)
 	repoH      := handlers.NewRepositoryHandler(repoSvc, rbacSvc)
 	userH      := handlers.NewUserHandler(userSvc)
-	blobH      := handlers.NewBlobStoreHandler(blobRepo)
+	blobH      := handlers.NewBlobStoreHandler(blobRepo).WithUsageDeps(repoRepo, assetRepo)
 	componentH := handlers.NewComponentHandler(componentRepo, assetRepo, repoRepo, cfg.HTTP.BaseURL).WithRBAC(rbacSvc)
-	browseH    := handlers.NewBrowseHandler(repoRepo, componentRepo, assetRepo, localBlob, rbacSvc)
+	browseH    := handlers.NewBrowseHandler(repoRepo, componentRepo, assetRepo, blobRepo, localBlob, rbacSvc)
 	cleanupH   := handlers.NewCleanupHandler(cleanupRepo, repoRepo, cleanupSvc)
 	auditH     := handlers.NewAuditHandler(auditRepo)
 	scanSvc    := service.NewScanService(componentRepo, cfg.HTTP.BaseURL)
@@ -218,6 +218,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 		// ── Blob stores (read) ────────────────────────────────
 		authed.GET("/service/rest/v1/blobstores", blobH.List)
 		authed.GET("/service/rest/v1/blobstores/:name", blobH.Get)
+		authed.GET("/api/v1/blob-stores/:name/usage", blobH.Usage)
 
 		// ── Cleanup policies (read) ───────────────────────────
 		authed.GET("/service/rest/v1/cleanup-policies", cleanupH.List)
@@ -386,15 +387,17 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 	//          API at /v2/:repoName/*
 	// Gin static-segment priority ensures /v2/repository/... always matches the long-path
 	// group first; the short-path group catches everything else under /v2/.
-	// GET /v2/ is public — Docker checks this before sending credentials.
-	r.GET("/v2/", func(c *gin.Context) {
-		c.Header("Docker-Distribution-API-Version", "registry/2.0")
-		c.Status(http.StatusOK)
-	})
-	r.HEAD("/v2/", func(c *gin.Context) {
-		c.Header("Docker-Distribution-API-Version", "registry/2.0")
-		c.Status(http.StatusOK)
-	})
+	// GET/HEAD /v2/ — OCI version check + Basic auth challenge.
+	// Returning 200 unconditionally makes Docker treat the registry as public and
+	// silently drop stored credentials on subsequent requests — which then fail RBAC
+	// as "anonymous" and surface to users as "pull access denied" even though
+	// `docker login` reported success. DockerV2Auth validates credentials when
+	// present and issues a 401 + `WWW-Authenticate: Basic` challenge otherwise,
+	// so `docker login` actually verifies the password and the CLI sends it on
+	// /v2/:repoName/* requests.
+	dockerV2Root := handlers.DockerV2Auth(userSvc, tokenSvc)
+	r.GET("/v2/", dockerV2Root)
+	r.HEAD("/v2/", dockerV2Root)
 
 	dockerV2H := serveDockerV2(repoRepo, groupHandler, formatRegistry)
 	v2docker := r.Group("/v2/repository", handlers.OptionalAuth(userSvc, tokenSvc), handlers.RBACMiddleware(rbacSvc, repoRepo))

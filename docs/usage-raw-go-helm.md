@@ -41,6 +41,27 @@ PROXY_REMOTE=https://releases.example.com \
 ./scripts/create-raw-repos.sh
 ```
 
+To store artifacts in a specific blob store instead of the default:
+
+```bash
+BLOB_STORE=s3-prod ./scripts/create-raw-repos.sh
+```
+
+The script resolves the blob store name to its UUID automatically. If the blob store does not exist the script exits with an error before creating any repositories. The group repository uses no direct storage and is not assigned a blob store.
+
+Available environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `BASE_URL` | `http://localhost:8081` | Server URL |
+| `ADMIN_USER` | `admin` | Admin login |
+| `ADMIN_PASS` | `admin123` | Admin password |
+| `HOSTED_NAME` | `raw-artifacts` | Hosted repo name |
+| `PROXY_NAME` | `raw-proxy` | Proxy repo name |
+| `GROUP_NAME` | `raw-common` | Group repo name |
+| `PROXY_REMOTE` | `https://example.com` | Remote URL for proxy |
+| `BLOB_STORE` | `default` | Blob store for hosted + proxy |
+
 This creates three repositories:
 
 | Name | Type |
@@ -159,6 +180,25 @@ BASE_URL=http://192.168.1.10:8081 \
 PROXY_REMOTE=https://proxy.golang.org \
 ./scripts/create-go-repos.sh
 ```
+
+To store modules in a specific blob store:
+
+```bash
+BLOB_STORE=s3-prod ./scripts/create-go-repos.sh
+```
+
+Available environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `BASE_URL` | `http://localhost:8081` | Server URL |
+| `ADMIN_USER` | `admin` | Admin login |
+| `ADMIN_PASS` | `admin123` | Admin password |
+| `HOSTED_NAME` | `go-hosted` | Hosted repo name |
+| `PROXY_NAME` | `go-proxy` | Proxy repo name |
+| `GROUP_NAME` | `go-group` | Group repo name |
+| `PROXY_REMOTE` | `https://proxy.golang.org` | Remote URL for proxy |
+| `BLOB_STORE` | `default` | Blob store for hosted + proxy |
 
 This creates three repositories:
 
@@ -298,6 +338,25 @@ BASE_URL=http://192.168.1.10:8081 \
 PROXY_REMOTE=https://charts.helm.sh/stable \
 ./scripts/create-helm-repos.sh
 ```
+
+To store charts in a specific blob store:
+
+```bash
+BLOB_STORE=s3-prod ./scripts/create-helm-repos.sh
+```
+
+Available environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `BASE_URL` | `http://localhost:8081` | Server URL |
+| `ADMIN_USER` | `admin` | Admin login |
+| `ADMIN_PASS` | `admin123` | Admin password |
+| `HOSTED_NAME` | `helm-hosted` | Hosted repo name |
+| `PROXY_NAME` | `helm-proxy` | Proxy repo name |
+| `GROUP_NAME` | `helm-charts` | Group repo name |
+| `PROXY_REMOTE` | `https://charts.helm.sh/stable` | Remote URL for proxy |
+| `BLOB_STORE` | `default` | Blob store for hosted + proxy |
 
 This creates three repositories:
 

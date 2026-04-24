@@ -17,6 +17,15 @@ interface Repository {
   description?: string
   cleanupPolicyIds?: string[]
   quotaBytes?: number | null
+  blobStoreId?: string | null
+}
+
+interface BlobStoreLite {
+  id: string
+  name: string
+  type: string
+  quotaBytes?: number | null
+  usedBytes?: number
 }
 
 interface CleanupPolicyRow {
@@ -63,6 +72,12 @@ export default function RepositoriesPage() {
       nexusApi.listRepositories(formatFilter ? { format: formatFilter } : {})
         .then(r => r.data),
   })
+
+  const { data: blobStores = [] } = useQuery<BlobStoreLite[]>({
+    queryKey: ['blobstores'],
+    queryFn: () => nexusApi.listBlobStores().then(r => r.data),
+  })
+  const storeNameById = new Map(blobStores.map(b => [b.id, b.name]))
 
   const deleteMutation = useMutation({
     mutationFn: (name: string) => nexusApi.deleteRepository(name),
@@ -145,6 +160,7 @@ export default function RepositoriesPage() {
               key={repo.id}
               repo={repo}
               isAdmin={isAdmin}
+              storeName={repo.blobStoreId ? storeNameById.get(repo.blobStoreId) : undefined}
               onClick={() => navigate(`/browse?repo=${repo.name}`)}
               onEdit={() => setEditRepo(repo)}
               onDelete={() => {
@@ -192,12 +208,14 @@ function formatBytes(bytes: number): string {
 function RepoCard({
   repo,
   isAdmin,
+  storeName,
   onClick,
   onEdit,
   onDelete,
 }: {
   repo: Repository
   isAdmin: boolean
+  storeName?: string
   onClick?: () => void
   onEdit: () => void
   onDelete: () => void
@@ -230,6 +248,11 @@ function RepoCard({
       <div className={styles.cardName}>{repo.name}</div>
       {repo.description && (
         <div className={styles.cardDesc}>{repo.description}</div>
+      )}
+      {repo.type !== 'group' && storeName && (
+        <div style={{ fontSize: 11, color: 'rgba(229,231,235,0.4)', marginTop: 4 }}>
+          on <span style={{ color: 'rgba(147,197,253,0.7)', fontWeight: 500 }}>{storeName}</span>
+        </div>
       )}
       {quota != null && (
         <div className={styles.quotaBar}>
@@ -295,6 +318,13 @@ function CreateRepoModal({ onClose, onCreated }: {
     queryFn: () => nexusApi.listCleanupPolicies().then(r => r.data),
   })
 
+  const { data: blobStores = [] } = useQuery<BlobStoreLite[]>({
+    queryKey: ['blobstores'],
+    queryFn: () => nexusApi.listBlobStores().then(r => r.data),
+  })
+
+  const defaultStoreId = blobStores.find(b => b.name === 'default')?.id ?? blobStores[0]?.id ?? ''
+
   const [form, setForm] = useState({
     name: '', format: 'maven2', type: 'hosted', description: '',
     remoteUrl: PROXY_DEFAULTS['maven2'],
@@ -302,6 +332,7 @@ function CreateRepoModal({ onClose, onCreated }: {
     cleanupPolicyIds: [] as string[],
     quotaGB: '',
     allowAnonymous: false,
+    blobStoreId: '',
   })
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -331,12 +362,33 @@ function CreateRepoModal({ onClose, onCreated }: {
       setError('Select at least one member repository')
       return
     }
+    const effectiveStoreId = form.type === 'group' ? '' : (form.blobStoreId || defaultStoreId)
+    if (form.type !== 'group' && !effectiveStoreId) {
+      setError('Select a blob store')
+      return
+    }
+
+    // Enforce repo quota <= blob store quota (backend also checks).
+    const quotaValue = form.quotaGB.trim() !== '' ? parseFloat(form.quotaGB) : NaN
+    if (!isNaN(quotaValue) && quotaValue > 0 && effectiveStoreId) {
+      const store = blobStores.find(b => b.id === effectiveStoreId)
+      if (store?.quotaBytes != null) {
+        const repoBytes = Math.round(quotaValue * 1024 * 1024 * 1024)
+        if (repoBytes > store.quotaBytes) {
+          setError(`Repository quota (${formatBytes(repoBytes)}) exceeds blob store "${store.name}" quota (${formatBytes(store.quotaBytes)})`)
+          return
+        }
+      }
+    }
 
     setLoading(true)
     try {
       const body: Record<string, unknown> = {
         name: form.name,
         description: form.description,
+      }
+      if (effectiveStoreId) {
+        body.blobStoreId = effectiveStoreId
       }
       if (form.type === 'proxy') {
         body.proxyConfig = { remote_url: form.remoteUrl.trim() }
@@ -494,6 +546,34 @@ function CreateRepoModal({ onClose, onCreated }: {
             </div>
           )}
 
+          {form.type !== 'group' && (
+            <div className={styles.formRow}>
+              <label className={styles.label}>Blob Store *</label>
+              {blobStores.length === 0 ? (
+                <span className={styles.hint}>No blob stores configured. Create one in System Admin → Blob Stores.</span>
+              ) : (
+                <Select
+                  options={blobStores.map(b => ({ value: b.id, label: `${b.name} (${b.type})` }))}
+                  value={form.blobStoreId || defaultStoreId}
+                  onChange={v => setField('blobStoreId', v)}
+                />
+              )}
+              {(() => {
+                const sel = blobStores.find(b => b.id === (form.blobStoreId || defaultStoreId))
+                if (!sel) return <span className={styles.hint}>Physical storage backend where artifacts are written.</span>
+                if (sel.quotaBytes == null) {
+                  return <span className={styles.hint}>Store quota: unlimited.</span>
+                }
+                const free = sel.quotaBytes - (sel.usedBytes ?? 0)
+                return (
+                  <span className={styles.hint}>
+                    Store quota: {formatBytes(sel.quotaBytes)} · free {formatBytes(free)}
+                  </span>
+                )
+              })()}
+            </div>
+          )}
+
           <div className={styles.formRow}>
             <label className={styles.label}>Description</label>
             <input
@@ -560,6 +640,11 @@ function EditRepoModal({
     queryFn: () => nexusApi.listCleanupPolicies().then(r => r.data),
   })
 
+  const { data: blobStores = [] } = useQuery<BlobStoreLite[]>({
+    queryKey: ['blobstores'],
+    queryFn: () => nexusApi.listBlobStores().then(r => r.data),
+  })
+
   const applicable = cleanupPoliciesForFormat(policies, repo.format)
   const [description, setDescription] = useState(repo.description ?? '')
   const [online, setOnline] = useState(repo.online)
@@ -568,6 +653,9 @@ function EditRepoModal({
   const [quotaGB, setQuotaGB] = useState(
     repo.quotaBytes != null ? String(repo.quotaBytes / (1024 * 1024 * 1024)) : ''
   )
+  const [blobStoreId, setBlobStoreId] = useState<string>(repo.blobStoreId ?? '')
+  const originalStoreId = repo.blobStoreId ?? ''
+  const storeChanged = blobStoreId !== originalStoreId
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -577,9 +665,25 @@ function EditRepoModal({
     )
   }
 
+  const effectiveStoreId = blobStoreId || originalStoreId
+  const selectedStore = blobStores.find(b => b.id === effectiveStoreId)
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
+
+    // Enforce repo quota <= blob store quota (backend also checks).
+    if (repo.type !== 'group' && quotaGB.trim() !== '') {
+      const gb = parseFloat(quotaGB)
+      if (!isNaN(gb) && gb > 0 && selectedStore?.quotaBytes != null) {
+        const repoBytes = Math.round(gb * 1024 * 1024 * 1024)
+        if (repoBytes > selectedStore.quotaBytes) {
+          setError(`Repository quota (${formatBytes(repoBytes)}) exceeds blob store "${selectedStore.name}" quota (${formatBytes(selectedStore.quotaBytes)})`)
+          return
+        }
+      }
+    }
+
     setLoading(true)
     try {
       const updateBody: Record<string, unknown> = { description, online, allowAnonymous, cleanupPolicyIds: policyIds }
@@ -590,6 +694,9 @@ function EditRepoModal({
         }
       } else {
         updateBody.quotaBytes = null
+      }
+      if (repo.type !== 'group' && blobStoreId) {
+        updateBody.blobStoreId = blobStoreId
       }
       await nexusApi.updateRepository(repo.format, repo.type, repo.name, updateBody)
       onSaved()
@@ -642,6 +749,29 @@ function EditRepoModal({
               placeholder="Optional"
             />
           </div>
+          {repo.type !== 'group' && blobStores.length > 0 && (
+            <div className={styles.formRow}>
+              <label className={styles.label}>Blob Store</label>
+              <Select
+                options={blobStores.map(b => ({ value: b.id, label: `${b.name} (${b.type})` }))}
+                value={blobStoreId || originalStoreId}
+                onChange={setBlobStoreId}
+              />
+              {storeChanged ? (
+                <span className={styles.hint} style={{ color: '#f59e0b' }}>
+                  ⚠ Existing artifacts stay on the original store. Only future uploads land on the new one.
+                </span>
+              ) : (
+                <span className={styles.hint}>Physical storage backend for new uploads.</span>
+              )}
+              {selectedStore && selectedStore.quotaBytes != null && (
+                <span className={styles.hint}>
+                  Store quota: {formatBytes(selectedStore.quotaBytes)} · free {formatBytes(selectedStore.quotaBytes - (selectedStore.usedBytes ?? 0))}
+                </span>
+              )}
+            </div>
+          )}
+
           {repo.type !== 'group' && (
             <div className={styles.formRow}>
               <label className={styles.label}>Storage quota (GB)</label>

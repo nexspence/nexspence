@@ -15,6 +15,8 @@ import (
 // BlobStoreHandler handles blob store management endpoints.
 type BlobStoreHandler struct {
 	repo      repository.BlobStoreRepo
+	repos     repository.RepositoryRepo
+	assets    repository.AssetRepo
 	gcSvc     *service.BlobGCService
 	blobStore storage.BlobStore
 }
@@ -30,6 +32,13 @@ func (h *BlobStoreHandler) WithGC(svc *service.BlobGCService) *BlobStoreHandler 
 
 func (h *BlobStoreHandler) WithBlobStore(bs storage.BlobStore) *BlobStoreHandler {
 	h.blobStore = bs
+	return h
+}
+
+// WithUsageDeps wires the repository and asset repos used by the Usage endpoint.
+func (h *BlobStoreHandler) WithUsageDeps(repos repository.RepositoryRepo, assets repository.AssetRepo) *BlobStoreHandler {
+	h.repos = repos
+	h.assets = assets
 	return h
 }
 
@@ -212,6 +221,64 @@ func (h *BlobStoreHandler) ConfigureLifecycle(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"expiration_days": req.ExpirationDays})
+}
+
+// LinkedRepoInfo is one row in the Usage response: a repository that uses the blob store.
+type LinkedRepoInfo struct {
+	Name       string `json:"name"`
+	Format     string `json:"format"`
+	Type       string `json:"type"`
+	BytesUsed  int64  `json:"bytesUsed"`
+}
+
+// Usage handles GET /api/v1/blob-stores/:name/usage
+// Returns the store details plus the repositories that use it and per-repo byte counts.
+func (h *BlobStoreHandler) Usage(c *gin.Context) {
+	if h.repos == nil || h.assets == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "usage deps not configured"})
+		return
+	}
+	name := c.Param("name")
+	ctx := c.Request.Context()
+
+	bs, err := h.repo.Get(ctx, name)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if bs == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "blob store not found"})
+		return
+	}
+
+	linked, err := h.repos.ListByBlobStoreID(ctx, bs.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	info := make([]LinkedRepoInfo, 0, len(linked))
+	var total int64
+	for _, r := range linked {
+		used, _ := h.assets.SumSizeByRepo(ctx, r.Name)
+		info = append(info, LinkedRepoInfo{
+			Name:      r.Name,
+			Format:    string(r.Format),
+			Type:      string(r.Type),
+			BytesUsed: used,
+		})
+		total += used
+	}
+
+	resp := gin.H{
+		"store":              bs,
+		"linkedRepositories": info,
+		"totalAssetBytes":    total,
+	}
+	if bs.QuotaBytes != nil {
+		resp["quotaRemaining"] = *bs.QuotaBytes - bs.UsedBytes
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
 // Compact handles POST /api/v1/blobstores/:name/compact
