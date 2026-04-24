@@ -3,9 +3,11 @@ package service
 import (
 	"context"
 	"fmt"
+	"path"
 	"strings"
 
 	"github.com/nexspence-oss/nexspence/internal/auth"
+	"github.com/nexspence-oss/nexspence/internal/config"
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/logger"
 	"github.com/nexspence-oss/nexspence/internal/repository"
@@ -18,6 +20,8 @@ type UserService struct {
 	auth           *auth.Service
 	ldap           auth.LDAPAuthenticator // nil when LDAP is disabled
 	ldapAdminGroup string                 // LDAP group name that maps to nx-admin role
+	oidc           auth.OIDCAuthenticator // nil when OIDC is disabled
+	oidcCfg        config.OIDCConfig      // empty when OIDC is disabled
 	log            logger.Logger
 }
 
@@ -36,6 +40,14 @@ func NewUserService(
 func (s *UserService) WithLDAP(l auth.LDAPAuthenticator, adminGroup string) *UserService {
 	s.ldap = l
 	s.ldapAdminGroup = adminGroup
+	return s
+}
+
+// WithOIDC attaches an OIDC authenticator and its config.
+// Returns the same service for chaining.
+func (s *UserService) WithOIDC(a auth.OIDCAuthenticator, cfg config.OIDCConfig) *UserService {
+	s.oidc = a
+	s.oidcCfg = cfg
 	return s
 }
 
@@ -328,6 +340,153 @@ func (s *UserService) GetUserRoles(ctx context.Context, userID string) ([]domain
 
 func (s *UserService) SetUserRoles(ctx context.Context, userID string, roleIDs []string) error {
 	return s.roles.SetUserRoles(ctx, userID, roleIDs)
+}
+
+// LoginOIDC upserts the user and assigns roles based on OIDC claims.
+// Roles are REPLACED (not merged) on every login — IdP is source of truth.
+func (s *UserService) LoginOIDC(ctx context.Context, claims *auth.OIDCClaims) (string, *domain.User, error) {
+	if s.oidc == nil {
+		return "", nil, fmt.Errorf("%w: oidc not configured", ErrInvalidInput)
+	}
+	username := strings.ToLower(strings.TrimSpace(claims.Username))
+	email := strings.ToLower(strings.TrimSpace(claims.Email))
+	if username == "" || email == "" {
+		return "", nil, fmt.Errorf("%w: claims missing username or email", ErrInvalidInput)
+	}
+
+	existing, err := s.users.Get(ctx, username)
+	if err != nil {
+		return "", nil, err
+	}
+	if existing != nil && existing.Source != domain.UserSourceOIDC {
+		return "", nil, fmt.Errorf("%w: username %q is claimed by %s",
+			ErrProvisioningConflict, username, existing.Source)
+	}
+
+	if existing == nil {
+		if err := s.checkProvisioning(email); err != nil {
+			return "", nil, err
+		}
+		existing = &domain.User{
+			Username:  username,
+			Email:     email,
+			FirstName: claims.FirstName,
+			LastName:  claims.LastName,
+			Status:    domain.UserStatusActive,
+			Source:    domain.UserSourceOIDC,
+		}
+		if err := s.users.Create(ctx, existing); err != nil {
+			return "", nil, fmt.Errorf("create oidc user: %w", err)
+		}
+	} else {
+		existing.Email = email
+		existing.FirstName = claims.FirstName
+		existing.LastName = claims.LastName
+		_ = s.users.Update(ctx, existing)
+	}
+
+	if existing.Status != domain.UserStatusActive {
+		return "", nil, fmt.Errorf("%w: user account is not active", ErrInvalidInput)
+	}
+
+	if err := s.syncOIDCRoles(ctx, existing.ID, claims.Groups); err != nil {
+		s.log.Warnw("syncOIDCRoles failed", "username", username, "err", err)
+	}
+
+	// Reload roles from DB — SetUserRoles does not update in-memory user.
+	if fresh, err2 := s.roles.GetUserRoles(ctx, existing.ID); err2 == nil {
+		names := make([]string, 0, len(fresh))
+		for _, r := range fresh {
+			names = append(names, r.Name)
+		}
+		existing.Roles = names
+	}
+
+	s.log.Infow("oidc login complete", "username", username, "roles", existing.Roles)
+
+	token, err := s.auth.GenerateToken(existing.ID, existing.Username, existing.Roles)
+	if err != nil {
+		return "", nil, err
+	}
+	_ = s.users.UpdateLastLogin(ctx, username)
+	return token, existing, nil
+}
+
+// checkProvisioning gates new-user creation based on oidc.provisioning mode.
+func (s *UserService) checkProvisioning(email string) error {
+	mode := s.oidcCfg.Provisioning
+	if mode == "" {
+		mode = "jit"
+	}
+	switch mode {
+	case "jit":
+		return nil
+	case "allowlist":
+		for _, pat := range s.oidcCfg.EmailAllowlist {
+			ok, _ := path.Match(strings.ToLower(pat), email)
+			if ok {
+				return nil
+			}
+		}
+		return fmt.Errorf("%w: email %q not in allowlist", ErrProvisioningRejected, email)
+	case "manual":
+		return fmt.Errorf("%w: user must be pre-created by an admin", ErrProvisioningRejected)
+	default:
+		return fmt.Errorf("%w: unknown provisioning mode %q", ErrInvalidInput, mode)
+	}
+}
+
+// syncOIDCRoles replaces the user's roles with those derived from claims.
+// Collection: admin_group match → nx-admin; role_mappings lookup by claim value
+// (with DN-aware comparison via oidcGroupMatch) → mapped role name.
+func (s *UserService) syncOIDCRoles(ctx context.Context, userID string, groups []string) error {
+	want := make(map[string]struct{})
+	for _, g := range groups {
+		if s.oidcCfg.AdminGroup != "" && oidcGroupMatch(g, s.oidcCfg.AdminGroup) {
+			want["nx-admin"] = struct{}{}
+		}
+		for mapKey, roleName := range s.oidcCfg.RoleMappings {
+			if roleName != "" && oidcGroupMatch(g, mapKey) {
+				want[roleName] = struct{}{}
+			}
+		}
+	}
+
+	allRoles, err := s.roles.List(ctx)
+	if err != nil {
+		return err
+	}
+	ids := make([]string, 0, len(want))
+	matched := make(map[string]bool)
+	for _, r := range allRoles {
+		if _, ok := want[r.Name]; ok {
+			ids = append(ids, r.ID)
+			matched[r.Name] = true
+		}
+	}
+	for name := range want {
+		if !matched[name] {
+			s.log.Warnw("oidc role mapping references unknown role", "role", name)
+		}
+	}
+	return s.roles.SetUserRoles(ctx, userID, ids)
+}
+
+// oidcGroupMatch is bidirectional: both args may be plain names or DN-encoded
+// ("CN=value,OU=..."). The first RDN value of a DN is compared.
+func oidcGroupMatch(a, b string) bool {
+	return strings.EqualFold(stripCNPrefix(a), stripCNPrefix(b))
+}
+
+func stripCNPrefix(s string) string {
+	if idx := strings.IndexByte(s, '='); idx >= 0 {
+		val := s[idx+1:]
+		if end := strings.IndexByte(val, ','); end >= 0 {
+			val = val[:end]
+		}
+		return val
+	}
+	return s
 }
 
 // ldapGroupMatch compares a group name returned by LDAP against the configured
