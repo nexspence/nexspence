@@ -6,7 +6,11 @@ Supports 12 package formats out of the box, hosted and proxy repositories, RBAC,
 
 ### Authentication
 
-- **Login UI / REST:** JWT bearer tokens (`POST /api/v1/login`, `Authorization: Bearer <jwt>`).
+Three auth sources coexist — routed per-user by `user.Source`:
+
+- **Local:** username + password, JWT bearer (`POST /api/v1/login`, `Authorization: Bearer <jwt>`). Bootstrap-admin is always local for DR.
+- **LDAP / Active Directory:** JIT user provisioning, optional admin-group → `nx-admin` mapping. Config block `ldap:` in `config.yaml`.
+- **OIDC / OAuth2 SSO** *(Phase 28)*: Keycloak / Google Workspace / Microsoft Entra ID / Okta or any OIDC-compliant provider. Authorization code + PKCE flow. Provisioning modes: `jit` / `allowlist` / `manual`. Role resolution via `admin_group` + `role_mappings`. Frontend "Sign in with X" button under login form. See [`docs/oidc-setup.md`](docs/oidc-setup.md) for provider-specific setup.
 - **User API tokens:** Random **`nxs_…`** tokens (hashed in DB). Use as **`Authorization: Bearer nxs_…`** or **HTTP Basic** with username + token as password. Implemented by **`TokenService`** and enforced together with JWT in **`AuthMiddleware`** / **`OptionalAuth`** (`internal/api/handlers/auth.go`, wired in `internal/api/router.go`).
 
 ---
@@ -697,9 +701,14 @@ Group URLs are for **reads** (GET/HEAD). **Component metadata** in PostgreSQL is
 |-------|---------|--------|
 | 6 | Cleanup policies, quotas, audit log, backup/restore, metrics | ✓ complete |
 | 7 | Tests (>80% coverage), API docs, deployment guides | pending |
-| 8 | CVE scanning (Trivy), SBOM generation, cosign, OIDC/SSO, LDAP, rate limiting | planned |
-| 9 | `nexctl` CLI, config-as-code, k8s SA token auth, OTel traces, analytics, badges | planned |
-| 10 | Multi-node HA, replication, blob GC, Prometheus metrics, soft delete, cache TTL | planned |
+| 8 | CVE scanning (Trivy), LDAP | ✓ complete |
+| 25 | Audit log: detailed events, NDJSON export, partition rotation (90d retention) | ✓ complete |
+| 26 | Docker `/v2/` anonymous fallthrough + OCI-shaped auth errors | ✓ complete |
+| 28 | OIDC/OAuth2 SSO (Keycloak / Google / Entra / Okta), fragment-JWT delivery, JIT/allowlist/manual provisioning, `admin_group` + `role_mappings` role resolution | ✓ complete |
+| 28.1 | OIDC Single Logout (SLO) via `end_session_endpoint` | planned |
+| 28.2 | OIDC refresh-token storage + silent session renewal | planned |
+| 28.3 | Multi-provider OIDC support | planned |
+| 29+ | SBOM generation, cosign, Terraform provider, Prometheus metrics, `nexctl` CLI, OTel traces, multi-node HA, blob GC | planned |
 | 15D | Docker uploader + `last_downloaded` in browse UI | deferred |
 
 See [`task_plan.md`](task_plan.md) for detailed task lists per phase.
