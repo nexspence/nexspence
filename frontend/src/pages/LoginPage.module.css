@@ -100,3 +100,49 @@
   opacity: 0.6;
   cursor: not-allowed;
 }
+
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: rgba(229, 231, 235, 0.3);
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.divider::before,
+.divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.oidcButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: rgba(59, 130, 246, 0.08);
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  border-radius: 8px;
+  padding: 11px;
+  color: #93c5fd;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s, box-shadow 0.15s;
+}
+
+.oidcButton:hover {
+  background: rgba(59, 130, 246, 0.16);
+  border-color: rgba(59, 130, 246, 0.6);
+  color: #bfdbfe;
+  box-shadow: 0 0 12px rgba(59, 130, 246, 0.2);
+}
+
+.oidcButton:active {
+  background: rgba(59, 130, 246, 0.24);
+}
