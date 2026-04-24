@@ -125,6 +125,9 @@ func (r *userRepo) GetOIDCIDToken(ctx context.Context, userID string) (string, e
 	err := r.db.QueryRow(ctx,
 		`SELECT oidc_id_token FROM users WHERE id=$1`, userID,
 	).Scan(&tok)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
 	if err != nil {
 		return "", err
 	}
