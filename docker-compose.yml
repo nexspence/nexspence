@@ -40,7 +40,7 @@ services:
     volumes:
       - ./keycloak:/opt/keycloak/data/import:ro
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8080/realms/nexspense/.well-known/openid-configuration > /dev/null"]
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/8080 && printf 'GET /realms/nexspense/.well-known/openid-configuration HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && cat <&3 | grep -q issuer"]
       interval: 10s
       timeout: 5s
       retries: 20
@@ -89,6 +89,9 @@ services:
       NEXSPENCE_OIDC_ADMIN_GROUP: "nexspense-admins"
       NEXSPENCE_OIDC_GROUPS_CLAIM: "groups"
       NEXSPENCE_OIDC_PROVISIONING: "jit"
+      # Request only standard scopes — groups claim is injected by a direct
+      # protocol mapper on the client, no custom scope needed.
+      NEXSPENCE_OIDC_SCOPES: "openid,profile,email"
     ports:
       - "8081:8081"
       - "5000:5000"   # Docker registry HTTP port

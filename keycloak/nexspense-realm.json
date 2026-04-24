@@ -29,28 +29,12 @@
       "attributes": {
         "pkce.code.challenge.method": "S256"
       },
-      "defaultClientScopes": [
-        "openid",
-        "profile",
-        "email",
-        "groups"
-      ],
-      "optionalClientScopes": []
-    }
-  ],
-
-  "clientScopes": [
-    {
-      "name": "groups",
-      "protocol": "openid-connect",
-      "attributes": {
-        "include.in.token.scope": "true"
-      },
       "protocolMappers": [
         {
           "name": "groups",
           "protocol": "openid-connect",
           "protocolMapper": "oidc-group-membership-mapper",
+          "consentRequired": false,
           "config": {
             "full.path": "false",
             "id.token.claim": "true",

@@ -223,6 +223,7 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("audit.lookahead_months", 2)
 	v.SetDefault("oidc.enabled", false)
 	v.SetDefault("oidc.display_name", "SSO")
+	v.SetDefault("oidc.public_issuer_url", "")
 	v.SetDefault("oidc.scopes", []string{"openid", "profile", "email", "groups"})
 	v.SetDefault("oidc.provisioning", "jit")
 	v.SetDefault("oidc.groups_claim", "groups")
