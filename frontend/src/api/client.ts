@@ -161,9 +161,31 @@ export const nexusApi = {
   listAuditEvents: (params?: {
     domain?: string
     action?: string
+    username?: string
+    from?: string   // YYYY-MM-DD or RFC3339
+    to?: string     // YYYY-MM-DD or RFC3339
     limit?: number
     offset?: number
   }) => apiClient.get('/service/rest/v1/audit', { params }),
+
+  // Returns a URL that triggers a NDJSON download in the browser. Accepts the
+  // same filter shape as `listAuditEvents` minus pagination.
+  auditExportUrl: (params?: {
+    domain?: string
+    action?: string
+    username?: string
+    from?: string
+    to?: string
+  }): string => {
+    const sp = new URLSearchParams({ format: 'ndjson' })
+    if (params?.domain)   sp.set('domain', params.domain)
+    if (params?.action)   sp.set('action', params.action)
+    if (params?.username) sp.set('username', params.username)
+    if (params?.from)     sp.set('from', params.from)
+    if (params?.to)       sp.set('to', params.to)
+    const base = (apiClient.defaults.baseURL ?? '').replace(/\/$/, '')
+    return `${base}/service/rest/v1/audit?${sp.toString()}`
+  },
 
   // Metrics
   getMetrics: () => apiClient.get('/api/v1/metrics'),
