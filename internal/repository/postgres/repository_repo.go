@@ -167,6 +167,19 @@ func (r *repositoryRepo) ListByBlobStoreID(ctx context.Context, blobStoreID stri
 	return repos, rows.Err()
 }
 
+func (r *repositoryRepo) HasAnyAnonymousDocker(ctx context.Context) (bool, error) {
+	var exists bool
+	err := r.db.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM repositories
+			WHERE format = 'docker' AND allow_anonymous = true
+		)`).Scan(&exists)
+	if err != nil {
+		return false, err
+	}
+	return exists, nil
+}
+
 func (r *repositoryRepo) DetachCleanupPolicyID(ctx context.Context, policyID string) error {
 	_, err := r.db.Exec(ctx, `
 		UPDATE repositories SET

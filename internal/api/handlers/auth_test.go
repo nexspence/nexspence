@@ -198,16 +198,17 @@ var _ = stringReader // used in Login tests above
 
 // ── DockerV2Auth ──────────────────────────────────────────────
 
-func buildDockerV2AuthRouter(svc *service.UserService) *gin.Engine {
+func buildDockerV2AuthRouter(svc *service.UserService, repos ...*domain.Repository) *gin.Engine {
 	r := gin.New()
-	h := handlers.DockerV2Auth(svc, nil)
+	h := handlers.DockerV2Auth(svc, nil, testutil.NewRepoRepo(repos...))
 	r.GET("/v2/", h)
 	r.HEAD("/v2/", h)
 	return r
 }
 
-func TestDockerV2Auth_NoAuth_Returns401WithBasicChallenge(t *testing.T) {
+func TestDockerV2Auth_NoAuth_NoAnonymousRepo_Returns401(t *testing.T) {
 	svc := newUserSvc()
+	// Repo list is empty, so no Docker repo allows anonymous access.
 	r := buildDockerV2AuthRouter(svc)
 
 	req := httptest.NewRequest(http.MethodGet, "/v2/", nil)
@@ -217,6 +218,48 @@ func TestDockerV2Auth_NoAuth_Returns401WithBasicChallenge(t *testing.T) {
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
 	assert.Contains(t, w.Header().Get("WWW-Authenticate"), "Basic")
 	assert.Equal(t, "registry/2.0", w.Header().Get("Docker-Distribution-API-Version"))
+}
+
+func TestDockerV2Auth_NoAuth_AnyAnonymousRepo_Returns200(t *testing.T) {
+	svc := newUserSvc()
+	publicRepo := &domain.Repository{
+		ID:             "r-pub",
+		Name:           "public-docker",
+		Format:         domain.FormatDocker,
+		Type:           domain.TypeProxy,
+		Online:         true,
+		AllowAnonymous: true,
+	}
+	r := buildDockerV2AuthRouter(svc, publicRepo)
+
+	req := httptest.NewRequest(http.MethodGet, "/v2/", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "registry/2.0", w.Header().Get("Docker-Distribution-API-Version"))
+	// Response must not issue a Basic challenge, otherwise Docker will still prompt.
+	assert.Empty(t, w.Header().Get("WWW-Authenticate"))
+}
+
+func TestDockerV2Auth_NoAuth_OnlyPrivateDockerRepo_Returns401(t *testing.T) {
+	svc := newUserSvc()
+	privateRepo := &domain.Repository{
+		ID:             "r-priv",
+		Name:           "private-docker",
+		Format:         domain.FormatDocker,
+		Type:           domain.TypeHosted,
+		Online:         true,
+		AllowAnonymous: false,
+	}
+	r := buildDockerV2AuthRouter(svc, privateRepo)
+
+	req := httptest.NewRequest(http.MethodGet, "/v2/", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+	assert.Contains(t, w.Header().Get("WWW-Authenticate"), "Basic")
 }
 
 func TestDockerV2Auth_ValidBasicAuth_Returns200(t *testing.T) {

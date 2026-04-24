@@ -1,12 +1,16 @@
 package handlers
 
 import (
+	"context"
 	"net/http"
 	"strings"
+	"sync/atomic"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/nexspence-oss/nexspence/internal/auth"
 	"github.com/nexspence-oss/nexspence/internal/logger"
+	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/service"
 )
 
@@ -179,19 +183,64 @@ func AuthMiddleware(users *service.UserService, tokens *service.TokenService) gi
 	}
 }
 
+// dockerV2AnonTTL bounds the freshness of the "any Docker repo is anonymous?"
+// decision made by DockerV2Auth. A miss-hit delay of up to this duration is
+// acceptable — admins flipping allow_anonymous will see the effect within the
+// window, and a cheap `EXISTS(...)` query per /v2/ ping would otherwise hit
+// the DB on every Docker client poll.
+const dockerV2AnonTTL = 30 * time.Second
+
 // DockerV2Auth handles GET/HEAD /v2/ — the OCI Distribution Spec version check.
-// When no Authorization header is present it issues a 401 + WWW-Authenticate: Basic challenge
-// so that Docker clients send credentials stored via `docker login` on all subsequent
-// /v2/repository/... requests. Without this challenge Docker treats the registry as public
-// and never sends credentials, so uploader_id is never set ("anonymous").
-// If credentials are present and valid the handler returns 200 and sets user context
-// (so the caller can use it for logging/metrics); invalid credentials → 401.
-func DockerV2Auth(users *service.UserService, tokens *service.TokenService) gin.HandlerFunc {
+//
+// Decision tree:
+//   - No Authorization header + at least one Docker repo has allow_anonymous=true
+//     → 200 (per-repo RBAC still enforced on subsequent /v2/:repo/... calls).
+//   - No Authorization header + all Docker repos are private
+//     → 401 + WWW-Authenticate: Basic challenge so `docker login` gets invoked
+//     and credentials are sent on subsequent requests.
+//   - Authorization header present → validated as before; 200 on success,
+//     401 + challenge on invalid credentials.
+//
+// The allow_anonymous lookup is cached for dockerV2AnonTTL to keep Docker
+// clients that poll /v2/ off the hot DB path.
+func DockerV2Auth(
+	users *service.UserService,
+	tokens *service.TokenService,
+	repos repository.RepositoryRepo,
+) gin.HandlerFunc {
+	var (
+		cachedValue   atomic.Bool
+		cachedExpires atomic.Int64 // UnixNano
+	)
+
+	anyAnonDocker := func(ctx context.Context) bool {
+		if repos == nil {
+			return false
+		}
+		now := time.Now().UnixNano()
+		if now < cachedExpires.Load() {
+			return cachedValue.Load()
+		}
+		v, err := repos.HasAnyAnonymousDocker(ctx)
+		if err != nil {
+			// Fail closed: when the DB is unreachable, require auth rather than
+			// silently opening the registry.
+			return false
+		}
+		cachedValue.Store(v)
+		cachedExpires.Store(now + dockerV2AnonTTL.Nanoseconds())
+		return v
+	}
+
 	return func(c *gin.Context) {
 		c.Header("Docker-Distribution-API-Version", "registry/2.0")
 
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
+			if anyAnonDocker(c.Request.Context()) {
+				c.Status(http.StatusOK)
+				return
+			}
 			c.Header("WWW-Authenticate", `Basic realm="Nexspence"`)
 			c.Status(http.StatusUnauthorized)
 			return

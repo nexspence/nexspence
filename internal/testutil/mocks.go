@@ -119,6 +119,17 @@ func (r *RepoRepo) ListByBlobStoreID(_ context.Context, blobStoreID string) ([]d
 	return out, nil
 }
 
+func (r *RepoRepo) HasAnyAnonymousDocker(_ context.Context) (bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, v := range r.repos {
+		if string(v.Format) == "docker" && v.AllowAnonymous {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func (r *RepoRepo) DetachCleanupPolicyID(_ context.Context, policyID string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()

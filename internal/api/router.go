@@ -395,7 +395,10 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 	// present and issues a 401 + `WWW-Authenticate: Basic` challenge otherwise,
 	// so `docker login` actually verifies the password and the CLI sends it on
 	// /v2/:repoName/* requests.
-	dockerV2Root := handlers.DockerV2Auth(userSvc, tokenSvc)
+	// `repoRepo` lets DockerV2Auth fall through to 200 when at least one
+	// Docker repository has allow_anonymous=true — restoring anonymous
+	// `docker pull` against public proxies (see Phase 26).
+	dockerV2Root := handlers.DockerV2Auth(userSvc, tokenSvc, repoRepo)
 	r.GET("/v2/", dockerV2Root)
 	r.HEAD("/v2/", dockerV2Root)
 

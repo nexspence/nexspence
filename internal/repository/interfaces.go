@@ -23,6 +23,10 @@ type RepositoryRepo interface {
 	DetachCleanupPolicyID(ctx context.Context, policyID string) error
 	// ListByBlobStoreID returns repositories that use the given blob_store_id.
 	ListByBlobStoreID(ctx context.Context, blobStoreID string) ([]domain.Repository, error)
+	// HasAnyAnonymousDocker reports whether at least one Docker-format repository
+	// has allow_anonymous=true. Used by the /v2/ root handler to decide whether
+	// unauthenticated Docker clients should be allowed to proceed to per-repo RBAC.
+	HasAnyAnonymousDocker(ctx context.Context) (bool, error)
 }
 
 // ComponentRepo manages component metadata.
