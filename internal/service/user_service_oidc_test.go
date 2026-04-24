@@ -23,6 +23,7 @@ func (m *mockOIDC) ExchangeAndVerify(ctx context.Context, code, v, n string) (*a
 	return nil, nil
 }
 func (m *mockOIDC) TestConnection(ctx context.Context) error { return nil }
+func (m *mockOIDC) EndSessionEndpoint() string { return "" }
 
 func newUserSvcOIDC(t *testing.T, cfg config.OIDCConfig, seed ...*domain.User) *UserService {
 	t.Helper()

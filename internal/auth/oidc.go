@@ -33,6 +33,9 @@ type OIDCAuthenticator interface {
 	AuthCodeURL(state, nonce, codeChallenge string) string
 	ExchangeAndVerify(ctx context.Context, code, codeVerifier, expectedNonce string) (*OIDCClaims, error)
 	TestConnection(ctx context.Context) error
+	// EndSessionEndpoint returns the IdP's end_session_endpoint URL from OIDC
+	// discovery metadata, or "" if the IdP does not publish it.
+	EndSessionEndpoint() string
 }
 
 // OIDCService implements OIDCAuthenticator against a real IdP using go-oidc.
@@ -149,4 +152,18 @@ func (s *OIDCService) extractClaims(subject string, raw map[string]any) *OIDCCla
 func (s *OIDCService) TestConnection(ctx context.Context) error {
 	_, err := oidc.NewProvider(ctx, s.cfg.Issuer)
 	return err
+}
+
+// endSessionMeta is used to extract end_session_endpoint from discovery JSON.
+type endSessionMeta struct {
+	EndSessionEndpoint string `json:"end_session_endpoint"`
+}
+
+// EndSessionEndpoint returns the IdP's end_session_endpoint, or "" if absent.
+func (s *OIDCService) EndSessionEndpoint() string {
+	var meta endSessionMeta
+	if err := s.provider.Claims(&meta); err != nil {
+		return ""
+	}
+	return meta.EndSessionEndpoint
 }
