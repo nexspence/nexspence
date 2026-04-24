@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/base64"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -75,6 +76,28 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 	if ldapSvc := auth.NewLDAPService(cfg.LDAP); ldapSvc != nil {
 		userSvc.WithLDAP(ldapSvc, cfg.LDAP.AdminGroup)
 	}
+
+	// OIDC is optional; NewOIDCService performs discovery and will fail
+	// startup if the IdP is unreachable or misconfigured (loud > lazy).
+	var oidcSvc auth.OIDCAuthenticator
+	var oidcSealer *auth.CookieSealer
+	if cfg.OIDC.Enabled {
+		svc, err := auth.NewOIDCService(context.Background(), cfg.OIDC)
+		if err != nil {
+			panic("oidc init: " + err.Error())
+		}
+		oidcSvc = svc
+		keyBytes, decErr := base64.StdEncoding.DecodeString(cfg.OIDC.CookieKey)
+		if decErr != nil {
+			panic("oidc cookie_key base64: " + decErr.Error())
+		}
+		sealer, sErr := auth.NewCookieSealer(keyBytes)
+		if sErr != nil {
+			panic("oidc cookie sealer: " + sErr.Error())
+		}
+		oidcSealer = sealer
+		userSvc.WithOIDC(oidcSvc, cfg.OIDC)
+	}
 	tokenSvc   := service.NewTokenService(userTokenRepo, userRepo)
 	webhookSvc := service.NewWebhookService(webhookRepo)
 	repoSvc.WithWebhooks(webhookSvc)
@@ -111,7 +134,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 	groupHandler := group.New(formatDeps, formatRegistry)
 
 	// ── Handlers ──────────────────────────────────────────────
-	authH      := handlers.NewAuthHandler(userSvc, log)
+	authH      := handlers.NewAuthHandler(userSvc, log).WithConfig(*cfg)
 	rbacSvc    := service.NewRBACService(rbacRepo, repoRepo, log)
 	repoH      := handlers.NewRepositoryHandler(repoSvc, rbacSvc)
 	userH      := handlers.NewUserHandler(userSvc)
@@ -149,6 +172,18 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 	r.POST("/api/v1/login", authH.Login)
 	// Nexus-compat login (used by some clients)
 	r.POST("/service/rest/v1/security/users/login", authH.Login)
+
+	// Public: feature-detection for LoginPage (whether SSO button should render).
+	r.GET("/api/v1/auth/config", authH.Config)
+
+	// OIDC redirect flow — only registered when oidc.enabled=true.
+	// Audit events fire via the global AuditMiddleware above (callback GET
+	// whitelisted). Routes are public so the pre-auth redirect flow works.
+	if oidcSvc != nil && oidcSealer != nil {
+		oidcH := handlers.NewOIDCHandler(oidcSvc, userSvc, oidcSealer, cfg.OIDC, log)
+		r.GET("/api/v1/auth/oidc/login", oidcH.Login)
+		r.GET("/api/v1/auth/oidc/callback", oidcH.Callback)
+	}
 
 	// Metrics (public — useful for monitoring without auth)
 	r.GET("/api/v1/metrics", handlers.MetricsHandler)

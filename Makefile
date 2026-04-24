@@ -142,4 +142,10 @@ help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-22s\033[0m %s\n", $$1, $$2}'
 
+# ── OIDC ──────────────────────────────────────────────────────
+
+.PHONY: oidc-secret
+oidc-secret: ## Generate a 32-byte base64 cookie key for oidc.cookie_key
+	@head -c 32 /dev/urandom | base64
+
 .DEFAULT_GOAL := help

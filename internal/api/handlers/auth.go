@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/nexspence-oss/nexspence/internal/auth"
+	"github.com/nexspence-oss/nexspence/internal/config"
 	"github.com/nexspence-oss/nexspence/internal/logger"
 	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/service"
@@ -17,11 +18,32 @@ import (
 // AuthHandler handles authentication endpoints.
 type AuthHandler struct {
 	users *service.UserService
+	cfg   config.Config
 	log   logger.Logger
 }
 
 func NewAuthHandler(users *service.UserService, log logger.Logger) *AuthHandler {
 	return &AuthHandler{users: users, log: log}
+}
+
+// WithConfig enables the /api/v1/auth/config feature-detection endpoint.
+// Returns the same handler for chaining.
+func (h *AuthHandler) WithConfig(cfg config.Config) *AuthHandler {
+	h.cfg = cfg
+	return h
+}
+
+// Config exposes the auth-related UI feature flags.
+// Unauthenticated, safe to call; used by LoginPage to decide whether to
+// show the "Sign in with {provider}" button.
+func (h *AuthHandler) Config(c *gin.Context) {
+	oidcOn := h.cfg.OIDC.Enabled && h.cfg.OIDC.ShowLoginButton
+	c.JSON(http.StatusOK, gin.H{
+		"oidcEnabled":     oidcOn,
+		"oidcDisplayName": h.cfg.OIDC.DisplayName,
+		"oidcLoginUrl":    "/api/v1/auth/oidc/login",
+		"ldapEnabled":     h.cfg.LDAP.Enabled,
+	})
 }
 
 // Login handles POST /api/v1/login  and  POST /service/rest/v1/security/users/login

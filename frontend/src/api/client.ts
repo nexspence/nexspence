@@ -30,6 +30,13 @@ apiClient.interceptors.response.use(
 
 // ── Domain types ─────────────────────────────────────────────
 
+export interface AuthConfig {
+  oidcEnabled: boolean
+  oidcDisplayName: string
+  oidcLoginUrl: string
+  ldapEnabled: boolean
+}
+
 export interface Privilege {
   id: string
   type?: string
@@ -44,6 +51,10 @@ export const nexusApi = {
   login: (username: string, password: string) =>
     apiClient.post('/api/v1/login', { username, password }),
   me: () => apiClient.get('/api/v1/me'),
+  getAuthConfig: async (): Promise<AuthConfig> => {
+    const { data } = await apiClient.get<AuthConfig>('/api/v1/auth/config')
+    return data
+  },
 
   // Repositories
   listRepositories: (params?: { format?: string; type?: string }) =>
