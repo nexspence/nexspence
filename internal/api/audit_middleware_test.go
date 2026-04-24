@@ -124,3 +124,91 @@ func TestAuditMiddleware_Username_FromContext(t *testing.T) {
 	require.Len(t, repo.Events, 1)
 	assert.Equal(t, "bob", repo.Events[0].Username)
 }
+
+func TestAuditMiddleware_Repository_CapturesPath(t *testing.T) {
+	repo := testutil.NewAuditRepo()
+	r := gin.New()
+	r.Use(api.AuditMiddleware(repo))
+	r.PUT("/repository/:repoName/*path", func(c *gin.Context) {
+		c.Status(http.StatusCreated)
+	})
+
+	req := httptest.NewRequest(http.MethodPut, "/repository/maven-hosted/com/example/foo/1.0/foo-1.0.jar", nil)
+	r.ServeHTTP(httptest.NewRecorder(), req)
+	waitForAudit()
+
+	require.Len(t, repo.Events, 1)
+	e := repo.Events[0]
+	assert.Equal(t, "REPOSITORY", e.Domain)
+	assert.Equal(t, "ARTIFACT", e.EntityType)
+	assert.Equal(t, "maven-hosted", e.EntityName)
+	require.NotNil(t, e.Context)
+	assert.Equal(t, "com/example/foo/1.0/foo-1.0.jar", e.Context["path"])
+}
+
+func TestAuditMiddleware_DockerV2_CapturesManifestRef(t *testing.T) {
+	repo := testutil.NewAuditRepo()
+	r := gin.New()
+	r.Use(api.AuditMiddleware(repo))
+	r.PUT("/v2/:repoName/manifests/:ref", func(c *gin.Context) {
+		c.Status(http.StatusCreated)
+	})
+
+	req := httptest.NewRequest(http.MethodPut, "/v2/myrepo/manifests/v1", nil)
+	r.ServeHTTP(httptest.NewRecorder(), req)
+	waitForAudit()
+
+	require.Len(t, repo.Events, 1)
+	assert.Equal(t, "manifests/v1", repo.Events[0].Context["path"])
+}
+
+func TestAuditMiddleware_Webhooks_PrefixIsAudited(t *testing.T) {
+	repo := testutil.NewAuditRepo()
+	r := gin.New()
+	r.Use(api.AuditMiddleware(repo))
+	r.POST("/api/v1/webhooks", func(c *gin.Context) {
+		c.Status(http.StatusCreated)
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks", nil)
+	r.ServeHTTP(httptest.NewRecorder(), req)
+	waitForAudit()
+
+	require.Len(t, repo.Events, 1)
+	assert.Equal(t, "SYSTEM", repo.Events[0].Domain)
+	assert.Equal(t, "WEBHOOK", repo.Events[0].EntityType)
+}
+
+func TestAuditMiddleware_Roles_PrefixIsAudited(t *testing.T) {
+	repo := testutil.NewAuditRepo()
+	r := gin.New()
+	r.Use(api.AuditMiddleware(repo))
+	r.POST("/service/rest/v1/security/roles", func(c *gin.Context) {
+		c.Status(http.StatusCreated)
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/service/rest/v1/security/roles", nil)
+	r.ServeHTTP(httptest.NewRecorder(), req)
+	waitForAudit()
+
+	require.Len(t, repo.Events, 1)
+	assert.Equal(t, "SECURITY", repo.Events[0].Domain)
+	assert.Equal(t, "ROLE", repo.Events[0].EntityType)
+}
+
+func TestAuditMiddleware_RemoteIP_NonEmpty(t *testing.T) {
+	repo := testutil.NewAuditRepo()
+	r := gin.New()
+	r.Use(api.AuditMiddleware(repo))
+	r.POST("/service/rest/v1/repositories", func(c *gin.Context) {
+		c.Status(http.StatusCreated)
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/service/rest/v1/repositories", nil)
+	req.RemoteAddr = "10.1.2.3:12345"
+	r.ServeHTTP(httptest.NewRecorder(), req)
+	waitForAudit()
+
+	require.Len(t, repo.Events, 1)
+	assert.NotEmpty(t, repo.Events[0].RemoteIP, "RemoteIP must be captured from c.ClientIP()")
+}
