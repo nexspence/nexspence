@@ -17,9 +17,10 @@ var (
 
 // Claims is the JWT payload.
 type Claims struct {
-	UserID   string   `json:"uid"`
-	Username string   `json:"sub"`
-	Roles    []string `json:"roles"`
+	UserID     string   `json:"uid"`
+	Username   string   `json:"sub"`
+	Roles      []string `json:"roles"`
+	AuthMethod string   `json:"auth_method,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -45,6 +46,25 @@ func (s *Service) GenerateToken(userID, username string, roles []string) (string
 		UserID:   userID,
 		Username: username,
 		Roles:    roles,
+		RegisteredClaims: jwt.RegisteredClaims{
+			IssuedAt:  jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(now.Add(time.Duration(s.expiryHrs) * time.Hour)),
+			Issuer:    "nexspence",
+		},
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(s.secret)
+}
+
+// GenerateTokenWithMethod is like GenerateToken but embeds an auth_method claim.
+// Used by OIDC login to let the frontend detect SSO sessions.
+func (s *Service) GenerateTokenWithMethod(userID, username string, roles []string, method string) (string, error) {
+	now := time.Now()
+	claims := Claims{
+		UserID:     userID,
+		Username:   username,
+		Roles:      roles,
+		AuthMethod: method,
 		RegisteredClaims: jwt.RegisteredClaims{
 			IssuedAt:  jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(now.Add(time.Duration(s.expiryHrs) * time.Hour)),
