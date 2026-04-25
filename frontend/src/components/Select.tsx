@@ -42,16 +42,16 @@ export function Select({
 
   useEffect(() => {
     if (!open) { setSearch(''); return }
-    function close() { setOpen(false) }
-    function onKey(e: KeyboardEvent) { if (e.key === 'Escape') setOpen(false) }
     function onScroll() { setOpen(false) }
-    document.addEventListener('mousedown', (e) => {
-      if (triggerRef.current && !triggerRef.current.contains(e.target as Node)) close()
-    })
+    function onKey(e: KeyboardEvent) { if (e.key === 'Escape') setOpen(false) }
+    function onMouseDown(e: MouseEvent) {
+      if (triggerRef.current && !triggerRef.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onMouseDown)
     document.addEventListener('keydown', onKey)
     window.addEventListener('scroll', onScroll, true)
     return () => {
-      document.removeEventListener('mousedown', close)
+      document.removeEventListener('mousedown', onMouseDown)
       document.removeEventListener('keydown', onKey)
       window.removeEventListener('scroll', onScroll, true)
     }
