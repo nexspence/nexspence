@@ -718,16 +718,17 @@ function PrivilegesTab({ admin }: { admin: boolean }) {
       />
 
       {isLoading ? <div style={emptyStyle}>Loading…</div> : privs.length === 0 ? <div style={emptyStyle}>No privileges</div> : filteredPrivs.length === 0 ? <div style={emptyStyle}>No matches</div> : (
-        <HoloCard style={{ padding: 0 }}>
-          <table className="holo-table" style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: 13 }}>
+        <HoloCard style={{ padding: '0 16px' }}>
+          <div style={{ overflowX: 'auto' as const }}>
+          <table className="holo-table" style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: 13, minWidth: 600 }}>
             <thead>
               <tr style={{ color: 'var(--holo-text-dim)', textAlign: 'left' as const }}>
-                <th style={{ padding: '0 0 10px', fontWeight: 600 }}>Name</th>
-                <th style={{ padding: '0 8px 10px', fontWeight: 600 }}>Type</th>
-                <th style={{ padding: '0 8px 10px', fontWeight: 600 }}>Actions</th>
-                <th style={{ padding: '0 8px 10px', fontWeight: 600 }}>Description</th>
-                <th style={{ padding: '0 8px 10px', fontWeight: 600 }}>Used in Roles</th>
-                {admin && <th style={{ padding: '0 0 10px', fontWeight: 600, width: 80 }}></th>}
+                <th style={{ padding: '12px 0 10px', fontWeight: 600, minWidth: 140 }}>Name</th>
+                <th style={{ padding: '12px 8px 10px', fontWeight: 600, minWidth: 130 }}>Type</th>
+                <th style={{ padding: '12px 8px 10px', fontWeight: 600, minWidth: 100 }}>Actions</th>
+                <th style={{ padding: '12px 8px 10px', fontWeight: 600 }}>Description</th>
+                <th style={{ padding: '12px 8px 10px', fontWeight: 600, minWidth: 120 }}>Used in Roles</th>
+                {admin && <th style={{ padding: '12px 0 10px', fontWeight: 600, width: 90 }}></th>}
               </tr>
             </thead>
             <tbody>
@@ -761,13 +762,15 @@ function PrivilegesTab({ admin }: { admin: boolean }) {
                       }
                     </td>
                     {admin && (
-                      <td style={{ padding: '9px 0', display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                      <td style={{ padding: '9px 0' }}>
+                        <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
                         {!p.readOnly && (
                           <>
                             <HoloButton style={{ padding: '4px 8px' }} onClick={() => openEdit(p)}>Edit</HoloButton>
                             <HoloButton variant="danger" style={{ padding: '4px 8px' }} onClick={() => { if (confirm(`Delete ${p.name}?`)) del.mutate(p.id) }}><Trash2 size={13} /></HoloButton>
                           </>
                         )}
+                        </div>
                       </td>
                     )}
                   </tr>
@@ -775,6 +778,7 @@ function PrivilegesTab({ admin }: { admin: boolean }) {
               })}
             </tbody>
           </table>
+          </div>
         </HoloCard>
       )}
 
@@ -987,15 +991,16 @@ function ContentSelectorsTab({ admin }: { admin: boolean }) {
       />
 
       {isLoading ? <div style={emptyStyle}>Loading…</div> : selectors.length === 0 ? <div style={emptyStyle}>No content selectors</div> : filteredSelectors.length === 0 ? <div style={emptyStyle}>No matches</div> : (
-        <HoloCard style={{ padding: 0 }}>
-          <table className="holo-table" style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: 13 }}>
+        <HoloCard style={{ padding: '0 16px' }}>
+          <div style={{ overflowX: 'auto' as const }}>
+          <table className="holo-table" style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: 13, minWidth: 500 }}>
             <thead>
               <tr style={{ color: 'var(--holo-text-dim)', textAlign: 'left' as const }}>
-                <th style={{ padding: '0 0 10px', fontWeight: 600 }}>Name</th>
-                <th style={{ padding: '0 8px 10px', fontWeight: 600 }}>Scope</th>
-                <th style={{ padding: '0 8px 10px', fontWeight: 600 }}>Privilege</th>
-                <th style={{ padding: '0 8px 10px', fontWeight: 600 }}>Description</th>
-                {admin && <th style={{ padding: '0 0 10px', width: 80 }}></th>}
+                <th style={{ padding: '12px 0 10px', fontWeight: 600, minWidth: 140 }}>Name</th>
+                <th style={{ padding: '12px 8px 10px', fontWeight: 600, minWidth: 180 }}>Scope</th>
+                <th style={{ padding: '12px 8px 10px', fontWeight: 600, minWidth: 130 }}>Privilege</th>
+                <th style={{ padding: '12px 8px 10px', fontWeight: 600 }}>Description</th>
+                {admin && <th style={{ padding: '12px 0 10px', width: 90 }}></th>}
               </tr>
             </thead>
             <tbody>
@@ -1015,15 +1020,18 @@ function ContentSelectorsTab({ admin }: { admin: boolean }) {
                   </td>
                   <td style={{ padding: '9px 8px', color: 'rgba(229,231,235,0.55)' }}>{s.description || '—'}</td>
                   {admin && (
-                    <td style={{ padding: '9px 0', display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                    <td style={{ padding: '9px 0' }}>
+                      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
                       <HoloButton style={{ padding: '4px 8px' }} onClick={() => openEdit(s)}>Edit</HoloButton>
                       <HoloButton variant="danger" style={{ padding: '4px 8px' }} onClick={() => { if (confirm(`Delete ${s.name}?`)) del.mutate(s.id) }}><Trash2 size={13} /></HoloButton>
+                      </div>
                     </td>
                   )}
                 </tr>
               ))}
             </tbody>
           </table>
+          </div>
         </HoloCard>
       )}
 
