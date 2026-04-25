@@ -6,7 +6,7 @@ import { nexusApi, nexspenceApi, apiClient } from '@/api/client'
 import { useAuthStore } from '@/store/authStore'
 import styles from './RepositoriesPage.module.css'
 import { Select } from '../components/Select'
-import { TiltCard, HoloCard, HoloButton, HoloInput, HoloPill, HoloText, HoloModal } from '@/components/holo'
+import { HoloButton, HoloInput, HoloPill, HoloText, HoloModal } from '@/components/holo'
 
 interface Repository {
   id: string
@@ -157,9 +157,9 @@ export default function RepositoriesPage() {
           )}
         </div>
       ) : (
-        <div className={styles.grid}>
+        <div className={styles.list}>
           {filtered.map(repo => (
-            <RepoCard
+            <RepoRow
               key={repo.id}
               repo={repo}
               isAdmin={isAdmin}
@@ -208,13 +208,8 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`
 }
 
-function RepoCard({
-  repo,
-  isAdmin,
-  storeName,
-  onClick,
-  onEdit,
-  onDelete,
+function RepoRow({
+  repo, isAdmin, storeName, onClick, onEdit, onDelete,
 }: {
   repo: Repository
   isAdmin: boolean
@@ -228,56 +223,59 @@ function RepoCard({
     queryFn: () => nexspenceApi.getRepositoryQuota(repo.name).then(r => r.data),
     staleTime: 30_000,
   })
-
   const pct = quota?.percentUsed ?? null
 
   return (
-    <TiltCard intensity={10} style={{ borderRadius: 14 }} onClick={onClick}>
-      <HoloCard edge style={{ padding: 16, cursor: 'pointer' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-          <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 4, textTransform: 'uppercase' as const, letterSpacing: '0.3px', background: (FORMAT_COLORS[repo.format] ?? '#6b7280') + '22', color: FORMAT_COLORS[repo.format] ?? '#6b7280' }}>
-            {repo.format}
-          </span>
-          <HoloPill tone={repo.type === 'hosted' ? 'success' : repo.type === 'proxy' ? 'default' : 'warn'}>
-            {TYPE_LABELS[repo.type] ?? repo.type}
-          </HoloPill>
-          <span style={{ width: 7, height: 7, borderRadius: '50%', background: repo.online ? 'var(--holo-green)' : 'rgba(255,255,255,0.2)', boxShadow: repo.online ? '0 0 6px var(--holo-green)' : 'none', display: 'inline-block', marginLeft: 'auto', flexShrink: 0 }} />
-          {repo.allowAnonymous && (
-            <HoloPill>anon</HoloPill>
-          )}
-        </div>
-        <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--holo-text)', wordBreak: 'break-word' as const, marginBottom: 4 }}>
+    <div className={styles.row} onClick={onClick}>
+      <span style={{
+        width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
+        background: repo.online ? 'var(--holo-green)' : 'rgba(255,255,255,0.2)',
+        boxShadow: repo.online ? '0 0 5px var(--holo-green)' : 'none',
+        display: 'inline-block',
+      }} />
+      <span style={{
+        fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 4,
+        textTransform: 'uppercase' as const, letterSpacing: '0.3px',
+        background: (FORMAT_COLORS[repo.format] ?? '#6b7280') + '22',
+        color: FORMAT_COLORS[repo.format] ?? '#6b7280',
+        whiteSpace: 'nowrap' as const,
+      }}>
+        {repo.format}
+      </span>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--holo-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>
           {repo.name}
         </div>
-        {repo.description && (
-          <div style={{ fontSize: 12, color: 'var(--holo-text-dim)', lineHeight: 1.4 }}>{repo.description}</div>
-        )}
-        {repo.type !== 'group' && storeName && (
-          <div style={{ fontSize: 11, color: 'var(--holo-text-faint)', marginTop: 4 }}>
-            on <span style={{ color: 'var(--holo-b)', fontWeight: 500 }}>{storeName}</span>
+        {(repo.description || storeName) && (
+          <div style={{ fontSize: 11, color: 'var(--holo-text-faint)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>
+            {repo.description || (storeName ? `on ${storeName}` : '')}
           </div>
         )}
-        {quota != null && (
-          <div style={{ marginTop: 8 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--holo-text-dim)', marginBottom: 4 }}>
-              <span className="holo-mono">{formatBytes(quota.usedBytes)} used</span>
-              {quota.quotaBytes != null && <span className="holo-mono">{formatBytes(quota.quotaBytes)}</span>}
-            </div>
-            {quota.quotaBytes != null && (
-              <div style={{ height: 3, background: 'rgba(255,255,255,0.08)', borderRadius: 2, overflow: 'hidden' }}>
-                <div style={{ height: '100%', borderRadius: 2, transition: 'width 0.3s ease', width: `${Math.min(pct ?? 0, 100)}%`, background: (pct ?? 0) >= 90 ? 'var(--holo-red)' : (pct ?? 0) >= 70 ? 'var(--holo-amber)' : 'var(--holo-green)' }} />
-              </div>
-            )}
+      </div>
+      <HoloPill tone={repo.type === 'hosted' ? 'success' : repo.type === 'proxy' ? 'default' : 'warn'}>
+        {TYPE_LABELS[repo.type] ?? repo.type}
+      </HoloPill>
+      <div>
+        <div style={{ fontSize: 11, color: 'var(--holo-text-faint)', fontFamily: 'ui-monospace,monospace', textAlign: 'right' as const }}>
+          {quota ? formatBytes(quota.usedBytes) : '—'}
+        </div>
+        {quota?.quotaBytes != null && (
+          <div style={{ height: 3, background: 'rgba(255,255,255,0.08)', borderRadius: 2, overflow: 'hidden', marginTop: 3 }}>
+            <div style={{
+              height: '100%', borderRadius: 2,
+              width: `${Math.min(pct ?? 0, 100)}%`,
+              background: (pct ?? 0) >= 90 ? 'var(--holo-red)' : (pct ?? 0) >= 70 ? 'var(--holo-amber)' : 'var(--holo-green)',
+            }} />
           </div>
         )}
-        {isAdmin && (
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12, paddingTop: 10, borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-            <HoloButton icon={<Settings2 size={14} />} onClick={e => { e.stopPropagation(); onEdit() }} title="Settings" />
-            <HoloButton variant="danger" icon={<Trash2 size={14} />} onClick={e => { e.stopPropagation(); onDelete() }} title="Delete" />
-          </div>
-        )}
-      </HoloCard>
-    </TiltCard>
+      </div>
+      {isAdmin && (
+        <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+          <HoloButton icon={<Settings2 size={14} />} onClick={e => { e.stopPropagation(); onEdit() }} title="Settings" />
+          <HoloButton variant="danger" icon={<Trash2 size={14} />} onClick={e => { e.stopPropagation(); onDelete() }} title="Delete" />
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -429,7 +427,7 @@ function CreateRepoModal({ onClose, onCreated }: {
   const applicableCreate = cleanupPoliciesForFormat(cleanupPolicies, form.format)
 
   return (
-    <HoloModal open={true} onClose={onClose}>
+    <HoloModal open={true} onClose={onClose} style={{ minWidth: 640 }}>
       <h2 style={{ fontSize: 17, fontWeight: 700, color: 'var(--holo-text)', margin: 0 }}>Create Repository</h2>
       <form onSubmit={handleSubmit} className={styles.form}>
 
@@ -698,7 +696,7 @@ function EditRepoModal({
   }
 
   return (
-    <HoloModal open={true} onClose={onClose}>
+    <HoloModal open={true} onClose={onClose} style={{ minWidth: 640 }}>
       <h2 style={{ fontSize: 17, fontWeight: 700, color: 'var(--holo-text)', margin: 0 }}>Repository settings</h2>
       <form onSubmit={handleSubmit} className={styles.form}>
         <div className={styles.formRow}>
