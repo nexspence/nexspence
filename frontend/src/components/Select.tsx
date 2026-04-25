@@ -88,7 +88,7 @@ export function Select({
         zIndex: 9999,
         padding: 6,
         display: 'flex', flexDirection: 'column', gap: 2,
-        boxShadow: '0 12px 40px rgba(0,0,0,0.7)',
+        boxShadow: '0 12px 40px rgba(0,0,0,0.6)',
         maxHeight: 280,
         overflowY: 'auto' as const,
       }}
