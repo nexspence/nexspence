@@ -136,7 +136,7 @@ export default function RepositoriesPage() {
         <div className={styles.empty}>
           <Database size={40} className={styles.emptyIcon} />
           <p style={{ color: '#ef4444', marginBottom: 8 }}>Error loading repositories</p>
-          <p style={{ fontSize: 13, color: 'rgba(229,231,235,0.5)', marginBottom: 16 }}>
+          <p style={{ fontSize: 13, color: 'var(--holo-text-dim)', marginBottom: 16 }}>
             {error instanceof Error ? error.message : 'Unable to access repositories. Check your permissions or contact your administrator.'}
           </p>
           <HoloButton variant="primary" icon={<RefreshCw size={15} />} onClick={() => refetch()} style={{ marginTop: 8 }}>
@@ -147,7 +147,7 @@ export default function RepositoriesPage() {
         <div className={styles.empty}>
           <Database size={40} className={styles.emptyIcon} />
           <p>No repositories found</p>
-          <p style={{ fontSize: 12, color: 'rgba(229,231,235,0.5)', marginTop: 8 }}>
+          <p style={{ fontSize: 12, color: 'var(--holo-text-dim)', marginTop: 8 }}>
             You don't have access to any repositories. Contact your administrator to grant you access.
           </p>
           {!filter && isAdmin && (
@@ -592,7 +592,7 @@ function CreateRepoModal({ onClose, onCreated }: {
 
         <div className={styles.formRow}>
           <label style={LABEL_STYLE}>Anonymous access</label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'rgba(229,231,235,0.75)', cursor: 'pointer' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--holo-text)', cursor: 'pointer' }}>
             <input
               type="checkbox"
               checked={form.allowAnonymous}
@@ -707,7 +707,7 @@ function EditRepoModal({
         </div>
         <div className={styles.formRow}>
           <label style={LABEL_STYLE}>Online</label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'rgba(229,231,235,0.75)', cursor: 'pointer' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--holo-text)', cursor: 'pointer' }}>
             <input
               type="checkbox"
               checked={online}
@@ -718,7 +718,7 @@ function EditRepoModal({
         </div>
         <div className={styles.formRow}>
           <label style={LABEL_STYLE}>Anonymous access</label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'rgba(229,231,235,0.75)', cursor: 'pointer' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--holo-text)', cursor: 'pointer' }}>
             <input
               type="checkbox"
               checked={allowAnonymous}
