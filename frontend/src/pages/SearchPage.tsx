@@ -147,6 +147,7 @@ export default function SearchPage() {
   const [sortKey, setSortKey] = useState<SortKey>('name')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [hoveredCId, setHoveredCId] = useState<string | null>(null)
   const [returnHighlight, setReturnHighlight] = useState<string | null>(null)
   const returnRowRef = useRef<HTMLDivElement | null>(null)
 
@@ -379,10 +380,15 @@ export default function SearchPage() {
                         style={{
                           padding: 14,
                           marginBottom: 8,
+                          transition: 'border-color 0.15s, background 0.15s',
                           ...(isReturnRow
                             ? { outline: '1px solid rgba(59,130,246,0.6)', background: 'rgba(59,130,246,0.08)', transition: 'background 0.6s, outline 0.6s' }
-                            : {}),
+                            : hoveredCId === c.id
+                              ? { borderColor: 'rgba(124,92,255,0.4)', background: 'rgba(124,92,255,0.04)' }
+                              : {}),
                         }}
+                        onMouseEnter={() => setHoveredCId(c.id)}
+                        onMouseLeave={() => setHoveredCId(null)}
                       >
                         <div
                           style={trowStyle}
