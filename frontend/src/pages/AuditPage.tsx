@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { FileText, RefreshCw, ChevronLeft, ChevronRight, Download } from 'lucide-react'
 import { nexusApi } from '@/api/client'
 import { Select } from '../components/Select'
+import { HoloButton, HoloInput, HoloCard, HoloPill, HoloText } from '@/components/holo'
 
 interface AuditEvent {
   id: number
@@ -42,29 +43,6 @@ const RESULT_COLOR: Record<string, string> = {
   success: '#22c55e',
   failure: '#ef4444',
   denied:  '#f59e0b',
-}
-
-const S = {
-  page:    { padding: 24, display: 'flex', flexDirection: 'column' as const, gap: 20 },
-  header:  { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap' as const, gap: 12 },
-  title:   { fontSize: 20, fontWeight: 700, color: '#dbeafe', margin: '0 0 4px' },
-  subtitle:{ fontSize: 13, color: 'rgba(229,231,235,0.5)', margin: 0 },
-  filters: { display: 'flex', gap: 10, flexWrap: 'wrap' as const, alignItems: 'center' },
-  iconBtn: { background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, padding: 8, color: 'rgba(229,231,235,0.7)', cursor: 'pointer', display: 'flex', alignItems: 'center' },
-  input:   { background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, padding: '8px 10px', color: '#e5e7eb', fontSize: 13, fontFamily: 'inherit' },
-  table:   { width: '100%', borderCollapse: 'collapse' as const, fontSize: 13 },
-  th:      { textAlign: 'left' as const, padding: '8px 12px', color: 'rgba(229,231,235,0.45)', fontWeight: 600, fontSize: 11, textTransform: 'uppercase' as const, letterSpacing: '0.05em', borderBottom: '1px solid rgba(255,255,255,0.06)' },
-  td:      { padding: '10px 12px', borderBottom: '1px solid rgba(255,255,255,0.04)', verticalAlign: 'middle' as const },
-  mono:    { fontFamily: 'monospace', fontSize: 12, color: 'rgba(229,231,235,0.6)' },
-  badge:   (color: string) => ({
-    fontSize: 11, fontWeight: 600 as const, padding: '2px 7px',
-    borderRadius: 4, background: color + '20', color,
-    display: 'inline-block',
-  }),
-  empty:   { display: 'flex', flexDirection: 'column' as const, alignItems: 'center', justifyContent: 'center', gap: 12, color: 'rgba(229,231,235,0.35)', fontSize: 14, paddingTop: 48 },
-  pagination:{ display: 'flex', alignItems: 'center', gap: 12, justifyContent: 'flex-end', fontSize: 13, color: 'rgba(229,231,235,0.5)' },
-  card:    { background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 12, overflow: 'hidden' as const },
-  pathCell:{ display: 'inline-block', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const },
 }
 
 function fmt(ts: string) {
@@ -138,13 +116,16 @@ export default function AuditPage() {
   const resetOffset = () => setOffset(0)
 
   return (
-    <div style={S.page}>
-      <div style={S.header}>
+    <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
         <div>
-          <h1 style={S.title}>Audit Log</h1>
-          <p style={S.subtitle}>All system mutations — repository, user, and security events</p>
+          <div className="holo-section-label" style={{ marginBottom: 6 }}>ADMINISTRATION / AUDIT</div>
+          <h1 style={{ fontSize: 40, fontWeight: 700, margin: '0 0 4px', letterSpacing: '-0.04em', lineHeight: 1 }}>
+            <HoloText>Audit Log</HoloText>
+          </h1>
+          <p style={{ fontSize: 13, color: 'var(--holo-text-dim)', margin: 0 }}>All system mutations — repository, user, and security events</p>
         </div>
-        <div style={S.filters}>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
           <Select
             options={DOMAINS.map(d => ({ value: d, label: d || 'All domains' }))}
             value={domain}
@@ -157,105 +138,99 @@ export default function AuditPage() {
             onChange={v => { setAction(v); resetOffset() }}
             style={{ minWidth: 140 }}
           />
-          <input
+          <HoloInput
             type="text"
             placeholder="username…"
             value={username}
             onChange={e => { setUsername(e.target.value); resetOffset() }}
-            style={{ ...S.input, minWidth: 140 }}
+            style={{ minWidth: 140 }}
           />
-          <input
+          <HoloInput
             type="date"
             value={from}
             onChange={e => { setFrom(e.target.value); resetOffset() }}
-            style={S.input}
             title="From"
           />
-          <input
+          <HoloInput
             type="date"
             value={to}
             onChange={e => { setTo(e.target.value); resetOffset() }}
-            style={S.input}
             title="To"
           />
-          <button style={S.iconBtn} onClick={() => refetch()} title="Refresh">
-            <RefreshCw size={15} />
-          </button>
-          <button style={S.iconBtn} onClick={onExport} title="Export filtered events as NDJSON">
-            <Download size={15} />
-          </button>
+          <HoloButton onClick={() => refetch()} title="Refresh"><RefreshCw size={15} /></HoloButton>
+          <HoloButton onClick={onExport} title="Export filtered events as NDJSON"><Download size={15} /></HoloButton>
         </div>
       </div>
 
       {isLoading ? (
-        <div style={S.empty}>Loading…</div>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, color: 'var(--holo-text-faint)', fontSize: 14, paddingTop: 48 }}>Loading…</div>
       ) : events.length === 0 ? (
-        <div style={S.empty}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, color: 'var(--holo-text-faint)', fontSize: 14, paddingTop: 48 }}>
           <FileText size={40} style={{ opacity: 0.3 }} />
           <p>No audit events{domain || action || username || from || to ? ' matching filters' : ''}</p>
         </div>
       ) : (
         <>
-          <div style={S.card}>
-            <table style={S.table}>
+          <HoloCard style={{ padding: 0 }}>
+            <table className="holo-table">
               <thead>
                 <tr>
-                  <th style={S.th}>Time</th>
-                  <th style={S.th}>User</th>
-                  <th style={S.th}>Domain</th>
-                  <th style={S.th}>Action</th>
-                  <th style={S.th}>Entity</th>
-                  <th style={S.th}>Path</th>
-                  <th style={S.th}>IP</th>
-                  <th style={S.th}>Result</th>
+                  <th>Time</th>
+                  <th>User</th>
+                  <th>Domain</th>
+                  <th>Action</th>
+                  <th>Entity</th>
+                  <th>Path</th>
+                  <th>IP</th>
+                  <th>Result</th>
                 </tr>
               </thead>
               <tbody>
                 {events.map(e => (
-                  <tr key={e.id} style={{ color: '#e5e7eb' }}>
-                    <td style={{ ...S.td, ...S.mono }}>{fmt(e.eventTime)}</td>
-                    <td style={{ ...S.td, fontWeight: 500 }}>{e.username || '—'}</td>
-                    <td style={S.td}>
-                      <span style={S.badge(DOMAIN_COLOR[e.domain] ?? '#6b7280')}>
+                  <tr key={e.id}>
+                    <td style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--holo-text-dim)' }}>{fmt(e.eventTime)}</td>
+                    <td style={{ fontWeight: 500 }}>{e.username || '—'}</td>
+                    <td>
+                      <HoloPill style={{ background: (DOMAIN_COLOR[e.domain] ?? '#6b7280') + '20', color: DOMAIN_COLOR[e.domain] ?? '#6b7280' }}>
                         {e.domain}
-                      </span>
+                      </HoloPill>
                     </td>
-                    <td style={S.td}>
-                      <span style={S.badge(ACTION_COLOR[e.action] ?? '#6b7280')}>
+                    <td>
+                      <HoloPill style={{ background: (ACTION_COLOR[e.action] ?? '#6b7280') + '20', color: ACTION_COLOR[e.action] ?? '#6b7280' }}>
                         {e.action}
-                      </span>
+                      </HoloPill>
                     </td>
-                    <td style={{ ...S.td, color: 'rgba(229,231,235,0.7)' }}>
+                    <td style={{ color: 'rgba(229,231,235,0.7)' }}>
                       {e.entityType ? `${e.entityType}: ` : ''}
-                      <span style={{ color: '#93c5fd' }}>{e.entityName || '—'}</span>
+                      <span style={{ color: 'var(--holo-a)' }}>{e.entityName || '—'}</span>
                     </td>
-                    <td style={{ ...S.td, ...S.mono, maxWidth: 320 }}>
+                    <td style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--holo-text-dim)', maxWidth: 320 }}>
                       {e.context?.path
-                        ? <span title={String(e.context.path)} style={S.pathCell}>{String(e.context.path)}</span>
+                        ? <span title={String(e.context.path)} style={{ display: 'inline-block', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{String(e.context.path)}</span>
                         : '—'}
                     </td>
-                    <td style={{ ...S.td, ...S.mono }}>{e.remoteIp || '—'}</td>
-                    <td style={S.td}>
-                      <span style={S.badge(RESULT_COLOR[e.result] ?? '#6b7280')}>
+                    <td style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--holo-text-dim)' }}>{e.remoteIp || '—'}</td>
+                    <td>
+                      <HoloPill style={{ background: (RESULT_COLOR[e.result] ?? '#6b7280') + '20', color: RESULT_COLOR[e.result] ?? '#6b7280' }}>
                         {e.result}
-                      </span>
+                      </HoloPill>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          </div>
+          </HoloCard>
 
-          <div style={S.pagination}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, justifyContent: 'flex-end', fontSize: 13, color: 'var(--holo-text-dim)' }}>
             <span>Showing {offset + 1}–{offset + events.length} of {total}</span>
-            <button style={{ ...S.iconBtn, opacity: hasPrev ? 1 : 0.4 }}
-              disabled={!hasPrev} onClick={() => setOffset(o => Math.max(0, o - PAGE_SIZE))}>
+            <HoloButton disabled={!hasPrev} style={{ opacity: hasPrev ? 1 : 0.4 }}
+              onClick={() => setOffset(o => Math.max(0, o - PAGE_SIZE))}>
               <ChevronLeft size={15} />
-            </button>
-            <button style={{ ...S.iconBtn, opacity: hasNext ? 1 : 0.4 }}
-              disabled={!hasNext} onClick={() => setOffset(o => o + PAGE_SIZE)}>
+            </HoloButton>
+            <HoloButton disabled={!hasNext} style={{ opacity: hasNext ? 1 : 0.4 }}
+              onClick={() => setOffset(o => o + PAGE_SIZE)}>
               <ChevronRight size={15} />
-            </button>
+            </HoloButton>
           </div>
         </>
       )}
