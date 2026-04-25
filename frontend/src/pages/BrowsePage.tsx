@@ -556,6 +556,33 @@ const S = {
   },
 }
 
+function GhostBtn({ onClick, title, danger = false, children }: {
+  onClick: (e: React.MouseEvent) => void
+  title?: string
+  danger?: boolean
+  children: React.ReactNode
+}) {
+  const [hov, setHov] = useState(false)
+  const style: React.CSSProperties = {
+    width: 24, height: 24, borderRadius: 6, padding: 0,
+    cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+    flexShrink: 0,
+    border: danger
+      ? `1px solid ${hov ? 'rgba(255,107,107,0.5)' : 'rgba(255,107,107,0.25)'}`
+      : `1px solid ${hov ? 'rgba(124,92,255,0.5)' : 'rgba(124,92,255,0.25)'}`,
+    background: danger
+      ? (hov ? 'rgba(255,107,107,0.18)' : 'rgba(255,107,107,0.07)')
+      : (hov ? 'rgba(124,92,255,0.2)' : 'rgba(124,92,255,0.08)'),
+    color: danger ? '#ff6b6b' : 'rgba(124,92,255,0.9)',
+  }
+  return (
+    <button type="button" title={title} style={style} onClick={onClick}
+      onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}>
+      {children}
+    </button>
+  )
+}
+
 const FORMAT_COLORS: Record<string, string> = {
   maven2: '#f97316',
   npm: '#ef4444',
@@ -690,13 +717,9 @@ function DockerTreeRows({
         <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{node.label}</span>
         {node.imageRef && <span style={S.muted}>— {node.imageRef}</span>}
         {showDelete && (node.kind === 'tag') && onDelete && (
-          <button
-            onClick={e => { e.stopPropagation(); onDelete(node) }}
-            style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(239,68,68,0.6)', padding: '2px 4px', display: 'flex', alignItems: 'center', flexShrink: 0 }}
-            title="Delete tag"
-          >
+          <GhostBtn danger onClick={e => { e.stopPropagation(); onDelete(node) }} title="Delete tag">
             <Trash2 size={12} />
-          </button>
+          </GhostBtn>
         )}
       </div>
     )
@@ -728,13 +751,9 @@ function DockerTreeRows({
         <FolderOpen size={14} style={{ color: '#60a5fa', flexShrink: 0 }} />
         <span style={{ fontWeight: depth === 0 ? 600 : 500 }}>{node.label}</span>
         {showDelete && onDelete && !['Tags', 'Manifests', 'Blobs'].includes(node.label) && (
-          <button
-            onClick={e => { e.stopPropagation(); onDelete(node) }}
-            style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(239,68,68,0.5)', padding: '2px 4px', display: 'flex', alignItems: 'center', flexShrink: 0 }}
-            title={`Delete all in ${node.label}`}
-          >
+          <GhostBtn danger onClick={e => { e.stopPropagation(); onDelete(node) }} title={`Delete all in ${node.label}`}>
             <Trash2 size={12} />
-          </button>
+          </GhostBtn>
         )}
       </div>
       {hasKids && !folded && node.children!.map((ch) => (
@@ -839,28 +858,16 @@ function RawTreeRows({
         )}
         {(hovered || selected) && (
           <div style={{ display: 'flex', gap: 2, alignItems: 'center', flexShrink: 0 }}>
-            <button
-              onClick={(e) => { e.stopPropagation(); doDownload() }}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(96,165,250,0.7)', padding: '3px 4px', borderRadius: 4, display: 'flex', alignItems: 'center' }}
-              title="Download"
-            >
+            <GhostBtn onClick={(e) => { e.stopPropagation(); doDownload() }} title="Download">
               <Download size={12} />
-            </button>
-            <button
-              onClick={(e) => { e.stopPropagation(); doCopy() }}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(96,165,250,0.7)', padding: '3px 4px', borderRadius: 4, display: 'flex', alignItems: 'center' }}
-              title="Copy link"
-            >
+            </GhostBtn>
+            <GhostBtn onClick={(e) => { e.stopPropagation(); doCopy() }} title="Copy link">
               <Link size={12} />
-            </button>
+            </GhostBtn>
             {showDelete && onDelete && (
-              <button
-                onClick={(e) => { e.stopPropagation(); onDelete(node) }}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(239,68,68,0.5)', padding: '3px 4px', borderRadius: 4, display: 'flex', alignItems: 'center' }}
-                title="Delete"
-              >
+              <GhostBtn danger onClick={(e) => { e.stopPropagation(); onDelete(node) }} title="Delete">
                 <Trash2 size={12} />
-              </button>
+              </GhostBtn>
             )}
           </div>
         )}
@@ -1431,13 +1438,9 @@ export default function BrowsePage() {
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     {canDeleteRepo && (
-                      <button
-                        onClick={() => setDeleteTarget({ path: assetPath, repo: repoName })}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(239,68,68,0.6)', padding: '2px 4px', display: 'flex', alignItems: 'center' }}
-                        title="Delete"
-                      >
+                      <GhostBtn danger onClick={() => setDeleteTarget({ path: assetPath, repo: repoName })} title="Delete">
                         <Trash2 size={13} />
-                      </button>
+                      </GhostBtn>
                     )}
                   </div>
                 </div>
