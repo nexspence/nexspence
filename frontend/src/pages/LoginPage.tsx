@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { KeyRound } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
 import { nexusApi, type AuthConfig } from '@/api/client'
+import { HoloApp, HoloButton, HoloInput } from '@/components/holo'
 import styles from './LoginPage.module.css'
 import logo from '@/assets/logo.png'
 
@@ -45,6 +46,7 @@ export default function LoginPage() {
   }
 
   return (
+    <HoloApp>
     <div className={styles.container}>
       <div className={styles.card}>
         <div className={styles.logo}>
@@ -54,8 +56,7 @@ export default function LoginPage() {
         <form onSubmit={handleSubmit} className={styles.form}>
           <div className={styles.field}>
             <label className={styles.label}>Username</label>
-            <input
-              className={styles.input}
+            <HoloInput
               type="text"
               value={username}
               onChange={e => setUsername(e.target.value)}
@@ -66,8 +67,7 @@ export default function LoginPage() {
           </div>
           <div className={styles.field}>
             <label className={styles.label}>Password</label>
-            <input
-              className={styles.input}
+            <HoloInput
               type="password"
               value={password}
               onChange={e => setPassword(e.target.value)}
@@ -83,24 +83,26 @@ export default function LoginPage() {
             </div>
           )}
 
-          <button className={styles.button} type="submit" disabled={loading}>
+          <HoloButton variant="primary" type="submit" disabled={loading} style={{ width: '100%', justifyContent: 'center' }}>
             {loading ? 'Signing in…' : 'Sign in'}
-          </button>
+          </HoloButton>
 
           {authConfig?.oidcEnabled && (
             <>
               <div className={styles.divider}>or</div>
-              <button
+              <HoloButton
                 type="button"
-                className={styles.oidcButton}
+                icon={<KeyRound size={16} />}
                 onClick={handleOIDC}
+                style={{ width: '100%', justifyContent: 'center' }}
               >
-                <KeyRound size={16} /> Sign in with {authConfig.oidcDisplayName}
-              </button>
+                Sign in with {authConfig.oidcDisplayName}
+              </HoloButton>
             </>
           )}
         </form>
       </div>
     </div>
+    </HoloApp>
   )
 }
