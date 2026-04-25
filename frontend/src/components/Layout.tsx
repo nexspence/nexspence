@@ -10,6 +10,7 @@ import styles from './Layout.module.css'
 import { useAuthStore } from '@/store/authStore'
 import { apiClient } from '@/api/client'
 import logo from '@/assets/logo.png'
+import { HoloApp, HoloModal, HoloButton, HoloInput } from '@/components/holo'
 
 const navItems = [
   { to: '/repositories', icon: Home,       label: 'Repositories' },
@@ -57,87 +58,77 @@ function ProfileModal({ onClose }: { onClose: () => void }) {
   })
 
   const S = {
-    overlay:  { position: 'fixed' as const, inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
-    modal:    { background: 'linear-gradient(135deg,rgba(11,20,38,0.98),rgba(7,11,20,0.98))', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 16, padding: 24, width: 480, maxWidth: '95vw', maxHeight: '80vh', display: 'flex', flexDirection: 'column' as const, gap: 16 },
     header:   { display: 'flex', alignItems: 'center', justifyContent: 'space-between' },
-    title:    { fontSize: 16, fontWeight: 700, color: '#dbeafe', display: 'flex', alignItems: 'center', gap: 8 },
-    card:     { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, padding: 16 },
-    input:    { flex: 1, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, padding: '8px 12px', color: '#e5e7eb', fontSize: 13, outline: 'none' },
-    btn:      (v: 'primary'|'danger'|'ghost') => ({ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600 as const, background: v === 'primary' ? '#3b82f6' : v === 'danger' ? 'rgba(239,68,68,0.15)' : 'rgba(255,255,255,0.06)', color: v === 'danger' ? '#ef4444' : '#fff' }),
+    title:    { fontSize: 16, fontWeight: 700, color: 'var(--holo-text)', display: 'flex', alignItems: 'center', gap: 8 },
     row:      { display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.06)' },
-    empty:    { color: 'rgba(229,231,235,0.4)', fontSize: 13, padding: '12px 0' },
+    empty:    { color: 'var(--holo-text-dim)', fontSize: 13, padding: '12px 0' },
     mono:     { fontFamily: 'ui-monospace,monospace' },
     scroll:   { overflowY: 'auto' as const, display: 'flex', flexDirection: 'column' as const, gap: 16 },
-    closeBtn: { background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(229,231,235,0.5)', padding: 4, display: 'flex' },
   }
 
   return (
-    <div style={S.overlay} onClick={onClose}>
-      <div style={S.modal} onClick={e => e.stopPropagation()}>
-        <div style={S.header}>
-          <div style={S.title}>
-            <Key size={16} style={{ color: '#3b82f6' }} />
-            Profile — {user?.username}
+    <HoloModal open={true} onClose={onClose}>
+      <div style={S.header}>
+        <div style={S.title}>
+          <Key size={16} style={{ color: 'var(--holo-a)' }} />
+          Profile — {user?.username}
+        </div>
+        <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--holo-text-dim)', padding: 4, display: 'flex' }} onClick={onClose}><X size={18} /></button>
+      </div>
+
+      <div style={S.scroll}>
+        <div className="holo-card" style={{ padding: 16 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--holo-text)', marginBottom: 10 }}>Create API Token</div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <HoloInput
+              style={{ flex: 1 }}
+              placeholder="Token name"
+              value={name}
+              onChange={e => setName(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && create()}
+            />
+            <HoloButton variant="primary" icon={<Plus size={14} />} onClick={create} disabled={creating || !name.trim()}>
+              {creating ? 'Creating…' : 'Create'}
+            </HoloButton>
           </div>
-          <button style={S.closeBtn} onClick={onClose}><X size={18} /></button>
         </div>
 
-        <div style={S.scroll}>
-          <div style={S.card}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: '#dbeafe', marginBottom: 10 }}>Create API Token</div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input
-                style={S.input}
-                placeholder="Token name"
-                value={name}
-                onChange={e => setName(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && create()}
-              />
-              <button style={S.btn('primary')} onClick={create} disabled={creating || !name.trim()}>
-                <Plus size={14} />{creating ? 'Creating…' : 'Create'}
-              </button>
+        {newToken && (
+          <div className="holo-card" style={{ padding: 16, background: 'rgba(94,255,184,0.08)', border: '1px solid rgba(94,255,184,0.25)' }}>
+            <div style={{ fontSize: 13, color: 'var(--holo-green)', fontWeight: 600, marginBottom: 8 }}>
+              Token created — copy it now, it won't be shown again
             </div>
+            <code style={{ ...S.mono, fontSize: 12, background: 'rgba(0,0,0,0.3)', padding: '8px 12px', borderRadius: 8, display: 'block', wordBreak: 'break-all' as const, color: 'var(--holo-a)' }}>
+              {newToken.token}
+            </code>
+            <HoloButton style={{ marginTop: 8 }} onClick={() => setNewToken(null)}>Dismiss</HoloButton>
           </div>
+        )}
 
-          {newToken && (
-            <div style={{ ...S.card, background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.3)' }}>
-              <div style={{ fontSize: 13, color: '#22c55e', fontWeight: 600, marginBottom: 8 }}>
-                Token created — copy it now, it won't be shown again
-              </div>
-              <code style={{ ...S.mono, fontSize: 12, background: 'rgba(0,0,0,0.3)', padding: '8px 12px', borderRadius: 8, display: 'block', wordBreak: 'break-all' as const, color: '#a5b4fc' }}>
-                {newToken.token}
-              </code>
-              <button style={{ ...S.btn('ghost'), marginTop: 8, fontSize: 12 }} onClick={() => setNewToken(null)}>Dismiss</button>
-            </div>
-          )}
-
-          <div style={S.card}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: '#dbeafe', marginBottom: 10 }}>Your API Tokens</div>
-            {isLoading
-              ? <div style={S.empty}>Loading…</div>
-              : tokens.length === 0
-                ? <div style={S.empty}>No tokens yet</div>
-                : tokens.map(t => (
-                  <div key={t.id} style={S.row}>
-                    <Key size={13} style={{ color: '#3b82f6', flexShrink: 0 }} />
-                    <div style={{ flex: 1 }}>
-                      <div style={{ color: '#dbeafe', fontWeight: 600, fontSize: 13 }}>{t.name}</div>
-                      <div style={{ fontSize: 11, color: 'rgba(229,231,235,0.4)' }}>
-                        Created {new Date(t.createdAt).toLocaleDateString()}
-                        {t.lastUsedAt && ` · Last used ${new Date(t.lastUsedAt).toLocaleDateString()}`}
-                        {t.expiresAt && ` · Expires ${new Date(t.expiresAt).toLocaleDateString()}`}
-                      </div>
+        <div className="holo-card" style={{ padding: 16 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--holo-text)', marginBottom: 10 }}>Your API Tokens</div>
+          {isLoading
+            ? <div style={S.empty}>Loading…</div>
+            : tokens.length === 0
+              ? <div style={S.empty}>No tokens yet</div>
+              : tokens.map(t => (
+                <div key={t.id} style={S.row}>
+                  <Key size={13} style={{ color: 'var(--holo-a)', flexShrink: 0 }} />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ color: 'var(--holo-text)', fontWeight: 600, fontSize: 13 }}>{t.name}</div>
+                    <div style={{ fontSize: 11, color: 'var(--holo-text-dim)' }}>
+                      Created {new Date(t.createdAt).toLocaleDateString()}
+                      {t.lastUsedAt && ` · Last used ${new Date(t.lastUsedAt).toLocaleDateString()}`}
+                      {t.expiresAt && ` · Expires ${new Date(t.expiresAt).toLocaleDateString()}`}
                     </div>
-                    <button style={S.btn('danger')} onClick={() => del.mutate(t.id)}>
-                      <Trash2 size={13} />
-                    </button>
                   </div>
-                ))
-            }
-          </div>
+                  <HoloButton variant="danger" icon={<Trash2 size={13} />} onClick={() => del.mutate(t.id)} />
+                </div>
+              ))
+          }
         </div>
       </div>
-    </div>
+    </HoloModal>
   )
 }
 
@@ -147,6 +138,7 @@ export default function Layout() {
   const [profileOpen, setProfileOpen] = useState(false)
 
   return (
+    <HoloApp>
     <div className={styles.root}>
       <aside className={styles.sidebar}>
         {/* Brand */}
@@ -212,7 +204,7 @@ export default function Layout() {
               <button
                 title="API Tokens & Profile"
                 onClick={() => setProfileOpen(true)}
-                style={{ background: 'rgba(59,130,246,0.12)', border: '1px solid rgba(59,130,246,0.25)', borderRadius: 7, padding: '5px 7px', cursor: 'pointer', color: '#3b82f6', display: 'flex', alignItems: 'center', flexShrink: 0 }}
+                style={{ background: 'rgba(124,92,255,0.12)', border: '1px solid rgba(124,92,255,0.25)', borderRadius: 7, padding: '5px 7px', cursor: 'pointer', color: 'var(--holo-a)', display: 'flex', alignItems: 'center', flexShrink: 0 }}
               >
                 <Key size={14} />
               </button>
@@ -247,5 +239,6 @@ export default function Layout() {
 
       {profileOpen && <ProfileModal onClose={() => setProfileOpen(false)} />}
     </div>
+    </HoloApp>
   )
 }
