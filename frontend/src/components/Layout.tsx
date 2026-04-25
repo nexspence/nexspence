@@ -58,12 +58,15 @@ function ProfileModal({ onClose }: { onClose: () => void }) {
   })
 
   const S = {
-    header:   { display: 'flex', alignItems: 'center', justifyContent: 'space-between' },
-    title:    { fontSize: 16, fontWeight: 700, color: 'var(--holo-text)', display: 'flex', alignItems: 'center', gap: 8 },
-    row:      { display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.06)' },
-    empty:    { color: 'var(--holo-text-dim)', fontSize: 13, padding: '12px 0' },
-    mono:     { fontFamily: 'ui-monospace,monospace' },
-    scroll:   { overflowY: 'auto' as const, display: 'flex', flexDirection: 'column' as const, gap: 16 },
+    header:    { display: 'flex', alignItems: 'center', justifyContent: 'space-between' },
+    title:     { fontSize: 16, fontWeight: 700, color: 'var(--holo-text)', display: 'flex', alignItems: 'center', gap: 8 },
+    tokenList: { maxHeight: 240, overflowY: 'auto' as const, display: 'flex', flexDirection: 'column' as const },
+    row:       { display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.06)', minWidth: 0 },
+    rowMeta:   { flex: 1, minWidth: 0 },
+    rowName:   { fontWeight: 600, fontSize: 13, color: 'var(--holo-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const },
+    rowDates:  { fontSize: 11, color: 'var(--holo-text-dim)', marginTop: 2, lineHeight: 1.4 },
+    empty:     { color: 'var(--holo-text-dim)', fontSize: 13, padding: '12px 0' },
+    mono:      { fontFamily: 'ui-monospace,monospace' },
   }
 
   return (
@@ -76,7 +79,7 @@ function ProfileModal({ onClose }: { onClose: () => void }) {
         <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--holo-text-dim)', padding: 4, display: 'flex' }} onClick={onClose}><X size={18} /></button>
       </div>
 
-      <div style={S.scroll}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div className="holo-card" style={{ padding: 16 }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--holo-text)', marginBottom: 10 }}>Create API Token</div>
           <div style={{ display: 'flex', gap: 8 }}>
@@ -106,25 +109,31 @@ function ProfileModal({ onClose }: { onClose: () => void }) {
         )}
 
         <div className="holo-card" style={{ padding: 16 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--holo-text)', marginBottom: 10 }}>Your API Tokens</div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--holo-text)', marginBottom: 10 }}>
+            Your API Tokens {tokens.length > 0 && <span style={{ fontWeight: 400, color: 'var(--holo-text-faint)', fontSize: 12 }}>({tokens.length})</span>}
+          </div>
           {isLoading
             ? <div style={S.empty}>Loading…</div>
             : tokens.length === 0
               ? <div style={S.empty}>No tokens yet</div>
-              : tokens.map(t => (
-                <div key={t.id} style={S.row}>
-                  <Key size={13} style={{ color: 'var(--holo-a)', flexShrink: 0 }} />
-                  <div style={{ flex: 1 }}>
-                    <div style={{ color: 'var(--holo-text)', fontWeight: 600, fontSize: 13 }}>{t.name}</div>
-                    <div style={{ fontSize: 11, color: 'var(--holo-text-dim)' }}>
-                      Created {new Date(t.createdAt).toLocaleDateString()}
-                      {t.lastUsedAt && ` · Last used ${new Date(t.lastUsedAt).toLocaleDateString()}`}
-                      {t.expiresAt && ` · Expires ${new Date(t.expiresAt).toLocaleDateString()}`}
+              : (
+                <div style={S.tokenList}>
+                  {tokens.map(t => (
+                    <div key={t.id} style={S.row}>
+                      <Key size={13} style={{ color: 'var(--holo-a)', flexShrink: 0, marginTop: 2 }} />
+                      <div style={S.rowMeta}>
+                        <div style={S.rowName}>{t.name}</div>
+                        <div style={S.rowDates}>
+                          Created {new Date(t.createdAt).toLocaleDateString()}
+                          {t.lastUsedAt && ` · Last used ${new Date(t.lastUsedAt).toLocaleDateString()}`}
+                          {t.expiresAt && ` · Expires ${new Date(t.expiresAt).toLocaleDateString()}`}
+                        </div>
+                      </div>
+                      <HoloButton variant="danger" icon={<Trash2 size={13} />} onClick={() => del.mutate(t.id)} style={{ flexShrink: 0 }} />
                     </div>
-                  </div>
-                  <HoloButton variant="danger" icon={<Trash2 size={13} />} onClick={() => del.mutate(t.id)} />
+                  ))}
                 </div>
-              ))
+              )
           }
         </div>
       </div>
