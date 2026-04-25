@@ -29,6 +29,7 @@ export function Select({
   const [search, setSearch] = useState('')
   const [dropPos, setDropPos] = useState<{ top: number; left: number; width: number } | null>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
+  const dropdownRef = useRef<HTMLDivElement>(null)
   const selected = options.find(o => o.value === value)
 
   function openMenu() {
@@ -42,18 +43,24 @@ export function Select({
 
   useEffect(() => {
     if (!open) { setSearch(''); return }
-    function onScroll() { setOpen(false) }
+    function onClose() { setOpen(false) }
     function onKey(e: KeyboardEvent) { if (e.key === 'Escape') setOpen(false) }
     function onMouseDown(e: MouseEvent) {
-      if (triggerRef.current && !triggerRef.current.contains(e.target as Node)) setOpen(false)
+      const t = e.target as Node
+      if (
+        triggerRef.current && !triggerRef.current.contains(t) &&
+        dropdownRef.current && !dropdownRef.current.contains(t)
+      ) setOpen(false)
     }
     document.addEventListener('mousedown', onMouseDown)
     document.addEventListener('keydown', onKey)
-    window.addEventListener('scroll', onScroll, true)
+    window.addEventListener('scroll', onClose, true)
+    window.addEventListener('resize', onClose)
     return () => {
       document.removeEventListener('mousedown', onMouseDown)
       document.removeEventListener('keydown', onKey)
-      window.removeEventListener('scroll', onScroll, true)
+      window.removeEventListener('scroll', onClose, true)
+      window.removeEventListener('resize', onClose)
     }
   }, [open])
 
@@ -78,6 +85,7 @@ export function Select({
 
   const dropdown = open && dropPos ? createPortal(
     <div
+      ref={dropdownRef}
       className="holo-card"
       style={{
         position: 'fixed',
@@ -118,7 +126,7 @@ export function Select({
             onClick={() => { onChange(opt.value); setOpen(false) }}
             style={{
               display: 'flex', alignItems: 'center', gap: 8,
-              padding: isSel ? '7px 12px' : '8px 12px',
+              padding: '7px 12px',
               cursor: 'pointer', fontSize: 13,
               color: isSel ? '#c4b5fd' : 'var(--holo-text)',
               background: isSel ? 'rgba(124,92,255,0.18)' : 'transparent',
