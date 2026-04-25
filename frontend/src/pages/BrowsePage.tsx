@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { HoloButton, HoloInput, HoloText, HoloModal } from '@/components/holo'
 import {
   ChevronDown,
   ChevronRight,
@@ -218,46 +219,36 @@ function ScanBadgeRow({ componentId }: { componentId: string }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '10px 0 0' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <ShieldAlert size={14} style={{ color: '#60a5fa', flexShrink: 0 }} />
-        <span style={{ fontSize: 12, color: 'rgba(229,231,235,0.5)' }}>Vulnerability scan</span>
+        <span style={{ fontSize: 12, color: 'var(--holo-text-dim)' }}>Vulnerability scan</span>
         {!scanMutation.isPending && scanResult && (
-          <span style={{ fontSize: 11, color: 'rgba(229,231,235,0.35)' }}>
+          <span style={{ fontSize: 11, color: 'var(--holo-text-faint)' }}>
             {new Date(scanResult.scannedAt).toLocaleString()}
           </span>
         )}
-        <button
-          type="button"
+        <HoloButton
+          variant="primary"
           onClick={() => {
             setMutationError(null)
             scanMutation.mutate()
           }}
           disabled={scanMutation.isPending}
-          style={{
-            marginLeft: 'auto',
-            fontSize: 11,
-            padding: '3px 10px',
-            borderRadius: 6,
-            border: '1px solid rgba(59,130,246,0.4)',
-            background: 'rgba(59,130,246,0.1)',
-            color: '#93c5fd',
-            cursor: scanMutation.isPending ? 'not-allowed' : 'pointer',
-            opacity: scanMutation.isPending ? 0.6 : 1,
-          }}
+          style={{ marginLeft: 'auto', fontSize: 11, padding: '3px 10px' }}
         >
           {scanMutation.isPending ? `Scanning… ${fmtElapsed(elapsed)}` : 'Scan now'}
-        </button>
+        </HoloButton>
       </div>
       {mutationError && (
         <span style={{ fontSize: 11, color: '#ef4444' }}>Error: {mutationError}</span>
       )}
       {scanMutation.isPending && (
-        <span style={{ fontSize: 11, color: 'rgba(229,231,235,0.35)', lineHeight: 1.4 }}>
+        <span style={{ fontSize: 11, color: 'var(--holo-text-faint)', lineHeight: 1.4 }}>
           Running Trivy vulnerability scan
           {elapsed >= 20 && ' — first run downloads the vulnerability DB (~2 min)'}
           {elapsed >= 90 && '; please wait…'}
         </span>
       )}
       {!scanMutation.isPending && isLoading ? (
-        <span style={{ fontSize: 11, color: 'rgba(229,231,235,0.35)' }}>Loading…</span>
+        <span style={{ fontSize: 11, color: 'var(--holo-text-faint)' }}>Loading…</span>
       ) : !scanMutation.isPending && scanResult?.status === 'failed' ? (
         <span style={{ fontSize: 11, color: '#ef4444' }}>Scan failed: {scanResult.error}</span>
       ) : !scanMutation.isPending && s ? (
@@ -295,7 +286,7 @@ function ScanBadgeRow({ componentId }: { componentId: string }) {
                             ? '#3b82f6'
                             : sevChipColor(f)
                           : 'rgba(255,255,255,0.06)',
-                      color: sevFilter === f ? '#fff' : 'rgba(229,231,235,0.55)',
+                      color: sevFilter === f ? '#fff' : 'var(--holo-text-dim)',
                     }}
                   >
                     {f}
@@ -314,7 +305,7 @@ function ScanBadgeRow({ componentId }: { componentId: string }) {
               >
                 <table style={{ width: '100%', borderCollapse: 'collapse' as const }}>
                   <thead>
-                    <tr style={{ color: 'rgba(229,231,235,0.45)', textAlign: 'left' as const }}>
+                    <tr style={{ color: 'var(--holo-text-faint)', textAlign: 'left' as const }}>
                       <th style={{ padding: '8px 10px', fontWeight: 600, position: 'sticky', top: 0, background: '#0c1018' }}>CVE</th>
                       <th style={{ padding: '8px 6px', fontWeight: 600, position: 'sticky', top: 0, background: '#0c1018' }}>Sev</th>
                       <th style={{ padding: '8px 6px', fontWeight: 600, position: 'sticky', top: 0, background: '#0c1018' }}>Package</th>
@@ -341,15 +332,15 @@ function ScanBadgeRow({ componentId }: { componentId: string }) {
                             {row.severity}
                           </span>
                         </td>
-                        <td style={{ padding: '6px 6px', color: '#e5e7eb' }}>{row.pkgName}</td>
-                        <td style={{ padding: '6px 6px', fontFamily: 'monospace', color: 'rgba(229,231,235,0.65)' }}>
+                        <td style={{ padding: '6px 6px', color: 'var(--holo-text)' }}>{row.pkgName}</td>
+                        <td style={{ padding: '6px 6px', fontFamily: 'monospace', color: 'var(--holo-text-dim)' }}>
                           {row.installedVersion}
                         </td>
                         <td style={{ padding: '6px 6px', fontFamily: 'monospace', color: '#86efac' }}>{row.fixedVersion || '—'}</td>
                         <td
                           style={{
                             padding: '6px 6px',
-                            color: 'rgba(229,231,235,0.55)',
+                            color: 'var(--holo-text-dim)',
                             maxWidth: 200,
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
@@ -364,14 +355,14 @@ function ScanBadgeRow({ componentId }: { componentId: string }) {
                   </tbody>
                 </table>
                 {filtered.length === 0 && (
-                  <div style={{ padding: 12, color: 'rgba(229,231,235,0.45)' }}>No rows for this filter.</div>
+                  <div style={{ padding: 12, color: 'var(--holo-text-faint)' }}>No rows for this filter.</div>
                 )}
               </div>
             </div>
           )}
         </>
       ) : !scanMutation.isPending ? (
-        <span style={{ fontSize: 11, color: 'rgba(229,231,235,0.35)' }}>Not scanned yet</span>
+        <span style={{ fontSize: 11, color: 'var(--holo-text-faint)' }}>Not scanned yet</span>
       ) : null}
     </div>
   )
@@ -429,15 +420,15 @@ function pickPrimaryDockerAsset(
 const S = {
   page: { padding: 24, display: 'flex', flexDirection: 'column' as const, gap: 20, height: '100%' },
   header: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 },
-  title: { fontSize: 20, fontWeight: 700, color: '#dbeafe', margin: '0 0 4px' },
-  subtitle: { fontSize: 13, color: 'rgba(229,231,235,0.5)', margin: 0 },
+  title: { fontSize: 20, fontWeight: 700, color: 'var(--holo-text)', margin: '0 0 4px' },
+  subtitle: { fontSize: 13, color: 'var(--holo-text-dim)', margin: 0 },
   toolbar: { display: 'flex', gap: 12, alignItems: 'center' },
   iconBtn: {
     background: 'rgba(255,255,255,0.06)',
     border: '1px solid rgba(255,255,255,0.1)',
     borderRadius: 8,
     padding: 8,
-    color: 'rgba(229,231,235,0.7)',
+    color: 'var(--holo-text-dim)',
     cursor: 'pointer',
     display: 'flex',
     alignItems: 'center',
@@ -449,13 +440,10 @@ const S = {
     alignItems: 'center',
     justifyContent: 'center',
     gap: 12,
-    color: 'rgba(229,231,235,0.4)',
+    color: 'var(--holo-text-faint)',
     fontSize: 14,
   },
   table: {
-    background: 'rgba(255,255,255,0.02)',
-    border: '1px solid rgba(255,255,255,0.07)',
-    borderRadius: 12,
     overflow: 'hidden' as const,
   },
   thead: {
@@ -466,7 +454,7 @@ const S = {
     borderBottom: '1px solid rgba(255,255,255,0.07)',
     fontSize: 11,
     fontWeight: 600,
-    color: 'rgba(229,231,235,0.5)',
+    color: 'var(--holo-text-dim)',
     textTransform: 'uppercase' as const,
     letterSpacing: '0.05em',
   },
@@ -476,7 +464,7 @@ const S = {
     padding: '11px 16px',
     borderBottom: '1px solid rgba(255,255,255,0.05)',
     fontSize: 13,
-    color: '#e5e7eb',
+    color: 'var(--holo-text)',
     alignItems: 'center',
   },
   badge: (color: string) => ({
@@ -487,7 +475,7 @@ const S = {
     background: color + '22',
     color,
   }),
-  muted: { color: 'rgba(229,231,235,0.4)', fontSize: 12 },
+  muted: { color: 'var(--holo-text-faint)', fontSize: 12 },
   path: { fontSize: 12, color: 'rgba(147,197,253,0.85)', fontFamily: 'monospace' as const },
   pager: { display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'center', paddingTop: 4 },
   pgBtn: (disabled: boolean) => ({
@@ -495,14 +483,11 @@ const S = {
     border: '1px solid rgba(255,255,255,0.1)',
     borderRadius: 8,
     padding: '6px 14px',
-    color: disabled ? 'rgba(229,231,235,0.25)' : '#e5e7eb',
+    color: disabled ? 'rgba(229,231,235,0.25)' : 'var(--holo-text)',
     fontSize: 13,
     cursor: disabled ? 'not-allowed' : 'pointer',
   }),
   treePanel: {
-    background: 'rgba(255,255,255,0.02)',
-    border: '1px solid rgba(255,255,255,0.07)',
-    borderRadius: 12,
     padding: '12px 8px',
     maxHeight: 'calc(100vh - 220px)',
     overflowY: 'auto' as const,
@@ -513,12 +498,12 @@ const S = {
     gap: 8,
     padding: '5px 8px 5px ' + (8 + depth * 16) + 'px',
     fontSize: 13,
-    color: '#e5e7eb',
+    color: 'var(--holo-text)',
     borderRadius: 6,
     cursor: 'default' as const,
   }),
   treeFolder: { cursor: 'pointer' as const, userSelect: 'none' as const },
-  treeHint: { fontSize: 11, color: 'rgba(229,231,235,0.35)', padding: '0 12px 8px' },
+  treeHint: { fontSize: 11, color: 'var(--holo-text-faint)', padding: '0 12px 8px' },
   dockerLayout: {
     display: 'flex',
     gap: 16,
@@ -529,14 +514,11 @@ const S = {
     flex: '1 1 320px',
     minWidth: 280,
     maxWidth: '100%',
-    background: 'rgba(255,255,255,0.02)',
-    border: '1px solid rgba(255,255,255,0.07)',
-    borderRadius: 12,
     padding: '14px 16px',
     maxHeight: 'calc(100vh - 220px)',
     overflowY: 'auto' as const,
   },
-  detailTitle: { fontSize: 14, fontWeight: 600, color: '#dbeafe', margin: '0 0 12px' },
+  detailTitle: { fontSize: 14, fontWeight: 600, color: 'var(--holo-text)', margin: '0 0 12px' },
   detailRow: {
     display: 'grid',
     gridTemplateColumns: '168px 1fr',
@@ -545,8 +527,8 @@ const S = {
     borderBottom: '1px solid rgba(255,255,255,0.06)',
     fontSize: 13,
   },
-  detailLabel: { color: 'rgba(229,231,235,0.45)', fontSize: 12 },
-  detailValue: { color: '#e5e7eb', wordBreak: 'break-word' as const },
+  detailLabel: { color: 'var(--holo-text-faint)', fontSize: 12 },
+  detailValue: { color: 'var(--holo-text)', wordBreak: 'break-word' as const },
   detailActions: { display: 'flex', gap: 8, marginTop: 14 },
   btnDl: {
     padding: '7px 14px',
@@ -565,7 +547,7 @@ const S = {
     background: 'rgba(255,255,255,0.05)',
     border: '1px solid rgba(255,255,255,0.1)',
     borderRadius: 8,
-    color: 'rgba(229,231,235,0.7)',
+    color: 'var(--holo-text-dim)',
     fontSize: 12,
     cursor: 'pointer' as const,
     display: 'flex',
@@ -736,9 +718,9 @@ function DockerTreeRows({
       >
         {hasKids ? (
           folded ? (
-            <ChevronRight size={14} style={{ color: 'rgba(229,231,235,0.45)', flexShrink: 0 }} />
+            <ChevronRight size={14} style={{ color: 'var(--holo-text-faint)', flexShrink: 0 }} />
           ) : (
-            <ChevronDown size={14} style={{ color: 'rgba(229,231,235,0.45)', flexShrink: 0 }} />
+            <ChevronDown size={14} style={{ color: 'var(--holo-text-faint)', flexShrink: 0 }} />
           )
         ) : (
           <span style={{ width: 14 }} />
@@ -851,7 +833,7 @@ function RawTreeRows({
           {node.label}
         </span>
         {node.size != null && (
-          <span style={{ fontSize: 11, color: 'rgba(229,231,235,0.35)', flexShrink: 0 }}>
+          <span style={{ fontSize: 11, color: 'var(--holo-text-faint)', flexShrink: 0 }}>
             {formatBytes(node.size)}
           </span>
         )}
@@ -912,9 +894,9 @@ function RawTreeRows({
       >
         {hasKids ? (
           folded ? (
-            <ChevronRight size={14} style={{ color: 'rgba(229,231,235,0.45)', flexShrink: 0 }} />
+            <ChevronRight size={14} style={{ color: 'var(--holo-text-faint)', flexShrink: 0 }} />
           ) : (
-            <ChevronDown size={14} style={{ color: 'rgba(229,231,235,0.45)', flexShrink: 0 }} />
+            <ChevronDown size={14} style={{ color: 'var(--holo-text-faint)', flexShrink: 0 }} />
           )
         ) : (
           <span style={{ width: 14, flexShrink: 0 }} />
@@ -1046,7 +1028,7 @@ export default function BrowsePage() {
       </span>
     ),
     tag: (
-      <span style={{ fontSize: 10, color: 'rgba(229,231,235,0.35)', flexShrink: 0 }}>
+      <span style={{ fontSize: 10, color: 'var(--holo-text-faint)', flexShrink: 0 }}>
         {r.type}
       </span>
     ),
@@ -1180,11 +1162,15 @@ export default function BrowsePage() {
 
   return (
     <div style={S.page}>
+      <div style={{ padding: '24px 24px 0', marginBottom: 16 }}>
+        <div className="holo-section-label" style={{ marginBottom: 6 }}>WORKSPACE / BROWSE</div>
+        <h1 style={{ fontSize: 40, fontWeight: 700, margin: '0 0 4px', letterSpacing: '-0.04em', lineHeight: 1 }}>
+          <HoloText>Browse</HoloText>
+        </h1>
+        <p style={{ fontSize: 13, color: 'var(--holo-text-dim)', margin: 0 }}>Explore repository contents</p>
+      </div>
       <div style={S.header}>
-        <div>
-          <h1 style={S.title}>Browse</h1>
-          <p style={S.subtitle}>{subtitle}</p>
-        </div>
+        <p style={S.subtitle}>{subtitle}</p>
         {repoName && (
           <button
             style={S.iconBtn}
@@ -1214,25 +1200,9 @@ export default function BrowsePage() {
         {isRaw && selectedRepo?.type === 'hosted' && (isAdmin() || myPrivs.some(p =>
           (p.attrs?.actions as string[] | undefined)?.includes('write')
         )) && (
-          <button
-            style={{
-              padding: '7px 16px',
-              background: 'rgba(59,130,246,0.15)',
-              border: '1px solid rgba(59,130,246,0.4)',
-              borderRadius: 8,
-              color: '#93c5fd',
-              fontSize: 13,
-              cursor: 'pointer',
-              fontWeight: 500,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-            }}
-            onClick={() => setUploadOpen(true)}
-          >
-            <Upload size={14} />
+          <HoloButton variant="primary" icon={<Upload size={14} />} onClick={() => setUploadOpen(true)}>
             Upload
-          </button>
+          </HoloButton>
         )}
       </div>
 
@@ -1251,7 +1221,7 @@ export default function BrowsePage() {
           </div>
         ) : (
           <div style={S.dockerLayout}>
-            <div style={{ ...S.treePanel, flex: '1 1 280px', minWidth: 260, maxWidth: '100%' }}>
+            <div className="holo-card" style={{ ...S.treePanel, flex: '1 1 280px', minWidth: 260, maxWidth: '100%' }}>
               <p style={S.treeHint}>
                 Expand folders to browse images. Click a tag, manifest, or blob for Nexus-style asset metadata.
               </p>
@@ -1288,7 +1258,7 @@ export default function BrowsePage() {
                 />
               ))}
             </div>
-            <div style={S.detailPanel}>
+            <div className="holo-card" style={S.detailPanel}>
               <h2 style={S.detailTitle}>Component details</h2>
               {!dockerSelection ? (
                 <p style={S.muted}>Select a tag, manifest, or blob in the tree.</p>
@@ -1312,7 +1282,7 @@ export default function BrowsePage() {
           </div>
         ) : (
           <div style={S.dockerLayout}>
-            <div style={{ ...S.treePanel, flex: '1 1 280px', minWidth: 260, maxWidth: '100%' }}>
+            <div className="holo-card" style={{ ...S.treePanel, flex: '1 1 280px', minWidth: 260, maxWidth: '100%' }}>
               <p style={S.treeHint}>
                 Expand folders to browse. Click a file for details.
               </p>
@@ -1338,7 +1308,7 @@ export default function BrowsePage() {
                 />
               ))}
             </div>
-            <div style={S.detailPanel}>
+            <div className="holo-card" style={S.detailPanel}>
               <h2 style={S.detailTitle}>File details</h2>
               {rawSelection ? (() => {
                 const node = rawSelection.node
@@ -1422,7 +1392,7 @@ export default function BrowsePage() {
         </div>
       ) : (
         <>
-          <div style={S.table}>
+          <div className="holo-card" style={S.table}>
             <div style={S.thead}>
               <div>Name</div>
               <div>Group</div>
@@ -1448,7 +1418,7 @@ export default function BrowsePage() {
                       : {}),
                   }}
                 >
-                  <div style={{ fontWeight: 600, color: '#dbeafe' }}>{c.name}</div>
+                  <div style={{ fontWeight: 600, color: 'var(--holo-text)' }}>{c.name}</div>
                   <div style={S.muted}>{c.group || '—'}</div>
                   <div>{c.version}</div>
                   <div>
@@ -1487,17 +1457,16 @@ export default function BrowsePage() {
         </>
       )}
 
-      {deleteTarget && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div style={{ background: '#0f172a', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 14, padding: 24, width: 460, display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#dbeafe', display: 'flex', alignItems: 'center', gap: 8 }}>
+      <HoloModal open={!!deleteTarget} onClose={() => { setDeleteTarget(null); setDeleteError(null) }}>
+          {deleteTarget && <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: 'var(--holo-text)', display: 'flex', alignItems: 'center', gap: 8 }}>
               <Trash2 size={17} style={{ color: '#ef4444' }} />
               {deleteTarget.affectedPaths ? 'Delete folder?' : 'Delete file?'}
             </h3>
-            <div style={{ fontSize: 13, color: 'rgba(229,231,235,0.7)' }}>
+            <div style={{ fontSize: 13, color: 'var(--holo-text-dim)' }}>
               <span style={{ fontFamily: 'monospace', color: '#fca5a5', fontSize: 12 }}>{deleteTarget.label ?? deleteTarget.path}</span>
               {deleteTarget.affectedPaths && (
-                <p style={{ margin: '8px 0 0', fontSize: 12, color: 'rgba(229,231,235,0.45)' }}>
+                <p style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--holo-text-faint)' }}>
                   All files in this folder will be permanently deleted:
                 </p>
               )}
@@ -1510,7 +1479,7 @@ export default function BrowsePage() {
                 padding: '10px 12px',
                 fontSize: 11,
                 fontFamily: 'monospace',
-                color: 'rgba(229,231,235,0.55)',
+                color: 'var(--holo-text-dim)',
                 maxHeight: 120,
                 overflowY: 'auto' as const,
                 display: 'flex',
@@ -1525,31 +1494,22 @@ export default function BrowsePage() {
                 ))}
               </div>
             )}
-            <p style={{ margin: 0, fontSize: 12, color: 'rgba(229,231,235,0.45)' }}>
+            <p style={{ margin: 0, fontSize: 12, color: 'var(--holo-text-faint)' }}>
               This action cannot be undone.
             </p>
             {deleteError && (
               <div style={{ padding: '8px 12px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, color: '#ef4444', fontSize: 12 }}>{deleteError}</div>
             )}
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button
-                style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer', background: 'rgba(255,255,255,0.06)', color: '#e5e7eb', fontSize: 13, fontWeight: 500 }}
-                onClick={() => { setDeleteTarget(null); setDeleteError(null) }}
-                disabled={deleting}
-              >
+              <HoloButton onClick={() => { setDeleteTarget(null); setDeleteError(null) }} disabled={deleting}>
                 Cancel
-              </button>
-              <button
-                style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid rgba(239,68,68,0.3)', cursor: 'pointer', background: 'rgba(239,68,68,0.15)', color: '#ef4444', fontSize: 13, fontWeight: 600 }}
-                onClick={confirmDelete}
-                disabled={deleting}
-              >
+              </HoloButton>
+              <HoloButton variant="danger" onClick={confirmDelete} disabled={deleting}>
                 {deleting ? 'Deleting…' : deleteTarget.affectedPaths ? `Delete ${deleteTarget.affectedPaths.length} files` : 'Delete'}
-              </button>
+              </HoloButton>
             </div>
-          </div>
-        </div>
-      )}
+          </div>}
+      </HoloModal>
 
       {uploadOpen && isRaw && (
         <RawUploadModal
@@ -1628,14 +1588,11 @@ function RawUploadModal({
   }
 
   return (
-    <div
-      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100 }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
-    >
-      <div style={{ background: '#0f172a', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 14, padding: 24, width: 520, display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <HoloModal open={true} onClose={onClose}>
+      <div style={{ width: 520, display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div>
-          <div style={{ fontSize: 16, fontWeight: 700, color: '#dbeafe' }}>Upload file</div>
-          <div style={{ fontSize: 12, color: 'rgba(229,231,235,0.45)', marginTop: 2 }}>→ {repoName}{destPath ? ' / ' + destPath : ''}</div>
+          <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--holo-text)' }}>Upload file</div>
+          <div style={{ fontSize: 12, color: 'var(--holo-text-faint)', marginTop: 2 }}>→ {repoName}{destPath ? ' / ' + destPath : ''}</div>
         </div>
 
         {/* Drop zone */}
@@ -1662,17 +1619,17 @@ function RawUploadModal({
             <>
               <div style={{ fontSize: 28, marginBottom: 8 }}>📦</div>
               <div style={{ fontSize: 14, fontWeight: 600, color: '#93c5fd' }}>{file.name}</div>
-              <div style={{ fontSize: 11, color: 'rgba(229,231,235,0.4)', marginTop: 3 }}>
+              <div style={{ fontSize: 11, color: 'var(--holo-text-faint)', marginTop: 3 }}>
                 {formatBytes(file.size)} · {file.type || 'application/octet-stream'}
               </div>
-              <div style={{ fontSize: 12, color: 'rgba(229,231,235,0.35)', marginTop: 6 }}>
+              <div style={{ fontSize: 12, color: 'var(--holo-text-faint)', marginTop: 6 }}>
                 {uploadState === 'idle' ? 'Click or drag to replace file' : ''}
               </div>
             </>
           ) : (
             <>
               <div style={{ fontSize: 28, marginBottom: 8 }}>📂</div>
-              <div style={{ fontSize: 14, color: 'rgba(229,231,235,0.5)' }}>Click or drag a file here</div>
+              <div style={{ fontSize: 14, color: 'var(--holo-text-dim)' }}>Click or drag a file here</div>
             </>
           )}
         </div>
@@ -1680,27 +1637,16 @@ function RawUploadModal({
         {/* Path field */}
         {uploadState !== 'done' && (
           <div>
-            <div style={{ fontSize: 12, color: 'rgba(229,231,235,0.4)', letterSpacing: '.05em', textTransform: 'uppercase' as const, marginBottom: 6 }}>
+            <div style={{ fontSize: 12, color: 'var(--holo-text-faint)', letterSpacing: '.05em', textTransform: 'uppercase' as const, marginBottom: 6 }}>
               Destination path
             </div>
-            <input
+            <HoloInput
               type="text"
               value={destPath}
               onChange={(e) => setDestPath(e.target.value)}
               disabled={uploadState === 'uploading'}
               placeholder="e.g. releases/myapp/1.0.0/myapp.tar.gz"
-              style={{
-                width: '100%',
-                background: 'rgba(255,255,255,0.05)',
-                border: '1px solid rgba(255,255,255,0.12)',
-                borderRadius: 8,
-                padding: '8px 12px',
-                fontSize: 12,
-                fontFamily: 'monospace',
-                color: '#e5e7eb',
-                outline: 'none',
-                boxSizing: 'border-box' as const,
-              }}
+              style={{ width: '100%', fontSize: 12, fontFamily: 'monospace', boxSizing: 'border-box' as const }}
             />
           </div>
         )}
@@ -1711,7 +1657,7 @@ function RawUploadModal({
             <div style={{ height: 4, background: 'rgba(255,255,255,0.08)', borderRadius: 2, overflow: 'hidden' }}>
               <div style={{ height: '100%', background: 'linear-gradient(90deg, #3b82f6, #60a5fa)', borderRadius: 2, width: `${progress}%`, transition: 'width .3s' }} />
             </div>
-            <div style={{ fontSize: 11, color: 'rgba(229,231,235,0.4)', display: 'flex', justifyContent: 'space-between' }}>
+            <div style={{ fontSize: 11, color: 'var(--holo-text-faint)', display: 'flex', justifyContent: 'space-between' }}>
               <span>Uploading…</span>
               <span>{progress}%</span>
             </div>
@@ -1734,8 +1680,7 @@ function RawUploadModal({
         )}
 
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button
-            style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer', background: 'rgba(255,255,255,0.06)', color: '#e5e7eb', fontSize: 13, fontWeight: 500 }}
+          <HoloButton
             onClick={() => {
               if (uploadState === 'uploading' && xhrRef[0]) {
                 xhrRef[0].abort()
@@ -1745,31 +1690,23 @@ function RawUploadModal({
               }
             }}
           >
-            {uploadState === 'uploading' ? 'Cancel' : 'Cancel'}
-          </button>
+            Cancel
+          </HoloButton>
           {uploadState === 'done' ? (
-            <button
-              style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid rgba(59,130,246,0.4)', cursor: 'pointer', background: 'rgba(59,130,246,0.2)', color: '#93c5fd', fontSize: 13, fontWeight: 500 }}
-              onClick={() => { onSuccess() }}
-            >
+            <HoloButton variant="primary" onClick={() => { onSuccess() }}>
               Done
-            </button>
+            </HoloButton>
           ) : (
-            <button
-              style={{
-                padding: '8px 16px', borderRadius: 8, border: '1px solid rgba(59,130,246,0.4)',
-                cursor: !file || uploadState === 'uploading' ? 'not-allowed' : 'pointer',
-                background: 'rgba(59,130,246,0.2)', color: '#93c5fd', fontSize: 13, fontWeight: 500,
-                opacity: !file || uploadState === 'uploading' ? 0.4 : 1,
-              }}
+            <HoloButton
+              variant="primary"
               disabled={!file || uploadState === 'uploading'}
               onClick={doUpload}
             >
               {uploadState === 'uploading' ? 'Uploading…' : 'Upload'}
-            </button>
+            </HoloButton>
           )}
         </div>
       </div>
-    </div>
+    </HoloModal>
   )
 }
