@@ -911,13 +911,9 @@ function RawTreeRows({
         <FolderOpen size={14} style={{ color: '#60a5fa', flexShrink: 0 }} />
         <span style={{ fontWeight: depth === 0 ? 600 : 500, flex: 1 }}>{node.label}</span>
         {hovered && showDelete && onDelete && (
-          <button
-            onClick={(e) => { e.stopPropagation(); onDelete(node) }}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(239,68,68,0.5)', padding: '2px 4px', display: 'flex', alignItems: 'center', flexShrink: 0 }}
-            title={`Delete folder ${node.label}`}
-          >
+          <GhostBtn danger onClick={e => { e.stopPropagation(); onDelete(node) }} title={`Delete folder ${node.label}`}>
             <Trash2 size={12} />
-          </button>
+          </GhostBtn>
         )}
       </div>
       {hasKids && !folded && node.children!.map((ch) => (
