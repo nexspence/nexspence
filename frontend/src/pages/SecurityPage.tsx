@@ -124,7 +124,7 @@ function PrivilegeTransferList({
   function add(id: string) { onChange([...selectedIds, id]) }
   function remove(id: string) { onChange(selectedIds.filter(x => x !== id)) }
   function addAll() { onChange([...new Set([...selectedIds, ...available.map(p => p.id)])]) }
-  function removeAll() { onChange(selectedIds.filter(id => !selected.some(p => p.id === id))) }
+  function removeAll() { onChange([]) }
 
   const panelStyle: React.CSSProperties = {
     border: '1px solid rgba(124,92,255,0.2)', borderRadius: 10, overflow: 'hidden', flex: 1,
