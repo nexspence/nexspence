@@ -6,10 +6,28 @@
   gap: 20px;
 }
 
-.grid {
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.row {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 16px;
+  grid-template-columns: 8px 100px 1fr 110px 80px auto;
+  align-items: center;
+  gap: 14px;
+  padding: 11px 16px;
+  background: rgba(10, 8, 28, 0.97);
+  border: 1px solid rgba(124, 92, 255, 0.2);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.row:hover {
+  border-color: rgba(124, 92, 255, 0.45);
+  background: rgba(124, 92, 255, 0.04);
 }
 
 .empty {

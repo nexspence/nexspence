@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
 import { Shield, RefreshCw, Webhook, AlertTriangle, CheckCircle, Loader, Trash2, Plus, Bug, Zap, Pencil } from 'lucide-react'
@@ -6,7 +6,6 @@ import { nexusApi, nexspenceApi, apiClient } from '@/api/client'
 import { UsersTab } from './UsersPage'
 import { useAuthStore } from '@/store/authStore'
 import { Select } from '../components/Select'
-import { MultiSelect } from '../components/MultiSelect'
 import { HoloButton, HoloInput, HoloModal, HoloText, HoloTabs, HoloPill, HoloCard, HoloTabItem } from '@/components/holo'
 
 /* ─── Types ─────────────────────────────────────────────── */
@@ -70,7 +69,7 @@ function RoleModal({
   error?: string | null
 }) {
   return (
-    <HoloModal open={true} onClose={onCancel}>
+    <HoloModal open={true} onClose={onCancel} style={{ minWidth: 640 }}>
       <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: 'var(--holo-text)' }}>{title}</h3>
       <HoloInput placeholder="Name *" value={form.name} onChange={e => onFormChange({ ...form, name: e.target.value })} />
       <HoloInput placeholder="Description (optional)" value={form.description} onChange={e => onFormChange({ ...form, description: e.target.value })} />
@@ -79,11 +78,10 @@ function RoleModal({
       {loadingPrivs ? (
         <div style={emptyStyle}>Loading privileges…</div>
       ) : (
-        <MultiSelect
-          options={allPrivs.map(p => ({ value: p.id, label: p.name }))}
-          value={selectedPrivIds}
+        <PrivilegeTransferList
+          allPrivs={allPrivs}
+          selectedIds={selectedPrivIds}
           onChange={onPrivToggle}
-          placeholder="Search and select privileges…"
         />
       )}
 
@@ -101,6 +99,114 @@ function RoleModal({
         </div>
       </div>
     </HoloModal>
+  )
+}
+
+function PrivilegeTransferList({
+  allPrivs, selectedIds, onChange,
+}: {
+  allPrivs: Privilege[]
+  selectedIds: string[]
+  onChange: (ids: string[]) => void
+}) {
+  const [leftSearch, setLeftSearch] = useState('')
+  const [rightSearch, setRightSearch] = useState('')
+
+  const available = allPrivs.filter(p =>
+    !selectedIds.includes(p.id) &&
+    (!leftSearch || p.name.toLowerCase().includes(leftSearch.toLowerCase()))
+  )
+  const selected = allPrivs.filter(p =>
+    selectedIds.includes(p.id) &&
+    (!rightSearch || p.name.toLowerCase().includes(rightSearch.toLowerCase()))
+  )
+
+  function add(id: string) { onChange([...selectedIds, id]) }
+  function remove(id: string) { onChange(selectedIds.filter(x => x !== id)) }
+  function addAll() { onChange([...new Set([...selectedIds, ...available.map(p => p.id)])]) }
+  function removeAll() { onChange([]) }
+
+  const panelStyle: React.CSSProperties = {
+    border: '1px solid rgba(124,92,255,0.2)', borderRadius: 10, overflow: 'hidden', flex: 1,
+  }
+  const headerStyle: React.CSSProperties = {
+    padding: '6px 10px', fontSize: 11, fontWeight: 600, color: 'var(--holo-text-dim)',
+    textTransform: 'uppercase' as const, letterSpacing: '0.4px',
+    borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(0,0,0,0.2)',
+  }
+  const listStyle: React.CSSProperties = { maxHeight: 160, overflowY: 'auto' as const }
+  const itemBase: React.CSSProperties = {
+    padding: '6px 10px', fontSize: 12, cursor: 'pointer',
+    borderBottom: '1px solid rgba(255,255,255,0.03)',
+  }
+  const arrowBtn: React.CSSProperties = {
+    width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center',
+    borderRadius: 8, border: '1px solid rgba(124,92,255,0.2)',
+    background: 'rgba(124,92,255,0.1)', color: 'var(--holo-a)', cursor: 'pointer', fontSize: 14,
+  }
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 28px 1fr', gap: 8, alignItems: 'start' }}>
+      <div style={panelStyle}>
+        <div style={headerStyle}>Available ({available.length})</div>
+        <div style={{ padding: '4px 6px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+          <input
+            placeholder="Filter…"
+            value={leftSearch}
+            onChange={e => setLeftSearch(e.target.value)}
+            className="holo-input"
+            style={{ width: '100%', boxSizing: 'border-box' as const, fontSize: 11, padding: '4px 8px' }}
+          />
+        </div>
+        <div style={listStyle}>
+          {available.map(p => (
+            <div key={p.id} style={{ ...itemBase, color: 'var(--holo-text)' }}
+              onClick={() => add(p.id)}
+              onMouseEnter={e => (e.currentTarget as HTMLDivElement).style.background = 'rgba(124,92,255,0.08)'}
+              onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.background = 'transparent'}
+            >{p.name}</div>
+          ))}
+          {available.length === 0 && (
+            <div style={{ ...itemBase, color: 'var(--holo-text-faint)' }}>
+              {leftSearch ? 'No matches' : 'All selected'}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingTop: 42 }}>
+        <button type="button" style={arrowBtn} onClick={addAll} title="Add all">→</button>
+        <button type="button" style={arrowBtn} onClick={removeAll} title="Remove all">←</button>
+      </div>
+
+      <div style={panelStyle}>
+        <div style={headerStyle}>Selected ({selected.length})</div>
+        <div style={{ padding: '4px 6px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+          <input
+            placeholder="Filter…"
+            value={rightSearch}
+            onChange={e => setRightSearch(e.target.value)}
+            className="holo-input"
+            style={{ width: '100%', boxSizing: 'border-box' as const, fontSize: 11, padding: '4px 8px' }}
+          />
+        </div>
+        <div style={listStyle}>
+          {selected.map(p => (
+            <div key={p.id} style={{ ...itemBase, color: '#c4b5fd', background: 'rgba(124,92,255,0.12)', display: 'flex', alignItems: 'center', gap: 6 }}
+              onClick={() => remove(p.id)}
+              onMouseEnter={e => (e.currentTarget as HTMLDivElement).style.background = 'rgba(124,92,255,0.2)'}
+              onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.background = 'rgba(124,92,255,0.12)'}
+            >
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#7c5cff', flexShrink: 0, display: 'inline-block' }} />
+              {p.name}
+            </div>
+          ))}
+          {selected.length === 0 && (
+            <div style={{ ...itemBase, color: 'var(--holo-text-faint)' }}>None selected</div>
+          )}
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -718,16 +824,17 @@ function PrivilegesTab({ admin }: { admin: boolean }) {
       />
 
       {isLoading ? <div style={emptyStyle}>Loading…</div> : privs.length === 0 ? <div style={emptyStyle}>No privileges</div> : filteredPrivs.length === 0 ? <div style={emptyStyle}>No matches</div> : (
-        <HoloCard style={{ padding: 0 }}>
-          <table className="holo-table" style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: 13 }}>
+        <HoloCard style={{ padding: '0 16px' }}>
+          <div style={{ overflowX: 'auto' as const }}>
+          <table className="holo-table" style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: 13, minWidth: 600 }}>
             <thead>
               <tr style={{ color: 'var(--holo-text-dim)', textAlign: 'left' as const }}>
-                <th style={{ padding: '0 0 10px', fontWeight: 600 }}>Name</th>
-                <th style={{ padding: '0 8px 10px', fontWeight: 600 }}>Type</th>
-                <th style={{ padding: '0 8px 10px', fontWeight: 600 }}>Actions</th>
-                <th style={{ padding: '0 8px 10px', fontWeight: 600 }}>Description</th>
-                <th style={{ padding: '0 8px 10px', fontWeight: 600 }}>Used in Roles</th>
-                {admin && <th style={{ padding: '0 0 10px', fontWeight: 600, width: 80 }}></th>}
+                <th style={{ padding: '12px 0 10px', fontWeight: 600, minWidth: 140 }}>Name</th>
+                <th style={{ padding: '12px 8px 10px', fontWeight: 600, minWidth: 130 }}>Type</th>
+                <th style={{ padding: '12px 8px 10px', fontWeight: 600, minWidth: 100 }}>Actions</th>
+                <th style={{ padding: '12px 8px 10px', fontWeight: 600 }}>Description</th>
+                <th style={{ padding: '12px 8px 10px', fontWeight: 600, minWidth: 120 }}>Used in Roles</th>
+                {admin && <th style={{ padding: '12px 0 10px', fontWeight: 600, width: 90 }}></th>}
               </tr>
             </thead>
             <tbody>
@@ -761,13 +868,15 @@ function PrivilegesTab({ admin }: { admin: boolean }) {
                       }
                     </td>
                     {admin && (
-                      <td style={{ padding: '9px 0', display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                      <td style={{ padding: '9px 0' }}>
+                        <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
                         {!p.readOnly && (
                           <>
                             <HoloButton style={{ padding: '4px 8px' }} onClick={() => openEdit(p)}>Edit</HoloButton>
                             <HoloButton variant="danger" style={{ padding: '4px 8px' }} onClick={() => { if (confirm(`Delete ${p.name}?`)) del.mutate(p.id) }}><Trash2 size={13} /></HoloButton>
                           </>
                         )}
+                        </div>
                       </td>
                     )}
                   </tr>
@@ -775,6 +884,7 @@ function PrivilegesTab({ admin }: { admin: boolean }) {
               })}
             </tbody>
           </table>
+          </div>
         </HoloCard>
       )}
 
@@ -987,15 +1097,16 @@ function ContentSelectorsTab({ admin }: { admin: boolean }) {
       />
 
       {isLoading ? <div style={emptyStyle}>Loading…</div> : selectors.length === 0 ? <div style={emptyStyle}>No content selectors</div> : filteredSelectors.length === 0 ? <div style={emptyStyle}>No matches</div> : (
-        <HoloCard style={{ padding: 0 }}>
-          <table className="holo-table" style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: 13 }}>
+        <HoloCard style={{ padding: '0 16px' }}>
+          <div style={{ overflowX: 'auto' as const }}>
+          <table className="holo-table" style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: 13, minWidth: 500 }}>
             <thead>
               <tr style={{ color: 'var(--holo-text-dim)', textAlign: 'left' as const }}>
-                <th style={{ padding: '0 0 10px', fontWeight: 600 }}>Name</th>
-                <th style={{ padding: '0 8px 10px', fontWeight: 600 }}>Scope</th>
-                <th style={{ padding: '0 8px 10px', fontWeight: 600 }}>Privilege</th>
-                <th style={{ padding: '0 8px 10px', fontWeight: 600 }}>Description</th>
-                {admin && <th style={{ padding: '0 0 10px', width: 80 }}></th>}
+                <th style={{ padding: '12px 0 10px', fontWeight: 600, minWidth: 140 }}>Name</th>
+                <th style={{ padding: '12px 8px 10px', fontWeight: 600, minWidth: 180 }}>Scope</th>
+                <th style={{ padding: '12px 8px 10px', fontWeight: 600, minWidth: 130 }}>Privilege</th>
+                <th style={{ padding: '12px 8px 10px', fontWeight: 600 }}>Description</th>
+                {admin && <th style={{ padding: '12px 0 10px', width: 90 }}></th>}
               </tr>
             </thead>
             <tbody>
@@ -1015,15 +1126,18 @@ function ContentSelectorsTab({ admin }: { admin: boolean }) {
                   </td>
                   <td style={{ padding: '9px 8px', color: 'rgba(229,231,235,0.55)' }}>{s.description || '—'}</td>
                   {admin && (
-                    <td style={{ padding: '9px 0', display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                    <td style={{ padding: '9px 0' }}>
+                      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
                       <HoloButton style={{ padding: '4px 8px' }} onClick={() => openEdit(s)}>Edit</HoloButton>
                       <HoloButton variant="danger" style={{ padding: '4px 8px' }} onClick={() => { if (confirm(`Delete ${s.name}?`)) del.mutate(s.id) }}><Trash2 size={13} /></HoloButton>
+                      </div>
                     </td>
                   )}
                 </tr>
               ))}
             </tbody>
           </table>
+          </div>
         </HoloCard>
       )}
 

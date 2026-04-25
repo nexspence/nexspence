@@ -1,5 +1,6 @@
 // frontend/src/components/Select.tsx
 import { CSSProperties, ReactNode, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { ChevronDown } from 'lucide-react'
 
 export interface SelectOption {
@@ -20,142 +21,151 @@ interface SelectProps {
 }
 
 export function Select({
-  options,
-  value,
-  onChange,
+  options, value, onChange,
   placeholder = '— Select —',
-  disabled,
-  searchable,
-  style,
+  disabled, searchable, style,
 }: SelectProps) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
-  const ref = useRef<HTMLDivElement>(null)
+  const [dropPos, setDropPos] = useState<{ top: number; left: number; width: number } | null>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const dropdownRef = useRef<HTMLDivElement>(null)
   const selected = options.find(o => o.value === value)
+
+  function openMenu() {
+    if (disabled) return
+    if (!open && triggerRef.current) {
+      const r = triggerRef.current.getBoundingClientRect()
+      setDropPos({ top: r.bottom + 4, left: r.left, width: r.width })
+    }
+    setOpen(v => !v)
+  }
 
   useEffect(() => {
     if (!open) { setSearch(''); return }
-    const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    function onClose() { setOpen(false) }
+    function onKey(e: KeyboardEvent) { if (e.key === 'Escape') setOpen(false) }
+    function onMouseDown(e: MouseEvent) {
+      const t = e.target as Node
+      if (
+        triggerRef.current && !triggerRef.current.contains(t) &&
+        dropdownRef.current && !dropdownRef.current.contains(t)
+      ) setOpen(false)
     }
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false)
-    }
-    document.addEventListener('mousedown', onDown)
+    document.addEventListener('mousedown', onMouseDown)
     document.addEventListener('keydown', onKey)
+    window.addEventListener('scroll', onClose, true)
+    window.addEventListener('resize', onClose)
     return () => {
-      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('mousedown', onMouseDown)
       document.removeEventListener('keydown', onKey)
+      window.removeEventListener('scroll', onClose, true)
+      window.removeEventListener('resize', onClose)
     }
   }, [open])
 
-  const visibleOptions = searchable && search.trim()
+  const visible = searchable && search.trim()
     ? options.filter(o => o.label.toLowerCase().includes(search.toLowerCase()))
     : options
 
+  const triggerStyle: CSSProperties = {
+    display: 'flex', alignItems: 'center', gap: 8,
+    width: '100%', padding: '9px 14px',
+    background: open ? 'rgba(124,92,255,0.12)' : 'rgba(124,92,255,0.08)',
+    border: `1px solid ${open ? 'rgba(124,92,255,0.5)' : 'rgba(124,92,255,0.35)'}`,
+    borderRadius: 999,
+    boxShadow: open ? '0 0 0 3px rgba(124,92,255,0.12)' : 'none',
+    color: selected ? 'var(--holo-text)' : 'var(--holo-text-faint)',
+    cursor: disabled ? 'not-allowed' : 'pointer',
+    opacity: disabled ? 0.5 : 1,
+    textAlign: 'left' as const,
+    fontSize: 13,
+    ...style,
+  }
+
+  const dropdown = open && dropPos ? createPortal(
+    <div
+      ref={dropdownRef}
+      className="holo-card"
+      style={{
+        position: 'fixed',
+        top: dropPos.top,
+        left: dropPos.left,
+        width: dropPos.width,
+        borderRadius: 14,
+        zIndex: 9999,
+        padding: 6,
+        display: 'flex', flexDirection: 'column', gap: 2,
+        boxShadow: '0 12px 40px rgba(0,0,0,0.6)',
+        maxHeight: 280,
+        overflowY: 'auto' as const,
+      }}
+    >
+      {searchable && (
+        <div style={{ padding: '4px 0 6px', borderBottom: '1px solid rgba(255,255,255,0.06)', marginBottom: 2 }}>
+          <input
+            autoFocus
+            placeholder="Filter…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="holo-input"
+            style={{ width: '100%', boxSizing: 'border-box' as const, fontSize: 12, padding: '5px 10px' }}
+          />
+        </div>
+      )}
+      {visible.length === 0 && (
+        <div style={{ padding: '8px 12px', fontSize: 12, color: 'var(--holo-text-faint)' }}>
+          {searchable && search ? 'No matches' : 'No options'}
+        </div>
+      )}
+      {visible.map(opt => {
+        const isSel = opt.value === value
+        return (
+          <div
+            key={opt.value}
+            onClick={() => { onChange(opt.value); setOpen(false) }}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              padding: '7px 12px',
+              cursor: 'pointer', fontSize: 13,
+              color: isSel ? '#c4b5fd' : 'var(--holo-text)',
+              background: isSel ? 'rgba(124,92,255,0.18)' : 'transparent',
+              border: isSel ? '1px solid rgba(124,92,255,0.35)' : '1px solid transparent',
+              borderRadius: isSel ? 10 : 8,
+              fontWeight: isSel ? 600 : 400,
+              transition: 'background 0.1s',
+            }}
+            onMouseEnter={e => {
+              if (!isSel) (e.currentTarget as HTMLDivElement).style.background = 'rgba(124,92,255,0.08)'
+            }}
+            onMouseLeave={e => {
+              (e.currentTarget as HTMLDivElement).style.background = isSel ? 'rgba(124,92,255,0.18)' : 'transparent'
+            }}
+          >
+            {isSel && (
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#7c5cff', boxShadow: '0 0 6px #7c5cff', flexShrink: 0, display: 'inline-block' }} />
+            )}
+            <span style={{ flex: 1 }}>{opt.label}</span>
+            {opt.badge}
+            {opt.tag}
+          </div>
+        )
+      })}
+    </div>,
+    document.body,
+  ) : null
+
   return (
-    <div ref={ref} style={{ position: 'relative' }}>
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={() => setOpen(v => !v)}
-        className="holo-input"
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          width: '100%',
-          cursor: disabled ? 'not-allowed' : 'pointer',
-          opacity: disabled ? 0.5 : 1,
-          textAlign: 'left' as const,
-          borderRadius: open ? 'var(--holo-radius-sm) var(--holo-radius-sm) 0 0' : undefined,
-          boxShadow: open ? 'var(--holo-ring)' : 'none',
-          borderColor: open ? 'var(--holo-border-strong)' : undefined,
-          ...style,
-        }}
-      >
-        <span style={{ flex: 1, color: selected ? 'var(--holo-text)' : 'var(--holo-text-faint)' }}>
+    <div style={{ position: 'relative' }}>
+      <button type="button" ref={triggerRef} disabled={disabled} onClick={openMenu} style={triggerStyle}>
+        <span style={{ flex: 1 }}>
           {selected ? selected.label : placeholder}
         </span>
         {selected?.badge}
         {selected?.tag}
-        <ChevronDown
-          size={14}
-          style={{
-            color: 'var(--holo-text-faint)',
-            flexShrink: 0,
-            transform: open ? 'rotate(180deg)' : 'none',
-            transition: 'transform 0.2s',
-          }}
-        />
+        <ChevronDown size={14} style={{ color: 'var(--holo-text-faint)', flexShrink: 0, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
       </button>
-
-      {open && (
-        <div
-          className="holo-card"
-          style={{
-            position: 'absolute',
-            top: '100%',
-            left: 0,
-            right: 0,
-            borderRadius: '0 0 var(--holo-radius-sm) var(--holo-radius-sm)',
-            borderTop: 'none',
-            zIndex: 200,
-            maxHeight: 260,
-            overflowY: 'auto' as const,
-            boxShadow: '0 12px 40px rgba(0,0,0,0.6)',
-          }}
-        >
-          {searchable && (
-            <div style={{ padding: '6px 8px', borderBottom: '1px solid rgba(255,255,255,0.06)', position: 'sticky', top: 0, background: 'rgba(8,13,28,0.98)', zIndex: 1 }}>
-              <input
-                autoFocus
-                placeholder="Filter…"
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                className="holo-input"
-                style={{ width: '100%', boxSizing: 'border-box' as const }}
-              />
-            </div>
-          )}
-          {visibleOptions.length === 0 && (
-            <div style={{ padding: '10px 14px', fontSize: 13, color: 'rgba(229,231,235,0.35)' }}>
-              {searchable && search.trim() ? 'No matches' : 'No options'}
-            </div>
-          )}
-          {visibleOptions.map(opt => {
-            const isSelected = opt.value === value
-            return (
-              <div
-                key={opt.value}
-                onClick={() => { onChange(opt.value); setOpen(false) }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  padding: '10px 14px',
-                  cursor: 'pointer',
-                  fontSize: 13,
-                  color: isSelected ? 'var(--holo-a)' : 'var(--holo-text)',
-                  background: isSelected ? 'rgba(124,92,255,0.15)' : 'transparent',
-                  borderBottom: '1px solid rgba(255,255,255,0.04)',
-                  transition: 'background 0.1s',
-                }}
-                onMouseEnter={e => {
-                  (e.currentTarget as HTMLDivElement).style.background = 'rgba(124,92,255,0.08)'
-                }}
-                onMouseLeave={e => {
-                  (e.currentTarget as HTMLDivElement).style.background = isSelected ? 'rgba(124,92,255,0.15)' : 'transparent'
-                }}
-              >
-                <span style={{ flex: 1 }}>{opt.label}</span>
-                {opt.badge}
-                {opt.tag}
-              </div>
-            )
-          })}
-        </div>
-      )}
+      {dropdown}
     </div>
   )
 }

@@ -19,8 +19,8 @@ interface UsageResp {
 }
 interface SystemInfo { version: string; edition: string; product: string }
 
-type AdminTab = 'blobs' | 'backup' | 'monitoring'
-const VALID_TABS: AdminTab[] = ['blobs', 'backup', 'monitoring']
+type AdminTab = 'info' | 'blobs' | 'backup' | 'monitoring'
+const VALID_TABS: AdminTab[] = ['info', 'blobs', 'backup', 'monitoring']
 
 function fmtGB(b: number) {
   return (b / 1024 / 1024 / 1024).toFixed(2) + ' GB'
@@ -38,7 +38,7 @@ function fmtBytes(b: number) {
 export default function AdminPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const tabParam = searchParams.get('tab') as AdminTab | null
-  const tab: AdminTab = tabParam && VALID_TABS.includes(tabParam) ? tabParam : 'blobs'
+  const tab: AdminTab = tabParam && VALID_TABS.includes(tabParam) ? tabParam : 'info'
   const setTab = (t: AdminTab) => {
     const next = new URLSearchParams(searchParams)
     next.set('tab', t)
@@ -130,56 +130,10 @@ export default function AdminPage() {
         </HoloButton>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-        {/* Status card */}
-        <HoloCard>
-          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--holo-text-dim)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
-            <CheckCircle size={14} /> System Status
-          </div>
-          {statusLoading ? (
-            <p style={{ fontSize: 12, color: 'var(--holo-text-faint)' }}>Loading…</p>
-          ) : (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-              <div style={{ width: 8, height: 8, borderRadius: '50%', background: isOnline ? '#22c55e' : '#ef4444', boxShadow: isOnline ? '0 0 6px #22c55e66' : '0 0 6px #ef444466', flexShrink: 0 }} />
-              <span style={{ fontSize: 14, fontWeight: 600, color: isOnline ? '#22c55e' : '#ef4444' }}>
-                {isOnline ? 'Online' : 'Offline'}
-              </span>
-              <span style={{ fontSize: 12, color: 'var(--holo-text-faint)', marginLeft: 4 }}>
-                {status?.edition ?? ''}
-              </span>
-            </div>
-          )}
-        </HoloCard>
-
-        {/* System Info card */}
-        <HoloCard>
-          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--holo-text-dim)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Info size={14} /> System Info
-          </div>
-          {info ? (
-            <>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.05)', fontSize: 13 }}>
-                <span style={{ color: 'var(--holo-text-dim)' }}>Product</span>
-                <span style={{ color: 'var(--holo-text)', fontWeight: 500 }}>{info.product}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.05)', fontSize: 13 }}>
-                <span style={{ color: 'var(--holo-text-dim)' }}>Version</span>
-                <span style={{ color: 'var(--holo-text)', fontWeight: 500 }}>{info.version}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: 'none', fontSize: 13 }}>
-                <span style={{ color: 'var(--holo-text-dim)' }}>Edition</span>
-                <span style={{ color: 'var(--holo-text)', fontWeight: 500 }}>{info.edition}</span>
-              </div>
-            </>
-          ) : (
-            <p style={{ fontSize: 12, color: 'var(--holo-text-faint)' }}>Loading…</p>
-          )}
-        </HoloCard>
-      </div>
-
       {/* Tabs */}
       <HoloTabs
         items={[
+          { value: 'info',       label: <><Info size={13} style={{ marginRight: 5 }} />Info</> },
           { value: 'blobs',      label: <><HardDrive size={13} style={{ marginRight: 5 }} />Blob Stores</> },
           { value: 'backup',     label: <><Database size={13} style={{ marginRight: 5 }} />Backup &amp; Restore</> },
           { value: 'monitoring', label: <><Activity size={13} style={{ marginRight: 5 }} />Monitoring</> },
@@ -187,6 +141,56 @@ export default function AdminPage() {
         value={tab}
         onChange={v => setTab(v as AdminTab)}
       />
+
+      {/* Info */}
+      {tab === 'info' && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+          {/* Status card */}
+          <HoloCard>
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--holo-text-dim)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <CheckCircle size={14} /> System Status
+            </div>
+            {statusLoading ? (
+              <p style={{ fontSize: 12, color: 'var(--holo-text-faint)' }}>Loading…</p>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                <div style={{ width: 8, height: 8, borderRadius: '50%', background: isOnline ? '#22c55e' : '#ef4444', boxShadow: isOnline ? '0 0 6px #22c55e66' : '0 0 6px #ef444466', flexShrink: 0 }} />
+                <span style={{ fontSize: 14, fontWeight: 600, color: isOnline ? '#22c55e' : '#ef4444' }}>
+                  {isOnline ? 'Online' : 'Offline'}
+                </span>
+                <span style={{ fontSize: 12, color: 'var(--holo-text-faint)', marginLeft: 4 }}>
+                  {status?.edition ?? ''}
+                </span>
+              </div>
+            )}
+          </HoloCard>
+
+          {/* System Info card */}
+          <HoloCard>
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--holo-text-dim)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Info size={14} /> System Info
+            </div>
+            {info ? (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.05)', fontSize: 13 }}>
+                  <span style={{ color: 'var(--holo-text-dim)' }}>Product</span>
+                  <span style={{ color: 'var(--holo-text)', fontWeight: 500 }}>{info.product}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.05)', fontSize: 13 }}>
+                  <span style={{ color: 'var(--holo-text-dim)' }}>Version</span>
+                  <span style={{ color: 'var(--holo-text)', fontWeight: 500 }}>{info.version}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: 'none', fontSize: 13 }}>
+                  <span style={{ color: 'var(--holo-text-dim)' }}>Edition</span>
+                  <span style={{ color: 'var(--holo-text)', fontWeight: 500 }}>{info.edition}</span>
+                </div>
+              </>
+            ) : (
+              <p style={{ fontSize: 12, color: 'var(--holo-text-faint)' }}>Loading…</p>
+            )}
+          </HoloCard>
+        </div>
+      )}
 
       {/* Backup / Restore */}
       {tab === 'backup' && (
