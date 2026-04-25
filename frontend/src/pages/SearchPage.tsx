@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Search, Package, ChevronDown, ChevronUp, ChevronsUpDown, ChevronRight, ExternalLink, HelpCircle } from 'lucide-react'
 import { nexusApi } from '@/api/client'
 import { Select } from '../components/Select'
+import { HoloCard, HoloButton, HoloInput, HoloPill, HoloText } from '@/components/holo'
 
 interface SearchAsset {
   id: string
@@ -31,32 +32,18 @@ type SortDir = 'asc' | 'desc'
 const S = {
   page: { padding: 24, display: 'flex', flexDirection: 'column' as const, gap: 20 },
   header: { marginBottom: 4 },
-  title: { fontSize: 20, fontWeight: 700, color: '#dbeafe', margin: '0 0 4px' },
-  subtitle: { fontSize: 13, color: 'rgba(229,231,235,0.5)', margin: 0 },
+  title: { fontSize: 20, fontWeight: 700, color: 'var(--holo-text)', margin: '0 0 4px' },
+  subtitle: { fontSize: 13, color: 'var(--holo-text-dim)', margin: 0 },
   filterCard: {
     background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)',
     borderRadius: 12, padding: '20px 20px 16px',
   },
   filterGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12, marginBottom: 14 },
   field: { display: 'flex', flexDirection: 'column' as const, gap: 5 },
-  label: { fontSize: 11, fontWeight: 600, color: 'rgba(229,231,235,0.5)', textTransform: 'uppercase' as const, letterSpacing: '0.04em' },
-  input: {
-    background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
-    borderRadius: 8, padding: '8px 12px', color: '#e5e7eb', fontSize: 13, outline: 'none',
-  },
+  label: { fontSize: 11, fontWeight: 600, color: 'var(--holo-text-dim)', textTransform: 'uppercase' as const, letterSpacing: '0.04em' },
   filterFooter: { display: 'flex', alignItems: 'center', gap: 10 },
-  searchBtn: {
-    background: '#3b82f6', border: 'none', borderRadius: 8,
-    padding: '9px 20px', color: '#fff', fontSize: 13, fontWeight: 600,
-    cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
-  },
-  clearBtn: {
-    background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
-    borderRadius: 8, padding: '9px 14px', color: 'rgba(229,231,235,0.6)',
-    fontSize: 13, cursor: 'pointer',
-  },
-  resultsLabel: { fontSize: 12, color: 'rgba(229,231,235,0.4)', marginLeft: 'auto' as const },
-  empty: { flex: 1, display: 'flex', flexDirection: 'column' as const, alignItems: 'center', justifyContent: 'center', gap: 12, color: 'rgba(229,231,235,0.4)', fontSize: 14, paddingTop: 48 },
+  resultsLabel: { fontSize: 12, color: 'var(--holo-text-faint)', marginLeft: 'auto' as const },
+  empty: { flex: 1, display: 'flex', flexDirection: 'column' as const, alignItems: 'center', justifyContent: 'center', gap: 12, color: 'var(--holo-text-faint)', fontSize: 14, paddingTop: 48 },
 
   group: { background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 12, overflow: 'hidden' as const },
   groupHeader: {
@@ -65,8 +52,8 @@ const S = {
     background: 'rgba(255,255,255,0.03)',
     borderBottom: '1px solid rgba(255,255,255,0.07)',
   },
-  groupName: { fontSize: 13, fontWeight: 600, color: '#dbeafe' },
-  groupCount: { fontSize: 11, color: 'rgba(229,231,235,0.4)', marginLeft: 'auto' as const },
+  groupName: { fontSize: 13, fontWeight: 600, color: 'var(--holo-text)' },
+  groupCount: { fontSize: 11, color: 'var(--holo-text-faint)', marginLeft: 'auto' as const },
 
   COLS: '1.5fr 1fr 1fr 2fr 1fr',
   thead: {
@@ -85,7 +72,7 @@ const S = {
   trow: {
     display: 'grid',
     padding: '10px 16px', borderBottom: '1px solid rgba(255,255,255,0.04)',
-    fontSize: 13, color: '#e5e7eb', alignItems: 'center',
+    fontSize: 13, color: 'var(--holo-text)', alignItems: 'center',
     cursor: 'pointer',
   },
   expanded: {
@@ -97,9 +84,8 @@ const S = {
     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
     padding: '4px 0', fontSize: 12, gap: 12,
   },
-  muted: { fontSize: 12, color: 'rgba(229,231,235,0.4)' },
+  muted: { fontSize: 12, color: 'var(--holo-text-faint)' },
   path: { fontSize: 11, color: 'rgba(147,197,253,0.85)', fontFamily: 'monospace' as const, wordBreak: 'break-all' as const },
-  badge: (color: string) => ({ fontSize: 11, fontWeight: 600 as const, padding: '2px 8px', borderRadius: 4, background: color + '22', color }),
 }
 
 const FORMAT_COLORS: Record<string, string> = {
@@ -269,16 +255,19 @@ export default function SearchPage() {
 
   return (
     <div style={S.page}>
-      <div style={S.header}>
-        <h1 style={S.title}>Search</h1>
-        <p style={S.subtitle}>Find artifacts across all repositories</p>
+      <div style={{ marginBottom: 24 }}>
+        <div className="holo-section-label" style={{ marginBottom: 6 }}>WORKSPACE / SEARCH</div>
+        <h1 style={{ fontSize: 40, fontWeight: 700, margin: '0 0 4px', letterSpacing: '-0.04em', lineHeight: 1 }}>
+          <HoloText>Search</HoloText>
+        </h1>
+        <p style={{ fontSize: 13, color: 'var(--holo-text-dim)', margin: 0 }}>Find artifacts across all repositories</p>
       </div>
 
       <form style={S.filterCard} onSubmit={handleSubmit}>
         <div style={S.filterGrid}>
           <div style={S.field}>
             <label style={S.label}>Name</label>
-            <input style={S.input} placeholder="e.g. spring-core" value={filters.name} onChange={set('name')} />
+            <HoloInput placeholder="e.g. spring-core" value={filters.name} onChange={set('name')} />
           </div>
           <div style={S.field}>
             <label style={S.label}>Format</label>
@@ -293,11 +282,11 @@ export default function SearchPage() {
           </div>
           <div style={S.field}>
             <label style={S.label}>Repository</label>
-            <input style={S.input} placeholder="any" value={filters.repository} onChange={set('repository')} />
+            <HoloInput placeholder="any" value={filters.repository} onChange={set('repository')} />
           </div>
           <div style={S.field}>
             <label style={S.label}>Version</label>
-            <input style={S.input} placeholder="e.g. 1.2.3" value={filters.version} onChange={set('version')} />
+            <HoloInput placeholder="e.g. 1.2.3" value={filters.version} onChange={set('version')} />
           </div>
           <div style={S.field}>
             <label style={{ ...S.label, display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -310,8 +299,7 @@ export default function SearchPage() {
                 <HelpCircle size={11} />
               </span>
             </label>
-            <input
-              style={S.input}
+            <HoloInput
               placeholder="e.g. org.springframework"
               title="Maven groupId / npm scope. Leave blank to search across all groups."
               value={filters.group}
@@ -320,8 +308,8 @@ export default function SearchPage() {
           </div>
         </div>
         <div style={S.filterFooter}>
-          <button type="submit" style={S.searchBtn}><Search size={14} /> Search</button>
-          <button type="button" style={S.clearBtn} onClick={handleClear}>Clear</button>
+          <HoloButton type="submit" variant="primary" icon={<Search size={14} />}>Search</HoloButton>
+          <HoloButton type="button" onClick={handleClear}>Clear</HoloButton>
           {submitted && !isLoading && (
             <span style={S.resultsLabel}>{items.length} result{items.length !== 1 ? 's' : ''} in {grouped.size} repo{grouped.size !== 1 ? 's' : ''}</span>
           )}
@@ -363,16 +351,15 @@ export default function SearchPage() {
             return (
               <div key={repo} style={S.group}>
                 <div style={S.groupHeader}>
-                  <span style={S.badge(color)}>{fmt}</span>
+                  <HoloPill style={{ background: color + '22', color }}>{fmt}</HoloPill>
                   <span style={S.groupName}>{repo}</span>
                   <span style={S.groupCount}>{comps.length} component{comps.length !== 1 ? 's' : ''}</span>
-                  <button
+                  <HoloButton
                     onClick={() => navigate(`/browse?repo=${encodeURIComponent(repo)}`)}
-                    style={{ marginLeft: 8, background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(147,197,253,0.7)', display: 'flex', alignItems: 'center', gap: 3, fontSize: 12 }}
+                    style={{ marginLeft: 8 }}
                     title="Open in Browse"
-                  >
-                    <ExternalLink size={12} /> Browse
-                  </button>
+                    icon={<ExternalLink size={12} />}
+                  >Browse</HoloButton>
                 </div>
                 {comps.map(c => {
                   const firstAsset = c.assets?.[0]
@@ -388,56 +375,61 @@ export default function SearchPage() {
                   }
                   return (
                     <div key={c.id} ref={isReturnRow ? returnRowRef : undefined}>
-                      <div
+                      <HoloCard
                         style={{
-                          ...trowStyle,
+                          padding: 14,
+                          marginBottom: 8,
                           ...(isReturnRow
                             ? { outline: '1px solid rgba(59,130,246,0.6)', background: 'rgba(59,130,246,0.08)', transition: 'background 0.6s, outline 0.6s' }
                             : {}),
                         }}
-                        title="Open in Browse"
-                        onClick={openInBrowse}
                       >
-                        <div style={{ fontWeight: 500, color: '#dbeafe', display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <span
-                            onClick={e => { e.stopPropagation(); toggleExpand(c.id) }}
-                            title={isOpen ? 'Collapse' : 'Expand assets'}
-                            style={{ display: 'inline-flex', alignItems: 'center', cursor: 'pointer', padding: 2, margin: -2, borderRadius: 3 }}
-                          >
-                            <ChevronRight size={12} style={{ color: 'rgba(229,231,235,0.6)', transform: isOpen ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s', flexShrink: 0 }} />
-                          </span>
-                          {c.name || '—'}
+                        <div
+                          style={trowStyle}
+                          title="Open in Browse"
+                          onClick={openInBrowse}
+                        >
+                          <div style={{ fontWeight: 500, color: 'var(--holo-text)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span
+                              onClick={e => { e.stopPropagation(); toggleExpand(c.id) }}
+                              title={isOpen ? 'Collapse' : 'Expand assets'}
+                              style={{ display: 'inline-flex', alignItems: 'center', cursor: 'pointer', padding: 2, margin: -2, borderRadius: 3 }}
+                            >
+                              <ChevronRight size={12} style={{ color: 'var(--holo-text-dim)', transform: isOpen ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s', flexShrink: 0 }} />
+                            </span>
+                            {c.name || '—'}
+                          </div>
+                          <div style={S.muted}>{c.group || '—'}</div>
+                          <div style={{ color: '#a5b4fc', fontFamily: 'monospace', fontSize: 12 }}>{c.version || '—'}</div>
+                          <div style={S.path}>{firstAsset?.path ?? '—'}{hasMulti ? ` +${c.assets!.length - 1}` : ''}</div>
+                          <div style={S.muted}>{fmtDate(firstAsset?.lastModified)} {firstAsset ? `· ${fmtSize(firstAsset.fileSize)}` : ''}</div>
                         </div>
-                        <div style={S.muted}>{c.group || '—'}</div>
-                        <div style={{ color: '#a5b4fc', fontFamily: 'monospace', fontSize: 12 }}>{c.version || '—'}</div>
-                        <div style={S.path}>{firstAsset?.path ?? '—'}{hasMulti ? ` +${c.assets!.length - 1}` : ''}</div>
-                        <div style={S.muted}>{fmtDate(firstAsset?.lastModified)} {firstAsset ? `· ${fmtSize(firstAsset.fileSize)}` : ''}</div>
-                      </div>
-                      {isOpen && (
-                        <div style={S.expanded}>
-                          {(c.assets ?? []).map(a => (
-                            <div key={a.id} style={S.assetRow}>
-                              <span style={S.path}>{a.path}</span>
-                              <span style={{ ...S.muted, whiteSpace: 'nowrap' as const }}>{fmtSize(a.fileSize)} · {a.contentType || '—'} · {fmtDate(a.lastModified)}</span>
-                            </div>
-                          ))}
-                          {(() => {
-                            const digests = dockerDigests.get(`${c.repository}::${c.name}`) ?? []
-                            if (digests.length === 0) return null
-                            return (
-                              <>
-                                <div style={{ ...S.muted, marginTop: 8, marginBottom: 4, fontSize: 11, textTransform: 'uppercase' as const, letterSpacing: '0.05em' }}>Digest aliases</div>
-                                {digests.flatMap(d => (d.assets ?? []).map(a => (
-                                  <div key={a.id} style={S.assetRow}>
-                                    <span style={{ ...S.path, color: 'rgba(147,197,253,0.5)' }}>{a.path}</span>
-                                    <span style={{ ...S.muted, whiteSpace: 'nowrap' as const }}>{d.version?.slice(0, 19)}… · {fmtSize(a.fileSize)}</span>
-                                  </div>
-                                )))}
-                              </>
-                            )
-                          })()}
-                        </div>
-                      )}
+                        {isOpen && (
+                          <div style={S.expanded}>
+                            {(c.assets ?? []).map(a => (
+                              <div key={a.id} style={S.assetRow}>
+                                <span style={S.path}>{a.path}</span>
+                                <span style={{ ...S.muted, whiteSpace: 'nowrap' as const }}>{fmtSize(a.fileSize)} · {a.contentType || '—'} · {fmtDate(a.lastModified)}</span>
+                              </div>
+                            ))}
+                            {(() => {
+                              const digests = dockerDigests.get(`${c.repository}::${c.name}`) ?? []
+                              if (digests.length === 0) return null
+                              return (
+                                <>
+                                  <div style={{ ...S.muted, marginTop: 8, marginBottom: 4, fontSize: 11, textTransform: 'uppercase' as const, letterSpacing: '0.05em' }}>Digest aliases</div>
+                                  {digests.flatMap(d => (d.assets ?? []).map(a => (
+                                    <div key={a.id} style={S.assetRow}>
+                                      <span style={{ ...S.path, color: 'rgba(147,197,253,0.5)' }}>{a.path}</span>
+                                      <span style={{ ...S.muted, whiteSpace: 'nowrap' as const }}>{d.version?.slice(0, 19)}… · {fmtSize(a.fileSize)}</span>
+                                    </div>
+                                  )))}
+                                </>
+                              )
+                            })()}
+                          </div>
+                        )}
+                      </HoloCard>
                     </div>
                   )
                 })}

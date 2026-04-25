@@ -8,9 +8,9 @@
   position: sticky;
   top: 0;
   height: 100vh;
-  background: linear-gradient(180deg, rgba(11,20,38,0.82), rgba(11,20,38,0.58));
-  backdrop-filter: blur(12px);
-  border-right: 1px solid var(--border);
+  background: rgba(8,6,18,0.6);
+  backdrop-filter: blur(30px);
+  border-right: 1px solid rgba(124,92,255,0.15);
   padding: 14px 12px;
   display: flex;
   flex-direction: column;
@@ -37,7 +37,7 @@
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--muted);
+  color: var(--holo-text-faint);
   padding: 0 4px;
   margin-top: 4px;
 }
@@ -53,33 +53,33 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 9px 11px;
-  border-radius: 11px;
-  border: 1px solid rgba(255,255,255,0.1);
-  background: rgba(255,255,255,0.03);
-  color: var(--text);
+  padding: 8px 11px;
+  border-radius: 9px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--holo-text-dim);
   font-size: 13px;
   font-weight: 500;
-  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease), color var(--dur) var(--ease);
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
   text-decoration: none;
+  cursor: pointer;
 }
 
 .navBtn:hover {
-  background: var(--brand-hover);
-  border-color: rgba(59,130,246,0.35);
-  color: #dbeafe;
+  background: rgba(255,255,255,0.04);
+  color: var(--holo-text);
 }
 
 .navBtn.active {
-  background: var(--brand-active);
-  border-color: rgba(59,130,246,0.5);
-  color: #eff6ff;
+  background: linear-gradient(90deg, rgba(124,92,255,0.18), rgba(34,211,238,0.06));
+  border-color: rgba(124,92,255,0.30);
+  color: var(--holo-text);
   font-weight: 600;
 }
 
 .divider {
   border: none;
-  border-top: 1px solid rgba(255,255,255,0.07);
+  border-top: 1px solid rgba(124,92,255,0.15);
   margin: 2px 0;
 }
 
@@ -89,13 +89,13 @@
   flex-direction: column;
   gap: 4px;
   padding-top: 10px;
-  border-top: 1px solid rgba(255,255,255,0.07);
+  border-top: 1px solid rgba(124,92,255,0.15);
 }
 
 .danger:hover {
-  background: rgba(239,68,68,0.12) !important;
-  border-color: rgba(239,68,68,0.35) !important;
-  color: #fca5a5 !important;
+  background: rgba(255,107,107,0.10) !important;
+  border-color: rgba(255,107,107,0.30) !important;
+  color: var(--holo-red) !important;
 }
 
 .userInfo {
@@ -104,21 +104,21 @@
   justify-content: space-between;
   padding: 6px 10px;
   border-radius: 8px;
-  background: rgba(255,255,255,0.03);
-  border: 1px solid rgba(255,255,255,0.07);
+  background: rgba(255,255,255,0.025);
+  border: 1px solid rgba(124,92,255,0.12);
 }
 
 .userName {
   font-size: 12px;
   font-weight: 600;
-  color: #dbeafe;
+  color: var(--holo-text);
 }
 
 .userRole {
   font-size: 10px;
   font-weight: 500;
-  color: rgba(59,130,246,0.9);
-  background: rgba(59,130,246,0.12);
+  color: var(--holo-a);
+  background: rgba(124,92,255,0.12);
   padding: 1px 6px;
   border-radius: 4px;
 }
@@ -126,7 +126,7 @@
 .version {
   text-align: center;
   font-size: 10px;
-  color: var(--muted);
+  color: var(--holo-text-faint);
   padding: 4px 0 0;
 }
 

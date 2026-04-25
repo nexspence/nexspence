@@ -6,6 +6,7 @@ import { nexusApi, nexspenceApi, apiClient } from '@/api/client'
 import { useAuthStore } from '@/store/authStore'
 import styles from './RepositoriesPage.module.css'
 import { Select } from '../components/Select'
+import { TiltCard, HoloCard, HoloButton, HoloInput, HoloPill, HoloText, HoloModal } from '@/components/holo'
 
 interface Repository {
   id: string
@@ -91,27 +92,29 @@ export default function RepositoriesPage() {
 
   return (
     <div className={styles.page}>
-      <div className={styles.header}>
-        <div>
-          <h1 className={styles.title}>Repositories</h1>
-          <p className={styles.subtitle}>{repos.length} total</p>
-        </div>
-        <div className={styles.actions}>
-          <button className={styles.iconBtn} onClick={() => refetch()} title="Refresh">
-            <RefreshCw size={16} />
-          </button>
-          {isAdmin && (
-            <button className={styles.createBtn} onClick={() => setShowCreate(true)}>
-              <Plus size={16} />
-              Create Repository
-            </button>
-          )}
+      <div style={{ marginBottom: 8 }}>
+        <div className="holo-section-label" style={{ marginBottom: 6 }}>WORKSPACE / REPOSITORIES</div>
+        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16 }}>
+          <div>
+            <h1 style={{ fontSize: 40, fontWeight: 700, margin: '0 0 4px', letterSpacing: '-0.04em', lineHeight: 1 }}>
+              <HoloText>Repositories</HoloText>
+            </h1>
+            <p style={{ fontSize: 13, color: 'var(--holo-text-dim)', margin: 0 }}>{repos.length} total</p>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <HoloButton icon={<RefreshCw size={15} />} onClick={() => refetch()} title="Refresh" />
+            {isAdmin && (
+              <HoloButton variant="primary" icon={<Plus size={15} />} onClick={() => setShowCreate(true)}>
+                Create Repository
+              </HoloButton>
+            )}
+          </div>
         </div>
       </div>
 
-      <div className={styles.toolbar}>
-        <input
-          className={styles.search}
+      <div style={{ display: 'flex', gap: 12 }}>
+        <HoloInput
+          style={{ flex: 1 }}
           placeholder="Filter by name…"
           value={filter}
           onChange={e => setFilter(e.target.value)}
@@ -133,24 +136,24 @@ export default function RepositoriesPage() {
         <div className={styles.empty}>
           <Database size={40} className={styles.emptyIcon} />
           <p style={{ color: '#ef4444', marginBottom: 8 }}>Error loading repositories</p>
-          <p style={{ fontSize: 13, color: 'rgba(229,231,235,0.5)', marginBottom: 16 }}>
+          <p style={{ fontSize: 13, color: 'var(--holo-text-dim)', marginBottom: 16 }}>
             {error instanceof Error ? error.message : 'Unable to access repositories. Check your permissions or contact your administrator.'}
           </p>
-          <button className={styles.createBtn} onClick={() => refetch()} style={{ marginTop: 8 }}>
-            <RefreshCw size={16} /> Retry
-          </button>
+          <HoloButton variant="primary" icon={<RefreshCw size={15} />} onClick={() => refetch()} style={{ marginTop: 8 }}>
+            Retry
+          </HoloButton>
         </div>
       ) : repos.length === 0 ? (
         <div className={styles.empty}>
           <Database size={40} className={styles.emptyIcon} />
           <p>No repositories found</p>
-          <p style={{ fontSize: 12, color: 'rgba(229,231,235,0.5)', marginTop: 8 }}>
+          <p style={{ fontSize: 12, color: 'var(--holo-text-dim)', marginTop: 8 }}>
             You don't have access to any repositories. Contact your administrator to grant you access.
           </p>
           {!filter && isAdmin && (
-            <button className={styles.createBtn} onClick={() => setShowCreate(true)}>
-              <Plus size={16} /> Create your first repository
-            </button>
+            <HoloButton variant="primary" icon={<Plus size={15} />} onClick={() => setShowCreate(true)}>
+              Create your first repository
+            </HoloButton>
           )}
         </div>
       ) : (
@@ -220,8 +223,6 @@ function RepoCard({
   onEdit: () => void
   onDelete: () => void
 }) {
-  const color = FORMAT_COLORS[repo.format] ?? '#6b7280'
-
   const { data: quota } = useQuery({
     queryKey: ['repoQuota', repo.name],
     queryFn: () => nexspenceApi.getRepositoryQuota(repo.name).then(r => r.data),
@@ -229,63 +230,54 @@ function RepoCard({
   })
 
   const pct = quota?.percentUsed ?? null
-  const quotaColor = pct == null ? '#3b82f6' : pct >= 90 ? '#ef4444' : pct >= 70 ? '#f59e0b' : '#22c55e'
 
   return (
-    <div className={styles.card} onClick={onClick} style={{ cursor: 'pointer' }}>
-      <div className={styles.cardHeader}>
-        <span className={styles.formatBadge} style={{ background: color + '22', color }}>
-          {repo.format}
-        </span>
-        <span className={`${styles.typeBadge} ${styles['type_' + repo.type]}`}>
-          {TYPE_LABELS[repo.type] ?? repo.type}
-        </span>
-        <span className={`${styles.statusDot} ${repo.online ? styles.online : styles.offline}`} />
-        {repo.allowAnonymous && (
-          <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 4, background: '#06b6d422', color: '#06b6d4', fontWeight: 600 }}>anon</span>
-        )}
-      </div>
-      <div className={styles.cardName}>{repo.name}</div>
-      {repo.description && (
-        <div className={styles.cardDesc}>{repo.description}</div>
-      )}
-      {repo.type !== 'group' && storeName && (
-        <div style={{ fontSize: 11, color: 'rgba(229,231,235,0.4)', marginTop: 4 }}>
-          on <span style={{ color: 'rgba(147,197,253,0.7)', fontWeight: 500 }}>{storeName}</span>
-        </div>
-      )}
-      {quota != null && (
-        <div className={styles.quotaBar}>
-          <div className={styles.quotaText}>
-            <span>{formatBytes(quota.usedBytes)} used</span>
-            {quota.quotaBytes != null && (
-              <span>/ {formatBytes(quota.quotaBytes)}</span>
-            )}
-          </div>
-          {quota.quotaBytes != null && (
-            <div className={styles.quotaTrack}>
-              <div
-                className={styles.quotaFill}
-                style={{
-                  width: `${Math.min(pct ?? 0, 100)}%`,
-                  background: quotaColor,
-                }}
-              />
-            </div>
+    <TiltCard intensity={10} style={{ borderRadius: 14 }} onClick={onClick}>
+      <HoloCard edge style={{ padding: 16, cursor: 'pointer' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+          <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 4, textTransform: 'uppercase' as const, letterSpacing: '0.3px', background: (FORMAT_COLORS[repo.format] ?? '#6b7280') + '22', color: FORMAT_COLORS[repo.format] ?? '#6b7280' }}>
+            {repo.format}
+          </span>
+          <HoloPill tone={repo.type === 'hosted' ? 'success' : repo.type === 'proxy' ? 'default' : 'warn'}>
+            {TYPE_LABELS[repo.type] ?? repo.type}
+          </HoloPill>
+          <span style={{ width: 7, height: 7, borderRadius: '50%', background: repo.online ? 'var(--holo-green)' : 'rgba(255,255,255,0.2)', boxShadow: repo.online ? '0 0 6px var(--holo-green)' : 'none', display: 'inline-block', marginLeft: 'auto', flexShrink: 0 }} />
+          {repo.allowAnonymous && (
+            <HoloPill>anon</HoloPill>
           )}
         </div>
-      )}
-      {isAdmin && (
-        <div className={styles.cardFooter}>
-          <button type="button" className={styles.settingsBtn} onClick={e => { e.stopPropagation(); onEdit() }} title="Settings">
-            <Settings2 size={14} />
-          </button>
-          <button type="button" className={styles.deleteBtn} onClick={e => { e.stopPropagation(); onDelete() }} title="Delete">
-            <Trash2 size={14} />
-          </button>
+        <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--holo-text)', wordBreak: 'break-word' as const, marginBottom: 4 }}>
+          {repo.name}
         </div>
-      )}
-    </div>
+        {repo.description && (
+          <div style={{ fontSize: 12, color: 'var(--holo-text-dim)', lineHeight: 1.4 }}>{repo.description}</div>
+        )}
+        {repo.type !== 'group' && storeName && (
+          <div style={{ fontSize: 11, color: 'var(--holo-text-faint)', marginTop: 4 }}>
+            on <span style={{ color: 'var(--holo-b)', fontWeight: 500 }}>{storeName}</span>
+          </div>
+        )}
+        {quota != null && (
+          <div style={{ marginTop: 8 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--holo-text-dim)', marginBottom: 4 }}>
+              <span className="holo-mono">{formatBytes(quota.usedBytes)} used</span>
+              {quota.quotaBytes != null && <span className="holo-mono">{formatBytes(quota.quotaBytes)}</span>}
+            </div>
+            {quota.quotaBytes != null && (
+              <div style={{ height: 3, background: 'rgba(255,255,255,0.08)', borderRadius: 2, overflow: 'hidden' }}>
+                <div style={{ height: '100%', borderRadius: 2, transition: 'width 0.3s ease', width: `${Math.min(pct ?? 0, 100)}%`, background: (pct ?? 0) >= 90 ? 'var(--holo-red)' : (pct ?? 0) >= 70 ? 'var(--holo-amber)' : 'var(--holo-green)' }} />
+              </div>
+            )}
+          </div>
+        )}
+        {isAdmin && (
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12, paddingTop: 10, borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+            <HoloButton icon={<Settings2 size={14} />} onClick={e => { e.stopPropagation(); onEdit() }} title="Settings" />
+            <HoloButton variant="danger" icon={<Trash2 size={14} />} onClick={e => { e.stopPropagation(); onDelete() }} title="Delete" />
+          </div>
+        )}
+      </HoloCard>
+    </TiltCard>
   )
 }
 
@@ -303,6 +295,9 @@ const PROXY_DEFAULTS: Record<string, string> = {
   yum:     'https://dl.fedoraproject.org/pub/epel/9/Everything/x86_64/',
   raw:     '',
 }
+
+const LABEL_STYLE = { fontSize: 12, fontWeight: 500, color: 'var(--holo-text-dim)', textTransform: 'uppercase' as const, letterSpacing: '0.4px' }
+const ERROR_STYLE = { background: 'rgba(255,107,107,0.12)', border: '1px solid rgba(255,107,107,0.3)', borderRadius: 10, padding: '10px 12px', color: 'var(--holo-red)', fontSize: 13 }
 
 function CreateRepoModal({ onClose, onCreated }: {
   onClose: () => void
@@ -434,195 +429,189 @@ function CreateRepoModal({ onClose, onCreated }: {
   const applicableCreate = cleanupPoliciesForFormat(cleanupPolicies, form.format)
 
   return (
-    <div className={styles.modalOverlay} onClick={onClose}>
-      <div className={styles.modal} onClick={e => e.stopPropagation()}>
-        <h2 className={styles.modalTitle}>Create Repository</h2>
-        <form onSubmit={handleSubmit} className={styles.form}>
+    <HoloModal open={true} onClose={onClose}>
+      <h2 style={{ fontSize: 17, fontWeight: 700, color: 'var(--holo-text)', margin: 0 }}>Create Repository</h2>
+      <form onSubmit={handleSubmit} className={styles.form}>
 
+        <div className={styles.formRow}>
+          <label style={LABEL_STYLE}>Name *</label>
+          <HoloInput
+            value={form.name}
+            onChange={e => setField('name', e.target.value)}
+            required
+            placeholder="my-repo"
+          />
+        </div>
+
+        <div className={styles.formRow}>
+          <label style={LABEL_STYLE}>Format</label>
+          <Select
+            options={['maven2','npm','docker','pypi','go','nuget','helm','raw','apt','yum','cargo','conan'].map(f => ({ value: f, label: f }))}
+            value={form.format}
+            onChange={handleFormatChange}
+          />
+        </div>
+
+        <div className={styles.formRow}>
+          <label style={LABEL_STYLE}>Type</label>
+          <Select
+            options={[
+              { value: 'hosted', label: 'Hosted — store artifacts locally' },
+              { value: 'proxy',  label: 'Proxy — cache from remote registry' },
+              { value: 'group',  label: 'Group — combine multiple repos' },
+            ]}
+            value={form.type}
+            onChange={t => setForm(f => ({
+              ...f,
+              type: t,
+              remoteUrl: t === 'proxy' ? (PROXY_DEFAULTS[f.format] ?? '') : '',
+            }))}
+          />
+        </div>
+
+        {/* Proxy: Remote URL */}
+        {form.type === 'proxy' && (
           <div className={styles.formRow}>
-            <label className={styles.label}>Name *</label>
-            <input
-              className={styles.input}
-              value={form.name}
-              onChange={e => setField('name', e.target.value)}
+            <label style={LABEL_STYLE}>Remote URL *</label>
+            <HoloInput
+              type="url"
+              value={form.remoteUrl}
+              onChange={e => setField('remoteUrl', e.target.value)}
               required
-              placeholder="my-repo"
+              placeholder="https://registry.example.com/"
             />
+            <span className={styles.hint}>
+              URL of the upstream registry to proxy and cache
+            </span>
           </div>
+        )}
 
+        {/* Group: member repos */}
+        {form.type === 'group' && (
           <div className={styles.formRow}>
-            <label className={styles.label}>Format</label>
-            <Select
-              options={['maven2','npm','docker','pypi','go','nuget','helm','raw','apt','yum','cargo','conan'].map(f => ({ value: f, label: f }))}
-              value={form.format}
-              onChange={handleFormatChange}
-            />
-          </div>
-
-          <div className={styles.formRow}>
-            <label className={styles.label}>Type</label>
-            <Select
-              options={[
-                { value: 'hosted', label: 'Hosted — store artifacts locally' },
-                { value: 'proxy',  label: 'Proxy — cache from remote registry' },
-                { value: 'group',  label: 'Group — combine multiple repos' },
-              ]}
-              value={form.type}
-              onChange={t => setForm(f => ({
-                ...f,
-                type: t,
-                remoteUrl: t === 'proxy' ? (PROXY_DEFAULTS[f.format] ?? '') : '',
-              }))}
-            />
-          </div>
-
-          {/* Proxy: Remote URL */}
-          {form.type === 'proxy' && (
-            <div className={styles.formRow}>
-              <label className={styles.label}>Remote URL *</label>
-              <input
-                className={styles.input}
-                type="url"
-                value={form.remoteUrl}
-                onChange={e => setField('remoteUrl', e.target.value)}
-                required
-                placeholder="https://registry.example.com/"
-              />
-              <span className={styles.hint}>
-                URL of the upstream registry to proxy and cache
-              </span>
-            </div>
-          )}
-
-          {/* Group: member repos */}
-          {form.type === 'group' && (
-            <div className={styles.formRow}>
-              <label className={styles.label}>Member Repositories *</label>
-              {memberCandidates.length === 0 ? (
-                <p className={styles.hint}>
-                  No {form.format} hosted/proxy repos found. Create them first.
-                </p>
-              ) : (
-                <div className={styles.memberList}>
-                  {memberCandidates.map(r => (
-                    <label key={r.id} className={styles.memberItem}>
-                      <input
-                        type="checkbox"
-                        checked={form.memberNames.includes(r.name)}
-                        onChange={() => toggleMember(r.name)}
-                      />
-                      <span className={styles.memberName}>{r.name}</span>
-                      <span className={styles.memberType}>{r.type}</span>
-                    </label>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {form.type !== 'group' && applicableCreate.length > 0 && (
-            <div className={styles.formRow}>
-              <label className={styles.label}>Cleanup policies</label>
+            <label style={LABEL_STYLE}>Member Repositories *</label>
+            {memberCandidates.length === 0 ? (
+              <p className={styles.hint}>
+                No {form.format} hosted/proxy repos found. Create them first.
+              </p>
+            ) : (
               <div className={styles.memberList}>
-                {applicableCreate.map(p => (
-                  <label key={p.id} className={styles.memberItem}>
+                {memberCandidates.map(r => (
+                  <label key={r.id} className={styles.memberItem}>
                     <input
                       type="checkbox"
-                      checked={form.cleanupPolicyIds.includes(p.id)}
-                      onChange={() =>
-                        setForm(f => ({
-                          ...f,
-                          cleanupPolicyIds: f.cleanupPolicyIds.includes(p.id)
-                            ? f.cleanupPolicyIds.filter(x => x !== p.id)
-                            : [...f.cleanupPolicyIds, p.id],
-                        }))
-                      }
+                      checked={form.memberNames.includes(r.name)}
+                      onChange={() => toggleMember(r.name)}
                     />
-                    <span className={styles.memberName}>{p.name}</span>
-                    <span className={styles.memberType}>{p.format === '*' ? 'all' : p.format}</span>
+                    <span className={styles.memberName}>{r.name}</span>
+                    <span className={styles.memberType}>{r.type}</span>
                   </label>
                 ))}
               </div>
-            </div>
-          )}
+            )}
+          </div>
+        )}
 
-          {form.type !== 'group' && (
-            <div className={styles.formRow}>
-              <label className={styles.label}>Blob Store *</label>
-              {blobStores.length === 0 ? (
-                <span className={styles.hint}>No blob stores configured. Create one in System Admin → Blob Stores.</span>
-              ) : (
-                <Select
-                  options={blobStores.map(b => ({ value: b.id, label: `${b.name} (${b.type})` }))}
-                  value={form.blobStoreId || defaultStoreId}
-                  onChange={v => setField('blobStoreId', v)}
-                />
-              )}
-              {(() => {
-                const sel = blobStores.find(b => b.id === (form.blobStoreId || defaultStoreId))
-                if (!sel) return <span className={styles.hint}>Physical storage backend where artifacts are written.</span>
-                if (sel.quotaBytes == null) {
-                  return <span className={styles.hint}>Store quota: unlimited.</span>
-                }
-                const free = sel.quotaBytes - (sel.usedBytes ?? 0)
-                return (
-                  <span className={styles.hint}>
-                    Store quota: {formatBytes(sel.quotaBytes)} · free {formatBytes(free)}
-                  </span>
-                )
-              })()}
-            </div>
-          )}
-
+        {form.type !== 'group' && applicableCreate.length > 0 && (
           <div className={styles.formRow}>
-            <label className={styles.label}>Description</label>
-            <input
-              className={styles.input}
-              value={form.description}
-              onChange={e => setField('description', e.target.value)}
-              placeholder="Optional description"
+            <label style={LABEL_STYLE}>Cleanup policies</label>
+            <div className={styles.memberList}>
+              {applicableCreate.map(p => (
+                <label key={p.id} className={styles.memberItem}>
+                  <input
+                    type="checkbox"
+                    checked={form.cleanupPolicyIds.includes(p.id)}
+                    onChange={() =>
+                      setForm(f => ({
+                        ...f,
+                        cleanupPolicyIds: f.cleanupPolicyIds.includes(p.id)
+                          ? f.cleanupPolicyIds.filter(x => x !== p.id)
+                          : [...f.cleanupPolicyIds, p.id],
+                      }))
+                    }
+                  />
+                  <span className={styles.memberName}>{p.name}</span>
+                  <span className={styles.memberType}>{p.format === '*' ? 'all' : p.format}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {form.type !== 'group' && (
+          <div className={styles.formRow}>
+            <label style={LABEL_STYLE}>Blob Store *</label>
+            {blobStores.length === 0 ? (
+              <span className={styles.hint}>No blob stores configured. Create one in System Admin → Blob Stores.</span>
+            ) : (
+              <Select
+                options={blobStores.map(b => ({ value: b.id, label: `${b.name} (${b.type})` }))}
+                value={form.blobStoreId || defaultStoreId}
+                onChange={v => setField('blobStoreId', v)}
+              />
+            )}
+            {(() => {
+              const sel = blobStores.find(b => b.id === (form.blobStoreId || defaultStoreId))
+              if (!sel) return <span className={styles.hint}>Physical storage backend where artifacts are written.</span>
+              if (sel.quotaBytes == null) {
+                return <span className={styles.hint}>Store quota: unlimited.</span>
+              }
+              const free = sel.quotaBytes - (sel.usedBytes ?? 0)
+              return (
+                <span className={styles.hint}>
+                  Store quota: {formatBytes(sel.quotaBytes)} · free {formatBytes(free)}
+                </span>
+              )
+            })()}
+          </div>
+        )}
+
+        <div className={styles.formRow}>
+          <label style={LABEL_STYLE}>Description</label>
+          <HoloInput
+            value={form.description}
+            onChange={e => setField('description', e.target.value)}
+            placeholder="Optional description"
+          />
+        </div>
+
+        {form.type !== 'group' && (
+          <div className={styles.formRow}>
+            <label style={LABEL_STYLE}>Storage quota (GB)</label>
+            <HoloInput
+              type="number"
+              min="0"
+              step="0.1"
+              value={form.quotaGB}
+              onChange={e => setField('quotaGB', e.target.value)}
+              placeholder="No limit"
             />
+            <span className={styles.hint}>Leave blank for unlimited storage</span>
           </div>
+        )}
 
-          {form.type !== 'group' && (
-            <div className={styles.formRow}>
-              <label className={styles.label}>Storage quota (GB)</label>
-              <input
-                className={styles.input}
-                type="number"
-                min="0"
-                step="0.1"
-                value={form.quotaGB}
-                onChange={e => setField('quotaGB', e.target.value)}
-                placeholder="No limit"
-              />
-              <span className={styles.hint}>Leave blank for unlimited storage</span>
-            </div>
-          )}
+        <div className={styles.formRow}>
+          <label style={LABEL_STYLE}>Anonymous access</label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--holo-text)', cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={form.allowAnonymous}
+              onChange={e => setField('allowAnonymous', e.target.checked)}
+            />
+            Allow unauthenticated read access
+          </label>
+          <span className={styles.hint}>When disabled, only users with an assigned role can read this repository.</span>
+        </div>
 
-          <div className={styles.formRow}>
-            <label className={styles.label}>Anonymous access</label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'rgba(229,231,235,0.75)', cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={form.allowAnonymous}
-                onChange={e => setField('allowAnonymous', e.target.checked)}
-              />
-              Allow unauthenticated read access
-            </label>
-            <span className={styles.hint}>When disabled, only users with an assigned role can read this repository.</span>
-          </div>
-
-          {error && <div className={styles.error}>{error}</div>}
-          <div className={styles.modalFooter}>
-            <button type="button" className={styles.cancelBtn} onClick={onClose}>Cancel</button>
-            <button type="submit" className={styles.submitBtn} disabled={loading}>
-              {loading ? 'Creating…' : 'Create'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+        {error && <div style={ERROR_STYLE}>{error}</div>}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 8 }}>
+          <HoloButton type="button" onClick={onClose}>Cancel</HoloButton>
+          <HoloButton variant="primary" type="submit" disabled={loading}>
+            {loading ? 'Creating…' : 'Create'}
+          </HoloButton>
+        </div>
+      </form>
+    </HoloModal>
   )
 }
 
@@ -709,114 +698,110 @@ function EditRepoModal({
   }
 
   return (
-    <div className={styles.modalOverlay} onClick={onClose}>
-      <div className={styles.modal} onClick={e => e.stopPropagation()}>
-        <h2 className={styles.modalTitle}>Repository settings</h2>
-        <form onSubmit={handleSubmit} className={styles.form}>
-          <div className={styles.formRow}>
-            <label className={styles.label}>Name</label>
-            <input className={`${styles.input} ${styles.inputDisabled}`} value={repo.name} readOnly />
-          </div>
-          <div className={styles.formRow}>
-            <label className={styles.label}>Online</label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'rgba(229,231,235,0.75)', cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={online}
-                onChange={e => setOnline(e.target.checked)}
-              />
-              Accept incoming requests
-            </label>
-          </div>
-          <div className={styles.formRow}>
-            <label className={styles.label}>Anonymous access</label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'rgba(229,231,235,0.75)', cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={allowAnonymous}
-                onChange={e => setAllowAnonymous(e.target.checked)}
-              />
-              Allow unauthenticated read access
-            </label>
-            <span className={styles.hint}>When disabled, only users with an assigned role can read this repository.</span>
-          </div>
-          <div className={styles.formRow}>
-            <label className={styles.label}>Description</label>
+    <HoloModal open={true} onClose={onClose}>
+      <h2 style={{ fontSize: 17, fontWeight: 700, color: 'var(--holo-text)', margin: 0 }}>Repository settings</h2>
+      <form onSubmit={handleSubmit} className={styles.form}>
+        <div className={styles.formRow}>
+          <label style={LABEL_STYLE}>Name</label>
+          <HoloInput value={repo.name} readOnly style={{ opacity: 0.55, cursor: 'not-allowed' }} />
+        </div>
+        <div className={styles.formRow}>
+          <label style={LABEL_STYLE}>Online</label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--holo-text)', cursor: 'pointer' }}>
             <input
-              className={styles.input}
-              value={description}
-              onChange={e => setDescription(e.target.value)}
-              placeholder="Optional"
+              type="checkbox"
+              checked={online}
+              onChange={e => setOnline(e.target.checked)}
             />
-          </div>
-          {repo.type !== 'group' && blobStores.length > 0 && (
-            <div className={styles.formRow}>
-              <label className={styles.label}>Blob Store</label>
-              <Select
-                options={blobStores.map(b => ({ value: b.id, label: `${b.name} (${b.type})` }))}
-                value={blobStoreId || originalStoreId}
-                onChange={setBlobStoreId}
-              />
-              {storeChanged ? (
-                <span className={styles.hint} style={{ color: '#f59e0b' }}>
-                  ⚠ Existing artifacts stay on the original store. Only future uploads land on the new one.
-                </span>
-              ) : (
-                <span className={styles.hint}>Physical storage backend for new uploads.</span>
-              )}
-              {selectedStore && selectedStore.quotaBytes != null && (
-                <span className={styles.hint}>
-                  Store quota: {formatBytes(selectedStore.quotaBytes)} · free {formatBytes(selectedStore.quotaBytes - (selectedStore.usedBytes ?? 0))}
-                </span>
-              )}
-            </div>
-          )}
-
-          {repo.type !== 'group' && (
-            <div className={styles.formRow}>
-              <label className={styles.label}>Storage quota (GB)</label>
-              <input
-                className={styles.input}
-                type="number"
-                min="0"
-                step="0.1"
-                value={quotaGB}
-                onChange={e => setQuotaGB(e.target.value)}
-                placeholder="No limit"
-              />
-              <span className={styles.hint}>Leave blank to remove the quota limit</span>
-            </div>
-          )}
+            Accept incoming requests
+          </label>
+        </div>
+        <div className={styles.formRow}>
+          <label style={LABEL_STYLE}>Anonymous access</label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--holo-text)', cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={allowAnonymous}
+              onChange={e => setAllowAnonymous(e.target.checked)}
+            />
+            Allow unauthenticated read access
+          </label>
+          <span className={styles.hint}>When disabled, only users with an assigned role can read this repository.</span>
+        </div>
+        <div className={styles.formRow}>
+          <label style={LABEL_STYLE}>Description</label>
+          <HoloInput
+            value={description}
+            onChange={e => setDescription(e.target.value)}
+            placeholder="Optional"
+          />
+        </div>
+        {repo.type !== 'group' && blobStores.length > 0 && (
           <div className={styles.formRow}>
-            <label className={styles.label}>Cleanup policies</label>
-            {applicable.length === 0 ? (
-              <p className={styles.hint}>Create policies on the Cleanup page first.</p>
+            <label style={LABEL_STYLE}>Blob Store</label>
+            <Select
+              options={blobStores.map(b => ({ value: b.id, label: `${b.name} (${b.type})` }))}
+              value={blobStoreId || originalStoreId}
+              onChange={setBlobStoreId}
+            />
+            {storeChanged ? (
+              <span className={styles.hint} style={{ color: '#f59e0b' }}>
+                ⚠ Existing artifacts stay on the original store. Only future uploads land on the new one.
+              </span>
             ) : (
-              <div className={styles.memberList}>
-                {applicable.map(p => (
-                  <label key={p.id} className={styles.memberItem}>
-                    <input
-                      type="checkbox"
-                      checked={policyIds.includes(p.id)}
-                      onChange={() => togglePolicy(p.id)}
-                    />
-                    <span className={styles.memberName}>{p.name}</span>
-                    <span className={styles.memberType}>{p.format === '*' ? 'all' : p.format}</span>
-                  </label>
-                ))}
-              </div>
+              <span className={styles.hint}>Physical storage backend for new uploads.</span>
             )}
-            <span className={styles.hint}>Scheduled and manual runs only affect attached repositories.</span>
+            {selectedStore && selectedStore.quotaBytes != null && (
+              <span className={styles.hint}>
+                Store quota: {formatBytes(selectedStore.quotaBytes)} · free {formatBytes(selectedStore.quotaBytes - (selectedStore.usedBytes ?? 0))}
+              </span>
+            )}
           </div>
-          {error && <div className={styles.error}>{error}</div>}
-          <div className={styles.modalFooter}>
-            <button type="button" className={styles.cancelBtn} onClick={onClose}>Cancel</button>
-            <button type="submit" className={styles.submitBtn} disabled={loading}>
-              {loading ? 'Saving…' : 'Save'}
-            </button>
+        )}
+
+        {repo.type !== 'group' && (
+          <div className={styles.formRow}>
+            <label style={LABEL_STYLE}>Storage quota (GB)</label>
+            <HoloInput
+              type="number"
+              min="0"
+              step="0.1"
+              value={quotaGB}
+              onChange={e => setQuotaGB(e.target.value)}
+              placeholder="No limit"
+            />
+            <span className={styles.hint}>Leave blank to remove the quota limit</span>
           </div>
-        </form>
-      </div>
-    </div>
+        )}
+        <div className={styles.formRow}>
+          <label style={LABEL_STYLE}>Cleanup policies</label>
+          {applicable.length === 0 ? (
+            <p className={styles.hint}>Create policies on the Cleanup page first.</p>
+          ) : (
+            <div className={styles.memberList}>
+              {applicable.map(p => (
+                <label key={p.id} className={styles.memberItem}>
+                  <input
+                    type="checkbox"
+                    checked={policyIds.includes(p.id)}
+                    onChange={() => togglePolicy(p.id)}
+                  />
+                  <span className={styles.memberName}>{p.name}</span>
+                  <span className={styles.memberType}>{p.format === '*' ? 'all' : p.format}</span>
+                </label>
+              ))}
+            </div>
+          )}
+          <span className={styles.hint}>Scheduled and manual runs only affect attached repositories.</span>
+        </div>
+        {error && <div style={ERROR_STYLE}>{error}</div>}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 8 }}>
+          <HoloButton type="button" onClick={onClose}>Cancel</HoloButton>
+          <HoloButton variant="primary" type="submit" disabled={loading}>
+            {loading ? 'Saving…' : 'Save'}
+          </HoloButton>
+        </div>
+      </form>
+    </HoloModal>
   )
 }

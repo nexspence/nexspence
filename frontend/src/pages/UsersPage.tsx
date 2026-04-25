@@ -4,6 +4,7 @@ import { UserPlus, Trash2, RefreshCw, Shield, User, AlertTriangle, Plus, Edit2, 
 import { nexusApi, apiClient } from '@/api/client'
 import styles from './UsersPage.module.css'
 import { Select } from '../components/Select'
+import { HoloTabs, HoloPill, HoloButton, HoloInput, HoloModal, HoloText, HoloCard } from '@/components/holo'
 
 /* ─── Types ─────────────────────────────────────────────────── */
 interface UserItem {
@@ -24,30 +25,6 @@ interface RoleItem {
   readOnly: boolean
   privileges: string[]
   roles: string[]
-}
-
-const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
-  active:   { bg: 'rgba(16,185,129,0.15)', text: '#10b981' },
-  disabled: { bg: 'rgba(107,114,128,0.15)', text: '#6b7280' },
-}
-
-const S = {
-  tabs:  { display: 'flex', gap: 4, borderBottom: '1px solid rgba(255,255,255,0.08)', marginBottom: 20 },
-  tab:   (active: boolean) => ({
-    padding: '8px 16px', fontSize: 13, fontWeight: 600 as const, cursor: 'pointer', border: 'none',
-    background: 'none', color: active ? '#3b82f6' : 'rgba(229,231,235,0.5)',
-    borderBottom: active ? '2px solid #3b82f6' : '2px solid transparent',
-  }),
-  error: { display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 10, color: '#fca5a5', fontSize: 13 },
-  card:  { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, padding: '16px 18px', marginBottom: 12 },
-  row:   { display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.06)' },
-  btn:   (v: 'primary'|'danger'|'ghost') => ({
-    display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 8, border: 'none',
-    cursor: 'pointer', fontSize: 13, fontWeight: 600 as const,
-    background: v === 'primary' ? '#3b82f6' : v === 'danger' ? 'rgba(239,68,68,0.15)' : 'rgba(255,255,255,0.06)',
-    color: v === 'danger' ? '#ef4444' : '#fff',
-  }),
-  input: { width: '100%', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, padding: '8px 12px', color: '#e5e7eb', fontSize: 13, outline: 'none', boxSizing: 'border-box' as const },
 }
 
 /* ─── Role assign modal ─────────────────────────────────────── */
@@ -86,83 +63,63 @@ export function AssignRolesModal({ user, roles, onClose, onSaved }: {
   }
 
   return (
-    <div
-      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}
-      onClick={onClose}
-    >
-      <div
-        style={{ background: '#0f172a', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 14, padding: 28, width: 460, maxWidth: '90vw', maxHeight: '80vh', overflowY: 'auto' as const, display: 'flex', flexDirection: 'column', gap: 0 }}
-        onClick={e => e.stopPropagation()}
-      >
-        <h2 style={{ margin: '0 0 16px', fontSize: 16, fontWeight: 700, color: '#dbeafe' }}>Assign Roles — {user.userId}</h2>
+    <HoloModal open={true} onClose={onClose}>
+      <h2 style={{ margin: '0 0 16px', fontSize: 16, fontWeight: 700, color: 'var(--holo-text)' }}>Assign Roles — {user.userId}</h2>
 
-        {selectedRoles.length > 0 && (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12, paddingBottom: 12, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-            {selectedRoles.map(r => (
-              <span key={r.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 4px 4px 10px', borderRadius: 999, background: 'rgba(59,130,246,0.15)', border: '1px solid rgba(59,130,246,0.35)', color: '#93c5fd', fontSize: 12, fontWeight: 600 }}>
-                <Shield size={11} />
-                {r.name}
-                <button
-                  type="button"
-                  onClick={() => toggle(r.id)}
-                  title={`Remove ${r.name}`}
-                  style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 18, height: 18, borderRadius: 999, background: 'rgba(59,130,246,0.2)', border: 'none', color: '#93c5fd', cursor: 'pointer', padding: 0 }}
-                >
-                  <X size={11} />
-                </button>
-              </span>
-            ))}
-          </div>
-        )}
-
-        <div style={{ position: 'relative', marginBottom: 10 }}>
-          <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'rgba(229,231,235,0.4)', pointerEvents: 'none' }} />
-          <input
-            type="text"
-            value={roleFilter}
-            onChange={e => setRoleFilter(e.target.value)}
-            placeholder="Filter roles…"
-            style={{ ...S.input, paddingLeft: 32 }}
-          />
-        </div>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 0, marginBottom: 16 }}>
-          {filteredRoles.map(r => (
-            <label key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-              <input type="checkbox" checked={selected.includes(r.id)} onChange={() => toggle(r.id)} style={{ accentColor: '#3b82f6', width: 16, height: 16, flexShrink: 0 }} />
-              <div style={{ flex: 1 }}>
-                <div style={{ color: '#dbeafe', fontWeight: 600, fontSize: 14 }}>{r.name}</div>
-                {r.description && <div style={{ fontSize: 12, color: 'rgba(229,231,235,0.4)', marginTop: 2 }}>{r.description}</div>}
-              </div>
-              {r.readOnly && <span style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, background: 'rgba(107,114,128,0.2)', color: '#9ca3af', flexShrink: 0 }}>built-in</span>}
-            </label>
+      {selectedRoles.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12, paddingBottom: 12, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+          {selectedRoles.map(r => (
+            <HoloPill key={r.id} style={{ padding: '4px 4px 4px 10px', fontSize: 12, fontWeight: 600, background: 'rgba(124,92,255,0.15)', color: 'var(--holo-a)', border: '1px solid rgba(124,92,255,0.35)' }}>
+              <Shield size={11} style={{ marginRight: 6 }} />
+              {r.name}
+              <button
+                type="button"
+                onClick={() => toggle(r.id)}
+                title={`Remove ${r.name}`}
+                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 18, height: 18, borderRadius: 999, background: 'rgba(124,92,255,0.2)', border: 'none', color: 'var(--holo-a)', cursor: 'pointer', padding: 0, marginLeft: 4 }}
+              >
+                <X size={11} />
+              </button>
+            </HoloPill>
           ))}
-          {roles.length === 0 && <div style={{ color: 'rgba(229,231,235,0.4)', fontSize: 13, padding: '12px 0' }}>No roles available</div>}
-          {roles.length > 0 && filteredRoles.length === 0 && (
-            <div style={{ color: 'rgba(229,231,235,0.4)', fontSize: 13, padding: '12px 0' }}>No roles match “{roleFilter}”</div>
-          )}
         </div>
+      )}
 
-        {err && <div style={{ marginBottom: 12, padding: '8px 12px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, fontSize: 13, color: '#fca5a5' }}>{err}</div>}
-
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button
-            type="button"
-            onClick={onClose}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 16px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600, background: 'rgba(255,255,255,0.06)', color: '#e5e7eb' }}
-          >
-            Cancel
-          </button>
-          <button
-            onClick={save}
-            disabled={saving}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 16px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600, background: '#3b82f6', color: '#fff', opacity: saving ? 0.7 : 1 }}
-          >
-            {saving ? 'Saving…' : 'Save'}
-          </button>
-        </div>
+      <div style={{ position: 'relative', marginBottom: 10 }}>
+        <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--holo-text-faint)', pointerEvents: 'none' }} />
+        <HoloInput
+          type="text"
+          value={roleFilter}
+          onChange={e => setRoleFilter(e.target.value)}
+          placeholder="Filter roles…"
+          style={{ paddingLeft: 32 }}
+        />
       </div>
-    </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 0, marginBottom: 16 }}>
+        {filteredRoles.map(r => (
+          <label key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+            <input type="checkbox" checked={selected.includes(r.id)} onChange={() => toggle(r.id)} style={{ accentColor: 'var(--holo-a)', width: 16, height: 16, flexShrink: 0 }} />
+            <div style={{ flex: 1 }}>
+              <div style={{ color: 'var(--holo-text)', fontWeight: 600, fontSize: 14 }}>{r.name}</div>
+              {r.description && <div style={{ fontSize: 12, color: 'var(--holo-text-faint)', marginTop: 2 }}>{r.description}</div>}
+            </div>
+            {r.readOnly && <HoloPill style={{ fontSize: 11 }}>built-in</HoloPill>}
+          </label>
+        ))}
+        {roles.length === 0 && <div style={{ color: 'var(--holo-text-faint)', fontSize: 13, padding: '12px 0' }}>No roles available</div>}
+        {roles.length > 0 && filteredRoles.length === 0 && (
+          <div style={{ color: 'var(--holo-text-faint)', fontSize: 13, padding: '12px 0' }}>No roles match "{roleFilter}"</div>
+        )}
+      </div>
+
+      {err && <div style={{ marginBottom: 12, padding: '8px 12px', background: 'rgba(255,107,107,0.08)', border: '1px solid rgba(255,107,107,0.2)', borderRadius: 8, fontSize: 13, color: 'var(--holo-red)' }}>{err}</div>}
+
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+        <HoloButton type="button" onClick={onClose}>Cancel</HoloButton>
+        <HoloButton variant="primary" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save'}</HoloButton>
+      </div>
+    </HoloModal>
   )
 }
 
@@ -201,17 +158,17 @@ export function UsersTab() {
           <p className={styles.subtitle}>{users.length} users</p>
         </div>
         <div className={styles.actions}>
-          <button className={styles.iconBtn} onClick={() => refetch()} title="Refresh"><RefreshCw size={16} /></button>
-          <button className={styles.createBtn} onClick={() => setShowCreate(true)}><UserPlus size={16} />Add User</button>
+          <HoloButton onClick={() => refetch()} title="Refresh"><RefreshCw size={16} /></HoloButton>
+          <HoloButton variant="primary" icon={<UserPlus size={16} />} onClick={() => setShowCreate(true)}>Add User</HoloButton>
         </div>
       </div>
 
       <div className={styles.toolbar}>
-        <input className={styles.search} placeholder="Filter by username or email…" value={filter} onChange={e => setFilter(e.target.value)} />
+        <HoloInput placeholder="Filter by username or email…" value={filter} onChange={e => setFilter(e.target.value)} style={{ maxWidth: 360 }} />
       </div>
 
       {isError && (
-        <div style={S.error}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: 'rgba(255,107,107,0.08)', border: '1px solid rgba(255,107,107,0.2)', borderRadius: 10, color: 'var(--holo-red)', fontSize: 13 }}>
           <AlertTriangle size={16} style={{ flexShrink: 0 }} />
           {(error as any)?.response?.data?.error ?? (error as Error)?.message ?? 'Failed to load users'}
         </div>
@@ -230,31 +187,28 @@ export function UsersTab() {
             <div>Username</div><div>Name</div><div>Email</div>
             <div>Roles</div><div>Status</div><div>Source</div><div></div>
           </div>
-          {filtered.map(user => {
-            const sc = STATUS_COLORS[user.status] ?? STATUS_COLORS.disabled
-            return (
-              <div key={user.userId} className={styles.tableRow}>
-                <div className={styles.username}><User size={14} className={styles.userIcon} />{user.userId}</div>
-                <div className={styles.cell}>{[user.firstName, user.lastName].filter(Boolean).join(' ') || '—'}</div>
-                <div className={styles.cell}>{user.emailAddress || '—'}</div>
-                <div className={styles.roles}>
-                  {(user.roles ?? []).map(r => (
-                    <span key={r} className={styles.roleBadge}><Shield size={10} /> {r}</span>
-                  ))}
-                  <button style={{ ...S.btn('ghost'), padding: '3px 8px', fontSize: 11 }} onClick={() => setAssignUser(user)} title="Assign roles">
-                    <Edit2 size={11} />
-                  </button>
-                </div>
-                <div><span className={styles.statusBadge} style={{ background: sc.bg, color: sc.text }}>{user.status}</span></div>
-                <div className={styles.cell}>{user.source}</div>
-                <div>
-                  <button className={styles.deleteBtn} disabled={user.userId === 'admin'} onClick={() => {
-                    if (confirm(`Delete user "${user.userId}"?`)) deleteMutation.mutate(user.userId)
-                  }} title="Delete user"><Trash2 size={14} /></button>
-                </div>
+          {filtered.map(user => (
+            <div key={user.userId} className={styles.tableRow}>
+              <div className={styles.username}><User size={14} className={styles.userIcon} />{user.userId}</div>
+              <div className={styles.cell}>{[user.firstName, user.lastName].filter(Boolean).join(' ') || '—'}</div>
+              <div className={styles.cell}>{user.emailAddress || '—'}</div>
+              <div className={styles.roles}>
+                {(user.roles ?? []).map(r => (
+                  <HoloPill key={r} style={{ fontSize: 11 }}><Shield size={10} style={{ marginRight: 4 }} />{r}</HoloPill>
+                ))}
+                <HoloButton style={{ padding: '3px 8px', fontSize: 11 }} onClick={() => setAssignUser(user)} title="Assign roles">
+                  <Edit2 size={11} />
+                </HoloButton>
               </div>
-            )
-          })}
+              <div><HoloPill tone={user.status === 'active' ? 'success' : 'default'}>{user.status}</HoloPill></div>
+              <div className={styles.cell}>{user.source}</div>
+              <div>
+                <HoloButton variant="danger" style={{ padding: 5 }} disabled={user.userId === 'admin'} onClick={() => {
+                  if (confirm(`Delete user "${user.userId}"?`)) deleteMutation.mutate(user.userId)
+                }} title="Delete user"><Trash2 size={14} /></HoloButton>
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
@@ -313,31 +267,31 @@ function RolesTab() {
           <p className={styles.subtitle}>{roles.length} roles</p>
         </div>
         <div className={styles.actions}>
-          <button className={styles.iconBtn} onClick={() => refetch()} title="Refresh"><RefreshCw size={16} /></button>
-          <button className={styles.createBtn} onClick={() => setShowForm(v => !v)}><Plus size={16} />New Role</button>
+          <HoloButton onClick={() => refetch()} title="Refresh"><RefreshCw size={16} /></HoloButton>
+          <HoloButton variant="primary" icon={<Plus size={16} />} onClick={() => setShowForm(v => !v)}>New Role</HoloButton>
         </div>
       </div>
 
       {isError && (
-        <div style={{ ...S.error, marginBottom: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: 'rgba(255,107,107,0.08)', border: '1px solid rgba(255,107,107,0.2)', borderRadius: 10, color: 'var(--holo-red)', fontSize: 13, marginBottom: 16 }}>
           <AlertTriangle size={16} style={{ flexShrink: 0 }} />
           {(error as any)?.response?.data?.error ?? (error as Error)?.message ?? 'Failed to load roles'}
         </div>
       )}
 
       {showForm && (
-        <div style={{ ...S.card, marginBottom: 16 }}>
-          <div style={{ fontSize: 14, fontWeight: 600, color: '#dbeafe', marginBottom: 12 }}>New Role</div>
+        <HoloCard style={{ marginBottom: 16, padding: 16 }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--holo-text)', marginBottom: 12 }}>New Role</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <input style={S.input} placeholder="Role name (e.g. developer)" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
-            <input style={S.input} placeholder="Description (optional)" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
-            {formErr && <div style={{ color: '#ef4444', fontSize: 13 }}>{formErr}</div>}
+            <HoloInput placeholder="Role name (e.g. developer)" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
+            <HoloInput placeholder="Description (optional)" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
+            {formErr && <div style={{ color: 'var(--holo-red)', fontSize: 13 }}>{formErr}</div>}
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button style={S.btn('ghost')} onClick={() => { setShowForm(false); setFormErr('') }}>Cancel</button>
-              <button style={S.btn('primary')} onClick={createRole} disabled={saving}>{saving ? 'Creating…' : 'Create'}</button>
+              <HoloButton onClick={() => { setShowForm(false); setFormErr('') }}>Cancel</HoloButton>
+              <HoloButton variant="primary" onClick={createRole} disabled={saving}>{saving ? 'Creating…' : 'Create'}</HoloButton>
             </div>
           </div>
-        </div>
+        </HoloCard>
       )}
 
       {isLoading ? (
@@ -345,23 +299,23 @@ function RolesTab() {
       ) : roles.length === 0 && !isError ? (
         <div className={styles.empty}><Shield size={40} className={styles.emptyIcon} /><p>No roles defined</p></div>
       ) : (
-        <div style={S.card}>
+        <HoloCard style={{ padding: 0 }}>
           {roles.map((r, i) => (
-            <div key={r.id} style={{ ...S.row, borderBottom: i < roles.length - 1 ? '1px solid rgba(255,255,255,0.06)' : 'none' }}>
-              <Shield size={15} style={{ color: '#3b82f6', flexShrink: 0 }} />
+            <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', borderBottom: i < roles.length - 1 ? '1px solid rgba(255,255,255,0.06)' : 'none' }}>
+              <Shield size={15} style={{ color: 'var(--holo-a)', flexShrink: 0 }} />
               <div style={{ flex: 1 }}>
-                <div style={{ color: '#dbeafe', fontWeight: 600 }}>{r.name}</div>
-                {r.description && <div style={{ fontSize: 12, color: 'rgba(229,231,235,0.4)' }}>{r.description}</div>}
+                <div style={{ color: 'var(--holo-text)', fontWeight: 600 }}>{r.name}</div>
+                {r.description && <div style={{ fontSize: 12, color: 'var(--holo-text-faint)' }}>{r.description}</div>}
               </div>
               {r.readOnly
-                ? <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: 'rgba(107,114,128,0.2)', color: '#9ca3af' }}>built-in</span>
-                : <button style={S.btn('danger')} onClick={() => {
+                ? <HoloPill style={{ fontSize: 11 }}>built-in</HoloPill>
+                : <HoloButton variant="danger" style={{ padding: '5px 10px' }} onClick={() => {
                     if (confirm(`Delete role "${r.name}"?`)) deleteMutation.mutate(r.id)
-                  }}><Trash2 size={13} /></button>
+                  }}><Trash2 size={13} /></HoloButton>
               }
             </div>
           ))}
-        </div>
+        </HoloCard>
       )}
     </>
   )
@@ -375,12 +329,24 @@ export default function UsersPage() {
 
   return (
     <div className={styles.page}>
-      <div style={S.tabs}>
-        {([['users', 'Users'], ['roles', 'Roles']] as [Tab, string][]).map(([id, label]) => (
-          <button key={id} style={S.tab(tab === id)} onClick={() => setTab(id)}>{label}</button>
-        ))}
+      <div style={{ marginBottom: 24 }}>
+        <div className="holo-section-label" style={{ marginBottom: 6 }}>ADMINISTRATION / USERS</div>
+        <h1 style={{ fontSize: 40, fontWeight: 700, margin: '0 0 4px', letterSpacing: '-0.04em', lineHeight: 1 }}>
+          <HoloText>Users</HoloText>
+        </h1>
+        <p style={{ fontSize: 13, color: 'var(--holo-text-dim)', margin: 0 }}>Manage users and roles</p>
       </div>
-      {tab === 'users' ? <UsersTab /> : <RolesTab />}
+      <HoloTabs
+        items={[
+          { value: 'users', label: 'Users' },
+          { value: 'roles', label: 'Roles' },
+        ]}
+        value={tab}
+        onChange={v => setTab(v as Tab)}
+      />
+      <div style={{ marginTop: 20 }}>
+        {tab === 'users' ? <UsersTab /> : <RolesTab />}
+      </div>
     </div>
   )
 }
@@ -402,50 +368,48 @@ export function CreateUserModal({ onClose, onCreated }: { onClose: () => void; o
   }
 
   return (
-    <div className={styles.modalOverlay} onClick={onClose}>
-      <div className={styles.modal} onClick={e => e.stopPropagation()}>
-        <h2 className={styles.modalTitle}>Add User</h2>
-        <form onSubmit={handleSubmit} className={styles.form}>
+    <HoloModal open={true} onClose={onClose}>
+      <h2 style={{ margin: '0 0 24px', fontSize: 18, fontWeight: 700, color: 'var(--holo-text)' }}>Add User</h2>
+      <form onSubmit={handleSubmit} className={styles.form}>
+        <div className={styles.formRow}>
+          <label className={styles.label}>Username *</label>
+          <HoloInput value={form.username} onChange={e => setForm(f => ({ ...f, username: e.target.value }))} required />
+        </div>
+        <div className={styles.formRow}>
+          <label className={styles.label}>Password *</label>
+          <HoloInput type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} required />
+        </div>
+        <div className={styles.formGrid}>
           <div className={styles.formRow}>
-            <label className={styles.label}>Username *</label>
-            <input className={styles.input} value={form.username} onChange={e => setForm(f => ({ ...f, username: e.target.value }))} required />
-          </div>
-          <div className={styles.formRow}>
-            <label className={styles.label}>Password *</label>
-            <input type="password" className={styles.input} value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} required />
-          </div>
-          <div className={styles.formGrid}>
-            <div className={styles.formRow}>
-              <label className={styles.label}>First name</label>
-              <input className={styles.input} value={form.firstName} onChange={e => setForm(f => ({ ...f, firstName: e.target.value }))} />
-            </div>
-            <div className={styles.formRow}>
-              <label className={styles.label}>Last name</label>
-              <input className={styles.input} value={form.lastName} onChange={e => setForm(f => ({ ...f, lastName: e.target.value }))} />
-            </div>
+            <label className={styles.label}>First name</label>
+            <HoloInput value={form.firstName} onChange={e => setForm(f => ({ ...f, firstName: e.target.value }))} />
           </div>
           <div className={styles.formRow}>
-            <label className={styles.label}>Email</label>
-            <input type="email" className={styles.input} value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} />
+            <label className={styles.label}>Last name</label>
+            <HoloInput value={form.lastName} onChange={e => setForm(f => ({ ...f, lastName: e.target.value }))} />
           </div>
-          <div className={styles.formRow}>
-            <label className={styles.label}>Status</label>
-            <Select
-              options={[
-                { value: 'active',   label: 'Active' },
-                { value: 'disabled', label: 'Disabled' },
-              ]}
-              value={form.status}
-              onChange={v => setForm(f => ({ ...f, status: v }))}
-            />
-          </div>
-          {error && <div className={styles.error}>{error}</div>}
-          <div className={styles.modalFooter}>
-            <button type="button" className={styles.cancelBtn} onClick={onClose}>Cancel</button>
-            <button type="submit" className={styles.submitBtn} disabled={loading}>{loading ? 'Creating…' : 'Create User'}</button>
-          </div>
-        </form>
-      </div>
-    </div>
+        </div>
+        <div className={styles.formRow}>
+          <label className={styles.label}>Email</label>
+          <HoloInput type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} />
+        </div>
+        <div className={styles.formRow}>
+          <label className={styles.label}>Status</label>
+          <Select
+            options={[
+              { value: 'active',   label: 'Active' },
+              { value: 'disabled', label: 'Disabled' },
+            ]}
+            value={form.status}
+            onChange={v => setForm(f => ({ ...f, status: v }))}
+          />
+        </div>
+        {error && <div className={styles.error}>{error}</div>}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 8 }}>
+          <HoloButton type="button" onClick={onClose}>Cancel</HoloButton>
+          <HoloButton variant="primary" type="submit" disabled={loading}>{loading ? 'Creating…' : 'Create User'}</HoloButton>
+        </div>
+      </form>
+    </HoloModal>
   )
 }

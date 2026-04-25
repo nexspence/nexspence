@@ -54,37 +54,35 @@ export function Select({
     : options
 
   return (
-    <div ref={ref} style={{ position: 'relative', ...style }}>
+    <div ref={ref} style={{ position: 'relative' }}>
       <button
         type="button"
         disabled={disabled}
         onClick={() => setOpen(v => !v)}
+        className="holo-input"
         style={{
           display: 'flex',
           alignItems: 'center',
           gap: 8,
           width: '100%',
-          padding: '10px 14px',
-          background: open ? 'rgba(20,35,70,0.9)' : 'rgba(15,20,40,0.8)',
-          border: `1.5px solid ${open ? '#3b82f6' : 'rgba(255,255,255,0.1)'}`,
-          borderRadius: open ? '8px 8px 0 0' : 8,
-          boxShadow: open ? '0 0 0 3px rgba(59,130,246,0.12)' : 'none',
-          color: selected ? '#e5e7eb' : 'rgba(229,231,235,0.35)',
-          fontSize: 13,
           cursor: disabled ? 'not-allowed' : 'pointer',
           opacity: disabled ? 0.5 : 1,
-          outline: 'none',
           textAlign: 'left' as const,
-          transition: 'border-color 0.15s, background 0.15s',
+          borderRadius: open ? 'var(--holo-radius-sm) var(--holo-radius-sm) 0 0' : undefined,
+          boxShadow: open ? 'var(--holo-ring)' : 'none',
+          borderColor: open ? 'var(--holo-border-strong)' : undefined,
+          ...style,
         }}
       >
-        <span style={{ flex: 1 }}>{selected ? selected.label : placeholder}</span>
+        <span style={{ flex: 1, color: selected ? 'var(--holo-text)' : 'var(--holo-text-faint)' }}>
+          {selected ? selected.label : placeholder}
+        </span>
         {selected?.badge}
         {selected?.tag}
         <ChevronDown
           size={14}
           style={{
-            color: 'rgba(229,231,235,0.4)',
+            color: 'var(--holo-text-faint)',
             flexShrink: 0,
             transform: open ? 'rotate(180deg)' : 'none',
             transition: 'transform 0.2s',
@@ -94,19 +92,18 @@ export function Select({
 
       {open && (
         <div
+          className="holo-card"
           style={{
             position: 'absolute',
             top: '100%',
             left: 0,
             right: 0,
-            background: 'rgba(8,13,28,0.98)',
-            border: '1.5px solid #3b82f6',
+            borderRadius: '0 0 var(--holo-radius-sm) var(--holo-radius-sm)',
             borderTop: 'none',
-            borderRadius: '0 0 8px 8px',
-            boxShadow: '0 12px 40px rgba(0,0,0,0.6)',
             zIndex: 200,
             maxHeight: 260,
             overflowY: 'auto' as const,
+            boxShadow: '0 12px 40px rgba(0,0,0,0.6)',
           }}
         >
           {searchable && (
@@ -116,7 +113,8 @@ export function Select({
                 placeholder="Filter…"
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                style={{ width: '100%', background: 'rgba(15,20,40,0.6)', border: '1px solid rgba(255,255,255,0.08)', outline: 'none', color: '#e5e7eb', fontSize: 13, padding: '6px 10px', borderRadius: 6, boxSizing: 'border-box' as const }}
+                className="holo-input"
+                style={{ width: '100%', boxSizing: 'border-box' as const }}
               />
             </div>
           )}
@@ -138,16 +136,16 @@ export function Select({
                   padding: '10px 14px',
                   cursor: 'pointer',
                   fontSize: 13,
-                  color: isSelected ? '#93c5fd' : '#e5e7eb',
-                  background: isSelected ? 'rgba(59,130,246,0.15)' : 'transparent',
+                  color: isSelected ? 'var(--holo-a)' : 'var(--holo-text)',
+                  background: isSelected ? 'rgba(124,92,255,0.15)' : 'transparent',
                   borderBottom: '1px solid rgba(255,255,255,0.04)',
                   transition: 'background 0.1s',
                 }}
                 onMouseEnter={e => {
-                  if (!isSelected) (e.currentTarget as HTMLDivElement).style.background = 'rgba(59,130,246,0.10)'
+                  (e.currentTarget as HTMLDivElement).style.background = 'rgba(124,92,255,0.08)'
                 }}
                 onMouseLeave={e => {
-                  if (!isSelected) (e.currentTarget as HTMLDivElement).style.background = 'transparent'
+                  (e.currentTarget as HTMLDivElement).style.background = isSelected ? 'rgba(124,92,255,0.15)' : 'transparent'
                 }}
               >
                 <span style={{ flex: 1 }}>{opt.label}</span>

@@ -3,17 +3,30 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #070b14;
+  background: var(--holo-bg);
 }
 
 .card {
-  width: 380px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 16px;
+  width: 400px;
+  background: linear-gradient(135deg, rgba(124,92,255,0.18), rgba(34,211,238,0.08), rgba(255,92,240,0.10));
+  border: 1px solid var(--holo-border);
+  border-radius: 18px;
   padding: 40px 36px;
-  backdrop-filter: blur(12px);
+  backdrop-filter: blur(20px);
   text-align: center;
+  position: relative;
+  overflow: hidden;
+  max-width: 92vw;
+}
+
+.card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 1px;
+  background: var(--holo-gradient);
+  background-size: 200% 200%;
+  animation: holoShift 5s ease infinite;
 }
 
 .logo {
@@ -45,67 +58,25 @@
 .label {
   font-size: 12px;
   font-weight: 500;
-  color: rgba(229, 231, 235, 0.7);
+  color: var(--holo-text-dim);
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
 
-.input {
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-  padding: 10px 12px;
-  color: #e5e7eb;
-  font-size: 14px;
-  outline: none;
-  transition: border-color 0.15s;
-}
-
-.input:focus {
-  border-color: #3b82f6;
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.input::placeholder {
-  color: rgba(229, 231, 235, 0.3);
-}
-
 .error {
-  background: rgba(239, 68, 68, 0.12);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  border-radius: 8px;
+  background: rgba(255,107,107,0.12);
+  border: 1px solid rgba(255,107,107,0.30);
+  border-radius: var(--holo-radius-sm);
   padding: 10px 12px;
-  color: #fca5a5;
+  color: var(--holo-red);
   font-size: 13px;
-}
-
-.button {
-  background: #3b82f6;
-  color: #fff;
-  border: none;
-  border-radius: 8px;
-  padding: 11px;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.15s, opacity 0.15s;
-  margin-top: 4px;
-}
-
-.button:hover:not(:disabled) {
-  background: #2563eb;
-}
-
-.button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
 }
 
 .divider {
   display: flex;
   align-items: center;
   gap: 12px;
-  color: rgba(229, 231, 235, 0.3);
+  color: var(--holo-text-faint);
   font-size: 12px;
   font-weight: 500;
   text-transform: uppercase;
@@ -117,32 +88,5 @@
   content: '';
   flex: 1;
   height: 1px;
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.oidcButton {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  background: rgba(59, 130, 246, 0.08);
-  border: 1px solid rgba(59, 130, 246, 0.35);
-  border-radius: 8px;
-  padding: 11px;
-  color: #93c5fd;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.15s, border-color 0.15s, color 0.15s, box-shadow 0.15s;
-}
-
-.oidcButton:hover {
-  background: rgba(59, 130, 246, 0.16);
-  border-color: rgba(59, 130, 246, 0.6);
-  color: #bfdbfe;
-  box-shadow: 0 0 12px rgba(59, 130, 246, 0.2);
-}
-
-.oidcButton:active {
-  background: rgba(59, 130, 246, 0.24);
+  background: rgba(124,92,255,0.2);
 }
