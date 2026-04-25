@@ -123,7 +123,7 @@ export function Select({
               color: isSel ? '#c4b5fd' : 'var(--holo-text)',
               background: isSel ? 'rgba(124,92,255,0.18)' : 'transparent',
               border: isSel ? '1px solid rgba(124,92,255,0.35)' : '1px solid transparent',
-              borderRadius: 10,
+              borderRadius: isSel ? 10 : 8,
               fontWeight: isSel ? 600 : 400,
               transition: 'background 0.1s',
             }}
