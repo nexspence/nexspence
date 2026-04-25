@@ -483,7 +483,7 @@ const S = {
     border: '1px solid rgba(255,255,255,0.1)',
     borderRadius: 8,
     padding: '6px 14px',
-    color: disabled ? 'rgba(229,231,235,0.25)' : 'var(--holo-text)',
+    color: disabled ? 'var(--holo-text-faint)' : 'var(--holo-text)',
     fontSize: 13,
     cursor: disabled ? 'not-allowed' : 'pointer',
   }),
