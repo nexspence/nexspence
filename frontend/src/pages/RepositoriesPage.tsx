@@ -6,7 +6,7 @@ import { nexusApi, nexspenceApi, apiClient } from '@/api/client'
 import { useAuthStore } from '@/store/authStore'
 import styles from './RepositoriesPage.module.css'
 import { Select } from '../components/Select'
-import { HoloButton, HoloInput, HoloPill, HoloModal } from '@/components/holo'
+import { HoloButton, HoloInput, HoloPill, HoloModal, Wizard } from '@/components/holo'
 
 interface Repository {
   id: string
@@ -328,12 +328,10 @@ function CreateRepoModal({ onClose, onCreated }: {
     queryKey: ['repositories'],
     queryFn: () => nexusApi.listRepositories({}).then(r => r.data),
   })
-
   const { data: cleanupPolicies = [] } = useQuery<CleanupPolicyRow[]>({
     queryKey: ['cleanupPolicies'],
     queryFn: () => nexusApi.listCleanupPolicies().then(r => r.data),
   })
-
   const { data: blobStores = [] } = useQuery<BlobStoreLite[]>({
     queryKey: ['blobstores'],
     queryFn: () => nexusApi.listBlobStores().then(r => r.data),
@@ -356,7 +354,6 @@ function CreateRepoModal({ onClose, onCreated }: {
   const setField = (field: string, value: unknown) =>
     setForm(f => ({ ...f, [field]: value }))
 
-  // When format changes on proxy, suggest the default URL
   const handleFormatChange = (fmt: string) => {
     setForm(f => ({
       ...f,
@@ -366,67 +363,55 @@ function CreateRepoModal({ onClose, onCreated }: {
     }))
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const memberCandidates = allRepos.filter(
+    r => r.format === form.format && r.type !== 'group'
+  )
+  const applicableCreate = cleanupPoliciesForFormat(cleanupPolicies, form.format)
+
+  const validateStep = (stepIdx: number): boolean => {
     setError('')
-
-    if (form.type === 'proxy' && !form.remoteUrl.trim()) {
-      setError('Remote URL is required for proxy repositories')
-      return
+    if (stepIdx === 1) {
+      if (!form.name.trim()) { setError('Name is required'); return false }
+      if (form.type === 'proxy' && !form.remoteUrl.trim()) { setError('Remote URL is required for proxy repositories'); return false }
+      if (form.type === 'group' && form.memberNames.length === 0) { setError('Select at least one member repository'); return false }
     }
-    if (form.type === 'group' && form.memberNames.length === 0) {
-      setError('Select at least one member repository')
-      return
-    }
-    const effectiveStoreId = form.type === 'group' ? '' : (form.blobStoreId || defaultStoreId)
-    if (form.type !== 'group' && !effectiveStoreId) {
-      setError('Select a blob store')
-      return
-    }
-
-    // Enforce repo quota <= blob store quota (backend also checks).
-    const quotaValue = form.quotaGB.trim() !== '' ? parseFloat(form.quotaGB) : NaN
-    if (!isNaN(quotaValue) && quotaValue > 0 && effectiveStoreId) {
-      const store = blobStores.find(b => b.id === effectiveStoreId)
-      if (store?.quotaBytes != null) {
-        const repoBytes = Math.round(quotaValue * 1024 * 1024 * 1024)
-        if (repoBytes > store.quotaBytes) {
-          setError(`Repository quota (${formatBytes(repoBytes)}) exceeds blob store "${store.name}" quota (${formatBytes(store.quotaBytes)})`)
-          return
+    if (stepIdx === 2) {
+      const effectiveStoreId = form.type === 'group' ? '' : (form.blobStoreId || defaultStoreId)
+      if (form.type !== 'group' && !effectiveStoreId) { setError('Select a blob store'); return false }
+      const quotaValue = form.quotaGB.trim() !== '' ? parseFloat(form.quotaGB) : NaN
+      if (!isNaN(quotaValue) && quotaValue > 0 && effectiveStoreId) {
+        const store = blobStores.find(b => b.id === effectiveStoreId)
+        if (store?.quotaBytes != null) {
+          const repoBytes = Math.round(quotaValue * 1024 * 1024 * 1024)
+          if (repoBytes > store.quotaBytes) {
+            setError(`Repository quota (${formatBytes(repoBytes)}) exceeds blob store "${store.name}" quota (${formatBytes(store.quotaBytes)})`)
+            return false
+          }
         }
       }
     }
+    return true
+  }
 
+  const handleFinish = async () => {
+    setError('')
+    const effectiveStoreId = form.type === 'group' ? '' : (form.blobStoreId || defaultStoreId)
     setLoading(true)
     try {
       const body: Record<string, unknown> = {
         name: form.name,
         description: form.description,
       }
-      if (effectiveStoreId) {
-        body.blobStoreId = effectiveStoreId
-      }
-      if (form.type === 'proxy') {
-        body.proxyConfig = { remote_url: form.remoteUrl.trim() }
-      }
-      if (form.type === 'group') {
-        body.formatConfig = { member_names: form.memberNames }
-      }
-      if (form.type !== 'group' && form.cleanupPolicyIds.length > 0) {
-        body.cleanupPolicyIds = form.cleanupPolicyIds
-      }
+      if (effectiveStoreId) body.blobStoreId = effectiveStoreId
+      if (form.type === 'proxy') body.proxyConfig = { remote_url: form.remoteUrl.trim() }
+      if (form.type === 'group') body.formatConfig = { member_names: form.memberNames }
+      if (form.type !== 'group' && form.cleanupPolicyIds.length > 0) body.cleanupPolicyIds = form.cleanupPolicyIds
       if (form.quotaGB.trim() !== '') {
         const gb = parseFloat(form.quotaGB)
-        if (!isNaN(gb) && gb > 0) {
-          body.quotaBytes = Math.round(gb * 1024 * 1024 * 1024)
-        }
+        if (!isNaN(gb) && gb > 0) body.quotaBytes = Math.round(gb * 1024 * 1024 * 1024)
       }
       body.allowAnonymous = form.allowAnonymous
-
-      await apiClient.post(
-        `/service/rest/v1/repositories/${form.format}/${form.type}`,
-        body,
-      )
+      await apiClient.post(`/service/rest/v1/repositories/${form.format}/${form.type}`, body)
       onCreated()
     } catch (err: any) {
       setError(err.response?.data?.error ?? 'Failed to create repository')
@@ -435,204 +420,186 @@ function CreateRepoModal({ onClose, onCreated }: {
     }
   }
 
-  // Repos that can be members of a group (same format, not a group itself)
-  const memberCandidates = allRepos.filter(
-    r => r.format === form.format && r.type !== 'group'
+  const step1 = (
+    <div className={styles.form}>
+      <div className={styles.formRow}>
+        <label style={LABEL_STYLE}>Format</label>
+        <Select
+          options={['maven2','npm','docker','pypi','go','nuget','helm','raw','apt','yum','cargo','conan'].map(f => ({ value: f, label: f }))}
+          value={form.format}
+          onChange={handleFormatChange}
+        />
+      </div>
+      <div className={styles.formRow}>
+        <label style={LABEL_STYLE}>Type</label>
+        <Select
+          options={[
+            { value: 'hosted', label: 'Hosted — store artifacts locally' },
+            { value: 'proxy',  label: 'Proxy — cache from remote registry' },
+            { value: 'group',  label: 'Group — combine multiple repos' },
+          ]}
+          value={form.type}
+          onChange={t => setForm(f => ({
+            ...f,
+            type: t,
+            remoteUrl: t === 'proxy' ? (PROXY_DEFAULTS[f.format] ?? '') : '',
+          }))}
+        />
+      </div>
+    </div>
   )
 
-  const toggleMember = (name: string) =>
-    setField('memberNames',
-      form.memberNames.includes(name)
-        ? form.memberNames.filter(n => n !== name)
-        : [...form.memberNames, name]
-    )
-
-  const applicableCreate = cleanupPoliciesForFormat(cleanupPolicies, form.format)
-
-  return (
-    <HoloModal open={true} onClose={onClose} style={{ minWidth: 640 }}>
-      <h2 style={{ fontSize: 17, fontWeight: 700, color: 'var(--holo-text)', margin: 0 }}>Create Repository</h2>
-      <form onSubmit={handleSubmit} className={styles.form}>
-
+  const step2 = (
+    <div className={styles.form}>
+      <div className={styles.formRow}>
+        <label style={LABEL_STYLE}>Name *</label>
+        <HoloInput
+          value={form.name}
+          onChange={e => setField('name', e.target.value)}
+          placeholder="my-repo"
+          autoFocus
+        />
+      </div>
+      <div className={styles.formRow}>
+        <label style={LABEL_STYLE}>Description</label>
+        <HoloInput
+          value={form.description}
+          onChange={e => setField('description', e.target.value)}
+          placeholder="Optional description"
+        />
+      </div>
+      {form.type === 'proxy' && (
         <div className={styles.formRow}>
-          <label style={LABEL_STYLE}>Name *</label>
+          <label style={LABEL_STYLE}>Remote URL *</label>
           <HoloInput
-            value={form.name}
-            onChange={e => setField('name', e.target.value)}
-            required
-            placeholder="my-repo"
+            type="url"
+            value={form.remoteUrl}
+            onChange={e => setField('remoteUrl', e.target.value)}
+            placeholder="https://registry.example.com/"
           />
+          <span className={styles.hint}>URL of the upstream registry to proxy and cache</span>
         </div>
-
+      )}
+      {form.type === 'group' && (
         <div className={styles.formRow}>
-          <label style={LABEL_STYLE}>Format</label>
-          <Select
-            options={['maven2','npm','docker','pypi','go','nuget','helm','raw','apt','yum','cargo','conan'].map(f => ({ value: f, label: f }))}
-            value={form.format}
-            onChange={handleFormatChange}
-          />
-        </div>
-
-        <div className={styles.formRow}>
-          <label style={LABEL_STYLE}>Type</label>
-          <Select
-            options={[
-              { value: 'hosted', label: 'Hosted — store artifacts locally' },
-              { value: 'proxy',  label: 'Proxy — cache from remote registry' },
-              { value: 'group',  label: 'Group — combine multiple repos' },
-            ]}
-            value={form.type}
-            onChange={t => setForm(f => ({
-              ...f,
-              type: t,
-              remoteUrl: t === 'proxy' ? (PROXY_DEFAULTS[f.format] ?? '') : '',
-            }))}
-          />
-        </div>
-
-        {/* Proxy: Remote URL */}
-        {form.type === 'proxy' && (
-          <div className={styles.formRow}>
-            <label style={LABEL_STYLE}>Remote URL *</label>
-            <HoloInput
-              type="url"
-              value={form.remoteUrl}
-              onChange={e => setField('remoteUrl', e.target.value)}
-              required
-              placeholder="https://registry.example.com/"
-            />
-            <span className={styles.hint}>
-              URL of the upstream registry to proxy and cache
-            </span>
-          </div>
-        )}
-
-        {/* Group: member repos */}
-        {form.type === 'group' && (
-          <div className={styles.formRow}>
-            <label style={LABEL_STYLE}>Member Repositories *</label>
-            {memberCandidates.length === 0 ? (
-              <p className={styles.hint}>
-                No {form.format} hosted/proxy repos found. Create them first.
-              </p>
-            ) : (
-              <div className={styles.memberList}>
-                {memberCandidates.map(r => (
-                  <label key={r.id} className={styles.memberItem}>
-                    <input
-                      type="checkbox"
-                      checked={form.memberNames.includes(r.name)}
-                      onChange={() => toggleMember(r.name)}
-                    />
-                    <span className={styles.memberName}>{r.name}</span>
-                    <span className={styles.memberType}>{r.type}</span>
-                  </label>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {form.type !== 'group' && applicableCreate.length > 0 && (
-          <div className={styles.formRow}>
-            <label style={LABEL_STYLE}>Cleanup policies</label>
+          <label style={LABEL_STYLE}>Member Repositories *</label>
+          {memberCandidates.length === 0 ? (
+            <p className={styles.hint}>No {form.format} hosted/proxy repos found. Create them first.</p>
+          ) : (
             <div className={styles.memberList}>
-              {applicableCreate.map(p => (
-                <label key={p.id} className={styles.memberItem}>
+              {memberCandidates.map(r => (
+                <label key={r.id} className={styles.memberItem}>
                   <input
                     type="checkbox"
-                    checked={form.cleanupPolicyIds.includes(p.id)}
+                    checked={form.memberNames.includes(r.name)}
                     onChange={() =>
-                      setForm(f => ({
-                        ...f,
-                        cleanupPolicyIds: f.cleanupPolicyIds.includes(p.id)
-                          ? f.cleanupPolicyIds.filter(x => x !== p.id)
-                          : [...f.cleanupPolicyIds, p.id],
-                      }))
+                      setField('memberNames',
+                        form.memberNames.includes(r.name)
+                          ? form.memberNames.filter(n => n !== r.name)
+                          : [...form.memberNames, r.name]
+                      )
                     }
                   />
-                  <span className={styles.memberName}>{p.name}</span>
-                  <span className={styles.memberType}>{p.format === '*' ? 'all' : p.format}</span>
+                  <span className={styles.memberName}>{r.name}</span>
+                  <span className={styles.memberType}>{r.type}</span>
                 </label>
               ))}
             </div>
-          </div>
-        )}
+          )}
+        </div>
+      )}
+    </div>
+  )
 
-        {form.type !== 'group' && (
-          <div className={styles.formRow}>
-            <label style={LABEL_STYLE}>Blob Store *</label>
-            {blobStores.length === 0 ? (
-              <span className={styles.hint}>No blob stores configured. Create one in System Admin → Blob Stores.</span>
-            ) : (
-              <Select
-                options={blobStores.map(b => ({ value: b.id, label: `${b.name} (${b.type})` }))}
-                value={form.blobStoreId || defaultStoreId}
-                onChange={v => setField('blobStoreId', v)}
-              />
-            )}
-            {(() => {
-              const sel = blobStores.find(b => b.id === (form.blobStoreId || defaultStoreId))
-              if (!sel) return <span className={styles.hint}>Physical storage backend where artifacts are written.</span>
-              if (sel.quotaBytes == null) {
-                return <span className={styles.hint}>Store quota: unlimited.</span>
-              }
-              const free = sel.quotaBytes - (sel.usedBytes ?? 0)
-              return (
-                <span className={styles.hint}>
-                  Store quota: {formatBytes(sel.quotaBytes)} · free {formatBytes(free)}
-                </span>
-              )
-            })()}
-          </div>
-        )}
-
+  const step3 = (
+    <div className={styles.form}>
+      {form.type !== 'group' && applicableCreate.length > 0 && (
         <div className={styles.formRow}>
-          <label style={LABEL_STYLE}>Description</label>
+          <label style={LABEL_STYLE}>Cleanup policies</label>
+          <div className={styles.memberList}>
+            {applicableCreate.map(p => (
+              <label key={p.id} className={styles.memberItem}>
+                <input
+                  type="checkbox"
+                  checked={form.cleanupPolicyIds.includes(p.id)}
+                  onChange={() =>
+                    setForm(f => ({
+                      ...f,
+                      cleanupPolicyIds: f.cleanupPolicyIds.includes(p.id)
+                        ? f.cleanupPolicyIds.filter(x => x !== p.id)
+                        : [...f.cleanupPolicyIds, p.id],
+                    }))
+                  }
+                />
+                <span className={styles.memberName}>{p.name}</span>
+                <span className={styles.memberType}>{p.format === '*' ? 'all' : p.format}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+      {form.type !== 'group' && (
+        <div className={styles.formRow}>
+          <label style={LABEL_STYLE}>Blob Store *</label>
+          {blobStores.length === 0 ? (
+            <span className={styles.hint}>No blob stores configured. Create one in System Admin → Blob Stores.</span>
+          ) : (
+            <Select
+              options={blobStores.map(b => ({ value: b.id, label: `${b.name} (${b.type})` }))}
+              value={form.blobStoreId || defaultStoreId}
+              onChange={v => setField('blobStoreId', v)}
+            />
+          )}
+          {(() => {
+            const sel = blobStores.find(b => b.id === (form.blobStoreId || defaultStoreId))
+            if (!sel) return <span className={styles.hint}>Physical storage backend where artifacts are written.</span>
+            if (sel.quotaBytes == null) return <span className={styles.hint}>Store quota: unlimited.</span>
+            const free = sel.quotaBytes - (sel.usedBytes ?? 0)
+            return <span className={styles.hint}>Store quota: {formatBytes(sel.quotaBytes)} · free {formatBytes(free)}</span>
+          })()}
+        </div>
+      )}
+      {form.type !== 'group' && (
+        <div className={styles.formRow}>
+          <label style={LABEL_STYLE}>Storage quota (GB)</label>
           <HoloInput
-            value={form.description}
-            onChange={e => setField('description', e.target.value)}
-            placeholder="Optional description"
+            type="number" min="0" step="0.1"
+            value={form.quotaGB}
+            onChange={e => setField('quotaGB', e.target.value)}
+            placeholder="No limit"
           />
+          <span className={styles.hint}>Leave blank for unlimited storage</span>
         </div>
+      )}
+      <div className={styles.formRow}>
+        <label style={LABEL_STYLE}>Anonymous access</label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--holo-text)', cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={form.allowAnonymous}
+            onChange={e => setField('allowAnonymous', e.target.checked)}
+          />
+          Allow unauthenticated read access
+        </label>
+        <span className={styles.hint}>When disabled, only users with an assigned role can read this repository.</span>
+      </div>
+    </div>
+  )
 
-        {form.type !== 'group' && (
-          <div className={styles.formRow}>
-            <label style={LABEL_STYLE}>Storage quota (GB)</label>
-            <HoloInput
-              type="number"
-              min="0"
-              step="0.1"
-              value={form.quotaGB}
-              onChange={e => setField('quotaGB', e.target.value)}
-              placeholder="No limit"
-            />
-            <span className={styles.hint}>Leave blank for unlimited storage</span>
-          </div>
-        )}
-
-        <div className={styles.formRow}>
-          <label style={LABEL_STYLE}>Anonymous access</label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--holo-text)', cursor: 'pointer' }}>
-            <input
-              type="checkbox"
-              checked={form.allowAnonymous}
-              onChange={e => setField('allowAnonymous', e.target.checked)}
-            />
-            Allow unauthenticated read access
-          </label>
-          <span className={styles.hint}>When disabled, only users with an assigned role can read this repository.</span>
-        </div>
-
-        {error && <div style={ERROR_STYLE}>{error}</div>}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 8 }}>
-          <HoloButton type="button" onClick={onClose}>Cancel</HoloButton>
-          <HoloButton variant="primary" type="submit" disabled={loading}>
-            {loading ? 'Creating…' : 'Create'}
-          </HoloButton>
-        </div>
-      </form>
-    </HoloModal>
+  return (
+    <Wizard
+      steps={[
+        { label: 'Тип', content: step1 },
+        { label: 'Основные поля', content: step2 },
+        { label: 'Хранилище', content: step3 },
+      ]}
+      onFinish={handleFinish}
+      finishLabel="Create"
+      onValidateStep={validateStep}
+      onClose={onClose}
+      loading={loading}
+      error={error}
+    />
   )
 }
 

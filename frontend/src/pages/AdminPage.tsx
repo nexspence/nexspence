@@ -5,7 +5,7 @@ import { Activity, ArrowRightLeft, CheckCircle, Database, Download, HardDrive, I
 import { nexusApi, nexspenceApi, ServiceStatus } from '@/api/client'
 import { MonitoringView } from '@/pages/MonitoringPage'
 import { Select } from '@/components/Select'
-import { HoloButton, HoloInput, HoloModal, HoloTabs, HoloCard, HoloTabItem } from '@/components/holo'
+import { HoloButton, HoloInput, HoloModal, HoloTabs, HoloCard, HoloTabItem, Wizard } from '@/components/holo'
 
 interface BlobStore {
   id: string; name: string; type: string; usedBytes: number; quotaBytes?: number; config?: Record<string, unknown>
@@ -834,8 +834,19 @@ function CreateMigrationJobModal({ onClose, onCreated }: { onClose: () => void; 
   const toggleScope = (k: keyof typeof scope) =>
     setScope(s => ({ ...s, [k]: !s[k] }))
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const validateStep = (stepIdx: number): boolean => {
+    setError('')
+    if (stepIdx === 0) {
+      if (!form.sourceUrl.trim()) { setError('Nexus URL is required'); return false }
+      if (!form.password.trim()) { setError('Password is required'); return false }
+    }
+    if (stepIdx === 1) {
+      if (!Object.values(scope).some(Boolean)) { setError('Select at least one scope item'); return false }
+    }
+    return true
+  }
+
+  const handleFinish = async () => {
     setError('')
     setLoading(true)
     try {
@@ -859,57 +870,92 @@ function CreateMigrationJobModal({ onClose, onCreated }: { onClose: () => void; 
     }
   }
 
+  const LABEL = { fontSize: 11, fontWeight: 600 as const, color: 'var(--holo-text-dim)', textTransform: 'uppercase' as const, letterSpacing: '0.04em' }
+
+  const scopeItems: { key: keyof typeof scope; label: string }[] = [
+    { key: 'migrateRepos',    label: 'Repositories' },
+    { key: 'migrateUsers',    label: 'Users & Roles' },
+    { key: 'migratePolicies', label: 'Cleanup Policies' },
+    { key: 'migrateBlobs',   label: 'Artifacts (blobs)' },
+  ]
+
+  const step1 = (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+        <label style={LABEL}>Nexus URL *</label>
+        <HoloInput placeholder="https://nexus.example.com" value={form.sourceUrl} onChange={set('sourceUrl')} autoFocus />
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+          <label style={LABEL}>Username</label>
+          <HoloInput value={form.username} onChange={set('username')} />
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+          <label style={LABEL}>Password *</label>
+          <HoloInput type="password" value={form.password} onChange={set('password')} />
+        </div>
+      </div>
+    </div>
+  )
+
+  const step2 = (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <label style={LABEL}>Migration Scope</label>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+        {scopeItems.map(({ key, label }) => (
+          <label key={key} style={{
+            display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
+            padding: '8px 10px',
+            background: scope[key] ? 'rgba(59,130,246,0.1)' : 'rgba(255,255,255,0.03)',
+            border: `1px solid ${scope[key] ? 'rgba(59,130,246,0.3)' : 'rgba(255,255,255,0.08)'}`,
+            borderRadius: 8, transition: 'background 0.15s, border-color 0.15s', userSelect: 'none',
+          }}>
+            <input type="checkbox" checked={scope[key]} onChange={() => toggleScope(key)} style={{ accentColor: '#3b82f6', width: 14, height: 14 }} />
+            <span style={{ fontSize: 13, color: scope[key] ? 'var(--holo-text)' : 'var(--holo-text-faint)', fontWeight: scope[key] ? 600 : 400 }}>{label}</span>
+          </label>
+        ))}
+      </div>
+    </div>
+  )
+
+  const step3 = (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+        <label style={LABEL}>Concurrency</label>
+        <HoloInput type="number" min={1} max={16} value={form.concurrency} onChange={set('concurrency')} />
+      </div>
+      <div style={{
+        background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(124,92,255,0.15)',
+        borderRadius: 10, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 6,
+      }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: '#7c5cff', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Summary</div>
+        <div style={{ fontSize: 12, color: 'var(--holo-text-dim)' }}>
+          <b style={{ color: 'var(--holo-text)' }}>Source:</b> {form.sourceUrl || '—'}
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--holo-text-dim)' }}>
+          <b style={{ color: 'var(--holo-text)' }}>Scope:</b>{' '}
+          {scopeItems.filter(i => scope[i.key]).map(i => i.label).join(', ') || 'none'}
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--holo-text-dim)' }}>
+          <b style={{ color: 'var(--holo-text)' }}>Concurrency:</b> {form.concurrency}
+        </div>
+      </div>
+    </div>
+  )
+
   return (
-    <HoloModal open={true} onClose={onClose}>
-      <h2 style={{ fontSize: 18, fontWeight: 700, color: 'var(--holo-text)', margin: '0 0 16px' }}>New Migration Job</h2>
-      <form style={{ display: 'flex', flexDirection: 'column', gap: 14 }} onSubmit={handleSubmit}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-          <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--holo-text-dim)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Nexus URL *</label>
-          <HoloInput placeholder="https://nexus.example.com" value={form.sourceUrl} onChange={set('sourceUrl')} required />
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-            <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--holo-text-dim)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Username</label>
-            <HoloInput value={form.username} onChange={set('username')} />
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-            <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--holo-text-dim)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Password *</label>
-            <HoloInput type="password" value={form.password} onChange={set('password')} required />
-          </div>
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-          <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--holo-text-dim)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Concurrency</label>
-          <HoloInput type="number" min={1} max={16} value={form.concurrency} onChange={set('concurrency')} />
-        </div>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--holo-text-dim)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Migration Scope</label>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-            {([
-              { key: 'migrateRepos',    label: 'Repositories' },
-              { key: 'migrateUsers',    label: 'Users & Roles' },
-              { key: 'migratePolicies', label: 'Cleanup Policies' },
-              { key: 'migrateBlobs',   label: 'Artifacts (blobs)' },
-            ] as { key: keyof typeof scope; label: string }[]).map(({ key, label }) => (
-              <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', padding: '8px 10px', background: scope[key] ? 'rgba(59,130,246,0.1)' : 'rgba(255,255,255,0.03)', border: `1px solid ${scope[key] ? 'rgba(59,130,246,0.3)' : 'rgba(255,255,255,0.08)'}`, borderRadius: 8, transition: 'background 0.15s, border-color 0.15s', userSelect: 'none' }}>
-                <input
-                  type="checkbox"
-                  checked={scope[key]}
-                  onChange={() => toggleScope(key)}
-                  style={{ accentColor: '#3b82f6', width: 14, height: 14 }}
-                />
-                <span style={{ fontSize: 13, color: scope[key] ? 'var(--holo-text)' : 'var(--holo-text-faint)', fontWeight: scope[key] ? 600 : 400 }}>{label}</span>
-              </label>
-            ))}
-          </div>
-        </div>
-
-        {error && <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 8, padding: '10px 12px', color: '#fca5a5', fontSize: 13 }}>{error}</div>}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 4 }}>
-          <HoloButton type="button" onClick={onClose}>Cancel</HoloButton>
-          <HoloButton type="submit" variant="primary" disabled={loading}>{loading ? 'Starting…' : 'Start Migration'}</HoloButton>
-        </div>
-      </form>
-    </HoloModal>
+    <Wizard
+      steps={[
+        { label: 'Источник', content: step1 },
+        { label: 'Область', content: step2 },
+        { label: 'Параметры', content: step3 },
+      ]}
+      onFinish={handleFinish}
+      finishLabel="Start Migration"
+      onValidateStep={validateStep}
+      onClose={onClose}
+      loading={loading}
+      error={error}
+    />
   )
 }

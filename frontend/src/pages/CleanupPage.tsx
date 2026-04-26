@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Trash2, RefreshCw, Plus, Play, Pencil, X, Check, AlertCircle } from 'lucide-react'
 import { nexusApi } from '@/api/client'
 import { Select } from '../components/Select'
-import { HoloButton, HoloInput, HoloModal, HoloPill } from '@/components/holo'
+import { HoloButton, HoloInput, HoloModal, HoloPill, Wizard } from '@/components/holo'
 
 interface CleanupPolicy {
   id: string
@@ -75,6 +75,8 @@ function PolicyModal({
     }
   })
   const [err, setErr] = useState('')
+  const [wizardError, setWizardError] = useState('')
+  const [wizardLoading, setWizardLoading] = useState(false)
 
   const payload = () => ({
     name: form.name.trim(),
@@ -108,6 +110,114 @@ function PolicyModal({
 
   const set = (k: keyof PolicyForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setForm(f => ({ ...f, [k]: e.target.value }))
+
+  // ── Create mode: stepped wizard ───────────────────────────────────────
+  if (!initial) {
+    const LABEL = { fontSize: 12, fontWeight: 600 as const, color: 'var(--holo-text-dim)', textTransform: 'uppercase' as const, letterSpacing: '0.04em' }
+
+    const validateStep = (stepIdx: number): boolean => {
+      setWizardError('')
+      if (stepIdx === 0 && !form.name.trim()) {
+        setWizardError('Name is required')
+        return false
+      }
+      return true
+    }
+
+    const handleFinish = async () => {
+      setWizardError('')
+      if (!form.name.trim()) { setWizardError('Name is required'); return }
+      setWizardLoading(true)
+      try {
+        await nexusApi.createCleanupPolicy(payload())
+        onSaved()
+        onClose()
+      } catch (e: any) {
+        setWizardError(e?.response?.data?.error ?? 'Save failed')
+      } finally {
+        setWizardLoading(false)
+      }
+    }
+
+    const wizStep1 = (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <label style={LABEL}>Name *</label>
+          <HoloInput value={form.name} onChange={set('name')} placeholder="e.g. delete-old-snapshots" autoFocus />
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <label style={LABEL}>Description</label>
+          <HoloInput value={form.description} onChange={set('description')} placeholder="Optional description" />
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <label style={LABEL}>Format</label>
+          <Select
+            options={FORMATS.map(f => ({ value: f, label: f === '*' ? 'All formats' : f }))}
+            value={form.format}
+            onChange={v => setForm(f => ({ ...f, format: v }))}
+          />
+        </div>
+      </div>
+    )
+
+    const wizStep2 = (
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <label style={LABEL}>Not downloaded for (days)</label>
+          <HoloInput type="number" min="1" value={form.lastDownloadedDays} onChange={set('lastDownloadedDays')} placeholder="e.g. 30" />
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <label style={LABEL}>Artifact age (days)</label>
+          <HoloInput type="number" min="1" value={form.artifactAgeDays} onChange={set('artifactAgeDays')} placeholder="e.g. 90" />
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <label style={LABEL}>Path prefix</label>
+          <HoloInput value={form.pathPrefix} onChange={set('pathPrefix')} placeholder="e.g. /releases/" />
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <label style={LABEL}>Name glob</label>
+          <HoloInput value={form.nameGlob} onChange={set('nameGlob')} placeholder="e.g. *-SNAPSHOT*" />
+        </div>
+      </div>
+    )
+
+    const wizStep3 = (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <label style={LABEL}>Schedule (cron)</label>
+          <HoloInput value={form.scheduleCron} onChange={set('scheduleCron')} placeholder="e.g. 0 2 * * * (default: every 6 hours)" />
+          <span style={{ fontSize: 11, color: 'rgba(229,231,235,0.35)' }}>Leave blank to use the global default. Format: minute hour day month weekday</span>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <label style={LABEL}>Options</label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--holo-text-dim)', cursor: 'pointer' }}>
+            <input type="checkbox" checked={form.enabled} onChange={e => setForm(f => ({ ...f, enabled: e.target.checked }))} />
+            Enabled
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--holo-text-dim)', cursor: 'pointer' }}>
+            <input type="checkbox" checked={form.dryRun} onChange={e => setForm(f => ({ ...f, dryRun: e.target.checked }))} />
+            Dry run (no deletes)
+          </label>
+        </div>
+      </div>
+    )
+
+    return (
+      <Wizard
+        steps={[
+          { label: 'Идентификация', content: wizStep1 },
+          { label: 'Критерии', content: wizStep2 },
+          { label: 'Расписание', content: wizStep3 },
+        ]}
+        onFinish={handleFinish}
+        finishLabel="Create Policy"
+        onValidateStep={validateStep}
+        onClose={onClose}
+        loading={wizardLoading}
+        error={wizardError}
+      />
+    )
+  }
 
   return (
     <HoloModal open={true} onClose={onClose}>
