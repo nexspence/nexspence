@@ -2,6 +2,11 @@
   display: grid;
   grid-template-columns: 260px minmax(0, 1fr);
   min-height: 100vh;
+  transition: grid-template-columns 0.2s cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.root.collapsed {
+  grid-template-columns: 48px minmax(0, 1fr);
 }
 
 .sidebar {
@@ -16,7 +21,13 @@
   flex-direction: column;
   gap: 10px;
   overflow-y: auto;
+  overflow-x: hidden;
   z-index: 20;
+  transition: padding 0.2s cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.root.collapsed .sidebar {
+  padding: 14px 4px;
 }
 
 .brand {
@@ -32,6 +43,13 @@
   display: block;
 }
 
+.brandLogoMini {
+  width: 30px;
+  height: 30px;
+  object-fit: contain;
+  display: block;
+}
+
 .sectionLabel {
   font-size: 10px;
   font-weight: 600;
@@ -40,6 +58,16 @@
   color: var(--holo-text-faint);
   padding: 0 4px;
   margin-top: 4px;
+  max-height: 20px;
+  overflow: hidden;
+  transition: opacity 0.15s, max-height 0.2s cubic-bezier(0.23, 1, 0.32, 1), margin 0.2s, padding 0.2s;
+}
+
+.root.collapsed .sectionLabel {
+  opacity: 0;
+  max-height: 0;
+  margin: 0;
+  padding: 0;
 }
 
 .nav {
@@ -60,9 +88,27 @@
   color: var(--holo-text-dim);
   font-size: 13px;
   font-weight: 500;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  transition: background 0.15s, color 0.15s, border-color 0.15s, padding 0.2s, gap 0.2s, justify-content 0.2s;
   text-decoration: none;
   cursor: pointer;
+}
+
+.navLabel {
+  white-space: nowrap;
+  overflow: hidden;
+  max-width: 200px;
+  transition: opacity 0.15s, max-width 0.2s cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.root.collapsed .navLabel {
+  opacity: 0;
+  max-width: 0;
+}
+
+.root.collapsed .navBtn {
+  justify-content: center;
+  padding: 8px 6px;
+  gap: 0;
 }
 
 .navBtn:hover {
@@ -106,6 +152,23 @@
   border-radius: 8px;
   background: rgba(255,255,255,0.025);
   border: 1px solid rgba(124,92,255,0.12);
+  transition: padding 0.2s, justify-content 0.2s;
+}
+
+.userInfoText {
+  overflow: hidden;
+  max-width: 160px;
+  transition: opacity 0.15s, max-width 0.2s cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.root.collapsed .userInfoText {
+  opacity: 0;
+  max-width: 0;
+}
+
+.root.collapsed .userInfo {
+  justify-content: center;
+  padding: 6px 4px;
 }
 
 .userName {
@@ -128,6 +191,35 @@
   font-size: 10px;
   color: var(--holo-text-faint);
   padding: 4px 0 0;
+  overflow: hidden;
+  max-height: 20px;
+  transition: opacity 0.15s, max-height 0.2s, padding 0.2s;
+}
+
+.root.collapsed .version {
+  opacity: 0;
+  max-height: 0;
+  padding: 0;
+}
+
+.collapseBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 6px;
+  border: 1px solid rgba(124,92,255,0.12);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--holo-text-faint);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+
+.collapseBtn:hover {
+  background: rgba(124,92,255,0.08);
+  color: var(--holo-text-dim);
 }
 
 .main {
