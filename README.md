@@ -705,10 +705,14 @@ Group URLs are for **reads** (GET/HEAD). **Component metadata** in PostgreSQL is
 | 25 | Audit log: detailed events, NDJSON export, partition rotation (90d retention) | ✓ complete |
 | 26 | Docker `/v2/` anonymous fallthrough + OCI-shaped auth errors | ✓ complete |
 | 28 | OIDC/OAuth2 SSO (Keycloak / Google / Entra / Okta), fragment-JWT delivery, JIT/allowlist/manual provisioning, `admin_group` + `role_mappings` role resolution | ✓ complete |
-| 28.1 | OIDC Single Logout (SLO) via `end_session_endpoint` | planned |
+| 28.1 | OIDC Single Logout (SLO) via `end_session_endpoint` | ✓ complete |
 | 28.2 | OIDC refresh-token storage + silent session renewal | planned |
 | 28.3 | Multi-provider OIDC support | planned |
-| 29+ | SBOM generation, cosign, Terraform provider, Prometheus metrics, `nexctl` CLI, OTel traces, multi-node HA, blob GC | planned |
+| 29–35 | UI polish: page headers, card rows, button hover, dropdown fix, repo/cleanup toggles, service status, browse example usage | ✓ complete |
+| 38 | Migration tab in System Admin + scope selection + history | ✓ complete |
+| 39 | Sidebar collapse — icon rail (260px ↔ 48px, localStorage) | ✓ complete |
+| 40 | Stepped wizard for Create Repository / Migration Job / Cleanup Policy | ✓ complete |
+| next | SBOM generation, cosign, Terraform provider, Prometheus metrics, `nexctl` CLI, OTel traces, multi-node HA, blob GC | planned |
 | 15D | Docker uploader + `last_downloaded` in browse UI | deferred |
 
 See [`task_plan.md`](task_plan.md) for detailed task lists per phase.
