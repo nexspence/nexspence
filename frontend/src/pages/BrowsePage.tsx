@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { HoloButton, HoloInput, HoloText, HoloModal } from '@/components/holo'
+import { HoloButton, HoloInput, HoloModal } from '@/components/holo'
 import {
+  BookOpen,
   ChevronDown,
   ChevronRight,
   Download,
@@ -93,6 +94,11 @@ interface RawTreeNode {
   updatedAt?: string
   componentId?: string
   children?: RawTreeNode[]
+}
+
+interface UsageTarget {
+  format: string
+  name: string
 }
 
 interface RawFileSelection {
@@ -423,16 +429,6 @@ const S = {
   title: { fontSize: 20, fontWeight: 700, color: 'var(--holo-text)', margin: '0 0 4px' },
   subtitle: { fontSize: 13, color: 'var(--holo-text-dim)', margin: 0 },
   toolbar: { display: 'flex', gap: 12, alignItems: 'center' },
-  iconBtn: {
-    background: 'rgba(255,255,255,0.06)',
-    border: '1px solid rgba(255,255,255,0.1)',
-    borderRadius: 8,
-    padding: 8,
-    color: 'var(--holo-text-dim)',
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-  },
   empty: {
     flex: 1,
     display: 'flex',
@@ -787,6 +783,7 @@ function RawTreeRows({
   onSelectFile,
   showDelete,
   onDelete,
+  onUsage,
   repoName,
 }: {
   node: RawTreeNode
@@ -797,6 +794,7 @@ function RawTreeRows({
   onSelectFile?: (node: RawTreeNode) => void
   showDelete?: boolean
   onDelete?: (node: RawTreeNode) => void
+  onUsage?: (node: RawTreeNode) => void
   repoName: string
 }) {
   const [hovered, setHovered] = useState(false)
@@ -864,6 +862,11 @@ function RawTreeRows({
             <GhostBtn onClick={(e) => { e.stopPropagation(); doCopy() }} title="Copy link">
               <Link size={12} />
             </GhostBtn>
+            {onUsage && (
+              <GhostBtn onClick={(e) => { e.stopPropagation(); onUsage(node) }} title="Example Usage">
+                <BookOpen size={12} />
+              </GhostBtn>
+            )}
             {showDelete && onDelete && (
               <GhostBtn danger onClick={(e) => { e.stopPropagation(); onDelete(node) }} title="Delete">
                 <Trash2 size={12} />
@@ -927,6 +930,7 @@ function RawTreeRows({
           onSelectFile={onSelectFile}
           showDelete={showDelete}
           onDelete={onDelete}
+          onUsage={onUsage}
           repoName={repoName}
         />
       ))}
@@ -965,6 +969,7 @@ export default function BrowsePage() {
   const [dockerSelection, setDockerSelection] = useState<DockerLeafSelection | null>(null)
   const [rawSelection, setRawSelection] = useState<RawFileSelection | null>(null)
   const [uploadOpen, setUploadOpen] = useState(false)
+  const [usageTarget, setUsageTarget] = useState<UsageTarget | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<{
     path: string; repo: string;
     dockerImage?: string; dockerRef?: string;
@@ -1165,23 +1170,21 @@ export default function BrowsePage() {
 
   return (
     <div style={S.page}>
-      <div style={{ padding: '24px 24px 0', marginBottom: 16 }}>
-        <div className="holo-section-label" style={{ marginBottom: 6 }}>WORKSPACE / BROWSE</div>
-        <h1 style={{ fontSize: 40, fontWeight: 700, margin: '0 0 4px', letterSpacing: '-0.04em', lineHeight: 1 }}>
-          <HoloText>Browse</HoloText>
-        </h1>
-        <p style={{ fontSize: 13, color: 'var(--holo-text-dim)', margin: 0 }}>Explore repository contents</p>
+      <div style={{ marginBottom: 4 }}>
+        <div className="holo-section-label" style={{ marginBottom: 4 }}>WORKSPACE / BROWSE</div>
+        <h1 style={{ fontSize: 20, fontWeight: 700, margin: '0 0 3px', letterSpacing: '-0.01em', lineHeight: 1.2, background: 'linear-gradient(110deg, #7c5cff, #22d3ee 60%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' as const }}>Browse</h1>
+        <p style={{ fontSize: 12, color: 'var(--holo-text-faint)', margin: 0 }}>Explore repository contents</p>
       </div>
       <div style={S.header}>
         <p style={S.subtitle}>{subtitle}</p>
         {repoName && (
-          <button
-            style={S.iconBtn}
+          <HoloButton
+            style={{ padding: 8, lineHeight: 0 }}
             onClick={() => isDocker ? refetchDockerTree() : isRaw ? refetchRawTree() : refetch()}
             title="Refresh"
           >
             <RefreshCw size={16} />
-          </button>
+          </HoloButton>
         )}
       </div>
 
@@ -1268,7 +1271,17 @@ export default function BrowsePage() {
               ) : dockerDetailLoading ? (
                 <p style={S.muted}>Loading…</p>
               ) : dockerDetail ? (
-                <DockerBrowseDetailBody comp={dockerDetail} sel={dockerSelection} />
+                <>
+                  <DockerBrowseDetailBody comp={dockerDetail} sel={dockerSelection} />
+                  <div style={{ marginTop: 12 }}>
+                    <button
+                      style={S.btnCopy}
+                      onClick={() => setUsageTarget({ format: dockerDetail.format, name: dockerDetail.name })}
+                    >
+                      <BookOpen size={13} /> Example Usage
+                    </button>
+                  </div>
+                </>
               ) : (
                 <p style={S.muted}>Could not load component.</p>
               )}
@@ -1307,6 +1320,7 @@ export default function BrowsePage() {
                       setDeleteTarget({ path: node.path, repo: repoName, label: node.path, affectedPaths: paths })
                     }
                   }}
+                  onUsage={(node) => setUsageTarget({ format: selectedRepo?.format ?? 'raw', name: node.label })}
                   repoName={repoName}
                 />
               ))}
@@ -1371,6 +1385,12 @@ export default function BrowsePage() {
                         onClick={() => { void navigator.clipboard.writeText(copyUrl) }}
                       >
                         <Link size={13} /> Copy link
+                      </button>
+                      <button
+                        style={S.btnCopy}
+                        onClick={() => setUsageTarget({ format: selectedRepo?.format ?? 'raw', name: node.label })}
+                      >
+                        <BookOpen size={13} /> Usage
                       </button>
                     </div>
                   </>
@@ -1455,6 +1475,37 @@ export default function BrowsePage() {
           </div>
         </>
       )}
+
+      <HoloModal open={!!usageTarget} onClose={() => setUsageTarget(null)}>
+        {usageTarget && (
+          <div style={{ minWidth: 380, display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <BookOpen size={20} style={{ color: '#93c5fd' }} />
+              <div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--holo-text)' }}>Example Usage</div>
+                <div style={{ fontSize: 12, color: 'var(--holo-text-faint)', marginTop: 2 }}>
+                  {usageTarget.format} · {usageTarget.name}
+                </div>
+              </div>
+            </div>
+            <div style={{
+              padding: '28px 16px',
+              background: 'rgba(255,255,255,0.03)',
+              border: '1px solid rgba(255,255,255,0.07)',
+              borderRadius: 8,
+              textAlign: 'center' as const,
+              color: 'var(--holo-text-faint)',
+              fontSize: 13,
+            }}>
+              <Package size={28} style={{ opacity: 0.3, display: 'block', margin: '0 auto 10px' }} />
+              Documentation coming soon
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <HoloButton onClick={() => setUsageTarget(null)}>Close</HoloButton>
+            </div>
+          </div>
+        )}
+      </HoloModal>
 
       <HoloModal open={!!deleteTarget} onClose={() => { setDeleteTarget(null); setDeleteError(null) }}>
           {deleteTarget && <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>

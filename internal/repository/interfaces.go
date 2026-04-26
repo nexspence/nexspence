@@ -220,6 +220,15 @@ type BlobRefRepo interface {
 	Get(ctx context.Context, blobKey string) (int, error)
 }
 
+// MigrationRepo manages migration job records.
+type MigrationRepo interface {
+	List(ctx context.Context) ([]domain.MigrationJob, error)
+	Get(ctx context.Context, id string) (*domain.MigrationJob, error)
+	Create(ctx context.Context, job *domain.MigrationJob) error
+	UpdateStatus(ctx context.Context, id string, status domain.MigrationJobStatus) error
+	Delete(ctx context.Context, id string) error
+}
+
 // BlobStoreRepo manages blob store configuration.
 type BlobStoreRepo interface {
 	List(ctx context.Context) ([]domain.BlobStore, error)

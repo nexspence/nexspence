@@ -37,6 +37,14 @@ export interface AuthConfig {
   ldapEnabled: boolean
 }
 
+export interface ServiceStatus {
+  name: string
+  status: 'ok' | 'error' | 'disabled'
+  latency_ms?: number
+  detail: string
+  checked_at: string
+}
+
 export interface Privilege {
   id: string
   type?: string
@@ -72,6 +80,8 @@ export const nexusApi = {
     data: Record<string, unknown>,
   ) =>
     apiClient.put(`/service/rest/v1/repositories/${format}/${type}/${name}`, data),
+  patchRepository: (name: string, patch: { online: boolean }) =>
+    apiClient.patch(`/service/rest/v1/repositories/${name}`, patch),
 
   // Components
   listComponents: (repository: string, continuationToken?: string) =>
@@ -226,8 +236,9 @@ export const nexspenceApi = {
   previewMigration: (data: unknown) =>
     apiClient.post('/api/v1/migration/preview', data),
 
-  // System info
+  // System info + service health
   getSystemInfo: () => apiClient.get('/api/v1/system/info'),
+  getServiceStatuses: () => apiClient.get<ServiceStatus[]>('/api/v1/system/services'),
 
   // Backup / restore (admin) — see handlers/backup.go
   exportBackup: () =>

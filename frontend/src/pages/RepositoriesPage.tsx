@@ -1,12 +1,12 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Database, Plus, Trash2, RefreshCw, Settings2 } from 'lucide-react'
+import { Database, Plus, Trash2, RefreshCw, Settings2, Power } from 'lucide-react'
 import { nexusApi, nexspenceApi, apiClient } from '@/api/client'
 import { useAuthStore } from '@/store/authStore'
 import styles from './RepositoriesPage.module.css'
 import { Select } from '../components/Select'
-import { HoloButton, HoloInput, HoloPill, HoloText, HoloModal } from '@/components/holo'
+import { HoloButton, HoloInput, HoloPill, HoloModal } from '@/components/holo'
 
 interface Repository {
   id: string
@@ -85,6 +85,23 @@ export default function RepositoriesPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['repositories'] }),
   })
 
+  const toggleOnlineMutation = useMutation({
+    mutationFn: ({ name, online }: { name: string; online: boolean }) =>
+      nexusApi.patchRepository(name, { online }),
+    onMutate: async ({ name, online }) => {
+      await qc.cancelQueries({ queryKey: ['repositories'] })
+      const prev = qc.getQueryData<Repository[]>(['repositories', formatFilter])
+      qc.setQueryData<Repository[]>(['repositories', formatFilter], old =>
+        old?.map(r => r.name === name ? { ...r, online } : r) ?? old
+      )
+      return { prev }
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.prev) qc.setQueryData(['repositories', formatFilter], ctx.prev)
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ['repositories'] }),
+  })
+
   const filtered = repos.filter(r =>
     r.name.toLowerCase().includes(filter.toLowerCase()) ||
     (r.description ?? '').toLowerCase().includes(filter.toLowerCase())
@@ -93,13 +110,11 @@ export default function RepositoriesPage() {
   return (
     <div className={styles.page}>
       <div style={{ marginBottom: 8 }}>
-        <div className="holo-section-label" style={{ marginBottom: 6 }}>WORKSPACE / REPOSITORIES</div>
+        <div className="holo-section-label" style={{ marginBottom: 4 }}>WORKSPACE / REPOSITORIES</div>
         <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16 }}>
           <div>
-            <h1 style={{ fontSize: 40, fontWeight: 700, margin: '0 0 4px', letterSpacing: '-0.04em', lineHeight: 1 }}>
-              <HoloText>Repositories</HoloText>
-            </h1>
-            <p style={{ fontSize: 13, color: 'var(--holo-text-dim)', margin: 0 }}>{repos.length} total</p>
+            <h1 style={{ fontSize: 20, fontWeight: 700, margin: '0 0 3px', letterSpacing: '-0.01em', lineHeight: 1.2, background: 'linear-gradient(110deg, #7c5cff, #22d3ee 60%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' as const }}>Repositories</h1>
+            <p style={{ fontSize: 12, color: 'var(--holo-text-faint)', margin: 0 }}>{repos.length} total</p>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <HoloButton icon={<RefreshCw size={15} />} onClick={() => refetch()} title="Refresh" />
@@ -171,6 +186,7 @@ export default function RepositoriesPage() {
                   deleteMutation.mutate(repo.name)
                 }
               }}
+              onToggleOnline={(online) => toggleOnlineMutation.mutate({ name: repo.name, online })}
             />
           ))}
         </div>
@@ -209,7 +225,7 @@ function formatBytes(bytes: number): string {
 }
 
 function RepoRow({
-  repo, isAdmin, storeName, onClick, onEdit, onDelete,
+  repo, isAdmin, storeName, onClick, onEdit, onDelete, onToggleOnline,
 }: {
   repo: Repository
   isAdmin: boolean
@@ -217,6 +233,7 @@ function RepoRow({
   onClick?: () => void
   onEdit: () => void
   onDelete: () => void
+  onToggleOnline: (online: boolean) => void
 }) {
   const { data: quota } = useQuery({
     queryKey: ['repoQuota', repo.name],
@@ -271,6 +288,12 @@ function RepoRow({
       </div>
       {isAdmin && (
         <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+          <HoloButton
+            icon={<Power size={14} />}
+            onClick={e => { e.stopPropagation(); onToggleOnline(!repo.online) }}
+            title={repo.online ? 'Disable repository' : 'Enable repository'}
+            style={{ color: repo.online ? 'var(--holo-green)' : 'var(--holo-text-faint)' }}
+          />
           <HoloButton icon={<Settings2 size={14} />} onClick={e => { e.stopPropagation(); onEdit() }} title="Settings" />
           <HoloButton variant="danger" icon={<Trash2 size={14} />} onClick={e => { e.stopPropagation(); onDelete() }} title="Delete" />
         </div>

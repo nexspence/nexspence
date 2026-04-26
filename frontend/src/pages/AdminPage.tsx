@@ -1,11 +1,11 @@
 import { useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Activity, CheckCircle, Database, Download, HardDrive, Info, Pencil, Plus, RefreshCw, Trash2, Upload, X } from 'lucide-react'
-import { nexusApi, nexspenceApi } from '@/api/client'
+import { Activity, ArrowRightLeft, CheckCircle, Database, Download, HardDrive, Info, Pause, Pencil, Play, Plus, RefreshCw, Trash2, Upload, Wifi, X } from 'lucide-react'
+import { nexusApi, nexspenceApi, ServiceStatus } from '@/api/client'
 import { MonitoringView } from '@/pages/MonitoringPage'
 import { Select } from '@/components/Select'
-import { HoloButton, HoloInput, HoloModal, HoloText, HoloTabs, HoloCard, HoloTabItem } from '@/components/holo'
+import { HoloButton, HoloInput, HoloModal, HoloTabs, HoloCard, HoloTabItem } from '@/components/holo'
 
 interface BlobStore {
   id: string; name: string; type: string; usedBytes: number; quotaBytes?: number; config?: Record<string, unknown>
@@ -19,8 +19,8 @@ interface UsageResp {
 }
 interface SystemInfo { version: string; edition: string; product: string }
 
-type AdminTab = 'info' | 'blobs' | 'backup' | 'monitoring'
-const VALID_TABS: AdminTab[] = ['info', 'blobs', 'backup', 'monitoring']
+type AdminTab = 'info' | 'blobs' | 'backup' | 'monitoring' | 'migration'
+const VALID_TABS: AdminTab[] = ['info', 'blobs', 'backup', 'monitoring', 'migration']
 
 function fmtGB(b: number) {
   return (b / 1024 / 1024 / 1024).toFixed(2) + ' GB'
@@ -105,6 +105,12 @@ export default function AdminPage() {
     queryFn: () => nexspenceApi.getSystemInfo().then(r => r.data),
   })
 
+  const { data: services, isFetching: servicesFetching, refetch: refetchServices } = useQuery<ServiceStatus[]>({
+    queryKey: ['systemServices'],
+    queryFn: () => nexspenceApi.getServiceStatuses().then(r => r.data),
+    staleTime: 30_000,
+  })
+
   const quotaMut = useMutation({
     mutationFn: ({ bs, gb }: { bs: BlobStore; gb: string }) => {
       const bytes = gb.trim() === '' ? null : Math.round(parseFloat(gb) * 1024 * 1024 * 1024)
@@ -119,13 +125,11 @@ export default function AdminPage() {
     <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 24 }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
         <div style={{ marginBottom: 20 }}>
-          <div className="holo-section-label" style={{ marginBottom: 6 }}>ADMINISTRATION / SYSTEM</div>
-          <h1 style={{ fontSize: 40, fontWeight: 700, margin: '0 0 4px', letterSpacing: '-0.04em', lineHeight: 1 }}>
-            <HoloText>System Admin</HoloText>
-          </h1>
-          <p style={{ fontSize: 13, color: 'var(--holo-text-dim)', margin: 0 }}>Server health, blob stores and configuration</p>
+          <div className="holo-section-label" style={{ marginBottom: 4 }}>ADMINISTRATION / SYSTEM</div>
+          <h1 style={{ fontSize: 20, fontWeight: 700, margin: '0 0 3px', letterSpacing: '-0.01em', lineHeight: 1.2, background: 'linear-gradient(110deg, #7c5cff, #22d3ee 60%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' as const }}>System Admin</h1>
+          <p style={{ fontSize: 12, color: 'var(--holo-text-faint)', margin: 0 }}>Server health, blob stores and configuration</p>
         </div>
-        <HoloButton onClick={() => { refetchStatus(); refetchBlobs() }} title="Refresh">
+        <HoloButton onClick={() => { refetchStatus(); refetchBlobs(); refetchServices() }} title="Refresh">
           <RefreshCw size={16} />
         </HoloButton>
       </div>
@@ -137,6 +141,7 @@ export default function AdminPage() {
           { value: 'blobs',      label: <><HardDrive size={13} style={{ marginRight: 5 }} />Blob Stores</> },
           { value: 'backup',     label: <><Database size={13} style={{ marginRight: 5 }} />Backup &amp; Restore</> },
           { value: 'monitoring', label: <><Activity size={13} style={{ marginRight: 5 }} />Monitoring</> },
+          { value: 'migration',  label: <><ArrowRightLeft size={13} style={{ marginRight: 5 }} />Migration</> },
         ] as HoloTabItem[]}
         value={tab}
         onChange={v => setTab(v as AdminTab)}
@@ -144,6 +149,7 @@ export default function AdminPage() {
 
       {/* Info */}
       {tab === 'info' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
           {/* Status card */}
           <HoloCard>
@@ -189,6 +195,47 @@ export default function AdminPage() {
               <p style={{ fontSize: 12, color: 'var(--holo-text-faint)' }}>Loading…</p>
             )}
           </HoloCard>
+        </div>
+
+        {/* Service Connections */}
+        <HoloCard>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--holo-text-dim)', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Wifi size={14} /> Service Connections
+            </div>
+            <HoloButton
+              style={{ padding: '4px 8px' }}
+              onClick={() => refetchServices()}
+              disabled={servicesFetching}
+              title="Re-run checks"
+            >
+              <RefreshCw size={13} style={{ animation: servicesFetching ? 'spin 1s linear infinite' : 'none' }} />
+            </HoloButton>
+          </div>
+          {!services ? (
+            <p style={{ fontSize: 12, color: 'var(--holo-text-faint)' }}>Loading…</p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {services.map(svc => {
+                const color = svc.status === 'ok' ? 'var(--holo-green)' : svc.status === 'error' ? 'var(--holo-red)' : 'rgba(255,255,255,0.25)'
+                const glow  = svc.status === 'ok' ? '0 0 5px var(--holo-green)' : svc.status === 'error' ? '0 0 5px var(--holo-red)' : 'none'
+                return (
+                  <div key={svc.name} style={{ display: 'grid', gridTemplateColumns: '8px 1fr auto', alignItems: 'center', gap: 12, padding: '10px 12px', background: 'rgba(255,255,255,0.03)', borderRadius: 8, border: '1px solid rgba(255,255,255,0.06)' }}>
+                    <span style={{ width: 7, height: 7, borderRadius: '50%', background: color, boxShadow: glow, flexShrink: 0, display: 'inline-block' }} />
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--holo-text)' }}>{svc.name}</div>
+                      <div style={{ fontSize: 11, color: 'var(--holo-text-faint)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>{svc.detail}</div>
+                    </div>
+                    <div style={{ textAlign: 'right' as const, fontSize: 11, color: 'var(--holo-text-faint)', whiteSpace: 'nowrap' as const }}>
+                      {svc.latency_ms != null && <span style={{ color: svc.latency_ms < 50 ? 'var(--holo-green)' : svc.latency_ms < 200 ? 'var(--holo-amber)' : 'var(--holo-red)' }}>{svc.latency_ms}ms</span>}
+                      <div style={{ marginTop: 2 }}>{new Date(svc.checked_at).toLocaleTimeString()}</div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </HoloCard>
         </div>
       )}
 
@@ -341,6 +388,9 @@ export default function AdminPage() {
 
       {/* Monitoring */}
       {tab === 'monitoring' && <MonitoringView />}
+
+      {/* Migration */}
+      {tab === 'migration' && <MigrationTab />}
 
       {detailName && <BlobStoreDetailModal name={detailName} onClose={() => setDetailName(null)} />}
       {createOpen && <CreateBlobStoreModal onClose={() => setCreateOpen(false)} />}
@@ -566,6 +616,300 @@ function ModalShell({ title, onClose, width, children }: { title: string; onClos
         </div>
         {children}
       </div>
+    </HoloModal>
+  )
+}
+
+// ── Migration tab ─────────────────────────────────────────────────
+
+interface MigrationJobData {
+  id: string
+  sourceUrl: string
+  sourceUser: string
+  status: 'pending' | 'running' | 'paused' | 'done' | 'error'
+  migrateRepos: boolean
+  migrateUsers: boolean
+  migrateBlobs: boolean
+  migratePolicies: boolean
+  repositoriesTotal: number
+  repositoriesDone: number
+  assetsTotal: number
+  assetsDone: number
+  errorCount: number
+  lastError?: string
+  startedAt?: string
+  finishedAt?: string
+  createdAt: string
+  updatedAt: string
+}
+
+const MIG_STATUS: Record<string, { bg: string; color: string }> = {
+  pending:   { bg: 'rgba(245,158,11,0.15)',  color: '#f59e0b' },
+  running:   { bg: 'rgba(59,130,246,0.15)',  color: '#3b82f6' },
+  paused:    { bg: 'rgba(107,114,128,0.15)', color: '#9ca3af' },
+  done:      { bg: 'rgba(34,197,94,0.15)',   color: '#22c55e' },
+  error:     { bg: 'rgba(239,68,68,0.15)',   color: '#ef4444' },
+}
+
+function MigrationTab() {
+  const qc = useQueryClient()
+  const [showCreate, setShowCreate] = useState(false)
+
+  const { data: jobs = [], isLoading, refetch } = useQuery<MigrationJobData[]>({
+    queryKey: ['migrationJobs'],
+    queryFn: () => nexspenceApi.listMigrationJobs().then(r => r.data),
+    refetchInterval: (q) => {
+      const list = q.state.data as MigrationJobData[] | undefined
+      return list?.some(j => j.status === 'running') ? 3000 : false
+    },
+  })
+
+  const pauseMut = useMutation({
+    mutationFn: (id: string) => nexspenceApi.pauseMigrationJob(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['migrationJobs'] }),
+  })
+  const resumeMut = useMutation({
+    mutationFn: (id: string) => nexspenceApi.resumeMigrationJob(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['migrationJobs'] }),
+  })
+
+  const activeJobs = jobs.filter(j => j.status === 'pending' || j.status === 'running' || j.status === 'paused')
+  const historyJobs = jobs.filter(j => j.status === 'done' || j.status === 'error')
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <ArrowRightLeft size={15} style={{ color: 'var(--holo-text-dim)' }} />
+          <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--holo-text)' }}>Migration from Nexus</span>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <HoloButton onClick={() => refetch()} title="Refresh"><RefreshCw size={14} /></HoloButton>
+          <HoloButton variant="primary" onClick={() => setShowCreate(true)}><Plus size={14} /> New Migration</HoloButton>
+        </div>
+      </div>
+
+      <div style={{ background: 'rgba(124,92,255,0.08)', border: '1px solid rgba(124,92,255,0.2)', borderRadius: 10, padding: '12px 16px', fontSize: 13, color: 'rgba(180,160,255,0.9)', lineHeight: 1.6 }}>
+        <strong>How it works:</strong> Nexspence connects to your Nexus instance via its REST API and
+        streams repositories, users, roles and all artifacts directly — no downtime required.
+        Jobs are pausable and resumable. Requires Nexus admin credentials.
+      </div>
+
+      {isLoading ? (
+        <p style={{ fontSize: 13, color: 'var(--holo-text-faint)' }}>Loading…</p>
+      ) : activeJobs.length === 0 && historyJobs.length === 0 ? (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, color: 'var(--holo-text-faint)', fontSize: 14, padding: '48px 0' }}>
+          <ArrowRightLeft size={40} style={{ opacity: 0.3 }} />
+          <p style={{ margin: 0 }}>No migration jobs yet</p>
+          <HoloButton variant="primary" onClick={() => setShowCreate(true)}><Plus size={14} /> Start Migration</HoloButton>
+        </div>
+      ) : (
+        <>
+          {activeJobs.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {activeJobs.map(job => <MigrationJobCard key={job.id} job={job} onPause={() => pauseMut.mutate(job.id)} onResume={() => resumeMut.mutate(job.id)} />)}
+            </div>
+          )}
+
+          {historyJobs.length > 0 && (
+            <>
+              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--holo-text-faint)', textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: 4 }}>
+                Migration History
+              </div>
+              <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--holo-border)', borderRadius: 12, overflow: 'hidden' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr 1fr', padding: '10px 16px', background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid var(--holo-border)', fontSize: 11, fontWeight: 600, color: 'var(--holo-text-faint)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  <div>Source</div>
+                  <div>Status</div>
+                  <div>Repos</div>
+                  <div>Assets</div>
+                  <div>Finished</div>
+                </div>
+                {historyJobs.map(job => {
+                  const st = MIG_STATUS[job.status] ?? MIG_STATUS.pending
+                  return (
+                    <div key={job.id} style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr 1fr', padding: '11px 16px', borderBottom: '1px solid rgba(255,255,255,0.04)', fontSize: 13, color: 'var(--holo-text)', alignItems: 'center' }}>
+                      <div>
+                        <div style={{ fontFamily: 'monospace', fontSize: 12, fontWeight: 600, color: 'var(--holo-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{job.sourceUrl}</div>
+                        {job.sourceUser && <div style={{ fontSize: 11, color: 'var(--holo-text-faint)', marginTop: 2 }}>{job.sourceUser}</div>}
+                      </div>
+                      <div>
+                        <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 4, background: st.bg, color: st.color }}>{job.status}</span>
+                        {job.errorCount > 0 && <div style={{ fontSize: 11, color: '#ef4444', marginTop: 3 }}>{job.errorCount} errors</div>}
+                      </div>
+                      <div style={{ fontSize: 13 }}>{job.repositoriesDone}/{job.repositoriesTotal || '?'}</div>
+                      <div style={{ fontSize: 13 }}>{job.assetsDone.toLocaleString()}/{job.assetsTotal ? job.assetsTotal.toLocaleString() : '?'}</div>
+                      <div style={{ fontSize: 12, color: 'var(--holo-text-faint)' }}>
+                        {job.finishedAt ? new Date(job.finishedAt).toLocaleString() : job.updatedAt ? new Date(job.updatedAt).toLocaleString() : '—'}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </>
+          )}
+        </>
+      )}
+
+      {showCreate && (
+        <CreateMigrationJobModal
+          onClose={() => setShowCreate(false)}
+          onCreated={() => {
+            setShowCreate(false)
+            qc.invalidateQueries({ queryKey: ['migrationJobs'] })
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+function MigrationJobCard({ job, onPause, onResume }: { job: MigrationJobData; onPause: () => void; onResume: () => void }) {
+  const reposPct = job.repositoriesTotal ? Math.round((job.repositoriesDone / job.repositoriesTotal) * 100) : 0
+  const assetsPct = job.assetsTotal ? Math.round((job.assetsDone / job.assetsTotal) * 100) : 0
+  const st = MIG_STATUS[job.status] ?? MIG_STATUS.pending
+  return (
+    <HoloCard style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <ArrowRightLeft size={15} style={{ color: 'var(--holo-text-faint)', flexShrink: 0 }} />
+        <span style={{ flex: 1, fontSize: 14, fontWeight: 600, color: 'var(--holo-text)', fontFamily: 'monospace', wordBreak: 'break-all' }}>{job.sourceUrl}</span>
+        <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 9px', borderRadius: 4, background: st.bg, color: st.color }}>{job.status}</span>
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' as const }}>
+        {[
+          { label: 'Repos', on: job.migrateRepos },
+          { label: 'Users', on: job.migrateUsers },
+          { label: 'Policies', on: job.migratePolicies },
+          { label: 'Artifacts', on: job.migrateBlobs },
+        ].map(s => (
+          <span key={s.label} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: s.on ? 'rgba(59,130,246,0.15)' : 'rgba(255,255,255,0.04)', color: s.on ? '#3b82f6' : 'var(--holo-text-faint)', fontWeight: 600 }}>{s.label}</span>
+        ))}
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+        <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 8, padding: '10px 12px' }}>
+          <div style={{ fontSize: 11, color: 'var(--holo-text-faint)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Repositories</div>
+          <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--holo-text)' }}>{job.repositoriesDone}<span style={{ fontSize: 13, color: 'var(--holo-text-faint)', fontWeight: 400 }}>/{job.repositoriesTotal || '?'}</span></div>
+          <div style={{ height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.08)', overflow: 'hidden', marginTop: 6 }}>
+            <div style={{ height: '100%', width: reposPct + '%', background: 'var(--holo-a)', transition: 'width 0.4s' }} />
+          </div>
+        </div>
+        <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 8, padding: '10px 12px' }}>
+          <div style={{ fontSize: 11, color: 'var(--holo-text-faint)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Assets</div>
+          <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--holo-text)' }}>{job.assetsDone}<span style={{ fontSize: 13, color: 'var(--holo-text-faint)', fontWeight: 400 }}>/{job.assetsTotal || '?'}</span></div>
+          <div style={{ height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.08)', overflow: 'hidden', marginTop: 6 }}>
+            <div style={{ height: '100%', width: assetsPct + '%', background: '#22c55e', transition: 'width 0.4s' }} />
+          </div>
+        </div>
+        <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 8, padding: '10px 12px' }}>
+          <div style={{ fontSize: 11, color: 'var(--holo-text-faint)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Errors</div>
+          <div style={{ fontSize: 18, fontWeight: 700, color: job.errorCount > 0 ? '#ef4444' : '#22c55e' }}>{job.errorCount}</div>
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <span style={{ fontSize: 12, color: 'var(--holo-text-faint)' }}>Started {job.startedAt ? new Date(job.startedAt).toLocaleString() : new Date(job.createdAt).toLocaleString()}</span>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {job.status === 'running' && <HoloButton onClick={onPause}><Pause size={12} /> Pause</HoloButton>}
+          {job.status === 'paused' && <HoloButton onClick={onResume}><Play size={12} /> Resume</HoloButton>}
+        </div>
+      </div>
+    </HoloCard>
+  )
+}
+
+function CreateMigrationJobModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+  const [form, setForm] = useState({
+    sourceUrl: '', username: 'admin', password: '', concurrency: '4',
+  })
+  const [scope, setScope] = useState({
+    migrateRepos: true, migrateUsers: true, migratePolicies: true, migrateBlobs: true,
+  })
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setForm(f => ({ ...f, [k]: e.target.value }))
+
+  const toggleScope = (k: keyof typeof scope) =>
+    setScope(s => ({ ...s, [k]: !s[k] }))
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError('')
+    setLoading(true)
+    try {
+      await nexspenceApi.createMigrationJob({
+        sourceUrl: form.sourceUrl,
+        credentials: { username: form.username, password: form.password },
+        options: { concurrency: parseInt(form.concurrency) || 4 },
+        scope: {
+          migrateRepos: scope.migrateRepos,
+          migrateUsers: scope.migrateUsers,
+          migratePolicies: scope.migratePolicies,
+          migrateBlobs: scope.migrateBlobs,
+        },
+      })
+      onCreated()
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { error?: string } } }
+      setError(e.response?.data?.error ?? 'Failed to create migration job')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <HoloModal open={true} onClose={onClose}>
+      <h2 style={{ fontSize: 18, fontWeight: 700, color: 'var(--holo-text)', margin: '0 0 16px' }}>New Migration Job</h2>
+      <form style={{ display: 'flex', flexDirection: 'column', gap: 14 }} onSubmit={handleSubmit}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+          <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--holo-text-dim)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Nexus URL *</label>
+          <HoloInput placeholder="https://nexus.example.com" value={form.sourceUrl} onChange={set('sourceUrl')} required />
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+            <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--holo-text-dim)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Username</label>
+            <HoloInput value={form.username} onChange={set('username')} />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+            <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--holo-text-dim)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Password *</label>
+            <HoloInput type="password" value={form.password} onChange={set('password')} required />
+          </div>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+          <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--holo-text-dim)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Concurrency</label>
+          <HoloInput type="number" min={1} max={16} value={form.concurrency} onChange={set('concurrency')} />
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--holo-text-dim)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Migration Scope</label>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            {([
+              { key: 'migrateRepos',    label: 'Repositories' },
+              { key: 'migrateUsers',    label: 'Users & Roles' },
+              { key: 'migratePolicies', label: 'Cleanup Policies' },
+              { key: 'migrateBlobs',   label: 'Artifacts (blobs)' },
+            ] as { key: keyof typeof scope; label: string }[]).map(({ key, label }) => (
+              <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', padding: '8px 10px', background: scope[key] ? 'rgba(59,130,246,0.1)' : 'rgba(255,255,255,0.03)', border: `1px solid ${scope[key] ? 'rgba(59,130,246,0.3)' : 'rgba(255,255,255,0.08)'}`, borderRadius: 8, transition: 'background 0.15s, border-color 0.15s', userSelect: 'none' }}>
+                <input
+                  type="checkbox"
+                  checked={scope[key]}
+                  onChange={() => toggleScope(key)}
+                  style={{ accentColor: '#3b82f6', width: 14, height: 14 }}
+                />
+                <span style={{ fontSize: 13, color: scope[key] ? 'var(--holo-text)' : 'var(--holo-text-faint)', fontWeight: scope[key] ? 600 : 400 }}>{label}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        {error && <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 8, padding: '10px 12px', color: '#fca5a5', fontSize: 13 }}>{error}</div>}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 4 }}>
+          <HoloButton type="button" onClick={onClose}>Cancel</HoloButton>
+          <HoloButton type="submit" variant="primary" disabled={loading}>{loading ? 'Starting…' : 'Start Migration'}</HoloButton>
+        </div>
+      </form>
     </HoloModal>
   )
 }

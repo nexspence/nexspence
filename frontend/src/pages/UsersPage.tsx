@@ -4,7 +4,7 @@ import { UserPlus, Trash2, RefreshCw, Shield, User, AlertTriangle, Plus, Edit2, 
 import { nexusApi, apiClient } from '@/api/client'
 import styles from './UsersPage.module.css'
 import { Select } from '../components/Select'
-import { HoloTabs, HoloPill, HoloButton, HoloInput, HoloModal, HoloText, HoloCard } from '@/components/holo'
+import { HoloTabs, HoloPill, HoloButton, HoloInput, HoloModal, HoloCard } from '@/components/holo'
 
 /* ─── Types ─────────────────────────────────────────────────── */
 interface UserItem {
@@ -64,7 +64,7 @@ export function AssignRolesModal({ user, roles, onClose, onSaved }: {
 
   return (
     <HoloModal open={true} onClose={onClose}>
-      <h2 style={{ margin: '0 0 16px', fontSize: 16, fontWeight: 700, color: 'var(--holo-text)' }}>Assign Roles — {user.userId}</h2>
+      <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: 'var(--holo-text)' }}>Assign Roles — {user.userId}</h2>
 
       {selectedRoles.length > 0 && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12, paddingBottom: 12, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
@@ -182,33 +182,44 @@ export function UsersTab() {
           <p>No users found</p>
         </div>
       ) : (
-        <div className={styles.table}>
-          <div className={styles.tableHead}>
-            <div>Username</div><div>Name</div><div>Email</div>
-            <div>Roles</div><div>Status</div><div>Source</div><div></div>
-          </div>
-          {filtered.map(user => (
-            <div key={user.userId} className={styles.tableRow}>
-              <div className={styles.username}><User size={14} className={styles.userIcon} />{user.userId}</div>
-              <div className={styles.cell}>{[user.firstName, user.lastName].filter(Boolean).join(' ') || '—'}</div>
-              <div className={styles.cell}>{user.emailAddress || '—'}</div>
-              <div className={styles.roles}>
-                {(user.roles ?? []).map(r => (
-                  <HoloPill key={r} style={{ fontSize: 11 }}><Shield size={10} style={{ marginRight: 4 }} />{r}</HoloPill>
-                ))}
-                <HoloButton style={{ padding: '3px 8px', fontSize: 11 }} onClick={() => setAssignUser(user)} title="Assign roles">
-                  <Edit2 size={11} />
-                </HoloButton>
-              </div>
-              <div><HoloPill tone={user.status === 'active' ? 'success' : 'default'}>{user.status}</HoloPill></div>
-              <div className={styles.cell}>{user.source}</div>
-              <div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {filtered.map(user => {
+            const isActive = user.status === 'active'
+            const fullName = [user.firstName, user.lastName].filter(Boolean).join(' ')
+            return (
+              <div key={user.userId} style={{
+                display: 'grid', gridTemplateColumns: '8px 1fr auto auto auto',
+                alignItems: 'center', gap: 12, padding: '11px 16px',
+                background: 'rgba(10,8,28,0.97)', border: '1px solid rgba(124,92,255,0.2)',
+                borderRadius: 10, transition: 'border-color 0.15s, background 0.15s',
+              }}
+              onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.borderColor = 'rgba(124,92,255,0.45)'; (e.currentTarget as HTMLDivElement).style.background = 'rgba(124,92,255,0.04)' }}
+              onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.borderColor = 'rgba(124,92,255,0.2)'; (e.currentTarget as HTMLDivElement).style.background = 'rgba(10,8,28,0.97)' }}
+              >
+                <span style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0, display: 'inline-block', background: isActive ? 'var(--holo-green)' : 'rgba(255,255,255,0.2)', boxShadow: isActive ? '0 0 5px var(--holo-green)' : 'none' }} />
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <User size={13} style={{ color: 'var(--holo-a)', flexShrink: 0 }} />
+                    <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--holo-text)', fontFamily: 'monospace' }}>{user.userId}</span>
+                    {fullName && <span style={{ fontSize: 12, color: 'var(--holo-text-faint)' }}>{fullName}</span>}
+                  </div>
+                  {user.emailAddress && <div style={{ fontSize: 11, color: 'var(--holo-text-faint)', marginTop: 1 }}>{user.emailAddress}</div>}
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap' as const, gap: 4, alignItems: 'center' }}>
+                  {(user.roles ?? []).map(r => (
+                    <HoloPill key={r} style={{ fontSize: 11 }}><Shield size={10} style={{ marginRight: 4 }} />{r}</HoloPill>
+                  ))}
+                  <HoloButton style={{ padding: '3px 8px', fontSize: 11 }} onClick={() => setAssignUser(user)} title="Assign roles">
+                    <Edit2 size={11} />
+                  </HoloButton>
+                </div>
+                <HoloPill style={{ fontSize: 11 }}>{user.source}</HoloPill>
                 <HoloButton variant="danger" style={{ padding: 5 }} disabled={user.userId === 'admin'} onClick={() => {
                   if (confirm(`Delete user "${user.userId}"?`)) deleteMutation.mutate(user.userId)
                 }} title="Delete user"><Trash2 size={14} /></HoloButton>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
 
@@ -330,11 +341,9 @@ export default function UsersPage() {
   return (
     <div className={styles.page}>
       <div style={{ marginBottom: 24 }}>
-        <div className="holo-section-label" style={{ marginBottom: 6 }}>ADMINISTRATION / USERS</div>
-        <h1 style={{ fontSize: 40, fontWeight: 700, margin: '0 0 4px', letterSpacing: '-0.04em', lineHeight: 1 }}>
-          <HoloText>Users</HoloText>
-        </h1>
-        <p style={{ fontSize: 13, color: 'var(--holo-text-dim)', margin: 0 }}>Manage users and roles</p>
+        <div className="holo-section-label" style={{ marginBottom: 4 }}>ADMINISTRATION / USERS</div>
+        <h1 style={{ fontSize: 20, fontWeight: 700, margin: '0 0 3px', letterSpacing: '-0.01em', lineHeight: 1.2, background: 'linear-gradient(110deg, #7c5cff, #22d3ee 60%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' as const }}>Users</h1>
+        <p style={{ fontSize: 12, color: 'var(--holo-text-faint)', margin: 0 }}>Manage users and roles</p>
       </div>
       <HoloTabs
         items={[
@@ -369,7 +378,7 @@ export function CreateUserModal({ onClose, onCreated }: { onClose: () => void; o
 
   return (
     <HoloModal open={true} onClose={onClose}>
-      <h2 style={{ margin: '0 0 24px', fontSize: 18, fontWeight: 700, color: 'var(--holo-text)' }}>Add User</h2>
+      <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: 'var(--holo-text)' }}>Add User</h2>
       <form onSubmit={handleSubmit} className={styles.form}>
         <div className={styles.formRow}>
           <label className={styles.label}>Username *</label>

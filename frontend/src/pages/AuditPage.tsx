@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { FileText, RefreshCw, ChevronLeft, ChevronRight, Download } from 'lucide-react'
 import { nexusApi } from '@/api/client'
 import { Select } from '../components/Select'
-import { HoloButton, HoloInput, HoloCard, HoloPill, HoloText } from '@/components/holo'
+import { HoloButton, HoloInput, HoloCard, HoloPill } from '@/components/holo'
 
 interface AuditEvent {
   id: number
@@ -119,11 +119,9 @@ export default function AuditPage() {
     <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 20 }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
         <div>
-          <div className="holo-section-label" style={{ marginBottom: 6 }}>ADMINISTRATION / AUDIT</div>
-          <h1 style={{ fontSize: 40, fontWeight: 700, margin: '0 0 4px', letterSpacing: '-0.04em', lineHeight: 1 }}>
-            <HoloText>Audit Log</HoloText>
-          </h1>
-          <p style={{ fontSize: 13, color: 'var(--holo-text-dim)', margin: 0 }}>All system mutations — repository, user, and security events</p>
+          <div className="holo-section-label" style={{ marginBottom: 4 }}>ADMINISTRATION / AUDIT</div>
+          <h1 style={{ fontSize: 20, fontWeight: 700, margin: '0 0 3px', letterSpacing: '-0.01em', lineHeight: 1.2, background: 'linear-gradient(110deg, #7c5cff, #22d3ee 60%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' as const }}>Audit Log</h1>
+          <p style={{ fontSize: 12, color: 'var(--holo-text-faint)', margin: 0 }}>All system mutations — repository, user, and security events</p>
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
           <Select

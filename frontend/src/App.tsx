@@ -8,7 +8,6 @@ import SearchPage from '@/pages/SearchPage'
 import UsersPage from '@/pages/UsersPage'
 import CleanupPage from '@/pages/CleanupPage'
 import AdminPage from '@/pages/AdminPage'
-import MigrationPage from '@/pages/MigrationPage'
 import SecurityPage from '@/pages/SecurityPage'
 import AuditPage from '@/pages/AuditPage'
 import OIDCCallbackPage from '@/pages/OIDCCallbackPage'
@@ -44,7 +43,7 @@ export default function App() {
           <Route path="users" element={<UsersPage />} />
           <Route path="cleanup" element={<CleanupPage />} />
           <Route path="admin" element={<AdminPage />} />
-          <Route path="migration" element={<MigrationPage />} />
+          <Route path="migration" element={<Navigate to="/admin?tab=migration" replace />} />
           <Route path="security" element={<SecurityPage />} />
           <Route path="audit" element={<AuditPage />} />
           <Route path="monitoring" element={<Navigate to="/admin?tab=monitoring" replace />} />

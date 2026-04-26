@@ -4,7 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Search, Package, ChevronDown, ChevronUp, ChevronsUpDown, ChevronRight, ExternalLink, HelpCircle } from 'lucide-react'
 import { nexusApi } from '@/api/client'
 import { Select } from '../components/Select'
-import { HoloCard, HoloButton, HoloInput, HoloPill, HoloText } from '@/components/holo'
+import { HoloCard, HoloButton, HoloInput, HoloPill } from '@/components/holo'
 
 interface SearchAsset {
   id: string
@@ -257,11 +257,9 @@ export default function SearchPage() {
   return (
     <div style={S.page}>
       <div style={{ marginBottom: 24 }}>
-        <div className="holo-section-label" style={{ marginBottom: 6 }}>WORKSPACE / SEARCH</div>
-        <h1 style={{ fontSize: 40, fontWeight: 700, margin: '0 0 4px', letterSpacing: '-0.04em', lineHeight: 1 }}>
-          <HoloText>Search</HoloText>
-        </h1>
-        <p style={{ fontSize: 13, color: 'var(--holo-text-dim)', margin: 0 }}>Find artifacts across all repositories</p>
+        <div className="holo-section-label" style={{ marginBottom: 4 }}>WORKSPACE / SEARCH</div>
+        <h1 style={{ fontSize: 20, fontWeight: 700, margin: '0 0 3px', letterSpacing: '-0.01em', lineHeight: 1.2, background: 'linear-gradient(110deg, #7c5cff, #22d3ee 60%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' as const }}>Search</h1>
+        <p style={{ fontSize: 12, color: 'var(--holo-text-faint)', margin: 0 }}>Find artifacts across all repositories</p>
       </div>
 
       <form style={S.filterCard} onSubmit={handleSubmit}>

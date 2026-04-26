@@ -43,7 +43,11 @@ export function Select({
 
   useEffect(() => {
     if (!open) { setSearch(''); return }
-    function onClose() { setOpen(false) }
+    function onScroll(e: Event) {
+      if (dropdownRef.current?.contains(e.target as Node)) return
+      setOpen(false)
+    }
+    function onResize() { setOpen(false) }
     function onKey(e: KeyboardEvent) { if (e.key === 'Escape') setOpen(false) }
     function onMouseDown(e: MouseEvent) {
       const t = e.target as Node
@@ -54,13 +58,13 @@ export function Select({
     }
     document.addEventListener('mousedown', onMouseDown)
     document.addEventListener('keydown', onKey)
-    window.addEventListener('scroll', onClose, true)
-    window.addEventListener('resize', onClose)
+    window.addEventListener('scroll', onScroll, true)
+    window.addEventListener('resize', onResize)
     return () => {
       document.removeEventListener('mousedown', onMouseDown)
       document.removeEventListener('keydown', onKey)
-      window.removeEventListener('scroll', onClose, true)
-      window.removeEventListener('resize', onClose)
+      window.removeEventListener('scroll', onScroll, true)
+      window.removeEventListener('resize', onResize)
     }
   }, [open])
 

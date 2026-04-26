@@ -227,11 +227,26 @@ func (s *OIDCService) extractClaims(subject string, raw map[string]any) *OIDCCla
 	}
 }
 
-// TestConnection re-runs discovery to confirm the IdP is reachable.
-// Called at startup for a clear "oidc discovery ok/err" log line.
+// TestConnection confirms the IdP is reachable by fetching the discovery
+// document and checking for HTTP 200. Uses a plain GET instead of
+// oidc.NewProvider to avoid the strict issuer-equality check — which always
+// fails in split-horizon setups (internal URL keycloak:8080 vs public URL
+// localhost:8180 in the iss field of the discovery doc).
 func (s *OIDCService) TestConnection(ctx context.Context) error {
-	_, err := oidc.NewProvider(ctx, s.cfg.Issuer)
-	return err
+	wellKnown := strings.TrimSuffix(s.cfg.Issuer, "/") + "/.well-known/openid-configuration"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, wellKnown, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("oidc discovery unreachable: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("oidc discovery returned HTTP %d", resp.StatusCode)
+	}
+	return nil
 }
 
 // endSessionMeta is used to extract end_session_endpoint from discovery JSON.

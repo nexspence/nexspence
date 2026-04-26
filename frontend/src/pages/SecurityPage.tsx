@@ -6,7 +6,7 @@ import { nexusApi, nexspenceApi, apiClient } from '@/api/client'
 import { UsersTab } from './UsersPage'
 import { useAuthStore } from '@/store/authStore'
 import { Select } from '../components/Select'
-import { HoloButton, HoloInput, HoloModal, HoloText, HoloTabs, HoloPill, HoloCard, HoloTabItem } from '@/components/holo'
+import { HoloButton, HoloInput, HoloModal, HoloTabs, HoloPill, HoloCard, HoloTabItem } from '@/components/holo'
 
 /* ─── Types ─────────────────────────────────────────────── */
 interface Role { id: string; name: string; description: string; privileges: string[]; roles: string[]; readOnly: boolean; source?: string }
@@ -327,36 +327,43 @@ function RolesTab({ roles, loading, onRefresh, admin }: { roles: Role[]; loading
         onChange={e => setRoleSearch(e.target.value)}
       />
       {!filtered.length ? <div style={emptyStyle}>No roles found</div> : (
-        <HoloCard style={{ padding: 0 }}>
-          {filtered.map((r, idx) => (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {filtered.map(r => (
             <div key={r.id} style={{
-              display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px',
-              borderBottom: idx < filtered.length - 1 ? '1px solid rgba(255,255,255,0.06)' : 'none',
-            }}>
+              display: 'grid', gridTemplateColumns: '20px 1fr auto',
+              alignItems: 'center', gap: 12, padding: '11px 16px',
+              background: 'rgba(10,8,28,0.97)', border: '1px solid rgba(124,92,255,0.2)',
+              borderRadius: 10, transition: 'border-color 0.15s, background 0.15s',
+            }}
+            onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.borderColor = 'rgba(124,92,255,0.45)'; (e.currentTarget as HTMLDivElement).style.background = 'rgba(124,92,255,0.04)' }}
+            onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.borderColor = 'rgba(124,92,255,0.2)'; (e.currentTarget as HTMLDivElement).style.background = 'rgba(10,8,28,0.97)' }}
+            >
               <Shield size={15} style={{ color: 'var(--holo-a)', flexShrink: 0 }} />
-              <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ minWidth: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' as const }}>
-                  <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--holo-text)' }}>{r.name}</span>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--holo-text)' }}>{r.name}</span>
                   {r.readOnly && <HoloPill style={{ fontSize: 11 }}>built-in</HoloPill>}
                 </div>
-                {r.description && (
-                  <div style={{ fontSize: 12, color: 'var(--holo-text-faint)', marginTop: 2 }}>{r.description}</div>
+                {r.description && <div style={{ fontSize: 11, color: 'var(--holo-text-faint)', marginTop: 1 }}>{r.description}</div>}
+                {(r.privileges ?? []).length > 0 && (
+                  <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' as const, marginTop: 4 }}>
+                    {(r.privileges ?? []).slice(0, 4).map(p => (
+                      <span key={p} style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, background: 'rgba(99,102,241,0.12)', color: '#a5b4fc', fontFamily: 'monospace' }}>{p}</span>
+                    ))}
+                    {(r.privileges ?? []).length > 4 && (
+                      <span style={{ fontSize: 10, color: 'var(--holo-text-faint)' }}>+{(r.privileges ?? []).length - 4} more</span>
+                    )}
+                  </div>
                 )}
-                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' as const, marginTop: 4 }}>
-                  {(r.privileges ?? []).slice(0, 3).map(p => (
-                    <span key={p} style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, background: 'rgba(99,102,241,0.12)', color: '#a5b4fc', fontFamily: 'monospace' }}>{p}</span>
-                  ))}
-                  {(r.privileges ?? []).length > 3 && (
-                    <span style={{ fontSize: 10, color: 'var(--holo-text-faint)' }}>+{(r.privileges ?? []).length - 3} more</span>
-                  )}
-                </div>
               </div>
-              {!r.readOnly && admin && (
-                <HoloButton style={{ padding: '4px 10px', fontSize: 12 }} onClick={() => openEdit(r)}>Edit</HoloButton>
-              )}
+              <div style={{ display: 'flex', gap: 6 }}>
+                {!r.readOnly && admin && (
+                  <HoloButton style={{ padding: '4px 10px', fontSize: 12 }} onClick={() => openEdit(r)}>Edit</HoloButton>
+                )}
+              </div>
             </div>
           ))}
-        </HoloCard>
+        </div>
       )}
 
       {editRole && (
@@ -824,68 +831,52 @@ function PrivilegesTab({ admin }: { admin: boolean }) {
       />
 
       {isLoading ? <div style={emptyStyle}>Loading…</div> : privs.length === 0 ? <div style={emptyStyle}>No privileges</div> : filteredPrivs.length === 0 ? <div style={emptyStyle}>No matches</div> : (
-        <HoloCard style={{ padding: '0 16px' }}>
-          <div style={{ overflowX: 'auto' as const }}>
-          <table className="holo-table" style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: 13, minWidth: 600 }}>
-            <thead>
-              <tr style={{ color: 'var(--holo-text-dim)', textAlign: 'left' as const }}>
-                <th style={{ padding: '12px 0 10px', fontWeight: 600, minWidth: 140 }}>Name</th>
-                <th style={{ padding: '12px 8px 10px', fontWeight: 600, minWidth: 130 }}>Type</th>
-                <th style={{ padding: '12px 8px 10px', fontWeight: 600, minWidth: 100 }}>Actions</th>
-                <th style={{ padding: '12px 8px 10px', fontWeight: 600 }}>Description</th>
-                <th style={{ padding: '12px 8px 10px', fontWeight: 600, minWidth: 120 }}>Used in Roles</th>
-                {admin && <th style={{ padding: '12px 0 10px', fontWeight: 600, width: 90 }}></th>}
-              </tr>
-            </thead>
-            <tbody>
-              {filteredPrivs.map(p => {
-                const actions = (p.attrs?.actions as string[] | undefined) ?? []
-                const typeColor = PRIV_TYPE_COLOR[p.type] ?? '#6b7280'
-                return (
-                  <tr key={p.id} style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-                    <td style={{ padding: '9px 0', color: 'var(--holo-text)', fontWeight: 600 }}>{p.name}</td>
-                    <td style={{ padding: '9px 8px' }}>
-                      <HoloPill style={{ background: typeColor+'22', color: typeColor }}>{p.type}</HoloPill>
-                      {p.readOnly && <HoloPill style={{ marginLeft: 4, fontSize: 11 }}>built-in</HoloPill>}
-                    </td>
-                    <td style={{ padding: '9px 8px' }}>
-                      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' as const }}>
-                        {actions.length > 0 ? actions.map(a => {
-                          const ac = (a === 'write' || a === 'delete') ? '#f59e0b' : '#22c55e'
-                          return <HoloPill key={a} style={{ background: ac+'22', color: ac }}>{a}</HoloPill>
-                        }) : <span style={{ color: 'var(--holo-text-faint)', fontSize: 12 }}>—</span>}
-                      </div>
-                    </td>
-                    <td style={{ padding: '9px 8px', color: 'rgba(229,231,235,0.55)' }}>{p.description || '—'}</td>
-                    <td style={{ padding: '8px 12px' }}>
-                      {(privRoleMap[p.id] ?? []).length === 0
-                        ? <span style={{ color: 'var(--holo-text-faint)', fontSize: 12 }}>—</span>
-                        : (privRoleMap[p.id] ?? []).map(roleName => (
-                            <span key={roleName} style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, background: 'rgba(6,182,212,0.12)', color: '#67e8f9', marginRight: 4, display: 'inline-block' }}>
-                              {roleName}
-                            </span>
-                          ))
-                      }
-                    </td>
-                    {admin && (
-                      <td style={{ padding: '9px 0' }}>
-                        <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                        {!p.readOnly && (
-                          <>
-                            <HoloButton style={{ padding: '4px 8px' }} onClick={() => openEdit(p)}>Edit</HoloButton>
-                            <HoloButton variant="danger" style={{ padding: '4px 8px' }} onClick={() => { if (confirm(`Delete ${p.name}?`)) del.mutate(p.id) }}><Trash2 size={13} /></HoloButton>
-                          </>
-                        )}
-                        </div>
-                      </td>
-                    )}
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-          </div>
-        </HoloCard>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {filteredPrivs.map(p => {
+            const actions = (p.attrs?.actions as string[] | undefined) ?? []
+            const typeColor = PRIV_TYPE_COLOR[p.type] ?? '#6b7280'
+            const usedInRoles = privRoleMap[p.id] ?? []
+            return (
+              <div key={p.id} style={{
+                display: 'grid', gridTemplateColumns: 'auto 1fr auto',
+                alignItems: 'center', gap: 12, padding: '11px 16px',
+                background: 'rgba(10,8,28,0.97)', border: '1px solid rgba(124,92,255,0.2)',
+                borderRadius: 10, transition: 'border-color 0.15s, background 0.15s',
+              }}
+              onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.borderColor = 'rgba(124,92,255,0.45)'; (e.currentTarget as HTMLDivElement).style.background = 'rgba(124,92,255,0.04)' }}
+              onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.borderColor = 'rgba(124,92,255,0.2)'; (e.currentTarget as HTMLDivElement).style.background = 'rgba(10,8,28,0.97)' }}
+              >
+                <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 4, textTransform: 'uppercase' as const, letterSpacing: '0.3px', whiteSpace: 'nowrap' as const, background: typeColor + '22', color: typeColor }}>
+                  {(p.type as string) === 'repository-content-selector' ? 'cs' : p.type.replace('repository-', '')}
+                </span>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' as const }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--holo-text)' }}>{p.name}</span>
+                    {p.readOnly && <HoloPill style={{ fontSize: 11 }}>built-in</HoloPill>}
+                  </div>
+                  {p.description && <div style={{ fontSize: 11, color: 'var(--holo-text-faint)', marginTop: 1 }}>{p.description}</div>}
+                  <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' as const, marginTop: 4, alignItems: 'center' }}>
+                    {actions.map(a => {
+                      const ac = (a === 'write' || a === 'delete') ? '#f59e0b' : '#22c55e'
+                      return <HoloPill key={a} style={{ background: ac + '22', color: ac, fontSize: 10 }}>{a}</HoloPill>
+                    })}
+                    {usedInRoles.map(roleName => (
+                      <span key={roleName} style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, background: 'rgba(6,182,212,0.12)', color: '#67e8f9' }}>{roleName}</span>
+                    ))}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {admin && !p.readOnly && (
+                    <>
+                      <HoloButton style={{ padding: '4px 8px' }} onClick={() => openEdit(p)}>Edit</HoloButton>
+                      <HoloButton variant="danger" style={{ padding: '4px 8px' }} onClick={() => { if (confirm(`Delete ${p.name}?`)) del.mutate(p.id) }}><Trash2 size={13} /></HoloButton>
+                    </>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
       )}
 
       <HoloModal open={showModal} onClose={() => setShowModal(false)}>
@@ -1097,48 +1088,42 @@ function ContentSelectorsTab({ admin }: { admin: boolean }) {
       />
 
       {isLoading ? <div style={emptyStyle}>Loading…</div> : selectors.length === 0 ? <div style={emptyStyle}>No content selectors</div> : filteredSelectors.length === 0 ? <div style={emptyStyle}>No matches</div> : (
-        <HoloCard style={{ padding: '0 16px' }}>
-          <div style={{ overflowX: 'auto' as const }}>
-          <table className="holo-table" style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: 13, minWidth: 500 }}>
-            <thead>
-              <tr style={{ color: 'var(--holo-text-dim)', textAlign: 'left' as const }}>
-                <th style={{ padding: '12px 0 10px', fontWeight: 600, minWidth: 140 }}>Name</th>
-                <th style={{ padding: '12px 8px 10px', fontWeight: 600, minWidth: 180 }}>Scope</th>
-                <th style={{ padding: '12px 8px 10px', fontWeight: 600, minWidth: 130 }}>Privilege</th>
-                <th style={{ padding: '12px 8px 10px', fontWeight: 600 }}>Description</th>
-                {admin && <th style={{ padding: '12px 0 10px', width: 90 }}></th>}
-              </tr>
-            </thead>
-            <tbody>
-              {filteredSelectors.map(s => (
-                <tr key={s.id} style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-                  <td style={{ padding: '9px 0', color: 'var(--holo-text)', fontWeight: 600 }}>{s.name}</td>
-                  <td style={{ padding: '9px 8px' }}>
-                    <code style={{ ...monoStyle, fontSize: 12, color: 'var(--holo-a)' }}>{selectorSummary(s.expression)}</code>
-                  </td>
-                  <td style={{ padding: '8px 12px' }}>
-                    {selectorToPriv.has(s.id) && selectorToPriv.get(s.id)
-                      ? <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 4, background: 'rgba(6,182,212,0.12)', color: '#67e8f9' }}>
-                          {selectorToPriv.get(s.id)}
-                        </span>
-                      : <span style={{ color: 'var(--holo-text-faint)', fontSize: 12 }}>—</span>
-                    }
-                  </td>
-                  <td style={{ padding: '9px 8px', color: 'rgba(229,231,235,0.55)' }}>{s.description || '—'}</td>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {filteredSelectors.map(s => {
+            const linkedPriv = selectorToPriv.get(s.id)
+            return (
+              <div key={s.id} style={{
+                display: 'grid', gridTemplateColumns: '1fr auto auto',
+                alignItems: 'center', gap: 12, padding: '11px 16px',
+                background: 'rgba(10,8,28,0.97)', border: '1px solid rgba(124,92,255,0.2)',
+                borderRadius: 10, transition: 'border-color 0.15s, background 0.15s',
+              }}
+              onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.borderColor = 'rgba(124,92,255,0.45)'; (e.currentTarget as HTMLDivElement).style.background = 'rgba(124,92,255,0.04)' }}
+              onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.borderColor = 'rgba(124,92,255,0.2)'; (e.currentTarget as HTMLDivElement).style.background = 'rgba(10,8,28,0.97)' }}
+              >
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--holo-text)' }}>{s.name}</div>
+                  <code style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--holo-a)', marginTop: 2, display: 'block' }}>{selectorSummary(s.expression)}</code>
+                  {s.description && <div style={{ fontSize: 11, color: 'var(--holo-text-faint)', marginTop: 1 }}>{s.description}</div>}
+                </div>
+                <div>
+                  {linkedPriv
+                    ? <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: 'rgba(6,182,212,0.12)', color: '#67e8f9', whiteSpace: 'nowrap' as const }}>{linkedPriv}</span>
+                    : <span style={{ color: 'var(--holo-text-faint)', fontSize: 12 }}>—</span>
+                  }
+                </div>
+                <div style={{ display: 'flex', gap: 6 }}>
                   {admin && (
-                    <td style={{ padding: '9px 0' }}>
-                      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                    <>
                       <HoloButton style={{ padding: '4px 8px' }} onClick={() => openEdit(s)}>Edit</HoloButton>
                       <HoloButton variant="danger" style={{ padding: '4px 8px' }} onClick={() => { if (confirm(`Delete ${s.name}?`)) del.mutate(s.id) }}><Trash2 size={13} /></HoloButton>
-                      </div>
-                    </td>
+                    </>
                   )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          </div>
-        </HoloCard>
+                </div>
+              </div>
+            )
+          })}
+        </div>
       )}
 
       <HoloModal open={showModal} onClose={() => setShowModal(false)}>
@@ -1298,11 +1283,9 @@ export default function SecurityPage() {
     <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 20 }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
         <div>
-          <div className="holo-section-label" style={{ marginBottom: 6 }}>ADMINISTRATION / SECURITY</div>
-          <h1 style={{ fontSize: 40, fontWeight: 700, margin: '0 0 4px', letterSpacing: '-0.04em', lineHeight: 1 }}>
-            <HoloText>Security</HoloText>
-          </h1>
-          <p style={{ fontSize: 13, color: 'var(--holo-text-dim)', margin: 0 }}>
+          <div className="holo-section-label" style={{ marginBottom: 4 }}>ADMINISTRATION / SECURITY</div>
+          <h1 style={{ fontSize: 20, fontWeight: 700, margin: '0 0 3px', letterSpacing: '-0.01em', lineHeight: 1.2, background: 'linear-gradient(110deg, #7c5cff, #22d3ee 60%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' as const }}>Security</h1>
+          <p style={{ fontSize: 12, color: 'var(--holo-text-faint)', margin: 0 }}>
             {admin
               ? 'Roles, users, privileges, content selectors and webhooks'
               : 'View roles and privileges. Content Selector → Privilege → Role defines what each user can access.'}

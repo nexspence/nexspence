@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Trash2, RefreshCw, Plus, Play, Pencil, X, Check, Clock, AlertCircle } from 'lucide-react'
+import { Trash2, RefreshCw, Plus, Play, Pencil, X, Check, AlertCircle } from 'lucide-react'
 import { nexusApi } from '@/api/client'
 import { Select } from '../components/Select'
-import { HoloButton, HoloInput, HoloModal, HoloText, HoloCard, HoloPill } from '@/components/holo'
+import { HoloButton, HoloInput, HoloModal, HoloPill } from '@/components/holo'
 
 interface CleanupPolicy {
   id: string
@@ -112,7 +112,7 @@ function PolicyModal({
   return (
     <HoloModal open={true} onClose={onClose}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h2 style={{ fontSize: 17, fontWeight: 700, color: 'var(--holo-text)', margin: '0 0 16px' }}>
+        <h2 style={{ fontSize: 17, fontWeight: 700, color: 'var(--holo-text)', margin: 0 }}>
           {initial ? 'Edit Policy' : 'New Cleanup Policy'}
         </h2>
         <HoloButton onClick={onClose} style={{ padding: 4 }}><X size={15} /></HoloButton>
@@ -234,11 +234,9 @@ export default function CleanupPage() {
 
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
         <div>
-          <div className="holo-section-label" style={{ marginBottom: 6 }}>ADMINISTRATION / CLEANUP</div>
-          <h1 style={{ fontSize: 40, fontWeight: 700, margin: '0 0 4px', letterSpacing: '-0.04em', lineHeight: 1 }}>
-            <HoloText>Cleanup Policies</HoloText>
-          </h1>
-          <p style={{ fontSize: 13, color: 'var(--holo-text-dim)', margin: 0, maxWidth: 560 }}>
+          <div className="holo-section-label" style={{ marginBottom: 4 }}>ADMINISTRATION / CLEANUP</div>
+          <h1 style={{ fontSize: 20, fontWeight: 700, margin: '0 0 3px', letterSpacing: '-0.01em', lineHeight: 1.2, background: 'linear-gradient(110deg, #7c5cff, #22d3ee 60%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' as const }}>Cleanup Policies</h1>
+          <p style={{ fontSize: 12, color: 'var(--holo-text-faint)', margin: 0, maxWidth: 560 }}>
             Automate deletion of old, unused artifacts by criteria. Attach each policy to one or more
             repositories under Repositories → repository settings — unattached policies do not delete anything.
           </p>
@@ -258,64 +256,94 @@ export default function CleanupPage() {
           <HoloButton variant="primary" icon={<Plus size={14} />} onClick={() => setModal('create')}>Create first policy</HoloButton>
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           {policies.map(p => {
             const color = FORMAT_COLOR[p.format] ?? '#6b7280'
             const criteria = [
-              p.criteria?.lastDownloadedDays && { k: 'Not downloaded for', v: `${p.criteria.lastDownloadedDays} days` },
-              p.criteria?.artifactAgeDays && { k: 'Artifact age >', v: `${p.criteria.artifactAgeDays} days` },
-            ].filter(Boolean) as { k: string; v: string }[]
+              p.criteria?.lastDownloadedDays && `≥${p.criteria.lastDownloadedDays}d not downloaded`,
+              p.criteria?.artifactAgeDays && `age >${p.criteria.artifactAgeDays}d`,
+              p.criteria?.pathPrefix && `path: ${p.criteria.pathPrefix}`,
+              p.criteria?.nameGlob && `glob: ${p.criteria.nameGlob}`,
+            ].filter(Boolean) as string[]
 
             return (
-              <HoloCard key={p.id} style={{ opacity: p.enabled ? 1 : 0.6, padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <Clock size={14} style={{ color: 'rgba(229,231,235,0.4)', flexShrink: 0 }} />
-                  <span style={{ flex: 1, fontSize: 14, fontWeight: 600, color: 'var(--holo-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={p.name}>{p.name}</span>
-                  <HoloPill style={{ background: color + '22', color }}>{p.format === '*' ? 'all' : p.format}</HoloPill>
-                  {p.dryRun && <HoloPill tone="warn">dry-run</HoloPill>}
-                  {!p.enabled && <HoloPill>disabled</HoloPill>}
+              <div
+                key={p.id}
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '8px 88px 1fr auto auto',
+                  alignItems: 'center',
+                  gap: 14,
+                  padding: '11px 16px',
+                  background: 'rgba(10,8,28,0.97)',
+                  border: '1px solid rgba(124,92,255,0.2)',
+                  borderRadius: 10,
+                  opacity: p.enabled ? 1 : 0.55,
+                  transition: 'border-color 0.15s, background 0.15s',
+                }}
+                onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.borderColor = 'rgba(124,92,255,0.45)'; (e.currentTarget as HTMLDivElement).style.background = 'rgba(124,92,255,0.04)' }}
+                onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.borderColor = 'rgba(124,92,255,0.2)'; (e.currentTarget as HTMLDivElement).style.background = 'rgba(10,8,28,0.97)' }}
+              >
+                {/* Status dot */}
+                <span style={{
+                  width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
+                  background: p.enabled ? 'var(--holo-green)' : 'rgba(255,255,255,0.2)',
+                  boxShadow: p.enabled ? '0 0 5px var(--holo-green)' : 'none',
+                  display: 'inline-block',
+                }} />
+
+                {/* Format badge */}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                  <span style={{
+                    fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 4,
+                    textTransform: 'uppercase', letterSpacing: '0.3px', whiteSpace: 'nowrap',
+                    background: color + '22', color,
+                  }}>
+                    {p.format === '*' ? 'all' : p.format}
+                  </span>
+                  {p.dryRun && <HoloPill tone="warn" style={{ fontSize: 10 }}>dry</HoloPill>}
                 </div>
 
-                {p.description && (
-                  <p style={{ fontSize: 12, color: 'var(--holo-text-dim)', margin: 0 }}>{p.description}</p>
-                )}
-
-                {criteria.length > 0 && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                    {criteria.map(c => (
-                      <div key={c.k} style={{ display: 'flex', gap: 8, fontSize: 12, color: 'rgba(229,231,235,0.7)' }}>
-                        <span style={{ color: 'var(--holo-text-faint)', minWidth: 130 }}>{c.k}</span>
-                        <span style={{ color: 'var(--holo-a)', fontFamily: 'monospace' }}>{c.v}</span>
-                      </div>
-                    ))}
+                {/* Name + meta */}
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--holo-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {p.name}
                   </div>
-                )}
-
-                <div style={{ fontSize: 11, color: 'var(--holo-text-faint)', display: 'flex', gap: 12 }}>
-                  {p.scheduleCron
-                    ? <span style={{ color: 'var(--holo-a)' }}>Schedule: {p.scheduleCron}</span>
-                    : <span>Schedule: global default</span>}
+                  <div style={{ display: 'flex', gap: 6, marginTop: 3, flexWrap: 'wrap', alignItems: 'center' }}>
+                    {criteria.length > 0 ? criteria.map(c => (
+                      <span key={c} style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, background: 'rgba(124,92,255,0.1)', color: 'var(--holo-a)', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{c}</span>
+                    )) : (
+                      <span style={{ fontSize: 11, color: 'var(--holo-text-faint)' }}>{p.description || 'No criteria'}</span>
+                    )}
+                    {p.description && criteria.length > 0 && (
+                      <span style={{ fontSize: 11, color: 'var(--holo-text-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.description}</span>
+                    )}
+                  </div>
                 </div>
 
-                {(p.lastRunAt || p.lastRunCount != null) && (
-                  <div style={{ fontSize: 11, color: 'var(--holo-text-faint)', display: 'flex', gap: 12 }}>
-                    {p.lastRunAt && <span>Last run: {new Date(p.lastRunAt).toLocaleString()}</span>}
-                    {p.lastRunCount != null && <span>Deleted: {p.lastRunCount}</span>}
-                    {p.lastRunFreedBytes != null && <span>Freed: {fmtBytes(p.lastRunFreedBytes)}</span>}
-                  </div>
-                )}
+                {/* Last run + schedule */}
+                <div style={{ textAlign: 'right', fontSize: 11, color: 'var(--holo-text-faint)', display: 'flex', flexDirection: 'column', gap: 2, minWidth: 120 }}>
+                  {p.lastRunAt && (
+                    <span>{new Date(p.lastRunAt).toLocaleDateString()}{p.lastRunCount != null ? ` · ${p.lastRunCount} del` : ''}{p.lastRunFreedBytes != null ? ` · ${fmtBytes(p.lastRunFreedBytes)}` : ''}</span>
+                  )}
+                  <span style={{ color: p.scheduleCron ? 'var(--holo-a)' : 'var(--holo-text-faint)', fontFamily: 'monospace', fontSize: 10 }}>
+                    {p.scheduleCron || 'default schedule'}
+                  </span>
+                </div>
 
-                <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                {/* Actions */}
+                <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
                   <HoloButton
-                    style={{ background: 'rgba(94,255,184,0.12)', border: '1px solid rgba(94,255,184,0.3)', color: 'var(--holo-green)', fontSize: 12, padding: '5px 10px' }}
-                    icon={<Play size={11} />}
+                    style={{ background: 'rgba(94,255,184,0.1)', border: '1px solid rgba(94,255,184,0.25)', color: 'var(--holo-green)', padding: '4px 8px' }}
+                    icon={<Play size={12} />}
                     onClick={() => handleRun(p.id)}
                     disabled={running === p.id}
-                  >{running === p.id ? 'Running…' : 'Run now'}</HoloButton>
-                  <HoloButton style={{ fontSize: 12, padding: '5px 10px' }} icon={<Pencil size={11} />} onClick={() => setModal(p)}>Edit</HoloButton>
-                  <HoloButton variant="danger" style={{ fontSize: 12, padding: '5px 10px' }} icon={<Trash2 size={11} />} onClick={() => window.confirm(`Delete policy "${p.name}"?`) && deleteMut.mutate(p.id)}>Delete</HoloButton>
+                    title="Run now"
+                  >{running === p.id ? '…' : 'Run'}</HoloButton>
+                  <HoloButton icon={<Pencil size={13} />} onClick={() => setModal(p)} title="Edit" style={{ padding: '4px 8px' }} />
+                  <HoloButton variant="danger" icon={<Trash2 size={13} />} onClick={() => window.confirm(`Delete policy "${p.name}"?`) && deleteMut.mutate(p.id)} title="Delete" style={{ padding: '4px 8px' }} />
                 </div>
-              </HoloCard>
+              </div>
             )
           })}
         </div>

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { ArrowRightLeft, Play, Pause, RefreshCw, Plus } from 'lucide-react'
 import { nexspenceApi } from '@/api/client'
-import { HoloCard, HoloButton, HoloPill, HoloInput, HoloModal, HoloText } from '@/components/holo'
+import { HoloCard, HoloButton, HoloPill, HoloInput, HoloModal } from '@/components/holo'
 
 interface MigrationJob {
   id: string
@@ -51,11 +51,9 @@ export default function MigrationPage() {
     <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 24 }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
         <div>
-          <div className="holo-section-label" style={{ marginBottom: 6 }}>ADMINISTRATION / MIGRATION</div>
-          <h1 style={{ fontSize: 40, fontWeight: 700, margin: '0 0 4px', letterSpacing: '-0.04em', lineHeight: 1 }}>
-            <HoloText>Migration from Nexus</HoloText>
-          </h1>
-          <p style={{ fontSize: 13, color: 'var(--holo-text-dim)', margin: 0 }}>
+          <div className="holo-section-label" style={{ marginBottom: 4 }}>ADMINISTRATION / MIGRATION</div>
+          <h1 style={{ fontSize: 20, fontWeight: 700, margin: '0 0 3px', letterSpacing: '-0.01em', lineHeight: 1.2, background: 'linear-gradient(110deg, #7c5cff, #22d3ee 60%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' as const }}>Migration from Nexus</h1>
+          <p style={{ fontSize: 12, color: 'var(--holo-text-faint)', margin: 0 }}>
             Import repositories, users, and artifacts from a live Nexus OSS instance
           </p>
         </div>
@@ -171,7 +169,7 @@ function CreateMigrationModal({ onClose, onCreated }: { onClose: () => void; onC
 
   return (
     <HoloModal open={true} onClose={onClose}>
-      <h2 style={{ fontSize: 18, fontWeight: 700, color: 'var(--holo-text)', margin: '0 0 20px' }}>New Migration Job</h2>
+      <h2 style={{ fontSize: 18, fontWeight: 700, color: 'var(--holo-text)', margin: 0 }}>New Migration Job</h2>
       <form style={{ display: 'flex', flexDirection: 'column', gap: 14 }} onSubmit={handleSubmit}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
           <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--holo-text-dim)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Nexus URL *</label>

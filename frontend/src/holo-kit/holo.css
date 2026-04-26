@@ -43,11 +43,6 @@
   50%      { background-position: 100% 50%; }
 }
 
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to   { transform: rotate(360deg); }
-}
-
 /* App shell — holographic background */
 .holo-app {
   position: relative;
@@ -94,7 +89,6 @@
   backdrop-filter: blur(20px);
   position: relative;
   overflow: hidden;
-  padding: 16px;
 }
 .holo-card--accent {
   background: linear-gradient(135deg, rgba(124,92,255,0.18), rgba(34,211,238,0.08), rgba(255,92,240,0.10));
@@ -119,21 +113,9 @@
   padding: 8px 11px; border-radius: 9px;
   font-size: 13px; color: var(--holo-text-dim);
   border: 1px solid transparent;
-  cursor: pointer;
-  transition:
-    background   0.15s ease-out,
-    color        0.15s ease-out,
-    border-color 0.15s ease-out,
-    transform    0.12s cubic-bezier(0.23, 1, 0.32, 1);
+  cursor: pointer; transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
-@media (hover: hover) and (pointer: fine) {
-  .holo-nav:not(.active):hover {
-    background: rgba(255,255,255,0.05);
-    color: var(--holo-text);
-    border-color: rgba(255,255,255,0.07);
-  }
-}
-.holo-nav:not(.active):active { transform: scale(0.98); transition-duration: 80ms; }
+.holo-nav:hover { background: rgba(255,255,255,0.04); color: var(--holo-text); }
 .holo-nav.active {
   background: linear-gradient(90deg, rgba(124,92,255,0.18), rgba(34,211,238,0.06));
   border-color: var(--holo-border-strong);
@@ -147,27 +129,12 @@
   font: 600 13px/1.2 inherit; letter-spacing: -0.005em;
   background: var(--holo-bg-3); color: var(--holo-text);
   border: 1px solid rgba(255,255,255,0.10);
-  cursor: pointer;
-  transition:
-    background    0.15s ease-out,
-    border-color  0.15s ease-out,
-    box-shadow    0.18s ease-out,
-    transform     0.15s cubic-bezier(0.23, 1, 0.32, 1);
+  cursor: pointer; transition: background 0.15s, border-color 0.15s, transform 0.08s, box-shadow 0.18s;
 }
-@media (hover: hover) and (pointer: fine) {
-  .holo-btn:not(:disabled):hover {
-    background: rgba(255,255,255,0.11);
-    border-color: rgba(255,255,255,0.22);
-    transform: translateY(-1px);
-    box-shadow: 0 4px 14px rgba(0,0,0,0.28);
-  }
-}
-.holo-btn:not(:disabled):active {
-  transform: scale(0.97);
-  transition-duration: 80ms;
-}
+.holo-btn:hover { background: rgba(255,255,255,0.10); border-color: rgba(255,255,255,0.20); }
+.holo-btn:active { transform: translateY(1px); }
 .holo-btn:focus-visible { outline: none; box-shadow: var(--holo-ring); }
-.holo-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.holo-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .holo-btn--primary {
   color: #fff;
@@ -177,25 +144,13 @@
   border-color: rgba(124,92,255,0.5);
   box-shadow: var(--holo-shadow-glow);
 }
-@media (hover: hover) and (pointer: fine) {
-  .holo-btn--primary:not(:disabled):hover {
-    transform: translateY(-1px);
-    box-shadow: 0 12px 40px rgba(124,92,255,0.6), 0 4px 14px rgba(0,0,0,0.2);
-  }
-}
+.holo-btn--primary:hover { box-shadow: 0 10px 36px rgba(124,92,255,0.5); }
 .holo-btn--danger {
   color: var(--holo-red);
   background: rgba(255,107,107,0.10);
   border-color: rgba(255,107,107,0.30);
 }
-@media (hover: hover) and (pointer: fine) {
-  .holo-btn--danger:not(:disabled):hover {
-    background: rgba(255,107,107,0.18);
-    border-color: rgba(255,107,107,0.48);
-    transform: translateY(-1px);
-    box-shadow: 0 4px 14px rgba(255,107,107,0.18);
-  }
-}
+.holo-btn--danger:hover { background: rgba(255,107,107,0.18); border-color: rgba(255,107,107,0.45); }
 
 /* Pills */
 .holo-pill {
@@ -230,15 +185,9 @@
   padding: 10px 16px;
   background: transparent; border: none;
   font: 500 13px/1.2 inherit; color: var(--holo-text-dim);
-  cursor: pointer;
-  transition:
-    color     0.15s ease-out,
-    transform 0.12s cubic-bezier(0.23, 1, 0.32, 1);
+  cursor: pointer; transition: color 0.15s;
 }
-@media (hover: hover) and (pointer: fine) {
-  .holo-tab:not(.active):hover { color: var(--holo-text); }
-}
-.holo-tab:not(.active):active { transform: scale(0.96); transition-duration: 80ms; }
+.holo-tab:hover { color: var(--holo-text); }
 .holo-tab.active { color: var(--holo-text); font-weight: 600; }
 .holo-tab.active::after {
   content: ''; position: absolute; left: 12px; right: 12px; bottom: -1px; height: 2px;
@@ -275,7 +224,7 @@
   min-width: 420px; max-width: 90vw; max-height: 85vh;
   box-shadow: 0 20px 60px rgba(0,0,0,0.6);
   display: flex; flex-direction: column; gap: 16px;
-  position: relative; overflow-y: auto;
+  position: relative; overflow: hidden;
 }
 .holo-modal::before {
   content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px;

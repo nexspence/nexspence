@@ -112,6 +112,40 @@ func (h *RepositoryHandler) Update(c *gin.Context) {
 	c.JSON(http.StatusOK, r)
 }
 
+// Patch handles PATCH /service/rest/v1/repositories/:name — partial update (currently: online toggle only)
+func (h *RepositoryHandler) Patch(c *gin.Context) {
+	name := c.Param("name")
+	var body struct {
+		Online bool `json:"online"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	existing, err := h.svc.Get(c.Request.Context(), name)
+	if err != nil {
+		if isNotFound(err) {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	r, err := h.svc.Update(c.Request.Context(), name, &domain.Repository{
+		Online:         body.Online,
+		AllowAnonymous: existing.AllowAnonymous,
+	})
+	if err != nil {
+		if isNotFound(err) {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, r)
+}
+
 // Delete handles DELETE /service/rest/v1/repositories/:name
 func (h *RepositoryHandler) Delete(c *gin.Context) {
 	name := c.Param("name")

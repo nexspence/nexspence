@@ -51,8 +51,9 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 	cleanupRepo   := postgres.NewCleanupPolicyRepo(pool)
 	auditRepo     := postgres.NewAuditRepo(pool)
 	userTokenRepo := postgres.NewUserTokenRepo(pool)
-	webhookRepo   := postgres.NewWebhookRepo(pool)
-	privilegeRepo := postgres.NewPrivilegeRepo(pool)
+	webhookRepo    := postgres.NewWebhookRepo(pool)
+	migrationRepo  := postgres.NewMigrationRepo(pool)
+	privilegeRepo  := postgres.NewPrivilegeRepo(pool)
 	csRepo        := postgres.NewContentSelectorRepo(pool)
 	rbacRepo      := postgres.NewRBACRepo(pool)
 	selectorSvc, svcErr := service.NewContentSelectorService(csRepo)
@@ -73,8 +74,10 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 
 	repoSvc    := service.NewRepositoryService(repoRepo, blobRepo, localBlob, cleanupRepo)
 	userSvc    := service.NewUserService(userRepo, roleRepo, authSvc, log)
-	if ldapSvc := auth.NewLDAPService(cfg.LDAP); ldapSvc != nil {
-		userSvc.WithLDAP(ldapSvc, cfg.LDAP.AdminGroup)
+	var ldapSvc auth.LDAPAuthenticator
+	if svc := auth.NewLDAPService(cfg.LDAP); svc != nil {
+		ldapSvc = svc
+		userSvc.WithLDAP(svc, cfg.LDAP.AdminGroup)
 	}
 
 	// OIDC is optional; NewOIDCService performs discovery and will fail
@@ -150,6 +153,8 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 	roleH      := handlers.NewRoleHandler(roleRepo, userRepo)
 	privH      := handlers.NewPrivilegeHandler(privilegeRepo, roleRepo)
 	csH        := handlers.NewContentSelectorHandler(selectorSvc)
+	systemH    := handlers.NewSystemHandler(cfg, pool, ldapSvc, oidcSvc)
+	migrationH := handlers.NewMigrationHandler(migrationRepo)
 	rbacMW     := handlers.RBACMiddleware(rbacSvc, repoRepo)
 
 	// ── Gin engine ────────────────────────────────────────────
@@ -285,6 +290,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 		// ── Repositories (write) ──────────────────────────────
 		admin.POST("/service/rest/v1/repositories/:format/:type", repoH.Create)
 		admin.PUT("/service/rest/v1/repositories/:format/:type/:name", repoH.Update)
+		admin.PATCH("/service/rest/v1/repositories/:name", repoH.Patch)
 		admin.DELETE("/service/rest/v1/repositories/:name", repoH.Delete)
 		admin.POST("/api/v1/repositories", func(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "use /service/rest/v1/repositories/:format/:type"})
@@ -359,13 +365,14 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 		admin.GET("/service/rest/v1/routing-rules", stubHandler("routing"))
 
 		// Migration
-		admin.GET("/api/v1/migration/jobs", stubHandler("migration"))
-		admin.POST("/api/v1/migration/jobs", stubHandler("migration"))
-		admin.POST("/api/v1/migration/jobs/:id/pause", stubHandler("migration"))
-		admin.POST("/api/v1/migration/jobs/:id/resume", stubHandler("migration"))
-		admin.DELETE("/api/v1/migration/jobs/:id", stubHandler("migration"))
+		admin.GET("/api/v1/migration/jobs", migrationH.ListJobs)
+		admin.POST("/api/v1/migration/jobs", migrationH.CreateJob)
+		admin.GET("/api/v1/migration/jobs/:id", migrationH.GetJob)
+		admin.POST("/api/v1/migration/jobs/:id/pause", migrationH.PauseJob)
+		admin.POST("/api/v1/migration/jobs/:id/resume", migrationH.ResumeJob)
+		admin.DELETE("/api/v1/migration/jobs/:id", migrationH.DeleteJob)
 
-		// System info
+		// System info + service health
 		admin.GET("/api/v1/system/info", func(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{
 				"version": "1.0.0",
@@ -373,6 +380,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 				"product": "Nexspence",
 			})
 		})
+		admin.GET("/api/v1/system/services", systemH.Services)
 	}
 
 	// ── Artifact protocol endpoints ───────────────────────────
