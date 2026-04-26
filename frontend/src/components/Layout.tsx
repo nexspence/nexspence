@@ -4,12 +4,14 @@ import {
   Home, Search, FolderOpen, Trash2,
   Settings, Shield, FileText, LogOut,
   Key, Plus, X,
+  ChevronLeft, ChevronRight,
 } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import styles from './Layout.module.css'
 import { useAuthStore } from '@/store/authStore'
 import { apiClient } from '@/api/client'
 import logo from '@/assets/logo.png'
+import miniLogo from '@/assets/mini_logo.png'
 import { HoloApp, HoloModal, HoloButton, HoloInput } from '@/components/holo'
 
 const navItems = [
@@ -144,14 +146,27 @@ export default function Layout() {
   const { user, logout, isAdmin, isOIDC } = useAuthStore()
   const admin = isAdmin()
   const [profileOpen, setProfileOpen] = useState(false)
+  const [collapsed, setCollapsed] = useState(() =>
+    localStorage.getItem('sidebar-collapsed') === 'true'
+  )
+
+  function toggleCollapse() {
+    const next = !collapsed
+    setCollapsed(next)
+    localStorage.setItem('sidebar-collapsed', String(next))
+  }
 
   return (
     <HoloApp>
-    <div className={styles.root}>
+    <div className={`${styles.root}${collapsed ? ' ' + styles.collapsed : ''}`}>
       <aside className={styles.sidebar}>
         {/* Brand */}
         <div className={styles.brand}>
-          <img src={logo} alt="Nexspence" className={styles.brandLogo} />
+          <img
+            src={collapsed ? miniLogo : logo}
+            alt="Nexspence"
+            className={collapsed ? styles.brandLogoMini : styles.brandLogo}
+          />
         </div>
 
         {/* Primary nav */}
@@ -161,12 +176,13 @@ export default function Layout() {
             <NavLink
               key={to}
               to={to}
+              title={collapsed ? label : undefined}
               className={({ isActive }) =>
                 `${styles.navBtn} ${isActive ? styles.active : ''}`
               }
             >
               <Icon size={16} />
-              <span>{label}</span>
+              <span className={styles.navLabel}>{label}</span>
             </NavLink>
           ))}
         </nav>
@@ -180,12 +196,13 @@ export default function Layout() {
                 <NavLink
                   key={to}
                   to={to}
+                  title={collapsed ? label : undefined}
                   className={({ isActive }) =>
                     `${styles.navBtn} ${isActive ? styles.active : ''}`
                   }
                 >
                   <Icon size={16} />
-                  <span>{label}</span>
+                  <span className={styles.navLabel}>{label}</span>
                 </NavLink>
               ))}
             </nav>
@@ -196,7 +213,7 @@ export default function Layout() {
         <div className={styles.footer}>
           {user && (
             <div className={styles.userInfo}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+              <div className={styles.userInfoText} style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
                 <span className={styles.userName}>
                   {user.firstName || user.username}
                 </span>
@@ -220,6 +237,7 @@ export default function Layout() {
           )}
           <button
             className={`${styles.navBtn} ${styles.danger}`}
+            title={collapsed ? 'Sign Out' : undefined}
             onClick={async () => {
               if (isOIDC()) {
                 try {
@@ -235,9 +253,16 @@ export default function Layout() {
             }}
           >
             <LogOut size={16} />
-            <span>Sign Out</span>
+            <span className={styles.navLabel}>Sign Out</span>
           </button>
           <span className={styles.version}>Nexspence v1.0.0 · OSS</span>
+          <button
+            className={styles.collapseBtn}
+            onClick={toggleCollapse}
+            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          >
+            {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+          </button>
         </div>
       </aside>
 
