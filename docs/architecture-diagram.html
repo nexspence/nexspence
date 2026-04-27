@@ -337,8 +337,72 @@ body {
 // ═══════════════════════════════════════════════════════
 //  DATA — populated in subsequent tasks
 // ═══════════════════════════════════════════════════════
-const NODES = {};
-const EDGES = [];
+const NODES = {
+  // ── Clients (y=40) ──
+  maven:   { id:'maven',   label:'Maven CLI',    layer:'clients', x:60,  y:40,  color:'cyan',   w:90,  h:30 },
+  npm:     { id:'npm',     label:'npm CLI',      layer:'clients', x:160, y:40,  color:'cyan',   w:90,  h:30 },
+  docker:  { id:'docker',  label:'Docker CLI',   layer:'clients', x:265, y:40,  color:'cyan',   w:90,  h:30 },
+  browser: { id:'browser', label:'Browser / UI', layer:'clients', x:380, y:40,  color:'cyan',   w:100, h:30 },
+  pip:     { id:'pip',     label:'pip / twine',  layer:'clients', x:495, y:40,  color:'cyan',   w:90,  h:30 },
+  cargo:   { id:'cargo',   label:'Cargo CLI',    layer:'clients', x:600, y:40,  color:'cyan',   w:90,  h:30 },
+  helm:    { id:'helm',    label:'Helm CLI',     layer:'clients', x:700, y:40,  color:'cyan',   w:90,  h:30 },
+
+  // ── HTTP (y=140) ──
+  gin: {
+    id:'gin', label:'Gin API Layer', layer:'http', x:420, y:140, color:'blue', w:140, h:34,
+    tooltip:'Middleware chain:\nRecovery → RequestLogger → CORS\n→ MetricsMiddleware → AuditMiddleware\n→ AuthMiddleware → RBACMiddleware'
+  },
+
+  // ── Services (y=242) ──
+  formatHandlers: { id:'formatHandlers', label:'Format Handlers', layer:'services', x:130, y:242, color:'purple', w:110, h:30 },
+  userService:    { id:'userService',    label:'UserService',     layer:'services', x:270, y:242, color:'purple', w:100, h:30 },
+  repoService:    { id:'repoService',    label:'RepoService',     layer:'services', x:410, y:242, color:'purple', w:100, h:30 },
+  tokenService:   { id:'tokenService',   label:'TokenService',    layer:'services', x:545, y:242, color:'purple', w:100, h:30 },
+  webhookSvc:     { id:'webhookSvc',     label:'WebhookService',  layer:'services', x:680, y:242, color:'purple', w:110, h:30 },
+  scanService:    { id:'scanService',    label:'ScanService',     layer:'services', x:810, y:242, color:'purple', w:100, h:30 },
+
+  // ── Data (y=355) ──
+  postgres:  { id:'postgres',  label:'PostgreSQL', layer:'data', x:310, y:355, color:'green', w:110, h:32, toggleable:true, serviceKey:'postgres' },
+  blobStore: { id:'blobStore', label:'BlobStore',  layer:'data', x:530, y:355, color:'green', w:110, h:32, toggleable:true, serviceKey:'blob' },
+
+  // ── External (y=465) ──
+  ldap:       { id:'ldap',       label:'LDAP',          layer:'external', x:130, y:465, color:'amber', w:90,  h:30, toggleable:true, serviceKey:'ldap' },
+  oidc:       { id:'oidc',       label:'OIDC Provider', layer:'external', x:265, y:465, color:'amber', w:110, h:30, toggleable:true, serviceKey:'oidc' },
+  upstream:   { id:'upstream',   label:'Upstream Proxy',layer:'external', x:415, y:465, color:'amber', w:120, h:30, toggleable:true, serviceKey:'upstream' },
+  webhookRcv: { id:'webhookRcv', label:'Webhook Rcvr',  layer:'external', x:555, y:465, color:'amber', w:110, h:30, toggleable:true, serviceKey:'webhookRcv' },
+  trivy:      { id:'trivy',      label:'Trivy Scanner', layer:'external', x:685, y:465, color:'amber', w:110, h:30, toggleable:true, serviceKey:'trivy' },
+};
+
+const EDGES = [
+  // clients → gin
+  { id:'maven_gin',   from:'maven',   to:'gin' },
+  { id:'npm_gin',     from:'npm',     to:'gin' },
+  { id:'docker_gin',  from:'docker',  to:'gin' },
+  { id:'browser_gin', from:'browser', to:'gin' },
+  { id:'pip_gin',     from:'pip',     to:'gin' },
+  { id:'cargo_gin',   from:'cargo',   to:'gin' },
+  { id:'helm_gin',    from:'helm',    to:'gin' },
+  // gin → services
+  { id:'gin_format',  from:'gin', to:'formatHandlers' },
+  { id:'gin_user',    from:'gin', to:'userService' },
+  { id:'gin_repo',    from:'gin', to:'repoService' },
+  { id:'gin_token',   from:'gin', to:'tokenService' },
+  { id:'gin_webhook', from:'gin', to:'webhookSvc' },
+  { id:'gin_scan',    from:'gin', to:'scanService' },
+  // services → data
+  { id:'format_blob', from:'formatHandlers', to:'blobStore' },
+  { id:'format_pg',   from:'formatHandlers', to:'postgres' },
+  { id:'user_pg',     from:'userService',    to:'postgres' },
+  { id:'repo_pg',     from:'repoService',    to:'postgres' },
+  { id:'token_pg',    from:'tokenService',   to:'postgres' },
+  { id:'scan_pg',     from:'scanService',    to:'postgres' },
+  // services → external
+  { id:'user_ldap',   from:'userService',    to:'ldap' },
+  { id:'user_oidc',   from:'userService',    to:'oidc' },
+  { id:'format_up',   from:'formatHandlers', to:'upstream' },
+  { id:'webhook_rcv', from:'webhookSvc',     to:'webhookRcv' },
+  { id:'scan_trivy',  from:'scanService',    to:'trivy' },
+];
 const SERVICES = {};
 const ACTIONS = [];
 
@@ -355,7 +419,91 @@ const state = {
 //  STUBS — replaced in subsequent tasks
 // ═══════════════════════════════════════════════════════
 function renderLeftPanel() {}
-function renderGraph()     {}
+function renderGraph() {
+  const svg = document.getElementById('graph-svg');
+
+  // Layer labels
+  [
+    { label:'CLIENTS',    y:16 },
+    { label:'HTTP / GIN', y:116 },
+    { label:'SERVICES',   y:218 },
+    { label:'DATA',       y:330 },
+    { label:'EXTERNAL',   y:440 },
+  ].forEach(l => {
+    const t = document.createElementNS('http://www.w3.org/2000/svg','text');
+    t.setAttribute('x','8');
+    t.setAttribute('y', l.y);
+    t.setAttribute('class','layer-label');
+    t.textContent = l.label;
+    svg.appendChild(t);
+  });
+
+  // Draw edges (behind nodes)
+  EDGES.forEach(e => {
+    const fn = NODES[e.from], tn = NODES[e.to];
+    const line = document.createElementNS('http://www.w3.org/2000/svg','line');
+    line.setAttribute('x1', fn.x);
+    line.setAttribute('y1', fn.y + fn.h / 2);
+    line.setAttribute('x2', tn.x);
+    line.setAttribute('y2', tn.y - tn.h / 2);
+    line.setAttribute('class','svg-edge');
+    line.id = 'edge-' + e.id;
+    svg.appendChild(line);
+  });
+
+  // Draw nodes
+  Object.values(NODES).forEach(n => {
+    const g = document.createElementNS('http://www.w3.org/2000/svg','g');
+    g.setAttribute('class', `svg-node color-${n.color} state-normal`);
+    g.id = 'node-' + n.id;
+
+    const rect = document.createElementNS('http://www.w3.org/2000/svg','rect');
+    rect.setAttribute('x', n.x - n.w / 2);
+    rect.setAttribute('y', n.y - n.h / 2);
+    rect.setAttribute('width', n.w);
+    rect.setAttribute('height', n.h);
+    rect.setAttribute('rx', '7');
+
+    const text = document.createElementNS('http://www.w3.org/2000/svg','text');
+    text.setAttribute('x', n.x);
+    text.setAttribute('y', n.y);
+    text.textContent = n.label;
+
+    g.appendChild(rect);
+    g.appendChild(text);
+
+    if (n.tooltip) {
+      g.style.cursor = 'help';
+      g.addEventListener('mouseenter', ev => showTooltip(n, ev));
+      g.addEventListener('mouseleave', hideTooltip);
+    }
+
+    svg.appendChild(g);
+  });
+}
+
+function showTooltip(node, ev) {
+  const tip = document.getElementById('node-tooltip');
+  document.getElementById('tooltip-title').textContent = node.label;
+  document.getElementById('tooltip-body').textContent = node.tooltip;
+  const panel = document.getElementById('center-panel');
+  const pr = panel.getBoundingClientRect();
+  tip.style.left = (ev.clientX - pr.left + 12) + 'px';
+  tip.style.top  = (ev.clientY - pr.top  + 12) + 'px';
+  tip.classList.add('visible');
+}
+
+function hideTooltip() {
+  document.getElementById('node-tooltip').classList.remove('visible');
+}
+
+function setNodeState(nodeId, st) {
+  const g = document.getElementById('node-' + nodeId);
+  if (!g) return;
+  // Replace state-X class while preserving color-X class
+  const classes = g.getAttribute('class').replace(/state-\w+/, '').trim();
+  g.setAttribute('class', classes + ' state-' + st);
+}
 function playAction(a)     {}
 function replayAction()    {}
 
