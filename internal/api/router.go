@@ -314,6 +314,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 
 		// ── Components & Assets (delete) ──────────────────────
 		admin.DELETE("/service/rest/v1/components/:id", componentH.Delete)
+		admin.PUT("/service/rest/v1/components/:id/tags", componentH.SetTags)
 		admin.DELETE("/service/rest/v1/assets/:id", func(c *gin.Context) {
 			if err := assetRepo.Delete(c.Request.Context(), c.Param("id")); err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

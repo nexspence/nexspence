@@ -302,6 +302,23 @@ func (c *ComponentRepo) UpdateExtra(_ context.Context, id string, extra map[stri
 	return nil
 }
 
+func (c *ComponentRepo) SetTags(_ context.Context, id string, tags []string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	comp, ok := c.components[id]
+	if !ok {
+		return fmt.Errorf("component not found: %s", id)
+	}
+	comp.Tags = tags
+	return nil
+}
+
+func (c *ComponentRepo) AddComponent(comp *domain.Component) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.components[comp.ID] = comp
+}
+
 // ── AssetRepo ─────────────────────────────────────────────────
 
 type AssetRepo struct {

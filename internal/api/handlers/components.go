@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/nexspence-oss/nexspence/internal/domain"
@@ -137,6 +138,33 @@ func (h *ComponentHandler) Delete(c *gin.Context) {
 		return
 	}
 	c.Status(http.StatusNoContent)
+}
+
+// SetTags handles PUT /service/rest/v1/components/:id/tags
+func (h *ComponentHandler) SetTags(c *gin.Context) {
+	id := c.Param("id")
+	var body struct {
+		Tags []string `json:"tags"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON"})
+		return
+	}
+	if body.Tags == nil {
+		body.Tags = []string{}
+	}
+	clean := make([]string, 0, len(body.Tags))
+	for _, t := range body.Tags {
+		t = strings.TrimSpace(t)
+		if t != "" {
+			clean = append(clean, t)
+		}
+	}
+	if err := h.components.SetTags(c.Request.Context(), id, clean); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"tags": clean})
 }
 
 // Search handles GET /service/rest/v1/search
