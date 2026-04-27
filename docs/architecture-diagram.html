@@ -402,6 +402,8 @@ const EDGES = [
   { id:'format_up',   from:'formatHandlers', to:'upstream' },
   { id:'webhook_rcv', from:'webhookSvc',     to:'webhookRcv' },
   { id:'scan_trivy',  from:'scanService',    to:'trivy' },
+  { id:'blobstore_browser', from:'blobStore', to:'browser' },
+  { id:'gin_oidc',          from:'gin',       to:'oidc' },
 ];
 const SERVICES = {};
 const ACTIONS = [];
@@ -485,7 +487,7 @@ function renderGraph() {
 function showTooltip(node, ev) {
   const tip = document.getElementById('node-tooltip');
   document.getElementById('tooltip-title').textContent = node.label;
-  document.getElementById('tooltip-body').textContent = node.tooltip;
+  document.getElementById('tooltip-body').innerHTML = node.tooltip.replace(/\n/g, '<br>');
   const panel = document.getElementById('center-panel');
   const pr = panel.getBoundingClientRect();
   tip.style.left = (ev.clientX - pr.left + 12) + 'px';
