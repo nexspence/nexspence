@@ -40,7 +40,7 @@ func (r *componentRepo) ListByRepoNames(ctx context.Context, repoNames []string,
 	args = append(args, limit+1, offset)
 	q := fmt.Sprintf(`
 		SELECT c.id, c.repository_id, rep.name, c.format,
-		       c.group_id, c.name, c.version,
+		       c.group_id, c.name, c.version, c.tags,
 		       c.extra, c.last_downloaded, c.download_count, c.created_at
 		FROM components c
 		JOIN repositories rep ON rep.id = c.repository_id
@@ -78,7 +78,7 @@ func (r *componentRepo) ListByRepoNames(ctx context.Context, repoNames []string,
 func (r *componentRepo) Get(ctx context.Context, id string) (*domain.Component, error) {
 	row := r.db.QueryRow(ctx, `
 		SELECT c.id, c.repository_id, rep.name, c.format,
-		       c.group_id, c.name, c.version,
+		       c.group_id, c.name, c.version, c.tags,
 		       c.extra, c.last_downloaded, c.download_count, c.created_at
 		FROM components c
 		JOIN repositories rep ON rep.id = c.repository_id
@@ -138,6 +138,11 @@ func (r *componentRepo) Search(ctx context.Context, p domain.SearchParams) (*dom
 		args = append(args, p.MavenArtifactID)
 		i++
 	}
+	if p.Tag != "" {
+		where += fmt.Sprintf(" AND $%d = ANY(c.tags)", i)
+		args = append(args, p.Tag)
+		i++
+	}
 
 	limit := p.Limit
 	if limit <= 0 || limit > 500 {
@@ -147,7 +152,7 @@ func (r *componentRepo) Search(ctx context.Context, p domain.SearchParams) (*dom
 
 	q := fmt.Sprintf(`
 		SELECT c.id, c.repository_id, rep.name, c.format,
-		       c.group_id, c.name, c.version,
+		       c.group_id, c.name, c.version, c.tags,
 		       c.extra, c.last_downloaded, c.download_count, c.created_at
 		FROM components c
 		JOIN repositories rep ON rep.id = c.repository_id
@@ -213,6 +218,17 @@ func (r *componentRepo) UpdateExtra(ctx context.Context, id string, extra map[st
 	return err
 }
 
+func (r *componentRepo) SetTags(ctx context.Context, id string, tags []string) error {
+	if tags == nil {
+		tags = []string{}
+	}
+	_, err := r.db.Exec(ctx,
+		`UPDATE components SET tags = $2, updated_at = NOW() WHERE id = $1`,
+		id, tags,
+	)
+	return err
+}
+
 func (r *componentRepo) ListDockerBrowseRows(ctx context.Context, repoNames []string, maxRows int) ([]domain.DockerBrowseRow, error) {
 	if len(repoNames) == 0 {
 		return nil, nil
@@ -274,11 +290,14 @@ func scanComponent(row scanner) (*domain.Component, error) {
 	var extraRaw []byte
 	err := row.Scan(
 		&c.ID, &c.RepositoryID, &c.Repository, &c.Format,
-		&c.Group, &c.Name, &c.Version,
+		&c.Group, &c.Name, &c.Version, &c.Tags,
 		&extraRaw, &c.LastDownloaded, &c.DownloadCount, &c.CreatedAt,
 	)
 	if err != nil {
 		return nil, err
+	}
+	if c.Tags == nil {
+		c.Tags = []string{}
 	}
 	_ = json.Unmarshal(extraRaw, &c.Extra)
 	return &c, nil
