@@ -78,6 +78,7 @@ type AuthConfig struct {
 	AnonymousEnabled   bool   `mapstructure:"anonymous_enabled"`
 	PasswordMinLength  int    `mapstructure:"password_min_length"`
 	BcryptCost         int    `mapstructure:"bcrypt_cost"`
+	TokenMaxDays       int    `mapstructure:"token_max_days"`
 }
 
 type LogConfig struct {
@@ -213,6 +214,7 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("auth.anonymous_enabled", true)
 	v.SetDefault("auth.password_min_length", 8)
 	v.SetDefault("auth.bcrypt_cost", 12)
+	v.SetDefault("auth.token_max_days", 90)
 	v.SetDefault("log.level", "info")
 	v.SetDefault("log.format", "json")
 	v.SetDefault("search.min_query_len", 2)

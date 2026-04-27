@@ -25,7 +25,7 @@ func newTokenStack(users ...*domain.User) (*service.UserService, *service.TokenS
 func buildTokenAPIRouter(userSvc *service.UserService, tokenSvc *service.TokenService) *gin.Engine {
 	r := gin.New()
 	r.Use(handlers.AuthMiddleware(userSvc, tokenSvc))
-	h := handlers.NewTokenHandler(tokenSvc, userSvc)
+	h := handlers.NewTokenHandler(tokenSvc, userSvc, 90)
 	r.GET("/api/v1/user-tokens", h.List)
 	r.POST("/api/v1/user-tokens", h.Create)
 	r.DELETE("/api/v1/user-tokens/:id", h.Delete)

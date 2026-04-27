@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { UserPlus, Trash2, RefreshCw, Shield, User, AlertTriangle, Plus, Edit2, X, Search } from 'lucide-react'
+import { UserPlus, Trash2, RefreshCw, Shield, User, AlertTriangle, Plus, Edit2 } from 'lucide-react'
 import { nexusApi, apiClient } from '@/api/client'
 import styles from './UsersPage.module.css'
 import { Select } from '../components/Select'
@@ -37,20 +37,24 @@ export function AssignRolesModal({ user, roles, onClose, onSaved }: {
   const userRoles = user.roles ?? []
   const userRoleIds = roles.filter(r => userRoles.includes(r.name)).map(r => r.id)
   const [selected, setSelected] = useState<string[]>(userRoleIds)
-  const [roleFilter, setRoleFilter] = useState('')
+  const [leftSearch, setLeftSearch] = useState('')
+  const [rightSearch, setRightSearch] = useState('')
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
 
-  const toggle = (id: string) =>
-    setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
+  const add = (id: string) => setSelected(prev => [...prev, id])
+  const remove = (id: string) => setSelected(prev => prev.filter(x => x !== id))
+  const addAll = () => setSelected(prev => [...new Set([...prev, ...available.map(r => r.id)])])
+  const removeAll = () => setSelected([])
 
-  const q = roleFilter.trim().toLowerCase()
-  const filteredRoles = q
-    ? roles.filter(r => r.name.toLowerCase().includes(q))
-    : roles
-  const selectedRoles = selected
-    .map(id => roles.find(r => r.id === id))
-    .filter((r): r is RoleItem => !!r)
+  const available = roles.filter(r =>
+    !selected.includes(r.id) &&
+    (!leftSearch || r.name.toLowerCase().includes(leftSearch.toLowerCase()))
+  )
+  const selectedRoles = roles.filter(r =>
+    selected.includes(r.id) &&
+    (!rightSearch || r.name.toLowerCase().includes(rightSearch.toLowerCase()))
+  )
 
   const save = async () => {
     setSaving(true); setErr('')
@@ -62,60 +66,106 @@ export function AssignRolesModal({ user, roles, onClose, onSaved }: {
     } finally { setSaving(false) }
   }
 
+  const panelStyle: React.CSSProperties = {
+    border: '1px solid rgba(124,92,255,0.2)', borderRadius: 10, overflow: 'hidden', flex: 1,
+  }
+  const headerStyle: React.CSSProperties = {
+    padding: '6px 10px', fontSize: 11, fontWeight: 600, color: 'var(--holo-text-dim)',
+    textTransform: 'uppercase' as const, letterSpacing: '0.4px',
+    borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(0,0,0,0.2)',
+  }
+  const listStyle: React.CSSProperties = { maxHeight: 200, overflowY: 'auto' as const }
+  const itemBase: React.CSSProperties = {
+    padding: '7px 10px', fontSize: 12, cursor: 'pointer',
+    borderBottom: '1px solid rgba(255,255,255,0.03)',
+  }
+  const arrowBtn: React.CSSProperties = {
+    width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center',
+    borderRadius: 8, border: '1px solid rgba(124,92,255,0.2)',
+    background: 'rgba(124,92,255,0.1)', color: 'var(--holo-a)', cursor: 'pointer', fontSize: 14,
+  }
+
   return (
     <HoloModal open={true} onClose={onClose}>
       <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: 'var(--holo-text)' }}>Assign Roles — {user.userId}</h2>
 
-      {selectedRoles.length > 0 && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12, paddingBottom: 12, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-          {selectedRoles.map(r => (
-            <HoloPill key={r.id} style={{ padding: '4px 4px 4px 10px', fontSize: 12, fontWeight: 600, background: 'rgba(124,92,255,0.15)', color: 'var(--holo-a)', border: '1px solid rgba(124,92,255,0.35)' }}>
-              <Shield size={11} style={{ marginRight: 6 }} />
-              {r.name}
-              <button
-                type="button"
-                onClick={() => toggle(r.id)}
-                title={`Remove ${r.name}`}
-                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 18, height: 18, borderRadius: 999, background: 'rgba(124,92,255,0.2)', border: 'none', color: 'var(--holo-a)', cursor: 'pointer', padding: 0, marginLeft: 4 }}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 28px 1fr', gap: 8, alignItems: 'stretch' }}>
+        {/* Available */}
+        <div style={panelStyle}>
+          <div style={headerStyle}>Available ({roles.filter(r => !selected.includes(r.id)).length})</div>
+          <div style={{ padding: '4px 6px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+            <input
+              placeholder="Filter…"
+              value={leftSearch}
+              onChange={e => setLeftSearch(e.target.value)}
+              className="holo-input"
+              style={{ width: '100%', boxSizing: 'border-box' as const, fontSize: 11, padding: '4px 8px' }}
+            />
+          </div>
+          <div style={listStyle}>
+            {available.map(r => (
+              <div key={r.id} style={{ ...itemBase, color: 'var(--holo-text)' }}
+                onClick={() => add(r.id)}
+                onMouseEnter={e => (e.currentTarget as HTMLDivElement).style.background = 'rgba(124,92,255,0.08)'}
+                onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.background = 'transparent'}
               >
-                <X size={11} />
-              </button>
-            </HoloPill>
-          ))}
+                <div style={{ fontWeight: 600 }}>{r.name}</div>
+                {r.description && <div style={{ fontSize: 11, color: 'var(--holo-text-faint)', marginTop: 1 }}>{r.description}</div>}
+              </div>
+            ))}
+            {available.length === 0 && (
+              <div style={{ ...itemBase, color: 'var(--holo-text-faint)' }}>
+                {leftSearch ? 'No matches' : 'All assigned'}
+              </div>
+            )}
+          </div>
         </div>
-      )}
 
-      <div style={{ position: 'relative', marginBottom: 10 }}>
-        <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--holo-text-faint)', pointerEvents: 'none' }} />
-        <HoloInput
-          type="text"
-          value={roleFilter}
-          onChange={e => setRoleFilter(e.target.value)}
-          placeholder="Filter roles…"
-          style={{ paddingLeft: 32 }}
-        />
+        {/* Arrow column */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, justifyContent: 'center', alignItems: 'center' }}>
+          <button type="button" style={arrowBtn} onClick={addAll} title="Add all">→</button>
+          <button type="button" style={arrowBtn} onClick={removeAll} title="Remove all">←</button>
+        </div>
+
+        {/* Selected */}
+        <div style={panelStyle}>
+          <div style={headerStyle}>Selected ({selected.length})</div>
+          <div style={{ padding: '4px 6px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+            <input
+              placeholder="Filter…"
+              value={rightSearch}
+              onChange={e => setRightSearch(e.target.value)}
+              className="holo-input"
+              style={{ width: '100%', boxSizing: 'border-box' as const, fontSize: 11, padding: '4px 8px' }}
+            />
+          </div>
+          <div style={listStyle}>
+            {selectedRoles.map(r => (
+              <div key={r.id} style={{ ...itemBase, color: '#c4b5fd', background: 'rgba(124,92,255,0.12)', display: 'flex', alignItems: 'flex-start', gap: 6 }}
+                onClick={() => remove(r.id)}
+                onMouseEnter={e => (e.currentTarget as HTMLDivElement).style.background = 'rgba(124,92,255,0.2)'}
+                onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.background = 'rgba(124,92,255,0.12)'}
+              >
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#7c5cff', flexShrink: 0, display: 'inline-block', marginTop: 4 }} />
+                <div>
+                  <div style={{ fontWeight: 600 }}>{r.name}</div>
+                  {r.description && <div style={{ fontSize: 11, color: 'rgba(196,181,253,0.6)', marginTop: 1 }}>{r.description}</div>}
+                </div>
+              </div>
+            ))}
+            {selected.length === 0 && (
+              <div style={{ ...itemBase, color: 'var(--holo-text-faint)' }}>None selected</div>
+            )}
+            {selected.length > 0 && selectedRoles.length === 0 && (
+              <div style={{ ...itemBase, color: 'var(--holo-text-faint)' }}>No matches</div>
+            )}
+          </div>
+        </div>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 0, marginBottom: 16 }}>
-        {filteredRoles.map(r => (
-          <label key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-            <input type="checkbox" checked={selected.includes(r.id)} onChange={() => toggle(r.id)} style={{ accentColor: 'var(--holo-a)', width: 16, height: 16, flexShrink: 0 }} />
-            <div style={{ flex: 1 }}>
-              <div style={{ color: 'var(--holo-text)', fontWeight: 600, fontSize: 14 }}>{r.name}</div>
-              {r.description && <div style={{ fontSize: 12, color: 'var(--holo-text-faint)', marginTop: 2 }}>{r.description}</div>}
-            </div>
-            {r.readOnly && <HoloPill style={{ fontSize: 11 }}>built-in</HoloPill>}
-          </label>
-        ))}
-        {roles.length === 0 && <div style={{ color: 'var(--holo-text-faint)', fontSize: 13, padding: '12px 0' }}>No roles available</div>}
-        {roles.length > 0 && filteredRoles.length === 0 && (
-          <div style={{ color: 'var(--holo-text-faint)', fontSize: 13, padding: '12px 0' }}>No roles match "{roleFilter}"</div>
-        )}
-      </div>
+      {err && <div style={{ marginTop: 12, padding: '8px 12px', background: 'rgba(255,107,107,0.08)', border: '1px solid rgba(255,107,107,0.2)', borderRadius: 8, fontSize: 13, color: 'var(--holo-red)' }}>{err}</div>}
 
-      {err && <div style={{ marginBottom: 12, padding: '8px 12px', background: 'rgba(255,107,107,0.08)', border: '1px solid rgba(255,107,107,0.2)', borderRadius: 8, fontSize: 13, color: 'var(--holo-red)' }}>{err}</div>}
-
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
         <HoloButton type="button" onClick={onClose}>Cancel</HoloButton>
         <HoloButton variant="primary" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save'}</HoloButton>
       </div>

@@ -589,9 +589,9 @@ function CreateRepoModal({ onClose, onCreated }: {
   return (
     <Wizard
       steps={[
-        { label: 'Тип', content: step1 },
-        { label: 'Основные поля', content: step2 },
-        { label: 'Хранилище', content: step3 },
+        { label: 'Type', content: step1 },
+        { label: 'Settings', content: step2 },
+        { label: 'Storage', content: step3 },
       ]}
       onFinish={handleFinish}
       finishLabel="Create"

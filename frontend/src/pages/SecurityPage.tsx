@@ -146,7 +146,7 @@ function PrivilegeTransferList({
   }
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 28px 1fr', gap: 8, alignItems: 'start' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 28px 1fr', gap: 8, alignItems: 'stretch' }}>
       <div style={panelStyle}>
         <div style={headerStyle}>Available ({available.length})</div>
         <div style={{ padding: '4px 6px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
@@ -174,7 +174,7 @@ function PrivilegeTransferList({
         </div>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingTop: 42 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, justifyContent: 'center', alignItems: 'center' }}>
         <button type="button" style={arrowBtn} onClick={addAll} title="Add all">→</button>
         <button type="button" style={arrowBtn} onClick={removeAll} title="Remove all">←</button>
       </div>

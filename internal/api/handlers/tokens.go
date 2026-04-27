@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 
@@ -13,12 +14,21 @@ import (
 // their owner so only the owner (or the admin impersonating them) can manage
 // them.
 type TokenHandler struct {
-	tokens *service.TokenService
-	users  *service.UserService
+	tokens  *service.TokenService
+	users   *service.UserService
+	maxDays int
 }
 
-func NewTokenHandler(tokens *service.TokenService, users *service.UserService) *TokenHandler {
-	return &TokenHandler{tokens: tokens, users: users}
+func NewTokenHandler(tokens *service.TokenService, users *service.UserService, maxDays int) *TokenHandler {
+	if maxDays <= 0 {
+		maxDays = 90
+	}
+	return &TokenHandler{tokens: tokens, users: users, maxDays: maxDays}
+}
+
+// TokenPolicy returns token creation constraints for the UI.
+func (h *TokenHandler) TokenPolicy(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{"tokenMaxDays": h.maxDays})
 }
 
 // callerUserID pulls the authenticated userID out of gin context. Returns
@@ -56,15 +66,31 @@ func (h *TokenHandler) Create(c *gin.Context) {
 		return
 	}
 	var req struct {
-		Name      string     `json:"name" binding:"required"`
-		Scopes    []string   `json:"scopes"`
-		ExpiresAt *time.Time `json:"expiresAt"`
+		Name         string   `json:"name" binding:"required"`
+		Scopes       []string `json:"scopes"`
+		ExpiresInDays *int    `json:"expiresInDays"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	tok, err := h.tokens.Create(c.Request.Context(), userID, req.Name, req.Scopes, req.ExpiresAt)
+
+	var expiresAt *time.Time
+	if req.ExpiresInDays != nil {
+		d := *req.ExpiresInDays
+		if d < 1 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "expiresInDays must be at least 1"})
+			return
+		}
+		if d > h.maxDays {
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("expiresInDays exceeds maximum of %d days", h.maxDays)})
+			return
+		}
+		t := time.Now().Add(time.Duration(d) * 24 * time.Hour)
+		expiresAt = &t
+	}
+
+	tok, err := h.tokens.Create(c.Request.Context(), userID, req.Name, req.Scopes, expiresAt)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return

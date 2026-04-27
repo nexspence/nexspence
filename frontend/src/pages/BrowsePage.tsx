@@ -526,30 +526,6 @@ const S = {
   detailLabel: { color: 'var(--holo-text-faint)', fontSize: 12 },
   detailValue: { color: 'var(--holo-text)', wordBreak: 'break-word' as const },
   detailActions: { display: 'flex', gap: 8, marginTop: 14 },
-  btnDl: {
-    padding: '7px 14px',
-    background: 'rgba(59,130,246,0.15)',
-    border: '1px solid rgba(59,130,246,0.4)',
-    borderRadius: 8,
-    color: '#93c5fd',
-    fontSize: 12,
-    cursor: 'pointer' as const,
-    display: 'flex',
-    alignItems: 'center',
-    gap: 5,
-  },
-  btnCopy: {
-    padding: '7px 14px',
-    background: 'rgba(255,255,255,0.05)',
-    border: '1px solid rgba(255,255,255,0.1)',
-    borderRadius: 8,
-    color: 'var(--holo-text-dim)',
-    fontSize: 12,
-    cursor: 'pointer' as const,
-    display: 'flex',
-    alignItems: 'center',
-    gap: 5,
-  },
 }
 
 function GhostBtn({ onClick, title, danger = false, children }: {
@@ -559,21 +535,63 @@ function GhostBtn({ onClick, title, danger = false, children }: {
   children: React.ReactNode
 }) {
   const [hov, setHov] = useState(false)
+  const [act, setAct] = useState(false)
   const style: React.CSSProperties = {
     width: 24, height: 24, borderRadius: 6, padding: 0,
     cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-    flexShrink: 0,
+    flexShrink: 0, transition: 'background 0.1s, border-color 0.1s, transform 0.08s',
+    transform: act ? 'scale(0.88)' : 'scale(1)',
     border: danger
-      ? `1px solid ${hov ? 'rgba(255,107,107,0.5)' : 'rgba(255,107,107,0.25)'}`
-      : `1px solid ${hov ? 'rgba(124,92,255,0.5)' : 'rgba(124,92,255,0.25)'}`,
+      ? `1px solid ${act ? 'rgba(255,107,107,0.8)' : hov ? 'rgba(255,107,107,0.5)' : 'rgba(255,107,107,0.25)'}`
+      : `1px solid ${act ? 'rgba(124,92,255,0.8)' : hov ? 'rgba(124,92,255,0.5)' : 'rgba(124,92,255,0.25)'}`,
     background: danger
-      ? (hov ? 'rgba(255,107,107,0.18)' : 'rgba(255,107,107,0.07)')
-      : (hov ? 'rgba(124,92,255,0.2)' : 'rgba(124,92,255,0.08)'),
+      ? (act ? 'rgba(255,107,107,0.3)' : hov ? 'rgba(255,107,107,0.18)' : 'rgba(255,107,107,0.07)')
+      : (act ? 'rgba(124,92,255,0.35)' : hov ? 'rgba(124,92,255,0.2)' : 'rgba(124,92,255,0.08)'),
     color: danger ? '#ff6b6b' : 'rgba(124,92,255,0.9)',
   }
   return (
     <button type="button" title={title} style={style} onClick={onClick}
-      onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}>
+      onMouseEnter={() => setHov(true)}
+      onMouseLeave={() => { setHov(false); setAct(false) }}
+      onMouseDown={() => setAct(true)}
+      onMouseUp={() => setAct(false)}>
+      {children}
+    </button>
+  )
+}
+
+function PanelBtn({ onClick, variant = 'default', children }: {
+  onClick: () => void
+  variant?: 'primary' | 'default'
+  children: React.ReactNode
+}) {
+  const [hov, setHov] = useState(false)
+  const [act, setAct] = useState(false)
+  const style: React.CSSProperties = variant === 'primary'
+    ? {
+        padding: '7px 14px', borderRadius: 8, fontSize: 12, cursor: 'pointer',
+        display: 'flex', alignItems: 'center', gap: 5,
+        transition: 'background 0.12s, border-color 0.12s, transform 0.08s',
+        transform: act ? 'scale(0.95)' : 'scale(1)',
+        background: act ? 'rgba(59,130,246,0.35)' : hov ? 'rgba(59,130,246,0.25)' : 'rgba(59,130,246,0.15)',
+        border: `1px solid ${act ? 'rgba(59,130,246,0.7)' : hov ? 'rgba(59,130,246,0.6)' : 'rgba(59,130,246,0.4)'}`,
+        color: hov ? '#bfdbfe' : '#93c5fd',
+      }
+    : {
+        padding: '7px 14px', borderRadius: 8, fontSize: 12, cursor: 'pointer',
+        display: 'flex', alignItems: 'center', gap: 5,
+        transition: 'background 0.12s, border-color 0.12s, transform 0.08s',
+        transform: act ? 'scale(0.95)' : 'scale(1)',
+        background: act ? 'rgba(124,92,255,0.18)' : hov ? 'rgba(124,92,255,0.1)' : 'rgba(255,255,255,0.05)',
+        border: `1px solid ${act ? 'rgba(124,92,255,0.5)' : hov ? 'rgba(124,92,255,0.35)' : 'rgba(255,255,255,0.1)'}`,
+        color: hov ? 'var(--holo-text)' : 'var(--holo-text-dim)',
+      }
+  return (
+    <button type="button" style={style} onClick={onClick}
+      onMouseEnter={() => setHov(true)}
+      onMouseLeave={() => { setHov(false); setAct(false) }}
+      onMouseDown={() => setAct(true)}
+      onMouseUp={() => setAct(false)}>
       {children}
     </button>
   )
@@ -1274,12 +1292,9 @@ export default function BrowsePage() {
                 <>
                   <DockerBrowseDetailBody comp={dockerDetail} sel={dockerSelection} />
                   <div style={{ marginTop: 12 }}>
-                    <button
-                      style={S.btnCopy}
-                      onClick={() => setUsageTarget({ format: dockerDetail.format, name: dockerDetail.name })}
-                    >
+                    <PanelBtn onClick={() => setUsageTarget({ format: dockerDetail.format, name: dockerDetail.name })}>
                       <BookOpen size={13} /> Example Usage
-                    </button>
+                    </PanelBtn>
                   </div>
                 </>
               ) : (
@@ -1363,35 +1378,26 @@ export default function BrowsePage() {
                       <div style={S.detailValue}>{repoName}</div>
                     </div>
                     <div style={S.detailActions}>
-                      <button
-                        style={S.btnDl}
-                        onClick={() => {
-                          void apiClient.get(downloadUrl, { responseType: 'blob' }).then((res) => {
-                            const url = window.URL.createObjectURL(res.data as Blob)
-                            const a = document.createElement('a')
-                            a.href = url
-                            a.download = node.label
-                            document.body.appendChild(a)
-                            a.click()
-                            document.body.removeChild(a)
-                            window.URL.revokeObjectURL(url)
-                          })
-                        }}
-                      >
+                      <PanelBtn variant="primary" onClick={() => {
+                        void apiClient.get(downloadUrl, { responseType: 'blob' }).then((res) => {
+                          const url = window.URL.createObjectURL(res.data as Blob)
+                          const a = document.createElement('a')
+                          a.href = url
+                          a.download = node.label
+                          document.body.appendChild(a)
+                          a.click()
+                          document.body.removeChild(a)
+                          window.URL.revokeObjectURL(url)
+                        })
+                      }}>
                         <Download size={13} /> Download
-                      </button>
-                      <button
-                        style={S.btnCopy}
-                        onClick={() => { void navigator.clipboard.writeText(copyUrl) }}
-                      >
+                      </PanelBtn>
+                      <PanelBtn onClick={() => { void navigator.clipboard.writeText(copyUrl) }}>
                         <Link size={13} /> Copy link
-                      </button>
-                      <button
-                        style={S.btnCopy}
-                        onClick={() => setUsageTarget({ format: selectedRepo?.format ?? 'raw', name: node.label })}
-                      >
+                      </PanelBtn>
+                      <PanelBtn onClick={() => setUsageTarget({ format: selectedRepo?.format ?? 'raw', name: node.label })}>
                         <BookOpen size={13} /> Usage
-                      </button>
+                      </PanelBtn>
                     </div>
                   </>
                 )

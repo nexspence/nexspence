@@ -946,9 +946,9 @@ function CreateMigrationJobModal({ onClose, onCreated }: { onClose: () => void; 
   return (
     <Wizard
       steps={[
-        { label: 'Источник', content: step1 },
-        { label: 'Область', content: step2 },
-        { label: 'Параметры', content: step3 },
+        { label: 'Source', content: step1 },
+        { label: 'Scope', content: step2 },
+        { label: 'Options', content: step3 },
       ]}
       onFinish={handleFinish}
       finishLabel="Start Migration"

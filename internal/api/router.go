@@ -148,7 +148,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 	auditH     := handlers.NewAuditHandler(auditRepo)
 	scanSvc    := service.NewScanService(componentRepo, cfg.HTTP.BaseURL)
 	scanH      := handlers.NewScanHandler(scanSvc)
-	tokenH     := handlers.NewTokenHandler(tokenSvc, userSvc)
+	tokenH     := handlers.NewTokenHandler(tokenSvc, userSvc, cfg.Auth.TokenMaxDays)
 	webhookH   := handlers.NewWebhookHandler(webhookSvc)
 	roleH      := handlers.NewRoleHandler(roleRepo, userRepo)
 	privH      := handlers.NewPrivilegeHandler(privilegeRepo, roleRepo)
@@ -180,6 +180,9 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 
 	// Public: feature-detection for LoginPage (whether SSO button should render).
 	r.GET("/api/v1/auth/config", authH.Config)
+
+	// Public: token creation policy (max expiry days).
+	r.GET("/api/v1/auth/token-policy", tokenH.TokenPolicy)
 
 	// OIDC redirect flow — only registered when oidc.enabled=true.
 	// Audit events fire via the global AuditMiddleware above (callback GET

@@ -3,7 +3,7 @@ import { Outlet, NavLink } from 'react-router-dom'
 import {
   Home, Search, FolderOpen, Trash2,
   Settings, Shield, FileText, LogOut,
-  Key, Plus, X,
+  Key, Plus, X, Copy, Check,
   ChevronLeft, ChevronRight,
 } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -38,19 +38,49 @@ function ProfileModal({ onClose }: { onClose: () => void }) {
     queryKey: ['my-tokens'],
     queryFn: () => apiClient.get<UserToken[]>('/api/v1/tokens').then(r => r.data ?? []),
   })
+  const { data: tokenPolicy } = useQuery<{ tokenMaxDays: number }>({
+    queryKey: ['token-policy'],
+    queryFn: () => apiClient.get<{ tokenMaxDays: number }>('/api/v1/auth/token-policy').then(r => r.data),
+    staleTime: Infinity,
+  })
+  const maxDays = tokenPolicy?.tokenMaxDays ?? 90
+
   const [name, setName] = useState('')
+  const [expiryDays, setExpiryDays] = useState('')
   const [newToken, setNewToken] = useState<NewToken | null>(null)
   const [creating, setCreating] = useState(false)
+  const [copied, setCopied] = useState(false)
+
+  const expiryError = (() => {
+    if (!expiryDays) return ''
+    const d = parseInt(expiryDays, 10)
+    if (isNaN(d) || d < 1) return 'Expiry must be at least 1 day'
+    if (d > maxDays) return `Expiry exceeds the maximum of ${maxDays} days`
+    return ''
+  })()
 
   async function create() {
     if (!name.trim()) return
     setCreating(true)
     try {
-      const res = await apiClient.post<NewToken>('/api/v1/tokens', { name: name.trim() })
+      const payload: Record<string, unknown> = { name: name.trim() }
+      const days = parseInt(expiryDays, 10)
+      if (expiryDays && !isNaN(days) && days > 0) payload.expiresInDays = days
+      const res = await apiClient.post<NewToken>('/api/v1/tokens', payload)
       setNewToken(res.data)
       setName('')
+      setExpiryDays('')
+      setCopied(false)
       qc.invalidateQueries({ queryKey: ['my-tokens'] })
     } finally { setCreating(false) }
+  }
+
+  function copyToken() {
+    if (!newToken) return
+    void navigator.clipboard.writeText(newToken.token).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    })
   }
 
   const del = useMutation({
@@ -83,18 +113,34 @@ function ProfileModal({ onClose }: { onClose: () => void }) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div className="holo-card" style={{ padding: 16 }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--holo-text)', marginBottom: 10 }}>Create API Token</div>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
             <HoloInput
               style={{ flex: 1 }}
               placeholder="Token name"
               value={name}
               onChange={e => setName(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && create()}
+              onKeyDown={e => e.key === 'Enter' && !expiryError && create()}
             />
-            <HoloButton variant="primary" icon={<Plus size={14} />} onClick={create} disabled={creating || !name.trim()}>
+            <HoloInput
+              type="number"
+              min={1}
+              max={maxDays}
+              style={{ width: 100, borderColor: expiryError ? 'rgba(255,107,107,0.6)' : undefined }}
+              placeholder={`Days (max ${maxDays})`}
+              value={expiryDays}
+              onChange={e => setExpiryDays(e.target.value)}
+              title={`Leave empty for no expiry. Maximum ${maxDays} days.`}
+            />
+            <HoloButton variant="primary" icon={<Plus size={14} />} onClick={create} disabled={creating || !name.trim() || !!expiryError}>
               {creating ? 'Creating…' : 'Create'}
             </HoloButton>
           </div>
+          {expiryError
+            ? <div style={{ fontSize: 11, color: 'var(--holo-red)' }}>{expiryError}</div>
+            : <div style={{ fontSize: 11, color: 'var(--holo-text-faint)' }}>
+                Expiry is optional — leave blank for a non-expiring token (max {maxDays} days)
+              </div>
+          }
         </div>
 
         {newToken && (
@@ -105,7 +151,17 @@ function ProfileModal({ onClose }: { onClose: () => void }) {
             <code style={{ ...S.mono, fontSize: 12, background: 'rgba(0,0,0,0.3)', padding: '8px 12px', borderRadius: 8, display: 'block', wordBreak: 'break-all' as const, color: 'var(--holo-a)' }}>
               {newToken.token}
             </code>
-            <HoloButton style={{ marginTop: 8 }} onClick={() => setNewToken(null)}>Dismiss</HoloButton>
+            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+              <HoloButton
+                variant="primary"
+                icon={copied ? <Check size={14} /> : <Copy size={14} />}
+                onClick={copyToken}
+                style={copied ? { background: 'rgba(34,211,238,0.2)', borderColor: 'rgba(34,211,238,0.4)', color: '#22d3ee' } : undefined}
+              >
+                {copied ? 'Copied!' : 'Copy'}
+              </HoloButton>
+              <HoloButton onClick={() => setNewToken(null)}>Dismiss</HoloButton>
+            </div>
           </div>
         )}
 

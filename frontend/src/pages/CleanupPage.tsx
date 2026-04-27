@@ -205,9 +205,9 @@ function PolicyModal({
     return (
       <Wizard
         steps={[
-          { label: 'Идентификация', content: wizStep1 },
-          { label: 'Критерии', content: wizStep2 },
-          { label: 'Расписание', content: wizStep3 },
+          { label: 'Identity', content: wizStep1 },
+          { label: 'Criteria', content: wizStep2 },
+          { label: 'Schedule', content: wizStep3 },
         ]}
         onFinish={handleFinish}
         finishLabel="Create Policy"

@@ -18,7 +18,7 @@ export interface WizardProps {
 export function Wizard({
   steps,
   onFinish,
-  finishLabel = 'Создать',
+  finishLabel = 'Create',
   onValidateStep,
   onClose,
   loading,
@@ -67,7 +67,7 @@ export function Wizard({
                   {i < step ? '✓' : i + 1}
                 </div>
                 <div className="holo-wizard__step-text">
-                  <span className="holo-wizard__step-num">Шаг {i + 1}</span>
+                  <span className="holo-wizard__step-num">Step {i + 1}</span>
                   <span className={`holo-wizard__step-name holo-wizard__step-name--${i < step ? 'done' : i === step ? 'active' : 'pending'}`}>
                     {s.label}
                   </span>
@@ -93,16 +93,16 @@ export function Wizard({
             onClick={handleBack}
             style={{ visibility: step > 0 ? 'visible' : 'hidden' }}
           >
-            ← Назад
+            ← Back
           </button>
-          <span className="holo-wizard__step-info">Шаг {step + 1} из {total}</span>
+          <span className="holo-wizard__step-info">Step {step + 1} of {total}</span>
           <button
             type="button"
             className="holo-btn holo-btn--primary"
             onClick={handleNext}
             disabled={!!loading}
           >
-            {loading ? 'Загрузка…' : step === total - 1 ? finishLabel : 'Далее →'}
+            {loading ? 'Loading…' : step === total - 1 ? finishLabel : 'Next →'}
           </button>
         </div>
       </div>
