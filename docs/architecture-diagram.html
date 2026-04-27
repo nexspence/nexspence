@@ -416,18 +416,172 @@ const SERVICES = {
 };
 
 const ACTIONS = [
-  { id:'login_password', label:'Логин — пароль',       icon:'🔐', dependsOn:['postgres'], steps:[], failureSteps:{} },
-  { id:'login_ldap',     label:'Логин — LDAP',          icon:'🪪', dependsOn:['ldap','postgres'], steps:[], failureSteps:{} },
-  { id:'login_oidc',     label:'Логин — OIDC/SSO',      icon:'🔑', dependsOn:['oidc','postgres'], steps:[], failureSteps:{} },
-  { id:'upload',         label:'Загрузка артефакта',    icon:'📦', dependsOn:['postgres','blob'], steps:[], failureSteps:{} },
-  { id:'download',       label:'Скачивание артефакта',  icon:'⬇️', dependsOn:['postgres','blob'], steps:[], failureSteps:{} },
-  { id:'proxy_miss',     label:'Proxy cache miss',       icon:'🔄', dependsOn:['upstream','blob','postgres'], steps:[], failureSteps:{} },
-  { id:'docker_pull',    label:'Docker pull',            icon:'🐳', dependsOn:['postgres','blob'], steps:[], failureSteps:{} },
-  { id:'api_token',      label:'API Token',              icon:'🔒', dependsOn:['postgres'], steps:[], failureSteps:{} },
-  { id:'webhook',        label:'Webhook delivery',       icon:'⚡', dependsOn:['webhookRcv','postgres','blob'], steps:[], failureSteps:{} },
-  { id:'cleanup',        label:'Cleanup Policy run',     icon:'🧹', dependsOn:['postgres','blob'], steps:[], failureSteps:{} },
-  { id:'search',         label:'Поиск компонентов',     icon:'🔍', dependsOn:['postgres'], steps:[], failureSteps:{} },
-  { id:'scan',           label:'Vulnerability scan',    icon:'🛡️', dependsOn:['trivy','postgres'], steps:[], failureSteps:{} },
+  {
+    id:'login_password', label:'Логин — пароль', icon:'🔐',
+    dependsOn:['postgres'],
+    steps:[
+      { from:'browser',     to:'gin',         label:'POST /api/v1/auth/login',        ms:1,  status:'ok' },
+      { from:'gin',         to:'userService', label:'AuthHandler.Login()',             ms:1,  status:'ok' },
+      { from:'userService', to:'postgres',    label:'UserRepo.GetByUsername()',         ms:2,  status:'ok' },
+      { from:'postgres',    to:'userService', label:'→ user row',                      ms:1,  status:'ok', reverse:true },
+      { from:'userService', to:'gin',         label:'bcrypt.CompareHashAndPassword()', ms:3,  status:'ok', reverse:true },
+      { from:'gin',         to:'browser',     label:'200 { token: "ey..." }',          ms:1,  status:'ok', reverse:true },
+    ],
+    failureSteps:{}
+  },
+  {
+    id:'login_ldap', label:'Логин — LDAP', icon:'🪪',
+    dependsOn:['ldap','postgres'],
+    steps:[
+      { from:'browser',     to:'gin',         label:'POST /api/v1/auth/login',       ms:1,  status:'ok' },
+      { from:'gin',         to:'userService', label:'AuthHandler → loginLDAP()',      ms:1,  status:'ok' },
+      { from:'userService', to:'ldap',        label:'ldap.Authenticate(username)',    ms:12, status:'ok' },
+      { from:'ldap',        to:'userService', label:'→ DN + group memberships',      ms:8,  status:'ok', reverse:true },
+      { from:'userService', to:'postgres',    label:'upsert user + syncLDAPRoles()', ms:4,  status:'ok' },
+      { from:'userService', to:'gin',         label:'auth.GenerateToken()',           ms:1,  status:'ok', reverse:true },
+      { from:'gin',         to:'browser',     label:'200 { token: "ey..." }',         ms:1,  status:'ok', reverse:true },
+    ],
+    failureSteps:{}
+  },
+  {
+    id:'login_oidc', label:'Логин — OIDC/SSO', icon:'🔑',
+    dependsOn:['oidc','postgres'],
+    steps:[
+      { from:'browser',     to:'gin',      label:'GET /oidc/start',                ms:1,   status:'ok' },
+      { from:'gin',         to:'oidc',     label:'302 → provider authorize URL',   ms:1,   status:'ok' },
+      { from:'oidc',        to:'gin',      label:'GET /oidc/callback?code=…',      ms:200, status:'ok', reverse:true },
+      { from:'gin',         to:'oidc',     label:'exchange code → tokens (PKCE)',  ms:150, status:'ok' },
+      { from:'oidc',        to:'gin',      label:'→ access_token + id_token',      ms:80,  status:'ok', reverse:true },
+      { from:'gin',         to:'postgres', label:'upsert user + syncOIDCRoles()',  ms:4,   status:'ok' },
+      { from:'gin',         to:'browser',  label:'302 /oidc/done#token=ey…',       ms:1,   status:'ok', reverse:true },
+    ],
+    failureSteps:{}
+  },
+  {
+    id:'upload', label:'Загрузка артефакта', icon:'📦',
+    dependsOn:['postgres','blob'],
+    steps:[
+      { from:'browser',        to:'gin',            label:'PUT /repository/maven-releases/…', ms:1,  status:'ok' },
+      { from:'gin',            to:'formatHandlers', label:'MavenHandler.StoreArtifact()',     ms:1,  status:'ok' },
+      { from:'formatHandlers', to:'blobStore',      label:'BlobStore.Put(sha256key, stream)', ms:25, status:'ok' },
+      { from:'formatHandlers', to:'postgres',       label:'ComponentRepo.Upsert()',           ms:5,  status:'ok' },
+      { from:'postgres',       to:'formatHandlers', label:'→ component ID',                  ms:2,  status:'ok', reverse:true },
+      { from:'gin',            to:'browser',        label:'201 Created',                     ms:1,  status:'ok', reverse:true },
+    ],
+    failureSteps:{}
+  },
+  {
+    id:'download', label:'Скачивание артефакта', icon:'⬇️',
+    dependsOn:['postgres','blob'],
+    steps:[
+      { from:'browser',        to:'gin',            label:'GET /repository/maven-releases/…', ms:1,  status:'ok' },
+      { from:'gin',            to:'formatHandlers', label:'MavenHandler.FetchArtifact()',     ms:1,  status:'ok' },
+      { from:'formatHandlers', to:'postgres',       label:'AssetRepo.GetByPath()',            ms:2,  status:'ok' },
+      { from:'postgres',       to:'formatHandlers', label:'→ blob_key (sha256)',              ms:1,  status:'ok', reverse:true },
+      { from:'formatHandlers', to:'blobStore',      label:'BlobStore.Get(key) → io.Reader',  ms:15, status:'ok' },
+      { from:'blobStore',      to:'browser',        label:'200 binary stream',               ms:1,  status:'ok', reverse:true },
+    ],
+    failureSteps:{}
+  },
+  {
+    id:'proxy_miss', label:'Proxy cache miss', icon:'🔄',
+    dependsOn:['upstream','blob','postgres'],
+    steps:[
+      { from:'browser',        to:'gin',            label:'GET /repository/proxy-central/…',  ms:1,   status:'ok' },
+      { from:'gin',            to:'formatHandlers', label:'MavenHandler.FetchArtifact()',      ms:1,   status:'ok' },
+      { from:'formatHandlers', to:'postgres',       label:'AssetRepo.GetByPath() — miss',      ms:2,   status:'ok' },
+      { from:'formatHandlers', to:'upstream',       label:'http.Get(upstream URL)',            ms:800, status:'ok' },
+      { from:'upstream',       to:'formatHandlers', label:'→ artifact stream',                ms:300, status:'ok', reverse:true },
+      { from:'formatHandlers', to:'blobStore',      label:'BlobStore.Put() — cache write',    ms:20,  status:'ok' },
+      { from:'formatHandlers', to:'postgres',       label:'AssetRepo.Create() — cache record',ms:5,   status:'ok' },
+      { from:'blobStore',      to:'browser',        label:'200 stream',                       ms:1,   status:'ok', reverse:true },
+    ],
+    failureSteps:{}
+  },
+  {
+    id:'docker_pull', label:'Docker pull', icon:'🐳',
+    dependsOn:['postgres','blob'],
+    steps:[
+      { from:'browser',        to:'gin',            label:'GET /v2/ (auth check)',               ms:1,  status:'warn' },
+      { from:'gin',            to:'browser',        label:'401 WWW-Authenticate: Basic realm=…', ms:1,  status:'warn', reverse:true },
+      { from:'browser',        to:'gin',            label:'GET /v2/ + Authorization: Bearer…',   ms:1,  status:'ok' },
+      { from:'gin',            to:'formatHandlers', label:'DockerHandler — manifest lookup',      ms:1,  status:'ok' },
+      { from:'formatHandlers', to:'postgres',       label:'AssetRepo.GetByDigest()',              ms:2,  status:'ok' },
+      { from:'postgres',       to:'formatHandlers', label:'→ manifest JSON',                     ms:1,  status:'ok', reverse:true },
+      { from:'formatHandlers', to:'blobStore',      label:'BlobStore.Get(layer sha256)',          ms:30, status:'ok' },
+      { from:'blobStore',      to:'browser',        label:'200 layer stream',                    ms:1,  status:'ok', reverse:true },
+    ],
+    failureSteps:{}
+  },
+  {
+    id:'api_token', label:'API Token', icon:'🔒',
+    dependsOn:['postgres'],
+    steps:[
+      { from:'browser',      to:'gin',          label:'POST /api/v1/auth/tokens',         ms:1,  status:'ok' },
+      { from:'gin',          to:'tokenService', label:'TokenService.Create(userID)',       ms:1,  status:'ok' },
+      { from:'tokenService', to:'postgres',     label:'UserTokenRepo.Create(sha256hash)', ms:2,  status:'ok' },
+      { from:'tokenService', to:'gin',          label:'→ plaintext nxs_randomhex',        ms:1,  status:'ok', reverse:true },
+      { from:'gin',          to:'browser',      label:'201 { token: "nxs_abc..." }',      ms:1,  status:'ok', reverse:true },
+      { from:'browser',      to:'gin',          label:'GET /api/… Authorization: Bearer nxs_…', ms:1, status:'ok' },
+      { from:'gin',          to:'tokenService', label:'TokenService.Validate(sha256(token))',    ms:1, status:'ok' },
+      { from:'tokenService', to:'postgres',     label:'UserTokenRepo.GetByHash()',              ms:2, status:'ok' },
+      { from:'gin',          to:'browser',      label:'200 (authenticated response)',           ms:1, status:'ok', reverse:true },
+    ],
+    failureSteps:{}
+  },
+  {
+    id:'webhook', label:'Webhook delivery', icon:'⚡',
+    dependsOn:['webhookRcv','postgres','blob'],
+    steps:[
+      { from:'browser',        to:'gin',            label:'PUT /repository/maven-releases/…', ms:1,   status:'ok' },
+      { from:'gin',            to:'formatHandlers', label:'MavenHandler.StoreArtifact()',     ms:1,   status:'ok' },
+      { from:'formatHandlers', to:'blobStore',      label:'BlobStore.Put()',                  ms:20,  status:'ok' },
+      { from:'formatHandlers', to:'postgres',       label:'ComponentRepo.Upsert()',           ms:5,   status:'ok' },
+      { from:'gin',            to:'browser',        label:'201 Created',                     ms:1,   status:'ok', reverse:true },
+      { from:'webhookSvc',     to:'webhookRcv',     label:'POST artifact.published (async)', ms:150, status:'ok' },
+      { from:'webhookRcv',     to:'webhookSvc',     label:'200 OK',                          ms:50,  status:'ok', reverse:true },
+    ],
+    failureSteps:{}
+  },
+  {
+    id:'cleanup', label:'Cleanup Policy run', icon:'🧹',
+    dependsOn:['postgres','blob'],
+    steps:[
+      { from:'browser',     to:'gin',         label:'POST /service/rest/v1/cleanup-policies/:id/run', ms:1,   status:'ok' },
+      { from:'gin',         to:'repoService', label:'CleanupService.Run(policyID)',                   ms:1,   status:'ok' },
+      { from:'repoService', to:'postgres',    label:'AssetRepo.ListExpired(criteria)',                ms:10,  status:'ok' },
+      { from:'postgres',    to:'repoService', label:'→ 47 expired asset rows',                       ms:5,   status:'ok', reverse:true },
+      { from:'repoService', to:'blobStore',   label:'BlobStore.Delete(keys) × 47',                   ms:200, status:'ok' },
+      { from:'repoService', to:'postgres',    label:'AssetRepo.DeleteBatch(IDs)',                    ms:15,  status:'ok' },
+      { from:'gin',         to:'browser',     label:'200 { deleted: 47, freed_bytes: … }',           ms:1,   status:'ok', reverse:true },
+    ],
+    failureSteps:{}
+  },
+  {
+    id:'search', label:'Поиск компонентов', icon:'🔍',
+    dependsOn:['postgres'],
+    steps:[
+      { from:'browser',     to:'gin',         label:'GET /service/rest/v1/search?q=spring', ms:1, status:'ok' },
+      { from:'gin',         to:'repoService', label:'SearchHandler.Search()',               ms:1, status:'ok' },
+      { from:'repoService', to:'postgres',    label:'ComponentRepo.Search() — tsvector',   ms:8, status:'ok' },
+      { from:'postgres',    to:'repoService', label:'→ 12 components',                    ms:4, status:'ok', reverse:true },
+      { from:'gin',         to:'browser',     label:'200 { items: [...] }',               ms:1, status:'ok', reverse:true },
+    ],
+    failureSteps:{}
+  },
+  {
+    id:'scan', label:'Vulnerability scan', icon:'🛡️',
+    dependsOn:['trivy','postgres'],
+    steps:[
+      { from:'browser',     to:'gin',         label:'POST /api/v1/components/:id/scan',         ms:1,    status:'ok' },
+      { from:'gin',         to:'scanService', label:'ScanService.Scan(imageRef)',                ms:1,    status:'ok' },
+      { from:'scanService', to:'trivy',       label:'trivy image --format json myimage:latest', ms:2000, status:'ok' },
+      { from:'trivy',       to:'scanService', label:'→ CVE list (critical:2, high:5)',           ms:500,  status:'ok', reverse:true },
+      { from:'scanService', to:'postgres',    label:'ComponentRepo.UpdateExtra(scan_result)',   ms:5,    status:'ok' },
+      { from:'gin',         to:'browser',     label:'200 { critical:2, high:5, medium:12 }',    ms:1,    status:'ok', reverse:true },
+    ],
+    failureSteps:{}
+  },
 ];
 
 // ═══════════════════════════════════════════════════════
