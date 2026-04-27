@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nexspense — Interactive Architecture</title>
+<style>
+:root {
+  --bg:        #070b14;
+  --bg2:       #0d1424;
+  --bg3:       #111827;
+  --glass:     rgba(255,255,255,0.04);
+  --border:    rgba(255,255,255,0.07);
+  --border-hi: rgba(59,130,246,0.4);
+  --blue:      #3b82f6;
+  --blue-dim:  #1d4ed8;
+  --blue-glow: rgba(59,130,246,0.25);
+  --green:     #22c55e;
+  --amber:     #f59e0b;
+  --red:       #ef4444;
+  --purple:    #a78bfa;
+  --cyan:      #22d3ee;
+  --text:      #e2e8f0;
+  --text-dim:  #94a3b8;
+  --text-mute: #475569;
+  --radius:    14px;
+  --radius-sm: 8px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, "SF Pro Display", "Segoe UI", sans-serif;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background-image:
+    radial-gradient(ellipse 80% 50% at 20% 0%, rgba(37,99,235,0.12) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 40% at 80% 100%, rgba(139,92,246,0.07) 0%, transparent 55%);
+}
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: linear-gradient(180deg,#3b82f6,#1d4ed8); border-radius: 3px; }
+
+/* ── Header ── */
+.header {
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(7,11,20,0.8);
+  backdrop-filter: blur(12px);
+  flex-shrink: 0;
+  z-index: 10;
+}
+.logo {
+  width: 34px; height: 34px;
+  background: linear-gradient(135deg, var(--blue) 0%, #1d4ed8 100%);
+  border-radius: 9px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 15px; font-weight: 900; color: #fff;
+  box-shadow: 0 0 16px rgba(59,130,246,0.4);
+  flex-shrink: 0;
+}
+.header-title { font-size: 16px; font-weight: 700; letter-spacing: -0.3px; }
+.header-sub   { font-size: 11px; color: var(--text-mute); margin-top: 1px; }
+.header-badge {
+  margin-left: auto;
+  font-size: 10px; font-weight: 600; letter-spacing: 0.5px;
+  background: rgba(59,130,246,0.12);
+  border: 1px solid rgba(59,130,246,0.3);
+  color: var(--blue);
+  padding: 3px 10px; border-radius: 20px;
+}
+.header-hint {
+  font-size: 11px; color: var(--text-mute);
+  display: flex; align-items: center; gap: 6px;
+}
+
+/* ── 3-col body ── */
+.body {
+  display: grid;
+  grid-template-columns: 220px 1fr 260px;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ── Left panel ── */
+.left-panel {
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+  background: rgba(7,11,20,0.5);
+}
+.panel-section { flex-shrink: 0; padding: 14px 14px 8px; }
+.panel-section-title {
+  font-size: 9px; font-weight: 700; letter-spacing: 1.2px;
+  text-transform: uppercase; color: var(--text-mute);
+  margin-bottom: 8px;
+}
+.left-scroll { overflow-y: auto; flex: 1; }
+
+/* Action items */
+.action-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 14px;
+  cursor: pointer;
+  font-size: 12px; font-weight: 500;
+  color: var(--text-dim);
+  border-left: 2px solid transparent;
+  transition: all .15s;
+  user-select: none;
+}
+.action-item:hover { background: rgba(59,130,246,0.05); color: var(--text); }
+.action-item.active {
+  background: rgba(59,130,246,0.1);
+  border-left-color: var(--blue);
+  color: var(--blue);
+}
+.action-item.running { color: var(--amber); border-left-color: var(--amber); background: rgba(245,158,11,0.07); }
+.action-icon { font-size: 14px; flex-shrink: 0; line-height: 1; }
+.action-label { flex: 1; }
+.action-running-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--amber);
+  animation: runPulse 0.8s ease-in-out infinite alternate;
+}
+@keyframes runPulse { from { opacity: 0.3; } to { opacity: 1; } }
+
+.divider { height: 1px; background: var(--border); margin: 4px 0; }
+
+/* Service toggles */
+.svc-toggle {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 14px;
+  cursor: pointer;
+  font-size: 11px; font-weight: 500;
+  color: var(--text-dim);
+  transition: all .15s;
+  user-select: none;
+}
+.svc-toggle:hover { background: rgba(255,255,255,0.02); }
+.svc-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  flex-shrink: 0; transition: background .2s;
+}
+.svc-dot.up   { background: var(--green); box-shadow: 0 0 6px rgba(34,197,94,0.5); }
+.svc-dot.down { background: var(--red);   box-shadow: 0 0 6px rgba(239,68,68,0.5); }
+.svc-label { flex: 1; }
+.svc-status { font-size: 9px; font-weight: 600; letter-spacing: 0.3px; }
+.svc-status.up   { color: rgba(34,197,94,0.7); }
+.svc-status.down { color: var(--red); }
+
+/* ── Center: SVG canvas ── */
+.center-panel {
+  position: relative;
+  overflow: hidden;
+  background: transparent;
+}
+#graph-svg {
+  width: 100%; height: 100%;
+  display: block;
+}
+
+/* SVG node styles */
+.svg-node rect { rx: 7; ry: 7; transition: all .2s; }
+.svg-node text {
+  font-family: system-ui, -apple-system, "SF Pro Display", "Segoe UI", sans-serif;
+  font-size: 11px; font-weight: 600;
+  dominant-baseline: middle; text-anchor: middle;
+  pointer-events: none;
+}
+.svg-node.state-normal rect   { fill: rgba(255,255,255,0.04); stroke: rgba(255,255,255,0.1);  stroke-width: 1; }
+.svg-node.state-active rect   { fill: rgba(59,130,246,0.18);  stroke: #3b82f6;                stroke-width: 1.5; filter: drop-shadow(0 0 8px rgba(59,130,246,0.5)); }
+.svg-node.state-error  rect   { fill: rgba(239,68,68,0.14);   stroke: #ef4444;                stroke-width: 1.5; filter: drop-shadow(0 0 8px rgba(239,68,68,0.4)); }
+.svg-node.state-down   rect   { fill: rgba(239,68,68,0.08);   stroke: rgba(239,68,68,0.4);    stroke-width: 1;   stroke-dasharray: 4 3; }
+.svg-node.state-warn   rect   { fill: rgba(245,158,11,0.14);  stroke: #f59e0b;                stroke-width: 1.5; filter: drop-shadow(0 0 6px rgba(245,158,11,0.4)); }
+
+.svg-node.color-cyan   text { fill: #22d3ee; }
+.svg-node.color-blue   text { fill: #3b82f6; }
+.svg-node.color-purple text { fill: #a78bfa; }
+.svg-node.color-green  text { fill: #22c55e; }
+.svg-node.color-amber  text { fill: #f59e0b; }
+.svg-node.color-red    text { fill: #ef4444; }
+.svg-node.color-mute   text { fill: #64748b; }
+.svg-node.state-down   text { fill: rgba(239,68,68,0.6) !important; }
+
+/* Layer labels */
+.layer-label {
+  font-family: system-ui, sans-serif;
+  font-size: 9px; font-weight: 700;
+  letter-spacing: 1.2px; text-transform: uppercase;
+  fill: rgba(255,255,255,0.12);
+}
+
+/* Edges */
+.svg-edge { stroke: rgba(255,255,255,0.07); stroke-width: 1; fill: none; }
+.svg-edge.active { stroke: rgba(59,130,246,0.5); stroke-width: 1.5; }
+.svg-edge.error  { stroke: rgba(239,68,68,0.5);  stroke-width: 1.5; }
+
+/* Tooltip */
+.node-tooltip {
+  position: absolute;
+  background: rgba(10,16,30,0.95);
+  border: 1px solid var(--border-hi);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 11px;
+  color: var(--text-dim);
+  pointer-events: none;
+  z-index: 100;
+  max-width: 280px;
+  line-height: 1.6;
+  display: none;
+  white-space: pre-line;
+}
+.node-tooltip.visible { display: block; }
+.node-tooltip-title { font-weight: 700; color: var(--text); margin-bottom: 4px; font-size: 12px; }
+
+/* ── Right panel: trace ── */
+.right-panel {
+  border-left: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+  background: rgba(5,9,18,0.6);
+}
+.trace-header {
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.trace-header-title {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.5px;
+  color: var(--text-dim); text-transform: uppercase;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.replay-btn {
+  display: none;
+  background: rgba(59,130,246,0.1);
+  border: 1px solid rgba(59,130,246,0.3);
+  color: var(--blue);
+  border-radius: 6px;
+  padding: 2px 10px;
+  font-size: 10px; font-weight: 600;
+  cursor: pointer;
+  letter-spacing: 0.3px;
+}
+.replay-btn:hover { background: rgba(59,130,246,0.18); }
+.trace-action-name {
+  font-size: 12px; font-weight: 600; color: var(--text);
+  margin-top: 4px;
+}
+.trace-empty {
+  padding: 24px 16px;
+  font-size: 12px; color: var(--text-mute);
+  text-align: center; line-height: 1.6;
+}
+.trace-body { overflow-y: auto; flex: 1; padding: 8px 0; }
+.trace-row {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 6px 16px;
+  border-bottom: 1px solid rgba(255,255,255,0.03);
+  animation: traceIn .2s ease;
+}
+@keyframes traceIn { from { opacity:0; transform: translateX(-6px); } to { opacity:1; transform: none; } }
+.trace-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  margin-top: 4px; flex-shrink: 0;
+}
+.trace-dot.ok    { background: var(--green); box-shadow: 0 0 4px rgba(34,197,94,0.5); }
+.trace-dot.error { background: var(--red);   box-shadow: 0 0 4px rgba(239,68,68,0.5); }
+.trace-dot.warn  { background: var(--amber); box-shadow: 0 0 4px rgba(245,158,11,0.5); }
+.trace-dot.info  { background: var(--blue);  box-shadow: 0 0 4px rgba(59,130,246,0.5); }
+.trace-content { flex: 1; min-width: 0; }
+.trace-label  { font-size: 11px; color: var(--text); word-break: break-all; }
+.trace-detail { font-size: 10px; color: var(--text-mute); margin-top: 2px; }
+.trace-time   { font-size: 10px; color: var(--text-mute); flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.trace-status-badge {
+  margin: 8px 16px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px; font-weight: 600;
+  text-align: center;
+  animation: traceIn .2s ease;
+}
+.trace-status-badge.ok    { background: rgba(34,197,94,0.1);  border: 1px solid rgba(34,197,94,0.3);  color: var(--green); }
+.trace-status-badge.error { background: rgba(239,68,68,0.1);  border: 1px solid rgba(239,68,68,0.3);  color: var(--red); }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo">N</div>
+  <div>
+    <div class="header-title">Nexspense Architecture</div>
+    <div class="header-sub">Interactive request flow diagram</div>
+  </div>
+  <div class="header-badge">INTERACTIVE</div>
+  <div class="header-hint">← Select action &nbsp;·&nbsp; Toggle services to simulate failures</div>
+</div>
+
+<div class="body">
+  <div class="left-panel" id="left-panel">
+    <div class="left-scroll" id="left-scroll">
+      <!-- rendered by JS -->
+    </div>
+  </div>
+
+  <div class="center-panel" id="center-panel">
+    <svg id="graph-svg" viewBox="0 0 900 560" preserveAspectRatio="xMidYMid meet">
+      <!-- rendered by JS -->
+    </svg>
+    <div class="node-tooltip" id="node-tooltip">
+      <div class="node-tooltip-title" id="tooltip-title"></div>
+      <div id="tooltip-body"></div>
+    </div>
+  </div>
+
+  <div class="right-panel" id="right-panel">
+    <div class="trace-header">
+      <div class="trace-header-title">
+        <span style="display:flex;align-items:center;gap:8px"><span>⚡</span> Request Trace</span>
+        <button class="replay-btn" id="replay-btn" onclick="replayAction()">↺ Replay</button>
+      </div>
+      <div class="trace-action-name" id="trace-action-name">—</div>
+    </div>
+    <div class="trace-body" id="trace-body">
+      <div class="trace-empty">Select an action from the left panel to see the request flow</div>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ═══════════════════════════════════════════════════════
+//  DATA — populated in subsequent tasks
+// ═══════════════════════════════════════════════════════
+const NODES = {};
+const EDGES = [];
+const SERVICES = {};
+const ACTIONS = [];
+
+// ═══════════════════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════════════════
+const state = {
+  selectedAction: null,
+  running: false,
+  services: {},
+};
+
+// ═══════════════════════════════════════════════════════
+//  STUBS — replaced in subsequent tasks
+// ═══════════════════════════════════════════════════════
+function renderLeftPanel() {}
+function renderGraph()     {}
+function playAction(a)     {}
+function replayAction()    {}
+
+// ═══════════════════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════════════════
+function init() {
+  renderLeftPanel();
+  renderGraph();
+}
+
+document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>
