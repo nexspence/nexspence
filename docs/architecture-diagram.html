@@ -620,8 +620,160 @@ function setNodeState(nodeId, st) {
   const classes = g.getAttribute('class').replace(/state-\w+/, '').trim();
   g.setAttribute('class', classes + ' state-' + st);
 }
-function playAction(a)     {}
-function replayAction()    {}
+// ═══════════════════════════════════════════════════════
+//  ANIMATION ENGINE
+// ═══════════════════════════════════════════════════════
+
+let _animTimer = null;
+
+function resetAllNodes() {
+  Object.values(NODES).forEach(n => {
+    const down = n.serviceKey && !state.services[n.serviceKey];
+    setNodeState(n.id, down ? 'down' : 'normal');
+  });
+  document.querySelectorAll('.svg-edge').forEach(el => {
+    el.setAttribute('class', 'svg-edge');
+  });
+}
+
+function getEdgeId(fromId, toId) {
+  const direct = EDGES.find(e => e.from === fromId && e.to === toId);
+  if (direct) return direct.id;
+  const rev = EDGES.find(e => e.from === toId && e.to === fromId);
+  return rev ? rev.id : null;
+}
+
+function animateDot(step) {
+  const svg = document.getElementById('graph-svg');
+  // Use from/to directly — reverse flag just means it's a response; direction is already correct
+  const from = NODES[step.from];
+  const to   = NODES[step.to];
+  if (!from || !to) return;
+
+  const isError = step.status === 'error';
+  const isWarn  = step.status === 'warn';
+  const color   = isError ? '#ef4444' : isWarn ? '#f59e0b' : (step.reverse ? '#22c55e' : '#3b82f6');
+  const radius  = step.reverse ? 4 : 5;
+
+  const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+  circle.setAttribute('r', radius);
+  circle.setAttribute('fill', color);
+  circle.setAttribute('opacity', '0.95');
+  svg.appendChild(circle);
+
+  const durMs = Math.min(Math.max(50, (step.ms || 0) / 8), 900);
+
+  circle.animate(
+    [
+      { transform: `translate(${from.x}px,${from.y}px)` },
+      { transform: `translate(${to.x}px,${to.y}px)` },
+    ],
+    { duration: durMs, easing: 'cubic-bezier(0.4,0,0.2,1)', fill: 'forwards' }
+  ).onfinish = () => setTimeout(() => circle.remove(), 80);
+
+  // Highlight edge
+  const edgeId = getEdgeId(step.from, step.to);
+  if (edgeId) {
+    const edgeEl = document.getElementById('edge-' + edgeId);
+    if (edgeEl) edgeEl.setAttribute('class', 'svg-edge ' + (isError ? 'error' : 'active'));
+  }
+}
+
+function clearTrace() {
+  document.getElementById('trace-body').innerHTML = '';
+  document.getElementById('replay-btn').style.display = 'none';
+}
+
+function appendTraceRow(step, elapsed) {
+  const body = document.getElementById('trace-body');
+  const row = document.createElement('div');
+  row.className = 'trace-row';
+
+  const isError = step.status === 'error';
+  const isWarn  = step.status === 'warn';
+  const dotClass = isError ? 'error' : isWarn ? 'warn' : (step.reverse ? 'ok' : 'info');
+  const timeStr  = elapsed >= 1000 ? (elapsed / 1000).toFixed(1) + 's' : elapsed + 'ms';
+
+  row.innerHTML = `
+    <div class="trace-dot ${dotClass}"></div>
+    <div class="trace-content">
+      <div class="trace-label">${step.label || (step.from + ' → ' + step.to)}</div>
+      ${step.detail ? `<div class="trace-detail">${step.detail}</div>` : ''}
+    </div>
+    <div class="trace-time">+${timeStr}</div>
+  `;
+  body.appendChild(row);
+  body.scrollTop = body.scrollHeight;
+}
+
+function appendTraceStatus(isError) {
+  const body = document.getElementById('trace-body');
+  const badge = document.createElement('div');
+  badge.className = 'trace-status-badge ' + (isError ? 'error' : 'ok');
+  badge.textContent = isError ? '✕ Failed' : '✓ Success';
+  body.appendChild(badge);
+  body.scrollTop = body.scrollHeight;
+  document.getElementById('replay-btn').style.display = 'block';
+}
+
+function playAction(action) {
+  if (_animTimer) { clearTimeout(_animTimer); _animTimer = null; }
+  clearTrace();
+  resetAllNodes();
+  state.running = true;
+
+  // Mark running
+  document.querySelectorAll('.action-item').forEach(el => el.classList.remove('running'));
+  const actionEl = document.getElementById('action-' + action.id);
+  if (actionEl) { actionEl.classList.remove('active'); actionEl.classList.add('running'); }
+
+  const steps = getStepsForAction(action);
+  if (!steps || steps.length === 0) {
+    state.running = false;
+    document.getElementById('trace-body').innerHTML = '<div class="trace-empty">No steps defined for this action yet.</div>';
+    if (actionEl) { actionEl.classList.remove('running'); actionEl.classList.add('active'); }
+    return;
+  }
+
+  let elapsed = 0;
+  let i = 0;
+
+  function playStep() {
+    if (i >= steps.length) {
+      state.running = false;
+      const lastStatus = steps[steps.length - 1]?.status;
+      appendTraceStatus(lastStatus === 'error');
+      if (actionEl) { actionEl.classList.remove('running'); actionEl.classList.add('active'); }
+      return;
+    }
+
+    const step = steps[i];
+    elapsed += step.ms || 0;
+
+    // Highlight source and target nodes
+    const nodeStatus = step.status === 'error' ? 'error' : step.status === 'warn' ? 'warn' : 'active';
+    setNodeState(step.from, nodeStatus);
+    setNodeState(step.to,   nodeStatus);
+
+    animateDot(step);
+    appendTraceRow(step, elapsed);
+
+    i++;
+    _animTimer = setTimeout(playStep, 680);
+  }
+
+  playStep();
+}
+
+function replayAction() {
+  if (state.running) return;
+  const action = ACTIONS.find(a => a.id === state.selectedAction);
+  if (action) {
+    clearTrace();
+    resetAllNodes();
+    playAction(action);
+  }
+}
 
 // ═══════════════════════════════════════════════════════
 //  INIT
