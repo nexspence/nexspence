@@ -83,6 +83,7 @@ body {
   grid-template-columns: 220px 1fr 260px;
   flex: 1;
   overflow: hidden;
+  gap: 0;
 }
 
 /* ── Left panel ── */
@@ -163,7 +164,7 @@ body {
 }
 
 /* SVG node styles */
-.svg-node rect { rx: 7; ry: 7; transition: all .2s; }
+.svg-node rect { transition: fill .2s, stroke .2s, stroke-width .2s, filter .2s; }
 .svg-node text {
   font-family: system-ui, -apple-system, "SF Pro Display", "Segoe UI", sans-serif;
   font-size: 11px; font-weight: 600;
