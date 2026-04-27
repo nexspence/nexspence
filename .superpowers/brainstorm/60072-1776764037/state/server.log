@@ -1,5 +1,0 @@
-{"type":"server-started","port":60586,"host":"127.0.0.1","url_host":"localhost","url":"http://localhost:60586","screen_dir":"/home/skensel/AI/self_nexus/.superpowers/brainstorm/60072-1776764037/content","state_dir":"/home/skensel/AI/self_nexus/.superpowers/brainstorm/60072-1776764037/state"}
-{"type":"screen-added","file":"/home/skensel/AI/self_nexus/.superpowers/brainstorm/60072-1776764037/content/dropdown-design.html"}
-{"type":"screen-added","file":"/home/skensel/AI/self_nexus/.superpowers/brainstorm/60072-1776764037/content/dropdown-spec.html"}
-{"type":"screen-added","file":"/home/skensel/AI/self_nexus/.superpowers/brainstorm/60072-1776764037/content/waiting.html"}
-{"type":"server-stopped","reason":"idle timeout"}

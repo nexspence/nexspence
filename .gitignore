@@ -3,6 +3,7 @@
 
 # Binary
 bin/
+server
 *.exe
 
 # Config with secrets (use config.yaml as template)
@@ -35,6 +36,10 @@ frontend/dist/
 # OS
 .DS_Store
 Thumbs.db
+*:Zone.Identifier
+
+# AI tools
+.superpowers/
 
 #LLM
 CLAUDE.md
