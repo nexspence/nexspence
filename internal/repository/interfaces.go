@@ -42,6 +42,8 @@ type ComponentRepo interface {
 	Delete(ctx context.Context, id string) error
 	// UpdateExtra merges JSON into components.extra (e.g. scan_result).
 	UpdateExtra(ctx context.Context, id string, extra map[string]any) error
+	// SetTags replaces the full tag list for a component.
+	SetTags(ctx context.Context, id string, tags []string) error
 	// DeleteOrphans removes components in repoName that have no remaining assets.
 	DeleteOrphans(ctx context.Context, repoName string) error
 }

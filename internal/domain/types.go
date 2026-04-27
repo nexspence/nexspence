@@ -208,6 +208,7 @@ type Component struct {
 	Group          string     `json:"group"`
 	Name           string     `json:"name"`
 	Version        string     `json:"version"`
+	Tags           []string   `json:"tags"`
 	Extra          map[string]any `json:"extra,omitempty"`
 	LastDownloaded *time.Time `json:"lastDownloaded,omitempty"`
 	DownloadCount  int64      `json:"downloadCount"`
@@ -411,6 +412,7 @@ type SearchParams struct {
 	Name        string
 	Version     string
 	SHA256      string
+	Tag         string   // exact match: $Tag = ANY(tags)
 	// Maven
 	MavenGroupID    string
 	MavenArtifactID string
