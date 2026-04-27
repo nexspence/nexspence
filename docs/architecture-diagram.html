@@ -405,8 +405,30 @@ const EDGES = [
   { id:'blobstore_browser', from:'blobStore', to:'browser' },
   { id:'gin_oidc',          from:'gin',       to:'oidc' },
 ];
-const SERVICES = {};
-const ACTIONS = [];
+const SERVICES = {
+  postgres:   { key:'postgres',   label:'PostgreSQL',    nodeId:'postgres',   up:true },
+  ldap:       { key:'ldap',       label:'LDAP',          nodeId:'ldap',       up:true },
+  oidc:       { key:'oidc',       label:'OIDC Provider', nodeId:'oidc',       up:true },
+  blob:       { key:'blob',       label:'BlobStore',     nodeId:'blobStore',  up:true },
+  upstream:   { key:'upstream',   label:'Upstream Proxy',nodeId:'upstream',   up:true },
+  webhookRcv: { key:'webhookRcv', label:'Webhook Rcvr',  nodeId:'webhookRcv', up:true },
+  trivy:      { key:'trivy',      label:'Trivy Scanner', nodeId:'trivy',      up:true },
+};
+
+const ACTIONS = [
+  { id:'login_password', label:'Логин — пароль',       icon:'🔐', dependsOn:['postgres'], steps:[], failureSteps:{} },
+  { id:'login_ldap',     label:'Логин — LDAP',          icon:'🪪', dependsOn:['ldap','postgres'], steps:[], failureSteps:{} },
+  { id:'login_oidc',     label:'Логин — OIDC/SSO',      icon:'🔑', dependsOn:['oidc','postgres'], steps:[], failureSteps:{} },
+  { id:'upload',         label:'Загрузка артефакта',    icon:'📦', dependsOn:['postgres','blob'], steps:[], failureSteps:{} },
+  { id:'download',       label:'Скачивание артефакта',  icon:'⬇️', dependsOn:['postgres','blob'], steps:[], failureSteps:{} },
+  { id:'proxy_miss',     label:'Proxy cache miss',       icon:'🔄', dependsOn:['upstream','blob','postgres'], steps:[], failureSteps:{} },
+  { id:'docker_pull',    label:'Docker pull',            icon:'🐳', dependsOn:['postgres','blob'], steps:[], failureSteps:{} },
+  { id:'api_token',      label:'API Token',              icon:'🔒', dependsOn:['postgres'], steps:[], failureSteps:{} },
+  { id:'webhook',        label:'Webhook delivery',       icon:'⚡', dependsOn:['webhookRcv','postgres','blob'], steps:[], failureSteps:{} },
+  { id:'cleanup',        label:'Cleanup Policy run',     icon:'🧹', dependsOn:['postgres','blob'], steps:[], failureSteps:{} },
+  { id:'search',         label:'Поиск компонентов',     icon:'🔍', dependsOn:['postgres'], steps:[], failureSteps:{} },
+  { id:'scan',           label:'Vulnerability scan',    icon:'🛡️', dependsOn:['trivy','postgres'], steps:[], failureSteps:{} },
+];
 
 // ═══════════════════════════════════════════════════════
 //  STATE
@@ -420,7 +442,99 @@ const state = {
 // ═══════════════════════════════════════════════════════
 //  STUBS — replaced in subsequent tasks
 // ═══════════════════════════════════════════════════════
-function renderLeftPanel() {}
+function renderLeftPanel() {
+  // Init state.services from SERVICES
+  Object.values(SERVICES).forEach(s => { state.services[s.key] = true; });
+
+  const scroll = document.getElementById('left-scroll');
+  scroll.innerHTML = '';
+
+  // Actions section title
+  const actSection = document.createElement('div');
+  actSection.className = 'panel-section';
+  actSection.innerHTML = '<div class="panel-section-title">Действия</div>';
+  scroll.appendChild(actSection);
+
+  // Action items
+  ACTIONS.forEach(action => {
+    const el = document.createElement('div');
+    el.className = 'action-item';
+    el.id = 'action-' + action.id;
+    el.innerHTML = `<span class="action-icon">${action.icon}</span><span class="action-label">${action.label}</span>`;
+    el.addEventListener('click', () => handleActionClick(action));
+    scroll.appendChild(el);
+  });
+
+  // Divider
+  const divider = document.createElement('div');
+  divider.className = 'divider';
+  divider.style.margin = '8px 0';
+  scroll.appendChild(divider);
+
+  // Services section title
+  const svcSection = document.createElement('div');
+  svcSection.className = 'panel-section';
+  svcSection.innerHTML = '<div class="panel-section-title">Сервисы</div>';
+  scroll.appendChild(svcSection);
+
+  // Service toggles
+  Object.values(SERVICES).forEach(svc => {
+    const el = document.createElement('div');
+    el.className = 'svc-toggle';
+    el.id = 'svc-' + svc.key;
+    el.innerHTML = `
+      <div class="svc-dot up" id="svc-dot-${svc.key}"></div>
+      <span class="svc-label">${svc.label}</span>
+      <span class="svc-status up" id="svc-status-${svc.key}">UP</span>
+    `;
+    el.addEventListener('click', () => toggleService(svc.key));
+    scroll.appendChild(el);
+  });
+}
+
+function handleActionClick(action) {
+  if (state.running) return;
+  document.querySelectorAll('.action-item').forEach(el => el.classList.remove('active'));
+  const el = document.getElementById('action-' + action.id);
+  if (el) el.classList.add('active');
+  state.selectedAction = action.id;
+  document.getElementById('trace-action-name').textContent = action.icon + ' ' + action.label;
+
+  // Guard: no steps yet (Tasks 5/6 fill them in)
+  const stepsToUse = getStepsForAction(action);
+  if (!stepsToUse || stepsToUse.length === 0) {
+    const body = document.getElementById('trace-body');
+    body.innerHTML = '<div class="trace-empty">No steps defined for this action yet.</div>';
+    return;
+  }
+  playAction(action);
+}
+
+function toggleService(key) {
+  state.services[key] = !state.services[key];
+  const svc = SERVICES[key];
+  const up = state.services[key];
+
+  // Update toggle UI
+  const dot    = document.getElementById('svc-dot-' + key);
+  const status = document.getElementById('svc-status-' + key);
+  dot.className    = 'svc-dot ' + (up ? 'up' : 'down');
+  status.className = 'svc-status ' + (up ? 'up' : 'down');
+  status.textContent = up ? 'UP' : 'DOWN';
+
+  // Update corresponding graph node
+  setNodeState(svc.nodeId, up ? 'normal' : 'down');
+}
+
+function getStepsForAction(action) {
+  // Full implementation in Task 4; stub returns empty for now
+  for (const svcKey of (action.dependsOn || [])) {
+    if (!state.services[svcKey] && action.failureSteps && action.failureSteps[svcKey]) {
+      return action.failureSteps[svcKey];
+    }
+  }
+  return action.steps;
+}
 function renderGraph() {
   const svg = document.getElementById('graph-svg');
 
