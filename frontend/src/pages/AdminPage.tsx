@@ -536,6 +536,13 @@ function BlobStoreDetailModal({ name, onClose }: { name: string; onClose: () => 
     queryKey: ['blobstore-usage', name],
     queryFn: () => nexusApi.getBlobStoreUsage(name).then(r => r.data),
   })
+  const linked = data?.linkedRepositories ?? []
+  const bs = data?.store
+  const used = bs ? fmtBytes(bs.usedBytes) : '—'
+  const quota = bs?.quotaBytes ? fmtBytes(bs.quotaBytes) : 'Unlimited'
+  const remaining = data?.quotaRemaining !== undefined ? fmtBytes(data.quotaRemaining) : null
+  const canDelete = linked.length === 0
+
   const [deleteError, setDeleteError] = useState('')
   const [editing, setEditing] = useState(false)
   const [editBucket, setEditBucket]       = useState('')
@@ -579,23 +586,16 @@ function BlobStoreDetailModal({ name, onClose }: { name: string; onClose: () => 
   })
 
   const startEdit = () => {
-    if (!bs?.config) return
-    setEditBucket((bs.config.bucket as string) ?? '')
-    setEditRegion((bs.config.region as string) ?? 'us-east-1')
-    setEditEndpoint((bs.config.endpoint as string) ?? '')
-    setEditAccessKey((bs.config.access_key as string) ?? '')
+    const cfg = bs?.config ?? {}
+    setEditBucket((cfg.bucket as string) ?? '')
+    setEditRegion((cfg.region as string) ?? 'us-east-1')
+    setEditEndpoint((cfg.endpoint as string) ?? '')
+    setEditAccessKey((cfg.access_key as string) ?? '')
     setEditSecretKey('')
-    setEditPath((bs.config.path as string) ?? '')
+    setEditPath((cfg.path as string) ?? '')
     setEditErr('')
     setEditing(true)
   }
-
-  const linked = data?.linkedRepositories ?? []
-  const bs = data?.store
-  const used = bs ? fmtBytes(bs.usedBytes) : '—'
-  const quota = bs?.quotaBytes ? fmtBytes(bs.quotaBytes) : 'Unlimited'
-  const remaining = data?.quotaRemaining !== undefined ? fmtBytes(data.quotaRemaining) : null
-  const canDelete = linked.length === 0
 
   return (
     <ModalShell title={`Blob Store: ${name}`} onClose={onClose} width={640}>
@@ -685,7 +685,7 @@ function BlobStoreDetailModal({ name, onClose }: { name: string; onClose: () => 
                 <HoloButton variant="primary" disabled={editMut.isPending} onClick={() => editMut.mutate()}>
                   {editMut.isPending ? 'Saving…' : 'Save'}
                 </HoloButton>
-                <HoloButton onClick={() => setEditing(false)}>Cancel</HoloButton>
+                <HoloButton onClick={() => { setEditing(false); setEditErr('') }}>Cancel</HoloButton>
               </div>
             </div>
           )}
@@ -809,7 +809,7 @@ function CreateBlobStoreModal({ onClose }: { onClose: () => void }) {
           <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--holo-text-dim)', marginBottom: 4, display: 'block' }}>Type</label>
           <Select
             value={type}
-            onChange={v => setType(v as 'local' | 's3')}
+            onChange={v => { setType(v as 'local' | 's3'); setTestResult(null) }}
             options={[{ value: 'local', label: 'Local filesystem' }, { value: 's3', label: 'S3-compatible' }]}
           />
         </div>
@@ -871,7 +871,7 @@ function CreateBlobStoreModal({ onClose }: { onClose: () => void }) {
         )}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
           <HoloButton onClick={onClose}>Cancel</HoloButton>
-          <HoloButton onClick={handleTest} disabled={testBusy || !name.trim()}>
+          <HoloButton onClick={handleTest} disabled={testBusy || !name.trim() || (type === 's3' && !bucket.trim())}>
             {testBusy ? 'Testing…' : 'Test Connection'}
           </HoloButton>
           <HoloButton variant="primary" disabled={!name.trim() || mut.isPending} onClick={() => { setErr(''); mut.mutate() }}>
