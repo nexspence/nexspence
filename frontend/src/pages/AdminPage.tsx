@@ -640,6 +640,8 @@ function CreateBlobStoreModal({ onClose }: { onClose: () => void }) {
   const [secretKey, setSecretKey] = useState('')
   const [quotaGB, setQuotaGB] = useState('')
   const [err, setErr] = useState('')
+  const [testResult, setTestResult] = useState<{ ok: boolean; error?: string } | null>(null)
+  const [testBusy, setTestBusy] = useState(false)
 
   const mut = useMutation({
     mutationFn: () => {
@@ -658,6 +660,22 @@ function CreateBlobStoreModal({ onClose }: { onClose: () => void }) {
       setErr(msg)
     },
   })
+
+  const handleTest = async () => {
+    setTestBusy(true)
+    setTestResult(null)
+    try {
+      const cfg: Record<string, unknown> = type === 'local'
+        ? { path }
+        : { bucket, region, endpoint, prefix, access_key: accessKey, secret_key: secretKey }
+      const res = await nexusApi.testBlobStore(type, cfg)
+      setTestResult(res.data)
+    } catch {
+      setTestResult({ ok: false, error: 'Request failed' })
+    } finally {
+      setTestBusy(false)
+    }
+  }
 
   return (
     <ModalShell title="New Blob Store" onClose={onClose} width={500}>
@@ -715,6 +733,16 @@ function CreateBlobStoreModal({ onClose }: { onClose: () => void }) {
           <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--holo-text-dim)', marginBottom: 4, display: 'block' }}>Quota (GB, optional)</label>
           <HoloInput type="number" min="0" step="0.1" value={quotaGB} onChange={e => setQuotaGB(e.target.value)} placeholder="Unlimited" />
         </div>
+        {testResult && (
+          <div style={{
+            padding: '8px 12px', borderRadius: 8, fontSize: 13,
+            background: testResult.ok ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)',
+            border: `1px solid ${testResult.ok ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`,
+            color: testResult.ok ? 'var(--holo-green)' : 'var(--holo-red)',
+          }}>
+            {testResult.ok ? 'Connection successful' : `Connection failed: ${testResult.error}`}
+          </div>
+        )}
         {err && (
           <div style={{ background: 'rgba(255,107,107,0.08)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, padding: '8px 12px', color: 'var(--holo-red)', fontSize: 13 }}>
             {err}
@@ -722,6 +750,9 @@ function CreateBlobStoreModal({ onClose }: { onClose: () => void }) {
         )}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
           <HoloButton onClick={onClose}>Cancel</HoloButton>
+          <HoloButton onClick={handleTest} disabled={testBusy || !name.trim()}>
+            {testBusy ? 'Testing…' : 'Test Connection'}
+          </HoloButton>
           <HoloButton variant="primary" disabled={!name.trim() || mut.isPending} onClick={() => { setErr(''); mut.mutate() }}>
             {mut.isPending ? 'Creating…' : 'Create'}
           </HoloButton>
