@@ -186,6 +186,9 @@ func (r *assetRepo) ListStale(ctx context.Context, format string, repoNames []st
 	// and retainNVersions as $2, then reuse $1 in the WHERE clause below.
 	var ctePrefix, cteExclude string
 	repoArgIdx := 0
+	// repoNames is always non-empty here when the service calls us (policies with no
+	// attached repos are skipped before reaching ListStale). The guard ensures we do
+	// not build a CTE that references an empty array.
 	if retainNVersions > 0 && len(repoNames) > 0 {
 		ctePrefix = fmt.Sprintf(`
 WITH retained_comps AS (

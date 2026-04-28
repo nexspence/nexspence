@@ -312,6 +312,7 @@ function PolicyModal({
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--holo-text-dim)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Retain N newest versions</label>
         <HoloInput type="number" min="0" value={form.retainNVersions} onChange={set('retainNVersions')} placeholder="0 = disabled" />
+        <span style={{ fontSize: 11, color: 'rgba(229,231,235,0.35)' }}>Keep the N most recent versions of each artifact even if they match other criteria.</span>
       </div>
 
       {err && <div style={{ fontSize: 12, color: 'var(--holo-red)', display: 'flex', gap: 6, alignItems: 'center' }}><AlertCircle size={13} />{err}</div>}

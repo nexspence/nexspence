@@ -350,7 +350,7 @@ type CleanupPolicy struct {
 	ScheduleCron    string         `json:"scheduleCron,omitempty"`
 	Enabled         bool           `json:"enabled"`
 	DryRun          bool           `json:"dryRun"`
-	RetainNVersions int            `json:"retainNVersions,omitempty"`
+	RetainNVersions int            `json:"retainNVersions"`
 	LastRunAt       *time.Time     `json:"lastRunAt,omitempty"`
 	LastRunFreed    int64          `json:"lastRunFreedBytes,omitempty"`
 	LastRunCount    int            `json:"lastRunCount,omitempty"`
