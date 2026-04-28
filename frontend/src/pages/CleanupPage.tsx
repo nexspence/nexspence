@@ -1,9 +1,15 @@
-import { useState } from 'react'
+import { type ChangeEvent, type CSSProperties, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Trash2, RefreshCw, Plus, Play, Pencil, X, Check, AlertCircle } from 'lucide-react'
+import { Trash2, RefreshCw, Plus, Play, Pencil, X, Check, AlertCircle, Folder, Search } from 'lucide-react'
 import { nexusApi } from '@/api/client'
+import type { CleanupPreviewResponse } from '@/api/client'
 import { Select } from '../components/Select'
 import { HoloButton, HoloInput, HoloModal, HoloPill, Wizard } from '@/components/holo'
+
+interface CleanupScope {
+  repositoryName?: string
+  pathPrefix?: string
+}
 
 interface CleanupPolicy {
   id: string
@@ -15,6 +21,7 @@ interface CleanupPolicy {
   enabled: boolean
   dryRun: boolean
   retainNVersions?: number
+  scope?: CleanupScope
   lastRunAt?: string
   lastRunFreedBytes?: number
   lastRunCount?: number
@@ -32,6 +39,8 @@ interface PolicyForm {
   nameGlob: string
   scheduleCron: string
   retainNVersions: string
+  scopeRepository: string
+  scopePath: string
 }
 
 const FORMATS = ['*', 'maven2', 'npm', 'docker', 'pypi', 'go', 'nuget', 'helm', 'raw', 'apt', 'yum', 'cargo', 'conan']
@@ -50,6 +59,8 @@ const emptyForm = (): PolicyForm => ({
   pathPrefix: '', nameGlob: '',
   scheduleCron: '',
   retainNVersions: '',
+  scopeRepository: '',
+  scopePath: '',
 })
 
 function fmtBytes(b: number) {
@@ -58,6 +69,211 @@ function fmtBytes(b: number) {
   if (b >= 1e3) return (b / 1e3).toFixed(1) + ' KB'
   return b + ' B'
 }
+
+// ── PathBrowserModal ───────────────────────────────────────────────────────────
+
+function PathBrowserModal({ repoName, current, onSelect, onClose }: {
+  repoName: string
+  current: string
+  onSelect: (path: string) => void
+  onClose: () => void
+}) {
+  const [selected, setSelected] = useState(current)
+  const [filter, setFilter] = useState('')
+
+  const { data, isLoading, isError } = useQuery<{ paths: string[] }>({
+    queryKey: ['pathTree', repoName],
+    queryFn: () => nexusApi.listPathTree(repoName).then(r => r.data),
+  })
+
+  const paths = data?.paths ?? []
+  const visible = filter.trim()
+    ? paths.filter(p => p.toLowerCase().includes(filter.toLowerCase()))
+    : paths
+
+  return (
+    <HoloModal open={true} onClose={onClose} style={{ minWidth: 480, maxWidth: 640 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <h2 style={{ fontSize: 15, fontWeight: 700, color: 'var(--holo-text)', margin: 0 }}>
+          Browse — {repoName}
+        </h2>
+        <HoloButton onClick={onClose} style={{ padding: 4 }}><X size={15} /></HoloButton>
+      </div>
+
+      <div style={{ position: 'relative' }}>
+        <Search size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--holo-text-faint)', pointerEvents: 'none' }} />
+        <HoloInput
+          value={filter}
+          onChange={e => setFilter(e.target.value)}
+          placeholder="Filter paths…"
+          style={{ width: '100%', boxSizing: 'border-box', paddingLeft: 30 }}
+          autoFocus
+        />
+      </div>
+
+      <div style={{ maxHeight: 320, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
+        {isLoading && (
+          <div style={{ color: 'var(--holo-text-faint)', fontSize: 13, padding: '12px 0', textAlign: 'center' }}>Loading…</div>
+        )}
+        {isError && (
+          <div style={{ color: 'var(--holo-red)', fontSize: 12, padding: 8 }}>Failed to load path tree.</div>
+        )}
+        {!isLoading && !isError && visible.length === 0 && (
+          <div style={{ color: 'var(--holo-text-faint)', fontSize: 13, padding: '12px 0', textAlign: 'center' }}>No paths found.</div>
+        )}
+        {visible.map(path => (
+          <div
+            key={path}
+            onClick={() => setSelected(path)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              padding: '7px 10px', borderRadius: 8, cursor: 'pointer',
+              fontSize: 12, fontFamily: 'monospace',
+              color: selected === path ? 'var(--holo-b)' : 'var(--holo-text)',
+              background: selected === path ? 'rgba(34,211,238,0.10)' : 'transparent',
+              border: selected === path ? '1px solid rgba(34,211,238,0.25)' : '1px solid transparent',
+              transition: 'background 0.1s',
+            }}
+            onMouseEnter={e => { if (selected !== path) (e.currentTarget as HTMLDivElement).style.background = 'rgba(255,255,255,0.04)' }}
+            onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = selected === path ? 'rgba(34,211,238,0.10)' : 'transparent' }}
+          >
+            <Folder size={13} style={{ color: 'var(--holo-text-faint)', flexShrink: 0 }} />
+            {path}
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+        <HoloButton onClick={onClose}>Cancel</HoloButton>
+        <HoloButton
+          variant="primary"
+          disabled={!selected}
+          onClick={() => { onSelect(selected); onClose() }}
+        >
+          Select {selected ? `"${selected}"` : ''}
+        </HoloButton>
+      </div>
+    </HoloModal>
+  )
+}
+
+// ── PreviewModal ───────────────────────────────────────────────────────────────
+
+function PreviewModal({ policyId, policyName, onClose, onRun }: {
+  policyId: string
+  policyName: string
+  onClose: () => void
+  onRun: () => void
+}) {
+  const { data, isLoading, isError, error } = useQuery<CleanupPreviewResponse>({
+    queryKey: ['cleanupPreview', policyId],
+    queryFn: () => nexusApi.previewCleanupPolicy(policyId).then(r => r.data),
+  })
+
+  return (
+    <HoloModal open={true} onClose={onClose} style={{ minWidth: 640, maxWidth: '90vw' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <h2 style={{ fontSize: 17, fontWeight: 700, color: 'var(--holo-text)', margin: '0 0 2px' }}>
+            Dry Run Preview
+          </h2>
+          <div style={{ fontSize: 12, color: 'var(--holo-text-faint)' }}>
+            Policy: {policyName} · no actual deletes
+          </div>
+        </div>
+        <HoloButton onClick={onClose} style={{ padding: 4 }}><X size={15} /></HoloButton>
+      </div>
+
+      {isLoading && (
+        <div style={{ color: 'var(--holo-text-faint)', fontSize: 13, textAlign: 'center', padding: '24px 0' }}>
+          Computing preview…
+        </div>
+      )}
+
+      {isError && (
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 12, color: 'var(--holo-red)', background: 'rgba(255,107,107,0.08)', border: '1px solid rgba(255,107,107,0.25)', borderRadius: 8, padding: '10px 14px' }}>
+          <AlertCircle size={14} />
+          {(error as any)?.response?.data?.error ?? 'Preview failed'}
+        </div>
+      )}
+
+      {data && data.totalCount === 0 && (
+        <div style={{ color: 'var(--holo-text-faint)', fontSize: 13, textAlign: 'center', padding: '24px 0' }}>
+          Nothing matches the policy criteria.
+        </div>
+      )}
+
+      {data && data.totalCount > 0 && (
+        <>
+          {/* Stats row */}
+          <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+            <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--holo-red)' }}>
+              {data.totalCount} assets to delete
+            </span>
+            <span style={{ color: 'var(--holo-text-faint)', fontSize: 12 }}>·</span>
+            <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--holo-green)' }}>
+              {fmtBytes(data.totalBytes)} to free
+            </span>
+          </div>
+
+          {/* Table */}
+          <div style={{ overflowX: 'auto', maxHeight: 360, overflowY: 'auto' }}>
+            <table className="holo-table" style={{ width: '100%' }}>
+              <thead>
+                <tr>
+                  <th>Path</th>
+                  <th>Repository</th>
+                  <th>Size</th>
+                  <th>Last downloaded</th>
+                  <th>Created</th>
+                  <th>Reason</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.assets.map((a, i) => (
+                  <tr key={i}>
+                    <td style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--holo-b)', maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {a.path}
+                    </td>
+                    <td style={{ fontSize: 12, color: 'var(--holo-text-dim)' }}>{a.repository}</td>
+                    <td style={{ fontSize: 12, color: 'var(--holo-amber)', whiteSpace: 'nowrap' }}>{fmtBytes(a.sizeBytes)}</td>
+                    <td>
+                      {a.lastDownloaded
+                        ? <span style={{ fontSize: 11, color: 'var(--holo-text-faint)' }}>{new Date(a.lastDownloaded).toLocaleDateString()}</span>
+                        : <HoloPill tone="danger" style={{ fontSize: 10 }}>never</HoloPill>
+                      }
+                    </td>
+                    <td style={{ fontSize: 11, color: 'var(--holo-text-faint)', whiteSpace: 'nowrap' }}>
+                      {new Date(a.createdAt).toLocaleDateString()}
+                    </td>
+                    <td style={{ fontSize: 11, color: 'var(--holo-text-dim)' }}>{a.reason}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div style={{ fontSize: 11, color: 'var(--holo-text-faint)' }}>
+            Showing {data.assets.length} of {data.totalCount} · No actual deletes occurred
+          </div>
+        </>
+      )}
+
+      <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+        <HoloButton onClick={onClose}>Close</HoloButton>
+        <HoloButton
+          variant="primary"
+          icon={<Play size={13} />}
+          onClick={() => { onRun(); onClose() }}
+        >
+          Run for real
+        </HoloButton>
+      </div>
+    </HoloModal>
+  )
+}
+
+// ── PolicyModal ────────────────────────────────────────────────────────────────
 
 function PolicyModal({
   initial, onClose, onSaved,
@@ -76,11 +292,22 @@ function PolicyModal({
       nameGlob: String(initial.criteria?.nameGlob ?? ''),
       scheduleCron: initial.scheduleCron ?? '',
       retainNVersions: String(initial.retainNVersions ?? ''),
+      scopeRepository: initial.scope?.repositoryName ?? '',
+      scopePath: initial.scope?.pathPrefix ?? '',
     }
   })
   const [err, setErr] = useState('')
   const [wizardError, setWizardError] = useState('')
   const [wizardLoading, setWizardLoading] = useState(false)
+  const [showBrowser, setShowBrowser] = useState(false)
+
+  // Fetch repos for scope picker (only when format is not '*')
+  const { data: reposData } = useQuery<{ name: string; format: string }[]>({
+    queryKey: ['repositories'],
+    queryFn: () => nexusApi.listRepositories().then(r => r.data),
+    enabled: form.format !== '*',
+  })
+  const filteredRepos = (reposData ?? []).filter(r => r.format === form.format)
 
   const payload = () => ({
     name: form.name.trim(),
@@ -95,6 +322,10 @@ function PolicyModal({
       ...(form.artifactAgeDays ? { artifactAgeDays: Number(form.artifactAgeDays) } : {}),
       ...(form.pathPrefix.trim() ? { pathPrefix: form.pathPrefix.trim() } : {}),
       ...(form.nameGlob.trim() ? { nameGlob: form.nameGlob.trim() } : {}),
+    },
+    scope: {
+      ...(form.scopeRepository ? { repositoryName: form.scopeRepository } : {}),
+      ...(form.scopePath ? { pathPrefix: form.scopePath } : {}),
     },
   })
 
@@ -113,13 +344,107 @@ function PolicyModal({
     }
   }
 
-  const set = (k: keyof PolicyForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+  const set = (k: keyof PolicyForm) => (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setForm(f => ({ ...f, [k]: e.target.value }))
+
+  const LABEL = { fontSize: 12, fontWeight: 600 as const, color: 'var(--holo-text-dim)', textTransform: 'uppercase' as const, letterSpacing: '0.04em' }
+
+  // Scope section — shared between wizard and edit modal
+  const scopeSection = form.format !== '*' ? (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {/* Divider */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
+        <div style={{ flex: 1, height: 1, background: 'rgba(124,92,255,0.2)' }} />
+        <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--holo-text-faint)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Scope</span>
+        <div style={{ flex: 1, height: 1, background: 'rgba(124,92,255,0.2)' }} />
+      </div>
+
+      {/* Repository picker */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <label style={LABEL}>Target repository</label>
+        <Select
+          options={[
+            { value: '', label: '— All repositories —' },
+            ...filteredRepos.map(r => ({
+              value: r.name,
+              label: r.name,
+              badge: (
+                <span style={{ width: 7, height: 7, borderRadius: '50%', background: FORMAT_COLOR[form.format] ?? '#6b7280', flexShrink: 0, display: 'inline-block' }} />
+              ),
+            })),
+          ]}
+          value={form.scopeRepository}
+          onChange={v => setForm(f => ({ ...f, scopeRepository: v, scopePath: v ? f.scopePath : '' }))}
+        />
+        {form.scopeRepository && (
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 2 }}>
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: 5,
+              fontSize: 11, padding: '2px 8px', borderRadius: 999,
+              background: (FORMAT_COLOR[form.format] ?? '#6b7280') + '22',
+              color: FORMAT_COLOR[form.format] ?? '#6b7280',
+              border: `1px solid ${FORMAT_COLOR[form.format] ?? '#6b7280'}44`,
+            }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: FORMAT_COLOR[form.format] ?? '#6b7280', display: 'inline-block' }} />
+              {form.scopeRepository}
+              <button
+                type="button"
+                onClick={() => setForm(f => ({ ...f, scopeRepository: '', scopePath: '' }))}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: 'inherit', display: 'flex', alignItems: 'center', marginLeft: 2 }}
+              >
+                <X size={10} />
+              </button>
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Path input + Browse button */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <label style={LABEL}>Path prefix</label>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <HoloInput
+            value={form.scopePath}
+            onChange={set('scopePath')}
+            placeholder="e.g. /releases/ (leave empty for all paths)"
+            disabled={!form.scopeRepository}
+            style={{ flex: 1 }}
+          />
+          <HoloButton
+            onClick={() => setShowBrowser(true)}
+            disabled={!form.scopeRepository}
+            title="Browse repository paths"
+          >
+            Browse…
+          </HoloButton>
+        </div>
+        <span style={{ fontSize: 11, color: 'rgba(229,231,235,0.35)' }}>
+          Leave empty to match all paths in the repository.
+        </span>
+      </div>
+
+      {/* Info banner */}
+      {form.scopeRepository && form.scopePath && (
+        <div style={{
+          display: 'flex', alignItems: 'flex-start', gap: 8,
+          fontSize: 12, color: 'var(--holo-b)',
+          background: 'rgba(34,211,238,0.08)',
+          border: '1px solid rgba(34,211,238,0.22)',
+          borderRadius: 8, padding: '9px 12px',
+        }}>
+          <span style={{ fontSize: 14, flexShrink: 0 }}>ℹ</span>
+          <span>
+            This policy will target <strong>{form.scopeRepository}</strong> at path{' '}
+            <code style={{ fontFamily: 'monospace', fontSize: 11 }}>{form.scopePath}</code>{' '}
+            and all sub-paths.
+          </span>
+        </div>
+      )}
+    </div>
+  ) : null
 
   // ── Create mode: stepped wizard ───────────────────────────────────────
   if (!initial) {
-    const LABEL = { fontSize: 12, fontWeight: 600 as const, color: 'var(--holo-text-dim)', textTransform: 'uppercase' as const, letterSpacing: '0.04em' }
-
     const validateStep = (stepIdx: number): boolean => {
       setWizardError('')
       if (stepIdx === 0 && !form.name.trim()) {
@@ -159,35 +484,38 @@ function PolicyModal({
           <Select
             options={FORMATS.map(f => ({ value: f, label: f === '*' ? 'All formats' : f }))}
             value={form.format}
-            onChange={v => setForm(f => ({ ...f, format: v }))}
+            onChange={v => setForm(f => ({ ...f, format: v, scopeRepository: '', scopePath: '' }))}
           />
         </div>
       </div>
     )
 
     const wizStep2 = (
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <label style={LABEL}>Not downloaded for (days)</label>
-          <HoloInput type="number" min="1" value={form.lastDownloadedDays} onChange={set('lastDownloadedDays')} placeholder="e.g. 30" />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <label style={LABEL}>Not downloaded for (days)</label>
+            <HoloInput type="number" min="1" value={form.lastDownloadedDays} onChange={set('lastDownloadedDays')} placeholder="e.g. 30" style={{ MozAppearance: 'textfield' } as CSSProperties} />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <label style={LABEL}>Artifact age (days)</label>
+            <HoloInput type="number" min="1" value={form.artifactAgeDays} onChange={set('artifactAgeDays')} placeholder="e.g. 90" style={{ MozAppearance: 'textfield' } as CSSProperties} />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <label style={LABEL}>Path prefix</label>
+            <HoloInput value={form.pathPrefix} onChange={set('pathPrefix')} placeholder="e.g. /releases/" />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <label style={LABEL}>Name glob</label>
+            <HoloInput value={form.nameGlob} onChange={set('nameGlob')} placeholder="e.g. *-SNAPSHOT*" />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, gridColumn: '1 / -1' }}>
+            <label style={LABEL}>Retain N newest versions</label>
+            <HoloInput type="number" min="0" value={form.retainNVersions} onChange={set('retainNVersions')} placeholder="e.g. 3 (0 = disabled)" style={{ MozAppearance: 'textfield' } as CSSProperties} />
+            <span style={{ fontSize: 11, color: 'rgba(229,231,235,0.35)' }}>Keep the N most recent versions of each artifact even if they match other criteria.</span>
+          </div>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <label style={LABEL}>Artifact age (days)</label>
-          <HoloInput type="number" min="1" value={form.artifactAgeDays} onChange={set('artifactAgeDays')} placeholder="e.g. 90" />
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <label style={LABEL}>Path prefix</label>
-          <HoloInput value={form.pathPrefix} onChange={set('pathPrefix')} placeholder="e.g. /releases/" />
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <label style={LABEL}>Name glob</label>
-          <HoloInput value={form.nameGlob} onChange={set('nameGlob')} placeholder="e.g. *-SNAPSHOT*" />
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, gridColumn: '1 / -1' }}>
-          <label style={LABEL}>Retain N newest versions</label>
-          <HoloInput type="number" min="0" value={form.retainNVersions} onChange={set('retainNVersions')} placeholder="e.g. 3 (0 = disabled)" />
-          <span style={{ fontSize: 11, color: 'rgba(229,231,235,0.35)' }}>Keep the N most recent versions of each artifact even if they match other criteria.</span>
-        </div>
+        {scopeSection}
       </div>
     )
 
@@ -213,122 +541,148 @@ function PolicyModal({
     )
 
     return (
-      <Wizard
-        steps={[
-          { label: 'Identity', content: wizStep1 },
-          { label: 'Criteria', content: wizStep2 },
-          { label: 'Schedule', content: wizStep3 },
-        ]}
-        onFinish={handleFinish}
-        finishLabel="Create Policy"
-        onValidateStep={validateStep}
-        onClose={onClose}
-        loading={wizardLoading}
-        error={wizardError}
-      />
+      <>
+        {showBrowser && form.scopeRepository && (
+          <PathBrowserModal
+            repoName={form.scopeRepository}
+            current={form.scopePath}
+            onSelect={path => setForm(f => ({ ...f, scopePath: path }))}
+            onClose={() => setShowBrowser(false)}
+          />
+        )}
+        <Wizard
+          steps={[
+            { label: 'Identity', content: wizStep1 },
+            { label: 'Criteria', content: wizStep2 },
+            { label: 'Schedule', content: wizStep3 },
+          ]}
+          onFinish={handleFinish}
+          finishLabel="Create Policy"
+          onValidateStep={validateStep}
+          onClose={onClose}
+          loading={wizardLoading}
+          error={wizardError}
+        />
+      </>
     )
   }
 
+  // ── Edit mode: flat modal ─────────────────────────────────────────────
   return (
-    <HoloModal open={true} onClose={onClose}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h2 style={{ fontSize: 17, fontWeight: 700, color: 'var(--holo-text)', margin: 0 }}>
-          {initial ? 'Edit Policy' : 'New Cleanup Policy'}
-        </h2>
-        <HoloButton onClick={onClose} style={{ padding: 4 }}><X size={15} /></HoloButton>
-      </div>
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--holo-text-dim)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Name *</label>
-        <HoloInput value={form.name} onChange={set('name')} placeholder="e.g. delete-old-snapshots" />
-      </div>
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--holo-text-dim)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Description</label>
-        <HoloInput value={form.description} onChange={set('description')} placeholder="Optional description" />
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--holo-text-dim)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Format</label>
-          <Select
-            options={FORMATS.map(f => ({ value: f, label: f === '*' ? 'All formats' : f }))}
-            value={form.format}
-            onChange={v => setForm(f => ({ ...f, format: v }))}
-          />
+    <>
+      {showBrowser && form.scopeRepository && (
+        <PathBrowserModal
+          repoName={form.scopeRepository}
+          current={form.scopePath}
+          onSelect={path => setForm(f => ({ ...f, scopePath: path }))}
+          onClose={() => setShowBrowser(false)}
+        />
+      )}
+      <HoloModal open={true} onClose={onClose}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h2 style={{ fontSize: 17, fontWeight: 700, color: 'var(--holo-text)', margin: 0 }}>
+            Edit Policy
+          </h2>
+          <HoloButton onClick={onClose} style={{ padding: 4 }}><X size={15} /></HoloButton>
         </div>
+
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--holo-text-dim)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Options</label>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 4 }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--holo-text-dim)', cursor: 'pointer' }}>
-              <input type="checkbox" checked={form.enabled}
-                onChange={e => setForm(f => ({ ...f, enabled: e.target.checked }))} />
-              Enabled
-            </label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--holo-text-dim)', cursor: 'pointer' }}>
-              <input type="checkbox" checked={form.dryRun}
-                onChange={e => setForm(f => ({ ...f, dryRun: e.target.checked }))} />
-              Dry run (no deletes)
-            </label>
+          <label style={LABEL}>Name *</label>
+          <HoloInput value={form.name} onChange={set('name')} placeholder="e.g. delete-old-snapshots" />
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <label style={LABEL}>Description</label>
+          <HoloInput value={form.description} onChange={set('description')} placeholder="Optional description" />
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <label style={LABEL}>Format</label>
+            <Select
+              options={FORMATS.map(f => ({ value: f, label: f === '*' ? 'All formats' : f }))}
+              value={form.format}
+              onChange={v => setForm(f => ({ ...f, format: v, scopeRepository: '', scopePath: '' }))}
+            />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <label style={LABEL}>Options</label>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 4 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--holo-text-dim)', cursor: 'pointer' }}>
+                <input type="checkbox" checked={form.enabled}
+                  onChange={e => setForm(f => ({ ...f, enabled: e.target.checked }))} />
+                Enabled
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--holo-text-dim)', cursor: 'pointer' }}>
+                <input type="checkbox" checked={form.dryRun}
+                  onChange={e => setForm(f => ({ ...f, dryRun: e.target.checked }))} />
+                Dry run (no deletes)
+              </label>
+            </div>
           </div>
         </div>
-      </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--holo-text-dim)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Schedule (cron)</label>
-        <HoloInput value={form.scheduleCron} onChange={set('scheduleCron')}
-          placeholder="e.g. 0 2 * * * (default: every 6 hours)" />
-        <span style={{ fontSize: 11, color: 'rgba(229,231,235,0.35)' }}>
-          Leave blank to use the global default schedule. Format: minute hour day month weekday
-        </span>
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--holo-text-dim)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Not downloaded for (days)</label>
-          <HoloInput type="number" min="1" value={form.lastDownloadedDays}
-            onChange={set('lastDownloadedDays')} placeholder="e.g. 30" />
+          <label style={LABEL}>Schedule (cron)</label>
+          <HoloInput value={form.scheduleCron} onChange={set('scheduleCron')}
+            placeholder="e.g. 0 2 * * * (default: every 6 hours)" />
+          <span style={{ fontSize: 11, color: 'rgba(229,231,235,0.35)' }}>
+            Leave blank to use the global default schedule. Format: minute hour day month weekday
+          </span>
         </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <label style={LABEL}>Not downloaded for (days)</label>
+            <HoloInput type="number" min="1" value={form.lastDownloadedDays}
+              onChange={set('lastDownloadedDays')} placeholder="e.g. 30" style={{ MozAppearance: 'textfield' } as CSSProperties} />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <label style={LABEL}>Artifact age (days)</label>
+            <HoloInput type="number" min="1" value={form.artifactAgeDays}
+              onChange={set('artifactAgeDays')} placeholder="e.g. 90" style={{ MozAppearance: 'textfield' } as CSSProperties} />
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <label style={LABEL}>Path prefix</label>
+            <HoloInput value={form.pathPrefix}
+              onChange={set('pathPrefix')} placeholder="e.g. com/example/" />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <label style={LABEL}>Name glob</label>
+            <HoloInput value={form.nameGlob}
+              onChange={set('nameGlob')} placeholder="e.g. *.jar or *-SNAPSHOT*" />
+          </div>
+        </div>
+
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--holo-text-dim)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Artifact age (days)</label>
-          <HoloInput type="number" min="1" value={form.artifactAgeDays}
-            onChange={set('artifactAgeDays')} placeholder="e.g. 90" />
+          <label style={LABEL}>Retain N newest versions</label>
+          <HoloInput type="number" min="0" value={form.retainNVersions} onChange={set('retainNVersions')} placeholder="0 = disabled" style={{ MozAppearance: 'textfield' } as CSSProperties} />
+          <span style={{ fontSize: 11, color: 'rgba(229,231,235,0.35)' }}>Keep the N most recent versions of each artifact even if they match other criteria.</span>
         </div>
-      </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--holo-text-dim)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Path prefix</label>
-          <HoloInput value={form.pathPrefix}
-            onChange={set('pathPrefix')} placeholder="e.g. com/example/" />
+        {scopeSection}
+
+        {err && <div style={{ fontSize: 12, color: 'var(--holo-red)', display: 'flex', gap: 6, alignItems: 'center' }}><AlertCircle size={13} />{err}</div>}
+
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+          <HoloButton onClick={onClose}>Cancel</HoloButton>
+          <HoloButton variant="primary" onClick={handleSave} icon={<Check size={14} />}>Save changes</HoloButton>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--holo-text-dim)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Name glob</label>
-          <HoloInput value={form.nameGlob}
-            onChange={set('nameGlob')} placeholder="e.g. *.jar or *-SNAPSHOT*" />
-        </div>
-      </div>
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--holo-text-dim)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Retain N newest versions</label>
-        <HoloInput type="number" min="0" value={form.retainNVersions} onChange={set('retainNVersions')} placeholder="0 = disabled" />
-        <span style={{ fontSize: 11, color: 'rgba(229,231,235,0.35)' }}>Keep the N most recent versions of each artifact even if they match other criteria.</span>
-      </div>
-
-      {err && <div style={{ fontSize: 12, color: 'var(--holo-red)', display: 'flex', gap: 6, alignItems: 'center' }}><AlertCircle size={13} />{err}</div>}
-
-      <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-        <HoloButton onClick={onClose}>Cancel</HoloButton>
-        <HoloButton variant="primary" onClick={handleSave} icon={<Check size={14} />}>{initial ? 'Save changes' : 'Create policy'}</HoloButton>
-      </div>
-    </HoloModal>
+      </HoloModal>
+    </>
   )
 }
+
+// ── Page ───────────────────────────────────────────────────────────────────────
 
 export default function CleanupPage() {
   const qc = useQueryClient()
   const [modal, setModal] = useState<'create' | CleanupPolicy | null>(null)
   const [running, setRunning] = useState<string | null>(null)
+  const [previewId, setPreviewId] = useState<string | null>(null)
 
   const { data: policies = [], isLoading, refetch } = useQuery<CleanupPolicy[]>({
     queryKey: ['cleanupPolicies'],
@@ -348,6 +702,8 @@ export default function CleanupPage() {
     } catch { setRunning(null) }
   }
 
+  const previewPolicy = previewId ? policies.find(p => p.id === previewId) : null
+
   return (
     <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 20 }}>
       {(modal !== null) && (
@@ -355,6 +711,15 @@ export default function CleanupPage() {
           initial={modal === 'create' ? null : modal}
           onClose={() => setModal(null)}
           onSaved={() => qc.invalidateQueries({ queryKey: ['cleanupPolicies'] })}
+        />
+      )}
+
+      {previewId && previewPolicy && (
+        <PreviewModal
+          policyId={previewId}
+          policyName={previewPolicy.name}
+          onClose={() => setPreviewId(null)}
+          onRun={() => { handleRun(previewId); setPreviewId(null) }}
         />
       )}
 
@@ -442,6 +807,16 @@ export default function CleanupPage() {
                     )) : (
                       <span style={{ fontSize: 11, color: 'var(--holo-text-faint)' }}>{p.description || 'No criteria'}</span>
                     )}
+                    {p.scope?.repositoryName && (
+                      <span style={{
+                        fontSize: 10, padding: '1px 6px', borderRadius: 4,
+                        background: 'rgba(34,211,238,0.10)', color: 'var(--holo-b)',
+                        border: '1px solid rgba(34,211,238,0.25)',
+                        fontFamily: 'monospace', whiteSpace: 'nowrap',
+                      }}>
+                        {p.scope.repositoryName}{p.scope.pathPrefix ? ` / ${p.scope.pathPrefix}` : ''}
+                      </span>
+                    )}
                     {p.description && criteria.length > 0 && (
                       <span style={{ fontSize: 11, color: 'var(--holo-text-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.description}</span>
                     )}
@@ -460,6 +835,11 @@ export default function CleanupPage() {
 
                 {/* Actions */}
                 <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                  <HoloButton
+                    style={{ background: 'rgba(34,211,238,0.08)', border: '1px solid rgba(34,211,238,0.22)', color: 'var(--holo-b)', padding: '4px 8px' }}
+                    onClick={() => setPreviewId(p.id)}
+                    title="Dry run preview"
+                  >Preview</HoloButton>
                   <HoloButton
                     style={{ background: 'rgba(94,255,184,0.1)', border: '1px solid rgba(94,255,184,0.25)', color: 'var(--holo-green)', padding: '4px 8px' }}
                     icon={<Play size={12} />}

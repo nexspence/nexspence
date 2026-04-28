@@ -162,9 +162,18 @@ func (s *CleanupService) runPolicy(ctx context.Context, p domain.CleanupPolicy) 
 		return nil
 	}
 
-	repoNames, err := s.repos.ListNamesByCleanupPolicyID(ctx, p.ID)
-	if err != nil {
-		return fmt.Errorf("cleanup: list repos for policy: %w", err)
+	var repoNames []string
+	var err error
+	if p.Scope.RepositoryName != "" {
+		repoNames = []string{p.Scope.RepositoryName}
+		if p.Scope.PathPrefix != "" {
+			pathPrefix = p.Scope.PathPrefix
+		}
+	} else {
+		repoNames, err = s.repos.ListNamesByCleanupPolicyID(ctx, p.ID)
+		if err != nil {
+			return fmt.Errorf("cleanup: list repos for policy: %w", err)
+		}
 	}
 	if len(repoNames) == 0 {
 		s.log.Info("cleanup: policy not attached to any repository (set cleanup policies on repositories), skipping", "policy", p.Name)
@@ -219,6 +228,68 @@ func (s *CleanupService) runPolicy(ctx context.Context, p domain.CleanupPolicy) 
 		"freed_bytes", freed,
 		"dry_run", p.DryRun)
 	return nil
+}
+
+// PreviewPolicy loads stale assets for a policy (limit 200) without deleting them.
+func (s *CleanupService) PreviewPolicy(ctx context.Context, id string) (*domain.CleanupPreviewResult, error) {
+	p, err := s.policies.Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if p == nil {
+		return nil, fmt.Errorf("cleanup policy %q not found", id)
+	}
+
+	lastDownloadedDays := intCriteria(p.Criteria, "lastDownloadedDays")
+	artifactAgeDays := intCriteria(p.Criteria, "artifactAgeDays")
+	pathPrefix := strCriteria(p.Criteria, "pathPrefix")
+	nameGlob := strCriteria(p.Criteria, "nameGlob")
+
+	var repoNames []string
+	if p.Scope.RepositoryName != "" {
+		repoNames = []string{p.Scope.RepositoryName}
+		if p.Scope.PathPrefix != "" {
+			pathPrefix = p.Scope.PathPrefix
+		}
+	} else {
+		repoNames, err = s.repos.ListNamesByCleanupPolicyID(ctx, p.ID)
+		if err != nil {
+			return nil, fmt.Errorf("cleanup: list repos for policy: %w", err)
+		}
+	}
+
+	var reason string
+	switch {
+	case lastDownloadedDays > 0:
+		reason = fmt.Sprintf("not dl %dd", lastDownloadedDays)
+	case artifactAgeDays > 0:
+		reason = fmt.Sprintf("age %dd", artifactAgeDays)
+	default:
+		reason = "stale"
+	}
+
+	const previewLimit = 200
+	stale, err := s.assets.ListStale(ctx, p.Format, repoNames, lastDownloadedDays, artifactAgeDays, pathPrefix, nameGlob, p.RetainNVersions, previewLimit)
+	if err != nil {
+		return nil, fmt.Errorf("cleanup: list stale assets: %w", err)
+	}
+
+	result := &domain.CleanupPreviewResult{
+		Assets: make([]domain.CleanupPreviewAsset, 0, len(stale)),
+	}
+	for _, a := range stale {
+		result.Assets = append(result.Assets, domain.CleanupPreviewAsset{
+			Path:           a.Path,
+			Repository:     a.Repository,
+			SizeBytes:      a.SizeBytes,
+			LastDownloaded: a.LastDownloaded,
+			CreatedAt:      a.CreatedAt,
+			Reason:         reason,
+		})
+		result.TotalBytes += a.SizeBytes
+	}
+	result.TotalCount = len(result.Assets)
+	return result, nil
 }
 
 func strCriteria(m map[string]any, key string) string {

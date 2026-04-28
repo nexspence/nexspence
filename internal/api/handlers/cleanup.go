@@ -14,6 +14,7 @@ type cleanupRunner interface {
 	RunPolicy(ctx context.Context, id string) error
 	RunAll(ctx context.Context) error
 	ReloadPolicy(ctx context.Context, id string)
+	PreviewPolicy(ctx context.Context, id string) (*domain.CleanupPreviewResult, error)
 }
 
 type CleanupHandler struct {
@@ -124,4 +125,14 @@ func (h *CleanupHandler) Run(c *gin.Context) {
 	}
 	go func() { _ = h.runner.RunPolicy(context.Background(), id) }()
 	c.JSON(http.StatusAccepted, gin.H{"status": "running", "id": id})
+}
+
+// Preview POST /api/v1/cleanup-policies/:id/preview — dry-run preview (no deletes)
+func (h *CleanupHandler) Preview(c *gin.Context) {
+	result, err := h.runner.PreviewPolicy(c.Request.Context(), c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, result)
 }

@@ -20,7 +20,7 @@ func (r *CleanupPolicyRepo) List(ctx context.Context) ([]domain.CleanupPolicy, e
 		SELECT id, name, description, format, criteria, COALESCE(schedule_cron,''),
 		       enabled, dry_run, COALESCE(retain_n_versions,0),
 		       last_run_at, COALESCE(last_run_freed,0), COALESCE(last_run_count,0),
-		       created_at, updated_at
+		       created_at, updated_at, COALESCE(scope,'{}')
 		FROM cleanup_policies ORDER BY name`)
 	if err != nil {
 		return nil, err
@@ -30,15 +30,17 @@ func (r *CleanupPolicyRepo) List(ctx context.Context) ([]domain.CleanupPolicy, e
 	for rows.Next() {
 		var p domain.CleanupPolicy
 		var criteriaJSON []byte
+		var scopeJSON []byte
 		if err := rows.Scan(
 			&p.ID, &p.Name, &p.Description, &p.Format, &criteriaJSON,
 			&p.ScheduleCron, &p.Enabled, &p.DryRun, &p.RetainNVersions,
 			&p.LastRunAt, &p.LastRunFreed, &p.LastRunCount,
-			&p.CreatedAt, &p.UpdatedAt,
+			&p.CreatedAt, &p.UpdatedAt, &scopeJSON,
 		); err != nil {
 			return nil, err
 		}
 		_ = json.Unmarshal(criteriaJSON, &p.Criteria)
+		_ = json.Unmarshal(scopeJSON, &p.Scope)
 		out = append(out, p)
 	}
 	return out, rows.Err()
@@ -47,43 +49,47 @@ func (r *CleanupPolicyRepo) List(ctx context.Context) ([]domain.CleanupPolicy, e
 func (r *CleanupPolicyRepo) Get(ctx context.Context, id string) (*domain.CleanupPolicy, error) {
 	var p domain.CleanupPolicy
 	var criteriaJSON []byte
+	var scopeJSON []byte
 	err := r.pool.QueryRow(ctx, `
 		SELECT id, name, description, format, criteria, COALESCE(schedule_cron,''),
 		       enabled, dry_run, COALESCE(retain_n_versions,0),
 		       last_run_at, COALESCE(last_run_freed,0), COALESCE(last_run_count,0),
-		       created_at, updated_at
+		       created_at, updated_at, COALESCE(scope,'{}')
 		FROM cleanup_policies WHERE id=$1`, id).
 		Scan(&p.ID, &p.Name, &p.Description, &p.Format, &criteriaJSON,
 			&p.ScheduleCron, &p.Enabled, &p.DryRun, &p.RetainNVersions,
 			&p.LastRunAt, &p.LastRunFreed, &p.LastRunCount,
-			&p.CreatedAt, &p.UpdatedAt)
+			&p.CreatedAt, &p.UpdatedAt, &scopeJSON)
 	if err != nil {
 		return nil, err
 	}
 	_ = json.Unmarshal(criteriaJSON, &p.Criteria)
+	_ = json.Unmarshal(scopeJSON, &p.Scope)
 	return &p, nil
 }
 
 func (r *CleanupPolicyRepo) Create(ctx context.Context, p *domain.CleanupPolicy) error {
 	criteriaJSON, _ := json.Marshal(p.Criteria)
+	scopeJSON, _ := json.Marshal(p.Scope)
 	return r.pool.QueryRow(ctx, `
-		INSERT INTO cleanup_policies (name, description, format, criteria, schedule_cron, enabled, dry_run, retain_n_versions)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+		INSERT INTO cleanup_policies (name, description, format, criteria, schedule_cron, enabled, dry_run, retain_n_versions, scope)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
 		RETURNING id, created_at, updated_at`,
 		p.Name, p.Description, p.Format, criteriaJSON,
-		p.ScheduleCron, p.Enabled, p.DryRun, p.RetainNVersions,
+		p.ScheduleCron, p.Enabled, p.DryRun, p.RetainNVersions, scopeJSON,
 	).Scan(&p.ID, &p.CreatedAt, &p.UpdatedAt)
 }
 
 func (r *CleanupPolicyRepo) Update(ctx context.Context, p *domain.CleanupPolicy) error {
 	criteriaJSON, _ := json.Marshal(p.Criteria)
+	scopeJSON, _ := json.Marshal(p.Scope)
 	tag, err := r.pool.Exec(ctx, `
 		UPDATE cleanup_policies
 		SET name=$1, description=$2, format=$3, criteria=$4,
-		    schedule_cron=$5, enabled=$6, dry_run=$7, retain_n_versions=$8, updated_at=NOW()
-		WHERE id=$9`,
+		    schedule_cron=$5, enabled=$6, dry_run=$7, retain_n_versions=$8, scope=$9, updated_at=NOW()
+		WHERE id=$10`,
 		p.Name, p.Description, p.Format, criteriaJSON,
-		p.ScheduleCron, p.Enabled, p.DryRun, p.RetainNVersions, p.ID)
+		p.ScheduleCron, p.Enabled, p.DryRun, p.RetainNVersions, scopeJSON, p.ID)
 	if err != nil {
 		return err
 	}

@@ -341,6 +341,12 @@ type Privilege struct {
 
 // ── Cleanup Policy ───────────────────────────────────────────
 
+// CleanupScope optionally narrows a policy to a specific repository and/or path prefix.
+type CleanupScope struct {
+	RepositoryName string `json:"repositoryName,omitempty"`
+	PathPrefix     string `json:"pathPrefix,omitempty"`
+}
+
 type CleanupPolicy struct {
 	ID              string         `json:"id"`
 	Name            string         `json:"name"`
@@ -351,11 +357,29 @@ type CleanupPolicy struct {
 	Enabled         bool           `json:"enabled"`
 	DryRun          bool           `json:"dryRun"`
 	RetainNVersions int            `json:"retainNVersions"`
+	Scope           CleanupScope   `json:"scope"`
 	LastRunAt       *time.Time     `json:"lastRunAt,omitempty"`
 	LastRunFreed    int64          `json:"lastRunFreedBytes,omitempty"`
 	LastRunCount    int            `json:"lastRunCount,omitempty"`
 	CreatedAt       time.Time      `json:"createdAt"`
 	UpdatedAt       time.Time      `json:"updatedAt"`
+}
+
+// CleanupPreviewAsset is a single asset returned by PreviewPolicy.
+type CleanupPreviewAsset struct {
+	Path           string     `json:"path"`
+	Repository     string     `json:"repository"`
+	SizeBytes      int64      `json:"sizeBytes"`
+	LastDownloaded *time.Time `json:"lastDownloaded"`
+	CreatedAt      time.Time  `json:"createdAt"`
+	Reason         string     `json:"reason"`
+}
+
+// CleanupPreviewResult is the response of PreviewPolicy.
+type CleanupPreviewResult struct {
+	Assets     []CleanupPreviewAsset `json:"assets"`
+	TotalCount int                   `json:"totalCount"`
+	TotalBytes int64                 `json:"totalBytes"`
 }
 
 // ── Audit Event ──────────────────────────────────────────────

@@ -52,6 +52,21 @@ export interface Privilege {
   attrs?: { actions?: string[] }
 }
 
+export interface CleanupPreviewAsset {
+  path: string
+  repository: string
+  sizeBytes: number
+  lastDownloaded: string | null
+  createdAt: string
+  reason: string
+}
+
+export interface CleanupPreviewResponse {
+  assets: CleanupPreviewAsset[]
+  totalCount: number
+  totalBytes: number
+}
+
 // ── API helpers ──────────────────────────────────────────────
 
 export const nexusApi = {
@@ -179,6 +194,8 @@ export const nexusApi = {
     apiClient.delete(`/service/rest/v1/cleanup-policies/${id}`),
   runCleanupPolicy: (id: string) =>
     apiClient.post(`/service/rest/v1/cleanup-policies/${id}/run`),
+  previewCleanupPolicy: (id: string) =>
+    apiClient.post<CleanupPreviewResponse>(`/api/v1/cleanup-policies/${id}/preview`),
 
   // Audit log
   listAuditEvents: (params?: {

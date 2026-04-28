@@ -328,6 +328,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 		admin.PUT("/service/rest/v1/cleanup-policies/:id", cleanupH.Update)
 		admin.DELETE("/service/rest/v1/cleanup-policies/:id", cleanupH.Delete)
 		admin.POST("/service/rest/v1/cleanup-policies/:id/run", cleanupH.Run)
+		admin.POST("/api/v1/cleanup-policies/:id/preview", cleanupH.Preview)
 
 		// ── Roles (write) ─────────────────────────────────────
 		admin.POST("/service/rest/v1/security/roles", roleH.Create)
