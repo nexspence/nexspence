@@ -191,13 +191,11 @@ export default function RepositoriesPage() {
                 try {
                   const res = await nexspenceApi.exportRepo(repo.name)
                   const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
-                  const url = URL.createObjectURL(new Blob([res.data]))
+                  const url = URL.createObjectURL(res.data as Blob)
                   const a = document.createElement('a')
                   a.href = url
                   a.download = `nexspense-repo-${repo.name}-${ts}.tar.gz`
-                  document.body.appendChild(a)
                   a.click()
-                  document.body.removeChild(a)
                   URL.revokeObjectURL(url)
                 } catch {
                   // silent — no toast in this phase
