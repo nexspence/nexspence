@@ -180,3 +180,114 @@ func TestBackupRepo_ExportNotFound(t *testing.T) {
 	err := svc.ExportRepo(context.Background(), "no-such-repo", &buf)
 	assert.ErrorIs(t, err, service.ErrRepoNotFound)
 }
+
+func TestBackupRepo_ImportRoundtrip(t *testing.T) {
+	ctx := context.Background()
+	srcRepo := testutil.SimpleRepo("srcrepo", "raw")
+	src := buildBackupSvc(srcRepo)
+
+	bs := &domain.BlobStore{Name: "default", Type: "local", Config: map[string]any{"path": "/tmp"}}
+	require.NoError(t, src.BlobStores.Create(ctx, bs))
+
+	comp := &domain.Component{
+		RepositoryID: srcRepo.ID, Repository: "srcrepo",
+		Format: "raw", Name: "file.txt", Version: "1",
+	}
+	require.NoError(t, src.Components.Create(ctx, comp))
+
+	blobData := []byte("hello")
+	blobKey := "aa/bb/aabb"
+	require.NoError(t, src.BlobStore.Put(ctx, blobKey, bytes.NewReader(blobData), int64(len(blobData))))
+
+	asset := &domain.Asset{
+		ComponentID: comp.ID, RepositoryID: srcRepo.ID, Repository: "srcrepo",
+		Path: "/file.txt", BlobKey: blobKey, BlobStoreID: bs.ID,
+		SizeBytes: int64(len(blobData)), ContentType: "text/plain",
+	}
+	require.NoError(t, src.Assets.Create(ctx, asset))
+
+	var buf bytes.Buffer
+	require.NoError(t, src.ExportRepo(ctx, "srcrepo", &buf))
+
+	dst := buildBackupSvc()
+	require.NoError(t, dst.BlobStores.Create(ctx, &domain.BlobStore{Name: "default", Type: "local", Config: map[string]any{"path": "/tmp"}}))
+
+	stats, err := dst.ImportRepo(ctx, &buf, "", "skip")
+	require.NoError(t, err)
+	assert.Equal(t, "srcrepo", stats.Repository)
+	assert.Equal(t, 1, stats.Components)
+	assert.Equal(t, 1, stats.Assets)
+	assert.Equal(t, 1, stats.Blobs)
+
+	// Blob should be present in destination.
+	rc, _, err := dst.BlobStore.Get(ctx, blobKey)
+	require.NoError(t, err)
+	rc.Close()
+}
+
+func TestBackupRepo_ImportSkipIdempotent(t *testing.T) {
+	ctx := context.Background()
+	repo := testutil.SimpleRepo("repo1", "raw")
+	src := buildBackupSvc(repo)
+
+	comp := &domain.Component{RepositoryID: repo.ID, Repository: "repo1", Format: "raw", Name: "f.txt", Version: "1"}
+	require.NoError(t, src.Components.Create(ctx, comp))
+	asset := &domain.Asset{ComponentID: comp.ID, RepositoryID: repo.ID, Repository: "repo1", Path: "/f.txt", SizeBytes: 0, ContentType: "text/plain"}
+	require.NoError(t, src.Assets.Create(ctx, asset))
+
+	var buf bytes.Buffer
+	require.NoError(t, src.ExportRepo(ctx, "repo1", &buf))
+	archived := buf.Bytes()
+
+	// First import.
+	dst := buildBackupSvc()
+	stats1, err := dst.ImportRepo(ctx, bytes.NewReader(archived), "", "skip")
+	require.NoError(t, err)
+	assert.Equal(t, 1, stats1.Components)
+	assert.Equal(t, 1, stats1.Assets)
+
+	// Second import (same archive) — everything already exists.
+	stats2, err := dst.ImportRepo(ctx, bytes.NewReader(archived), "", "skip")
+	require.NoError(t, err)
+	assert.Equal(t, 0, stats2.Components, "second import should skip existing components")
+	assert.Equal(t, 0, stats2.Assets, "second import should skip existing assets")
+}
+
+func TestBackupRepo_ImportRename(t *testing.T) {
+	ctx := context.Background()
+	src := buildBackupSvc(testutil.SimpleRepo("original", "raw"))
+
+	var buf bytes.Buffer
+	require.NoError(t, src.ExportRepo(ctx, "original", &buf))
+
+	dst := buildBackupSvc()
+	stats, err := dst.ImportRepo(ctx, &buf, "renamed", "rename")
+	require.NoError(t, err)
+	assert.Equal(t, "renamed", stats.Repository)
+}
+
+func TestBackupRepo_ImportRenameConflict(t *testing.T) {
+	ctx := context.Background()
+	src := buildBackupSvc(testutil.SimpleRepo("repo", "raw"))
+
+	var buf bytes.Buffer
+	require.NoError(t, src.ExportRepo(ctx, "repo", &buf))
+
+	// Destination already has "newname".
+	dst := buildBackupSvc(testutil.SimpleRepo("newname", "raw"))
+	_, err := dst.ImportRepo(ctx, bytes.NewReader(buf.Bytes()), "newname", "rename")
+	assert.ErrorIs(t, err, service.ErrRepoConflict)
+}
+
+func TestBackupRepo_ImportRenameMissingTargetName(t *testing.T) {
+	ctx := context.Background()
+	src := buildBackupSvc(testutil.SimpleRepo("repo", "raw"))
+
+	var buf bytes.Buffer
+	require.NoError(t, src.ExportRepo(ctx, "repo", &buf))
+
+	dst := buildBackupSvc()
+	_, err := dst.ImportRepo(ctx, &buf, "", "rename")
+	assert.Error(t, err)
+	assert.NotErrorIs(t, err, service.ErrRepoConflict)
+}

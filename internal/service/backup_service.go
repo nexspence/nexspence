@@ -177,7 +177,10 @@ func (s *BackupService) Export(ctx context.Context, w io.Writer) error {
 			rc.Close()
 			return err
 		}
-		_, _ = io.Copy(tw, rc)
+		if _, err := io.Copy(tw, rc); err != nil {
+			rc.Close()
+			return fmt.Errorf("copy blob %s: %w", a.BlobKey, err)
+		}
 		rc.Close()
 	}
 
@@ -189,7 +192,10 @@ func (s *BackupService) Export(ctx context.Context, w io.Writer) error {
 // Returns ErrRepoNotFound if repoName does not exist.
 func (s *BackupService) ExportRepo(ctx context.Context, repoName string, w io.Writer) error {
 	repo, err := s.Repos.Get(ctx, repoName)
-	if err != nil || repo == nil {
+	if err != nil {
+		return err
+	}
+	if repo == nil {
 		return fmt.Errorf("%w: %s", ErrRepoNotFound, repoName)
 	}
 
@@ -265,11 +271,192 @@ func (s *BackupService) ExportRepo(ctx context.Context, repoName string, w io.Wr
 			rc.Close()
 			return err
 		}
-		_, _ = io.Copy(tw, rc)
+		if _, err := io.Copy(tw, rc); err != nil {
+			rc.Close()
+			return fmt.Errorf("copy blob %s: %w", a.BlobKey, err)
+		}
 		rc.Close()
 	}
 
 	return nil
+}
+
+// ImportRepoStats reports what was imported.
+type ImportRepoStats struct {
+	Repository   string `json:"repository"`
+	Components   int    `json:"components"`
+	Assets       int    `json:"assets"`
+	Blobs        int    `json:"blobs"`
+	ConflictMode string `json:"conflictMode"`
+}
+
+// ImportRepo reads a per-repository archive (as produced by ExportRepo) and
+// creates the repository, components, assets, and blobs in the current instance.
+//
+// targetName — if non-empty, override the repository name from the archive.
+// conflictMode — "skip" (default) | "merge" | "rename":
+//   - skip/merge: if repo exists, add only absent components (by name+version+group) and assets (by path).
+//   - rename: targetName must be non-empty; returns ErrRepoConflict if targetName is taken.
+func (s *BackupService) ImportRepo(ctx context.Context, r io.Reader, targetName, conflictMode string) (*ImportRepoStats, error) {
+	if conflictMode == "" {
+		conflictMode = "skip"
+	}
+	if conflictMode == "rename" && targetName == "" {
+		return nil, fmt.Errorf("conflictMode=rename requires non-empty targetName")
+	}
+
+	gr, err := gzip.NewReader(r)
+	if err != nil {
+		return nil, fmt.Errorf("not a gzip archive: %w", err)
+	}
+	defer gr.Close()
+	tr := tar.NewReader(gr)
+
+	var archivedRepo domain.Repository
+	var components []domain.Component
+	var assets []domain.Asset
+	blobs := map[string][]byte{}
+
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("read archive: %w", err)
+		}
+		data, err := io.ReadAll(tr)
+		if err != nil {
+			return nil, fmt.Errorf("read entry %s: %w", hdr.Name, err)
+		}
+		switch hdr.Name {
+		case "repository.json":
+			_ = json.Unmarshal(data, &archivedRepo)
+		case "components.json":
+			_ = json.Unmarshal(data, &components)
+		case "assets.json":
+			_ = json.Unmarshal(data, &assets)
+		default:
+			if strings.HasPrefix(hdr.Name, "blobs/") {
+				key := strings.TrimPrefix(hdr.Name, "blobs/")
+				blobs[key] = data
+			}
+		}
+	}
+
+	if archivedRepo.Name == "" {
+		return nil, fmt.Errorf("invalid archive: missing or empty repository.json")
+	}
+
+	finalName := archivedRepo.Name
+	if targetName != "" {
+		finalName = targetName
+	}
+
+	stats := &ImportRepoStats{ConflictMode: conflictMode, Repository: finalName}
+
+	// Resolve or create destination repository.
+	destRepo, _ := s.Repos.Get(ctx, finalName)
+	if destRepo == nil {
+		newRepo := archivedRepo
+		newRepo.ID = ""
+		newRepo.Name = finalName
+		newRepo.BlobStoreID = nil
+		if err := s.Repos.Create(ctx, &newRepo); err != nil {
+			return nil, fmt.Errorf("create repository: %w", err)
+		}
+		destRepo, _ = s.Repos.Get(ctx, finalName)
+	} else if conflictMode == "rename" {
+		return nil, fmt.Errorf("%w: %q", ErrRepoConflict, finalName)
+	}
+	if destRepo == nil {
+		return nil, fmt.Errorf("repository %q not available after creation", finalName)
+	}
+
+	// Pick blob store ID for imported assets.
+	blobStoreID := ""
+	if destRepo.BlobStoreID != nil {
+		blobStoreID = *destRepo.BlobStoreID
+	}
+	if blobStoreID == "" {
+		bss, _ := s.BlobStores.List(ctx)
+		if len(bss) > 0 {
+			blobStoreID = bss[0].ID
+		}
+	}
+
+	// Build existing-components map (group+name+version → id) for skip/merge dedup.
+	existingCompIDs := map[string]string{}
+	if conflictMode == "skip" || conflictMode == "merge" {
+		page, _ := s.Components.Search(ctx, domain.SearchParams{Repository: finalName})
+		if page != nil {
+			for _, c := range page.Items {
+				k := c.Group + "\x00" + c.Name + "\x00" + c.Version
+				existingCompIDs[k] = c.ID
+			}
+		}
+	}
+
+	// Import components.
+	compIDMap := map[string]string{} // archived ID → new/existing ID
+	for i := range components {
+		comp := &components[i]
+		oldID := comp.ID
+		k := comp.Group + "\x00" + comp.Name + "\x00" + comp.Version
+
+		if id, found := existingCompIDs[k]; found {
+			compIDMap[oldID] = id
+			continue
+		}
+
+		comp.ID = ""
+		comp.RepositoryID = destRepo.ID
+		comp.Repository = finalName
+		if err := s.Components.Create(ctx, comp); err != nil {
+			continue
+		}
+		compIDMap[oldID] = comp.ID
+		stats.Components++
+	}
+
+	// Import assets.
+	for i := range assets {
+		a := &assets[i]
+
+		newCompID, ok := compIDMap[a.ComponentID]
+		if !ok {
+			continue
+		}
+
+		// Dedup by path for skip/merge.
+		if conflictMode == "skip" || conflictMode == "merge" {
+			if existing, _ := s.Assets.GetByPath(ctx, finalName, a.Path); existing != nil {
+				continue
+			}
+		}
+
+		// Restore blob bytes.
+		if a.BlobKey != "" {
+			if data, ok := blobs[a.BlobKey]; ok {
+				_ = s.BlobStore.Put(ctx, a.BlobKey, bytes.NewReader(data), int64(len(data)))
+				stats.Blobs++
+			}
+		}
+
+		a.ID = ""
+		a.ComponentID = newCompID
+		a.RepositoryID = destRepo.ID
+		a.Repository = finalName
+		if blobStoreID != "" {
+			a.BlobStoreID = blobStoreID
+		}
+		if err := s.Assets.Create(ctx, a); err != nil {
+			continue
+		}
+		stats.Assets++
+	}
+
+	return stats, nil
 }
 
 // Restore reads a backup archive (as produced by Export) and re-creates all data.
