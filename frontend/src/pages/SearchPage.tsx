@@ -21,6 +21,7 @@ interface SearchComponent {
   group: string
   name: string
   version: string
+  tags?: string[]
   assets?: SearchAsset[]
 }
 
@@ -55,7 +56,7 @@ const S = {
   groupName: { fontSize: 13, fontWeight: 600, color: 'var(--holo-text)' },
   groupCount: { fontSize: 11, color: 'var(--holo-text-faint)', marginLeft: 'auto' as const },
 
-  COLS: '1.5fr 1fr 1fr 2fr 1fr',
+  COLS: '1.5fr 1fr 1fr 2fr 1fr 1fr',
   thead: {
     display: 'grid',
     padding: '8px 16px',
@@ -111,12 +112,12 @@ function SortIcon({ col, sortKey, sortDir }: { col: SortKey; sortKey: SortKey; s
   return sortDir === 'asc' ? <ChevronUp size={11} /> : <ChevronDown size={11} />
 }
 
-const EMPTY_FILTERS = { repository: '', format: '', name: '', group: '', version: '' }
+const EMPTY_FILTERS = { repository: '', format: '', name: '', group: '', version: '', tag: '' }
 type Filters = typeof EMPTY_FILTERS
 
 // URL param keys kept short and stable so Browse-back restores state.
 const URL_KEYS: Record<keyof Filters, string> = {
-  name: 'q', format: 'format', repository: 'repo', version: 'version', group: 'group',
+  name: 'q', format: 'format', repository: 'repo', version: 'version', group: 'group', tag: 'tag',
 }
 
 function filtersFromURL(sp: URLSearchParams): Filters {
@@ -126,6 +127,7 @@ function filtersFromURL(sp: URLSearchParams): Filters {
     repository: sp.get(URL_KEYS.repository) ?? '',
     version:    sp.get(URL_KEYS.version)    ?? '',
     group:      sp.get(URL_KEYS.group)      ?? '',
+    tag:        sp.get(URL_KEYS.tag)        ?? '',
   }
 }
 
@@ -166,6 +168,7 @@ export default function SearchPage() {
       if (submitted!.name)       p.name       = submitted!.name
       if (submitted!.group)      p.group      = submitted!.group
       if (submitted!.version)    p.version    = submitted!.version
+      if (submitted!.tag)        p.tag        = submitted!.tag
       return nexusApi.search(p).then(r => r.data)
     },
     enabled: !!submitted,
@@ -305,6 +308,15 @@ export default function SearchPage() {
               onChange={set('group')}
             />
           </div>
+          <div style={{ ...S.field, gridColumn: '1 / -1' }}>
+            <label style={{ ...S.label, color: '#7c5cff' }}>Tag</label>
+            <HoloInput
+              placeholder="e.g. prod  or  team:backend"
+              value={filters.tag}
+              onChange={set('tag')}
+              style={{ borderColor: filters.tag ? 'rgba(124,92,255,0.5)' : undefined }}
+            />
+          </div>
         </div>
         <div style={S.filterFooter}>
           <HoloButton type="submit" variant="primary" icon={<Search size={14} />}>Search</HoloButton>
@@ -342,6 +354,7 @@ export default function SearchPage() {
             <div style={S.th(sortKey === 'date')} onClick={() => handleSort('date')}>
               Modified <SortIcon col="date" sortKey={sortKey} sortDir={sortDir} />
             </div>
+            <div>Tags</div>
           </div>
 
           {[...grouped.entries()].map(([repo, comps]) => {
@@ -407,6 +420,16 @@ export default function SearchPage() {
                           <div style={{ color: '#a5b4fc', fontFamily: 'monospace', fontSize: 12 }}>{c.version || '—'}</div>
                           <div style={S.path}>{firstAsset?.path ?? '—'}{hasMulti ? ` +${c.assets!.length - 1}` : ''}</div>
                           <div style={S.muted}>{fmtDate(firstAsset?.lastModified)} {firstAsset ? `· ${fmtSize(firstAsset.fileSize)}` : ''}</div>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+                            {(c.tags ?? []).map(t => (
+                              <span key={t} style={{
+                                background: 'rgba(124,92,255,0.12)',
+                                border: '1px solid rgba(124,92,255,0.25)',
+                                borderRadius: 4, padding: '2px 6px',
+                                fontSize: 10, color: '#a78bfa', fontFamily: 'monospace',
+                              }}>{t}</span>
+                            ))}
+                          </div>
                         </div>
                         {isOpen && (
                           <div style={S.expanded}>

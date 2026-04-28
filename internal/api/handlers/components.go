@@ -176,6 +176,7 @@ func (h *ComponentHandler) Search(c *gin.Context) {
 		Name:            c.Query("name"),
 		Version:         c.Query("version"),
 		SHA256:          c.Query("sha256"),
+		Tag:             c.Query("tag"),
 		MavenGroupID:    c.Query("maven.groupId"),
 		MavenArtifactID: c.Query("maven.artifactId"),
 		MavenVersion:    c.Query("maven.baseVersion"),
