@@ -59,7 +59,8 @@ type AssetRepo interface {
 	//   repoNames non-empty restricts to those repositories; empty = any repository (use with care).
 	//   pathPrefix filters assets whose path starts with that prefix (empty = no filter).
 	//   nameGlob is a glob pattern matched against the full asset path (* = any chars, ? = one char).
-	ListStale(ctx context.Context, format string, repoNames []string, lastDownloadedDays, artifactAgeDays int, pathPrefix, nameGlob string, limit int) ([]domain.Asset, error)
+	// retainNVersions — when > 0, the N newest versions of each (group_id, name) are excluded from results.
+	ListStale(ctx context.Context, format string, repoNames []string, lastDownloadedDays, artifactAgeDays int, pathPrefix, nameGlob string, retainNVersions int, limit int) ([]domain.Asset, error)
 	Create(ctx context.Context, a *domain.Asset) error
 	Delete(ctx context.Context, id string) error
 	IncrementDownload(ctx context.Context, id string) error

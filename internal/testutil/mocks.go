@@ -322,11 +322,12 @@ func (c *ComponentRepo) AddComponent(comp *domain.Component) {
 // ── AssetRepo ─────────────────────────────────────────────────
 
 type AssetRepo struct {
-	mu     sync.Mutex
-	assets map[string]*domain.Asset // key: "repo:path"
-	byID   map[string]*domain.Asset
-	nextID int
-	Stale  []domain.Asset // populated by tests to control ListStale output
+	mu          sync.Mutex
+	assets      map[string]*domain.Asset // key: "repo:path"
+	byID        map[string]*domain.Asset
+	nextID      int
+	Stale       []domain.Asset // populated by tests to control ListStale output
+	LastRetainN int
 }
 
 func NewAssetRepo() *AssetRepo {
@@ -358,8 +359,9 @@ func (a *AssetRepo) GetByPath(_ context.Context, repoName, path string) (*domain
 func (a *AssetRepo) SearchAssets(_ context.Context, _ domain.SearchParams) (*domain.Page[domain.Asset], error) {
 	return &domain.Page[domain.Asset]{Items: []domain.Asset{}}, nil
 }
-func (a *AssetRepo) ListStale(_ context.Context, _ string, _ []string, _, _ int, _, _ string, limit int) ([]domain.Asset, error) {
+func (a *AssetRepo) ListStale(_ context.Context, _ string, _ []string, _, _ int, _, _ string, retainNVersions int, limit int) ([]domain.Asset, error) {
 	a.mu.Lock()
+	a.LastRetainN = retainNVersions
 	defer a.mu.Unlock()
 	if len(a.Stale) == 0 {
 		return nil, nil
