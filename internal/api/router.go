@@ -143,7 +143,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 	rbacSvc    := service.NewRBACService(rbacRepo, repoRepo, log)
 	repoH      := handlers.NewRepositoryHandler(repoSvc, rbacSvc)
 	userH      := handlers.NewUserHandler(userSvc)
-	blobH      := handlers.NewBlobStoreHandler(blobRepo).WithUsageDeps(repoRepo, assetRepo)
+	blobH      := handlers.NewBlobStoreHandler(blobRepo).WithUsageDeps(repoRepo, assetRepo).WithRegistry(blobRegistry)
 	componentH := handlers.NewComponentHandler(componentRepo, assetRepo, repoRepo, cfg.HTTP.BaseURL).WithRBAC(rbacSvc)
 	browseH    := handlers.NewBrowseHandler(repoRepo, componentRepo, assetRepo, blobRepo, localBlob, rbacSvc)
 	cleanupH   := handlers.NewCleanupHandler(cleanupRepo, repoRepo, cleanupSvc)

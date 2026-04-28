@@ -20,6 +20,7 @@ type BlobStoreHandler struct {
 	assets    repository.AssetRepo
 	gcSvc     *service.BlobGCService
 	blobStore storage.BlobStore
+	registry  *storage.Registry
 }
 
 func NewBlobStoreHandler(repo repository.BlobStoreRepo) *BlobStoreHandler {
@@ -33,6 +34,11 @@ func (h *BlobStoreHandler) WithGC(svc *service.BlobGCService) *BlobStoreHandler 
 
 func (h *BlobStoreHandler) WithBlobStore(bs storage.BlobStore) *BlobStoreHandler {
 	h.blobStore = bs
+	return h
+}
+
+func (h *BlobStoreHandler) WithRegistry(r *storage.Registry) *BlobStoreHandler {
+	h.registry = r
 	return h
 }
 
@@ -119,6 +125,9 @@ func (h *BlobStoreHandler) Update(c *gin.Context) {
 	if err := h.repo.Update(c.Request.Context(), &updates); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+	if h.registry != nil && existing.ID != "" {
+		h.registry.Invalidate(existing.ID)
 	}
 	c.JSON(http.StatusOK, updates)
 }
