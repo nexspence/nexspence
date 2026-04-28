@@ -22,6 +22,7 @@ import axios from 'axios'
 import { nexusApi, nexspenceApi, apiClient, Privilege } from '@/api/client'
 import { Select, SelectOption } from '../components/Select'
 import { useAuthStore } from '@/store/authStore'
+import { TagEditor } from '@/components/TagEditor'
 
 interface Repository {
   id: string
@@ -64,6 +65,7 @@ interface DockerComponentDetail {
   downloadCount?: number
   lastDownloaded?: string | null
   assets?: DockerDetailAsset[]
+  tags?: string[]
 }
 
 interface DockerTreeNode {
@@ -594,6 +596,21 @@ function PanelBtn({ onClick, variant = 'default', children }: {
       onMouseUp={() => setAct(false)}>
       {children}
     </button>
+  )
+}
+
+function RawTagSection({ componentId, isAdmin: admin }: { componentId: string; isAdmin: boolean }) {
+  const { data: comp } = useQuery({
+    queryKey: ['componentDetail', componentId],
+    queryFn: () => nexusApi.getComponent(componentId).then((r) => r.data as { tags?: string[] }),
+  })
+  return (
+    <TagEditor
+      componentId={componentId}
+      initialTags={comp?.tags ?? []}
+      queryKey={['componentDetail', componentId]}
+      readOnly={!admin}
+    />
   )
 }
 
@@ -1296,6 +1313,12 @@ export default function BrowsePage() {
                       <BookOpen size={13} /> Example Usage
                     </PanelBtn>
                   </div>
+                  <TagEditor
+                    componentId={dockerSelection.componentId}
+                    initialTags={dockerDetail.tags ?? []}
+                    queryKey={['dockerComponentDetail', dockerSelection.componentId]}
+                    readOnly={!isAdmin()}
+                  />
                 </>
               ) : (
                 <p style={S.muted}>Could not load component.</p>
@@ -1399,6 +1422,9 @@ export default function BrowsePage() {
                         <BookOpen size={13} /> Usage
                       </PanelBtn>
                     </div>
+                    {node.componentId && (
+                      <RawTagSection componentId={node.componentId} isAdmin={isAdmin()} />
+                    )}
                   </>
                 )
               })() : (
