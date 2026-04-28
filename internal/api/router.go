@@ -155,6 +155,17 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 	csH        := handlers.NewContentSelectorHandler(selectorSvc)
 	systemH    := handlers.NewSystemHandler(cfg, pool, ldapSvc, oidcSvc)
 	migrationH := handlers.NewMigrationHandler(migrationRepo)
+	backupSvc := &service.BackupService{
+		BlobStores: blobRepo,
+		Repos:      repoRepo,
+		Users:      userRepo,
+		Roles:      roleRepo,
+		Policies:   cleanupRepo,
+		Components: componentRepo,
+		Assets:     assetRepo,
+		BlobStore:  localBlob,
+	}
+	backupH    := handlers.NewBackupHandler(backupSvc)
 	rbacMW     := handlers.RBACMiddleware(rbacSvc, repoRepo)
 
 	// ── Gin engine ────────────────────────────────────────────
@@ -376,6 +387,14 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 		admin.POST("/api/v1/migration/jobs/:id/pause", migrationH.PauseJob)
 		admin.POST("/api/v1/migration/jobs/:id/resume", migrationH.ResumeJob)
 		admin.DELETE("/api/v1/migration/jobs/:id", migrationH.DeleteJob)
+
+		// ── Backup / Restore (full system) ───────────────────────
+		admin.GET("/api/v1/backup/export", backupH.Export)
+		admin.POST("/api/v1/backup/restore", backupH.Restore)
+
+		// ── Per-repository Export / Import ───────────────────────
+		admin.GET("/api/v1/repositories/:name/export", backupH.ExportRepo)
+		admin.POST("/api/v1/repositories/import", backupH.ImportRepo)
 
 		// System info + service health
 		admin.GET("/api/v1/system/info", func(c *gin.Context) {

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -59,4 +60,61 @@ func (h *BackupHandler) Restore(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"restored": stats,
 	})
+}
+
+// ExportRepo streams a per-repository backup archive (gzipped tar) to the client.
+// GET /api/v1/repositories/:name/export
+func (h *BackupHandler) ExportRepo(c *gin.Context) {
+	name := c.Param("name")
+	ctx := c.Request.Context()
+
+	// Pre-check existence before committing to streaming headers.
+	repo, _ := h.svc.Repos.Get(ctx, name)
+	if repo == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "repository not found: " + name})
+		return
+	}
+
+	ts := time.Now().UTC().Format("20060102-150405")
+	filename := fmt.Sprintf("nexspense-repo-%s-%s.tar.gz", name, ts)
+	c.Header("Content-Disposition", "attachment; filename="+filename)
+	c.Header("Content-Type", "application/x-tar")
+	c.Header("Transfer-Encoding", "chunked")
+	c.Status(http.StatusOK)
+
+	if err := h.svc.ExportRepo(ctx, name, c.Writer); err != nil {
+		_ = err // headers already sent; cannot change status code
+	}
+}
+
+// ImportRepo accepts a per-repository backup archive (multipart field "file")
+// and re-creates the repository, components, assets, and blobs.
+// POST /api/v1/repositories/import
+func (h *BackupHandler) ImportRepo(c *gin.Context) {
+	var reader = c.Request.Body
+	if c.ContentType() == "multipart/form-data" {
+		if err := c.Request.ParseMultipartForm(512 << 20); err == nil {
+			if f, _, err := c.Request.FormFile("file"); err == nil {
+				defer f.Close()
+				reader = f
+			}
+		}
+	}
+
+	targetName := c.Request.FormValue("targetName")
+	conflictMode := c.Request.FormValue("conflictMode")
+	if conflictMode == "" {
+		conflictMode = "skip"
+	}
+
+	stats, err := h.svc.ImportRepo(c.Request.Context(), reader, targetName, conflictMode)
+	if err != nil {
+		if errors.Is(err, service.ErrRepoConflict) {
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"imported": stats})
 }
