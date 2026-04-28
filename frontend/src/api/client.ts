@@ -91,6 +91,8 @@ export const nexusApi = {
   getComponent: (id: string) => apiClient.get(`/service/rest/v1/components/${id}`),
   deleteComponent: (id: string) =>
     apiClient.delete(`/service/rest/v1/components/${id}`),
+  setComponentTags: (id: string, tags: string[]) =>
+    apiClient.put<{ tags: string[] }>(`/service/rest/v1/components/${encodeURIComponent(id)}/tags`, { tags }),
 
   // Search
   search: (params: Record<string, string | undefined>) =>
