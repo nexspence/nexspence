@@ -239,3 +239,31 @@ func TestStartCronScheduler_InvalidCronFallsBackToDefault(t *testing.T) {
 	go svc.StartCronScheduler(ctx, "@yearly")
 	time.Sleep(50 * time.Millisecond)
 }
+
+func TestRunPolicy_RetainNVersions_PassedToListStale(t *testing.T) {
+	staleAssets := []domain.Asset{
+		{ID: "a10", BlobKey: "bk10", SizeBytes: 10, Path: "/old.jar"},
+	}
+	policies := testutil.NewCleanupPolicyRepo(
+		&domain.CleanupPolicy{
+			ID: "p20", Name: "retain-test", Enabled: true, Format: "*",
+			Criteria:        map[string]any{"artifactAgeDays": float64(30)},
+			RetainNVersions: 3,
+		},
+	)
+	assets := testutil.NewAssetRepo()
+	assets.Stale = staleAssets
+	blobs := testutil.NewBlobStore()
+	blobRepo := testutil.NewBlobStoreRepo()
+	_ = blobs.Put(context.Background(), "bk10", testutil.MakeReader("x"), 1)
+	repos := testutil.NewRepoRepo(&domain.Repository{
+		Name: "hosted", ID: "r1", Format: domain.FormatRaw,
+		CleanupPolicyIDs: []string{"p20"},
+	})
+
+	svc := service.NewCleanupService(policies, repos, assets, blobRepo, blobs, nopLog())
+	require.NoError(t, svc.RunPolicy(context.Background(), "p20"))
+
+	assert.Equal(t, 3, assets.LastRetainN)
+	assert.Contains(t, blobs.Deleted, "bk10")
+}

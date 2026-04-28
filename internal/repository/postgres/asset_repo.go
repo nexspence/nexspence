@@ -174,18 +174,54 @@ func (r *assetRepo) SearchAssets(ctx context.Context, p domain.SearchParams) (*d
 	return &domain.Page[domain.Asset]{Items: items, ContinuationToken: token}, nil
 }
 
-func (r *assetRepo) ListStale(ctx context.Context, format string, repoNames []string, lastDownloadedDays, artifactAgeDays int, pathPrefix, nameGlob string, limit int) ([]domain.Asset, error) {
+func (r *assetRepo) ListStale(ctx context.Context, format string, repoNames []string, lastDownloadedDays, artifactAgeDays int, pathPrefix, nameGlob string, retainNVersions int, limit int) ([]domain.Asset, error) {
 	if limit <= 0 {
 		limit = 500
 	}
 	args := []any{}
 	i := 1
+
+	// When retainNVersions > 0, build a CTE that finds the N newest component
+	// versions per (repository_id, group_id, name). We pass repoNames as $1
+	// and retainNVersions as $2, then reuse $1 in the WHERE clause below.
+	var ctePrefix, cteExclude string
+	repoArgIdx := 0
+	// repoNames is always non-empty here when the service calls us (policies with no
+	// attached repos are skipped before reaching ListStale). The guard ensures we do
+	// not build a CTE that references an empty array.
+	if retainNVersions > 0 && len(repoNames) > 0 {
+		ctePrefix = fmt.Sprintf(`
+WITH retained_comps AS (
+  SELECT id FROM (
+    SELECT comp2.id,
+      ROW_NUMBER() OVER (
+        PARTITION BY comp2.repository_id, comp2.group_id, comp2.name
+        ORDER BY comp2.version_sort DESC, comp2.created_at DESC
+      ) rn
+    FROM components comp2
+    WHERE comp2.repository_id IN (
+      SELECT id FROM repositories WHERE name = ANY($%d::text[])
+    )
+  ) r WHERE rn <= $%d
+)
+`, i, i+1)
+		repoArgIdx = i
+		args = append(args, repoNames, retainNVersions)
+		i += 2
+		cteExclude = " AND comp.id NOT IN (SELECT id FROM retained_comps)"
+	}
+
 	where := "WHERE 1=1"
 
 	if len(repoNames) > 0 {
-		where += fmt.Sprintf(" AND rep.name = ANY($%d::text[])", i)
-		args = append(args, repoNames)
-		i++
+		if repoArgIdx > 0 {
+			// repoNames already in args as $repoArgIdx — reuse it
+			where += fmt.Sprintf(" AND rep.name = ANY($%d::text[])", repoArgIdx)
+		} else {
+			where += fmt.Sprintf(" AND rep.name = ANY($%d::text[])", i)
+			args = append(args, repoNames)
+			i++
+		}
 	}
 
 	if format != "" && format != "*" {
@@ -216,14 +252,13 @@ func (r *assetRepo) ListStale(ctx context.Context, format string, repoNames []st
 		args = append(args, like)
 		i++
 	}
+	where += cteExclude
 	args = append(args, limit)
 
-	q := fmt.Sprintf(`
-		SELECT %s %s
+	q := fmt.Sprintf(`%sSELECT %s %s
 		JOIN components comp ON comp.id = a.component_id
-		%s
-		ORDER BY a.created_at ASC
-		LIMIT $%d`, assetSelectCols, assetFromJoin, where, i)
+		%s ORDER BY a.created_at ASC LIMIT $%d`,
+		ctePrefix, assetSelectCols, assetFromJoin, where, i)
 
 	rows, err := r.db.Query(ctx, q, args...)
 	if err != nil {

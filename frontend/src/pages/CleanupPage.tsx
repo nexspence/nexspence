@@ -14,6 +14,7 @@ interface CleanupPolicy {
   scheduleCron?: string
   enabled: boolean
   dryRun: boolean
+  retainNVersions?: number
   lastRunAt?: string
   lastRunFreedBytes?: number
   lastRunCount?: number
@@ -30,6 +31,7 @@ interface PolicyForm {
   pathPrefix: string
   nameGlob: string
   scheduleCron: string
+  retainNVersions: string
 }
 
 const FORMATS = ['*', 'maven2', 'npm', 'docker', 'pypi', 'go', 'nuget', 'helm', 'raw', 'apt', 'yum', 'cargo', 'conan']
@@ -47,6 +49,7 @@ const emptyForm = (): PolicyForm => ({
   lastDownloadedDays: '', artifactAgeDays: '',
   pathPrefix: '', nameGlob: '',
   scheduleCron: '',
+  retainNVersions: '',
 })
 
 function fmtBytes(b: number) {
@@ -72,6 +75,7 @@ function PolicyModal({
       pathPrefix: String(initial.criteria?.pathPrefix ?? ''),
       nameGlob: String(initial.criteria?.nameGlob ?? ''),
       scheduleCron: initial.scheduleCron ?? '',
+      retainNVersions: String(initial.retainNVersions ?? ''),
     }
   })
   const [err, setErr] = useState('')
@@ -85,6 +89,7 @@ function PolicyModal({
     enabled: form.enabled,
     dryRun: form.dryRun,
     scheduleCron: form.scheduleCron.trim(),
+    retainNVersions: form.retainNVersions ? Number(form.retainNVersions) : 0,
     criteria: {
       ...(form.lastDownloadedDays ? { lastDownloadedDays: Number(form.lastDownloadedDays) } : {}),
       ...(form.artifactAgeDays ? { artifactAgeDays: Number(form.artifactAgeDays) } : {}),
@@ -177,6 +182,11 @@ function PolicyModal({
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <label style={LABEL}>Name glob</label>
           <HoloInput value={form.nameGlob} onChange={set('nameGlob')} placeholder="e.g. *-SNAPSHOT*" />
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, gridColumn: '1 / -1' }}>
+          <label style={LABEL}>Retain N newest versions</label>
+          <HoloInput type="number" min="0" value={form.retainNVersions} onChange={set('retainNVersions')} placeholder="e.g. 3 (0 = disabled)" />
+          <span style={{ fontSize: 11, color: 'rgba(229,231,235,0.35)' }}>Keep the N most recent versions of each artifact even if they match other criteria.</span>
         </div>
       </div>
     )
@@ -299,6 +309,12 @@ function PolicyModal({
         </div>
       </div>
 
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--holo-text-dim)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Retain N newest versions</label>
+        <HoloInput type="number" min="0" value={form.retainNVersions} onChange={set('retainNVersions')} placeholder="0 = disabled" />
+        <span style={{ fontSize: 11, color: 'rgba(229,231,235,0.35)' }}>Keep the N most recent versions of each artifact even if they match other criteria.</span>
+      </div>
+
       {err && <div style={{ fontSize: 12, color: 'var(--holo-red)', display: 'flex', gap: 6, alignItems: 'center' }}><AlertCircle size={13} />{err}</div>}
 
       <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
@@ -374,6 +390,7 @@ export default function CleanupPage() {
               p.criteria?.artifactAgeDays && `age >${p.criteria.artifactAgeDays}d`,
               p.criteria?.pathPrefix && `path: ${p.criteria.pathPrefix}`,
               p.criteria?.nameGlob && `glob: ${p.criteria.nameGlob}`,
+              p.retainNVersions && p.retainNVersions > 0 && `retain ≥${p.retainNVersions}`,
             ].filter(Boolean) as string[]
 
             return (
