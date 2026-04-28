@@ -532,6 +532,14 @@ function BlobStoreDetailModal({ name, onClose }: { name: string; onClose: () => 
     queryFn: () => nexusApi.getBlobStoreUsage(name).then(r => r.data),
   })
   const [deleteError, setDeleteError] = useState('')
+  const [editing, setEditing] = useState(false)
+  const [editBucket, setEditBucket]       = useState('')
+  const [editRegion, setEditRegion]       = useState('')
+  const [editEndpoint, setEditEndpoint]   = useState('')
+  const [editAccessKey, setEditAccessKey] = useState('')
+  const [editSecretKey, setEditSecretKey] = useState('')
+  const [editPath, setEditPath]           = useState('')
+  const [editErr, setEditErr]             = useState('')
   const delMut = useMutation({
     mutationFn: () => nexusApi.deleteBlobStore(name),
     onSuccess: () => {
@@ -543,6 +551,39 @@ function BlobStoreDetailModal({ name, onClose }: { name: string; onClose: () => 
       setDeleteError(msg)
     },
   })
+
+  const editMut = useMutation({
+    mutationFn: () => {
+      if (!bs) return Promise.reject('no store')
+      const secret = editSecretKey || (bs.config?.secret_key as string) || ''
+      const config: Record<string, unknown> = bs.type === 's3'
+        ? { bucket: editBucket, region: editRegion, endpoint: editEndpoint,
+            access_key: editAccessKey, secret_key: secret }
+        : { path: editPath }
+      return nexusApi.updateBlobStore(bs.type, bs.name, { config, quotaBytes: bs.quotaBytes ?? null })
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['blobstore-usage', name] })
+      qc.invalidateQueries({ queryKey: ['blobstores'] })
+      setEditing(false)
+    },
+    onError: (e: unknown) => {
+      const msg = (e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Save failed'
+      setEditErr(msg)
+    },
+  })
+
+  const startEdit = () => {
+    if (!bs?.config) return
+    setEditBucket((bs.config.bucket as string) ?? '')
+    setEditRegion((bs.config.region as string) ?? 'us-east-1')
+    setEditEndpoint((bs.config.endpoint as string) ?? '')
+    setEditAccessKey((bs.config.access_key as string) ?? '')
+    setEditSecretKey('')
+    setEditPath((bs.config.path as string) ?? '')
+    setEditErr('')
+    setEditing(true)
+  }
 
   const linked = data?.linkedRepositories ?? []
   const bs = data?.store
@@ -572,7 +613,77 @@ function BlobStoreDetailModal({ name, onClose }: { name: string; onClose: () => 
             )}
             <span style={{ color: 'var(--holo-text-dim)' }}>Asset total</span>
             <span style={{ color: 'var(--holo-text)' }}>{fmtBytes(data?.totalAssetBytes ?? 0)} across {linked.length} {linked.length === 1 ? 'repo' : 'repos'}</span>
+            {bs.type === 's3' && bs.config && (
+              <>
+                <span style={{ color: 'var(--holo-text-dim)' }}>Endpoint</span>
+                <span style={{ color: 'var(--holo-text)', fontFamily: 'monospace', fontSize: 12 }}>
+                  {(bs.config.endpoint as string) || 'AWS S3'}
+                </span>
+                <span style={{ color: 'var(--holo-text-dim)' }}>Bucket</span>
+                <span style={{ color: 'var(--holo-text)', fontFamily: 'monospace', fontSize: 12 }}>
+                  {(bs.config.bucket as string) || '—'}
+                </span>
+                <span style={{ color: 'var(--holo-text-dim)' }}>Region</span>
+                <span style={{ color: 'var(--holo-text)', fontFamily: 'monospace', fontSize: 12 }}>
+                  {(bs.config.region as string) || '—'}
+                </span>
+              </>
+            )}
+            {bs.type === 'local' && bs.config && (
+              <>
+                <span style={{ color: 'var(--holo-text-dim)' }}>Path</span>
+                <span style={{ color: 'var(--holo-text)', fontFamily: 'monospace', fontSize: 12 }}>
+                  {(bs.config.path as string) || '—'}
+                </span>
+              </>
+            )}
           </div>
+
+          {editing && bs && (
+            <div style={{ marginBottom: 16, padding: '12px 14px', background: 'rgba(255,255,255,0.03)', borderRadius: 10, border: '1px solid var(--holo-border)' }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--holo-text-dim)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', marginBottom: 10 }}>Edit Configuration</div>
+              {bs.type === 's3' ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    <div>
+                      <label style={{ fontSize: 11, color: 'var(--holo-text-faint)', display: 'block', marginBottom: 3 }}>Bucket</label>
+                      <HoloInput value={editBucket} onChange={e => setEditBucket(e.target.value)} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 11, color: 'var(--holo-text-faint)', display: 'block', marginBottom: 3 }}>Region</label>
+                      <HoloInput value={editRegion} onChange={e => setEditRegion(e.target.value)} />
+                    </div>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, color: 'var(--holo-text-faint)', display: 'block', marginBottom: 3 }}>Endpoint</label>
+                    <HoloInput value={editEndpoint} onChange={e => setEditEndpoint(e.target.value)} placeholder="leave empty for AWS S3" />
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    <div>
+                      <label style={{ fontSize: 11, color: 'var(--holo-text-faint)', display: 'block', marginBottom: 3 }}>Access Key</label>
+                      <HoloInput value={editAccessKey} onChange={e => setEditAccessKey(e.target.value)} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 11, color: 'var(--holo-text-faint)', display: 'block', marginBottom: 3 }}>Secret Key (leave blank to keep)</label>
+                      <HoloInput type="password" value={editSecretKey} onChange={e => setEditSecretKey(e.target.value)} placeholder="unchanged" />
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <label style={{ fontSize: 11, color: 'var(--holo-text-faint)', display: 'block', marginBottom: 3 }}>Path</label>
+                  <HoloInput value={editPath} onChange={e => setEditPath(e.target.value)} />
+                </div>
+              )}
+              {editErr && <div style={{ marginTop: 8, color: 'var(--holo-red)', fontSize: 12 }}>{editErr}</div>}
+              <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                <HoloButton variant="primary" disabled={editMut.isPending} onClick={() => editMut.mutate()}>
+                  {editMut.isPending ? 'Saving…' : 'Save'}
+                </HoloButton>
+                <HoloButton onClick={() => setEditing(false)}>Cancel</HoloButton>
+              </div>
+            </div>
+          )}
 
           <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--holo-text-faint)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
             Linked Repositories
@@ -618,7 +729,12 @@ function BlobStoreDetailModal({ name, onClose }: { name: string; onClose: () => 
               <Trash2 size={13} />
               {delMut.isPending ? 'Deleting…' : 'Delete'}
             </HoloButton>
-            <HoloButton onClick={onClose}>Close</HoloButton>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {!editing && bs && (
+                <HoloButton icon={<Pencil size={13} />} onClick={startEdit}>Edit Config</HoloButton>
+              )}
+              <HoloButton onClick={onClose}>Close</HoloButton>
+            </div>
           </div>
         </>
       )}
