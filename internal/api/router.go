@@ -313,6 +313,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 		})
 
 		// ── Blob stores (write) ───────────────────────────────
+		admin.POST("/api/v1/blobstores/test", blobH.TestConnection)
 		admin.POST("/service/rest/v1/blobstores/:type", blobH.Create)
 		admin.PUT("/service/rest/v1/blobstores/:type/:name", blobH.Update)
 		admin.DELETE("/service/rest/v1/blobstores/:name", blobH.Delete)

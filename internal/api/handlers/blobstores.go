@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 	"time"
@@ -279,6 +280,42 @@ func (h *BlobStoreHandler) Usage(c *gin.Context) {
 		resp["quotaRemaining"] = *bs.QuotaBytes - bs.UsedBytes
 	}
 	c.JSON(http.StatusOK, resp)
+}
+
+// TestConnection handles POST /api/v1/blobstores/test.
+// Body: {"type": "s3"|"local", "config": {...}}
+// Tries to connect and returns {"ok": true} or {"ok": false, "error": "..."}.
+func (h *BlobStoreHandler) TestConnection(c *gin.Context) {
+	var req struct {
+		Type   string         `json:"type"`
+		Config map[string]any `json:"config"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if req.Type == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "type is required"})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+
+	bs, err := storage.NewFromConfig(ctx, req.Type, req.Config)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"ok": false, "error": err.Error()})
+		return
+	}
+
+	// Probe the store: list with a small cap is a cheap connectivity check.
+	_, listErr := bs.ListKeys(ctx)
+	if listErr != nil {
+		c.JSON(http.StatusOK, gin.H{"ok": false, "error": listErr.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
 // Compact handles POST /api/v1/blobstores/:name/compact
