@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Activity, ArrowRightLeft, CheckCircle, Database, Download, HardDrive, Info, Pause, Pencil, Play, Plus, RefreshCw, Trash2, Upload, Wifi, X } from 'lucide-react'
+import { Activity, Archive, ArrowRightLeft, CheckCircle, Database, Download, HardDrive, Info, Paperclip, Pause, Pencil, Play, Plus, RefreshCw, Trash2, Upload, Wifi, X } from 'lucide-react'
 import { nexusApi, nexspenceApi, ImportRepoStats, ServiceStatus } from '@/api/client'
 import { MonitoringView } from '@/pages/MonitoringPage'
 import { Select } from '@/components/Select'
@@ -56,6 +56,7 @@ export default function AdminPage() {
   const [restoreResult, setRestoreResult] = useState<Record<string, number> | null>(null)
   const [restoreError, setRestoreError] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const importFileRef = useRef<HTMLInputElement>(null)
   const [editingQuota, setEditingQuota] = useState<string | null>(null) // blob store id
   const [quotaInput, setQuotaInput] = useState('')
   const [detailName, setDetailName] = useState<string | null>(null) // open detail modal for this blob store
@@ -262,25 +263,27 @@ export default function AdminPage() {
 
       {/* Backup / Restore */}
       {tab === 'backup' && (
-      <div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-          <Database size={15} style={{ color: 'var(--holo-text-dim)' }} />
-          <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--holo-text)' }}>Backup &amp; Restore</span>
-        </div>
-        <HoloCard style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' as const, alignItems: 'center' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+        {/* ── System Backup & Restore ── */}
+        <HoloCard style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+            <Database size={15} style={{ color: 'var(--holo-text-dim)' }} />
+            <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--holo-text)' }}>System Backup &amp; Restore</span>
+          </div>
+          <p style={{ fontSize: 12, color: 'var(--holo-text-faint)', margin: 0 }}>
+            Full instance snapshot — all repositories, users, roles, policies, components, assets and blobs.
+            Restore is non-destructive; existing records are skipped.
+          </p>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' as const, alignItems: 'center' }}>
             <HoloButton variant="primary" icon={<Download size={14} />} onClick={handleExport} disabled={exportBusy}>
-              {exportBusy ? 'Exporting…' : 'Export backup'}
+              {exportBusy ? 'Exporting…' : 'Export Backup'}
             </HoloButton>
-            <HoloButton variant="primary" icon={<Upload size={14} />} onClick={() => fileInputRef.current?.click()} disabled={restoreBusy}>
-              {restoreBusy ? 'Restoring…' : 'Restore from backup'}
+            <HoloButton icon={<Upload size={14} />} onClick={() => fileInputRef.current?.click()} disabled={restoreBusy}>
+              {restoreBusy ? 'Restoring…' : 'Restore'}
             </HoloButton>
             <input ref={fileInputRef} type="file" accept=".tar.gz,.tgz" style={{ display: 'none' }} onChange={handleRestore} />
           </div>
-          <p style={{ fontSize: 12, color: 'var(--holo-text-faint)', margin: 0 }}>
-            Export creates a full <code style={{ color: 'var(--holo-a)' }}>.tar.gz</code> archive of all repositories, users, roles, policies, components, assets and blobs.
-            Restore is non-destructive — existing records are skipped.
-          </p>
           {restoreError && (
             <div style={{ background: 'rgba(255,107,107,0.08)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, padding: '10px 14px', color: 'var(--holo-red)', fontSize: 13 }}>
               {restoreError}
@@ -298,87 +301,109 @@ export default function AdminPage() {
               </div>
             </div>
           )}
+        </HoloCard>
 
-          {/* Import Repository */}
-          <div style={{ marginTop: 24, paddingTop: 20, borderTop: '1px solid rgba(124,92,255,0.15)' }}>
-            <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--holo-text)' }}>Import Repository</span>
-            <p style={{ fontSize: 12, color: 'var(--holo-text-faint)', margin: '6px 0 16px' }}>
-              Import a single repository from a <code>.tar.gz</code> archive exported by Nexspence.
-            </p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div>
-                <label style={{ fontSize: 12, color: 'var(--holo-text-faint)', display: 'block', marginBottom: 4 }}>Archive file</label>
-                <input
-                  type="file"
-                  accept=".tar.gz,.tgz"
-                  style={{ fontSize: 13, color: 'var(--holo-text)' }}
-                  onChange={e => {
-                    const f = e.target.files?.[0] ?? null
-                    setImportFile(f)
-                    setImportResult(null)
-                    setImportError(null)
-                  }}
-                />
-              </div>
-              <div>
-                <label style={{ fontSize: 12, color: 'var(--holo-text-faint)', display: 'block', marginBottom: 4 }}>
-                  Target name <span style={{ color: 'rgba(229,231,235,0.4)' }}>(optional — overrides name in archive)</span>
-                </label>
-                <HoloInput
-                  placeholder="leave blank to use archived name"
-                  value={importTargetName}
-                  onChange={e => setImportTargetName(e.target.value)}
-                  style={{ width: 280 }}
-                />
-              </div>
-              <div>
-                <label style={{ fontSize: 12, color: 'var(--holo-text-faint)', display: 'block', marginBottom: 4 }}>
-                  Conflict mode
-                </label>
-                <Select
-                  value={importConflict}
-                  onChange={setImportConflict}
-                  options={[
-                    { value: 'skip',   label: 'Skip — add only absent components/assets' },
-                    { value: 'merge',  label: 'Merge — alias for skip' },
-                    { value: 'rename', label: 'Rename — create under target name (error if taken)' },
-                  ]}
-                  style={{ width: 340 }}
-                />
-              </div>
-              <div>
-                <HoloButton
-                  variant="primary"
-                  disabled={!importFile || importBusy}
-                  onClick={handleImportRepo}
-                >
-                  {importBusy ? 'Importing…' : 'Import repository'}
+        {/* ── Repository Import ── */}
+        <HoloCard style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+            <Archive size={15} style={{ color: 'var(--holo-text-dim)' }} />
+            <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--holo-text)' }}>Repository Import</span>
+          </div>
+          <p style={{ fontSize: 12, color: 'var(--holo-text-faint)', margin: 0 }}>
+            Import a single repository from a <code style={{ color: 'var(--holo-a)' }}>.tar.gz</code> archive
+            exported from this or another Nexspence instance. Users, roles and cleanup policies are not included — only repository metadata, components, assets and blobs.
+          </p>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {/* File picker */}
+            <div>
+              <label style={{ fontSize: 12, color: 'var(--holo-text-faint)', display: 'block', marginBottom: 6 }}>Archive file</label>
+              <input
+                ref={importFileRef}
+                type="file"
+                accept=".tar.gz,.tgz"
+                style={{ display: 'none' }}
+                onChange={e => {
+                  setImportFile(e.target.files?.[0] ?? null)
+                  setImportResult(null)
+                  setImportError(null)
+                }}
+              />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <HoloButton icon={<Paperclip size={14} />} onClick={() => importFileRef.current?.click()}>
+                  Choose archive
                 </HoloButton>
+                {importFile ? (
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--holo-text-faint)', maxWidth: 320, overflow: 'hidden' }}>
+                    <Archive size={12} style={{ flexShrink: 0 }} />
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>{importFile.name}</span>
+                    <button
+                      onClick={() => { setImportFile(null); if (importFileRef.current) importFileRef.current.value = '' }}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--holo-text-dim)', padding: '0 2px', lineHeight: 1, fontSize: 16, flexShrink: 0 }}
+                      title="Clear"
+                    ><X size={13} /></button>
+                  </span>
+                ) : (
+                  <span style={{ fontSize: 12, color: 'rgba(229,231,235,0.28)' }}>No file selected</span>
+                )}
               </div>
-              {importResult && (
-                <div style={{
-                  padding: '10px 14px', borderRadius: 8,
-                  background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)',
-                  fontSize: 13, color: 'var(--holo-text)',
-                }}>
-                  Imported <strong>{importResult.imported.components}</strong> components,{' '}
-                  <strong>{importResult.imported.assets}</strong> assets into{' '}
-                  <code style={{ color: '#93c5fd' }}>{importResult.imported.repository}</code>
-                  {importResult.imported.blobs > 0 && <> ({importResult.imported.blobs} blobs)</>}.
-                </div>
-              )}
-              {importError && (
-                <div style={{
-                  padding: '10px 14px', borderRadius: 8,
-                  background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)',
-                  fontSize: 13, color: '#fca5a5',
-                }}>
-                  {importError}
-                </div>
-              )}
             </div>
+
+            {/* Target name */}
+            <div>
+              <label style={{ fontSize: 12, color: 'var(--holo-text-faint)', display: 'block', marginBottom: 6 }}>
+                Target name <span style={{ color: 'rgba(229,231,235,0.35)' }}>— optional, overrides the name in the archive</span>
+              </label>
+              <HoloInput
+                placeholder="leave blank to use the archived name"
+                value={importTargetName}
+                onChange={e => setImportTargetName(e.target.value)}
+                style={{ width: 300 }}
+              />
+            </div>
+
+            {/* Conflict mode */}
+            <div>
+              <label style={{ fontSize: 12, color: 'var(--holo-text-faint)', display: 'block', marginBottom: 6 }}>Conflict mode</label>
+              <Select
+                value={importConflict}
+                onChange={setImportConflict}
+                options={[
+                  { value: 'skip',   label: 'Skip — add only absent components/assets if repo exists' },
+                  { value: 'rename', label: 'Rename — create under target name (fails if name is taken)' },
+                ]}
+                style={{ width: 360 }}
+              />
+            </div>
+
+            <div>
+              <HoloButton
+                variant="primary"
+                icon={<Upload size={14} />}
+                disabled={!importFile || importBusy}
+                onClick={handleImportRepo}
+              >
+                {importBusy ? 'Importing…' : 'Import Repository'}
+              </HoloButton>
+            </div>
+
+            {importResult && (
+              <div style={{ padding: '10px 14px', borderRadius: 8, background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.28)', fontSize: 13, color: 'var(--holo-text)' }}>
+                <span style={{ color: 'var(--holo-green)', fontWeight: 600, display: 'block', marginBottom: 4 }}>Import complete</span>
+                Imported <strong>{importResult.imported.components}</strong> components and{' '}
+                <strong>{importResult.imported.assets}</strong> assets into{' '}
+                <code style={{ color: '#93c5fd' }}>{importResult.imported.repository}</code>
+                {importResult.imported.blobs > 0 && <>, <strong>{importResult.imported.blobs}</strong> blobs</>}.
+              </div>
+            )}
+            {importError && (
+              <div style={{ padding: '10px 14px', borderRadius: 8, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.28)', fontSize: 13, color: '#fca5a5' }}>
+                {importError}
+              </div>
+            )}
           </div>
         </HoloCard>
+
       </div>
       )}
 

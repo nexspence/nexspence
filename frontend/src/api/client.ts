@@ -5,11 +5,16 @@ export const apiClient = axios.create({
   headers: { 'Content-Type': 'application/json' },
 })
 
-// Attach JWT token from localStorage
+// Attach JWT token from localStorage.
+// Also strip the default application/json Content-Type when sending FormData so
+// the browser fills in the correct multipart/form-data boundary automatically.
 apiClient.interceptors.request.use((config) => {
   const token = localStorage.getItem('nexspence_token')
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
+  }
+  if (config.data instanceof FormData) {
+    delete (config.headers as Record<string, unknown>)['Content-Type']
   }
   return config
 })

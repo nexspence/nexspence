@@ -8,7 +8,6 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -70,19 +69,24 @@ func TestBackupHandler_ExportRepo_SetsHeaders(t *testing.T) {
 	assert.Greater(t, w.Body.Len(), 0)
 }
 
-func TestBackupHandler_ImportRepo_BadArchive(t *testing.T) {
+func TestBackupHandler_ImportRepo_MissingFile(t *testing.T) {
 	h := buildBackupHandler()
 	r := ginTestRouter()
 	r.POST("/api/v1/repositories/import", h.ImportRepo)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/repositories/import",
-		strings.NewReader("not a gzip"))
-	req.Header.Set("Content-Type", "application/octet-stream")
+	// No "file" field in the multipart form → 400.
+	var body bytes.Buffer
+	mw := multipart.NewWriter(&body)
+	require.NoError(t, mw.WriteField("conflictMode", "skip"))
+	mw.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/repositories/import", &body)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
-	assert.Contains(t, w.Body.String(), "error")
+	assert.Contains(t, w.Body.String(), "missing file field")
 }
 
 func TestBackupHandler_ImportRepo_ParsesMultipartFields(t *testing.T) {

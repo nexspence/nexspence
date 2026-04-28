@@ -91,23 +91,22 @@ func (h *BackupHandler) ExportRepo(c *gin.Context) {
 // and re-creates the repository, components, assets, and blobs.
 // POST /api/v1/repositories/import
 func (h *BackupHandler) ImportRepo(c *gin.Context) {
-	var reader = c.Request.Body
-	if c.ContentType() == "multipart/form-data" {
-		if err := c.Request.ParseMultipartForm(512 << 20); err == nil {
-			if f, _, err := c.Request.FormFile("file"); err == nil {
-				defer f.Close()
-				reader = f
-			}
-		}
+	fh, err := c.FormFile("file")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing file field: " + err.Error()})
+		return
 	}
-
-	targetName := c.Request.FormValue("targetName")
-	conflictMode := c.Request.FormValue("conflictMode")
-	if conflictMode == "" {
-		conflictMode = "skip"
+	f, err := fh.Open()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "cannot open uploaded file: " + err.Error()})
+		return
 	}
+	defer f.Close()
 
-	stats, err := h.svc.ImportRepo(c.Request.Context(), reader, targetName, conflictMode)
+	targetName := c.PostForm("targetName")
+	conflictMode := c.DefaultPostForm("conflictMode", "skip")
+
+	stats, err := h.svc.ImportRepo(c.Request.Context(), f, targetName, conflictMode)
 	if err != nil {
 		if errors.Is(err, service.ErrRepoConflict) {
 			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
