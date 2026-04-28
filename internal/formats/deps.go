@@ -12,7 +12,8 @@ type Deps struct {
 	Components repository.ComponentRepo
 	Assets     repository.AssetRepo
 	Blobs      repository.BlobStoreRepo
-	BlobStore  storage.BlobStore
+	BlobStore  storage.BlobStore    // default / fallback store
+	Registry   *storage.Registry   // optional: per-blob-store routing; nil disables
 	BaseURL    string
 	// Webhooks is optional — nil disables event delivery.
 	Webhooks domain.WebhookDispatcher
