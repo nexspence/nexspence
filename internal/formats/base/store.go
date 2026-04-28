@@ -18,6 +18,7 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/metrics"
 	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/requestctx"
+	"github.com/nexspence-oss/nexspence/internal/storage"
 )
 
 // ErrQuotaExceeded is returned by StoreArtifact when a blob store or repository quota would be exceeded.
@@ -67,6 +68,20 @@ func StoreArtifact(ctx context.Context, d formats.Deps,
 
 	blobKey := BlobKey(repoName, filePath)
 
+	// Resolve the physical blob store for this repository.
+	var physStore storage.BlobStore
+	{
+		bsID, _, refErr := resolveBlobStoreRef(ctx, d, repo)
+		if refErr == nil && bsID != "" {
+			if bsMeta, getErr := d.Blobs.GetByID(ctx, bsID); getErr == nil {
+				physStore = physicalStore(ctx, d, bsMeta)
+			}
+		}
+		if physStore == nil {
+			physStore = d.BlobStore
+		}
+	}
+
 	// Stream → hash writers → blob store via pipe
 	sha256h := sha256.New()
 	sha1h   := sha1.New()
@@ -79,7 +94,7 @@ func StoreArtifact(ctx context.Context, d formats.Deps,
 		pw.CloseWithError(pipeErr)
 	}()
 
-	if err := d.BlobStore.Put(ctx, blobKey, pr, declaredSize); err != nil {
+	if err := physStore.Put(ctx, blobKey, pr, declaredSize); err != nil {
 		return nil, fmt.Errorf("store blob: %w", err)
 	}
 
@@ -89,7 +104,7 @@ func StoreArtifact(ctx context.Context, d formats.Deps,
 
 	size := declaredSize
 	if size <= 0 {
-		if s, err := d.BlobStore.Size(ctx, blobKey); err == nil {
+		if s, err := physStore.Size(ctx, blobKey); err == nil {
 			size = s
 		}
 	}
@@ -97,7 +112,7 @@ func StoreArtifact(ctx context.Context, d formats.Deps,
 	// Post-write quota check covers streaming uploads where size wasn't declared.
 	if size > 0 && declaredSize <= 0 {
 		if err := checkQuota(ctx, d, repo, size); err != nil {
-			_ = d.BlobStore.Delete(ctx, blobKey)
+			_ = physStore.Delete(ctx, blobKey)
 			return nil, err
 		}
 	}
@@ -201,7 +216,16 @@ func FetchArtifact(ctx context.Context, d formats.Deps, repoName, filePath strin
 		return nil, nil, fmt.Errorf("not found: %s/%s", repoName, filePath)
 	}
 
-	rc, _, err := d.BlobStore.Get(ctx, asset.BlobKey)
+	var fetchStore storage.BlobStore
+	if asset.BlobStoreID != "" {
+		if bsMeta, getErr := d.Blobs.GetByID(ctx, asset.BlobStoreID); getErr == nil {
+			fetchStore = physicalStore(ctx, d, bsMeta)
+		}
+	}
+	if fetchStore == nil {
+		fetchStore = d.BlobStore
+	}
+	rc, _, err := fetchStore.Get(ctx, asset.BlobKey)
 	if err != nil {
 		return nil, nil, fmt.Errorf("blob missing: %w", err)
 	}
@@ -222,7 +246,16 @@ func DeleteArtifact(ctx context.Context, d formats.Deps, repoName, filePath stri
 	if asset == nil {
 		return nil // idempotent
 	}
-	_ = d.BlobStore.Delete(ctx, asset.BlobKey)
+	var delStore storage.BlobStore
+	if asset.BlobStoreID != "" {
+		if bsMeta, getErr := d.Blobs.GetByID(ctx, asset.BlobStoreID); getErr == nil {
+			delStore = physicalStore(ctx, d, bsMeta)
+		}
+	}
+	if delStore == nil {
+		delStore = d.BlobStore
+	}
+	_ = delStore.Delete(ctx, asset.BlobKey)
 	if err := d.Assets.Delete(ctx, asset.ID); err != nil {
 		return err
 	}
@@ -331,6 +364,24 @@ func resolveBlobStoreObj(ctx context.Context, d formats.Deps, repo *domain.Repos
 		return nil, fmt.Errorf("default blob store not found")
 	}
 	return bs, nil
+}
+
+// physicalStore returns the physical BlobStore for the given domain blob store.
+// If the registry is set and the descriptor is valid, it returns the cached/created instance.
+// Falls back to d.BlobStore (the global default) on any error or missing registry.
+func physicalStore(ctx context.Context, d formats.Deps, bs *domain.BlobStore) storage.BlobStore {
+	if d.Registry == nil || bs == nil {
+		return d.BlobStore
+	}
+	store, err := d.Registry.Get(ctx, storage.BlobStoreDescriptor{
+		ID:     bs.ID,
+		Type:   bs.Type,
+		Config: bs.Config,
+	})
+	if err != nil {
+		return d.BlobStore
+	}
+	return store
 }
 
 // resolveBlobStoreRef returns the blob store UUID for assets.blob_store_id (FK)
