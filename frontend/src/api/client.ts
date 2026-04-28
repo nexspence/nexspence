@@ -67,6 +67,14 @@ export interface CleanupPreviewResponse {
   totalBytes: number
 }
 
+export interface ImportRepoStats {
+  repository: string
+  components: number
+  assets: number
+  blobs: number
+  conflictMode: string
+}
+
 // ── API helpers ──────────────────────────────────────────────
 
 export const nexusApi = {
@@ -266,6 +274,17 @@ export const nexspenceApi = {
     const fd = new FormData()
     fd.append('file', file)
     return apiClient.post<{ restored: Record<string, number> }>('/api/v1/backup/restore', fd)
+  },
+
+  exportRepo: (name: string) =>
+    apiClient.get(`/api/v1/repositories/${encodeURIComponent(name)}/export`, { responseType: 'blob' }),
+
+  importRepo: (file: File, targetName: string, conflictMode: string) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    fd.append('targetName', targetName)
+    fd.append('conflictMode', conflictMode)
+    return apiClient.post<{ imported: ImportRepoStats }>('/api/v1/repositories/import', fd)
   },
 
   // Repository storage usage vs quota — GET /api/v1/repositories/:name/quota
