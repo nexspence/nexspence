@@ -175,7 +175,7 @@ func (s *CleanupService) runPolicy(ctx context.Context, p domain.CleanupPolicy) 
 	var freed int64
 	var deleted int
 	for {
-		stale, err := s.assets.ListStale(ctx, p.Format, repoNames, lastDownloadedDays, artifactAgeDays, pathPrefix, nameGlob, batchLimit)
+		stale, err := s.assets.ListStale(ctx, p.Format, repoNames, lastDownloadedDays, artifactAgeDays, pathPrefix, nameGlob, p.RetainNVersions, batchLimit)
 		if err != nil {
 			return fmt.Errorf("cleanup: list stale assets: %w", err)
 		}
