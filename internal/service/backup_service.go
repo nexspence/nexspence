@@ -295,7 +295,8 @@ type ImportRepoStats struct {
 //
 // targetName — if non-empty, override the repository name from the archive.
 // conflictMode — "skip" (default) | "merge" | "rename":
-//   - skip/merge: if repo exists, add only absent components (by name+version+group) and assets (by path).
+//   - skip: if repo exists, add only absent components (by name+version+group) and assets (by path).
+//   - merge: currently an alias for "skip".
 //   - rename: targetName must be non-empty; returns ErrRepoConflict if targetName is taken.
 func (s *BackupService) ImportRepo(ctx context.Context, r io.Reader, targetName, conflictMode string) (*ImportRepoStats, error) {
 	if conflictMode == "" {
@@ -388,11 +389,17 @@ func (s *BackupService) ImportRepo(ctx context.Context, r io.Reader, targetName,
 	// Build existing-components map (group+name+version → id) for skip/merge dedup.
 	existingCompIDs := map[string]string{}
 	if conflictMode == "skip" || conflictMode == "merge" {
-		page, _ := s.Components.Search(ctx, domain.SearchParams{Repository: finalName})
-		if page != nil {
+		for offset := 0; ; offset += 500 {
+			page, _ := s.Components.List(ctx, finalName, 500, offset)
+			if page == nil || len(page.Items) == 0 {
+				break
+			}
 			for _, c := range page.Items {
 				k := c.Group + "\x00" + c.Name + "\x00" + c.Version
 				existingCompIDs[k] = c.ID
+			}
+			if len(page.Items) < 500 {
+				break
 			}
 		}
 	}
@@ -439,7 +446,6 @@ func (s *BackupService) ImportRepo(ctx context.Context, r io.Reader, targetName,
 		if a.BlobKey != "" {
 			if data, ok := blobs[a.BlobKey]; ok {
 				_ = s.BlobStore.Put(ctx, a.BlobKey, bytes.NewReader(data), int64(len(data)))
-				stats.Blobs++
 			}
 		}
 
@@ -454,6 +460,11 @@ func (s *BackupService) ImportRepo(ctx context.Context, r io.Reader, targetName,
 			continue
 		}
 		stats.Assets++
+		if a.BlobKey != "" {
+			if _, hadBlob := blobs[a.BlobKey]; hadBlob {
+				stats.Blobs++
+			}
+		}
 	}
 
 	return stats, nil
