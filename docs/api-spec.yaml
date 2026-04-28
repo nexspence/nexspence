@@ -206,7 +206,7 @@ components:
             lastDownloaded:     { type: integer, description: "days" }
             preRelease:         { type: string, enum: [RELEASES, PRERELEASES, "*"] }
             regexKey:           { type: string }
-            retainVersions:     { type: integer }
+        retainNVersions: { type: integer, default: 0, description: "Nexspence: keep N newest versions of each (group_id, name) even if they match other criteria. 0 = disabled." }
         scheduleCron:  { type: string, description: "Nexspence extension: cron expression" }
 
     PagedResponse:

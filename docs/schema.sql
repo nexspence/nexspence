@@ -282,6 +282,7 @@ CREATE TABLE cleanup_policies (
     schedule_cron   TEXT NOT NULL DEFAULT '0 2 * * *',
     enabled         BOOLEAN NOT NULL DEFAULT TRUE,
     dry_run         BOOLEAN NOT NULL DEFAULT FALSE,
+    retain_n_versions INT NOT NULL DEFAULT 0,  -- keep N newest versions per (group_id, name)
     last_run_at     TIMESTAMPTZ,
     last_run_freed  BIGINT,             -- bytes freed last run
     last_run_count  INT,                -- artifacts deleted last run
