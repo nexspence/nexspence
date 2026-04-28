@@ -1,8 +1,11 @@
 package service_test
 
 import (
+	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"context"
+	"io"
 	"testing"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
@@ -12,10 +15,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func buildBackupSvc(repo *domain.Repository) *service.BackupService {
+func buildBackupSvc(repos ...*domain.Repository) *service.BackupService {
 	return &service.BackupService{
 		BlobStores: testutil.NewBlobStoreRepo(),
-		Repos:      testutil.NewRepoRepo(repo),
+		Repos:      testutil.NewRepoRepo(repos...),
 		Users:      testutil.NewUserRepo(),
 		Roles:      testutil.NewRoleRepo(),
 		Policies:   testutil.NewCleanupPolicyRepo(),
@@ -119,4 +122,61 @@ func TestBackup_InvalidArchive(t *testing.T) {
 
 	_, err := svc.Restore(ctx, bytes.NewReader([]byte("not a gzip")))
 	assert.Error(t, err, "should reject non-gzip input")
+}
+
+func TestBackupRepo_ExportRoundtrip(t *testing.T) {
+	ctx := context.Background()
+	repo := testutil.SimpleRepo("myrepo", "raw")
+	svc := buildBackupSvc(repo)
+
+	// Add component + asset + blob.
+	comp := &domain.Component{
+		RepositoryID: repo.ID, Repository: repo.Name,
+		Format: "raw", Name: "pkg.tar.gz", Version: "1.0",
+	}
+	require.NoError(t, svc.Components.Create(ctx, comp))
+
+	blobKey := "ab/cd/abcdef"
+	blobData := []byte("artifact-bytes")
+	require.NoError(t, svc.BlobStore.Put(ctx, blobKey, bytes.NewReader(blobData), int64(len(blobData))))
+
+	bs := &domain.BlobStore{Name: "default", Type: "local", Config: map[string]any{"path": "/tmp"}}
+	require.NoError(t, svc.BlobStores.Create(ctx, bs))
+
+	asset := &domain.Asset{
+		ComponentID: comp.ID, RepositoryID: repo.ID, Repository: repo.Name,
+		Path: "/pkg.tar.gz", BlobKey: blobKey, BlobStoreID: bs.ID,
+		SizeBytes: int64(len(blobData)), ContentType: "application/gzip",
+	}
+	require.NoError(t, svc.Assets.Create(ctx, asset))
+
+	var buf bytes.Buffer
+	require.NoError(t, svc.ExportRepo(ctx, "myrepo", &buf))
+	assert.Greater(t, buf.Len(), 0)
+
+	// Archive must contain manifest, repository, components, assets, blobs entries.
+	gr, err := gzip.NewReader(&buf)
+	require.NoError(t, err)
+	tr := tar.NewReader(gr)
+	entries := map[string]bool{}
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		entries[hdr.Name] = true
+	}
+	assert.True(t, entries["manifest.json"])
+	assert.True(t, entries["repository.json"])
+	assert.True(t, entries["components.json"])
+	assert.True(t, entries["assets.json"])
+	assert.True(t, entries["blobs/"+blobKey])
+}
+
+func TestBackupRepo_ExportNotFound(t *testing.T) {
+	svc := buildBackupSvc(testutil.SimpleRepo("exists", "raw"))
+	var buf bytes.Buffer
+	err := svc.ExportRepo(context.Background(), "no-such-repo", &buf)
+	assert.ErrorIs(t, err, service.ErrRepoNotFound)
 }

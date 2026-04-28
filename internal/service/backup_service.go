@@ -7,6 +7,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -28,6 +29,12 @@ type BackupService struct {
 	Assets     repository.AssetRepo
 	BlobStore  storage.BlobStore
 }
+
+// Sentinel errors for per-repository operations.
+var (
+	ErrRepoNotFound = errors.New("repository not found")
+	ErrRepoConflict = errors.New("repository already exists")
+)
 
 // RestoreStats reports what was restored.
 type RestoreStats struct {
@@ -151,6 +158,94 @@ func (s *BackupService) Export(ctx context.Context, w io.Writer) error {
 	}
 
 	// Blobs: deduplicate by key.
+	seen := map[string]bool{}
+	for _, a := range allAssets {
+		if a.BlobKey == "" || seen[a.BlobKey] {
+			continue
+		}
+		seen[a.BlobKey] = true
+		rc, size, err := s.BlobStore.Get(ctx, a.BlobKey)
+		if err != nil {
+			continue
+		}
+		if err := tw.WriteHeader(&tar.Header{
+			Name:    "blobs/" + a.BlobKey,
+			Size:    size,
+			Mode:    0o644,
+			ModTime: time.Now(),
+		}); err != nil {
+			rc.Close()
+			return err
+		}
+		_, _ = io.Copy(tw, rc)
+		rc.Close()
+	}
+
+	return nil
+}
+
+// ExportRepo writes a gzip-compressed tar archive scoped to one repository.
+// Archive contains: manifest.json, repository.json, components.json, assets.json, blobs/<key>.
+// Returns ErrRepoNotFound if repoName does not exist.
+func (s *BackupService) ExportRepo(ctx context.Context, repoName string, w io.Writer) error {
+	repo, err := s.Repos.Get(ctx, repoName)
+	if err != nil || repo == nil {
+		return fmt.Errorf("%w: %s", ErrRepoNotFound, repoName)
+	}
+
+	gw, err := gzip.NewWriterLevel(w, gzip.BestSpeed)
+	if err != nil {
+		return err
+	}
+	defer gw.Close()
+	tw := tar.NewWriter(gw)
+	defer tw.Close()
+
+	manifest := map[string]any{
+		"version":  "1",
+		"created":  time.Now().UTC().Format(time.RFC3339),
+		"repoName": repoName,
+	}
+	if err := writeJSONEntry(tw, "manifest.json", manifest); err != nil {
+		return err
+	}
+	if err := writeJSONEntry(tw, "repository.json", *repo); err != nil {
+		return err
+	}
+
+	// Components (paginated).
+	var allComponents []domain.Component
+	for offset := 0; ; offset += 500 {
+		page, err := s.Components.List(ctx, repoName, 500, offset)
+		if err != nil {
+			break
+		}
+		allComponents = append(allComponents, page.Items...)
+		if len(page.Items) < 500 {
+			break
+		}
+	}
+	if err := writeJSONEntry(tw, "components.json", allComponents); err != nil {
+		return err
+	}
+
+	// Assets (paginated).
+	var allAssets []domain.Asset
+	for offset := 0; ; offset += 500 {
+		page, err := s.Assets.List(ctx, repoName, 500, offset)
+		if err != nil {
+			break
+		}
+		allAssets = append(allAssets, page.Items...)
+		if len(page.Items) < 500 {
+			break
+		}
+	}
+	if err := writeJSONEntry(tw, "assets.json", allAssets); err != nil {
+		return err
+	}
+
+	// Blobs (deduplicated by key).
 	seen := map[string]bool{}
 	for _, a := range allAssets {
 		if a.BlobKey == "" || seen[a.BlobKey] {
