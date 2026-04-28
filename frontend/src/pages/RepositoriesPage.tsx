@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Database, Plus, Trash2, RefreshCw, Settings2, Power } from 'lucide-react'
+import { Database, Download, Plus, Trash2, RefreshCw, Settings2, Power } from 'lucide-react'
 import { nexusApi, nexspenceApi, apiClient } from '@/api/client'
 import { useAuthStore } from '@/store/authStore'
 import styles from './RepositoriesPage.module.css'
@@ -187,6 +187,22 @@ export default function RepositoriesPage() {
                 }
               }}
               onToggleOnline={(online) => toggleOnlineMutation.mutate({ name: repo.name, online })}
+              onExport={async () => {
+                try {
+                  const res = await nexspenceApi.exportRepo(repo.name)
+                  const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+                  const url = URL.createObjectURL(new Blob([res.data]))
+                  const a = document.createElement('a')
+                  a.href = url
+                  a.download = `nexspense-repo-${repo.name}-${ts}.tar.gz`
+                  document.body.appendChild(a)
+                  a.click()
+                  document.body.removeChild(a)
+                  URL.revokeObjectURL(url)
+                } catch {
+                  // silent — no toast in this phase
+                }
+              }}
             />
           ))}
         </div>
@@ -225,7 +241,7 @@ function formatBytes(bytes: number): string {
 }
 
 function RepoRow({
-  repo, isAdmin, storeName, onClick, onEdit, onDelete, onToggleOnline,
+  repo, isAdmin, storeName, onClick, onEdit, onDelete, onToggleOnline, onExport,
 }: {
   repo: Repository
   isAdmin: boolean
@@ -234,6 +250,7 @@ function RepoRow({
   onEdit: () => void
   onDelete: () => void
   onToggleOnline: (online: boolean) => void
+  onExport: () => void
 }) {
   const { data: quota } = useQuery({
     queryKey: ['repoQuota', repo.name],
@@ -293,6 +310,11 @@ function RepoRow({
             onClick={e => { e.stopPropagation(); onToggleOnline(!repo.online) }}
             title={repo.online ? 'Disable repository' : 'Enable repository'}
             style={{ color: repo.online ? 'var(--holo-green)' : 'var(--holo-text-faint)' }}
+          />
+          <HoloButton
+            icon={<Download size={14} />}
+            onClick={e => { e.stopPropagation(); onExport() }}
+            title="Export repository"
           />
           <HoloButton icon={<Settings2 size={14} />} onClick={e => { e.stopPropagation(); onEdit() }} title="Settings" />
           <HoloButton variant="danger" icon={<Trash2 size={14} />} onClick={e => { e.stopPropagation(); onDelete() }} title="Delete" />
