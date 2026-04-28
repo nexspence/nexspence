@@ -342,19 +342,20 @@ type Privilege struct {
 // ── Cleanup Policy ───────────────────────────────────────────
 
 type CleanupPolicy struct {
-	ID           string         `json:"id"`
-	Name         string         `json:"name"`
-	Description  string         `json:"description,omitempty"`
-	Format       string         `json:"format"` // "*" = all formats
-	Criteria     map[string]any `json:"criteria"` // e.g. {"lastDownloadedDays":30,"artifactAgeDays":90}
-	ScheduleCron string         `json:"scheduleCron,omitempty"`
-	Enabled      bool           `json:"enabled"`
-	DryRun       bool           `json:"dryRun"`
-	LastRunAt    *time.Time     `json:"lastRunAt,omitempty"`
-	LastRunFreed int64          `json:"lastRunFreedBytes,omitempty"`
-	LastRunCount int            `json:"lastRunCount,omitempty"`
-	CreatedAt    time.Time      `json:"createdAt"`
-	UpdatedAt    time.Time      `json:"updatedAt"`
+	ID              string         `json:"id"`
+	Name            string         `json:"name"`
+	Description     string         `json:"description,omitempty"`
+	Format          string         `json:"format"` // "*" = all formats
+	Criteria        map[string]any `json:"criteria"` // e.g. {"lastDownloadedDays":30,"artifactAgeDays":90}
+	ScheduleCron    string         `json:"scheduleCron,omitempty"`
+	Enabled         bool           `json:"enabled"`
+	DryRun          bool           `json:"dryRun"`
+	RetainNVersions int            `json:"retainNVersions,omitempty"`
+	LastRunAt       *time.Time     `json:"lastRunAt,omitempty"`
+	LastRunFreed    int64          `json:"lastRunFreedBytes,omitempty"`
+	LastRunCount    int            `json:"lastRunCount,omitempty"`
+	CreatedAt       time.Time      `json:"createdAt"`
+	UpdatedAt       time.Time      `json:"updatedAt"`
 }
 
 // ── Audit Event ──────────────────────────────────────────────
