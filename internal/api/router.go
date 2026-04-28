@@ -71,6 +71,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 	if err != nil {
 		panic("failed to init blob store: " + err.Error())
 	}
+	blobRegistry := storage.NewRegistry(localBlob)
 
 	repoSvc    := service.NewRepositoryService(repoRepo, blobRepo, localBlob, cleanupRepo)
 	userSvc    := service.NewUserService(userRepo, roleRepo, authSvc, log)
@@ -116,6 +117,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 		Assets:     assetRepo,
 		Blobs:      blobRepo,
 		BlobStore:  localBlob,
+		Registry:   blobRegistry,
 		BaseURL:    cfg.HTTP.BaseURL,
 		Webhooks:   webhookSvc,
 	}
