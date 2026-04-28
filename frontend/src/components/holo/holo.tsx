@@ -1,4 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 
 /**
  * Holographic Depth — React component kit for self_nexus.
@@ -139,9 +140,10 @@ export function CountUp({ to, suffix = '', dur = 1200, decimals }: { to: number;
 /* ---------- Modal ---------- */
 export function HoloModal({ open, onClose, children, style }: { open: boolean; onClose: () => void; children: React.ReactNode; style?: React.CSSProperties }) {
   if (!open) return null;
-  return (
+  return createPortal(
     <div className="holo-overlay" onClick={onClose}>
       <div className="holo-modal" style={style} onClick={e => e.stopPropagation()}>{children}</div>
-    </div>
+    </div>,
+    document.body
   );
 }
