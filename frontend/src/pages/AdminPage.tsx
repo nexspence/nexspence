@@ -2,7 +2,7 @@ import { useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Activity, ArrowRightLeft, CheckCircle, Database, Download, HardDrive, Info, Pause, Pencil, Play, Plus, RefreshCw, Trash2, Upload, Wifi, X } from 'lucide-react'
-import { nexusApi, nexspenceApi, ServiceStatus } from '@/api/client'
+import { nexusApi, nexspenceApi, ImportRepoStats, ServiceStatus } from '@/api/client'
 import { MonitoringView } from '@/pages/MonitoringPage'
 import { Select } from '@/components/Select'
 import { HoloButton, HoloInput, HoloModal, HoloTabs, HoloCard, HoloTabItem, Wizard } from '@/components/holo'
@@ -46,6 +46,12 @@ export default function AdminPage() {
   }
 
   const [exportBusy, setExportBusy] = useState(false)
+  const [importFile, setImportFile]             = useState<File | null>(null)
+  const [importTargetName, setImportTargetName] = useState('')
+  const [importConflict, setImportConflict]     = useState('skip')
+  const [importBusy, setImportBusy]             = useState(false)
+  const [importResult, setImportResult]         = useState<{ imported: ImportRepoStats } | null>(null)
+  const [importError, setImportError]           = useState<string | null>(null)
   const [restoreBusy, setRestoreBusy] = useState(false)
   const [restoreResult, setRestoreResult] = useState<Record<string, number> | null>(null)
   const [restoreError, setRestoreError] = useState('')
@@ -69,6 +75,21 @@ export default function AdminPage() {
       URL.revokeObjectURL(url)
     } finally {
       setExportBusy(false)
+    }
+  }
+
+  const handleImportRepo = async () => {
+    if (!importFile) return
+    setImportBusy(true)
+    setImportResult(null)
+    setImportError(null)
+    try {
+      const res = await nexspenceApi.importRepo(importFile, importTargetName, importConflict)
+      setImportResult(res.data)
+    } catch (e: any) {
+      setImportError(e.response?.data?.error ?? e.message ?? 'Import failed')
+    } finally {
+      setImportBusy(false)
     }
   }
 
@@ -277,6 +298,86 @@ export default function AdminPage() {
               </div>
             </div>
           )}
+
+          {/* Import Repository */}
+          <div style={{ marginTop: 24, paddingTop: 20, borderTop: '1px solid rgba(124,92,255,0.15)' }}>
+            <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--holo-text)' }}>Import Repository</span>
+            <p style={{ fontSize: 12, color: 'var(--holo-text-faint)', margin: '6px 0 16px' }}>
+              Import a single repository from a <code>.tar.gz</code> archive exported by Nexspence.
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div>
+                <label style={{ fontSize: 12, color: 'var(--holo-text-faint)', display: 'block', marginBottom: 4 }}>Archive file</label>
+                <input
+                  type="file"
+                  accept=".tar.gz,.tgz"
+                  style={{ fontSize: 13, color: 'var(--holo-text)' }}
+                  onChange={e => {
+                    const f = e.target.files?.[0] ?? null
+                    setImportFile(f)
+                    setImportResult(null)
+                    setImportError(null)
+                  }}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: 'var(--holo-text-faint)', display: 'block', marginBottom: 4 }}>
+                  Target name <span style={{ color: 'rgba(229,231,235,0.4)' }}>(optional — overrides name in archive)</span>
+                </label>
+                <HoloInput
+                  placeholder="leave blank to use archived name"
+                  value={importTargetName}
+                  onChange={e => setImportTargetName(e.target.value)}
+                  style={{ width: 280 }}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: 'var(--holo-text-faint)', display: 'block', marginBottom: 4 }}>
+                  Conflict mode
+                </label>
+                <Select
+                  value={importConflict}
+                  onChange={setImportConflict}
+                  options={[
+                    { value: 'skip',   label: 'Skip — add only absent components/assets' },
+                    { value: 'merge',  label: 'Merge — alias for skip' },
+                    { value: 'rename', label: 'Rename — create under target name (error if taken)' },
+                  ]}
+                  style={{ width: 340 }}
+                />
+              </div>
+              <div>
+                <HoloButton
+                  variant="primary"
+                  disabled={!importFile || importBusy}
+                  onClick={handleImportRepo}
+                >
+                  {importBusy ? 'Importing…' : 'Import repository'}
+                </HoloButton>
+              </div>
+              {importResult && (
+                <div style={{
+                  padding: '10px 14px', borderRadius: 8,
+                  background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)',
+                  fontSize: 13, color: 'var(--holo-text)',
+                }}>
+                  Imported <strong>{importResult.imported.components}</strong> components,{' '}
+                  <strong>{importResult.imported.assets}</strong> assets into{' '}
+                  <code style={{ color: '#93c5fd' }}>{importResult.imported.repository}</code>
+                  {importResult.imported.blobs > 0 && <> ({importResult.imported.blobs} blobs)</>}.
+                </div>
+              )}
+              {importError && (
+                <div style={{
+                  padding: '10px 14px', borderRadius: 8,
+                  background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)',
+                  fontSize: 13, color: '#fca5a5',
+                }}>
+                  {importError}
+                </div>
+              )}
+            </div>
+          </div>
         </HoloCard>
       </div>
       )}
