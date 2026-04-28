@@ -155,7 +155,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 	roleH      := handlers.NewRoleHandler(roleRepo, userRepo)
 	privH      := handlers.NewPrivilegeHandler(privilegeRepo, roleRepo)
 	csH        := handlers.NewContentSelectorHandler(selectorSvc)
-	systemH    := handlers.NewSystemHandler(cfg, pool, ldapSvc, oidcSvc)
+	systemH    := handlers.NewSystemHandler(cfg, pool, ldapSvc, oidcSvc).WithBlobStores(blobRepo)
 	migrationH := handlers.NewMigrationHandler(migrationRepo)
 	backupSvc := &service.BackupService{
 		BlobStores: blobRepo,

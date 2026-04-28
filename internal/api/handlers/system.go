@@ -15,6 +15,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nexspence-oss/nexspence/internal/auth"
 	"github.com/nexspence-oss/nexspence/internal/config"
+	"github.com/nexspence-oss/nexspence/internal/repository"
+	"github.com/nexspence-oss/nexspence/internal/storage"
 )
 
 // ServiceStatus describes the live health of one external dependency.
@@ -28,14 +30,20 @@ type ServiceStatus struct {
 
 // SystemHandler serves system-level diagnostic endpoints.
 type SystemHandler struct {
-	cfg  *config.Config
-	pool *pgxpool.Pool
-	ldap auth.LDAPAuthenticator  // nil when LDAP disabled
-	oidc auth.OIDCAuthenticator  // nil when OIDC disabled
+	cfg        *config.Config
+	pool       *pgxpool.Pool
+	ldap       auth.LDAPAuthenticator // nil when LDAP disabled
+	oidc       auth.OIDCAuthenticator // nil when OIDC disabled
+	blobStores repository.BlobStoreRepo
 }
 
 func NewSystemHandler(cfg *config.Config, pool *pgxpool.Pool, ldap auth.LDAPAuthenticator, oidc auth.OIDCAuthenticator) *SystemHandler {
 	return &SystemHandler{cfg: cfg, pool: pool, ldap: ldap, oidc: oidc}
+}
+
+func (h *SystemHandler) WithBlobStores(r repository.BlobStoreRepo) *SystemHandler {
+	h.blobStores = r
+	return h
 }
 
 // Services handles GET /api/v1/system/services.
@@ -62,6 +70,41 @@ func (h *SystemHandler) Services(c *gin.Context) {
 		checks = append(checks, func(_ context.Context) ServiceStatus {
 			return disabled("OIDC")
 		})
+	}
+
+	// Add one check per unique S3 endpoint found in blob_stores table.
+	if h.blobStores != nil {
+		if stores, err := h.blobStores.List(ctx); err == nil {
+			type endpointGroup struct {
+				endpoint string
+				names    []string
+				buckets  []string
+			}
+			groups := map[string]*endpointGroup{}
+			for _, bs := range stores {
+				if bs.Type != "s3" {
+					continue
+				}
+				ep, _ := bs.Config["endpoint"].(string)
+				bkt, _ := bs.Config["bucket"].(string)
+				g, ok := groups[ep]
+				if !ok {
+					g = &endpointGroup{endpoint: ep}
+					groups[ep] = g
+				}
+				g.names = append(g.names, bs.Name)
+				if bkt != "" {
+					g.buckets = append(g.buckets, bkt)
+				}
+			}
+			for ep, g := range groups {
+				ep := ep
+				g := g
+				checks = append(checks, func(ctx context.Context) ServiceStatus {
+					return h.checkS3Endpoint(ctx, ep, g.names, g.buckets)
+				})
+			}
+		}
 	}
 
 	results := make([]ServiceStatus, len(checks))
@@ -118,6 +161,51 @@ func (h *SystemHandler) checkStorage(ctx context.Context) ServiceStatus {
 		detail = fmt.Sprintf("%s · free %s / %s", path, fmtBytes(free), fmtBytes(total))
 	}
 	return ServiceStatus{Name: "Local Storage", Status: "ok", Detail: detail, CheckedAt: now}
+}
+
+func (h *SystemHandler) checkS3Endpoint(ctx context.Context, endpoint string, names []string, buckets []string) ServiceStatus {
+	now := time.Now().UTC().Format(time.RFC3339)
+	displayName := "S3 · AWS"
+	if endpoint != "" {
+		displayName = "S3 · " + endpoint
+	}
+
+	storeNames := strings.Join(names, ", ")
+	bucketList := strings.Join(buckets, ", ")
+	detail := fmt.Sprintf("stores: %s · buckets: %s", storeNames, bucketList)
+
+	if h.blobStores == nil {
+		return ServiceStatus{Name: displayName, Status: "ok", Detail: detail, CheckedAt: now}
+	}
+	stores, err := h.blobStores.List(ctx)
+	if err != nil {
+		return ServiceStatus{Name: displayName, Status: "error", Detail: err.Error(), CheckedAt: now}
+	}
+
+	start := time.Now()
+	var probeErr error
+	for _, bs := range stores {
+		if bs.Type != "s3" {
+			continue
+		}
+		ep, _ := bs.Config["endpoint"].(string)
+		if ep != endpoint {
+			continue
+		}
+		physical, err := storage.NewFromConfig(ctx, "s3", bs.Config)
+		if err != nil {
+			probeErr = err
+			break
+		}
+		_, probeErr = physical.ListKeys(ctx)
+		break
+	}
+	lat := int(time.Since(start).Milliseconds())
+
+	if probeErr != nil {
+		return ServiceStatus{Name: displayName, Status: "error", LatencyMs: lat, Detail: fmt.Sprintf("%s · %s", detail, probeErr.Error()), CheckedAt: now}
+	}
+	return ServiceStatus{Name: displayName, Status: "ok", LatencyMs: lat, Detail: detail, CheckedAt: now}
 }
 
 func (h *SystemHandler) checkLDAP(ctx context.Context) ServiceStatus {
