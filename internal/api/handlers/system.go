@@ -79,6 +79,7 @@ func (h *SystemHandler) Services(c *gin.Context) {
 				endpoint string
 				names    []string
 				buckets  []string
+				config   map[string]any // config of the first store for this endpoint (used for probe)
 			}
 			groups := map[string]*endpointGroup{}
 			for _, bs := range stores {
@@ -89,7 +90,7 @@ func (h *SystemHandler) Services(c *gin.Context) {
 				bkt, _ := bs.Config["bucket"].(string)
 				g, ok := groups[ep]
 				if !ok {
-					g = &endpointGroup{endpoint: ep}
+					g = &endpointGroup{endpoint: ep, config: bs.Config}
 					groups[ep] = g
 				}
 				g.names = append(g.names, bs.Name)
@@ -101,7 +102,7 @@ func (h *SystemHandler) Services(c *gin.Context) {
 				ep := ep
 				g := g
 				checks = append(checks, func(ctx context.Context) ServiceStatus {
-					return h.checkS3Endpoint(ctx, ep, g.names, g.buckets)
+					return h.checkS3Endpoint(ctx, ep, g.names, g.buckets, g.config)
 				})
 			}
 		}
@@ -163,7 +164,7 @@ func (h *SystemHandler) checkStorage(ctx context.Context) ServiceStatus {
 	return ServiceStatus{Name: "Local Storage", Status: "ok", Detail: detail, CheckedAt: now}
 }
 
-func (h *SystemHandler) checkS3Endpoint(ctx context.Context, endpoint string, names []string, buckets []string) ServiceStatus {
+func (h *SystemHandler) checkS3Endpoint(ctx context.Context, endpoint string, names []string, buckets []string, cfg map[string]any) ServiceStatus {
 	now := time.Now().UTC().Format(time.RFC3339)
 	displayName := "S3 · AWS"
 	if endpoint != "" {
@@ -174,31 +175,13 @@ func (h *SystemHandler) checkS3Endpoint(ctx context.Context, endpoint string, na
 	bucketList := strings.Join(buckets, ", ")
 	detail := fmt.Sprintf("stores: %s · buckets: %s", storeNames, bucketList)
 
-	if h.blobStores == nil {
-		return ServiceStatus{Name: displayName, Status: "ok", Detail: detail, CheckedAt: now}
-	}
-	stores, err := h.blobStores.List(ctx)
-	if err != nil {
-		return ServiceStatus{Name: displayName, Status: "error", Detail: err.Error(), CheckedAt: now}
-	}
-
 	start := time.Now()
 	var probeErr error
-	for _, bs := range stores {
-		if bs.Type != "s3" {
-			continue
-		}
-		ep, _ := bs.Config["endpoint"].(string)
-		if ep != endpoint {
-			continue
-		}
-		physical, err := storage.NewFromConfig(ctx, "s3", bs.Config)
-		if err != nil {
-			probeErr = err
-			break
-		}
-		_, probeErr = physical.ListKeys(ctx)
-		break
+	physical, err := storage.NewFromConfig(ctx, "s3", cfg)
+	if err != nil {
+		probeErr = err
+	} else {
+		_, probeErr = physical.Exists(ctx, "__health__")
 	}
 	lat := int(time.Since(start).Milliseconds())
 

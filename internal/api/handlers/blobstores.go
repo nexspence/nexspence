@@ -317,10 +317,10 @@ func (h *BlobStoreHandler) TestConnection(c *gin.Context) {
 		return
 	}
 
-	// Probe the store: list with a small cap is a cheap connectivity check.
-	_, listErr := bs.ListKeys(ctx)
-	if listErr != nil {
-		c.JSON(http.StatusOK, gin.H{"ok": false, "error": listErr.Error()})
+	// Probe the store: HeadObject on a sentinel key is a cheap connectivity check.
+	_, probeErr := bs.Exists(ctx, "__health__")
+	if probeErr != nil {
+		c.JSON(http.StatusOK, gin.H{"ok": false, "error": probeErr.Error()})
 		return
 	}
 
