@@ -194,6 +194,8 @@ export const nexusApi = {
     apiClient.delete(`/service/rest/v1/blobstores/${name}`),
   getBlobStoreUsage: (name: string) =>
     apiClient.get(`/api/v1/blob-stores/${name}/usage`),
+  testBlobStore: (type: string, config: Record<string, unknown>) =>
+    apiClient.post<{ ok: boolean; error?: string }>('/api/v1/blobstores/test', { type, config }),
 
   // Cleanup policies
   listCleanupPolicies: () => apiClient.get('/service/rest/v1/cleanup-policies'),
