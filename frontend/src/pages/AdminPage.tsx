@@ -993,7 +993,10 @@ function MigrationTab() {
       </div>
 
       {isLoading ? (
-        <p style={{ fontSize: 13, color: 'var(--holo-text-faint)' }}>Loading…</p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div className="holo-skeleton holo-skeleton--block" />
+          <div className="holo-skeleton holo-skeleton--block" />
+        </div>
       ) : activeJobs.length === 0 && historyJobs.length === 0 ? (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, color: 'var(--holo-text-faint)', fontSize: 14, padding: '48px 0' }}>
           <ArrowRightLeft size={40} style={{ opacity: 0.3 }} />
