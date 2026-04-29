@@ -327,7 +327,7 @@
 .holo-wizard__dot--active { background: rgba(59,130,246,0.2); border: 2px solid #3b82f6; color: #60a5fa; box-shadow: 0 0 12px rgba(59,130,246,0.3); }
 .holo-wizard__dot--pending { background: rgba(255,255,255,0.04); border: 1.5px solid rgba(255,255,255,0.1); color: #334155; }
 .holo-wizard__step-text { display: flex; flex-direction: column; }
-.holo-wizard__step-num { font-size: 9px; color: #475569; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+.holo-wizard__step-num { font-size: 11px; color: #475569; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
 .holo-wizard__step-name { font-size: 12px; font-weight: 600; }
 .holo-wizard__step-name--active  { color: #93c5fd; }
 .holo-wizard__step-name--done    { color: #64748b; }
@@ -349,4 +349,15 @@
   padding: 12px 20px; border-top: 1px solid rgba(124,92,255,0.1); background: rgba(0,0,0,0.15);
 }
 .holo-wizard__back { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); color: var(--holo-text-dim); }
-.holo-wizard__step-info { font-size: 10px; color: #475569; font-weight: 600; }
+.holo-wizard__step-info { font-size: 11px; color: #475569; font-weight: 600; }
+
+@media (prefers-reduced-motion: reduce) {
+  .holo-text,
+  .holo-btn--primary,
+  .holo-tab.active::after,
+  .holo-modal::before,
+  .holo-wizard::before {
+    animation: none !important;
+    transition: none !important;
+  }
+}
