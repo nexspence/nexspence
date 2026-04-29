@@ -55,8 +55,9 @@ export default function LoginPage() {
 
         <form onSubmit={handleSubmit} className={styles.form}>
           <div className={styles.field}>
-            <label className={styles.label}>Username</label>
+            <label className={styles.label} htmlFor="username">Username</label>
             <HoloInput
+              id="username"
               type="text"
               value={username}
               onChange={e => setUsername(e.target.value)}
@@ -66,8 +67,9 @@ export default function LoginPage() {
             />
           </div>
           <div className={styles.field}>
-            <label className={styles.label}>Password</label>
+            <label className={styles.label} htmlFor="password">Password</label>
             <HoloInput
+              id="password"
               type="password"
               value={password}
               onChange={e => setPassword(e.target.value)}
@@ -76,7 +78,7 @@ export default function LoginPage() {
             />
           </div>
 
-          {error && <div className={styles.error}>{error}</div>}
+          {error && <div className={styles.error} role="alert">{error}</div>}
           {oidcError && (
             <div className={styles.error} role="alert">
               SSO login failed: {oidcError}

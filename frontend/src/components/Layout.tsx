@@ -113,8 +113,10 @@ function ProfileModal({ onClose }: { onClose: () => void }) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div className="holo-card" style={{ padding: 16 }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--holo-text)', marginBottom: 10 }}>Create API Token</div>
+          <label htmlFor="token-name" style={{ fontSize: 12, color: 'var(--holo-text-faint)', display: 'block', marginBottom: 6 }}>Token name</label>
           <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
             <HoloInput
+              id="token-name"
               style={{ flex: 1 }}
               placeholder="Token name"
               value={name}
