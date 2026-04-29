@@ -163,7 +163,7 @@ export function AssignRolesModal({ user, roles, onClose, onSaved }: {
         </div>
       </div>
 
-      {err && <div style={{ marginTop: 12, padding: '8px 12px', background: 'rgba(255,107,107,0.08)', border: '1px solid rgba(255,107,107,0.2)', borderRadius: 8, fontSize: 13, color: 'var(--holo-red)' }}>{err}</div>}
+      {err && <div role="alert" style={{ marginTop: 12, padding: '8px 12px', background: 'rgba(255,107,107,0.08)', border: '1px solid rgba(255,107,107,0.2)', borderRadius: 8, fontSize: 13, color: 'var(--holo-red)' }}>{err}</div>}
 
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
         <HoloButton type="button" onClick={onClose}>Cancel</HoloButton>
@@ -208,7 +208,7 @@ export function UsersTab() {
           <p className={styles.subtitle}>{users.length} users</p>
         </div>
         <div className={styles.actions}>
-          <HoloButton onClick={() => refetch()} title="Refresh"><RefreshCw size={16} /></HoloButton>
+          <HoloButton onClick={() => refetch()} aria-label="Refresh"><RefreshCw size={16} /></HoloButton>
           <HoloButton variant="primary" icon={<UserPlus size={16} />} onClick={() => setShowCreate(true)}>Add User</HoloButton>
         </div>
       </div>
@@ -218,7 +218,7 @@ export function UsersTab() {
       </div>
 
       {isError && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: 'rgba(255,107,107,0.08)', border: '1px solid rgba(255,107,107,0.2)', borderRadius: 10, color: 'var(--holo-red)', fontSize: 13 }}>
+        <div role="alert" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: 'rgba(255,107,107,0.08)', border: '1px solid rgba(255,107,107,0.2)', borderRadius: 10, color: 'var(--holo-red)', fontSize: 13 }}>
           <AlertTriangle size={16} style={{ flexShrink: 0 }} />
           {(error as any)?.response?.data?.error ?? (error as Error)?.message ?? 'Failed to load users'}
         </div>
@@ -328,13 +328,13 @@ function RolesTab() {
           <p className={styles.subtitle}>{roles.length} roles</p>
         </div>
         <div className={styles.actions}>
-          <HoloButton onClick={() => refetch()} title="Refresh"><RefreshCw size={16} /></HoloButton>
+          <HoloButton onClick={() => refetch()} aria-label="Refresh"><RefreshCw size={16} /></HoloButton>
           <HoloButton variant="primary" icon={<Plus size={16} />} onClick={() => setShowForm(v => !v)}>New Role</HoloButton>
         </div>
       </div>
 
       {isError && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: 'rgba(255,107,107,0.08)', border: '1px solid rgba(255,107,107,0.2)', borderRadius: 10, color: 'var(--holo-red)', fontSize: 13, marginBottom: 16 }}>
+        <div role="alert" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: 'rgba(255,107,107,0.08)', border: '1px solid rgba(255,107,107,0.2)', borderRadius: 10, color: 'var(--holo-red)', fontSize: 13, marginBottom: 16 }}>
           <AlertTriangle size={16} style={{ flexShrink: 0 }} />
           {(error as any)?.response?.data?.error ?? (error as Error)?.message ?? 'Failed to load roles'}
         </div>
@@ -346,7 +346,7 @@ function RolesTab() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             <HoloInput placeholder="Role name (e.g. developer)" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
             <HoloInput placeholder="Description (optional)" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
-            {formErr && <div style={{ color: 'var(--holo-red)', fontSize: 13 }}>{formErr}</div>}
+            {formErr && <div role="alert" style={{ color: 'var(--holo-red)', fontSize: 13 }}>{formErr}</div>}
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <HoloButton onClick={() => { setShowForm(false); setFormErr('') }}>Cancel</HoloButton>
               <HoloButton variant="primary" onClick={createRole} disabled={saving}>{saving ? 'Creating…' : 'Create'}</HoloButton>
@@ -463,7 +463,7 @@ export function CreateUserModal({ onClose, onCreated }: { onClose: () => void; o
             onChange={v => setForm(f => ({ ...f, status: v }))}
           />
         </div>
-        {error && <div className={styles.error}>{error}</div>}
+        {error && <div role="alert" className={styles.error}>{error}</div>}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 8 }}>
           <HoloButton type="button" onClick={onClose}>Cancel</HoloButton>
           <HoloButton variant="primary" type="submit" disabled={loading}>{loading ? 'Creating…' : 'Create User'}</HoloButton>

@@ -191,7 +191,7 @@ function PreviewModal({ policyId, policyName, onClose, onRun }: {
       )}
 
       {isError && (
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 12, color: 'var(--holo-red)', background: 'rgba(255,107,107,0.08)', border: '1px solid rgba(255,107,107,0.25)', borderRadius: 8, padding: '10px 14px' }}>
+        <div role="alert" style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 12, color: 'var(--holo-red)', background: 'rgba(255,107,107,0.08)', border: '1px solid rgba(255,107,107,0.25)', borderRadius: 8, padding: '10px 14px' }}>
           <AlertCircle size={14} />
           {(error as any)?.response?.data?.error ?? 'Preview failed'}
         </div>
@@ -665,7 +665,7 @@ function PolicyModal({
 
         {scopeSection}
 
-        {err && <div style={{ fontSize: 12, color: 'var(--holo-red)', display: 'flex', gap: 6, alignItems: 'center' }}><AlertCircle size={13} />{err}</div>}
+        {err && <div role="alert" style={{ fontSize: 12, color: 'var(--holo-red)', display: 'flex', gap: 6, alignItems: 'center' }}><AlertCircle size={13} />{err}</div>}
 
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
           <HoloButton onClick={onClose}>Cancel</HoloButton>
@@ -733,7 +733,7 @@ export default function CleanupPage() {
           </p>
         </div>
         <div style={{ display: 'flex', gap: 10 }}>
-          <HoloButton onClick={() => refetch()} title="Refresh"><RefreshCw size={16} /></HoloButton>
+          <HoloButton onClick={() => refetch()} aria-label="Refresh"><RefreshCw size={16} /></HoloButton>
           <HoloButton variant="primary" icon={<Plus size={15} />} onClick={() => setModal('create')}>New Policy</HoloButton>
         </div>
       </div>

@@ -58,7 +58,7 @@ export default function MigrationPage() {
           </p>
         </div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          <HoloButton onClick={() => refetch()} title="Refresh"><RefreshCw size={16} /></HoloButton>
+          <HoloButton onClick={() => refetch()} aria-label="Refresh"><RefreshCw size={16} /></HoloButton>
           <HoloButton variant="primary" onClick={() => setShowCreate(true)}><Plus size={16} /> New Migration</HoloButton>
         </div>
       </div>

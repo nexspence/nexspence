@@ -151,7 +151,7 @@ export default function AdminPage() {
           <h1 style={{ fontSize: 20, fontWeight: 700, margin: '0 0 3px', letterSpacing: '-0.01em', lineHeight: 1.2, background: 'linear-gradient(110deg, #7c5cff, #22d3ee 60%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' as const }}>System Admin</h1>
           <p style={{ fontSize: 12, color: 'var(--holo-text-faint)', margin: 0 }}>Server health, blob stores and configuration</p>
         </div>
-        <HoloButton onClick={() => { refetchStatus(); refetchBlobs(); refetchServices() }} title="Refresh">
+        <HoloButton onClick={() => { refetchStatus(); refetchBlobs(); refetchServices() }} aria-label="Refresh">
           <RefreshCw size={16} />
         </HoloButton>
       </div>
@@ -290,7 +290,7 @@ export default function AdminPage() {
             <input ref={fileInputRef} type="file" accept=".tar.gz,.tgz" style={{ display: 'none' }} onChange={handleRestore} />
           </div>
           {restoreError && (
-            <div style={{ background: 'rgba(255,107,107,0.08)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, padding: '10px 14px', color: 'var(--holo-red)', fontSize: 13 }}>
+            <div role="alert" style={{ background: 'rgba(255,107,107,0.08)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, padding: '10px 14px', color: 'var(--holo-red)', fontSize: 13 }}>
               {restoreError}
             </div>
           )}
@@ -402,7 +402,7 @@ export default function AdminPage() {
               </div>
             )}
             {importError && (
-              <div style={{ padding: '10px 14px', borderRadius: 8, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.28)', fontSize: 13, color: '#fca5a5' }}>
+              <div role="alert" style={{ padding: '10px 14px', borderRadius: 8, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.28)', fontSize: 13, color: '#fca5a5' }}>
                 {importError}
               </div>
             )}
@@ -716,7 +716,7 @@ function BlobStoreDetailModal({ name, onClose }: { name: string; onClose: () => 
           )}
 
           {deleteError && (
-            <div style={{ marginTop: 12, background: 'rgba(255,107,107,0.08)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, padding: '8px 12px', color: 'var(--holo-red)', fontSize: 13 }}>
+            <div role="alert" style={{ marginTop: 12, background: 'rgba(255,107,107,0.08)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, padding: '8px 12px', color: 'var(--holo-red)', fontSize: 13 }}>
               {deleteError}
             </div>
           )}
@@ -865,7 +865,7 @@ function CreateBlobStoreModal({ onClose }: { onClose: () => void }) {
           </div>
         )}
         {err && (
-          <div style={{ background: 'rgba(255,107,107,0.08)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, padding: '8px 12px', color: 'var(--holo-red)', fontSize: 13 }}>
+          <div role="alert" style={{ background: 'rgba(255,107,107,0.08)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, padding: '8px 12px', color: 'var(--holo-red)', fontSize: 13 }}>
             {err}
           </div>
         )}

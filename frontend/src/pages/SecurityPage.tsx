@@ -86,7 +86,7 @@ function RoleModal({
       )}
 
       {error && (
-        <div style={{ padding: '8px 12px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, color: 'var(--holo-red)', fontSize: 12 }}>{error}</div>
+        <div role="alert" style={{ padding: '8px 12px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, color: 'var(--holo-red)', fontSize: 12 }}>{error}</div>
       )}
 
       <div style={{ display: 'flex', gap: 8, justifyContent: 'space-between', marginTop: 4 }}>
@@ -472,11 +472,11 @@ function ScanTab() {
             {elapsed >= 90 ? '; please wait…' : ''}
           </div>
         )}
-        {error && <div style={{ marginTop: 10, padding: '8px 12px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, color: '#ef4444', fontSize: 13 }}>{error}</div>}
+        {error && <div role="alert" style={{ marginTop: 10, padding: '8px 12px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, color: '#ef4444', fontSize: 13 }}>{error}</div>}
       </HoloCard>
 
       {result && result.status === 'failed' && result.error && (
-        <div style={{ padding: '12px 14px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: 10, color: '#fca5a5', fontSize: 13, lineHeight: 1.45 }}>
+        <div role="alert" style={{ padding: '12px 14px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: 10, color: '#fca5a5', fontSize: 13, lineHeight: 1.45 }}>
           {result.error}
         </div>
       )}

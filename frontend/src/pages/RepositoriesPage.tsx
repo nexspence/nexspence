@@ -117,7 +117,7 @@ export default function RepositoriesPage() {
             <p style={{ fontSize: 12, color: 'var(--holo-text-faint)', margin: 0 }}>{repos.length} total</p>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <HoloButton icon={<RefreshCw size={15} />} onClick={() => refetch()} title="Refresh" />
+            <HoloButton icon={<RefreshCw size={15} />} onClick={() => refetch()} aria-label="Refresh" />
             {isAdmin && (
               <HoloButton variant="primary" icon={<Plus size={15} />} onClick={() => setShowCreate(true)}>
                 Create Repository
