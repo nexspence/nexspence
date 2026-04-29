@@ -75,7 +75,7 @@ export function MultiSelect({ options, value, onChange, placeholder = '— Selec
         left: dropPos.left,
         width: dropPos.width,
         borderRadius: 14,
-        zIndex: 9999,
+        zIndex: 100,
         padding: 0,
         display: 'flex', flexDirection: 'column',
         boxShadow: '0 12px 40px rgba(0,0,0,0.6)',

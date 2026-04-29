@@ -1469,6 +1469,13 @@ export default function BrowsePage() {
                 <div
                   key={c.id}
                   ref={isHighlighted ? highlightRowRef : undefined}
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      setDeleteTarget({ path: assetPath, repo: repoName })
+                    }
+                  }}
                   style={{
                     ...S.trow,
                     ...(isHighlighted

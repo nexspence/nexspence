@@ -258,7 +258,12 @@ function RepoRow({
   const pct = quota?.percentUsed ?? null
 
   return (
-    <div className={styles.row} onClick={onClick}>
+    <div className={styles.row} onClick={onClick} tabIndex={0} onKeyDown={(e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault()
+        onClick?.()
+      }
+    }}>
       <span style={{
         width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
         background: repo.online ? 'var(--holo-green)' : 'rgba(255,255,255,0.2)',

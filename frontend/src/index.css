@@ -1,6 +1,9 @@
 /* ============================================================
    Nexspence UI — VMSManager K3S Dark Glassmorphism Design System
    ============================================================ */
+
+/* Z-index scale: 0=bg, 1=scanlines, 2=content, 20=sidebar, 50=modal, 100=dropdown */
+
 :root {
   --bg: #070b14;
   --panel: #0b1426;
