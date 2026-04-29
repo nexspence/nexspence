@@ -466,6 +466,7 @@ export default function AdminPage() {
               return (
                 <div
                   key={bs.id}
+                  tabIndex={0}
                   style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 2fr 1fr', padding: '11px 16px', borderBottom: '1px solid rgba(255,255,255,0.05)', fontSize: 13, color: 'var(--holo-text)', alignItems: 'center', cursor: 'pointer' }}
                   onClick={(e) => {
                     // Don't open detail if click is on a button or input
@@ -473,6 +474,7 @@ export default function AdminPage() {
                     if (t.closest('button') || t.closest('input')) return
                     setDetailName(bs.name)
                   }}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setDetailName(bs.name) } }}
                 >
                   <div style={{ fontWeight: 600, color: 'var(--holo-text)' }}>{bs.name}</div>
                   <div>

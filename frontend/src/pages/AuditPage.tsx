@@ -161,7 +161,10 @@ export default function AuditPage() {
       </div>
 
       {isLoading ? (
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, color: 'var(--holo-text-faint)', fontSize: 14, paddingTop: 48 }}>Loading…</div>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, paddingTop: 48 }}>
+          <div className="holo-skeleton holo-skeleton--block" style={{ width: '100%' }} />
+          <div className="holo-skeleton holo-skeleton--text" style={{ width: '60%', marginTop: 8 }} />
+        </div>
       ) : events.length === 0 ? (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, color: 'var(--holo-text-faint)', fontSize: 14, paddingTop: 48 }}>
           <FileText size={40} style={{ opacity: 0.3 }} />

@@ -123,16 +123,20 @@ function ProfileModal({ onClose }: { onClose: () => void }) {
               onChange={e => setName(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && !expiryError && create()}
             />
-            <HoloInput
-              type="number"
-              min={1}
-              max={maxDays}
-              style={{ width: 100, borderColor: expiryError ? 'rgba(255,107,107,0.6)' : undefined }}
-              placeholder={`Days (max ${maxDays})`}
-              value={expiryDays}
-              onChange={e => setExpiryDays(e.target.value)}
-              title={`Leave empty for no expiry. Maximum ${maxDays} days.`}
-            />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <label htmlFor="expiry-days" style={{ fontSize: 12, color: 'var(--holo-text-faint)' }}>Expiry (days)</label>
+              <HoloInput
+                id="expiry-days"
+                type="number"
+                min={1}
+                max={maxDays}
+                style={{ width: 100, borderColor: expiryError ? 'rgba(255,107,107,0.6)' : undefined }}
+                placeholder={`Days (max ${maxDays})`}
+                value={expiryDays}
+                onChange={e => setExpiryDays(e.target.value)}
+                title={`Leave empty for no expiry. Maximum ${maxDays} days.`}
+              />
+            </div>
             <HoloButton variant="primary" icon={<Plus size={14} />} onClick={create} disabled={creating || !name.trim() || !!expiryError}>
               {creating ? 'Creating…' : 'Create'}
             </HoloButton>
