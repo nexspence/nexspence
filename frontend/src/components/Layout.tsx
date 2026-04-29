@@ -186,7 +186,7 @@ function ProfileModal({ onClose }: { onClose: () => void }) {
                           {t.expiresAt && ` · Expires ${new Date(t.expiresAt).toLocaleDateString()}`}
                         </div>
                       </div>
-                      <HoloButton variant="danger" icon={<Trash2 size={13} />} onClick={() => del.mutate(t.id)} style={{ flexShrink: 0 }} />
+                      <HoloButton variant="danger" icon={<Trash2 size={13} />} onClick={() => del.mutate(t.id)} aria-label="Delete token" style={{ flexShrink: 0 }} />
                     </div>
                   ))}
                 </div>
@@ -215,6 +215,7 @@ export default function Layout() {
   return (
     <HoloApp>
     <div className={`${styles.root}${collapsed ? ' ' + styles.collapsed : ''}`}>
+      <a href="#main-content" className={styles.skipLink}>Skip to content</a>
       <aside className={styles.sidebar}>
         {/* Brand */}
         <div className={styles.brand}>
@@ -285,6 +286,7 @@ export default function Layout() {
               <button
                 title="API Tokens & Profile"
                 onClick={() => setProfileOpen(true)}
+                className={styles.profileBtn}
                 style={{ background: 'rgba(124,92,255,0.12)', border: '1px solid rgba(124,92,255,0.25)', borderRadius: 7, padding: '5px 7px', cursor: 'pointer', color: 'var(--holo-a)', display: 'flex', alignItems: 'center', flexShrink: 0 }}
               >
                 <Key size={14} />
@@ -322,7 +324,7 @@ export default function Layout() {
         </div>
       </aside>
 
-      <main className={styles.main}>
+      <main id="main-content" className={styles.main}>
         <Outlet />
       </main>
 

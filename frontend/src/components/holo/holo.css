@@ -246,6 +246,10 @@
   animation: holoShift 5s ease infinite;
   border-radius: 2px 2px 0 0;
 }
+.holo-tab:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px #3b82f6;
+}
 
 /* Tables */
 .holo-table { width: 100%; border-collapse: collapse; font-size: 13px; }

@@ -228,3 +228,33 @@
   min-height: 100vh;
   overflow: hidden;
 }
+
+.skipLink {
+  position: absolute;
+  left: -999em;
+  top: -999em;
+  z-index: 200;
+  background: #1e3a5f;
+  color: #e2e8f0;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  text-decoration: none;
+  font-size: 0.875rem;
+}
+.skipLink:focus {
+  left: 1rem;
+  top: 1rem;
+}
+
+.navBtn:focus-visible,
+.collapseBtn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px #3b82f6;
+  border-radius: 8px;
+}
+
+.profileBtn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px #3b82f6;
+  border-radius: 50%;
+}
