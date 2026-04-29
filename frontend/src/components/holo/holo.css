@@ -276,7 +276,7 @@
   border: 1px solid var(--holo-border);
   border-radius: 18px;
   padding: 24px;
-  min-width: 420px; max-width: 90vw; max-height: 85vh;
+  min-width: min(420px, 95vw); max-width: 90vw; max-height: 85vh;
   box-shadow: 0 20px 60px rgba(0,0,0,0.6);
   display: flex; flex-direction: column; gap: 16px;
   position: relative; overflow-y: auto;
@@ -301,7 +301,7 @@
   border: 1px solid var(--holo-border);
   border-radius: 16px;
   overflow: hidden;
-  min-width: 560px;
+  min-width: min(560px, 95vw);
   max-width: 90vw;
   max-height: 85vh;
   box-shadow: 0 24px 64px rgba(0,0,0,0.7), 0 0 0 1px rgba(124,92,255,0.08);
@@ -355,6 +355,25 @@
 .holo-wizard__back { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); color: var(--holo-text-dim); }
 .holo-wizard__step-info { font-size: 11px; color: #475569; font-weight: 600; }
 
+/* Skeleton loaders */
+@keyframes skeletonPulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.8; }
+}
+.holo-skeleton {
+  background: rgba(59, 130, 246, 0.08);
+  border-radius: 6px;
+  animation: skeletonPulse 1.5s ease-in-out infinite;
+}
+.holo-skeleton--text {
+  height: 1em;
+  margin: 0.4em 0;
+}
+.holo-skeleton--block {
+  height: 80px;
+  width: 100%;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .holo-text,
   .holo-btn--primary,
@@ -364,4 +383,5 @@
     animation: none !important;
     transition: none !important;
   }
+  .holo-skeleton { animation: none; opacity: 0.5; }
 }

@@ -112,3 +112,9 @@
   padding: 1px 6px;
   border-radius: 4px;
 }
+
+@media (max-width: 768px) {
+  .row {
+    grid-template-columns: 1fr;
+  }
+}

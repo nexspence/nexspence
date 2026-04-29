@@ -179,7 +179,10 @@ export default function AdminPage() {
               <CheckCircle size={14} /> System Status
             </div>
             {statusLoading ? (
-              <p style={{ fontSize: 12, color: 'var(--holo-text-faint)' }}>Loading…</p>
+              <>
+                <div className="holo-skeleton holo-skeleton--text" style={{ width: '70%' }} />
+                <div className="holo-skeleton holo-skeleton--text" style={{ width: '60%', marginTop: 8 }} />
+              </>
             ) : (
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
                 <div style={{ width: 8, height: 8, borderRadius: '50%', background: isOnline ? '#22c55e' : '#ef4444', boxShadow: isOnline ? '0 0 6px #22c55e66' : '0 0 6px #ef444466', flexShrink: 0 }} />
@@ -214,7 +217,11 @@ export default function AdminPage() {
                 </div>
               </>
             ) : (
-              <p style={{ fontSize: 12, color: 'var(--holo-text-faint)' }}>Loading…</p>
+              <>
+                <div className="holo-skeleton holo-skeleton--text" style={{ width: '75%' }} />
+                <div className="holo-skeleton holo-skeleton--text" style={{ width: '55%', marginTop: 8 }} />
+                <div className="holo-skeleton holo-skeleton--text" style={{ width: '65%', marginTop: 8 }} />
+              </>
             )}
           </HoloCard>
         </div>
@@ -235,7 +242,11 @@ export default function AdminPage() {
             </HoloButton>
           </div>
           {!services ? (
-            <p style={{ fontSize: 12, color: 'var(--holo-text-faint)' }}>Loading…</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div className="holo-skeleton holo-skeleton--text" style={{ width: '100%' }} />
+              <div className="holo-skeleton holo-skeleton--text" style={{ width: '95%' }} />
+              <div className="holo-skeleton holo-skeleton--text" style={{ width: '100%' }} />
+            </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {services.map(svc => {

@@ -26,7 +26,7 @@ const S = {
   header:     { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap' as const, gap: 12 },
   title:      { fontSize: 20, fontWeight: 700, color: '#dbeafe', margin: '0 0 4px' },
   subtitle:   { fontSize: 13, color: 'rgba(229,231,235,0.5)', margin: 0 },
-  grid3:      { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14 },
+  grid3:      { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14 },
   grid2:      { display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14 },
   card:       { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: 18 },
   cardTitle:  { fontSize: 11, fontWeight: 600, color: 'rgba(229,231,235,0.45)', textTransform: 'uppercase' as const, letterSpacing: '0.06em', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 },
