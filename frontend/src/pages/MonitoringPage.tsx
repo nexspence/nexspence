@@ -110,7 +110,10 @@ export function MonitoringView() {
       </div>
 
       {isLoading ? (
-        <p style={{ color: 'rgba(229,231,235,0.4)', fontSize: 14 }}>Loading…</p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div className="holo-skeleton holo-skeleton--block" />
+          <div className="holo-skeleton holo-skeleton--block" />
+        </div>
       ) : m ? (
         <>
           {/* Top stat cards */}

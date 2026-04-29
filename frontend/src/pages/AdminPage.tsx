@@ -436,7 +436,10 @@ export default function AdminPage() {
         </div>
 
         {blobsLoading ? (
-          <p style={{ fontSize: 12, color: 'var(--holo-text-faint)' }}>Loading…</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div className="holo-skeleton holo-skeleton--block" />
+            <div className="holo-skeleton holo-skeleton--block" />
+          </div>
         ) : blobs.length === 0 ? (
           <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: 20, textAlign: 'center' as const, color: 'var(--holo-text-faint)', fontSize: 14 }}>
             <Database size={32} style={{ opacity: 0.3, margin: '0 auto 8px' }} />
@@ -610,7 +613,12 @@ function BlobStoreDetailModal({ name, onClose }: { name: string; onClose: () => 
 
   return (
     <ModalShell title={`Blob Store: ${name}`} onClose={onClose} width={640}>
-      {isLoading && <p style={{ color: 'var(--holo-text-dim)' }}>Loading…</p>}
+      {isLoading && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div className="holo-skeleton holo-skeleton--text" style={{ width: '60%' }} />
+          <div className="holo-skeleton holo-skeleton--block" />
+        </div>
+      )}
       {error && <p style={{ color: 'var(--holo-red)' }}>Failed to load usage</p>}
       {bs && (
         <>
