@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -53,13 +53,10 @@ body {
   flex-shrink: 0;
   z-index: 10;
 }
-.logo {
+.logo-img {
   width: 34px; height: 34px;
-  background: linear-gradient(135deg, var(--blue) 0%, #1d4ed8 100%);
   border-radius: 9px;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 15px; font-weight: 900; color: #fff;
-  box-shadow: 0 0 16px rgba(59,130,246,0.4);
+  object-fit: contain;
   flex-shrink: 0;
 }
 .header-title { font-size: 16px; font-weight: 700; letter-spacing: -0.3px; }
@@ -291,7 +288,7 @@ body {
 <body>
 
 <div class="header">
-  <div class="logo">N</div>
+  <img src="../frontend/src/assets/mini_logo.png" class="logo-img" alt="Nexspense">
   <div>
     <div class="header-title">Nexspense Architecture</div>
     <div class="header-sub">Interactive request flow diagram</div>
@@ -308,7 +305,7 @@ body {
   </div>
 
   <div class="center-panel" id="center-panel">
-    <svg id="graph-svg" viewBox="0 0 900 560" preserveAspectRatio="xMidYMid meet">
+    <svg id="graph-svg" viewBox="0 0 1060 560" preserveAspectRatio="xMidYMid meet">
       <!-- rendered by JS -->
     </svg>
     <div class="node-tooltip" id="node-tooltip">
@@ -335,7 +332,7 @@ body {
 'use strict';
 
 // ═══════════════════════════════════════════════════════
-//  DATA — populated in subsequent tasks
+//  DATA
 // ═══════════════════════════════════════════════════════
 const NODES = {
   // ── Clients (y=40) ──
@@ -349,28 +346,40 @@ const NODES = {
 
   // ── HTTP (y=140) ──
   gin: {
-    id:'gin', label:'Gin API Layer', layer:'http', x:420, y:140, color:'blue', w:140, h:34,
+    id:'gin', label:'Gin API Layer', layer:'http', x:480, y:140, color:'blue', w:140, h:34,
     tooltip:'Middleware chain:\nRecovery → RequestLogger → CORS\n→ MetricsMiddleware → AuditMiddleware\n→ AuthMiddleware → RBACMiddleware'
   },
 
   // ── Services (y=242) ──
-  formatHandlers: { id:'formatHandlers', label:'Format Handlers', layer:'services', x:130, y:242, color:'purple', w:110, h:30 },
-  userService:    { id:'userService',    label:'UserService',     layer:'services', x:270, y:242, color:'purple', w:100, h:30 },
-  repoService:    { id:'repoService',    label:'RepoService',     layer:'services', x:410, y:242, color:'purple', w:100, h:30 },
-  tokenService:   { id:'tokenService',   label:'TokenService',    layer:'services', x:545, y:242, color:'purple', w:100, h:30 },
-  webhookSvc:     { id:'webhookSvc',     label:'WebhookService',  layer:'services', x:680, y:242, color:'purple', w:110, h:30 },
-  scanService:    { id:'scanService',    label:'ScanService',     layer:'services', x:810, y:242, color:'purple', w:100, h:30 },
+  formatHandlers: {
+    id:'formatHandlers', label:'Format Handlers', layer:'services', x:100, y:242, color:'purple', w:115, h:30,
+    tooltip:'12 format protocols: Maven, npm, Docker, PyPI,\nGo, NuGet, Cargo, Helm, Apt, Yum, Conan, Raw\nPer-repo BlobStore routing via Registry'
+  },
+  userService:    { id:'userService',    label:'UserService',     layer:'services', x:240, y:242, color:'purple', w:100, h:30 },
+  repoService:    { id:'repoService',    label:'RepoService',     layer:'services', x:375, y:242, color:'purple', w:100, h:30 },
+  tokenService:   { id:'tokenService',   label:'TokenService',    layer:'services', x:510, y:242, color:'purple', w:100, h:30 },
+  backupService:  { id:'backupService',  label:'BackupService',   layer:'services', x:645, y:242, color:'purple', w:110, h:30,
+    tooltip:'Phase 45: Per-repo Export/Import\nExportRepo: streaming gzip-tar\nImportRepo: skip/rename conflict modes\nFull-system backup/restore'
+  },
+  webhookSvc:     { id:'webhookSvc',     label:'WebhookService',  layer:'services', x:790, y:242, color:'purple', w:110, h:30 },
+  scanService:    { id:'scanService',    label:'ScanService',     layer:'services', x:940, y:242, color:'purple', w:100, h:30 },
 
   // ── Data (y=355) ──
-  postgres:  { id:'postgres',  label:'PostgreSQL', layer:'data', x:310, y:355, color:'green', w:110, h:32, toggleable:true, serviceKey:'postgres' },
-  blobStore: { id:'blobStore', label:'BlobStore',  layer:'data', x:530, y:355, color:'green', w:110, h:32, toggleable:true, serviceKey:'blob' },
+  postgres:  { id:'postgres',  label:'PostgreSQL',      layer:'data', x:310, y:355, color:'green', w:110, h:32, toggleable:true, serviceKey:'postgres' },
+  blobStore: {
+    id:'blobStore', label:'BlobStore Registry', layer:'data', x:560, y:355, color:'green', w:130, h:32, toggleable:true, serviceKey:'blob',
+    tooltip:'BlobStore interface + Registry\nRoutes per-repository to physical store:\n  • Local filesystem (default)\n  • S3-compatible (per-repo config)\nCache: atomic lazy-init, invalidated on update'
+  },
 
   // ── External (y=465) ──
-  ldap:       { id:'ldap',       label:'LDAP',          layer:'external', x:130, y:465, color:'amber', w:90,  h:30, toggleable:true, serviceKey:'ldap' },
-  oidc:       { id:'oidc',       label:'OIDC Provider', layer:'external', x:265, y:465, color:'amber', w:110, h:30, toggleable:true, serviceKey:'oidc' },
-  upstream:   { id:'upstream',   label:'Upstream Proxy',layer:'external', x:415, y:465, color:'amber', w:120, h:30, toggleable:true, serviceKey:'upstream' },
-  webhookRcv: { id:'webhookRcv', label:'Webhook Rcvr',  layer:'external', x:555, y:465, color:'amber', w:110, h:30, toggleable:true, serviceKey:'webhookRcv' },
-  trivy:      { id:'trivy',      label:'Trivy Scanner', layer:'external', x:685, y:465, color:'amber', w:110, h:30, toggleable:true, serviceKey:'trivy' },
+  ldap:       { id:'ldap',       label:'LDAP',          layer:'external', x:90,  y:465, color:'amber', w:90,  h:30, toggleable:true, serviceKey:'ldap' },
+  oidc:       { id:'oidc',       label:'OIDC Provider', layer:'external', x:230, y:465, color:'amber', w:110, h:30, toggleable:true, serviceKey:'oidc' },
+  upstream:   { id:'upstream',   label:'Upstream Proxy',layer:'external', x:385, y:465, color:'amber', w:120, h:30, toggleable:true, serviceKey:'upstream' },
+  webhookRcv: { id:'webhookRcv', label:'Webhook Rcvr',  layer:'external', x:535, y:465, color:'amber', w:110, h:30, toggleable:true, serviceKey:'webhookRcv' },
+  trivy:      { id:'trivy',      label:'Trivy Scanner', layer:'external', x:680, y:465, color:'amber', w:110, h:30, toggleable:true, serviceKey:'trivy' },
+  s3store:    { id:'s3store',    label:'S3 Endpoint',   layer:'external', x:845, y:465, color:'amber', w:110, h:30, toggleable:true, serviceKey:'s3store',
+    tooltip:'S3-compatible object storage\n(AWS S3, MinIO, Ceph, etc.)\nUsed when a blob store is configured\nwith type=S3. Health checked via\nGET /api/v1/system/connections'
+  },
 };
 
 const EDGES = [
@@ -387,6 +396,7 @@ const EDGES = [
   { id:'gin_user',    from:'gin', to:'userService' },
   { id:'gin_repo',    from:'gin', to:'repoService' },
   { id:'gin_token',   from:'gin', to:'tokenService' },
+  { id:'gin_backup',  from:'gin', to:'backupService' },
   { id:'gin_webhook', from:'gin', to:'webhookSvc' },
   { id:'gin_scan',    from:'gin', to:'scanService' },
   // services → data
@@ -396,15 +406,21 @@ const EDGES = [
   { id:'repo_pg',     from:'repoService',    to:'postgres' },
   { id:'token_pg',    from:'tokenService',   to:'postgres' },
   { id:'scan_pg',     from:'scanService',    to:'postgres' },
+  { id:'backup_pg',   from:'backupService',  to:'postgres' },
+  { id:'backup_blob', from:'backupService',  to:'blobStore' },
   // services → external
   { id:'user_ldap',   from:'userService',    to:'ldap' },
   { id:'user_oidc',   from:'userService',    to:'oidc' },
   { id:'format_up',   from:'formatHandlers', to:'upstream' },
   { id:'webhook_rcv', from:'webhookSvc',     to:'webhookRcv' },
   { id:'scan_trivy',  from:'scanService',    to:'trivy' },
+  // data → external (S3 backend)
+  { id:'blob_s3',          from:'blobStore', to:'s3store' },
+  // data → clients (download streaming)
   { id:'blobstore_browser', from:'blobStore', to:'browser' },
   { id:'gin_oidc',          from:'gin',       to:'oidc' },
 ];
+
 const SERVICES = {
   postgres:   { key:'postgres',   label:'PostgreSQL',    nodeId:'postgres',   up:true },
   ldap:       { key:'ldap',       label:'LDAP',          nodeId:'ldap',       up:true },
@@ -413,11 +429,13 @@ const SERVICES = {
   upstream:   { key:'upstream',   label:'Upstream Proxy',nodeId:'upstream',   up:true },
   webhookRcv: { key:'webhookRcv', label:'Webhook Rcvr',  nodeId:'webhookRcv', up:true },
   trivy:      { key:'trivy',      label:'Trivy Scanner', nodeId:'trivy',      up:true },
+  s3store:    { key:'s3store',    label:'S3 Endpoint',   nodeId:'s3store',    up:true },
 };
 
 const ACTIONS = [
+  // ── Auth ────────────────────────────────────────────────
   {
-    id:'login_password', label:'Логин — пароль', icon:'🔐',
+    id:'login_password', label:'Login — Password', icon:'🔐',
     dependsOn:['postgres'],
     steps:[
       { from:'browser',     to:'gin',         label:'POST /api/v1/auth/login',        ms:1,  status:'ok' },
@@ -437,7 +455,7 @@ const ACTIONS = [
     }
   },
   {
-    id:'login_ldap', label:'Логин — LDAP', icon:'🪪',
+    id:'login_ldap', label:'Login — LDAP', icon:'🪪',
     dependsOn:['ldap','postgres'],
     steps:[
       { from:'browser',     to:'gin',         label:'POST /api/v1/auth/login',       ms:1,  status:'ok' },
@@ -466,7 +484,7 @@ const ACTIONS = [
     }
   },
   {
-    id:'login_oidc', label:'Логин — OIDC/SSO', icon:'🔑',
+    id:'login_oidc', label:'Login — OIDC/SSO', icon:'🔑',
     dependsOn:['oidc','postgres'],
     steps:[
       { from:'browser',     to:'gin',      label:'GET /oidc/start',                ms:1,   status:'ok' },
@@ -494,16 +512,17 @@ const ACTIONS = [
       ],
     }
   },
+  // ── Artifacts ────────────────────────────────────────────
   {
-    id:'upload', label:'Загрузка артефакта', icon:'📦',
+    id:'upload', label:'Artifact Upload', icon:'📦',
     dependsOn:['postgres','blob'],
     steps:[
-      { from:'browser',        to:'gin',            label:'PUT /repository/maven-releases/…', ms:1,  status:'ok' },
-      { from:'gin',            to:'formatHandlers', label:'MavenHandler.StoreArtifact()',     ms:1,  status:'ok' },
-      { from:'formatHandlers', to:'blobStore',      label:'BlobStore.Put(sha256key, stream)', ms:25, status:'ok' },
-      { from:'formatHandlers', to:'postgres',       label:'ComponentRepo.Upsert()',           ms:5,  status:'ok' },
-      { from:'postgres',       to:'formatHandlers', label:'→ component ID',                  ms:2,  status:'ok', reverse:true },
-      { from:'gin',            to:'browser',        label:'201 Created',                     ms:1,  status:'ok', reverse:true },
+      { from:'browser',        to:'gin',            label:'PUT /repository/maven-releases/…',   ms:1,  status:'ok' },
+      { from:'gin',            to:'formatHandlers', label:'MavenHandler.StoreArtifact()',        ms:1,  status:'ok' },
+      { from:'formatHandlers', to:'blobStore',      label:'Registry.Resolve(repoID) → Put(key)', ms:25, status:'ok' },
+      { from:'formatHandlers', to:'postgres',       label:'ComponentRepo.Upsert()',              ms:5,  status:'ok' },
+      { from:'postgres',       to:'formatHandlers', label:'→ component ID',                     ms:2,  status:'ok', reverse:true },
+      { from:'gin',            to:'browser',        label:'201 Created',                        ms:1,  status:'ok', reverse:true },
     ],
     failureSteps:{
       blob:[
@@ -522,14 +541,14 @@ const ACTIONS = [
     }
   },
   {
-    id:'download', label:'Скачивание артефакта', icon:'⬇️',
+    id:'download', label:'Artifact Download', icon:'⬇️',
     dependsOn:['postgres','blob'],
     steps:[
       { from:'browser',        to:'gin',            label:'GET /repository/maven-releases/…', ms:1,  status:'ok' },
       { from:'gin',            to:'formatHandlers', label:'MavenHandler.FetchArtifact()',     ms:1,  status:'ok' },
       { from:'formatHandlers', to:'postgres',       label:'AssetRepo.GetByPath()',            ms:2,  status:'ok' },
       { from:'postgres',       to:'formatHandlers', label:'→ blob_key (sha256)',              ms:1,  status:'ok', reverse:true },
-      { from:'formatHandlers', to:'blobStore',      label:'BlobStore.Get(key) → io.Reader',  ms:15, status:'ok' },
+      { from:'formatHandlers', to:'blobStore',      label:'Registry.Resolve(repoID) → Get(key)', ms:15, status:'ok' },
       { from:'blobStore',      to:'browser',        label:'200 binary stream',               ms:1,  status:'ok', reverse:true },
     ],
     failureSteps:{
@@ -550,7 +569,7 @@ const ACTIONS = [
     }
   },
   {
-    id:'proxy_miss', label:'Proxy cache miss', icon:'🔄',
+    id:'proxy_miss', label:'Proxy Cache Miss', icon:'🔄',
     dependsOn:['upstream','blob','postgres'],
     steps:[
       { from:'browser',        to:'gin',            label:'GET /repository/proxy-central/…',  ms:1,   status:'ok' },
@@ -582,7 +601,7 @@ const ACTIONS = [
     }
   },
   {
-    id:'docker_pull', label:'Docker pull', icon:'🐳',
+    id:'docker_pull', label:'Docker Pull', icon:'🐳',
     dependsOn:['postgres','blob'],
     steps:[
       { from:'browser',        to:'gin',            label:'GET /v2/ (auth check)',               ms:1,  status:'warn' },
@@ -611,6 +630,7 @@ const ACTIONS = [
       ],
     }
   },
+  // ── Auth tokens ──────────────────────────────────────────
   {
     id:'api_token', label:'API Token', icon:'🔒',
     dependsOn:['postgres'],
@@ -634,8 +654,9 @@ const ACTIONS = [
       ],
     }
   },
+  // ── Webhooks / events ────────────────────────────────────
   {
-    id:'webhook', label:'Webhook delivery', icon:'⚡',
+    id:'webhook', label:'Webhook Delivery', icon:'⚡',
     dependsOn:['webhookRcv','postgres','blob'],
     steps:[
       { from:'browser',        to:'gin',            label:'PUT /repository/maven-releases/…', ms:1,   status:'ok' },
@@ -657,13 +678,14 @@ const ACTIONS = [
       ],
     }
   },
+  // ── Cleanup ──────────────────────────────────────────────
   {
-    id:'cleanup', label:'Cleanup Policy run', icon:'🧹',
+    id:'cleanup', label:'Cleanup Policy Run', icon:'🧹',
     dependsOn:['postgres','blob'],
     steps:[
       { from:'browser',     to:'gin',         label:'POST /service/rest/v1/cleanup-policies/:id/run', ms:1,   status:'ok' },
       { from:'gin',         to:'repoService', label:'CleanupService.Run(policyID)',                   ms:1,   status:'ok' },
-      { from:'repoService', to:'postgres',    label:'AssetRepo.ListExpired(criteria)',                ms:10,  status:'ok' },
+      { from:'repoService', to:'postgres',    label:'AssetRepo.ListStale(criteria, retainNVersions)', ms:10,  status:'ok' },
       { from:'postgres',    to:'repoService', label:'→ 47 expired asset rows',                       ms:5,   status:'ok', reverse:true },
       { from:'repoService', to:'blobStore',   label:'BlobStore.Delete(keys) × 47',                   ms:200, status:'ok' },
       { from:'repoService', to:'postgres',    label:'AssetRepo.DeleteBatch(IDs)',                    ms:15,  status:'ok' },
@@ -673,13 +695,13 @@ const ACTIONS = [
       postgres:[
         { from:'browser',     to:'gin',         label:'POST /cleanup-policies/:id/run', ms:1,    status:'ok' },
         { from:'gin',         to:'repoService', label:'CleanupService.Run()',           ms:1,    status:'ok' },
-        { from:'repoService', to:'postgres',    label:'AssetRepo.ListExpired() — error',ms:3000, status:'error', detail:'connection refused' },
+        { from:'repoService', to:'postgres',    label:'AssetRepo.ListStale() — error', ms:3000, status:'error', detail:'connection refused' },
         { from:'gin',         to:'browser',     label:'503 Service Unavailable',        ms:1,    status:'error', reverse:true },
       ],
       blob:[
         { from:'browser',     to:'gin',         label:'POST /cleanup-policies/:id/run',ms:1,   status:'ok' },
         { from:'gin',         to:'repoService', label:'CleanupService.Run()',          ms:1,   status:'ok' },
-        { from:'repoService', to:'postgres',    label:'AssetRepo.ListExpired()',       ms:10,  status:'ok' },
+        { from:'repoService', to:'postgres',    label:'AssetRepo.ListStale()',         ms:10,  status:'ok' },
         { from:'postgres',    to:'repoService', label:'→ 47 expired assets',           ms:5,   status:'ok', reverse:true },
         { from:'repoService', to:'blobStore',   label:'BlobStore.Delete() — error',   ms:200, status:'error', detail:'storage backend unreachable' },
         { from:'gin',         to:'browser',     label:'500 partial cleanup failed',    ms:1,   status:'error', reverse:true },
@@ -687,7 +709,27 @@ const ACTIONS = [
     }
   },
   {
-    id:'search', label:'Поиск компонентов', icon:'🔍',
+    id:'cleanup_dryrun', label:'Cleanup Dry Run', icon:'🔍',
+    dependsOn:['postgres'],
+    steps:[
+      { from:'browser',     to:'gin',         label:'POST /service/rest/v1/cleanup-policies/:id/run?dry_run=true', ms:1,  status:'ok' },
+      { from:'gin',         to:'repoService', label:'CleanupService.DryRun(policyID, scope)',                       ms:1,  status:'ok' },
+      { from:'repoService', to:'postgres',    label:'AssetRepo.ListStale(criteria, retainNVersions)',               ms:12, status:'ok' },
+      { from:'postgres',    to:'repoService', label:'→ 23 candidate assets (not deleted)',                         ms:5,  status:'ok', reverse:true },
+      { from:'gin',         to:'browser',     label:'200 { would_delete: 23, would_free_bytes: 418MB }',           ms:1,  status:'ok', reverse:true },
+    ],
+    failureSteps:{
+      postgres:[
+        { from:'browser',     to:'gin',         label:'POST /cleanup-policies/:id/run?dry_run=true', ms:1,    status:'ok' },
+        { from:'gin',         to:'repoService', label:'CleanupService.DryRun()',                      ms:1,    status:'ok' },
+        { from:'repoService', to:'postgres',    label:'AssetRepo.ListStale() — error',               ms:3000, status:'error', detail:'connection refused' },
+        { from:'gin',         to:'browser',     label:'503 Service Unavailable',                      ms:1,    status:'error', reverse:true },
+      ],
+    }
+  },
+  // ── Search ───────────────────────────────────────────────
+  {
+    id:'search', label:'Component Search', icon:'🔎',
     dependsOn:['postgres'],
     steps:[
       { from:'browser',     to:'gin',         label:'GET /service/rest/v1/search?q=spring', ms:1, status:'ok' },
@@ -705,8 +747,9 @@ const ACTIONS = [
       ],
     }
   },
+  // ── Security ─────────────────────────────────────────────
   {
-    id:'scan', label:'Vulnerability scan', icon:'🛡️',
+    id:'scan', label:'Vulnerability Scan', icon:'🛡️',
     dependsOn:['trivy','postgres'],
     steps:[
       { from:'browser',     to:'gin',         label:'POST /api/v1/components/:id/scan',         ms:1,    status:'ok' },
@@ -733,6 +776,81 @@ const ACTIONS = [
       ],
     }
   },
+  // ── Backup / Export-Import (Phase 45) ────────────────────
+  {
+    id:'export_repo', label:'Export Repository', icon:'📤',
+    dependsOn:['postgres','blob'],
+    steps:[
+      { from:'browser',       to:'gin',           label:'GET /api/v1/repositories/my-repo/export',        ms:1,   status:'ok' },
+      { from:'gin',           to:'backupService', label:'BackupHandler.ExportRepo()',                      ms:1,   status:'ok' },
+      { from:'backupService', to:'postgres',      label:'ComponentRepo.List() — enumerate assets',         ms:10,  status:'ok' },
+      { from:'postgres',      to:'backupService', label:'→ N components + asset rows',                    ms:5,   status:'ok', reverse:true },
+      { from:'backupService', to:'blobStore',     label:'BlobStore.Get(key) × N — stream blobs into tar', ms:200, status:'ok' },
+      { from:'gin',           to:'browser',       label:'200 streaming tar.gz (Content-Disposition: attachment)', ms:1, status:'ok', reverse:true },
+    ],
+    failureSteps:{
+      postgres:[
+        { from:'browser',       to:'gin',           label:'GET /api/v1/repositories/my-repo/export', ms:1,    status:'ok' },
+        { from:'gin',           to:'backupService', label:'BackupHandler.ExportRepo()',               ms:1,    status:'ok' },
+        { from:'backupService', to:'postgres',      label:'ComponentRepo.List() — error',            ms:3000, status:'error', detail:'connection refused' },
+        { from:'gin',           to:'browser',       label:'503 Service Unavailable',                  ms:1,    status:'error', reverse:true },
+      ],
+      blob:[
+        { from:'browser',       to:'gin',           label:'GET /api/v1/repositories/my-repo/export', ms:1,  status:'ok' },
+        { from:'gin',           to:'backupService', label:'BackupHandler.ExportRepo()',               ms:1,  status:'ok' },
+        { from:'backupService', to:'postgres',      label:'ComponentRepo.List()',                     ms:10, status:'ok' },
+        { from:'postgres',      to:'backupService', label:'→ asset rows',                            ms:5,  status:'ok', reverse:true },
+        { from:'backupService', to:'blobStore',     label:'BlobStore.Get() — file missing',          ms:100, status:'error', detail:'blob key not found on disk' },
+        { from:'gin',           to:'browser',       label:'500 Internal Server Error',               ms:1,  status:'error', reverse:true },
+      ],
+    }
+  },
+  {
+    id:'import_repo', label:'Import Repository', icon:'📥',
+    dependsOn:['postgres','blob'],
+    steps:[
+      { from:'browser',       to:'gin',           label:'POST /api/v1/repositories/import (multipart tar.gz)', ms:1,   status:'ok' },
+      { from:'gin',           to:'backupService', label:'BackupHandler.ImportRepo(conflictMode=skip)',          ms:1,   status:'ok' },
+      { from:'backupService', to:'postgres',      label:'ComponentRepo.Upsert() — dedup by sha256',           ms:20,  status:'ok' },
+      { from:'backupService', to:'blobStore',     label:'BlobStore.Put(key) × N — write blobs',               ms:300, status:'ok' },
+      { from:'gin',           to:'browser',       label:'200 { imported: 38, skipped: 4, bytes: 210MB }',     ms:1,   status:'ok', reverse:true },
+    ],
+    failureSteps:{
+      postgres:[
+        { from:'browser',       to:'gin',           label:'POST /api/v1/repositories/import', ms:1,    status:'ok' },
+        { from:'gin',           to:'backupService', label:'BackupHandler.ImportRepo()',        ms:1,    status:'ok' },
+        { from:'backupService', to:'postgres',      label:'ComponentRepo.Upsert() — error',  ms:3000, status:'error', detail:'connection refused' },
+        { from:'gin',           to:'browser',       label:'503 Service Unavailable',           ms:1,    status:'error', reverse:true },
+      ],
+      blob:[
+        { from:'browser',       to:'gin',           label:'POST /api/v1/repositories/import', ms:1,  status:'ok' },
+        { from:'gin',           to:'backupService', label:'BackupHandler.ImportRepo()',        ms:1,  status:'ok' },
+        { from:'backupService', to:'postgres',      label:'ComponentRepo.Upsert()',           ms:20, status:'ok' },
+        { from:'backupService', to:'blobStore',     label:'BlobStore.Put() — disk full',     ms:3000, status:'error', detail:'no space left on device' },
+        { from:'gin',           to:'browser',       label:'507 Insufficient Storage',         ms:1,  status:'error', reverse:true },
+      ],
+    }
+  },
+  // ── S3 Blob Store (Phase 46) ─────────────────────────────
+  {
+    id:'test_blobstore', label:'Test Blob Store', icon:'🔌',
+    dependsOn:['s3store'],
+    steps:[
+      { from:'browser',   to:'gin',       label:'POST /api/v1/blobstores/test',            ms:1,  status:'ok' },
+      { from:'gin',       to:'blobStore', label:'BlobStoreService.TestConnect(config)',     ms:1,  status:'ok' },
+      { from:'blobStore', to:'s3store',   label:'S3 PutObject probe (s3://bucket/.probe)', ms:80, status:'ok' },
+      { from:'s3store',   to:'blobStore', label:'→ 200 OK',                                ms:30, status:'ok', reverse:true },
+      { from:'gin',       to:'browser',   label:'200 { ok: true, latency_ms: 110 }',       ms:1,  status:'ok', reverse:true },
+    ],
+    failureSteps:{
+      s3store:[
+        { from:'browser',   to:'gin',       label:'POST /api/v1/blobstores/test',          ms:1,    status:'ok' },
+        { from:'gin',       to:'blobStore', label:'BlobStoreService.TestConnect()',         ms:1,    status:'ok' },
+        { from:'blobStore', to:'s3store',   label:'S3 probe — connection refused',         ms:5000, status:'error', detail:'dial tcp: connection refused' },
+        { from:'gin',       to:'browser',   label:'200 { ok: false, error: "dial tcp: connection refused" }', ms:1, status:'error', reverse:true },
+      ],
+    }
+  },
 ];
 
 // ═══════════════════════════════════════════════════════
@@ -745,22 +863,19 @@ const state = {
 };
 
 // ═══════════════════════════════════════════════════════
-//  STUBS — replaced in subsequent tasks
+//  LEFT PANEL
 // ═══════════════════════════════════════════════════════
 function renderLeftPanel() {
-  // Init state.services from SERVICES
   Object.values(SERVICES).forEach(s => { state.services[s.key] = true; });
 
   const scroll = document.getElementById('left-scroll');
   scroll.innerHTML = '';
 
-  // Actions section title
   const actSection = document.createElement('div');
   actSection.className = 'panel-section';
-  actSection.innerHTML = '<div class="panel-section-title">Действия</div>';
+  actSection.innerHTML = '<div class="panel-section-title">Actions</div>';
   scroll.appendChild(actSection);
 
-  // Action items
   ACTIONS.forEach(action => {
     const el = document.createElement('div');
     el.className = 'action-item';
@@ -770,19 +885,16 @@ function renderLeftPanel() {
     scroll.appendChild(el);
   });
 
-  // Divider
   const divider = document.createElement('div');
   divider.className = 'divider';
   divider.style.margin = '8px 0';
   scroll.appendChild(divider);
 
-  // Services section title
   const svcSection = document.createElement('div');
   svcSection.className = 'panel-section';
-  svcSection.innerHTML = '<div class="panel-section-title">Сервисы</div>';
+  svcSection.innerHTML = '<div class="panel-section-title">Services</div>';
   scroll.appendChild(svcSection);
 
-  // Service toggles
   Object.values(SERVICES).forEach(svc => {
     const el = document.createElement('div');
     el.className = 'svc-toggle';
@@ -805,7 +917,6 @@ function handleActionClick(action) {
   state.selectedAction = action.id;
   document.getElementById('trace-action-name').textContent = action.icon + ' ' + action.label;
 
-  // Guard: no steps yet (Tasks 5/6 fill them in)
   const stepsToUse = getStepsForAction(action);
   if (!stepsToUse || stepsToUse.length === 0) {
     const body = document.getElementById('trace-body');
@@ -820,19 +931,16 @@ function toggleService(key) {
   const svc = SERVICES[key];
   const up = state.services[key];
 
-  // Update toggle UI
   const dot    = document.getElementById('svc-dot-' + key);
   const status = document.getElementById('svc-status-' + key);
   dot.className    = 'svc-dot ' + (up ? 'up' : 'down');
   status.className = 'svc-status ' + (up ? 'up' : 'down');
   status.textContent = up ? 'UP' : 'DOWN';
 
-  // Update corresponding graph node
   setNodeState(svc.nodeId, up ? 'normal' : 'down');
 }
 
 function getStepsForAction(action) {
-  // Full implementation in Task 4; stub returns empty for now
   for (const svcKey of (action.dependsOn || [])) {
     if (!state.services[svcKey] && action.failureSteps && action.failureSteps[svcKey]) {
       return action.failureSteps[svcKey];
@@ -840,10 +948,13 @@ function getStepsForAction(action) {
   }
   return action.steps;
 }
+
+// ═══════════════════════════════════════════════════════
+//  GRAPH
+// ═══════════════════════════════════════════════════════
 function renderGraph() {
   const svg = document.getElementById('graph-svg');
 
-  // Layer labels
   [
     { label:'CLIENTS',    y:16 },
     { label:'HTTP / GIN', y:116 },
@@ -859,9 +970,9 @@ function renderGraph() {
     svg.appendChild(t);
   });
 
-  // Draw edges (behind nodes)
   EDGES.forEach(e => {
     const fn = NODES[e.from], tn = NODES[e.to];
+    if (!fn || !tn) return;
     const line = document.createElementNS('http://www.w3.org/2000/svg','line');
     line.setAttribute('x1', fn.x);
     line.setAttribute('y1', fn.y + fn.h / 2);
@@ -872,7 +983,6 @@ function renderGraph() {
     svg.appendChild(line);
   });
 
-  // Draw nodes
   Object.values(NODES).forEach(n => {
     const g = document.createElementNS('http://www.w3.org/2000/svg','g');
     g.setAttribute('class', `svg-node color-${n.color} state-normal`);
@@ -921,10 +1031,10 @@ function hideTooltip() {
 function setNodeState(nodeId, st) {
   const g = document.getElementById('node-' + nodeId);
   if (!g) return;
-  // Replace state-X class while preserving color-X class
   const classes = g.getAttribute('class').replace(/state-\w+/, '').trim();
   g.setAttribute('class', classes + ' state-' + st);
 }
+
 // ═══════════════════════════════════════════════════════
 //  ANIMATION ENGINE
 // ═══════════════════════════════════════════════════════
@@ -950,7 +1060,6 @@ function getEdgeId(fromId, toId) {
 
 function animateDot(step) {
   const svg = document.getElementById('graph-svg');
-  // Use from/to directly — reverse flag just means it's a response; direction is already correct
   const from = NODES[step.from];
   const to   = NODES[step.to];
   if (!from || !to) return;
@@ -976,7 +1085,6 @@ function animateDot(step) {
     { duration: durMs, easing: 'cubic-bezier(0.4,0,0.2,1)', fill: 'forwards' }
   ).onfinish = () => setTimeout(() => circle.remove(), 80);
 
-  // Highlight edge
   const edgeId = getEdgeId(step.from, step.to);
   if (edgeId) {
     const edgeEl = document.getElementById('edge-' + edgeId);
@@ -1027,7 +1135,6 @@ function playAction(action) {
   resetAllNodes();
   state.running = true;
 
-  // Mark running
   document.querySelectorAll('.action-item').forEach(el => el.classList.remove('running'));
   const actionEl = document.getElementById('action-' + action.id);
   if (actionEl) { actionEl.classList.remove('active'); actionEl.classList.add('running'); }
@@ -1055,7 +1162,6 @@ function playAction(action) {
     const step = steps[i];
     elapsed += step.ms || 0;
 
-    // Highlight source and target nodes
     const nodeStatus = step.status === 'error' ? 'error' : step.status === 'warn' ? 'warn' : 'active';
     setNodeState(step.from, nodeStatus);
     setNodeState(step.to,   nodeStatus);

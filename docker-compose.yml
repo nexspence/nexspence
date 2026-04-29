@@ -112,6 +112,42 @@ services:
       timeout: 5s
       retries: 5
 
+  # ── MinIO (S3-compatible object storage) ─────────────────────
+  # Console: http://localhost:9001  (minioadmin / minioadmin)
+  # S3 API:  http://localhost:9000
+  # Inside Docker network: endpoint = http://minio:9000
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Creates bucket "nexspence-blobs" on first start, then exits.
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      sh -c "
+        mc alias set local http://minio:9000 minioadmin minioadmin &&
+        mc mb --ignore-existing local/nexspence-blobs &&
+        echo 'bucket ready'
+      "
+    restart: "no"
+
   # ── Frontend dev server (Vite) ────────────────────────────────
   # Only used during development — production build is embedded in nexspence binary
   frontend-dev:
@@ -133,4 +169,5 @@ services:
 volumes:
   postgres_data:
   nexspence_blobs:
+  minio_data:
   frontend_node_modules:

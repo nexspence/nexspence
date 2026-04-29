@@ -604,10 +604,12 @@ function RawTagSection({ componentId, isAdmin: admin }: { componentId: string; i
     queryKey: ['componentDetail', componentId],
     queryFn: () => nexusApi.getComponent(componentId).then((r) => r.data as { tags?: string[] }),
   })
+  if (!comp) return null
   return (
     <TagEditor
+      key={componentId}
       componentId={componentId}
-      initialTags={comp?.tags ?? []}
+      initialTags={comp.tags ?? []}
       queryKey={['componentDetail', componentId]}
       readOnly={!admin}
     />
@@ -1314,6 +1316,7 @@ export default function BrowsePage() {
                     </PanelBtn>
                   </div>
                   <TagEditor
+                    key={dockerSelection.componentId}
                     componentId={dockerSelection.componentId}
                     initialTags={dockerDetail.tags ?? []}
                     queryKey={['dockerComponentDetail', dockerSelection.componentId]}
