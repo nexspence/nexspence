@@ -253,8 +253,11 @@ export default function AdminPage() {
                 const color = svc.status === 'ok' ? 'var(--holo-green)' : svc.status === 'error' ? 'var(--holo-red)' : 'rgba(255,255,255,0.25)'
                 const glow  = svc.status === 'ok' ? '0 0 5px var(--holo-green)' : svc.status === 'error' ? '0 0 5px var(--holo-red)' : 'none'
                 return (
-                  <div key={svc.name} style={{ display: 'grid', gridTemplateColumns: '8px 1fr auto', alignItems: 'center', gap: 12, padding: '10px 12px', background: 'rgba(255,255,255,0.03)', borderRadius: 8, border: '1px solid rgba(255,255,255,0.06)' }}>
-                    <span style={{ width: 7, height: 7, borderRadius: '50%', background: color, boxShadow: glow, flexShrink: 0, display: 'inline-block' }} />
+                  <div key={svc.name} style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto', alignItems: 'center', gap: 12, padding: '10px 12px', background: 'rgba(255,255,255,0.03)', borderRadius: 8, border: '1px solid rgba(255,255,255,0.06)' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                      <span style={{ width: 7, height: 7, borderRadius: '50%', background: color, boxShadow: glow, flexShrink: 0, display: 'inline-block' }} />
+                      <span style={{ fontSize: 10, fontWeight: 700, color, whiteSpace: 'nowrap' as const }}>{svc.status === 'ok' ? 'OK' : svc.status === 'error' ? 'ERROR' : 'UNKNOWN'}</span>
+                    </span>
                     <div style={{ minWidth: 0 }}>
                       <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--holo-text)', display: 'flex', alignItems: 'center', gap: 6 }}>
                         {svc.name}
@@ -441,9 +444,11 @@ export default function AdminPage() {
             <div className="holo-skeleton holo-skeleton--block" />
           </div>
         ) : blobs.length === 0 ? (
-          <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: 20, textAlign: 'center' as const, color: 'var(--holo-text-faint)', fontSize: 14 }}>
-            <Database size={32} style={{ opacity: 0.3, margin: '0 auto 8px' }} />
-            <p>No blob stores configured</p>
+          <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: '40px 20px', textAlign: 'center' as const, color: 'var(--holo-text-faint)', fontSize: 14, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+            <Database size={40} style={{ opacity: 0.3 }} />
+            <div style={{ fontWeight: 500, color: 'var(--holo-text)' }}>No blob stores configured</div>
+            <div style={{ fontSize: 12 }}>Create a blob store to manage artifact storage locations.</div>
+            <HoloButton variant="primary" icon={<Plus size={14} />} style={{ marginTop: 4 }} onClick={() => setCreateOpen(true)}>New Blob Store</HoloButton>
           </div>
         ) : (
           <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--holo-border)', borderRadius: 12, overflow: 'hidden' }}>

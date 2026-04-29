@@ -75,10 +75,11 @@ export default function MigrationPage() {
           <div className="holo-skeleton holo-skeleton--block" />
         </div>
       ) : jobs.length === 0 ? (
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, color: 'var(--holo-text-faint)', fontSize: 14, padding: '48px 0' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, color: 'var(--holo-text-faint)', fontSize: 14, padding: '48px 0' }}>
           <ArrowRightLeft size={40} style={{ opacity: 0.3 }} />
-          <p>No migration jobs yet</p>
-          <HoloButton variant="primary" onClick={() => setShowCreate(true)}><Plus size={14} /> Start Migration</HoloButton>
+          <div style={{ fontWeight: 500, color: 'var(--holo-text)' }}>No migration jobs yet</div>
+          <div style={{ fontSize: 12 }}>Import repositories, users, and artifacts from a live Nexus instance.</div>
+          <HoloButton variant="primary" style={{ marginTop: 4 }} onClick={() => setShowCreate(true)}><Plus size={14} /> Start Migration</HoloButton>
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>

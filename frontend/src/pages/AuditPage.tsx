@@ -163,9 +163,10 @@ export default function AuditPage() {
       {isLoading ? (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, color: 'var(--holo-text-faint)', fontSize: 14, paddingTop: 48 }}>Loading…</div>
       ) : events.length === 0 ? (
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, color: 'var(--holo-text-faint)', fontSize: 14, paddingTop: 48 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, color: 'var(--holo-text-faint)', fontSize: 14, paddingTop: 48 }}>
           <FileText size={40} style={{ opacity: 0.3 }} />
-          <p>No audit events{domain || action || username || from || to ? ' matching filters' : ''}</p>
+          <div style={{ fontWeight: 500, color: 'var(--holo-text)' }}>No audit events{domain || action || username || from || to ? ' matching filters' : ''}</div>
+          <div style={{ fontSize: 12 }}>{domain || action || username || from || to ? 'Try adjusting your filters.' : 'Audit events are recorded as users and services interact with the system.'}</div>
         </div>
       ) : (
         <>

@@ -137,8 +137,11 @@ export function MonitoringView() {
                 <span style={S.rowKey}>Heap allocated</span>
                 <span style={S.rowVal}>{fmtBytes(m.memory.alloc_bytes)}</span>
               </div>
-              <div style={S.bar}>
-                <div style={{ height: '100%', width: heapPct + '%', background: heapPct > 80 ? '#ef4444' : '#3b82f6', transition: 'width 0.4s' }} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ ...S.bar, flex: 1 }}>
+                  <div style={{ height: '100%', width: heapPct + '%', background: heapPct > 80 ? '#ef4444' : '#3b82f6', transition: 'width 0.4s' }} />
+                </div>
+                <span style={{ fontSize: 11, fontWeight: 600, color: heapPct > 80 ? '#ef4444' : '#3b82f6', whiteSpace: 'nowrap' as const }}>{heapPct.toFixed(0)}%{heapPct > 80 ? ' HIGH' : ' OK'}</span>
               </div>
               <div style={{ ...S.row, marginTop: 4 }}>
                 <span style={S.rowKey}>Total allocated</span>
@@ -178,7 +181,10 @@ export function MonitoringView() {
               </div>
               <div style={{ ...S.row, borderBottom: 'none' }}>
                 <span style={S.rowKey}>Error rate</span>
-                <span style={S.badge(errColor)}>{errorRate}%</span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={S.badge(errColor)}>{errorRate}%</span>
+                  <span style={{ fontSize: 11, color: errColor, fontWeight: 600 }}>{m && m.request_errors > 0 ? 'WARN' : 'OK'}</span>
+                </span>
               </div>
             </div>
           </div>
