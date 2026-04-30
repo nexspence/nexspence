@@ -1,66 +1,164 @@
-# Nexspence
+<div align="center">
+  <img src="frontend/src/assets/logo.png" alt="Nexspence" width="380">
+  <br><br>
+  <p><strong>Free, open-source universal artifact repository manager</strong></p>
+  <p>A full-featured self-hosted alternative to Sonatype Nexus Repository OSS / Pro</p>
+  <br>
 
-**Free, open-source universal artifact repository manager** — a full-featured alternative to Sonatype Nexus Repository OSS/Pro.
+  ![Go](https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat-square&logo=go&logoColor=white)
+  ![React](https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react&logoColor=black)
+  ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript&logoColor=white)
+  ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16+-4169E1?style=flat-square&logo=postgresql&logoColor=white)
+  ![Docker](https://img.shields.io/badge/Docker-ready-2496ED?style=flat-square&logo=docker&logoColor=white)
+  ![License](https://img.shields.io/badge/License-AGPLv3-22c55e?style=flat-square)
 
-Supports 12 package formats out of the box, hosted and proxy repositories, RBAC, cleanup policies, audit log, S3-compatible storage, and a dark glassmorphism web UI.
-
-### Authentication
-
-Three auth sources coexist — routed per-user by `user.Source`:
-
-- **Local:** username + password, JWT bearer (`POST /api/v1/login`, `Authorization: Bearer <jwt>`). Bootstrap-admin is always local for DR.
-- **LDAP / Active Directory:** JIT user provisioning, optional admin-group → `nx-admin` mapping. Config block `ldap:` in `config.yaml`.
-- **OIDC / OAuth2 SSO** *(Phase 28)*: Keycloak / Google Workspace / Microsoft Entra ID / Okta or any OIDC-compliant provider. Authorization code + PKCE flow. Provisioning modes: `jit` / `allowlist` / `manual`. Role resolution via `admin_group` + `role_mappings`. Frontend "Sign in with X" button under login form. See [`docs/oidc-setup.md`](docs/oidc-setup.md) for provider-specific setup.
-- **User API tokens:** Random **`nxs_…`** tokens (hashed in DB). Use as **`Authorization: Bearer nxs_…`** or **HTTP Basic** with username + token as password. Implemented by **`TokenService`** and enforced together with JWT in **`AuthMiddleware`** / **`OptionalAuth`** (`internal/api/handlers/auth.go`, wired in `internal/api/router.go`).
-
----
-
-## Supported formats
-
-| Format | Hosted | Proxy | Group |
-|--------|:------:|:-----:|:-----:|
-| Maven 2/3 | ✓ | ✓ | ✓ |
-| npm | ✓ | ✓ | ✓ |
-| PyPI | ✓ | ✓ | ✓ |
-| Go modules (GOPROXY) | ✓ | ✓ | ✓ |
-| Docker / OCI | ✓ | ✓ | ✓ |
-| NuGet v2/v3 | ✓ | ✓ | ✓ |
-| Helm | ✓ | ✓ | ✓ |
-| Cargo (Rust) | ✓ | ✓ | ✓ |
-| APT (Debian) | ✓ | ✓ | — |
-| Yum / DNF (RPM) | ✓ | ✓ | — |
-| Conan (C/C++) | ✓ | ✓ | — |
-| Raw (any file) | ✓ | ✓ | ✓ |
+</div>
 
 ---
 
-## Quick start — Docker Compose
+## What is Nexspence?
+
+Nexspence is a self-hosted artifact repository manager that supports **12 package formats**, three repository types (hosted, proxy, group), fine-grained RBAC, SSO via OIDC/LDAP, audit logging, S3-compatible storage, and a modern dark-theme web UI — all in a single binary backed by PostgreSQL.
+
+It exposes the full **Sonatype Nexus OSS v1 REST API** at `/service/rest/v1/` for drop-in compatibility with existing CI/CD pipelines, Maven/Gradle settings, and npm/pip configurations.
+
+---
+
+## Screenshots
+
+### Dashboard & Repositories
+
+<table>
+  <tr>
+    <td><img src="docs/assets/screenshots/repositories.PNG" alt="Repositories page" width="480"></td>
+    <td><img src="docs/assets/screenshots/browse.PNG" alt="Browse" width="480"></td>
+  </tr>
+  <tr>
+    <td align="center"><em>Repositories list</em></td>
+    <td align="center"><em>Browse tree view</em></td>
+  </tr>
+</table>
+
+### Admin & Security
+
+<table>
+  <tr>
+    <td><img src="docs/assets/screenshots/admin_blobstores.PNG" alt="Blob Stores" width="480"></td>
+    <td><img src="docs/assets/screenshots/security_roles.PNG" alt="Roles & RBAC" width="480"></td>
+  </tr>
+  <tr>
+    <td align="center"><em>Blob stores — S3 + local with connection test</em></td>
+    <td align="center"><em>Roles, privileges, content selectors</em></td>
+  </tr>
+</table>
+
+### Cleanup & Search
+
+<table>
+  <tr>
+    <td><img src="docs/assets/screenshots/cleanup.PNG" alt="Cleanup policies" width="480"></td>
+    <td><img src="docs/assets/screenshots/search.PNG" alt="Search" width="480"></td>
+  </tr>
+  <tr>
+    <td align="center"><em>Cleanup policies with dry-run preview</em></td>
+    <td align="center"><em>Full-text component search</em></td>
+  </tr>
+</table>
+
+---
+
+## Quick Start
+
+### Prerequisites
+
+- [Docker](https://docs.docker.com/get-docker/) 24+
+- [Docker Compose](https://docs.docker.com/compose/install/) v2 (bundled with Docker Desktop)
+
+### 1. Clone the repository
 
 ```bash
 git clone https://github.com/nexspence-oss/nexspence
 cd nexspence
-docker compose up --build
 ```
 
-Web UI: http://localhost:8081  
-Default credentials: `admin` / `admin123`
+The repository includes two ready-to-use files in the root:
 
-> Change `bootstrap.admin_password` in `config.yaml` before production use.
+| File | Purpose |
+|------|---------|
+| `docker-compose.yml` | Starts PostgreSQL + Nexspence (with optional Keycloak / MinIO profiles) |
+| `config.yaml` | Full application configuration — mounted read-only into the container |
+
+### 2. Configure before first launch
+
+Open `config.yaml` and change at minimum these two values:
+
+```yaml
+auth:
+  jwt_secret: "CHANGE_ME_AT_LEAST_32_CHARACTERS_LONG"   # ← replace with a random 32+ char string
+
+bootstrap:
+  admin_password: "changeme"   # ← your initial admin password
+```
+
+Everything else works out of the box for a local setup. Environment variables take precedence over `config.yaml`:
+
+```bash
+# Override admin password without touching config.yaml
+NEXSPENCE_BOOTSTRAP_ADMIN_PASSWORD=mysecret docker compose up -d
+```
+
+### 3. Start the stack
+
+```bash
+docker compose up -d
+```
+
+Docker Compose will:
+1. Pull `postgres:16-alpine` and `nexspence/nexspence:latest`
+2. Start PostgreSQL and wait for it to become healthy
+3. Start Nexspence — it auto-migrates the schema and bootstraps the admin account on first run
+
+Check that everything is up:
+
+```bash
+docker compose ps
+docker compose logs -f nexspence
+```
+
+### 4. Open the web UI
+
+| Service | URL | Default credentials |
+|---------|-----|---------------------|
+| Web UI & REST API | http://localhost:8081 | `admin` / `changeme` |
+| Docker registry | localhost:5000 | same credentials |
+| PostgreSQL | localhost:5437 | `nexspence` / `nexspence` |
+
+> Change the default password immediately after the first login via **Administration → Security → Users**.
+
+### 5. Stop and clean up
+
+```bash
+# Stop containers (data is preserved in Docker volumes)
+docker compose down
+
+# Stop AND remove all data volumes (full reset)
+docker compose down -v
+```
 
 ---
 
-## Quick start — from source
+## Quick Start — From Source
 
-**Requirements:** Go 1.25+, Node.js 22+, PostgreSQL 16+
+**Requirements:** Go 1.22+, Node.js 22+, PostgreSQL 16+
 
 ```bash
-# Start PostgreSQL (or use the compose DB service)
+# Start PostgreSQL only
 docker compose up -d db
 
 # Build and run backend (runs DB migrations automatically)
 go run ./cmd/server serve
 
-# Build frontend (separate terminal)
+# In a separate terminal — frontend dev server
 cd frontend
 npm ci
 npm run dev       # dev server on :5173
@@ -72,17 +170,135 @@ npm run build     # production build → frontend/dist/
 
 ## Configuration
 
-All settings are in `config.yaml`. Every key can be overridden by an environment variable:
+`config.yaml` is mounted into the container at `/app/config.yaml`. All keys can be overridden via environment variables using the pattern `NEXSPENCE_<SECTION>_<KEY>` (uppercase, underscore separator).
 
-```
-NEXSPENCE_HTTP_ADDR=:8081
-NEXSPENCE_DATABASE_DSN=postgres://user:pass@host:5432/db?sslmode=disable
-NEXSPENCE_AUTH_JWT_SECRET=your-secret-here
-NEXSPENCE_BOOTSTRAP_ADMIN_PASSWORD=strongpassword
-NEXSPENCE_STORAGE_DEFAULT_TYPE=s3    # or "local"
+### HTTP server
+
+```yaml
+http:
+  addr: ":8081"
+  read_timeout_sec: 1800
+  write_timeout_sec: 1800
+  max_body_mb: 1024
+  base_url: "http://localhost:8081"   # change to your public hostname in production
+  tls:
+    enabled: false
+    cert_file: ""
+    key_file: ""
 ```
 
-### S3-compatible storage (MinIO, AWS, Ceph, Backblaze)
+### Database
+
+```yaml
+database:
+  dsn: "postgres://nexspence:nexspence@localhost:5437/nexspence?sslmode=disable"
+  max_conns: 100
+  min_conns: 5
+  max_idle_sec: 300
+```
+
+> When running via Docker Compose the DSN is overridden by the `NEXSPENCE_DATABASE_DSN` environment variable — the container connects to the `postgres` service, not `localhost`.
+
+### Storage
+
+```yaml
+storage:
+  default_type: "local"   # "local" or "s3"
+  local:
+    base_path: "./data/blobs"
+  # s3:
+  #   bucket: "nexspence-blobs"
+  #   region: "us-east-1"
+  #   endpoint: "http://minio:9000"    # MinIO inside Docker Compose
+  #   access_key_id: ""
+  #   secret_access_key: ""
+  #   force_path_style: true            # required for MinIO / non-AWS S3
+```
+
+### Authentication
+
+```yaml
+auth:
+  jwt_secret: "CHANGE_ME_AT_LEAST_32_CHARACTERS_LONG"
+  jwt_expiry_hours: 24
+  anonymous_enabled: true      # allow read-only access to public repos without login
+  password_min_length: 8
+  bcrypt_cost: 12
+  token_max_days: 180          # maximum lifetime of user API tokens (nxs_*)
+
+bootstrap:
+  admin_username: "admin"
+  admin_password: "changeme"
+  admin_email: "admin@example.com"
+  admin_first_name: "Admin"
+```
+
+### LDAP / Active Directory (optional)
+
+```yaml
+ldap:
+  enabled: false
+  host: "ldap.example.com"
+  port: 636                    # 636 for LDAPS, 389 for plain/STARTTLS
+  use_tls: true
+  bind_dn: "CN=svc-nexspence,OU=ServiceAccounts,DC=example,DC=com"
+  bind_password: ""            # set via NEXSPENCE_LDAP_BIND_PASSWORD env var
+  search_base: "DC=example,DC=com"
+  search_filter: "(sAMAccountName={0})"   # AD; for OpenLDAP use: (uid={0})
+  auto_create_users: true
+  admin_group: ""              # group CN whose members get nx-admin role
+```
+
+### OIDC / OAuth2 SSO (optional)
+
+Supports Keycloak, Google Workspace, Microsoft Entra ID, Okta.
+
+```yaml
+oidc:
+  enabled: false
+  display_name: "SSO"          # button label: "Sign in with {display_name}"
+  issuer: ""                   # e.g. "https://kc.example.com/realms/nexspence"
+  client_id: ""
+  client_secret: ""            # set via NEXSPENCE_OIDC_CLIENT_SECRET env var
+  redirect_url: ""             # "https://nexspence.example.com/api/v1/auth/oidc/callback"
+  frontend_base_url: ""        # "https://nexspence.example.com"
+  provisioning: "jit"          # jit | allowlist | manual
+  admin_group: ""
+```
+
+---
+
+## Optional Services
+
+The `docker-compose.yml` includes commented-out blocks for two optional services.
+
+### Keycloak (local OIDC provider)
+
+```bash
+docker compose --profile keycloak up -d
+```
+
+Admin UI: http://localhost:8180 (`admin` / `admin`)
+
+After starting, create a realm `nexspence`, add a client `nexspence` (confidential, redirect URI: `http://localhost:8081/api/v1/auth/oidc/callback`), then enable OIDC in `config.yaml`:
+
+```yaml
+oidc:
+  enabled: true
+  issuer: "http://localhost:8180/realms/nexspence"
+  client_id: "nexspence"
+  client_secret: "<your-client-secret>"
+  redirect_url: "http://localhost:8081/api/v1/auth/oidc/callback"
+  frontend_base_url: "http://localhost:8081"
+```
+
+### MinIO (S3-compatible blob store)
+
+```bash
+docker compose --profile minio up -d
+```
+
+Switch storage to S3 in `config.yaml`:
 
 ```yaml
 storage:
@@ -90,15 +306,75 @@ storage:
   s3:
     bucket: "nexspence-blobs"
     region: "us-east-1"
-    endpoint: "http://minio:9000"   # omit for AWS S3
+    endpoint: "http://minio:9000"
     access_key_id: "minioadmin"
     secret_access_key: "minioadmin"
-    force_path_style: true          # required for MinIO
+    force_path_style: true
 ```
+
+MinIO console: http://localhost:9001 (`minioadmin` / `minioadmin`)
 
 ---
 
-## Uploading artifacts
+## Supported Package Formats
+
+| Format | Hosted | Proxy | Group |
+|--------|:------:|:-----:|:-----:|
+| Maven 2 / 3 | ✓ | ✓ | ✓ |
+| npm | ✓ | ✓ | ✓ |
+| PyPI | ✓ | ✓ | ✓ |
+| Go modules (GOPROXY v2) | ✓ | ✓ | ✓ |
+| Docker / OCI | ✓ | ✓ | ✓ |
+| NuGet v2 / v3 | ✓ | ✓ | ✓ |
+| Helm charts | ✓ | ✓ | ✓ |
+| Cargo (Rust) | ✓ | ✓ | ✓ |
+| APT (Debian/Ubuntu) | ✓ | ✓ | — |
+| Yum / RPM | ✓ | ✓ | — |
+| Conan (C/C++) | ✓ | ✓ | — |
+| Raw files | ✓ | ✓ | ✓ |
+
+---
+
+## Feature Highlights
+
+### Authentication & Access Control
+- **Local accounts** — JWT bearer tokens, bcrypt passwords
+- **LDAP / Active Directory** — JIT user provisioning, group → role mapping, admin-group sync
+- **OIDC / OAuth 2.0 SSO** — Keycloak, Google Workspace, Microsoft Entra ID, Okta; Authorization Code + PKCE
+- **User API tokens** — `nxs_…` prefixed, SHA-256 hashed in DB; usable as Bearer or HTTP Basic password
+- **RBAC** — Roles, Privileges, Content Selectors (CEL expressions for path/format scoping)
+
+### Storage
+- **Local filesystem** — default, zero configuration
+- **S3-compatible** — AWS S3, MinIO, Ceph; configurable per blob store; connection test endpoint
+- **Per-repository blob store routing** — each repository can use a different physical blob store
+- **Storage quotas** — per blob store and per repository; enforced on upload
+
+### Repository Management
+- **Hosted** — direct artifact upload and storage
+- **Proxy** — transparent remote caching (cache-miss fetches from upstream, stores locally)
+- **Group** — ordered union of hosted + proxy repos under a single URL
+- **Cleanup policies** — by age, last-downloaded, format; retain-N-versions; cron scheduler; **dry-run preview**
+- **Component tags** — free-form text tags on components, searchable via the API and UI
+
+### Backup & Migration
+- **Per-repository export** — streaming `.tar.gz` download (metadata + blobs)
+- **Per-repository import** — multipart upload; skip or rename conflict resolution; deduplication by SHA-256
+- **Full system backup / restore** — complete database + blob export
+- **Live migration from Nexus** — import repositories, users, roles, cleanup policies from a running Nexus OSS/Pro instance
+
+### Developer Experience
+- **Nexus OSS v1 REST API** — `/service/rest/v1/` compatible; drop-in replacement
+- **Full-text search** — PostgreSQL tsvector across components and assets
+- **Browse UI** — tree view for raw and Docker repositories; file details with download, copy-link, and usage examples
+- **Audit log** — every API action logged; filterable by date/user/path; NDJSON streaming export; 90-day retention
+- **Webhooks** — `artifact.published`, `artifact.deleted`, `repo.created` events; HMAC-SHA256 signatures
+- **Vulnerability scanning** — Trivy integration for Docker images; CVE results cached in component metadata
+- **Dark glassmorphism UI** — sidebar collapse/expand; tabbed admin pages; wizard-style create flows
+
+---
+
+## Uploading Artifacts
 
 All artifact endpoints follow the pattern:
 
@@ -109,18 +385,16 @@ http://localhost:8081/repository/<repo-name>/<format-specific-path>
 Create a hosted repository first (UI → Repositories → New Repository, or via API):
 
 ```bash
-curl -u admin:admin123 -X POST http://localhost:8081/service/rest/v1/repositories/raw/hosted \
+curl -u admin:changeme -X POST http://localhost:8081/service/rest/v1/repositories/raw/hosted \
   -H 'Content-Type: application/json' \
-  -d '{"name":"my-raw","online":true,"storage":{"blobStoreName":"default","strictContentTypeValidation":false},"cleanup":null}'
+  -d '{"name":"my-raw","online":true,"storage":{"blobStoreName":"default","strictContentTypeValidation":false}}'
 ```
-
----
 
 ### Raw (any file)
 
 ```bash
 # Upload
-curl -u admin:admin123 -X PUT \
+curl -u admin:changeme -X PUT \
   http://localhost:8081/repository/my-raw/path/to/myfile.zip \
   --upload-file myfile.zip
 
@@ -128,15 +402,13 @@ curl -u admin:admin123 -X PUT \
 curl -O http://localhost:8081/repository/my-raw/path/to/myfile.zip
 
 # Delete
-curl -u admin:admin123 -X DELETE \
+curl -u admin:changeme -X DELETE \
   http://localhost:8081/repository/my-raw/path/to/myfile.zip
 ```
 
----
+### Maven 2 / 3
 
-### Maven 2/3
-
-Configure in `~/.m2/settings.xml`:
+Configure `~/.m2/settings.xml`:
 
 ```xml
 <settings>
@@ -144,7 +416,7 @@ Configure in `~/.m2/settings.xml`:
     <server>
       <id>nexspence</id>
       <username>admin</username>
-      <password>admin123</password>
+      <password>changeme</password>
     </server>
   </servers>
 </settings>
@@ -169,211 +441,107 @@ In `pom.xml`:
 mvn deploy
 ```
 
-Direct upload via curl:
-
-```bash
-curl -u admin:admin123 -X PUT \
-  "http://localhost:8081/repository/my-maven-hosted/com/example/mylib/1.0.0/mylib-1.0.0.jar" \
-  --upload-file mylib-1.0.0.jar
-```
-
----
-
 ### npm
 
 ```bash
-# Point npm at Nexspence
 npm config set registry http://localhost:8081/repository/my-npm/
-
-# Authenticate
 npm login --registry=http://localhost:8081/repository/my-npm/
-
-# Publish a package
 npm publish --registry=http://localhost:8081/repository/my-npm/
-
-# Install from Nexspence
 npm install my-package --registry=http://localhost:8081/repository/my-npm/
 ```
 
----
-
 ### PyPI
 
-**Upload** with [twine](https://twine.readthedocs.io/):
-
 ```bash
+# Upload with twine
 pip install twine
-
 twine upload \
   --repository-url http://localhost:8081/repository/my-pypi/ \
-  --username admin \
-  --password admin123 \
+  --username admin --password changeme \
   dist/*
-```
 
-**Install** with pip:
-
-```bash
+# Install with pip
 pip install my-package \
-  --index-url http://admin:admin123@localhost:8081/repository/my-pypi/simple/ \
+  --index-url http://admin:changeme@localhost:8081/repository/my-pypi/simple/ \
   --trusted-host localhost
 ```
-
-Or configure `~/.pip/pip.conf`:
-
-```ini
-[global]
-index-url = http://admin:admin123@localhost:8081/repository/my-pypi/simple/
-trusted-host = localhost
-```
-
----
 
 ### Go modules (GOPROXY)
 
 ```bash
-# Set proxy
 export GOPROXY=http://localhost:8081/repository/my-go/,direct
 export GONOSUMCHECK=localhost
-
 go get github.com/some/module@v1.2.3
 ```
-
-Upload a module manually:
-
-```bash
-# Upload .info, .mod, .zip
-curl -u admin:admin123 -X PUT \
-  "http://localhost:8081/repository/my-go/github.com/example/lib/@v/v1.0.0.mod" \
-  --upload-file go.mod
-
-curl -u admin:admin123 -X PUT \
-  "http://localhost:8081/repository/my-go/github.com/example/lib/@v/v1.0.0.zip" \
-  --upload-file v1.0.0.zip
-```
-
----
 
 ### Docker / OCI
 
 ```bash
-# Configure Docker daemon for HTTP (add to /etc/docker/daemon.json):
-# {"insecure-registries": ["localhost:8081"]}
+# Add to /etc/docker/daemon.json: {"insecure-registries": ["localhost:8081"]}
 
-# Login
-docker login localhost:8081 -u admin -p admin123
+docker login localhost:8081 -u admin -p changeme
 
-# Tag and push — both URL styles work:
-# Long form (traditional):
+# Push
 docker tag myimage:latest localhost:8081/repository/my-docker/myimage:latest
 docker push localhost:8081/repository/my-docker/myimage:latest
 
-# Short form (Phase 16+):
-docker tag myimage:latest localhost:8081/my-docker/myimage:latest
-docker push localhost:8081/my-docker/myimage:latest
-
-# Pull — both styles also supported
-docker pull localhost:8081/repository/my-docker/myimage:latest   # long form
-docker pull localhost:8081/my-docker/myimage:latest              # short form
+# Pull
+docker pull localhost:8081/repository/my-docker/myimage:latest
 ```
-
-> **Note**: The Docker client sends API requests to `/v2/repository/<repoName>/...` (long form) or `/v2/<repoName>/...` (short form).
-> Nexspence registers both routes automatically — no extra configuration needed.
-
-> **Common mistake:** `docker pull localhost:8081/dockerproxy/library/alpine:latest` is **wrong** — the client calls `/v2/dockerproxy/...` (without `repository`), hits the web UI, and you get errors like `unexpected media type text/html` when a layer is actually HTML. Always include **`repository`** in the image name: `docker pull localhost:8081/repository/dockerproxy/library/alpine:latest`.
-
----
 
 ### NuGet
 
 ```bash
-# Register source
 nuget sources add \
   -Name Nexspence \
   -Source http://localhost:8081/repository/my-nuget/index.json \
-  -Username admin \
-  -Password admin123
+  -Username admin -Password changeme
 
-# Push package
-nuget push MyPackage.1.0.0.nupkg \
-  -Source Nexspence \
-  -ApiKey admin123
-
-# Restore / install
+nuget push MyPackage.1.0.0.nupkg -Source Nexspence -ApiKey changeme
 dotnet add package MyPackage --source http://localhost:8081/repository/my-nuget/index.json
 ```
-
----
 
 ### Helm
 
 ```bash
-# Add repo
 helm repo add nexspence \
   http://localhost:8081/repository/my-helm/ \
-  --username admin --password admin123
+  --username admin --password changeme
 
 helm repo update
-
-# Install chart from repo
 helm install my-release nexspence/my-chart
 
-# Push chart (requires helm-push plugin)
+# Push chart
 helm plugin install https://github.com/chartmuseum/helm-push
-
 helm cm-push my-chart-1.0.0.tgz nexspence
-
-# Or upload directly with curl
-curl -u admin:admin123 -X POST \
-  http://localhost:8081/repository/my-helm/api/charts \
-  -F "chart=@my-chart-1.0.0.tgz"
 ```
-
----
 
 ### Cargo (Rust)
 
-Configure `~/.cargo/config.toml`:
+Add to `~/.cargo/config.toml`:
 
 ```toml
 [registries.nexspence]
 index = "sparse+http://localhost:8081/repository/my-cargo/"
-
-[net]
-git-fetch-with-cli = true
 ```
 
 ```bash
-# Publish crate
 cargo publish --registry nexspence
-
-# Add dependency
 cargo add my-crate --registry nexspence
 ```
 
----
-
 ### APT (Debian / Ubuntu)
-
-Add repository to apt sources:
 
 ```bash
 echo "deb [trusted=yes] http://localhost:8081/repository/my-apt/ stable main" \
   | sudo tee /etc/apt/sources.list.d/nexspence.list
+sudo apt update && sudo apt install my-package
 
-sudo apt update
-sudo apt install my-package
-```
-
-Upload a `.deb` package:
-
-```bash
-curl -u admin:admin123 -X PUT \
+# Upload .deb
+curl -u admin:changeme -X PUT \
   "http://localhost:8081/repository/my-apt/pool/main/my-package_1.0.0_amd64.deb" \
   --upload-file my-package_1.0.0_amd64.deb
 ```
-
----
 
 ### Yum / DNF (RPM)
 
@@ -388,35 +556,109 @@ gpgcheck=0
 ```
 
 ```bash
-sudo yum install my-package
-# or
 sudo dnf install my-package
-```
 
-Upload an `.rpm` package:
-
-```bash
-curl -u admin:admin123 -X PUT \
+# Upload .rpm
+curl -u admin:changeme -X PUT \
   "http://localhost:8081/repository/my-yum/my-package-1.0.0.x86_64.rpm" \
   --upload-file my-package-1.0.0.x86_64.rpm
 ```
 
----
-
 ### Conan (C/C++)
 
 ```bash
-# Add remote
 conan remote add nexspence http://localhost:8081/repository/my-conan/
-
-# Authenticate
-conan user admin -r nexspence -p admin123
-
-# Upload package
+conan user admin -r nexspence -p changeme
 conan upload my-lib/1.0.0@ -r nexspence --all
-
-# Install
 conan install my-lib/1.0.0@ -r nexspence
+```
+
+---
+
+## Proxy Repositories
+
+A proxy repository caches artifacts from an upstream registry on first request. Subsequent requests are served locally without hitting upstream again.
+
+**How it works:**
+1. Client requests an artifact
+2. Cache hit → served from local blob store immediately
+3. Cache miss → Nexspence fetches from `remote_url`, streams to client, persists locally (zero-copy)
+4. Mutations (push/delete) are rejected with `405 Method Not Allowed`
+
+### Create proxy repositories (API)
+
+```bash
+# Maven Central
+curl -u admin:changeme -X POST \
+  http://localhost:8081/service/rest/v1/repositories/maven2/proxy \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"maven-central","type":"proxy","format":"maven2","proxy_config":{"remote_url":"https://repo1.maven.org/maven2/"}}'
+
+# npm registry
+curl -u admin:changeme -X POST \
+  http://localhost:8081/service/rest/v1/repositories/npm/proxy \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"npm-proxy","type":"proxy","format":"npm","proxy_config":{"remote_url":"https://registry.npmjs.org/"}}'
+
+# PyPI
+curl -u admin:changeme -X POST \
+  http://localhost:8081/service/rest/v1/repositories/pypi/proxy \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"pypi-proxy","type":"proxy","format":"pypi","proxy_config":{"remote_url":"https://pypi.org/"}}'
+
+# Docker Hub
+curl -u admin:changeme -X POST \
+  http://localhost:8081/service/rest/v1/repositories/docker/proxy \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"docker-hub","type":"proxy","format":"docker","proxy_config":{"remote_url":"https://registry-1.docker.io/"}}'
+
+# Helm / Bitnami
+curl -u admin:changeme -X POST \
+  http://localhost:8081/service/rest/v1/repositories/helm/proxy \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"bitnami","type":"proxy","format":"helm","proxy_config":{"remote_url":"https://charts.bitnami.com/bitnami/"}}'
+```
+
+### Proxy format support
+
+| Format | Proxy | Default upstream |
+|--------|:-----:|-----------------|
+| maven2 | ✓ | `https://repo1.maven.org/maven2/` |
+| npm | ✓ | `https://registry.npmjs.org/` |
+| pypi | ✓ | `https://pypi.org/` |
+| go | ✓ | `https://proxy.golang.org/` |
+| docker | ✓ | `https://registry-1.docker.io/` |
+| helm | ✓ | `https://charts.bitnami.com/bitnami/` |
+| nuget | ✓ | `https://api.nuget.org/v3/` |
+| cargo | ✓ | `https://index.crates.io/` |
+| apt | ✓ | `http://archive.ubuntu.com/ubuntu/` |
+| yum | ✓ | `https://dl.fedoraproject.org/pub/epel/…` |
+| conan | ✓ | `https://center2.conan.io/` |
+| raw | ✓ | any HTTP server |
+
+---
+
+## Group Repositories
+
+A **group** repository exposes a single URL that aggregates **hosted** and/or **proxy** repositories of the same format. Members are tried in order; the first non-404 response is returned.
+
+- **Read-only:** GET and HEAD only — PUT/POST/DELETE return `405`
+- **Browse & Search:** Nexspence expands group → member names and queries across all members
+- **Tracing:** Responses include `X-Nexspence-Source` with the member that served the request
+
+```bash
+# npm group over hosted + proxy
+curl -u admin:changeme -X POST \
+  http://localhost:8081/service/rest/v1/repositories/npm/group \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "name": "npm-all",
+    "type": "group",
+    "format": "npm",
+    "formatConfig": { "member_names": ["npm-private", "npm-proxy"] }
+  }'
+
+npm install lodash --registry http://localhost:8081/repository/npm-all/
 ```
 
 ---
@@ -425,323 +667,111 @@ conan install my-lib/1.0.0@ -r nexspence
 
 Nexspence implements the Nexus OSS v1 REST API — existing Nexus clients work without modification.
 
-| Base path | Purpose |
-|-----------|---------|
-| `/service/rest/v1/` | Nexus OSS v1 REST API (100% compatible) |
-| `/api/v1/` | Native Nexspence API |
-| `/repository/:name/*path` | Artifact protocol endpoints |
+### API paths
+
+| Path prefix | Purpose |
+|-------------|---------|
+| `/service/rest/v1/` | Nexus OSS v1 REST — drop-in compatible |
+| `/service/rest/beta/` | Nexus beta endpoints |
+| `/api/v1/` | Nexspence-native API (migration, backup, extended admin) |
+| `/repository/:name/*` | Artifact protocol endpoints |
+| `/v2/` | OCI Distribution Spec v2 (Docker) |
+
+### Key endpoints
+
+```
+GET  /api/v1/status                                    # Health check
+GET  /api/v1/metrics                                   # Metrics (public)
+POST /api/v1/login                                     # JWT login
+
+GET  /service/rest/v1/repositories                     # List repos
+POST /service/rest/v1/repositories/:format/hosted      # Create hosted repo
+POST /service/rest/v1/repositories/:format/proxy       # Create proxy repo
+POST /service/rest/v1/repositories/:format/group       # Create group repo
+
+GET  /service/rest/v1/search?name=foo                  # Search components
+GET  /service/rest/v1/search/assets                    # Search assets
+
+GET  /service/rest/v1/security/users                   # List users
+GET  /service/rest/v1/security/roles                   # List roles
+GET  /service/rest/v1/audit                            # Audit log
+
+GET  /service/rest/v1/cleanup-policies                 # List cleanup policies
+POST /service/rest/v1/cleanup-policies/:id/run         # Run policy now
+
+GET  /api/v1/repositories/:name/export                 # Export repo as .tar.gz
+POST /api/v1/repositories/import                       # Import repo from .tar.gz
+```
 
 Full OpenAPI 3.1 spec: [`docs/api-spec.yaml`](docs/api-spec.yaml)
-
-Key endpoints:
-
-```
-GET  /api/v1/status                          # Health check
-GET  /api/v1/metrics                         # Metrics (public)
-POST /api/v1/login                           # JWT login
-
-GET  /service/rest/v1/repositories           # List repos
-POST /service/rest/v1/repositories/:format/hosted  # Create hosted repo
-POST /service/rest/v1/repositories/:format/proxy   # Create proxy repo
-POST /service/rest/v1/repositories/:format/group   # Create group repo (formatConfig.member_names)
-
-GET  /service/rest/v1/search?name=foo        # Search components
-GET  /service/rest/v1/search/assets          # Search assets
-
-GET  /service/rest/v1/security/users         # List users
-GET  /service/rest/v1/security/roles         # List roles
-GET  /service/rest/v1/audit                  # Audit log
-
-GET  /service/rest/v1/cleanup-policies       # List cleanup policies
-POST /service/rest/v1/cleanup-policies/:id/run  # Run policy now
-```
-
----
-
-## Proxy repositories
-
-A proxy repository caches artifacts from an upstream registry on first request. Subsequent requests are served from the local cache (blob store), without hitting the upstream again.
-
-### How it works
-
-1. Client requests an artifact from Nexspence
-2. Cache hit → served immediately from local blob store
-3. Cache miss → Nexspence fetches from `remote_url`, streams to client, and persists to blob store simultaneously (zero-copy, no memory buffering)
-4. Mutations (push, upload, delete) are rejected with `405 Method Not Allowed`
-
-**Docker Hub:** the public registry answers with **401** and a `WWW-Authenticate` Bearer challenge. Nexspence resolves that server-side (anonymous token from `https://auth.docker.io/token`) and retries upstream. Credentials from `docker login <nexspence-host>` are **not** forwarded to Docker Hub — forwarding them caused Docker to report *“authentication required - incorrect username or password”* when it tried Hub’s token flow with Nexspence users.
-
-### Create a proxy repository (UI)
-
-Repositories → **New Repository** → select format → select type **proxy** → set **Remote URL**.
-
-### Create a proxy repository (API)
-
-The JSON body always uses the `proxy_config.remote_url` field:
-
-```bash
-# Maven — proxy Maven Central
-curl -u admin:admin123 -X POST \
-  http://localhost:8081/service/rest/v1/repositories/maven2/proxy \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "name": "maven-central",
-    "type": "proxy",
-    "format": "maven2",
-    "proxy_config": {"remote_url": "https://repo1.maven.org/maven2/"}
-  }'
-
-# npm — proxy npmjs.org
-curl -u admin:admin123 -X POST \
-  http://localhost:8081/service/rest/v1/repositories/npm/proxy \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "name": "npm-proxy",
-    "type": "proxy",
-    "format": "npm",
-    "proxy_config": {"remote_url": "https://registry.npmjs.org/"}
-  }'
-
-# PyPI — proxy PyPI.org
-curl -u admin:admin123 -X POST \
-  http://localhost:8081/service/rest/v1/repositories/pypi/proxy \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "name": "pypi-proxy",
-    "type": "proxy",
-    "format": "pypi",
-    "proxy_config": {"remote_url": "https://pypi.org/"}
-  }'
-
-# Go modules — proxy pkg.go.dev / sum.golang.org
-curl -u admin:admin123 -X POST \
-  http://localhost:8081/service/rest/v1/repositories/go/proxy \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "name": "go-proxy",
-    "type": "proxy",
-    "format": "go",
-    "proxy_config": {"remote_url": "https://proxy.golang.org/"}
-  }'
-
-# Docker — proxy Docker Hub (unauthenticated registries / mirrors)
-curl -u admin:admin123 -X POST \
-  http://localhost:8081/service/rest/v1/repositories/docker/proxy \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "name": "docker-hub-proxy",
-    "type": "proxy",
-    "format": "docker",
-    "proxy_config": {"remote_url": "https://registry-1.docker.io/"}
-  }'
-
-# Helm — proxy Artifact Hub / Bitnami
-curl -u admin:admin123 -X POST \
-  http://localhost:8081/service/rest/v1/repositories/helm/proxy \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "name": "bitnami-proxy",
-    "type": "proxy",
-    "format": "helm",
-    "proxy_config": {"remote_url": "https://charts.bitnami.com/bitnami/"}
-  }'
-
-# NuGet — proxy nuget.org
-curl -u admin:admin123 -X POST \
-  http://localhost:8081/service/rest/v1/repositories/nuget/proxy \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "name": "nuget-proxy",
-    "type": "proxy",
-    "format": "nuget",
-    "proxy_config": {"remote_url": "https://api.nuget.org/v3/"}
-  }'
-
-# Cargo — proxy crates.io sparse index
-curl -u admin:admin123 -X POST \
-  http://localhost:8081/service/rest/v1/repositories/cargo/proxy \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "name": "crates-proxy",
-    "type": "proxy",
-    "format": "cargo",
-    "proxy_config": {"remote_url": "https://index.crates.io/"}
-  }'
-
-# APT — proxy Ubuntu archive
-curl -u admin:admin123 -X POST \
-  http://localhost:8081/service/rest/v1/repositories/apt/proxy \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "name": "ubuntu-noble-proxy",
-    "type": "proxy",
-    "format": "apt",
-    "proxy_config": {"remote_url": "http://archive.ubuntu.com/ubuntu/"}
-  }'
-
-# Yum — proxy EPEL
-curl -u admin:admin123 -X POST \
-  http://localhost:8081/service/rest/v1/repositories/yum/proxy \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "name": "epel-proxy",
-    "type": "proxy",
-    "format": "yum",
-    "proxy_config": {"remote_url": "https://dl.fedoraproject.org/pub/epel/9/Everything/x86_64/"}
-  }'
-
-# Raw — proxy any HTTP file server
-curl -u admin:admin123 -X POST \
-  http://localhost:8081/service/rest/v1/repositories/raw/proxy \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "name": "my-mirror",
-    "type": "proxy",
-    "format": "raw",
-    "proxy_config": {"remote_url": "https://files.example.com/"}
-  }'
-```
-
-### Using a proxy repository
-
-Client configuration is identical to hosted repositories — just point at the Nexspence URL:
-
-```bash
-# Maven — use proxy instead of Maven Central directly
-# In settings.xml mirror block:
-#   <url>http://localhost:8081/repository/maven-central/</url>
-
-# npm
-npm install react --registry http://localhost:8081/repository/npm-proxy/
-
-# pip
-pip install requests \
-  --index-url http://localhost:8081/repository/pypi-proxy/simple/
-
-# Go
-export GOPROXY=http://localhost:8081/repository/go-proxy/,direct
-
-# Docker (pull via proxy cache)
-docker pull localhost:8081/repository/docker-hub-proxy/library/ubuntu:24.04
-
-# Helm
-helm repo add nexspence-proxy http://localhost:8081/repository/bitnami-proxy/
-helm install my-release nexspence-proxy/nginx
-
-# Cargo (~/.cargo/config.toml)
-# [registries.crates-proxy]
-# index = "sparse+http://localhost:8081/repository/crates-proxy/"
-```
-
-### Proxy format support matrix
-
-| Format | Proxy | Notable upstream |
-|--------|:-----:|-----------------|
-| maven2 | ✓ | `https://repo1.maven.org/maven2/` |
-| npm | ✓ | `https://registry.npmjs.org/` |
-| pypi | ✓ | `https://pypi.org/` |
-| go | ✓ | `https://proxy.golang.org/` |
-| raw | ✓ | any HTTP server |
-| docker | ✓ | `https://registry-1.docker.io/` (unauthenticated) |
-| helm | ✓ | `https://charts.bitnami.com/bitnami/` |
-| nuget | ✓ | `https://api.nuget.org/v3/` |
-| cargo | ✓ | `https://index.crates.io/` |
-| apt | ✓ | `http://archive.ubuntu.com/ubuntu/` |
-| yum | ✓ | `https://dl.fedoraproject.org/pub/epel/…` |
-| conan | ✓ | `https://center2.conan.io/` |
-
-> **Note:** Docker Hub requires authentication for most images beyond the free pull rate limit. For authenticated proxy use a registry mirror (e.g. your own ECR pull-through cache) as the `remote_url`.
-
----
-
-## Group repositories
-
-A **group** repository exposes a single URL that aggregates **hosted** and/or **proxy** repositories of the **same format**. Members are tried in **order**; the first successful response (anything other than **404**) is returned. This matches Nexus-style “group” merges (e.g. Maven releases + snapshots + Maven Central proxy behind one URL).
-
-### Configuration
-
-- **API / UI:** `type: "group"` and **`formatConfig.member_names`**: ordered JSON array of repository **names** (the UI checklist on Repositories → New Repository writes the same field).
-- **Validation:** On create/update, every member must exist, must **not** be another group, and must use the **same** `format` as the group.
-- **Read-only:** **GET** and **HEAD** only. **PUT** / **POST** / **PATCH** / **DELETE** return **405** — publish to a **hosted** member (or use a member proxy as usual).
-
-### Behaviour
-
-- **HTTP artifacts:** `http://localhost:8081/repository/<group-name>/<same-path-as-member>` — each member’s `FormatHandler` runs in order; proxy members can still fetch upstream on cache miss.
-- **Docker:** `docker pull localhost:8081/repository/<group-name>/…` — uses `/v2/repository/<group-name>/…` internally; same ordering rules.
-- **Tracing:** Responses may include **`X-Nexspence-Source`** with the member repository name that satisfied the request.
-
-### Example (API): npm group over hosted + proxy
-
-```bash
-# Assume repos "npm-private" (hosted) and "npmjs" (proxy) already exist (same format npm).
-curl -u admin:admin123 -X POST \
-  http://localhost:8081/service/rest/v1/repositories/npm/group \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "name": "npm-all",
-    "type": "group",
-    "format": "npm",
-    "formatConfig": { "member_names": ["npm-private", "npmjs"] }
-  }'
-
-npm install lodash --registry http://localhost:8081/repository/npm-all/
-```
-
-### Browse, Search, and Docker tree with groups
-
-Group URLs are for **reads** (GET/HEAD). **Component metadata** in PostgreSQL is stored per **member** repository, not per group.
-
-- **Implemented:** When you select a **group** on **Browse** or filter **Search** by a group name, the backend expands the group to **`member_names`** and queries **`components` / `assets` across those members** (`ListByRepoNames`, `SearchParams.RepositoryNames`, aggregated **docker-tree**). You should see the **union** of artifacts from all members (same image may appear twice if present in multiple members).
-- **Column “Repository”** in API/UI responses typically shows the **member** repository that owns the row — that is expected.
-- **What to verify:** After `docker pull` (or other clients) through **members** so the DB has rows, open Browse → choose the **group** — the tree/table should **not** be empty. If members are empty, the group browse will be empty too.
-
-### Roadmap
-
-| Phase | Feature | Status |
-|-------|---------|--------|
-| 6 | Cleanup policies, quotas, audit log, backup/restore, metrics | ✓ complete |
-| 7 | Tests (>80% coverage), API docs, deployment guides | pending |
-| 8 | CVE scanning (Trivy), LDAP | ✓ complete |
-| 25 | Audit log: detailed events, NDJSON export, partition rotation (90d retention) | ✓ complete |
-| 26 | Docker `/v2/` anonymous fallthrough + OCI-shaped auth errors | ✓ complete |
-| 28 | OIDC/OAuth2 SSO (Keycloak / Google / Entra / Okta), fragment-JWT delivery, JIT/allowlist/manual provisioning, `admin_group` + `role_mappings` role resolution | ✓ complete |
-| 28.1 | OIDC Single Logout (SLO) via `end_session_endpoint` | ✓ complete |
-| 28.2 | OIDC refresh-token storage + silent session renewal | planned |
-| 28.3 | Multi-provider OIDC support | planned |
-| 29–35 | UI polish: page headers, card rows, button hover, dropdown fix, repo/cleanup toggles, service status, browse example usage | ✓ complete |
-| 38 | Migration tab in System Admin + scope selection + history | ✓ complete |
-| 39 | Sidebar collapse — icon rail (260px ↔ 48px, localStorage) | ✓ complete |
-| 40 | Stepped wizard for Create Repository / Migration Job / Cleanup Policy | ✓ complete |
-| next | SBOM generation, cosign, Terraform provider, Prometheus metrics, `nexctl` CLI, OTel traces, multi-node HA, blob GC | planned |
-| 15D | Docker uploader + `last_downloaded` in browse UI | deferred |
-
-See [`task_plan.md`](task_plan.md) for detailed task lists per phase.
 
 ---
 
 ## Architecture
 
 ```
-┌────────────┐   JWT/Basic   ┌──────────────────────┐
-│  Client    │ ────────────▶ │  Gin HTTP Router      │
-│ (curl/mvn/ │               │  + Auth Middleware     │
-│  pip/npm…) │ ◀──────────── │  + Audit Middleware    │
-└────────────┘               └──────────┬───────────┘
-                                         │
-                    ┌────────────────────▼───────────┐
-                    │      Format Handler Registry    │
-                    │  maven│npm│pypi│go│docker│…    │
-                    └────────────────────┬───────────┘
-                              ┌──────────▼──────────┐
-                    ┌─────────▼──────┐  ┌───────────▼───────┐
-                    │  BlobStore     │  │  PostgreSQL         │
-                    │  Local / S3    │  │  Repos, Components, │
-                    └────────────────┘  │  Assets, Users, …  │
-                                        └───────────────────┘
+┌────────────┐   JWT/Basic   ┌──────────────────────────┐
+│  Client    │ ────────────▶ │  Gin HTTP Router           │
+│ (curl/mvn/ │               │  + Auth Middleware          │
+│  pip/npm…) │ ◀──────────── │  + Audit Middleware         │
+└────────────┘               └──────────────┬────────────┘
+                                             │
+                        ┌────────────────────▼──────────────┐
+                        │      Format Handler Registry        │
+                        │  maven│npm│pypi│go│docker│helm│…  │
+                        └────────────────────┬──────────────┘
+                                   ┌──────────▼──────────┐
+                         ┌─────────▼──────┐  ┌───────────▼──────────┐
+                         │  BlobStore     │  │  PostgreSQL            │
+                         │  Local / S3    │  │  Repos, Components,    │
+                         └────────────────┘  │  Assets, Users, …     │
+                                             └──────────────────────┘
 ```
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Backend | Go 1.22 — Gin, pgx v5, golang-migrate, go-oidc v3, zap |
+| Frontend | React 18, TypeScript 5, Vite, Zustand, React Query, Axios |
+| Database | PostgreSQL 16+ (pgx, goose migrations) |
+| Storage | Local filesystem · S3-compatible (AWS S3, MinIO, Ceph) |
+| Auth | JWT + bcrypt · LDAP/AD · OIDC + PKCE · API tokens |
+| Scanning | Trivy (Docker CVE) |
+| Container | Docker + Docker Compose |
+
+---
+
+## Roadmap
+
+| Phase | Feature | Status |
+|-------|---------|--------|
+| 1–22 | Core: repos, RBAC, formats, blob stores, proxy, group, cleanup | ✓ complete |
+| 25 | Audit log: detailed events, NDJSON export, 90-day partition rotation | ✓ complete |
+| 26 | Docker `/v2/` anonymous fallthrough + OCI-shaped auth errors | ✓ complete |
+| 28 | OIDC/OAuth2 SSO — Keycloak, Google, Entra, Okta; PKCE; JIT/allowlist provisioning | ✓ complete |
+| 38 | Migration tab — live Nexus import with scope selection + job history | ✓ complete |
+| 39 | Sidebar collapse — icon rail (260px ↔ 48px, persisted) | ✓ complete |
+| 40 | Stepped wizard — Create Repository / Migration Job / Cleanup Policy | ✓ complete |
+| 41–47 | UI polish: token expiry, transfer lists, empty states, a11y, z-index | ✓ complete |
+| next | SBOM generation, cosign image signing, Terraform provider | planned |
+| next | Prometheus metrics endpoint, OpenTelemetry traces | planned |
+| next | `nexctl` CLI, multi-node HA, blob GC | planned |
+
+See [`task_plan.md`](task_plan.md) for detailed task lists per phase.
 
 ---
 
 ## License
 
-Apache 2.0 — see [LICENSE](LICENSE)
+AGPLv3 — see [LICENSE](LICENSE)
+
+---
+
+<div align="center">
+  <img src="frontend/src/assets/mini_logo.png" alt="Nexspence" width="60">
+  <br>
+  <sub>AGPLv3 License · Built with Go + React</sub>
+</div>
