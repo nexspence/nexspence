@@ -31,7 +31,7 @@ jobs:
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          password: ${{ secrets.RELEASE_PAT }}
 
       - name: Extract Docker metadata
         id: meta
@@ -87,6 +87,10 @@ jobs:
 
           cp config.yaml.example release-assets/config.yaml.example
 
+          cd release-assets
+          zip "nexspence-${{ github.ref_name }}.zip" docker-compose.yml config.yaml.example
+          cd ..
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PAT }}
@@ -111,5 +115,4 @@ jobs:
           3. \`docker compose up -d\`
 
           Web UI: \`http://localhost:8081\`" \
-            release-assets/docker-compose.yml \
-            release-assets/config.yaml.example
+            "release-assets/nexspence-${{ github.ref_name }}.zip"
