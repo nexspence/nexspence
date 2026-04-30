@@ -1,5 +1,6 @@
 # ── Build stage ───────────────────────────────────────────────
-FROM golang:1.25-alpine AS builder
+# $BUILDPLATFORM = native runner arch (amd64); cross-compile for $TARGETPLATFORM
+FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS builder
 
 RUN apk add --no-cache git ca-certificates
 
@@ -12,15 +13,18 @@ RUN go mod download
 # Copy source
 COPY . .
 
-# Build binary with version injection
+# Build binary with version injection — cross-compile natively, no QEMU needed
 ARG VERSION=dev
-RUN CGO_ENABLED=0 GOOS=linux go build \
+ARG TARGETOS=linux
+ARG TARGETARCH=amd64
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
     -ldflags="-s -w -X main.Version=${VERSION}" \
     -o /nexspence \
     ./cmd/server
 
 # ── Frontend build stage ──────────────────────────────────────
-FROM node:22-alpine AS frontend-builder
+# Static assets are arch-independent — always build on native amd64, skip QEMU
+FROM --platform=$BUILDPLATFORM node:22-alpine AS frontend-builder
 
 WORKDIR /frontend
 COPY frontend/package*.json ./
