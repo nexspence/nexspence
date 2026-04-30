@@ -1,0 +1,123 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: skensell201/nexspence
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # create GitHub release + upload assets
+      packages: write   # push to ghcr.io
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          build-args: VERSION=${{ github.ref_name }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Prepare release assets
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
+        run: |
+          mkdir release-assets
+
+          # Replace build block with pre-built image reference
+          python3 - <<'PYEOF'
+          import re, os, sys
+
+          image = os.environ['IMAGE']
+
+          with open('docker-compose.yml') as f:
+              content = f.read()
+
+          patched, n = re.subn(
+              r'(?m)(  nexspence:\n    )build:\n      context: \.\n      dockerfile: Dockerfile\n',
+              lambda m: m.group(1) + f'image: {image}\n',
+              content,
+          )
+
+          if n == 0:
+              print('WARNING: build block not found — check docker-compose.yml format', file=sys.stderr)
+
+          with open('release-assets/docker-compose.yml', 'w') as f:
+              f.write(patched)
+
+          print(f'Generated docker-compose.yml with image={image}')
+          PYEOF
+
+          cp config.yaml.example release-assets/config.yaml.example
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Nexspence ${{ github.ref_name }}
+          generate_release_notes: true
+          body: |
+            ## Docker image
+
+            ```
+            ghcr.io/skensell201/nexspence:${{ github.ref_name }}
+            ```
+
+            Pull directly:
+            ```bash
+            docker pull ghcr.io/skensell201/nexspence:${{ github.ref_name }}
+            ```
+
+            ## Quick start
+
+            1. Download `docker-compose.yml` and `config.yaml.example` from this release
+            2. Rename `config.yaml.example` → `config.yaml` and change at minimum:
+               - `bootstrap.admin_password`
+               - `auth.jwt_secret`
+               - `database.dsn`
+            3. Start:
+
+            ```bash
+            docker compose up -d
+            ```
+
+            Web UI is available at `http://localhost:8081` after startup.
+          files: |
+            release-assets/docker-compose.yml
+            release-assets/config.yaml.example
