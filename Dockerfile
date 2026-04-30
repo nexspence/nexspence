@@ -51,9 +51,6 @@ WORKDIR /app
 COPY --from=builder /nexspence /app/nexspence
 COPY --from=frontend-builder /frontend/dist /app/frontend/dist
 
-# Default config (overridden by volume mount or env vars)
-COPY config.yaml /app/config.yaml
-
 EXPOSE 8081 5000
 
 ENTRYPOINT ["/app/nexspence"]
