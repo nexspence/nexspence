@@ -88,38 +88,28 @@ jobs:
           cp config.yaml.example release-assets/config.yaml.example
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          repository: skensell201/nexspence
-          token: ${{ secrets.RELEASE_PAT }}
-          name: Nexspence ${{ github.ref_name }}
-          generate_release_notes: false
-          body: |
-            ## Docker image
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --repo skensell201/nexspence \
+            --title "Nexspence ${{ github.ref_name }}" \
+            --notes "## Docker image
 
-            ```
-            ghcr.io/skensell201/nexspence:${{ github.ref_name }}
-            ```
+          \`\`\`
+          ghcr.io/skensell201/nexspence:${{ github.ref_name }}
+          \`\`\`
 
-            Pull directly:
-            ```bash
-            docker pull ghcr.io/skensell201/nexspence:${{ github.ref_name }}
-            ```
+          \`\`\`bash
+          docker pull ghcr.io/skensell201/nexspence:${{ github.ref_name }}
+          \`\`\`
 
-            ## Quick start
+          ## Quick start
 
-            1. Download `docker-compose.yml` and `config.yaml.example` from this release
-            2. Rename `config.yaml.example` → `config.yaml` and change at minimum:
-               - `bootstrap.admin_password`
-               - `auth.jwt_secret`
-               - `database.dsn`
-            3. Start:
+          1. Download \`docker-compose.yml\` and \`config.yaml.example\` from this release
+          2. Rename \`config.yaml.example\` → \`config.yaml\` and edit: admin password, JWT secret, DB DSN
+          3. \`docker compose up -d\`
 
-            ```bash
-            docker compose up -d
-            ```
-
-            Web UI is available at `http://localhost:8081` after startup.
-          files: |
-            release-assets/docker-compose.yml
+          Web UI: \`http://localhost:8081\`" \
+            release-assets/docker-compose.yml \
             release-assets/config.yaml.example
