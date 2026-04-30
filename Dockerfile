@@ -1,5 +1,5 @@
 # ── Build stage ───────────────────────────────────────────────
-FROM nexus.da.lan/golang:1.25-alpine AS builder
+FROM golang:1.25-alpine AS builder
 
 RUN apk add --no-cache git ca-certificates
 
@@ -20,7 +20,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
     ./cmd/server
 
 # ── Frontend build stage ──────────────────────────────────────
-FROM nexus.da.lan/node:22-alpine AS frontend-builder
+FROM node:22-alpine AS frontend-builder
 
 WORKDIR /frontend
 COPY frontend/package*.json ./
@@ -29,7 +29,7 @@ COPY frontend/ .
 RUN npm run build
 
 # ── Final image ───────────────────────────────────────────────
-FROM nexus.da.lan/alpine:3.21
+FROM alpine:3.21
 
 RUN apk add --no-cache ca-certificates tzdata wget
 

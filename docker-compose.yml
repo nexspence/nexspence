@@ -22,9 +22,9 @@ services:
       retries: 10
 
   # ── Keycloak (dev OIDC IdP) ───────────────────────────────────────
-  # Realm "nexspense" is auto-imported on first start from keycloak/nexspense-realm.json.
+  # Realm "nexspence" is auto-imported on first start from keycloak/nexspence-realm.json.
   # Admin UI: http://localhost:8180  (admin / admin)
-  # Test user: testuser / testpass  (in group nexspense-admins → gets nx-admin role)
+  # Test user: testuser / testpass  (in group nexspence-admins → gets nx-admin role)
   keycloak:
     image: quay.io/keycloak/keycloak:24.0
     command: ["start-dev", "--import-realm"]
@@ -48,7 +48,7 @@ services:
     volumes:
       - ./keycloak:/opt/keycloak/data/import:ro
     healthcheck:
-      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/8080 && printf 'GET /realms/nexspense/.well-known/openid-configuration HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && cat <&3 | grep -q issuer"]
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/8080 && printf 'GET /realms/nexspence/.well-known/openid-configuration HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && cat <&3 | grep -q issuer"]
       interval: 10s
       timeout: 5s
       retries: 20
@@ -84,17 +84,17 @@ services:
       NEXSPENCE_OIDC_ENABLED: "true"
       NEXSPENCE_OIDC_DISPLAY_NAME: "Keycloak"
       # Internal URL — used for discovery + token exchange inside Docker network
-      NEXSPENCE_OIDC_ISSUER: "http://keycloak:8080/realms/nexspense"
+      NEXSPENCE_OIDC_ISSUER: "http://keycloak:8080/realms/nexspence"
       # Public URL — rewritten into auth redirect + SLO URLs sent to the browser
-      NEXSPENCE_OIDC_PUBLIC_ISSUER_URL: "http://localhost:8180/realms/nexspense"
-      NEXSPENCE_OIDC_CLIENT_ID: "nexspense"
-      NEXSPENCE_OIDC_CLIENT_SECRET: "dev-oidc-secret-nexspense"
+      NEXSPENCE_OIDC_PUBLIC_ISSUER_URL: "http://localhost:8180/realms/nexspence"
+      NEXSPENCE_OIDC_CLIENT_ID: "nexspence"
+      NEXSPENCE_OIDC_CLIENT_SECRET: "dev-oidc-secret-nexspence"
       NEXSPENCE_OIDC_REDIRECT_URL: "http://localhost:8081/api/v1/auth/oidc/callback"
       NEXSPENCE_OIDC_FRONTEND_BASE_URL: "http://localhost:8081"
       NEXSPENCE_OIDC_COOKIE_SECURE: "false"
       # base64(32 random bytes) — dev-only key, change in production
       NEXSPENCE_OIDC_COOKIE_KEY: "YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY="
-      NEXSPENCE_OIDC_ADMIN_GROUP: "nexspense-admins"
+      NEXSPENCE_OIDC_ADMIN_GROUP: "nexspence-admins"
       NEXSPENCE_OIDC_GROUPS_CLAIM: "groups"
       NEXSPENCE_OIDC_PROVISIONING: "jit"
       # Request only standard scopes — groups claim is injected by a direct

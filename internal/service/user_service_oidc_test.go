@@ -46,7 +46,7 @@ func baseOIDCSvcCfg() config.OIDCConfig {
 	return config.OIDCConfig{
 		Enabled:      true,
 		Provisioning: "jit",
-		AdminGroup:   "nexspense-admins",
+		AdminGroup:   "nexspence-admins",
 		RoleMappings: map[string]string{"developers": "release-manager"},
 	}
 }
@@ -58,7 +58,7 @@ func TestLoginOIDC_NewUser_JIT_AutoCreatesWithRoles(t *testing.T) {
 		Email:     "alice@ex.com",
 		FirstName: "Alice",
 		LastName:  "Example",
-		Groups:    []string{"developers", "nexspense-admins"},
+		Groups:    []string{"developers", "nexspence-admins"},
 	}
 	tok, u, err := s.LoginOIDC(context.Background(), claims, "fake-id-token")
 	require.NoError(t, err)
@@ -135,7 +135,7 @@ func TestLoginOIDC_ExistingOIDCUser_SyncRoles_Replaces(t *testing.T) {
 
 	_, u, err := s.LoginOIDC(context.Background(), &auth.OIDCClaims{
 		Username: "alice", Email: "alice@ex.com",
-		Groups: []string{"developers"}, // no nexspense-admins → nx-admin must drop
+		Groups: []string{"developers"}, // no nexspence-admins → nx-admin must drop
 	}, "fake-id-token")
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []string{"release-manager"}, u.Roles)
@@ -182,7 +182,7 @@ func TestLoginOIDC_DNFormatGroup_MatchesAdminGroup(t *testing.T) {
 	s := newUserSvcOIDC(t, baseOIDCSvcCfg())
 	_, u, err := s.LoginOIDC(context.Background(), &auth.OIDCClaims{
 		Username: "alice", Email: "alice@ex.com",
-		Groups: []string{"CN=nexspense-admins,OU=Groups,DC=ex,DC=com"},
+		Groups: []string{"CN=nexspence-admins,OU=Groups,DC=ex,DC=com"},
 	}, "fake-id-token")
 	require.NoError(t, err)
 	assert.Contains(t, u.Roles, "nx-admin")

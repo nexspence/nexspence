@@ -1,0 +1,159 @@
+http:
+  addr: ":8081"
+  read_timeout_sec: 1800
+  write_timeout_sec: 1800
+  max_body_mb: 1024
+  base_url: "http://localhost:8081"
+  tls:
+    enabled: false
+    cert_file: ""
+    key_file: ""
+
+database:
+  dsn: "postgres://nexspence:nexspence@localhost:5432/nexspence?sslmode=disable"
+  max_conns: 100
+  min_conns: 5
+  max_idle_sec: 300
+
+storage:
+  default_type: "local"
+  local:
+    base_path: "./data/blobs"
+  # s3:
+  #   bucket: "nexspence-blobs"
+  #   region: "us-east-1"
+  #   endpoint: "http://minio:9000"   # for MinIO
+  #   access_key_id: ""
+  #   secret_access_key: ""
+  #   force_path_style: true
+
+auth:
+  jwt_secret: "CHANGE_ME_AT_LEAST_32_CHARACTERS_LONG"
+  jwt_expiry_hours: 24
+  anonymous_enabled: true
+  password_min_length: 8
+  bcrypt_cost: 12
+  token_max_days: 180
+
+# Bootstrap: create / update the admin user on every server start.
+# Safe to run repeatedly — only acts if user is missing or password changed.
+# Override via env: NEXSPENCE_BOOTSTRAP_ADMIN_PASSWORD=secret
+bootstrap:
+  admin_username: "admin"
+  admin_password: "admin123"   # change this!
+  admin_email:    "admin@example.com"
+  admin_first_name: "Admin"
+
+log:
+  level: "info"   # debug | info | warn | error
+  format: "json"  # json | text
+
+search:
+  min_query_len: 2
+
+cleanup:
+  default_schedule: "0 */6 * * *"   # cron schedule used for policies without schedule_cron
+
+# Audit log retention.
+# Events live in monthly PostgreSQL partitions.
+# Rotator pre-creates partitions for the next `lookahead_months` ahead and
+# DETACH/DROPs partitions whose end-date is older than `retention_days`.
+# `soft_cap` is observability-only — when total rows exceed the cap, a warning
+# is logged and `audit_events_count` metric is updated; nothing is deleted.
+audit:
+  retention_days: 90
+  soft_cap: 1000000
+  rotation_interval: 24h
+  lookahead_months: 2
+
+# ── LDAP / Active Directory authentication ───────────────────────────────────
+# Set enabled: true and configure the block below to allow LDAP/AD login.
+# Local admin account always works regardless of LDAP settings.
+#
+# Env overrides: NEXSPENCE_LDAP_ENABLED, NEXSPENCE_LDAP_BIND_PASSWORD, etc.
+ldap:
+  enabled: false
+
+  # LDAP server address
+  host: "ldap.example.com"
+  port: 636                  # 636 for LDAPS
+
+  # TLS options (use one or neither)
+  use_tls: true             # connect directly over TLS (LDAPS)
+  start_tls: false           # upgrade plain connection with STARTTLS
+  insecure_skip_verify: false # set true only for self-signed certs in dev
+
+  # Service account used to search the directory (leave empty for anonymous bind)
+  bind_dn: "CN=ServiceAccount,OU=ServiceAccounts,DC=example,DC=com"
+  bind_password: ""          # set via NEXSPENCE_LDAP_BIND_PASSWORD env var
+
+  # User search
+  search_base: "DC=example,DC=com"
+  search_filter: "(sAMAccountName={0})"  # {0} is replaced with the username; AD: (sAMAccountName={0}); LDAP: (uid={0})
+
+  # Attribute mapping (LDAP attr name → Nexspence field)
+  user_attributes:
+    email:      "mail"
+    first_name: "givenName"
+    last_name:  "sn"
+
+  # Group / role mapping (optional — leave group_base empty to skip)
+  group_base:      "DC=example,DC=com"
+  group_filter:    "(member={dn})"   # {dn} is replaced with the user's DN
+  group_attribute: "cn"              # group attribute used as the Nexspence role name
+
+  # Automatically create a local user record on first successful LDAP login
+  auto_create_users: true
+
+  # If set, any LDAP user whose groups include this name is automatically granted
+  # the nx-admin role on every login. Leave empty to disable.
+  admin_group: ""
+
+  # Network timeout for LDAP operations (seconds)
+  timeout_sec: 10
+
+  # ── Active Directory example ─────────────────────────────────
+  # host: "ad.corp.example.com"
+  # port: 389
+  # start_tls: true
+  # bind_dn: "CORP\\svc-nexspence"   # or UPN: svc-nexspence@corp.example.com
+  # search_base: "DC=corp,DC=example,DC=com"
+  # search_filter: "(sAMAccountName={0})"
+  # group_filter: "(member:1.2.840.113556.1.4.1941:={dn})"  # recursive AD groups
+
+# ── OIDC / OAuth2 SSO ────────────────────────────────────────────────────────
+# Single provider per deployment (Keycloak / Google / Microsoft Entra / Okta).
+# Coexists with local + LDAP auth — login flow routes by user.Source.
+# Set enabled: true and populate client_id / client_secret / issuer to turn on.
+#
+# Cookie key: `make oidc-secret` generates a 32-byte base64 value.
+# Env overrides: NEXSPENCE_OIDC_CLIENT_SECRET, NEXSPENCE_OIDC_COOKIE_KEY.
+oidc:
+  enabled: false
+  display_name: "SSO"                 # button text: "Sign in with {DisplayName}"
+  issuer: ""                          # e.g. "https://kc.example.com/realms/nexspence"
+  client_id: ""
+  client_secret: ""                   # set via NEXSPENCE_OIDC_CLIENT_SECRET env var
+  redirect_url: ""                    # "https://nexspence.example.com/api/v1/auth/oidc/callback"
+  frontend_base_url: ""               # "https://nexspence.example.com" — callback redirect target
+  scopes: ["openid", "profile", "email", "groups"]
+
+  # Provisioning: jit | allowlist | manual
+  provisioning: "jit"
+  email_allowlist: []                 # required when provisioning=allowlist; path.Match globs
+
+  # Role resolution: claim value → Nexspence role
+  groups_claim: "groups"              # "roles" for Entra app-roles; empty for Google w/o Admin SDK
+  admin_group: ""                     # if set & present in claim → nx-admin
+  role_mappings: {}                   # e.g. { "developers": "release-manager" }
+
+  # Claim name overrides (provider-specific tweaks)
+  username_claim: "preferred_username"  # Google: use "email"
+  email_claim: "email"
+  name_claim: "name"
+
+  # Security
+  show_login_button: true             # false hides the UI button (callback stays available)
+  cookie_secure: true                 # set false for local HTTP dev only
+  cookie_key: ""                      # base64-encoded 32 bytes; set via NEXSPENCE_OIDC_COOKIE_KEY env var
+  allowed_skew_seconds: 60

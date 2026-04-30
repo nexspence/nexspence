@@ -194,7 +194,7 @@ export default function RepositoriesPage() {
                   const url = URL.createObjectURL(res.data as Blob)
                   const a = document.createElement('a')
                   a.href = url
-                  a.download = `nexspense-repo-${repo.name}-${ts}.tar.gz`
+                  a.download = `nexspence-repo-${repo.name}-${ts}.tar.gz`
                   a.click()
                   URL.revokeObjectURL(url)
                 } catch {

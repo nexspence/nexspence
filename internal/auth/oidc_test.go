@@ -122,7 +122,7 @@ func TestOIDCService_HappyPath(t *testing.T) {
 		"name":               "Alice Example",
 		"given_name":         "Alice",
 		"family_name":        "Example",
-		"groups":             []any{"developers", "nexspense-admins"},
+		"groups":             []any{"developers", "nexspence-admins"},
 	}
 
 	svc, err := NewOIDCService(context.Background(), baseOIDCTestCfg(idp))
@@ -135,7 +135,7 @@ func TestOIDCService_HappyPath(t *testing.T) {
 	assert.Equal(t, "alice@example.com", claims.Email)
 	assert.Equal(t, "Alice", claims.FirstName)
 	assert.Equal(t, "Example", claims.LastName)
-	assert.ElementsMatch(t, []string{"developers", "nexspense-admins"}, claims.Groups)
+	assert.ElementsMatch(t, []string{"developers", "nexspence-admins"}, claims.Groups)
 	assert.Equal(t, "u-123", claims.Subject)
 }
 

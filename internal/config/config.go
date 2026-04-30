@@ -134,7 +134,7 @@ type OIDCConfig struct {
 	// Role resolution.
 	GroupsClaim  string            `mapstructure:"groups_claim"`   // default "groups"
 	AdminGroup   string            `mapstructure:"admin_group"`    // claim value → nx-admin
-	RoleMappings map[string]string `mapstructure:"role_mappings"`  // claim value → Nexspense role name
+	RoleMappings map[string]string `mapstructure:"role_mappings"`  // claim value → Nexspence role name
 
 	// Claim name overrides (provider-specific).
 	UsernameClaim string `mapstructure:"username_claim"`

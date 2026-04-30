@@ -6,7 +6,8 @@ bin/
 server
 *.exe
 
-# Config with secrets (use config.yaml as template)
+# Config with secrets (use config.yaml.example as template)
+config.yaml
 config.local.yaml
 .env
 .env.local
@@ -43,9 +44,16 @@ Thumbs.db
 
 #LLM
 CLAUDE.md
+bugs.md
 findings.md
 progress.md
 task_plan.md
 .qwen/
 .claude/
 .cursor/
+
+# AI session artifacts
+docs/superpowers/
+
+# Landing page (separate project)
+landing/

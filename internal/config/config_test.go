@@ -21,7 +21,7 @@ func validOIDC() OIDCConfig {
 	return OIDCConfig{
 		Enabled:         true,
 		Issuer:          "https://idp.example.com",
-		ClientID:        "nexspense",
+		ClientID:        "nexspence",
 		ClientSecret:    "s3cret",
 		RedirectURL:     "https://app/cb",
 		FrontendBaseURL: "https://app",

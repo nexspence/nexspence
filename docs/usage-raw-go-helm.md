@@ -16,7 +16,7 @@ Each script creates a hosted, proxy, and group repository and accepts environmen
 
 ### Concept
 
-Raw repositories store arbitrary files without imposing any format-specific structure — release binaries, configuration files, installers, OS packages, or any other binary/text artifact. Paths are free-form; Nexspense stores and serves whatever you upload under the path you choose.
+Raw repositories store arbitrary files without imposing any format-specific structure — release binaries, configuration files, installers, OS packages, or any other binary/text artifact. Paths are free-form; Nexspence stores and serves whatever you upload under the path you choose.
 
 ### When to use: hosted vs proxy vs group
 
@@ -111,7 +111,7 @@ curl -O http://localhost:8081/repository/raw-proxy/terraform/1.7.5/terraform_1.7
 
 ### Group — unified access
 
-The group repository aggregates hosted and proxy members under a single URL. Clients point to the group and Nexspense resolves requests against each member in order, returning the first match.
+The group repository aggregates hosted and proxy members under a single URL. Clients point to the group and Nexspence resolves requests against each member in order, returning the first match.
 
 ```bash
 curl -O http://localhost:8081/repository/raw-common/releases/myapp/1.0.0/myapp-1.0.0-linux-amd64.tar.gz
@@ -157,7 +157,7 @@ curl -O http://localhost:8081/repository/raw-proxy/python/3.12.2/Python-3.12.2.t
 
 Go modules are fetched via the **GOPROXY protocol** — a simple HTTP API with four endpoints: `$module/@v/list`, `$module/@v/$version.info`, `$module/@v/$version.mod`, and `$module/@v/$version.zip`. The `go` toolchain resolves the `GOPROXY` environment variable, which accepts a comma-separated list of proxy URLs followed by an optional `direct` fallback or `off` to block public access entirely.
 
-Nexspense implements the full GOPROXY v2 protocol. A proxy repository caches downloaded modules from an upstream (typically `proxy.golang.org`), enabling offline builds, reproducible CI, and an audit trail of every module version your builds depend on. A hosted repository accepts `go mod` uploads for private/internal modules.
+Nexspence implements the full GOPROXY v2 protocol. A proxy repository caches downloaded modules from an upstream (typically `proxy.golang.org`), enabling offline builds, reproducible CI, and an audit trail of every module version your builds depend on. A hosted repository accepts `go mod` uploads for private/internal modules.
 
 ### When to use: hosted vs proxy vs group
 
@@ -252,7 +252,7 @@ go env -w GOPRIVATE=github.com/myorg/*
 
 ### Group — unified access
 
-The group repository serves both private hosted modules and public cached modules through a single URL. Nexspense checks the hosted member first; if the module is not found it delegates to the proxy member.
+The group repository serves both private hosted modules and public cached modules through a single URL. Nexspence checks the hosted member first; if the module is not found it delegates to the proxy member.
 
 Set `GOPROXY` once and forget the distinction between private and public modules:
 
@@ -271,7 +271,7 @@ In CI pipelines, set the variable in your environment config:
 ```yaml
 # GitHub Actions example
 env:
-  GOPROXY: http://nexspense.internal:8081/repository/go-group,direct
+  GOPROXY: http://nexspence.internal:8081/repository/go-group,direct
   GONOSUMCHECK: "*"
 ```
 
@@ -313,7 +313,7 @@ Using `off` as the final fallback prevents the `go` toolchain from going to the 
 
 ### Concept
 
-Helm chart repositories follow the Helm HTTP protocol: a repository is simply an `index.yaml` file listing available charts, with chart packages served as `.tgz` files at stable URLs. Nexspense generates `index.yaml` dynamically from its database when Helm clients request it, so the index stays current automatically after each upload.
+Helm chart repositories follow the Helm HTTP protocol: a repository is simply an `index.yaml` file listing available charts, with chart packages served as `.tgz` files at stable URLs. Nexspence generates `index.yaml` dynamically from its database when Helm clients request it, so the index stays current automatically after each upload.
 
 Charts are standard `helm package` tarballs. Hosted repositories accept uploads via HTTP PUT or multipart POST. Proxy repositories cache charts from upstream Helm registries such as `https://charts.helm.sh/stable` or format-specific repos like `https://charts.jetstack.io`.
 
@@ -371,20 +371,20 @@ This creates three repositories:
 Add the group or proxy repository as a Helm repo, then use it exactly like any official Helm registry:
 
 ```bash
-helm repo add nexspense http://localhost:8081/repository/helm-charts
+helm repo add nexspence http://localhost:8081/repository/helm-charts
 helm repo update
 ```
 
 Search available charts:
 
 ```bash
-helm search repo nexspense/
+helm search repo nexspence/
 ```
 
 Pull a chart tarball manually (useful for air-gapped inspection):
 
 ```bash
-helm pull nexspense/nginx-ingress --version 4.11.3
+helm pull nexspence/nginx-ingress --version 4.11.3
 ```
 
 ### Hosted — publish internal charts
@@ -401,14 +401,14 @@ Upload using the `helm-push` plugin (compatible with ChartMuseum-style endpoints
 
 ```bash
 helm plugin install https://github.com/chartmuseum/helm-push
-helm cm-push mychart/ nexspense
+helm cm-push mychart/ nexspence
 ```
 
 After uploading, the chart is immediately searchable:
 
 ```bash
 helm repo update
-helm search repo nexspense/mychart
+helm search repo nexspence/mychart
 ```
 
 ### Group — unified access
@@ -416,7 +416,7 @@ helm search repo nexspense/mychart
 With the group repository configured, a single `helm repo add` gives clients access to both internal and upstream-cached charts:
 
 ```bash
-helm repo add nexspense http://localhost:8081/repository/helm-charts
+helm repo add nexspence http://localhost:8081/repository/helm-charts
 helm repo update
 ```
 
@@ -427,15 +427,15 @@ Helm resolves charts against group members in order — internal hosted charts t
 **Install nginx-ingress-controller from cache:**
 
 ```bash
-helm repo add nexspense http://localhost:8081/repository/helm-charts
+helm repo add nexspence http://localhost:8081/repository/helm-charts
 helm repo update
-helm install my-ingress nexspense/nginx-ingress --version 4.11.3
+helm install my-ingress nexspence/nginx-ingress --version 4.11.3
 ```
 
 **Install cert-manager into its own namespace:**
 
 ```bash
-helm install cert-manager nexspense/cert-manager \
+helm install cert-manager nexspence/cert-manager \
   --version v1.14.4 \
   --namespace cert-manager \
   --create-namespace
@@ -444,7 +444,7 @@ helm install cert-manager nexspense/cert-manager \
 **Install Redis with namespace isolation:**
 
 ```bash
-helm install redis nexspense/redis \
+helm install redis nexspence/redis \
   --version 19.0.1 \
   -n redis \
   --create-namespace
@@ -458,15 +458,15 @@ curl -u admin:admin123 \
   -F "chart=@myapp-1.5.0.tgz" \
   http://localhost:8081/repository/helm-hosted/
 helm repo update
-helm upgrade --install myapp nexspense/myapp --version 1.5.0
+helm upgrade --install myapp nexspence/myapp --version 1.5.0
 ```
 
 **CI pipeline — reproducible chart installs:**
 
 ```bash
-# In CI, always use a pinned version from the Nexspense cache
-helm repo add nexspense "${NEXSPENSE_URL}/repository/helm-charts"
+# In CI, always use a pinned version from the Nexspence cache
+helm repo add nexspence "${NEXSPENCE_URL}/repository/helm-charts"
 helm repo update
 helm dependency update ./deploy/helm/myapp
-helm install myapp nexspense/myapp --version "${CHART_VERSION}"
+helm install myapp nexspence/myapp --version "${CHART_VERSION}"
 ```

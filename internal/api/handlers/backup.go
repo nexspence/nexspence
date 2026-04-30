@@ -76,7 +76,7 @@ func (h *BackupHandler) ExportRepo(c *gin.Context) {
 	}
 
 	ts := time.Now().UTC().Format("20060102-150405")
-	filename := fmt.Sprintf("nexspense-repo-%s-%s.tar.gz", name, ts)
+	filename := fmt.Sprintf("nexspence-repo-%s-%s.tar.gz", name, ts)
 	c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
 	c.Header("Content-Type", "application/x-tar")
 	c.Header("Transfer-Encoding", "chunked")

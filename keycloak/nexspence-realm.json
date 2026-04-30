@@ -1,5 +1,5 @@
 {
-  "realm": "nexspense",
+  "realm": "nexspence",
   "enabled": true,
   "sslRequired": "none",
   "registrationAllowed": false,
@@ -11,10 +11,10 @@
 
   "clients": [
     {
-      "clientId": "nexspense",
+      "clientId": "nexspence",
       "enabled": true,
       "publicClient": false,
-      "secret": "dev-oidc-secret-nexspense",
+      "secret": "dev-oidc-secret-nexspence",
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": false,
@@ -49,7 +49,7 @@
 
   "groups": [
     {
-      "name": "nexspense-admins"
+      "name": "nexspence-admins"
     }
   ],
 
@@ -68,7 +68,7 @@
         }
       ],
       "groups": [
-        "nexspense-admins"
+        "nexspence-admins"
       ]
     }
   ]

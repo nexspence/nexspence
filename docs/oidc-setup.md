@@ -1,12 +1,12 @@
 # OIDC / OAuth2 SSO setup
 
-Nexspense supports any OIDC-compliant Identity Provider. This guide covers
+Nexspence supports any OIDC-compliant Identity Provider. This guide covers
 the four most common: Keycloak, Google Workspace, Microsoft Entra ID, Okta.
 
 ## Common steps
 
-1. Register Nexspense as an **application** / **client** on your IdP.
-2. Set the **redirect URI** to `https://<nexspense-host>/api/v1/auth/oidc/callback`.
+1. Register Nexspence as an **application** / **client** on your IdP.
+2. Set the **redirect URI** to `https://<nexspence-host>/api/v1/auth/oidc/callback`.
 3. Generate a client secret.
 4. Generate a 32-byte cookie key: `make oidc-secret`.
 5. Export the secrets as env vars (recommended over config-file in cleartext):
@@ -16,7 +16,7 @@ the four most common: Keycloak, Google Workspace, Microsoft Entra ID, Okta.
    ```
 6. Edit `config.yaml` `oidc:` block and set `enabled: true` plus provider-
    specific fields (see presets below).
-7. Restart Nexspense. Startup log should show `oidc discovery OK`.
+7. Restart Nexspence. Startup log should show `oidc discovery OK`.
 
 ## Keycloak
 
@@ -24,26 +24,26 @@ the four most common: Keycloak, Google Workspace, Microsoft Entra ID, Okta.
 oidc:
   enabled: true
   display_name: "Keycloak"
-  issuer: "https://kc.example.com/realms/nexspense"
-  client_id: "nexspense"
+  issuer: "https://kc.example.com/realms/nexspence"
+  client_id: "nexspence"
   client_secret: "${OIDC_CLIENT_SECRET}"
-  redirect_url: "https://nexspense.example.com/api/v1/auth/oidc/callback"
-  frontend_base_url: "https://nexspense.example.com"
+  redirect_url: "https://nexspence.example.com/api/v1/auth/oidc/callback"
+  frontend_base_url: "https://nexspence.example.com"
   scopes: ["openid", "profile", "email", "groups"]
   groups_claim: "groups"
-  admin_group: "nexspense-admins"
+  admin_group: "nexspence-admins"
   cookie_key: "${OIDC_COOKIE_KEY}"
 ```
 
 **Keycloak realm config:**
 
-- Clients → **Create Client** → OpenID Connect, client ID `nexspense`,
+- Clients → **Create Client** → OpenID Connect, client ID `nexspence`,
   **Client authentication** ON (confidential).
-- Valid Redirect URIs: `https://nexspense.example.com/api/v1/auth/oidc/callback`.
+- Valid Redirect URIs: `https://nexspence.example.com/api/v1/auth/oidc/callback`.
 - Client Scopes → `groups` → **Create mapper** → type: Group Membership,
   Token Claim Name: `groups`, **Full group path: OFF**. Assign to the
-  `nexspense` client's default scopes.
-- Groups → create `nexspense-admins` → add admin users.
+  `nexspence` client's default scopes.
+- Groups → create `nexspence-admins` → add admin users.
 
 ## Google Workspace
 
@@ -61,8 +61,8 @@ oidc:
   issuer: "https://accounts.google.com"
   client_id: "<app>.apps.googleusercontent.com"
   client_secret: "${OIDC_CLIENT_SECRET}"
-  redirect_url: "https://nexspense.example.com/api/v1/auth/oidc/callback"
-  frontend_base_url: "https://nexspense.example.com"
+  redirect_url: "https://nexspence.example.com/api/v1/auth/oidc/callback"
+  frontend_base_url: "https://nexspence.example.com"
   scopes: ["openid", "profile", "email"]
 
   provisioning: "allowlist"
@@ -88,14 +88,14 @@ oidc:
   issuer: "https://login.microsoftonline.com/<tenant-id>/v2.0"
   client_id: "<app-registration-client-id>"
   client_secret: "${OIDC_CLIENT_SECRET}"
-  redirect_url: "https://nexspense.example.com/api/v1/auth/oidc/callback"
-  frontend_base_url: "https://nexspense.example.com"
+  redirect_url: "https://nexspence.example.com/api/v1/auth/oidc/callback"
+  frontend_base_url: "https://nexspence.example.com"
   scopes: ["openid", "profile", "email"]
 
   groups_claim: "roles"     # Entra app-roles → claim
   role_mappings:
-    "NexspenseAdmin": "nx-admin"
-    "NexspenseDev":   "release-manager"
+    "NexspenceAdmin": "nx-admin"
+    "NexspenceDev":   "release-manager"
   cookie_key: "${OIDC_COOKIE_KEY}"
 ```
 
@@ -114,11 +114,11 @@ oidc:
   issuer: "https://<org>.okta.com/oauth2/default"
   client_id: "<okta-app-client-id>"
   client_secret: "${OIDC_CLIENT_SECRET}"
-  redirect_url: "https://nexspense.example.com/api/v1/auth/oidc/callback"
-  frontend_base_url: "https://nexspense.example.com"
+  redirect_url: "https://nexspence.example.com/api/v1/auth/oidc/callback"
+  frontend_base_url: "https://nexspence.example.com"
   scopes: ["openid", "profile", "email", "groups"]
   groups_claim: "groups"
-  admin_group: "nexspense-admins"
+  admin_group: "nexspence-admins"
   cookie_key: "${OIDC_COOKIE_KEY}"
 ```
 
@@ -148,18 +148,18 @@ docker compose -f docker-compose.yml -f docker-compose.oidc.yml up
 
 Configure the realm at `http://localhost:8180`:
 
-1. Realm: `nexspense`.
-2. Client: `nexspense` (confidential, redirect `http://localhost:8081/api/v1/auth/oidc/callback`).
-3. Create user with password + group `nexspense-admins`.
+1. Realm: `nexspence`.
+2. Client: `nexspence` (confidential, redirect `http://localhost:8081/api/v1/auth/oidc/callback`).
+3. Create user with password + group `nexspence-admins`.
 4. Add `groups` client scope + mapper as above.
 
-Nexspense `config.yaml`:
+Nexspence `config.yaml`:
 
 ```yaml
 oidc:
   enabled: true
-  issuer: "http://keycloak:8080/realms/nexspense"  # inside compose network
-  client_id: "nexspense"
+  issuer: "http://keycloak:8080/realms/nexspence"  # inside compose network
+  client_id: "nexspence"
   client_secret: "<secret-from-keycloak-ui>"
   redirect_url: "http://localhost:8081/api/v1/auth/oidc/callback"
   frontend_base_url: "http://localhost:8081"
@@ -171,7 +171,7 @@ oidc:
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `oidc discovery failed` on startup | `issuer` URL unreachable or missing `.well-known/openid-configuration` | Verify URL from the Nexspense container: `curl {issuer}/.well-known/openid-configuration`. |
+| `oidc discovery failed` on startup | `issuer` URL unreachable or missing `.well-known/openid-configuration` | Verify URL from the Nexspence container: `curl {issuer}/.well-known/openid-configuration`. |
 | Redirect loop / `state mismatch` | Cookie not being sent back | Ensure `cookie_secure` matches your scheme (false for plain HTTP). Check SameSite isn't blocking (Lax is used — top-level redirect from IdP must preserve it). |
 | `oidc_error=provisioning rejected` banner | `provisioning: allowlist` + no email match, or `provisioning: manual` + user not pre-created | Adjust mode, add email pattern, or pre-create user in Security → Users. |
 | No roles assigned after login | Claim name wrong or claim empty | Decode id_token at jwt.io. Verify `groups_claim` matches actual claim name. For Entra: use `roles`. For Google: set `groups_claim: ""` and assign roles manually. |
@@ -183,10 +183,10 @@ oidc:
   Rotate the key to invalidate all in-flight login attempts.
 - **Fragment-based JWT delivery** — tokens never appear in access logs or
   Referer headers. Do not change the redirect scheme to query-string.
-- **Role sync is REPLACE, not merge** — an OIDC user's Nexspense roles are
+- **Role sync is REPLACE, not merge** — an OIDC user's Nexspence roles are
   rewritten from claims on every login. If an admin is removed from
-  `nexspense-admins` in your IdP, they lose `nx-admin` on their next
+  `nexspence-admins` in your IdP, they lose `nx-admin` on their next
   login. Manual role grants in the UI are NOT preserved for OIDC users.
-- **Session lifetime** — Phase 28 issues a Nexspense JWT (24h default).
+- **Session lifetime** — Phase 28 issues a Nexspence JWT (24h default).
   Single Logout (SLO) is deferred to Phase 28.1; if you need immediate
   session termination on IdP side, consider reducing `auth.jwt_expiry_hours`.

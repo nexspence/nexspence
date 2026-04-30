@@ -258,7 +258,7 @@ func (s *S3BlobStore) ConfigureLifecycle(ctx context.Context, expirationDays int
 		LifecycleConfiguration: &types.BucketLifecycleConfiguration{
 			Rules: []types.LifecycleRule{
 				{
-					ID:     aws.String("nexspense-blob-expiration"),
+					ID:     aws.String("nexspence-blob-expiration"),
 					Status: types.ExpirationStatusEnabled,
 					Filter: &types.LifecycleRuleFilter{Prefix: aws.String("")},
 					Expiration: &types.LifecycleExpiration{
