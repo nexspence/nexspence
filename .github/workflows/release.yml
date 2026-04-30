@@ -90,8 +90,10 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          repository: skensell201/nexspence
+          token: ${{ secrets.RELEASE_PAT }}
           name: Nexspence ${{ github.ref_name }}
-          generate_release_notes: true
+          generate_release_notes: false
           body: |
             ## Docker image
 
