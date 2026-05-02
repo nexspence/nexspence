@@ -102,7 +102,7 @@ services:
       NEXSPENCE_OIDC_SCOPES: "openid,profile,email"
     ports:
       - "8081:8081"
-      - "5000:5000"   # Docker registry HTTP port
+      - "5001:5000"   # Docker registry HTTP port
     volumes:
       - nexspence_blobs:/data/blobs
       - ./config.yaml:/app/config.yaml:ro
