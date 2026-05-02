@@ -157,6 +157,12 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 	csH        := handlers.NewContentSelectorHandler(selectorSvc)
 	systemH    := handlers.NewSystemHandler(cfg, pool, ldapSvc, oidcSvc).WithBlobStores(blobRepo)
 	migrationH := handlers.NewMigrationHandler(migrationRepo)
+	blobMigrationRepo := postgres.NewBlobStoreMigrationRepo(pool)
+	blobMigSvc  := service.NewBlobStoreMigrationService(blobMigrationRepo, assetRepo, repoRepo, blobRepo, blobRegistry)
+	blobMigH    := handlers.NewBlobStoreMigrationHandler(blobMigSvc)
+
+	// Resume any migrations that were interrupted by a server restart.
+	go blobMigSvc.ResumeAll(context.Background())
 	backupSvc := &service.BackupService{
 		BlobStores: blobRepo,
 		Repos:      repoRepo,
@@ -390,6 +396,11 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 		admin.POST("/api/v1/migration/jobs/:id/pause", migrationH.PauseJob)
 		admin.POST("/api/v1/migration/jobs/:id/resume", migrationH.ResumeJob)
 		admin.DELETE("/api/v1/migration/jobs/:id", migrationH.DeleteJob)
+
+		// ── Blob store migration ─────────────────────────────────
+		admin.POST("/api/v1/repositories/:name/migrate-blob-store", blobMigH.Start)
+		admin.GET("/api/v1/repositories/:name/blob-store-migration", blobMigH.GetLatest)
+		admin.DELETE("/api/v1/repositories/:name/blob-store-migration", blobMigH.Cancel)
 
 		// ── Backup / Restore (full system) ───────────────────────
 		admin.GET("/api/v1/backup/export", backupH.Export)
