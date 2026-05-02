@@ -2,6 +2,7 @@ package base_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -288,5 +289,31 @@ func TestStoreArtifact_GroupStore_RoundRobin_AlternatesMembers(t *testing.T) {
 	}
 	if selected[0] != selected[2] || selected[1] != selected[3] {
 		t.Errorf("round-robin pattern broken: %v", selected)
+	}
+}
+
+func TestStoreArtifact_GroupStore_AllMembersFull_ReturnsQuotaExceeded(t *testing.T) {
+	quota := int64(10)
+	memberA := &domain.BlobStore{ID: "full-a", Name: "full-store-a", Type: "local",
+		QuotaBytes: &quota, UsedBytes: 10,
+		Config: map[string]any{"path": t.TempDir()}}
+	memberB := &domain.BlobStore{ID: "full-b", Name: "full-store-b", Type: "local",
+		QuotaBytes: &quota, UsedBytes: 10,
+		Config: map[string]any{"path": t.TempDir()}}
+	group := groupBlobStore("group-full", "full-group", "write_to_first_fill", "full-a", "full-b")
+
+	bsID := "group-full"
+	repo := &domain.Repository{
+		ID: "repo-full", Name: "full-repo", Format: "raw", Type: "hosted",
+		Online: true, BlobStoreID: &bsID,
+	}
+	d := depsWithGroup(repo, group, memberA, memberB)
+
+	_, err := base.StoreArtifact(context.Background(), d,
+		"full-repo", "/file.txt", "text/plain",
+		base.Coords{Name: "file.txt"},
+		strings.NewReader("hello"), 5)
+	if !errors.Is(err, base.ErrQuotaExceeded) {
+		t.Errorf("want ErrQuotaExceeded when all members full, got %v", err)
 	}
 }

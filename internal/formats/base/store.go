@@ -323,14 +323,16 @@ type Coords struct {
 	Version string // semantic version
 }
 
-// checkQuota verifies that writing `size` bytes won't exceed either the blob store
-// quota or the repository-level quota. Returns ErrQuotaExceeded if either is breached.
+// checkQuota verifies that writing `size` bytes won't exceed either the blob store quota or the
+// repository-level quota. Returns ErrQuotaExceeded if either is breached.
+// For group stores, the blob-store quota check is deferred to resolveBlobStoreRef:
+// PickMember returns "" when all members are at capacity.
 func checkQuota(ctx context.Context, d formats.Deps, repo *domain.Repository, size int64) error {
 	bs, err := resolveBlobStoreObj(ctx, d, repo)
 	if err != nil {
 		return err
 	}
-	if bs.QuotaBytes != nil && bs.UsedBytes+size > *bs.QuotaBytes {
+	if bs.Type != "group" && bs.QuotaBytes != nil && bs.UsedBytes+size > *bs.QuotaBytes {
 		return fmt.Errorf("%w: blob store %q usage %d + %d > limit %d",
 			ErrQuotaExceeded, bs.Name, bs.UsedBytes, size, *bs.QuotaBytes)
 	}
