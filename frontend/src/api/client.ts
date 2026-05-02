@@ -80,6 +80,23 @@ export interface ImportRepoStats {
   conflictMode: string
 }
 
+export interface BlobStoreMigration {
+  id: string;
+  repositoryName: string;
+  sourceStoreId: string;
+  targetStoreId: string;
+  status: 'pending' | 'running' | 'cancelled' | 'done' | 'failed';
+  totalAssets: number;
+  doneAssets: number;
+  totalBytes: number;
+  doneBytes: number;
+  errorMessage: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // ── API helpers ──────────────────────────────────────────────
 
 export const nexusApi = {
@@ -347,4 +364,35 @@ export const nexspenceApi = {
       `/api/v1/components/${encodeURIComponent(componentId)}/scan`,
       body ?? {},
     ),
+}
+
+export async function startBlobStoreMigration(
+  repoName: string,
+  targetStoreId: string,
+): Promise<BlobStoreMigration> {
+  const { data } = await apiClient.post<BlobStoreMigration>(
+    `/api/v1/repositories/${encodeURIComponent(repoName)}/migrate-blob-store`,
+    { targetStoreId },
+  )
+  return data
+}
+
+export async function getBlobStoreMigration(
+  repoName: string,
+): Promise<BlobStoreMigration | null> {
+  try {
+    const { data } = await apiClient.get<BlobStoreMigration>(
+      `/api/v1/repositories/${encodeURIComponent(repoName)}/blob-store-migration`,
+    )
+    return data
+  } catch (err: any) {
+    if (err?.response?.status === 404) return null
+    throw err
+  }
+}
+
+export async function cancelBlobStoreMigration(repoName: string): Promise<void> {
+  await apiClient.delete(
+    `/api/v1/repositories/${encodeURIComponent(repoName)}/blob-store-migration`,
+  )
 }

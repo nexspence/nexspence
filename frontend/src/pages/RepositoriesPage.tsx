@@ -1,8 +1,9 @@
 import { useState } from 'react'
+import * as React from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Database, Download, Plus, Trash2, RefreshCw, Settings2, Power } from 'lucide-react'
-import { nexusApi, nexspenceApi, apiClient } from '@/api/client'
+import { nexusApi, nexspenceApi, apiClient, BlobStoreMigration, startBlobStoreMigration, getBlobStoreMigration, cancelBlobStoreMigration } from '@/api/client'
 import { useAuthStore } from '@/store/authStore'
 import styles from './RepositoriesPage.module.css'
 import { Select } from '../components/Select'
@@ -66,6 +67,7 @@ export default function RepositoriesPage() {
   const [formatFilter, setFormatFilter] = useState('')
   const [showCreate, setShowCreate] = useState(false)
   const [editRepo, setEditRepo] = useState<Repository | null>(null)
+  const [activeMigrations, setActiveMigrations] = React.useState<Set<string>>(new Set())
 
   const { data: repos = [], isLoading, isError, error, refetch } = useQuery<Repository[]>({
     queryKey: ['repositories', formatFilter],
@@ -179,6 +181,7 @@ export default function RepositoriesPage() {
               repo={repo}
               isAdmin={isAdmin}
               storeName={repo.blobStoreId ? storeNameById.get(repo.blobStoreId) : undefined}
+              migrating={activeMigrations.has(repo.name)}
               onClick={() => navigate(`/browse?repo=${repo.name}`)}
               onEdit={() => setEditRepo(repo)}
               onDelete={() => {
@@ -225,6 +228,16 @@ export default function RepositoriesPage() {
             qc.invalidateQueries({ queryKey: ['repositories'] })
             setEditRepo(null)
           }}
+          onMigrationStarted={(repoName) =>
+            setActiveMigrations(prev => new Set([...prev, repoName]))
+          }
+          onMigrationEnded={(repoName) =>
+            setActiveMigrations(prev => {
+              const next = new Set(prev)
+              next.delete(repoName)
+              return next
+            })
+          }
         />
       )}
     </div>
@@ -239,11 +252,12 @@ function formatBytes(bytes: number): string {
 }
 
 function RepoRow({
-  repo, isAdmin, storeName, onClick, onEdit, onDelete, onToggleOnline, onExport,
+  repo, isAdmin, storeName, migrating, onClick, onEdit, onDelete, onToggleOnline, onExport,
 }: {
   repo: Repository
   isAdmin: boolean
   storeName?: string
+  migrating?: boolean
   onClick?: () => void
   onEdit: () => void
   onDelete: () => void
@@ -292,6 +306,18 @@ function RepoRow({
       <HoloPill tone={repo.type === 'hosted' ? 'success' : repo.type === 'proxy' ? 'default' : 'warn'}>
         {TYPE_LABELS[repo.type] ?? repo.type}
       </HoloPill>
+      {migrating && (
+        <span style={{
+          fontSize: 10,
+          padding: '1px 6px',
+          borderRadius: 10,
+          background: 'rgba(59,130,246,0.15)',
+          border: '1px solid rgba(59,130,246,0.3)',
+          color: '#60a5fa',
+        }}>
+          ⟳ migrating
+        </span>
+      )}
       <div>
         <div style={{ fontSize: 11, color: 'var(--holo-text-faint)', fontFamily: 'ui-monospace,monospace', textAlign: 'right' as const }}>
           {quota ? formatBytes(quota.usedBytes) : '—'}
@@ -632,10 +658,14 @@ function EditRepoModal({
   repo,
   onClose,
   onSaved,
+  onMigrationStarted,
+  onMigrationEnded,
 }: {
   repo: Repository
   onClose: () => void
   onSaved: () => void
+  onMigrationStarted?: (repoName: string) => void
+  onMigrationEnded?: (repoName: string) => void
 }) {
   const { data: policies = [] } = useQuery<CleanupPolicyRow[]>({
     queryKey: ['cleanupPolicies'],
@@ -660,6 +690,10 @@ function EditRepoModal({
   const storeChanged = blobStoreId !== originalStoreId
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [migration, setMigration] = React.useState<BlobStoreMigration | null>(null)
+  const [migrLoading, setMigrLoading] = React.useState(false)
+  const [migrError, setMigrError] = React.useState('')
+  const pollingRef = React.useRef<ReturnType<typeof setInterval> | null>(null)
 
   const togglePolicy = (id: string) => {
     setPolicyIds(prev =>
@@ -669,6 +703,48 @@ function EditRepoModal({
 
   const effectiveStoreId = blobStoreId || originalStoreId
   const selectedStore = blobStores.find(b => b.id === effectiveStoreId)
+
+  React.useEffect(() => {
+    if (!repo) return
+    getBlobStoreMigration(repo.name)
+      .then(m => setMigration(m))
+      .catch(() => {})
+  }, [repo?.name])
+
+  const startPolling = React.useCallback((repoName: string) => {
+    if (pollingRef.current) clearInterval(pollingRef.current)
+    pollingRef.current = setInterval(async () => {
+      try {
+        const m = await getBlobStoreMigration(repoName)
+        setMigration(m)
+        if (m && (m.status === 'done' || m.status === 'failed' || m.status === 'cancelled')) {
+          clearInterval(pollingRef.current!)
+          pollingRef.current = null
+          onMigrationEnded?.(repoName)
+        }
+      } catch { /* ignore */ }
+    }, 2000)
+  }, [onMigrationEnded])
+
+  React.useEffect(() => () => { if (pollingRef.current) clearInterval(pollingRef.current) }, [])
+
+  const handleMigrateContent = async () => {
+    if (!repo) return
+    const targetId = blobStoreId
+    if (!targetId) return
+    setMigrLoading(true)
+    setMigrError('')
+    try {
+      const m = await startBlobStoreMigration(repo.name, targetId)
+      setMigration(m)
+      onMigrationStarted?.(repo.name)
+      startPolling(repo.name)
+    } catch (err: any) {
+      setMigrError(err?.response?.data?.error ?? 'Failed to start migration')
+    } finally {
+      setMigrLoading(false)
+    }
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -768,6 +844,70 @@ function EditRepoModal({
               <span className={styles.hint}>
                 Store quota: {formatBytes(selectedStore.quotaBytes)} · free {formatBytes(selectedStore.quotaBytes - (selectedStore.usedBytes ?? 0))}
               </span>
+            )}
+            {/* Migrate Content button — shown when store differs and no active migration */}
+            {storeChanged && (!migration || migration.status === 'cancelled' || migration.status === 'failed') && (
+              <div style={{ marginTop: 8 }}>
+                <button
+                  className="holo-btn"
+                  onClick={handleMigrateContent}
+                  disabled={migrLoading}
+                  style={{ fontSize: 12 }}
+                >
+                  {migrLoading ? 'Starting…' : 'Migrate Content'}
+                </button>
+                {migrError && (
+                  <p role="alert" style={{ color: '#ef4444', fontSize: 12, marginTop: 4 }}>{migrError}</p>
+                )}
+              </div>
+            )}
+            {/* Progress section */}
+            {migration && migration.status !== 'done' && (
+              <div style={{
+                marginTop: 12,
+                padding: '10px 12px',
+                background: 'rgba(59,130,246,0.06)',
+                border: '1px solid rgba(59,130,246,0.2)',
+                borderRadius: 8,
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                  <span style={{ fontSize: 12, color: '#94a3b8' }}>
+                    {migration.status === 'running' || migration.status === 'pending'
+                      ? 'Migrating content…'
+                      : migration.status === 'cancelled' ? 'Migration cancelled'
+                      : `Migration failed: ${migration.errorMessage ?? 'unknown error'}`}
+                  </span>
+                  {(migration.status === 'running' || migration.status === 'pending') && (
+                    <button
+                      className="holo-btn holo-btn--danger"
+                      style={{ fontSize: 11, padding: '2px 8px' }}
+                      onClick={() => cancelBlobStoreMigration(repo!.name).catch(() => {})}
+                    >
+                      Cancel
+                    </button>
+                  )}
+                </div>
+                {migration.totalAssets > 0 && (
+                  <>
+                    <div style={{ height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.1)', overflow: 'hidden', marginBottom: 4 }}>
+                      <div style={{
+                        height: '100%',
+                        width: `${Math.round((migration.doneAssets / migration.totalAssets) * 100)}%`,
+                        background: migration.status === 'failed' ? '#ef4444' : '#3b82f6',
+                        transition: 'width 0.3s ease',
+                      }} />
+                    </div>
+                    <div style={{ fontSize: 11, color: '#64748b' }}>
+                      {migration.doneAssets} / {migration.totalAssets} assets · {formatBytes(migration.doneBytes)} / {formatBytes(migration.totalBytes)}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+            {migration?.status === 'done' && (
+              <div style={{ marginTop: 8, fontSize: 12, color: '#22c55e' }}>
+                ✓ Migration complete — content is now on the new store
+              </div>
             )}
           </div>
         )}

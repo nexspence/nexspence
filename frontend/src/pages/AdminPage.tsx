@@ -565,12 +565,7 @@ export default function AdminPage() {
 }
 
 // ── BlobStoreDetailModal ─────────────────────────────────────────
-function extractMemberIds(raw: unknown): string[] {
-  if (!Array.isArray(raw)) return []
-  return (raw as unknown[]).filter((x): x is string => typeof x === 'string')
-}
-
-function BlobStoreDetailModal({ name, blobStores, onClose }: { name: string; blobStores: BlobStore[]; onClose: () => void }) {
+function BlobStoreDetailModal({ name, blobStores: _blobStores, onClose }: { name: string; blobStores: BlobStore[]; onClose: () => void }) {
   const qc = useQueryClient()
   const { data, isLoading, error } = useQuery<UsageResp>({
     queryKey: ['blobstore-usage', name],
