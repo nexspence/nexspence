@@ -4,7 +4,15 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 )
+
+// MemberInfo carries the blob-store fields needed for fill-policy member selection.
+type MemberInfo struct {
+	ID         string
+	QuotaBytes *int64
+	UsedBytes  int64
+}
 
 // BlobStoreDescriptor carries the minimal DB data needed to instantiate a physical BlobStore.
 type BlobStoreDescriptor struct {
@@ -20,6 +28,7 @@ type Registry struct {
 	mu           sync.RWMutex
 	instances    map[string]BlobStore
 	defaultStore BlobStore
+	rrCounters   sync.Map // groupID → *atomic.Uint64
 }
 
 func NewRegistry(defaultStore BlobStore) *Registry {
@@ -65,6 +74,30 @@ func (r *Registry) Invalidate(id string) {
 	r.mu.Lock()
 	delete(r.instances, id)
 	r.mu.Unlock()
+}
+
+// PickMember selects a member blob store ID according to the fill policy.
+// Returns "" if members is empty or all members are at capacity (write_to_first_fill).
+func (r *Registry) PickMember(groupID, policy string, members []MemberInfo) string {
+	if len(members) == 0 {
+		return ""
+	}
+	switch policy {
+	case "round_robin":
+		v, _ := r.rrCounters.LoadOrStore(groupID, new(atomic.Uint64))
+		ctr := v.(*atomic.Uint64)
+		idx := ctr.Add(1) - 1
+		return members[idx%uint64(len(members))].ID
+	case "write_to_first_fill":
+		for _, m := range members {
+			if m.QuotaBytes == nil || m.UsedBytes < *m.QuotaBytes {
+				return m.ID
+			}
+		}
+		return ""
+	default:
+		return members[0].ID
+	}
 }
 
 // NewFromConfig creates a BlobStore directly from type + config map (no caching).
