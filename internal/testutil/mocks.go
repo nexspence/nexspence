@@ -503,6 +503,14 @@ func (a *AssetRepo) ListRawAssetPaths(_ context.Context, repoName string) ([]str
 	return out, nil
 }
 
+func (a *AssetRepo) ListForBlobStoreMigration(_ context.Context, _, _ string) ([]domain.MigrationAssetRow, error) {
+	return nil, nil
+}
+
+func (a *AssetRepo) UpdateBlobStoreForBlobKey(_ context.Context, _, _, _ string) error {
+	return nil
+}
+
 // ── CleanupPolicyRepo ─────────────────────────────────────────
 
 type CleanupPolicyRepo struct {

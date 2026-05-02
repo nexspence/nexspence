@@ -545,3 +545,41 @@ func (r *assetRepo) CountByBlobKey(ctx context.Context, blobKey, excludeID strin
 	).Scan(&count)
 	return count, err
 }
+
+// ListForBlobStoreMigration returns distinct (blob_key, blob_store_id, size_bytes) for all
+// assets in repoName whose blob_store_id differs from targetStoreID.
+func (r *assetRepo) ListForBlobStoreMigration(ctx context.Context, repoName, targetStoreID string) ([]domain.MigrationAssetRow, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT DISTINCT a.blob_key, a.blob_store_id::text, a.size_bytes
+		FROM assets a
+		JOIN repositories rep ON rep.id = a.repository_id
+		WHERE rep.name = $1
+		  AND a.blob_key IS NOT NULL AND a.blob_key != ''
+		  AND a.blob_store_id IS NOT NULL
+		  AND a.blob_store_id != $2::uuid
+		ORDER BY a.blob_key`, repoName, targetStoreID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []domain.MigrationAssetRow
+	for rows.Next() {
+		var row domain.MigrationAssetRow
+		if err := rows.Scan(&row.BlobKey, &row.SourceBlobStoreID, &row.SizeBytes); err != nil {
+			return nil, err
+		}
+		result = append(result, row)
+	}
+	return result, rows.Err()
+}
+
+// UpdateBlobStoreForBlobKey updates blob_store_id for all assets in repoName with the given blob_key.
+func (r *assetRepo) UpdateBlobStoreForBlobKey(ctx context.Context, blobKey, repoName, newBlobStoreID string) error {
+	_, err := r.db.Exec(ctx, `
+		UPDATE assets SET blob_store_id = $1::uuid
+		WHERE blob_key = $2
+		  AND repository_id = (SELECT id FROM repositories WHERE name = $3)`,
+		newBlobStoreID, blobKey, repoName)
+	return err
+}

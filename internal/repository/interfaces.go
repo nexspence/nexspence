@@ -70,6 +70,12 @@ type AssetRepo interface {
 	ListAllBlobKeys(ctx context.Context) ([]string, error)
 	// SumSizeByRepo returns total size_bytes of all assets in the repository.
 	SumSizeByRepo(ctx context.Context, repoName string) (int64, error)
+	// ListForBlobStoreMigration returns distinct (blob_key, source_blob_store_id, size_bytes)
+	// for all assets in repoName whose blob_store_id differs from targetStoreID.
+	ListForBlobStoreMigration(ctx context.Context, repoName, targetStoreID string) ([]domain.MigrationAssetRow, error)
+	// UpdateBlobStoreForBlobKey sets blob_store_id = newBlobStoreID for all assets
+	// in repoName that have the given blob_key.
+	UpdateBlobStoreForBlobKey(ctx context.Context, blobKey, repoName, newBlobStoreID string) error
 	// ListPathsByRepo returns unique directory-level path prefixes from assets
 	// in the given repository. If q is non-empty, only paths containing q
 	// (case-insensitive) are returned. Fetches up to 5000 raw paths from the DB
@@ -241,4 +247,18 @@ type BlobStoreRepo interface {
 	Update(ctx context.Context, b *domain.BlobStore) error
 	Delete(ctx context.Context, name string) error
 	UpdateUsedBytes(ctx context.Context, name string, delta int64) error
+}
+
+// BlobStoreMigrationRepo persists blob store migration job records.
+type BlobStoreMigrationRepo interface {
+	Create(ctx context.Context, m *domain.BlobStoreMigration) error
+	Get(ctx context.Context, id string) (*domain.BlobStoreMigration, error)
+	// GetActiveByRepo returns a pending|running migration for the repo, or nil if none.
+	GetActiveByRepo(ctx context.Context, repoName string) (*domain.BlobStoreMigration, error)
+	// GetLatestByRepo returns the most recent migration regardless of status, or nil.
+	GetLatestByRepo(ctx context.Context, repoName string) (*domain.BlobStoreMigration, error)
+	SetTotals(ctx context.Context, id string, totalAssets int, totalBytes int64) error
+	UpdateProgress(ctx context.Context, id string, doneAssets int, doneBytes int64) error
+	UpdateStatus(ctx context.Context, id string, status string, errMsg *string) error
+	FinishMigration(ctx context.Context, id string, status string, errMsg *string) error
 }

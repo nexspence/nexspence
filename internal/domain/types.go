@@ -426,6 +426,34 @@ type Page[T any] struct {
 	ContinuationToken *string `json:"continuationToken"`
 }
 
+// ── Blob Store Migration ─────────────────────────────────────
+
+// MigrationAssetRow is a lightweight struct used by the migration service to
+// iterate distinct blobs to copy.
+type MigrationAssetRow struct {
+	BlobKey           string
+	SourceBlobStoreID string
+	SizeBytes         int64
+}
+
+// BlobStoreMigration tracks progress of a background blob store migration for one repository.
+type BlobStoreMigration struct {
+	ID             string
+	RepositoryName string
+	SourceStoreID  string
+	TargetStoreID  string
+	Status         string
+	TotalAssets    int
+	DoneAssets     int
+	TotalBytes     int64
+	DoneBytes      int64
+	ErrorMessage   *string
+	StartedAt      *time.Time
+	FinishedAt     *time.Time
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+}
+
 // ── Search params ────────────────────────────────────────────
 
 type SearchParams struct {
