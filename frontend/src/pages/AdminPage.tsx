@@ -802,7 +802,7 @@ function BlobStoreDetailModal({ name, blobStores, onClose }: { name: string; blo
               {delMut.isPending ? 'Deleting…' : 'Delete'}
             </HoloButton>
             <div style={{ display: 'flex', gap: 8 }}>
-              {!editing && bs && (
+              {!editing && bs && bs.type !== 'group' && (
                 <HoloButton icon={<Pencil size={13} />} onClick={startEdit}>Edit Config</HoloButton>
               )}
               <HoloButton onClick={onClose}>Close</HoloButton>

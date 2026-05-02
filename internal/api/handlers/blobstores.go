@@ -206,6 +206,13 @@ func (h *BlobStoreHandler) Update(c *gin.Context) {
 	updates.Name = name
 	updates.Type = existing.Type
 
+	if updates.Type == "group" {
+		if msg := h.validateGroupConfig(c.Request.Context(), updates.Config); msg != "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": msg})
+			return
+		}
+	}
+
 	if err := h.repo.Update(c.Request.Context(), &updates); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
