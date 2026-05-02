@@ -231,13 +231,14 @@ export default function RepositoriesPage() {
           onMigrationStarted={(repoName) =>
             setActiveMigrations(prev => new Set([...prev, repoName]))
           }
-          onMigrationEnded={(repoName) =>
+          onMigrationEnded={(repoName) => {
             setActiveMigrations(prev => {
               const next = new Set(prev)
               next.delete(repoName)
               return next
             })
-          }
+            qc.invalidateQueries({ queryKey: ['repositories'] })
+          }}
         />
       )}
     </div>
@@ -849,6 +850,7 @@ function EditRepoModal({
             {storeChanged && (!migration || migration.status === 'cancelled' || migration.status === 'failed') && (
               <div style={{ marginTop: 8 }}>
                 <button
+                  type="button"
                   className="holo-btn"
                   onClick={handleMigrateContent}
                   disabled={migrLoading}
@@ -879,6 +881,7 @@ function EditRepoModal({
                   </span>
                   {(migration.status === 'running' || migration.status === 'pending') && (
                     <button
+                      type="button"
                       className="holo-btn holo-btn--danger"
                       style={{ fontSize: 11, padding: '2px 8px' }}
                       onClick={() => cancelBlobStoreMigration(repo!.name).catch(() => {})}

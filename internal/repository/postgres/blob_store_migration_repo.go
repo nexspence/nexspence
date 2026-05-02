@@ -102,6 +102,26 @@ func (r *blobStoreMigrationRepo) FinishMigration(ctx context.Context, id string,
 	return err
 }
 
+func (r *blobStoreMigrationRepo) ListActive(ctx context.Context) ([]domain.BlobStoreMigration, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT `+blobStoreMigrationCols+` FROM blob_store_migrations
+		WHERE status IN ('pending','running')
+		ORDER BY created_at ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ms []domain.BlobStoreMigration
+	for rows.Next() {
+		m, err := scanMigration(rows)
+		if err != nil {
+			return nil, err
+		}
+		ms = append(ms, *m)
+	}
+	return ms, rows.Err()
+}
+
 const blobStoreMigrationCols = `
 	id, repository_name,
 	COALESCE(source_store_id::text,'') as source_store_id,

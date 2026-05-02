@@ -1386,3 +1386,15 @@ func (r *BlobStoreMigrationRepo) FinishMigration(_ context.Context, id string, s
 	}
 	return nil
 }
+
+func (r *BlobStoreMigrationRepo) ListActive(_ context.Context) ([]domain.BlobStoreMigration, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []domain.BlobStoreMigration
+	for _, m := range r.migrations {
+		if m.Status == "pending" || m.Status == "running" {
+			out = append(out, *m)
+		}
+	}
+	return out, nil
+}

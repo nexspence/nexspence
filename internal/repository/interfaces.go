@@ -257,6 +257,8 @@ type BlobStoreMigrationRepo interface {
 	GetActiveByRepo(ctx context.Context, repoName string) (*domain.BlobStoreMigration, error)
 	// GetLatestByRepo returns the most recent migration regardless of status, or nil.
 	GetLatestByRepo(ctx context.Context, repoName string) (*domain.BlobStoreMigration, error)
+	// ListActive returns all pending|running migrations (used by ResumeAll on startup).
+	ListActive(ctx context.Context) ([]domain.BlobStoreMigration, error)
 	SetTotals(ctx context.Context, id string, totalAssets int, totalBytes int64) error
 	UpdateProgress(ctx context.Context, id string, doneAssets int, doneBytes int64) error
 	UpdateStatus(ctx context.Context, id string, status string, errMsg *string) error

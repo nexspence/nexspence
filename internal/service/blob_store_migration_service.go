@@ -114,9 +114,17 @@ func (s *BlobStoreMigrationService) GetLatestByRepo(ctx context.Context, repoNam
 	return s.migrations.GetLatestByRepo(ctx, repoName)
 }
 
-// ResumeAll is called on server startup to relaunch interrupted migrations.
-// Currently a no-op placeholder; full implementation requires a List method on the repo.
+// ResumeAll is called on server startup to mark interrupted migrations as cancelled
+// so users can restart them. Goroutines cannot be safely resumed across process restarts.
 func (s *BlobStoreMigrationService) ResumeAll(ctx context.Context) error {
+	active, err := s.migrations.ListActive(ctx)
+	if err != nil {
+		return err
+	}
+	interrupted := "interrupted by server restart"
+	for _, m := range active {
+		_ = s.migrations.FinishMigration(ctx, m.ID, "cancelled", &interrupted)
+	}
 	return nil
 }
 
