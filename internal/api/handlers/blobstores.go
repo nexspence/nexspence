@@ -331,6 +331,7 @@ type LinkedRepoInfo struct {
 
 // Usage handles GET /api/v1/blob-stores/:name/usage
 // Returns the store details plus the repositories that use it and per-repo byte counts.
+// For group blob stores, aggregates across all member stores.
 func (h *BlobStoreHandler) Usage(c *gin.Context) {
 	if h.repos == nil || h.assets == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "usage deps not configured"})
@@ -346,6 +347,11 @@ func (h *BlobStoreHandler) Usage(c *gin.Context) {
 	}
 	if bs == nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "blob store not found"})
+		return
+	}
+
+	if bs.Type == "group" {
+		h.usageGroup(c, ctx, bs)
 		return
 	}
 
@@ -375,6 +381,66 @@ func (h *BlobStoreHandler) Usage(c *gin.Context) {
 	}
 	if bs.QuotaBytes != nil {
 		resp["quotaRemaining"] = *bs.QuotaBytes - bs.UsedBytes
+	}
+	c.JSON(http.StatusOK, resp)
+}
+
+type memberUsage struct {
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	UsedBytes  int64  `json:"usedBytes"`
+	QuotaBytes *int64 `json:"quotaBytes,omitempty"`
+}
+
+func (h *BlobStoreHandler) usageGroup(c *gin.Context, ctx context.Context, group *domain.BlobStore) {
+	memberIDs := extractMemberIDs(group.Config)
+	var members []memberUsage
+	var totalUsed, totalQuota int64
+	hasQuota := true
+
+	var allRepos []LinkedRepoInfo
+	var totalAssetBytes int64
+
+	for _, mid := range memberIDs {
+		m, err := h.repo.GetByID(ctx, mid)
+		if err != nil || m == nil {
+			continue
+		}
+		mu := memberUsage{ID: m.ID, Name: m.Name, UsedBytes: m.UsedBytes, QuotaBytes: m.QuotaBytes}
+		members = append(members, mu)
+		totalUsed += m.UsedBytes
+		if m.QuotaBytes == nil {
+			hasQuota = false
+		} else {
+			totalQuota += *m.QuotaBytes
+		}
+
+		linked, err := h.repos.ListByBlobStoreID(ctx, m.ID)
+		if err != nil {
+			continue
+		}
+		for _, r := range linked {
+			used, _ := h.assets.SumSizeByRepo(ctx, r.Name)
+			allRepos = append(allRepos, LinkedRepoInfo{
+				Name:      r.Name,
+				Format:    string(r.Format),
+				Type:      string(r.Type),
+				BytesUsed: used,
+			})
+			totalAssetBytes += used
+		}
+	}
+
+	resp := gin.H{
+		"store":              group,
+		"members":            members,
+		"memberTotalUsed":    totalUsed,
+		"linkedRepositories": allRepos,
+		"totalAssetBytes":    totalAssetBytes,
+	}
+	if hasQuota {
+		resp["memberTotalQuota"] = totalQuota
+		resp["quotaRemaining"] = totalQuota - totalUsed
 	}
 	c.JSON(http.StatusOK, resp)
 }
