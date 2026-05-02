@@ -30,8 +30,9 @@ var (
 	_ repository.UserTokenRepo       = (*UserTokenRepo)(nil)
 	_ repository.WebhookRepo         = (*WebhookRepo)(nil)
 	_ repository.RoutingRuleRepo     = (*RoutingRuleRepo)(nil)
-	_ repository.PrivilegeRepo       = (*PrivilegeRepo)(nil)
-	_ storage.BlobStore              = (*BlobStore)(nil)
+	_ repository.PrivilegeRepo          = (*PrivilegeRepo)(nil)
+	_ repository.BlobStoreMigrationRepo = (*BlobStoreMigrationRepo)(nil)
+	_ storage.BlobStore                 = (*BlobStore)(nil)
 )
 
 // ── RepositoryRepo ────────────────────────────────────────────
@@ -322,12 +323,13 @@ func (c *ComponentRepo) AddComponent(comp *domain.Component) {
 // ── AssetRepo ─────────────────────────────────────────────────
 
 type AssetRepo struct {
-	mu          sync.Mutex
-	assets      map[string]*domain.Asset // key: "repo:path"
-	byID        map[string]*domain.Asset
-	nextID      int
-	Stale       []domain.Asset // populated by tests to control ListStale output
-	LastRetainN int
+	mu            sync.Mutex
+	assets        map[string]*domain.Asset // key: "repo:path"
+	byID          map[string]*domain.Asset
+	nextID        int
+	Stale         []domain.Asset // populated by tests to control ListStale output
+	LastRetainN   int
+	MigrationRows []domain.MigrationAssetRow
 }
 
 func NewAssetRepo() *AssetRepo {
@@ -503,8 +505,8 @@ func (a *AssetRepo) ListRawAssetPaths(_ context.Context, repoName string) ([]str
 	return out, nil
 }
 
-func (a *AssetRepo) ListForBlobStoreMigration(_ context.Context, _, _ string) ([]domain.MigrationAssetRow, error) {
-	return nil, nil
+func (a *AssetRepo) ListForBlobStoreMigration(_ context.Context, repoName, targetStoreID string) ([]domain.MigrationAssetRow, error) {
+	return a.MigrationRows, nil
 }
 
 func (a *AssetRepo) UpdateBlobStoreForBlobKey(_ context.Context, _, _, _ string) error {
@@ -1276,4 +1278,111 @@ func (r *PrivilegeRepo) ListByRole(_ context.Context, _ string) ([]domain.Privil
 
 func (r *PrivilegeRepo) PrivilegeRoleMap(_ context.Context) (map[string][]string, error) {
 	return map[string][]string{}, nil
+}
+
+// ── BlobStoreMigrationRepo ────────────────────────────────────
+
+type BlobStoreMigrationRepo struct {
+	mu         sync.Mutex
+	migrations map[string]*domain.BlobStoreMigration
+}
+
+func NewBlobStoreMigrationRepo(ms ...*domain.BlobStoreMigration) *BlobStoreMigrationRepo {
+	r := &BlobStoreMigrationRepo{migrations: make(map[string]*domain.BlobStoreMigration)}
+	for _, m := range ms {
+		r.migrations[m.ID] = m
+	}
+	return r
+}
+
+func (r *BlobStoreMigrationRepo) Create(_ context.Context, m *domain.BlobStoreMigration) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if m.ID == "" {
+		m.ID = fmt.Sprintf("mig-%d", len(r.migrations)+1)
+	}
+	cp := *m
+	r.migrations[m.ID] = &cp
+	return nil
+}
+
+func (r *BlobStoreMigrationRepo) Get(_ context.Context, id string) (*domain.BlobStoreMigration, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	m := r.migrations[id]
+	if m == nil {
+		return nil, nil
+	}
+	cp := *m
+	return &cp, nil
+}
+
+func (r *BlobStoreMigrationRepo) GetActiveByRepo(_ context.Context, repoName string) (*domain.BlobStoreMigration, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, m := range r.migrations {
+		if m.RepositoryName == repoName && (m.Status == "pending" || m.Status == "running") {
+			cp := *m
+			return &cp, nil
+		}
+	}
+	return nil, nil
+}
+
+func (r *BlobStoreMigrationRepo) GetLatestByRepo(_ context.Context, repoName string) (*domain.BlobStoreMigration, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var latest *domain.BlobStoreMigration
+	for _, m := range r.migrations {
+		if m.RepositoryName == repoName {
+			if latest == nil || m.CreatedAt.After(latest.CreatedAt) {
+				latest = m
+			}
+		}
+	}
+	if latest == nil {
+		return nil, nil
+	}
+	cp := *latest
+	return &cp, nil
+}
+
+func (r *BlobStoreMigrationRepo) SetTotals(_ context.Context, id string, total int, totalBytes int64) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if m := r.migrations[id]; m != nil {
+		m.TotalAssets = total
+		m.TotalBytes = totalBytes
+	}
+	return nil
+}
+
+func (r *BlobStoreMigrationRepo) UpdateProgress(_ context.Context, id string, done int, doneBytes int64) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if m := r.migrations[id]; m != nil {
+		m.DoneAssets = done
+		m.DoneBytes = doneBytes
+	}
+	return nil
+}
+
+func (r *BlobStoreMigrationRepo) UpdateStatus(_ context.Context, id string, status string, errMsg *string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if m := r.migrations[id]; m != nil {
+		m.Status = status
+		m.ErrorMessage = errMsg
+	}
+	return nil
+}
+
+func (r *BlobStoreMigrationRepo) FinishMigration(_ context.Context, id string, status string, errMsg *string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if m := r.migrations[id]; m != nil {
+		m.Status = status
+		m.ErrorMessage = errMsg
+	}
+	return nil
 }
