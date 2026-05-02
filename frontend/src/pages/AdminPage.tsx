@@ -16,6 +16,10 @@ interface UsageResp {
   linkedRepositories: LinkedRepo[]
   totalAssetBytes: number
   quotaRemaining?: number
+  // group-specific fields
+  members?: Array<{ id: string; name: string; usedBytes: number; quotaBytes?: number }>
+  memberTotalUsed?: number
+  memberTotalQuota?: number
 }
 interface SystemInfo { version: string; edition: string; product: string }
 
@@ -692,22 +696,27 @@ function BlobStoreDetailModal({ name, blobStores, onClose }: { name: string; blo
                   {bs.config?.fill_policy === 'write_to_first_fill' ? 'Write to First Fill' : 'Round Robin'}
                 </strong>
               </div>
+              {data?.memberTotalUsed !== undefined && (
+                <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 8 }}>
+                  Total used: <strong style={{ color: '#e2e8f0' }}>
+                    {(data.memberTotalUsed / 1024 / 1024).toFixed(1)} MB
+                  </strong>
+                  {data.memberTotalQuota !== undefined && (
+                    <> / {(data.memberTotalQuota / 1024 / 1024).toFixed(1)} MB</>
+                  )}
+                </div>
+              )}
               <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 6 }}>Members:</div>
-              {extractMemberIds(bs.config?.member_ids).map((mid: string) => {
-                const m = blobStores.find(s => s.id === mid)
-                return m ? (
-                  <div key={mid} style={{ display: 'flex', justifyContent: 'space-between',
-                    fontSize: 12, padding: '4px 8px', background: 'rgba(255,255,255,0.04)', borderRadius: 6, marginBottom: 4 }}>
-                    <span style={{ color: '#e2e8f0' }}>{m.name}</span>
-                    <span style={{ color: '#64748b' }}>
-                      {m.usedBytes != null ? `${(m.usedBytes / 1024 / 1024).toFixed(1)} MB` : ''}
-                      {m.quotaBytes != null ? ` / ${(m.quotaBytes / 1024 / 1024).toFixed(1)} MB` : ''}
-                    </span>
-                  </div>
-                ) : (
-                  <div key={mid} style={{ fontSize: 12, color: '#64748b', padding: '2px 8px' }}>{mid}</div>
-                )
-              })}
+              {(data?.members ?? []).map(m => (
+                <div key={m.id} style={{ display: 'flex', justifyContent: 'space-between',
+                  fontSize: 12, padding: '4px 8px', background: 'rgba(255,255,255,0.04)', borderRadius: 6, marginBottom: 4 }}>
+                  <span style={{ color: '#e2e8f0' }}>{m.name}</span>
+                  <span style={{ color: '#64748b' }}>
+                    {(m.usedBytes / 1024 / 1024).toFixed(1)} MB
+                    {m.quotaBytes != null ? ` / ${(m.quotaBytes / 1024 / 1024).toFixed(1)} MB` : ''}
+                  </span>
+                </div>
+              ))}
             </div>
           )}
 
