@@ -2,12 +2,15 @@ package base_test
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/formats"
 	"github.com/nexspence-oss/nexspence/internal/formats/base"
+	"github.com/nexspence-oss/nexspence/internal/storage"
 	"github.com/nexspence-oss/nexspence/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -191,4 +194,126 @@ func TestDeleteArtifact_Idempotent(t *testing.T) {
 	// Deleting a non-existent artifact should not error
 	err := base.DeleteArtifact(context.Background(), d, "idempotentrepo", "/nonexistent.bin")
 	assert.NoError(t, err)
+}
+
+// ── Group blob store routing ──────────────────────────────────
+
+func groupBlobStore(id, name, policy string, memberIDs ...string) *domain.BlobStore {
+	ids := make([]interface{}, len(memberIDs))
+	for i, m := range memberIDs {
+		ids[i] = m
+	}
+	return &domain.BlobStore{
+		ID:   id,
+		Name: name,
+		Type: "group",
+		Config: map[string]any{
+			"fill_policy": policy,
+			"member_ids":  ids,
+		},
+	}
+}
+
+func depsWithGroup(repo *domain.Repository, groupStore *domain.BlobStore, memberStores ...*domain.BlobStore) formats.Deps {
+	allStores := append([]*domain.BlobStore{groupStore}, memberStores...)
+	blobs := testutil.NewBlobStoreRepo(allStores...)
+	defaultBS := testutil.NewBlobStore()
+	reg := storage.NewRegistry(defaultBS)
+	return formats.Deps{
+		Repos:      testutil.NewRepoRepo(repo),
+		Blobs:      blobs,
+		Components: testutil.NewComponentRepo(),
+		Assets:     testutil.NewAssetRepo(),
+		BlobStore:  defaultBS,
+		Registry:   reg,
+		BaseURL:    "http://localhost:8080",
+	}
+}
+
+func TestStoreArtifact_GroupStore_AssetBlobStoreIDIsPhysicalMember(t *testing.T) {
+	memberA := &domain.BlobStore{ID: "member-a", Name: "store-a", Type: "local",
+		Config: map[string]any{"path": t.TempDir()}}
+	memberB := &domain.BlobStore{ID: "member-b", Name: "store-b", Type: "local",
+		Config: map[string]any{"path": t.TempDir()}}
+	group := groupBlobStore("group-1", "my-group", "round_robin", "member-a", "member-b")
+
+	bsID := "group-1"
+	repo := &domain.Repository{
+		ID: "repo-1", Name: "testrepo2", Format: "raw", Type: "hosted",
+		Online: true, BlobStoreID: &bsID,
+	}
+
+	d := depsWithGroup(repo, group, memberA, memberB)
+
+	result, err := base.StoreArtifact(context.Background(), d,
+		"testrepo2", "/file.txt", "text/plain",
+		base.Coords{Name: "file.txt"},
+		strings.NewReader("hello"), 5)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	if result.Asset.BlobStoreID == "group-1" {
+		t.Fatal("asset.BlobStoreID must not be the group ID — it must be a physical member ID")
+	}
+	if result.Asset.BlobStoreID != "member-a" && result.Asset.BlobStoreID != "member-b" {
+		t.Errorf("expected member-a or member-b, got %q", result.Asset.BlobStoreID)
+	}
+}
+
+func TestStoreArtifact_GroupStore_RoundRobin_AlternatesMembers(t *testing.T) {
+	memberA := &domain.BlobStore{ID: "rr-member-a", Name: "rr-store-a", Type: "local",
+		Config: map[string]any{"path": t.TempDir()}}
+	memberB := &domain.BlobStore{ID: "rr-member-b", Name: "rr-store-b", Type: "local",
+		Config: map[string]any{"path": t.TempDir()}}
+	group := groupBlobStore("group-rr", "rr-group", "round_robin", "rr-member-a", "rr-member-b")
+
+	bsID := "group-rr"
+	repo := &domain.Repository{
+		ID: "repo-rr", Name: "rr-repo", Format: "raw", Type: "hosted",
+		Online: true, BlobStoreID: &bsID,
+	}
+	d := depsWithGroup(repo, group, memberA, memberB)
+
+	var selected []string
+	for i := 0; i < 4; i++ {
+		path := fmt.Sprintf("/rr-file%d.txt", i)
+		res, err := base.StoreArtifact(context.Background(), d,
+			"rr-repo", path, "text/plain",
+			base.Coords{Name: fmt.Sprintf("file%d.txt", i)},
+			strings.NewReader("data"), 4)
+		require.NoError(t, err)
+		selected = append(selected, res.Asset.BlobStoreID)
+	}
+	if selected[0] == selected[1] {
+		t.Errorf("round-robin should alternate, got same member twice: %v", selected)
+	}
+	if selected[0] != selected[2] || selected[1] != selected[3] {
+		t.Errorf("round-robin pattern broken: %v", selected)
+	}
+}
+
+func TestStoreArtifact_GroupStore_AllMembersFull_ReturnsQuotaExceeded(t *testing.T) {
+	quota := int64(10)
+	memberA := &domain.BlobStore{ID: "full-a", Name: "full-store-a", Type: "local",
+		QuotaBytes: &quota, UsedBytes: 10,
+		Config: map[string]any{"path": t.TempDir()}}
+	memberB := &domain.BlobStore{ID: "full-b", Name: "full-store-b", Type: "local",
+		QuotaBytes: &quota, UsedBytes: 10,
+		Config: map[string]any{"path": t.TempDir()}}
+	group := groupBlobStore("group-full", "full-group", "write_to_first_fill", "full-a", "full-b")
+
+	bsID := "group-full"
+	repo := &domain.Repository{
+		ID: "repo-full", Name: "full-repo", Format: "raw", Type: "hosted",
+		Online: true, BlobStoreID: &bsID,
+	}
+	d := depsWithGroup(repo, group, memberA, memberB)
+
+	_, err := base.StoreArtifact(context.Background(), d,
+		"full-repo", "/file.txt", "text/plain",
+		base.Coords{Name: "file.txt"},
+		strings.NewReader("hello"), 5)
+	if !errors.Is(err, base.ErrQuotaExceeded) {
+		t.Errorf("want ErrQuotaExceeded when all members full, got %v", err)
+	}
 }

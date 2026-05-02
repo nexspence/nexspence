@@ -68,18 +68,18 @@ func StoreArtifact(ctx context.Context, d formats.Deps,
 
 	blobKey := BlobKey(repoName, filePath)
 
-	// Resolve the physical blob store for this repository.
+	// Resolve once — result passed to RegisterStoredBlob to avoid double-call.
+	// For group stores, double-call would advance the round-robin counter twice.
+	resolvedBlobStoreID, resolvedBlobStoreName, _ := resolveBlobStoreRef(ctx, d, repo)
+
 	var physStore storage.BlobStore
-	{
-		bsID, _, refErr := resolveBlobStoreRef(ctx, d, repo)
-		if refErr == nil && bsID != "" {
-			if bsMeta, getErr := d.Blobs.GetByID(ctx, bsID); getErr == nil {
-				physStore = physicalStore(ctx, d, bsMeta)
-			}
+	if resolvedBlobStoreID != "" {
+		if bsMeta, getErr := d.Blobs.GetByID(ctx, resolvedBlobStoreID); getErr == nil {
+			physStore = PhysicalStore(ctx, d, bsMeta)
 		}
-		if physStore == nil {
-			physStore = d.BlobStore
-		}
+	}
+	if physStore == nil {
+		physStore = d.BlobStore
 	}
 
 	// Stream → hash writers → blob store via pipe
@@ -117,7 +117,7 @@ func StoreArtifact(ctx context.Context, d formats.Deps,
 		}
 	}
 
-	asset, err := RegisterStoredBlob(ctx, d, repo, filePath, contentType, coords, blobKey, sha256sum, sha1sum, md5sum, size)
+	asset, err := RegisterStoredBlob(ctx, d, repo, filePath, contentType, coords, blobKey, sha256sum, sha1sum, md5sum, size, resolvedBlobStoreID, resolvedBlobStoreName)
 	if err != nil {
 		return nil, err
 	}
@@ -151,15 +151,21 @@ func StoreArtifact(ctx context.Context, d formats.Deps,
 }
 
 // RegisterStoredBlob upserts component + asset after a blob was written to blobKey with known checksums.
+// blobStoreID and blobStoreName may be pre-resolved by the caller to avoid calling resolveBlobStoreRef
+// twice (which would advance a round-robin group counter twice). Pass empty strings to resolve internally.
 func RegisterStoredBlob(ctx context.Context, d formats.Deps, repo *domain.Repository,
 	filePath, contentType string, coords Coords,
 	blobKey string,
 	sha256sum, sha1sum, md5sum string,
 	size int64,
+	blobStoreID, blobStoreName string,
 ) (*domain.Asset, error) {
-	blobStoreID, blobStoreName, err := resolveBlobStoreRef(ctx, d, repo)
-	if err != nil {
-		return nil, err
+	if blobStoreID == "" {
+		var err error
+		blobStoreID, blobStoreName, err = resolveBlobStoreRef(ctx, d, repo)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	version := coords.Version
@@ -219,7 +225,7 @@ func FetchArtifact(ctx context.Context, d formats.Deps, repoName, filePath strin
 	var fetchStore storage.BlobStore
 	if asset.BlobStoreID != "" {
 		if bsMeta, getErr := d.Blobs.GetByID(ctx, asset.BlobStoreID); getErr == nil {
-			fetchStore = physicalStore(ctx, d, bsMeta)
+			fetchStore = PhysicalStore(ctx, d, bsMeta)
 		}
 	}
 	if fetchStore == nil {
@@ -249,7 +255,7 @@ func DeleteArtifact(ctx context.Context, d formats.Deps, repoName, filePath stri
 	var delStore storage.BlobStore
 	if asset.BlobStoreID != "" {
 		if bsMeta, getErr := d.Blobs.GetByID(ctx, asset.BlobStoreID); getErr == nil {
-			delStore = physicalStore(ctx, d, bsMeta)
+			delStore = PhysicalStore(ctx, d, bsMeta)
 		}
 	}
 	if delStore == nil {
@@ -317,14 +323,16 @@ type Coords struct {
 	Version string // semantic version
 }
 
-// checkQuota verifies that writing `size` bytes won't exceed either the blob store
-// quota or the repository-level quota. Returns ErrQuotaExceeded if either is breached.
+// checkQuota verifies that writing `size` bytes won't exceed either the blob store quota or the
+// repository-level quota. Returns ErrQuotaExceeded if either is breached.
+// For group stores, the blob-store quota check is deferred to resolveBlobStoreRef:
+// PickMember returns "" when all members are at capacity.
 func checkQuota(ctx context.Context, d formats.Deps, repo *domain.Repository, size int64) error {
 	bs, err := resolveBlobStoreObj(ctx, d, repo)
 	if err != nil {
 		return err
 	}
-	if bs.QuotaBytes != nil && bs.UsedBytes+size > *bs.QuotaBytes {
+	if bs.Type != "group" && bs.QuotaBytes != nil && bs.UsedBytes+size > *bs.QuotaBytes {
 		return fmt.Errorf("%w: blob store %q usage %d + %d > limit %d",
 			ErrQuotaExceeded, bs.Name, bs.UsedBytes, size, *bs.QuotaBytes)
 	}
@@ -366,10 +374,10 @@ func resolveBlobStoreObj(ctx context.Context, d formats.Deps, repo *domain.Repos
 	return bs, nil
 }
 
-// physicalStore returns the physical BlobStore for the given domain blob store.
+// PhysicalStore returns the physical BlobStore for the given domain blob store.
 // If the registry is set and the descriptor is valid, it returns the cached/created instance.
 // Falls back to d.BlobStore (the global default) on any error or missing registry.
-func physicalStore(ctx context.Context, d formats.Deps, bs *domain.BlobStore) storage.BlobStore {
+func PhysicalStore(ctx context.Context, d formats.Deps, bs *domain.BlobStore) storage.BlobStore {
 	if d.Registry == nil || bs == nil {
 		return d.BlobStore
 	}
@@ -384,28 +392,103 @@ func physicalStore(ctx context.Context, d formats.Deps, bs *domain.BlobStore) st
 	return store
 }
 
+// groupMemberIDs extracts member_ids from a group blob store config.
+// Handles []string (from Go) and []interface{} (from JSON unmarshal).
+func groupMemberIDs(bs *domain.BlobStore) []string {
+	if bs.Config == nil {
+		return nil
+	}
+	raw := bs.Config["member_ids"]
+	switch v := raw.(type) {
+	case []string:
+		return v
+	case []interface{}:
+		out := make([]string, 0, len(v))
+		for _, item := range v {
+			if s, ok := item.(string); ok {
+				out = append(out, s)
+			}
+		}
+		return out
+	}
+	return nil
+}
+
+// groupFillPolicy returns the fill_policy from a group blob store config, defaulting to "round_robin".
+func groupFillPolicy(bs *domain.BlobStore) string {
+	if bs.Config == nil {
+		return "round_robin"
+	}
+	if p, ok := bs.Config["fill_policy"].(string); ok && p != "" {
+		return p
+	}
+	return "round_robin"
+}
+
 // resolveBlobStoreRef returns the blob store UUID for assets.blob_store_id (FK)
 // and the store name for BlobStoreRepo.UpdateUsedBytes (keyed by name).
+// For group stores, it picks a physical member using the configured fill policy.
 func resolveBlobStoreRef(ctx context.Context, d formats.Deps, repo *domain.Repository) (id string, name string, err error) {
+	var bs *domain.BlobStore
 	if repo.BlobStoreID != nil {
 		ref := strings.TrimSpace(*repo.BlobStoreID)
 		if ref != "" {
-			bs, err := d.Blobs.GetByID(ctx, ref)
+			bs, err = d.Blobs.GetByID(ctx, ref)
 			if err != nil {
 				return "", "", fmt.Errorf("blob store: %w", err)
 			}
-			if bs != nil {
-				return bs.ID, bs.Name, nil
+			if bs == nil {
+				return "", "", fmt.Errorf("blob store id %q not found", ref)
 			}
-			return "", "", fmt.Errorf("blob store id %q not found", ref)
 		}
 	}
-	bs, err := d.Blobs.Get(ctx, "default")
-	if err != nil {
-		return "", "", fmt.Errorf("blob store: %w", err)
-	}
 	if bs == nil {
-		return "", "", fmt.Errorf("default blob store not found (seed blob_stores or assign repository.blobStoreId)")
+		bs, err = d.Blobs.Get(ctx, "default")
+		if err != nil {
+			return "", "", fmt.Errorf("blob store: %w", err)
+		}
+		if bs == nil {
+			return "", "", fmt.Errorf("default blob store not found (seed blob_stores or assign repository.blobStoreId)")
+		}
 	}
-	return bs.ID, bs.Name, nil
+
+	if bs.Type != "group" {
+		return bs.ID, bs.Name, nil
+	}
+
+	// Group store: pick a physical member via fill policy.
+	memberIDs := groupMemberIDs(bs)
+	if len(memberIDs) == 0 {
+		return "", "", fmt.Errorf("group blob store %q has no members", bs.Name)
+	}
+	if d.Registry == nil {
+		return "", "", fmt.Errorf("group blob store %q requires Registry to be configured", bs.Name)
+	}
+
+	memberMap := make(map[string]domain.BlobStore, len(memberIDs))
+	var members []storage.MemberInfo
+	for _, mid := range memberIDs {
+		m, getErr := d.Blobs.GetByID(ctx, mid)
+		if getErr != nil || m == nil {
+			continue
+		}
+		members = append(members, storage.MemberInfo{
+			ID:         m.ID,
+			QuotaBytes: m.QuotaBytes,
+			UsedBytes:  m.UsedBytes,
+		})
+		memberMap[m.ID] = *m
+	}
+	if len(members) == 0 {
+		return "", "", fmt.Errorf("group blob store %q: no valid members found", bs.Name)
+	}
+
+	policy := groupFillPolicy(bs)
+	memberID := d.Registry.PickMember(bs.ID, policy, members)
+	if memberID == "" {
+		return "", "", fmt.Errorf("%w: all members of group blob store %q are at capacity", ErrQuotaExceeded, bs.Name)
+	}
+
+	m := memberMap[memberID]
+	return m.ID, m.Name, nil
 }
