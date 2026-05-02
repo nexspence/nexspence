@@ -476,7 +476,17 @@ export default function AdminPage() {
                   }}
                   onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setDetailName(bs.name) } }}
                 >
-                  <div style={{ fontWeight: 600, color: 'var(--holo-text)' }}>{bs.name}</div>
+                  <div style={{ fontWeight: 600, color: 'var(--holo-text)', display: 'flex', alignItems: 'center' }}>
+                    {bs.name}
+                    {bs.type === 'group' && (
+                      <span style={{
+                        fontSize: 10, fontWeight: 700, padding: '2px 6px',
+                        borderRadius: 4, background: 'rgba(139,92,246,0.15)',
+                        color: '#a78bfa', border: '1px solid rgba(139,92,246,0.3)',
+                        marginLeft: 6, letterSpacing: '0.05em',
+                      }}>GROUP</span>
+                    )}
+                  </div>
                   <div>
                     <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 4, background: 'rgba(124,92,255,0.15)', color: 'var(--holo-a)' }}>
                       {bs.type}
@@ -544,14 +554,19 @@ export default function AdminPage() {
       {/* Migration */}
       {tab === 'migration' && <MigrationTab />}
 
-      {detailName && <BlobStoreDetailModal name={detailName} onClose={() => setDetailName(null)} />}
-      {createOpen && <CreateBlobStoreModal onClose={() => setCreateOpen(false)} />}
+      {detailName && <BlobStoreDetailModal name={detailName} blobStores={blobs} onClose={() => setDetailName(null)} />}
+      {createOpen && <CreateBlobStoreModal blobStores={blobs} onClose={() => setCreateOpen(false)} />}
     </div>
   )
 }
 
 // ── BlobStoreDetailModal ─────────────────────────────────────────
-function BlobStoreDetailModal({ name, onClose }: { name: string; onClose: () => void }) {
+function extractMemberIds(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return []
+  return (raw as unknown[]).filter((x): x is string => typeof x === 'string')
+}
+
+function BlobStoreDetailModal({ name, blobStores, onClose }: { name: string; blobStores: BlobStore[]; onClose: () => void }) {
   const qc = useQueryClient()
   const { data, isLoading, error } = useQuery<UsageResp>({
     queryKey: ['blobstore-usage', name],
@@ -670,6 +685,32 @@ function BlobStoreDetailModal({ name, onClose }: { name: string; onClose: () => 
             )}
           </div>
 
+          {bs.type === 'group' && (
+            <div style={{ marginTop: 16 }}>
+              <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 8 }}>
+                Fill Policy: <strong style={{ color: '#e2e8f0' }}>
+                  {bs.config?.fill_policy === 'write_to_first_fill' ? 'Write to First Fill' : 'Round Robin'}
+                </strong>
+              </div>
+              <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 6 }}>Members:</div>
+              {extractMemberIds(bs.config?.member_ids).map((mid: string) => {
+                const m = blobStores.find(s => s.id === mid)
+                return m ? (
+                  <div key={mid} style={{ display: 'flex', justifyContent: 'space-between',
+                    fontSize: 12, padding: '4px 8px', background: 'rgba(255,255,255,0.04)', borderRadius: 6, marginBottom: 4 }}>
+                    <span style={{ color: '#e2e8f0' }}>{m.name}</span>
+                    <span style={{ color: '#64748b' }}>
+                      {m.usedBytes != null ? `${(m.usedBytes / 1024 / 1024).toFixed(1)} MB` : ''}
+                      {m.quotaBytes != null ? ` / ${(m.quotaBytes / 1024 / 1024).toFixed(1)} MB` : ''}
+                    </span>
+                  </div>
+                ) : (
+                  <div key={mid} style={{ fontSize: 12, color: '#64748b', padding: '2px 8px' }}>{mid}</div>
+                )
+              })}
+            </div>
+          )}
+
           {editing && bs && (
             <div style={{ marginBottom: 16, padding: '12px 14px', background: 'rgba(255,255,255,0.03)', borderRadius: 10, border: '1px solid var(--holo-border)' }}>
               <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--holo-text-dim)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', marginBottom: 10 }}>Edit Configuration</div>
@@ -774,10 +815,10 @@ function BlobStoreDetailModal({ name, onClose }: { name: string; onClose: () => 
 }
 
 // ── CreateBlobStoreModal ──────────────────────────────────────────
-function CreateBlobStoreModal({ onClose }: { onClose: () => void }) {
+function CreateBlobStoreModal({ blobStores, onClose }: { blobStores: BlobStore[]; onClose: () => void }) {
   const qc = useQueryClient()
   const [name, setName] = useState('')
-  const [type, setType] = useState<'local' | 's3'>('local')
+  const [type, setType] = useState<'local' | 's3' | 'group'>('local')
   const [path, setPath] = useState('./data/blobs/')
   const [bucket, setBucket] = useState('')
   const [region, setRegion] = useState('us-east-1')
@@ -789,17 +830,27 @@ function CreateBlobStoreModal({ onClose }: { onClose: () => void }) {
   const [err, setErr] = useState('')
   const [testResult, setTestResult] = useState<{ ok: boolean; error?: string } | null>(null)
   const [testBusy, setTestBusy] = useState(false)
+  const [groupFillPolicy, setGroupFillPolicy] = useState<'round_robin' | 'write_to_first_fill'>('round_robin')
+  const [groupMemberIds, setGroupMemberIds] = useState<string[]>([])
 
   const mut = useMutation({
     mutationFn: () => {
       const quotaBytes = quotaGB.trim() === '' ? null : Math.round(parseFloat(quotaGB) * 1024 * 1024 * 1024)
       const config: Record<string, unknown> = type === 'local'
         ? { path }
-        : { bucket, region, endpoint, prefix, access_key: accessKey, secret_key: secretKey }
+        : type === 's3'
+        ? { bucket, region, endpoint, prefix, access_key: accessKey, secret_key: secretKey }
+        : {}
+      if (type === 'group') {
+        config.fill_policy = groupFillPolicy
+        config.member_ids = groupMemberIds
+      }
       return nexusApi.createBlobStore(type, { name, config, quotaBytes })
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['blobstores'] })
+      setGroupFillPolicy('round_robin')
+      setGroupMemberIds([])
       onClose()
     },
     onError: (e: unknown) => {
@@ -815,7 +866,7 @@ function CreateBlobStoreModal({ onClose }: { onClose: () => void }) {
       const cfg: Record<string, unknown> = type === 'local'
         ? { path }
         : { bucket, region, endpoint, prefix, access_key: accessKey, secret_key: secretKey }
-      const res = await nexusApi.testBlobStore(type, cfg)
+      const res = await nexusApi.testBlobStore(type === 'group' ? 'local' : type, cfg)
       setTestResult(res.data)
     } catch {
       setTestResult({ ok: false, error: 'Request failed' })
@@ -835,16 +886,17 @@ function CreateBlobStoreModal({ onClose }: { onClose: () => void }) {
           <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--holo-text-dim)', marginBottom: 4, display: 'block' }}>Type</label>
           <Select
             value={type}
-            onChange={v => { setType(v as 'local' | 's3'); setTestResult(null) }}
-            options={[{ value: 'local', label: 'Local filesystem' }, { value: 's3', label: 'S3-compatible' }]}
+            onChange={v => { setType(v as 'local' | 's3' | 'group'); setTestResult(null) }}
+            options={[{ value: 'local', label: 'Local filesystem' }, { value: 's3', label: 'S3-compatible' }, { value: 'group', label: 'Group' }]}
           />
         </div>
-        {type === 'local' ? (
+        {type === 'local' && (
           <div>
             <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--holo-text-dim)', marginBottom: 4, display: 'block' }}>Path</label>
             <HoloInput value={path} onChange={e => setPath(e.target.value)} placeholder="./data/blobs/fast-ssd" />
           </div>
-        ) : (
+        )}
+        {type === 's3' && (
           <>
             <div>
               <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--holo-text-dim)', marginBottom: 4, display: 'block' }}>Bucket</label>
@@ -876,6 +928,47 @@ function CreateBlobStoreModal({ onClose }: { onClose: () => void }) {
             </div>
           </>
         )}
+        {type === 'group' && (
+          <div>
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ display: 'block', marginBottom: 6, color: '#94a3b8', fontSize: 13 }}>
+                Fill Policy
+              </label>
+              <div style={{ display: 'flex', gap: 16 }}>
+                {(['round_robin', 'write_to_first_fill'] as const).map(p => (
+                  <label key={p} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13, color: '#e2e8f0' }}>
+                    <input type="radio" name="groupFillPolicy" value={p}
+                      checked={groupFillPolicy === p}
+                      onChange={() => setGroupFillPolicy(p)} />
+                    {p === 'round_robin' ? 'Round Robin' : 'Write to First Fill'}
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label style={{ display: 'block', marginBottom: 6, color: '#94a3b8', fontSize: 13 }}>
+                Members (non-group stores)
+              </label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 160, overflowY: 'auto',
+                background: 'rgba(255,255,255,0.04)', borderRadius: 8, padding: 8, border: '1px solid rgba(255,255,255,0.08)' }}>
+                {blobStores.filter(s => s.type !== 'group').map(s => (
+                  <label key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, color: '#e2e8f0' }}>
+                    <input type="checkbox"
+                      checked={groupMemberIds.includes(s.id)}
+                      onChange={e => setGroupMemberIds(prev =>
+                        e.target.checked ? [...prev, s.id] : prev.filter(id => id !== s.id)
+                      )} />
+                    <span>{s.name}</span>
+                    <span style={{ color: '#64748b', fontSize: 11 }}>{s.type}</span>
+                  </label>
+                ))}
+                {blobStores.filter(s => s.type !== 'group').length === 0 && (
+                  <span style={{ color: '#64748b', fontSize: 12 }}>No non-group stores available</span>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
         <div>
           <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--holo-text-dim)', marginBottom: 4, display: 'block' }}>Quota (GB, optional)</label>
           <HoloInput type="number" min="0" step="0.1" value={quotaGB} onChange={e => setQuotaGB(e.target.value)} placeholder="Unlimited" />
@@ -897,9 +990,11 @@ function CreateBlobStoreModal({ onClose }: { onClose: () => void }) {
         )}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
           <HoloButton onClick={onClose}>Cancel</HoloButton>
-          <HoloButton onClick={handleTest} disabled={testBusy || !name.trim() || (type === 's3' && !bucket.trim())}>
-            {testBusy ? 'Testing…' : 'Test Connection'}
-          </HoloButton>
+          {type !== 'group' && (
+            <HoloButton onClick={handleTest} disabled={testBusy || !name.trim() || (type === 's3' && !bucket.trim())}>
+              {testBusy ? 'Testing…' : 'Test Connection'}
+            </HoloButton>
+          )}
           <HoloButton variant="primary" disabled={!name.trim() || mut.isPending} onClick={() => { setErr(''); mut.mutate() }}>
             {mut.isPending ? 'Creating…' : 'Create'}
           </HoloButton>
