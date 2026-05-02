@@ -214,7 +214,7 @@ func (h *Handler) pushManifest(c *gin.Context, repoName, imageName, reference st
 				manifestPath(imageName, digestRef), ct,
 				base.Coords{Name: imageName, Version: digestRef},
 				res.Asset.BlobKey,
-				res.SHA256, res.SHA1, res.MD5, res.Size)
+				res.SHA256, res.SHA1, res.MD5, res.Size, "", "")
 		}
 	}
 

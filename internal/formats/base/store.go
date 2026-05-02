@@ -68,18 +68,18 @@ func StoreArtifact(ctx context.Context, d formats.Deps,
 
 	blobKey := BlobKey(repoName, filePath)
 
-	// Resolve the physical blob store for this repository.
+	// Resolve once — result passed to RegisterStoredBlob to avoid double-call.
+	// For group stores, double-call would advance the round-robin counter twice.
+	resolvedBlobStoreID, resolvedBlobStoreName, _ := resolveBlobStoreRef(ctx, d, repo)
+
 	var physStore storage.BlobStore
-	{
-		bsID, _, refErr := resolveBlobStoreRef(ctx, d, repo)
-		if refErr == nil && bsID != "" {
-			if bsMeta, getErr := d.Blobs.GetByID(ctx, bsID); getErr == nil {
-				physStore = physicalStore(ctx, d, bsMeta)
-			}
+	if resolvedBlobStoreID != "" {
+		if bsMeta, getErr := d.Blobs.GetByID(ctx, resolvedBlobStoreID); getErr == nil {
+			physStore = physicalStore(ctx, d, bsMeta)
 		}
-		if physStore == nil {
-			physStore = d.BlobStore
-		}
+	}
+	if physStore == nil {
+		physStore = d.BlobStore
 	}
 
 	// Stream → hash writers → blob store via pipe
@@ -117,7 +117,7 @@ func StoreArtifact(ctx context.Context, d formats.Deps,
 		}
 	}
 
-	asset, err := RegisterStoredBlob(ctx, d, repo, filePath, contentType, coords, blobKey, sha256sum, sha1sum, md5sum, size)
+	asset, err := RegisterStoredBlob(ctx, d, repo, filePath, contentType, coords, blobKey, sha256sum, sha1sum, md5sum, size, resolvedBlobStoreID, resolvedBlobStoreName)
 	if err != nil {
 		return nil, err
 	}
@@ -151,15 +151,21 @@ func StoreArtifact(ctx context.Context, d formats.Deps,
 }
 
 // RegisterStoredBlob upserts component + asset after a blob was written to blobKey with known checksums.
+// blobStoreID and blobStoreName may be pre-resolved by the caller to avoid calling resolveBlobStoreRef
+// twice (which would advance a round-robin group counter twice). Pass empty strings to resolve internally.
 func RegisterStoredBlob(ctx context.Context, d formats.Deps, repo *domain.Repository,
 	filePath, contentType string, coords Coords,
 	blobKey string,
 	sha256sum, sha1sum, md5sum string,
 	size int64,
+	blobStoreID, blobStoreName string,
 ) (*domain.Asset, error) {
-	blobStoreID, blobStoreName, err := resolveBlobStoreRef(ctx, d, repo)
-	if err != nil {
-		return nil, err
+	if blobStoreID == "" {
+		var err error
+		blobStoreID, blobStoreName, err = resolveBlobStoreRef(ctx, d, repo)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	version := coords.Version
