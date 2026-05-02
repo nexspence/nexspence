@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -77,6 +78,82 @@ func (h *BlobStoreHandler) Get(c *gin.Context) {
 	c.JSON(http.StatusOK, bs)
 }
 
+var validFillPolicies = map[string]bool{
+	"round_robin":         true,
+	"write_to_first_fill": true,
+}
+
+// extractMemberIDs pulls member_ids from blob store config, handling []string and []interface{}.
+func extractMemberIDs(cfg map[string]any) []string {
+	if cfg == nil {
+		return nil
+	}
+	raw := cfg["member_ids"]
+	switch v := raw.(type) {
+	case []string:
+		return v
+	case []interface{}:
+		out := make([]string, 0, len(v))
+		for _, item := range v {
+			if s, ok := item.(string); ok {
+				out = append(out, s)
+			}
+		}
+		return out
+	}
+	return nil
+}
+
+// validateGroupConfig validates config for a group blob store.
+// Returns a non-empty error string on failure.
+func (h *BlobStoreHandler) validateGroupConfig(ctx context.Context, cfg map[string]any) string {
+	if cfg == nil {
+		return "group blob store requires config with fill_policy and member_ids"
+	}
+	policy, _ := cfg["fill_policy"].(string)
+	if !validFillPolicies[policy] {
+		return "fill_policy must be 'round_robin' or 'write_to_first_fill'"
+	}
+	memberIDs := extractMemberIDs(cfg)
+	if len(memberIDs) == 0 {
+		return "group blob store must have at least one member_id"
+	}
+	for _, mid := range memberIDs {
+		m, err := h.repo.GetByID(ctx, mid)
+		if err != nil || m == nil {
+			return fmt.Sprintf("member blob store %q not found", mid)
+		}
+		if m.Type == "group" {
+			return fmt.Sprintf("member %q is itself a group — nested groups are not allowed", m.Name)
+		}
+	}
+	return ""
+}
+
+// checkNotGroupMember returns a non-empty message if the named store is referenced as a member
+// in any group blob store, to prevent orphaned groups.
+func (h *BlobStoreHandler) checkNotGroupMember(ctx context.Context, name string) string {
+	bs, err := h.repo.Get(ctx, name)
+	if err != nil || bs == nil {
+		return ""
+	}
+	all, err := h.repo.List(ctx)
+	if err != nil {
+		return ""
+	}
+	for _, g := range all {
+		if g.Type != "group" {
+			continue
+		}
+		for _, mid := range extractMemberIDs(g.Config) {
+			if mid == bs.ID {
+				return fmt.Sprintf("blob store %q is a member of group %q — remove it from the group first", name, g.Name)
+			}
+		}
+	}
+	return ""
+}
+
 // Create handles POST /service/rest/v1/blobstores/:type
 func (h *BlobStoreHandler) Create(c *gin.Context) {
 	blobType := c.Param("type")
@@ -91,6 +168,13 @@ func (h *BlobStoreHandler) Create(c *gin.Context) {
 	if bs.Name == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "name is required"})
 		return
+	}
+
+	if bs.Type == "group" {
+		if msg := h.validateGroupConfig(c.Request.Context(), bs.Config); msg != "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": msg})
+			return
+		}
 	}
 
 	if err := h.repo.Create(c.Request.Context(), &bs); err != nil {
@@ -135,6 +219,10 @@ func (h *BlobStoreHandler) Update(c *gin.Context) {
 // Delete handles DELETE /service/rest/v1/blobstores/:name
 func (h *BlobStoreHandler) Delete(c *gin.Context) {
 	name := c.Param("name")
+	if msg := h.checkNotGroupMember(c.Request.Context(), name); msg != "" {
+		c.JSON(http.StatusConflict, gin.H{"error": msg})
+		return
+	}
 	if err := h.repo.Delete(c.Request.Context(), name); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
