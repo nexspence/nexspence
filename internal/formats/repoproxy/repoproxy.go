@@ -19,6 +19,7 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/formats"
 	"github.com/nexspence-oss/nexspence/internal/formats/base"
+	"github.com/nexspence-oss/nexspence/internal/storage"
 )
 
 var UpstreamClient = &http.Client{
@@ -143,7 +144,16 @@ func ServeGET(c *gin.Context, d formats.Deps, repo *domain.Repository, repoRelat
 		return fmt.Errorf("repoproxy: asset lookup: %w", err)
 	}
 	if asset != nil {
-		rc, _, err := d.BlobStore.Get(ctx, asset.BlobKey)
+		var fetchStore storage.BlobStore
+		if asset.BlobStoreID != "" {
+			if bsMeta, getErr := d.Blobs.GetByID(ctx, asset.BlobStoreID); getErr == nil && bsMeta != nil {
+				fetchStore = base.PhysicalStore(ctx, d, bsMeta)
+			}
+		}
+		if fetchStore == nil {
+			fetchStore = d.BlobStore
+		}
+		rc, _, err := fetchStore.Get(ctx, asset.BlobKey)
 		if err != nil {
 			return fmt.Errorf("repoproxy: blob get: %w", err)
 		}

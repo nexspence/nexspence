@@ -75,7 +75,7 @@ func StoreArtifact(ctx context.Context, d formats.Deps,
 	var physStore storage.BlobStore
 	if resolvedBlobStoreID != "" {
 		if bsMeta, getErr := d.Blobs.GetByID(ctx, resolvedBlobStoreID); getErr == nil {
-			physStore = physicalStore(ctx, d, bsMeta)
+			physStore = PhysicalStore(ctx, d, bsMeta)
 		}
 	}
 	if physStore == nil {
@@ -225,7 +225,7 @@ func FetchArtifact(ctx context.Context, d formats.Deps, repoName, filePath strin
 	var fetchStore storage.BlobStore
 	if asset.BlobStoreID != "" {
 		if bsMeta, getErr := d.Blobs.GetByID(ctx, asset.BlobStoreID); getErr == nil {
-			fetchStore = physicalStore(ctx, d, bsMeta)
+			fetchStore = PhysicalStore(ctx, d, bsMeta)
 		}
 	}
 	if fetchStore == nil {
@@ -255,7 +255,7 @@ func DeleteArtifact(ctx context.Context, d formats.Deps, repoName, filePath stri
 	var delStore storage.BlobStore
 	if asset.BlobStoreID != "" {
 		if bsMeta, getErr := d.Blobs.GetByID(ctx, asset.BlobStoreID); getErr == nil {
-			delStore = physicalStore(ctx, d, bsMeta)
+			delStore = PhysicalStore(ctx, d, bsMeta)
 		}
 	}
 	if delStore == nil {
@@ -374,10 +374,10 @@ func resolveBlobStoreObj(ctx context.Context, d formats.Deps, repo *domain.Repos
 	return bs, nil
 }
 
-// physicalStore returns the physical BlobStore for the given domain blob store.
+// PhysicalStore returns the physical BlobStore for the given domain blob store.
 // If the registry is set and the descriptor is valid, it returns the cached/created instance.
 // Falls back to d.BlobStore (the global default) on any error or missing registry.
-func physicalStore(ctx context.Context, d formats.Deps, bs *domain.BlobStore) storage.BlobStore {
+func PhysicalStore(ctx context.Context, d formats.Deps, bs *domain.BlobStore) storage.BlobStore {
 	if d.Registry == nil || bs == nil {
 		return d.BlobStore
 	}
