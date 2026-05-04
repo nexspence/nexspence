@@ -32,6 +32,7 @@ var (
 	_ repository.RoutingRuleRepo     = (*RoutingRuleRepo)(nil)
 	_ repository.PrivilegeRepo          = (*PrivilegeRepo)(nil)
 	_ repository.BlobStoreMigrationRepo = (*BlobStoreMigrationRepo)(nil)
+	_ repository.ScanResultRepo         = (*ScanResultRepo)(nil)
 	_ storage.BlobStore                 = (*BlobStore)(nil)
 )
 
@@ -1397,4 +1398,73 @@ func (r *BlobStoreMigrationRepo) ListActive(_ context.Context) ([]domain.BlobSto
 		}
 	}
 	return out, nil
+}
+
+// ── ScanResultRepo ─────────────────────────────────────────────
+
+type ScanResultRepo struct {
+	mu   sync.Mutex
+	rows []*domain.ScanResultRow
+}
+
+func NewScanResultRepo() *ScanResultRepo { return &ScanResultRepo{} }
+
+func (r *ScanResultRepo) Insert(_ context.Context, row *domain.ScanResultRow) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	cp := *row
+	r.rows = append(r.rows, &cp)
+	return nil
+}
+
+func (r *ScanResultRepo) GetLatestByComponent(_ context.Context, componentID string) (*domain.ScanResultRow, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var latest *domain.ScanResultRow
+	for _, row := range r.rows {
+		if row.ComponentID == componentID {
+			if latest == nil || row.ScannedAt.After(latest.ScannedAt) {
+				cp := *row
+				latest = &cp
+			}
+		}
+	}
+	return latest, nil
+}
+
+func (r *ScanResultRepo) Aggregate(_ context.Context) (*domain.SecuritySummary, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	// latest scan per component
+	latest := map[string]*domain.ScanResultRow{}
+	for _, row := range r.rows {
+		prev, ok := latest[row.ComponentID]
+		if !ok || row.ScannedAt.After(prev.ScannedAt) {
+			cp := *row
+			latest[row.ComponentID] = &cp
+		}
+	}
+	s := &domain.SecuritySummary{ScannedTotal: len(latest)}
+	for _, row := range latest {
+		s.Critical += row.Critical
+		s.High += row.High
+		s.Medium += row.Medium
+		s.Low += row.Low
+		s.Unknown += row.Unknown
+	}
+	return s, nil
+}
+
+func (r *ScanResultRepo) List(_ context.Context, f domain.VulnFilter) ([]*domain.VulnRow, int, error) {
+	// minimal stub — returns empty; override per test if needed
+	return nil, 0, nil
+}
+
+// Rows returns all inserted rows (for assertions in tests).
+func (r *ScanResultRepo) Rows() []*domain.ScanResultRow {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	cp := make([]*domain.ScanResultRow, len(r.rows))
+	copy(cp, r.rows)
+	return cp
 }

@@ -264,3 +264,14 @@ type BlobStoreMigrationRepo interface {
 	UpdateStatus(ctx context.Context, id string, status string, errMsg *string) error
 	FinishMigration(ctx context.Context, id string, status string, errMsg *string) error
 }
+
+// ScanResultRepo manages rows in the scan_results table.
+type ScanResultRepo interface {
+	Insert(ctx context.Context, r *domain.ScanResultRow) error
+	GetLatestByComponent(ctx context.Context, componentID string) (*domain.ScanResultRow, error)
+	// Aggregate returns summed severity counts across the latest scan per component.
+	Aggregate(ctx context.Context) (*domain.SecuritySummary, error)
+	// List returns vulnerability rows with join to components+repositories, filtered by f.
+	// Returns (rows, totalCount, error).
+	List(ctx context.Context, f domain.VulnFilter) ([]*domain.VulnRow, int, error)
+}
