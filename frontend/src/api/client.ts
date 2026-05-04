@@ -44,7 +44,7 @@ export interface AuthConfig {
 
 export interface ServiceStatus {
   name: string
-  status: 'ok' | 'error' | 'disabled'
+  status: 'ok' | 'warn' | 'error' | 'disabled'
   latency_ms?: number
   detail: string
   checked_at: string

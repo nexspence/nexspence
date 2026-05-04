@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Activity, Archive, ArrowRightLeft, CheckCircle, Database, Download, HardDrive, Info, Paperclip, Pause, Pencil, Play, Plus, RefreshCw, Trash2, Upload, Wifi, X } from 'lucide-react'
+import { Activity, Archive, ArrowRightLeft, CheckCircle, Database, Download, HardDrive, Info, Network, Paperclip, Pause, Pencil, Play, Plus, RefreshCw, Trash2, Upload, Wifi, X } from 'lucide-react'
 import { nexusApi, nexspenceApi, ImportRepoStats, ServiceStatus } from '@/api/client'
 import { MonitoringView } from '@/pages/MonitoringPage'
 import { Select } from '@/components/Select'
@@ -254,13 +254,13 @@ export default function AdminPage() {
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {services.map(svc => {
-                const color = svc.status === 'ok' ? 'var(--holo-green)' : svc.status === 'error' ? 'var(--holo-red)' : 'rgba(255,255,255,0.25)'
-                const glow  = svc.status === 'ok' ? '0 0 5px var(--holo-green)' : svc.status === 'error' ? '0 0 5px var(--holo-red)' : 'none'
+                const color = svc.status === 'ok' ? 'var(--holo-green)' : svc.status === 'error' ? 'var(--holo-red)' : svc.status === 'warn' ? 'var(--holo-amber)' : 'rgba(255,255,255,0.25)'
+                const glow  = svc.status === 'ok' ? '0 0 5px var(--holo-green)' : svc.status === 'error' ? '0 0 5px var(--holo-red)' : svc.status === 'warn' ? '0 0 5px var(--holo-amber)' : 'none'
                 return (
                   <div key={svc.name} style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto', alignItems: 'center', gap: 12, padding: '10px 12px', background: 'rgba(255,255,255,0.03)', borderRadius: 8, border: '1px solid rgba(255,255,255,0.06)' }}>
                     <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                       <span style={{ width: 7, height: 7, borderRadius: '50%', background: color, boxShadow: glow, flexShrink: 0, display: 'inline-block' }} />
-                      <span style={{ fontSize: 10, fontWeight: 700, color, whiteSpace: 'nowrap' as const }}>{svc.status === 'ok' ? 'OK' : svc.status === 'error' ? 'ERROR' : 'UNKNOWN'}</span>
+                      <span style={{ fontSize: 10, fontWeight: 700, color, whiteSpace: 'nowrap' as const }}>{svc.status === 'ok' ? 'OK' : svc.status === 'error' ? 'ERROR' : svc.status === 'warn' ? 'WARN' : 'DISABLED'}</span>
                     </span>
                     <div style={{ minWidth: 0 }}>
                       <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--holo-text)', display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -281,6 +281,42 @@ export default function AdminPage() {
             </div>
           )}
         </HoloCard>
+
+        {/* Docker Subdomain Connector */}
+        {(() => {
+          const connector = services?.find(s => s.name === 'Docker Subdomain Connector')
+          if (!connector) return null
+          const statusColor =
+            connector.status === 'ok'       ? 'var(--holo-green)'    :
+            connector.status === 'warn'     ? 'var(--holo-amber)'    :
+            connector.status === 'disabled' ? 'var(--holo-text-dim)' :
+                                              'var(--holo-red)'
+          const statusLabel =
+            connector.status === 'ok'       ? 'ACTIVE'   :
+            connector.status === 'warn'     ? 'WARN'     :
+            connector.status === 'disabled' ? 'DISABLED' : 'ERROR'
+          const baseDomain = connector.detail.match(/\*\.([^\s]+)/)?.[1]
+          return (
+            <HoloCard>
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--holo-text-dim)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Network size={14} style={{ color: 'var(--holo-primary)' }} />
+                Docker Subdomain Connector
+                <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, color: statusColor }}>{statusLabel}</span>
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--holo-text-dim)', lineHeight: 1.6 }}>{connector.detail}</div>
+              {connector.status === 'ok' && baseDomain && (
+                <div style={{ marginTop: 12, padding: '8px 12px', background: 'rgba(59,130,246,0.08)', borderRadius: 8, fontFamily: 'monospace', fontSize: 11, color: 'var(--holo-text)' }}>
+                  docker pull <span style={{ color: 'var(--holo-primary)' }}>&lt;repo&gt;</span>.{baseDomain}/<span style={{ color: 'var(--holo-primary)' }}>image:tag</span>
+                </div>
+              )}
+              {connector.status === 'disabled' && (
+                <div style={{ marginTop: 10, fontSize: 11, color: 'var(--holo-text-dim)' }}>
+                  Set <code style={{ background: 'rgba(255,255,255,0.06)', padding: '1px 4px', borderRadius: 3 }}>docker.subdomain_connector.enabled: true</code> in <code style={{ background: 'rgba(255,255,255,0.06)', padding: '1px 4px', borderRadius: 3 }}>config.yaml</code>
+                </div>
+              )}
+            </HoloCard>
+          )
+        })()}
         </div>
       )}
 
