@@ -153,6 +153,10 @@ func (h *Handler) serveWrite(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "writable member not found: " + targetName})
 		return
 	}
+	if targetRepo.Type != domain.TypeHosted || !targetRepo.Online || string(targetRepo.Format) != string(repoDef.Format) {
+		c.JSON(http.StatusConflict, gin.H{"error": "writable_member is not an online hosted repository matching group format"})
+		return
+	}
 
 	handler, ok := h.formatRegistry[string(targetRepo.Format)]
 	if !ok {

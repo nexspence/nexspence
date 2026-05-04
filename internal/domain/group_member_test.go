@@ -27,6 +27,7 @@ func TestGroupMemberNames(t *testing.T) {
 }
 
 func TestGroupWritableMember(t *testing.T) {
+	t.Parallel()
 	r := &Repository{
 		FormatConfig: map[string]any{"writable_member": "hosted1"},
 	}
