@@ -587,6 +587,7 @@ function VulnDashTab() {
   const [repoFilter, setRepoFilter] = useState('')
   const [severityFilter, setSeverityFilter] = useState('')
   const [scanning, setScanning] = useState(false)
+  const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
   const LIMIT = 50
@@ -598,9 +599,10 @@ function VulnDashTab() {
     } catch { /* ignore */ }
   }
 
-  async function loadVulns(reset = false) {
-    const newOffset = reset ? 0 : offset
+  async function loadVulns(reset = false, explicitOffset?: number) {
+    const newOffset = reset ? 0 : (explicitOffset ?? offset)
     if (reset) setOffset(0)
+    setLoading(true)
     try {
       const params: Record<string, string | number> = { limit: LIMIT, offset: newOffset }
       if (repoFilter) params.repo = repoFilter
@@ -610,6 +612,8 @@ function VulnDashTab() {
       setTotal(res.data.total)
     } catch (e: unknown) {
       if (axios.isAxiosError(e)) setError(e.response?.data?.error ?? e.message)
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -688,7 +692,9 @@ function VulnDashTab() {
       )}
 
       {/* Vulnerabilities table */}
-      {items.length === 0 ? (
+      {loading && items.length === 0 ? (
+        <div style={emptyStyle}>Loading…</div>
+      ) : items.length === 0 ? (
         <div style={emptyStyle}>No vulnerabilities found — run a scan to populate this view</div>
       ) : (
         <HoloCard>
@@ -710,8 +716,8 @@ function VulnDashTab() {
               </tr>
             </thead>
             <tbody>
-              {items.map((row, i) => (
-                <tr key={row.componentId + i} style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+              {items.map((row) => (
+                <tr key={row.componentId} style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
                   <td style={{ padding: '8px 8px 8px 0', color: 'var(--holo-a)' }}>{row.repoName}</td>
                   <td style={{ padding: '8px 8px 8px 0', color: 'var(--holo-text-dim)' }}>{row.format}</td>
                   <td style={{ padding: '8px 8px 8px 0', color: 'var(--holo-text)' }}>{row.name}</td>
@@ -729,8 +735,8 @@ function VulnDashTab() {
           </table>
           {items.length < total && (
             <div style={{ marginTop: 12, textAlign: 'center' as const }}>
-              <HoloButton onClick={() => { const next = offset + LIMIT; setOffset(next); loadVulns() }}>
-                Load more
+              <HoloButton disabled={loading} onClick={() => { const next = items.length; setOffset(next); loadVulns(false, next) }}>
+                {loading ? 'Loading…' : 'Load more'}
               </HoloButton>
             </div>
           )}
