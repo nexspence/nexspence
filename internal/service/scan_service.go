@@ -201,6 +201,7 @@ func (s *ScanService) Scan(ctx context.Context, componentID, imageRef string) (*
 			result.Status = domain.ScanStatusFailed
 			result.Error = truncateScanError(msg)
 			_ = s.persistResult(ctx, comp, result)
+			s.persistScanRow(ctx, comp, result, "trivy")
 			return result, nil
 		}
 	}
