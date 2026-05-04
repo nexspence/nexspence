@@ -114,16 +114,85 @@ func TestGroup_AllMissing_Returns404(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
-func TestGroup_PUT_Returns405(t *testing.T) {
-	m := testutil.SimpleRepo("m-ro", "raw")
-	grp := makeGroupRepo("grp-ro", "m-ro")
-	r := buildEngine(m, grp)
+// TestGroup_PUT_Returns405_ProxyOnly: group with no hosted members → 405
+func TestGroup_PUT_Returns405_ProxyOnly(t *testing.T) {
+	proxy := &domain.Repository{
+		ID: "repo-px", Name: "px-only", Format: "raw",
+		Type: domain.TypeProxy, Online: true,
+	}
+	grp := makeGroupRepo("grp-proxy-only", "px-only")
+	r := buildEngine(proxy, grp)
 
-	req := httptest.NewRequest(http.MethodPut, "/repository/grp-ro/file.txt", strings.NewReader("x"))
+	req := httptest.NewRequest(http.MethodPut, "/repository/grp-proxy-only/file.txt", strings.NewReader("x"))
 	req.ContentLength = 1
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusMethodNotAllowed, w.Code)
+}
+
+// TestGroup_PUT_ForwardsToFirstHosted: PUT on group → stores artifact in first hosted member
+func TestGroup_PUT_ForwardsToFirstHosted(t *testing.T) {
+	m1 := testutil.SimpleRepo("hw1", "raw")
+	grp := makeGroupRepo("grp-write", "hw1")
+	r := buildEngine(m1, grp)
+
+	code := put(r, "grp-write", "/uploaded.txt", "via group")
+	assert.Equal(t, http.StatusCreated, code)
+
+	req := httptest.NewRequest(http.MethodGet, "/repository/hw1/uploaded.txt", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "via group", w.Body.String())
+}
+
+// TestGroup_PUT_SkipsProxyUsesHosted: first member is proxy, second is hosted
+func TestGroup_PUT_SkipsProxyUsesHosted(t *testing.T) {
+	proxy := &domain.Repository{
+		ID: "repo-px2", Name: "px2", Format: "raw",
+		Type: domain.TypeProxy, Online: true,
+	}
+	hosted := testutil.SimpleRepo("hx2", "raw")
+	grp := makeGroupRepo("grp-mixed", "px2", "hx2")
+	r := buildEngine(proxy, hosted, grp)
+
+	code := put(r, "grp-mixed", "/art.bin", "from mixed")
+	assert.Equal(t, http.StatusCreated, code)
+
+	req := httptest.NewRequest(http.MethodGet, "/repository/hx2/art.bin", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "from mixed", w.Body.String())
+}
+
+// TestGroup_PUT_UsesWritableMemberConfig: explicit writable_member overrides auto-detect
+func TestGroup_PUT_UsesWritableMemberConfig(t *testing.T) {
+	m1 := testutil.SimpleRepo("wm1", "raw")
+	m2 := testutil.SimpleRepo("wm2", "raw")
+	grp := &domain.Repository{
+		ID: "repo-grp-wm", Name: "grp-wm", Format: "raw",
+		Type: domain.TypeGroup, Online: true,
+		FormatConfig: map[string]any{
+			"member_names":    []interface{}{"wm1", "wm2"},
+			"writable_member": "wm2",
+		},
+	}
+	r := buildEngine(m1, m2, grp)
+
+	code := put(r, "grp-wm", "/targeted.txt", "to m2")
+	assert.Equal(t, http.StatusCreated, code)
+
+	req1 := httptest.NewRequest(http.MethodGet, "/repository/wm1/targeted.txt", nil)
+	w1 := httptest.NewRecorder()
+	r.ServeHTTP(w1, req1)
+	assert.Equal(t, http.StatusNotFound, w1.Code)
+
+	req2 := httptest.NewRequest(http.MethodGet, "/repository/wm2/targeted.txt", nil)
+	w2 := httptest.NewRecorder()
+	r.ServeHTTP(w2, req2)
+	assert.Equal(t, http.StatusOK, w2.Code)
+	assert.Equal(t, "to m2", w2.Body.String())
 }
 
 func TestGroup_EmptyMembers_Returns404(t *testing.T) {

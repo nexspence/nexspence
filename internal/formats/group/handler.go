@@ -2,13 +2,11 @@
 //
 // A group repository aggregates multiple hosted/proxy repositories under one URL.
 // GET/HEAD are delegated to each member's format handler in order; the first
-// non-404 response is returned (so hosted, proxy cache-miss upstream fetch, and
-// generated metadata all work).
+// non-404 response is returned.
 //
-// Members are stored in repo.FormatConfig["member_names"] as []interface{} (JSON array of strings).
-//
-// Mutations (PUT/POST/DELETE/PATCH) are rejected — group repos are read-only.
-// Publishing must go directly to a hosted member.
+// PUT/POST/PATCH are forwarded to the first hosted member (or the member named
+// by formatConfig["writable_member"] if set). Groups with no hosted members
+// return 405.
 package group
 
 import (
@@ -23,8 +21,6 @@ import (
 )
 
 // Handler implements the group repository type.
-// It holds a reference to the format registry and repository store so it can
-// fan-out to member repos at request time.
 type Handler struct {
 	deps           formats.Deps
 	formatRegistry map[string]formats.FormatHandler
@@ -41,6 +37,8 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 	switch c.Request.Method {
 	case http.MethodGet, http.MethodHead:
 		h.serveGet(c)
+	case http.MethodPut, http.MethodPost, http.MethodPatch:
+		h.serveWrite(c)
 	default:
 		c.JSON(http.StatusMethodNotAllowed, gin.H{
 			"error": "group repository is read-only — publish to a member hosted repository",
@@ -53,7 +51,6 @@ func (h *Handler) serveGet(c *gin.Context) {
 	filePath := c.Param("path")
 	ctx := c.Request.Context()
 
-	// Load the group repo definition to get member list.
 	repoDef, err := h.deps.Repos.Get(ctx, repoName)
 	if err != nil || repoDef == nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "group repository not found: " + repoName})
@@ -66,7 +63,6 @@ func (h *Handler) serveGet(c *gin.Context) {
 		return
 	}
 
-	// Fan-out: delegate to each member's format handler until one returns not-404.
 	for _, memberName := range members {
 		memberRepo, err := h.deps.Repos.Get(ctx, memberName)
 		if err != nil || memberRepo == nil || !memberRepo.Online {
@@ -119,3 +115,73 @@ func (h *Handler) serveGet(c *gin.Context) {
 	})
 }
 
+func (h *Handler) serveWrite(c *gin.Context) {
+	repoName := c.Param("repoName")
+	filePath := c.Param("path")
+	ctx := c.Request.Context()
+
+	repoDef, err := h.deps.Repos.Get(ctx, repoName)
+	if err != nil || repoDef == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "group repository not found: " + repoName})
+		return
+	}
+
+	// Resolve writable member: explicit config wins, then first TypeHosted member.
+	targetName := domain.GroupWritableMember(repoDef)
+	if targetName == "" {
+		for _, memberName := range domain.GroupMemberNames(repoDef) {
+			memberRepo, err := h.deps.Repos.Get(ctx, memberName)
+			if err != nil || memberRepo == nil || !memberRepo.Online {
+				continue
+			}
+			if memberRepo.Type == domain.TypeHosted && string(memberRepo.Format) == string(repoDef.Format) {
+				targetName = memberName
+				break
+			}
+		}
+	}
+
+	if targetName == "" {
+		c.JSON(http.StatusMethodNotAllowed, gin.H{
+			"error": "group repository has no hosted member — publish directly to a hosted repository",
+		})
+		return
+	}
+
+	targetRepo, err := h.deps.Repos.Get(ctx, targetName)
+	if err != nil || targetRepo == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "writable member not found: " + targetName})
+		return
+	}
+
+	handler, ok := h.formatRegistry[string(targetRepo.Format)]
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "no handler for format: " + string(targetRepo.Format)})
+		return
+	}
+
+	rec := httptest.NewRecorder()
+	sub, _ := gin.CreateTestContext(rec)
+	sub.Request = c.Request.Clone(ctx)
+	sub.Params = gin.Params{
+		{Key: "repoName", Value: targetName},
+		{Key: "path", Value: filePath},
+	}
+
+	handler.ServeHTTP(sub)
+	sub.Writer.WriteHeaderNow() // flush buffered status to rec.Code
+
+	code := rec.Code
+	if code == 0 {
+		code = http.StatusOK
+	}
+	for k, vals := range rec.Header() {
+		for _, v := range vals {
+			c.Writer.Header().Add(k, v)
+		}
+	}
+	c.Status(code)
+	if rec.Body.Len() > 0 {
+		_, _ = io.Copy(c.Writer, rec.Body)
+	}
+}
