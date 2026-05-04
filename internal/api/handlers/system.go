@@ -72,6 +72,30 @@ func (h *SystemHandler) Services(c *gin.Context) {
 		})
 	}
 
+	// Docker Subdomain Connector status.
+	checks = append(checks, func(_ context.Context) ServiceStatus {
+		sc := h.cfg.Docker.SubdomainConnector
+		if !sc.Enabled {
+			return ServiceStatus{
+				Name:   "Docker Subdomain Connector",
+				Status: "disabled",
+				Detail: "set docker.subdomain_connector.enabled=true to activate",
+			}
+		}
+		if sc.BaseDomain == "" {
+			return ServiceStatus{
+				Name:   "Docker Subdomain Connector",
+				Status: "warn",
+				Detail: "enabled but docker.subdomain_connector.base_domain is empty",
+			}
+		}
+		return ServiceStatus{
+			Name:   "Docker Subdomain Connector",
+			Status: "ok",
+			Detail: "*." + sc.BaseDomain + " → docker pull <repo>." + sc.BaseDomain + "/<image>:<tag>",
+		}
+	})
+
 	// Add one check per unique S3 endpoint found in blob_stores table.
 	if h.blobStores != nil {
 		if stores, err := h.blobStores.List(ctx); err == nil {
