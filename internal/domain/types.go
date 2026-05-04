@@ -208,6 +208,57 @@ type CVEFinding struct {
 	Title        string `json:"title,omitempty"`
 }
 
+// ScanResultRow is a single scan run stored in the scan_results table.
+type ScanResultRow struct {
+	ID          string
+	ComponentID string
+	Scanner     string     // "trivy" | "osv"
+	Status      ScanStatus
+	Critical    int
+	High        int
+	Medium      int
+	Low         int
+	Unknown     int
+	Total       int
+	ScannedAt   time.Time
+	Raw         map[string]any
+	Error       string
+}
+
+// SecuritySummary is an aggregate across all scan_results rows.
+type SecuritySummary struct {
+	Critical     int `json:"critical"`
+	High         int `json:"high"`
+	Medium       int `json:"medium"`
+	Low          int `json:"low"`
+	Unknown      int `json:"unknown"`
+	ScannedTotal int `json:"scanned_total"` // distinct components with at least one scan
+}
+
+// VulnRow is one row in the vulnerability dashboard table, joining scan_results + components + repositories.
+type VulnRow struct {
+	RepoName    string    `json:"repoName"`
+	Format      string    `json:"format"`
+	ComponentID string    `json:"componentId"`
+	Name        string    `json:"name"`
+	Version     string    `json:"version"`
+	Critical    int       `json:"critical"`
+	High        int       `json:"high"`
+	Medium      int       `json:"medium"`
+	Low         int       `json:"low"`
+	Unknown     int       `json:"unknown"`
+	ScannedAt   time.Time `json:"scannedAt"`
+}
+
+// VulnFilter controls which rows ListVulnerabilities returns.
+type VulnFilter struct {
+	Repo     string // filter by repository name; empty = all
+	Severity string // minimum severity: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW"; empty = all
+	Format   string // filter by format; empty = all
+	Limit    int
+	Offset   int
+}
+
 // ── Component ────────────────────────────────────────────────
 
 type Component struct {
