@@ -25,3 +25,15 @@ func TestGroupMemberNames(t *testing.T) {
 	require.Nil(t, GroupMemberNames(nil))
 	require.Nil(t, GroupMemberNames(&Repository{}))
 }
+
+func TestGroupWritableMember(t *testing.T) {
+	r := &Repository{
+		FormatConfig: map[string]any{"writable_member": "hosted1"},
+	}
+	require.Equal(t, "hosted1", GroupWritableMember(r))
+
+	r2 := &Repository{FormatConfig: map[string]any{}}
+	require.Equal(t, "", GroupWritableMember(r2))
+
+	require.Equal(t, "", GroupWritableMember(nil))
+}

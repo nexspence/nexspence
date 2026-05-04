@@ -73,6 +73,16 @@ func GroupMemberNames(r *Repository) []string {
 	}
 }
 
+// GroupWritableMember returns the explicitly configured writable member name
+// from formatConfig["writable_member"], or empty string if not set (auto-detect).
+func GroupWritableMember(r *Repository) string {
+	if r == nil || r.FormatConfig == nil {
+		return ""
+	}
+	v, _ := r.FormatConfig["writable_member"].(string)
+	return v
+}
+
 // ── Webhook ──────────────────────────────────────────────────
 
 type WebhookEvent string
