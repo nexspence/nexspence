@@ -544,12 +544,6 @@ func serveDockerV2(
 		}
 
 		if repoDef.Type == domain.TypeGroup {
-			if c.Request.Method != http.MethodGet && c.Request.Method != http.MethodHead {
-				c.JSON(http.StatusMethodNotAllowed, gin.H{
-					"error": "group repository is read-only — publish to a member hosted repository",
-				})
-				return
-			}
 			if string(repoDef.Format) != "docker" {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "repository is not a docker registry"})
 				return
