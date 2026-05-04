@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
@@ -58,6 +61,9 @@ func TestScanService_NonDocker(t *testing.T) {
 	_, err := svc.Scan(context.Background(), comp.ID, "")
 	if err == nil {
 		t.Fatal("expected error for non-docker format")
+	}
+	if !strings.Contains(err.Error(), "not supported for format") {
+		t.Errorf("unexpected error message: %v", err)
 	}
 }
 
@@ -155,4 +161,115 @@ func TestScanService_GetResult_AfterPersist(t *testing.T) {
 // via the service package's test-visible wrapper.
 func exportParseTrivyJSON(data []byte) ([]domain.CVEFinding, domain.ScanSummary) {
 	return service.ParseTrivyJSONForTest(data)
+}
+
+func TestScanService_WithScanResults_InsertsCalled(t *testing.T) {
+	t.Parallel()
+	comp := &domain.Component{
+		Repository: "npmhosted",
+		Format:     "npm",
+		Name:       "lodash",
+		Version:    "4.17.20",
+	}
+	comps := testutil.NewComponentRepo()
+	comps.Create(context.Background(), comp)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{
+			"vulns": []map[string]any{
+				{"id": "CVE-2021-9999", "aliases": []string{"CVE-2021-9999"}, "summary": "Prototype pollution",
+					"database_specific": map[string]any{"severity": "HIGH"}},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	scanRepo := testutil.NewScanResultRepo()
+	svc := service.NewScanService(comps, "")
+	svc.WithScanResults(scanRepo)
+	svc.OSVClient.BaseURL = srv.URL
+
+	result, err := svc.Scan(context.Background(), comp.ID, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Summary.High != 1 {
+		t.Errorf("expected High=1, got %d", result.Summary.High)
+	}
+
+	rows := scanRepo.Rows()
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 scan_results row, got %d", len(rows))
+	}
+	if rows[0].High != 1 {
+		t.Errorf("expected row.High=1, got %d", rows[0].High)
+	}
+	if rows[0].Scanner != "osv" {
+		t.Errorf("expected scanner=osv, got %q", rows[0].Scanner)
+	}
+}
+
+func TestScanService_BulkScan(t *testing.T) {
+	t.Parallel()
+	comps := testutil.NewComponentRepo()
+	comps.Create(context.Background(), &domain.Component{
+		Repository: "npm-repo", Format: "npm", Name: "pkg-a", Version: "1.0.0",
+	})
+	comps.Create(context.Background(), &domain.Component{
+		Repository: "npm-repo", Format: "npm", Name: "pkg-b", Version: "2.0.0",
+	})
+	comps.Create(context.Background(), &domain.Component{
+		Repository: "raw-repo", Format: "raw", Name: "somefile", Version: "",
+	})
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{"vulns": []any{}})
+	}))
+	defer srv.Close()
+
+	scanRepo := testutil.NewScanResultRepo()
+	svc := service.NewScanService(comps, "")
+	svc.WithScanResults(scanRepo)
+	svc.OSVClient.BaseURL = srv.URL
+
+	scanned, failed, err := svc.BulkScan(context.Background(), "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if scanned != 2 {
+		t.Errorf("expected scanned=2, got %d", scanned)
+	}
+	if failed != 1 {
+		t.Errorf("expected failed=1, got %d", failed)
+	}
+}
+
+func TestScanService_GetSummary(t *testing.T) {
+	t.Parallel()
+	scanRepo := testutil.NewScanResultRepo()
+	scanRepo.Insert(context.Background(), &domain.ScanResultRow{
+		ComponentID: "c1", Scanner: "osv", Status: domain.ScanStatusOK,
+		Critical: 2, High: 1, Total: 3,
+	})
+	scanRepo.Insert(context.Background(), &domain.ScanResultRow{
+		ComponentID: "c2", Scanner: "osv", Status: domain.ScanStatusOK,
+		High: 3, Total: 3,
+	})
+
+	svc := service.NewScanService(testutil.NewComponentRepo(), "")
+	svc.WithScanResults(scanRepo)
+
+	summary, err := svc.GetSummary(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if summary.Critical != 2 {
+		t.Errorf("expected Critical=2, got %d", summary.Critical)
+	}
+	if summary.High != 4 {
+		t.Errorf("expected High=4, got %d", summary.High)
+	}
+	if summary.ScannedTotal != 2 {
+		t.Errorf("expected ScannedTotal=2, got %d", summary.ScannedTotal)
+	}
 }

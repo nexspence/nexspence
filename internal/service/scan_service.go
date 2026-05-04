@@ -93,6 +93,8 @@ type ScanService struct {
 	HTTPBaseURL  string        // e.g. http://localhost:8081 — used to build registry pull refs for hosted images
 	TrivyBin     string        // path to trivy binary; defaults to "trivy"
 	TrivyTimeout time.Duration // per-scan wall-clock limit (0 = no extra timeout); default 10m
+	ScanResults  repository.ScanResultRepo // may be nil; if set, each scan is persisted here
+	OSVClient    *OSVClient                // used for non-Docker formats
 
 	// trivyMu serializes Trivy CLI runs. Trivy's on-disk cache (BoltDB) is not safe for concurrent
 	// processes; parallel scans caused "cache may be in use by another process: timeout".
@@ -105,7 +107,13 @@ func NewScanService(components repository.ComponentRepo, httpBaseURL string) *Sc
 		HTTPBaseURL:  strings.TrimSpace(httpBaseURL),
 		TrivyBin:     "trivy",
 		TrivyTimeout: 10 * time.Minute,
+		OSVClient:    NewOSVClient(),
 	}
+}
+
+func (s *ScanService) WithScanResults(repo repository.ScanResultRepo) *ScanService {
+	s.ScanResults = repo
+	return s
 }
 
 // Scan runs trivy against imageRef, persists the result in component.Extra["scan_result"],
@@ -118,8 +126,13 @@ func (s *ScanService) Scan(ctx context.Context, componentID, imageRef string) (*
 	if comp == nil {
 		return nil, fmt.Errorf("component %s not found", componentID)
 	}
-	if !strings.EqualFold(comp.Format, "docker") {
-		return nil, fmt.Errorf("vulnerability scanning is only supported for docker format (got %s)", comp.Format)
+	switch strings.ToLower(comp.Format) {
+	case "docker":
+		// falls through to Trivy path below
+	case "maven", "npm", "pypi", "cargo":
+		return s.scanOSV(ctx, comp)
+	default:
+		return nil, fmt.Errorf("vulnerability scanning is not supported for format %q", comp.Format)
 	}
 
 	ref := strings.TrimSpace(imageRef)
@@ -196,6 +209,7 @@ func (s *ScanService) Scan(ctx context.Context, componentID, imageRef string) (*
 	result.Status = domain.ScanStatusOK
 
 	_ = s.persistResult(ctx, comp, result)
+	s.persistScanRow(ctx, comp, result, "trivy")
 	return result, nil
 }
 
@@ -228,6 +242,106 @@ func (s *ScanService) persistResult(ctx context.Context, comp *domain.Component,
 	var raw map[string]any
 	_ = json.Unmarshal(b, &raw)
 	return s.Components.UpdateExtra(ctx, comp.ID, map[string]any{"scan_result": raw})
+}
+
+func (s *ScanService) scanOSV(ctx context.Context, comp *domain.Component) (*domain.ScanResult, error) {
+	ecosystem := FormatToEcosystem(comp.Format)
+	if ecosystem == "" {
+		return nil, fmt.Errorf("format %q not supported for scanning", comp.Format)
+	}
+
+	result := &domain.ScanResult{
+		ScannedAt: time.Now().UTC(),
+		Status:    domain.ScanStatusOK,
+	}
+
+	vulns, err := s.OSVClient.Query(ctx, comp.Name, comp.Version, ecosystem)
+	if err != nil {
+		result.Status = domain.ScanStatusFailed
+		result.Error = err.Error()
+		_ = s.persistResult(ctx, comp, result)
+		s.persistScanRow(ctx, comp, result, "osv")
+		return result, nil
+	}
+
+	var findings []domain.CVEFinding
+	var summary domain.ScanSummary
+	for _, v := range vulns {
+		findings = append(findings, domain.CVEFinding{
+			ID:       v.ID,
+			Severity: v.Severity,
+			Title:    v.Summary,
+		})
+		switch v.Severity {
+		case "CRITICAL":
+			summary.Critical++
+		case "HIGH":
+			summary.High++
+		case "MEDIUM":
+			summary.Medium++
+		case "LOW":
+			summary.Low++
+		default:
+			summary.Unknown++
+		}
+		summary.Total++
+	}
+	result.Findings = findings
+	result.Summary = summary
+
+	_ = s.persistResult(ctx, comp, result)
+	s.persistScanRow(ctx, comp, result, "osv")
+	return result, nil
+}
+
+func (s *ScanService) persistScanRow(ctx context.Context, comp *domain.Component, result *domain.ScanResult, scanner string) {
+	if s.ScanResults == nil {
+		return
+	}
+	row := &domain.ScanResultRow{
+		ComponentID: comp.ID,
+		Scanner:     scanner,
+		Status:      result.Status,
+		Critical:    result.Summary.Critical,
+		High:        result.Summary.High,
+		Medium:      result.Summary.Medium,
+		Low:         result.Summary.Low,
+		Unknown:     result.Summary.Unknown,
+		Total:       result.Summary.Total,
+		ScannedAt:   result.ScannedAt,
+		Error:       result.Error,
+	}
+	_ = s.ScanResults.Insert(ctx, row)
+}
+
+func (s *ScanService) BulkScan(ctx context.Context, repoName string) (scanned int, failed int, err error) {
+	page, err := s.Components.Search(ctx, domain.SearchParams{Repository: repoName, Limit: 10000})
+	if err != nil {
+		return 0, 0, err
+	}
+	for _, comp := range page.Items {
+		_, scanErr := s.Scan(ctx, comp.ID, "")
+		if scanErr != nil {
+			failed++
+		} else {
+			scanned++
+		}
+	}
+	return scanned, failed, nil
+}
+
+func (s *ScanService) GetSummary(ctx context.Context) (*domain.SecuritySummary, error) {
+	if s.ScanResults == nil {
+		return &domain.SecuritySummary{}, nil
+	}
+	return s.ScanResults.Aggregate(ctx)
+}
+
+func (s *ScanService) ListVulnerabilities(ctx context.Context, f domain.VulnFilter) ([]*domain.VulnRow, int, error) {
+	if s.ScanResults == nil {
+		return nil, 0, nil
+	}
+	return s.ScanResults.List(ctx, f)
 }
 
 // ── Trivy JSON parsing ────────────────────────────────────────
