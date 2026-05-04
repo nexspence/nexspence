@@ -21,6 +21,7 @@ type Config struct {
 	Search    SearchConfig    `mapstructure:"search"`
 	Cleanup   CleanupConfig   `mapstructure:"cleanup"`
 	Audit     AuditConfig     `mapstructure:"audit"`
+	Docker    DockerConfig    `mapstructure:"docker"`
 }
 
 type BootstrapConfig struct {
@@ -196,6 +197,15 @@ type AuditConfig struct {
 	LookaheadMonths  int           `mapstructure:"lookahead_months"`
 }
 
+type DockerConfig struct {
+	SubdomainConnector SubdomainConnectorConfig `mapstructure:"subdomain_connector"`
+}
+
+type SubdomainConnectorConfig struct {
+	Enabled    bool   `mapstructure:"enabled"`
+	BaseDomain string `mapstructure:"base_domain"`
+}
+
 func Load(path string) (*Config, error) {
 	v := viper.New()
 
@@ -223,6 +233,8 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("audit.soft_cap", int64(1_000_000))
 	v.SetDefault("audit.rotation_interval", "24h")
 	v.SetDefault("audit.lookahead_months", 2)
+	v.SetDefault("docker.subdomain_connector.enabled", false)
+	v.SetDefault("docker.subdomain_connector.base_domain", "")
 	v.SetDefault("oidc.enabled", false)
 	v.SetDefault("oidc.display_name", "SSO")
 	v.SetDefault("oidc.public_issuer_url", "")
