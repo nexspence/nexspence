@@ -22,6 +22,9 @@ func buildScanRouter(svc *service.ScanService) *gin.Engine {
 	h := handlers.NewScanHandler(svc)
 	r.POST("/api/v1/components/:id/scan", h.Scan)
 	r.GET("/api/v1/components/:id/scan", h.GetScanResult)
+	r.GET("/api/v1/security/summary", h.Summary)
+	r.GET("/api/v1/security/vulnerabilities", h.Vulnerabilities)
+	r.POST("/api/v1/security/scan/bulk", h.BulkScanHandler)
 	return r
 }
 
@@ -160,5 +163,109 @@ func TestScanHandler_GetResult_NoScan(t *testing.T) {
 
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("want 204 got %d body=%s", w.Code, w.Body.String())
+	}
+}
+
+// TestScanHandler_Summary verifies GET /api/v1/security/summary returns 200 with aggregated counts.
+func TestScanHandler_Summary(t *testing.T) {
+	t.Parallel()
+	comps := testutil.NewComponentRepo()
+	scanResults := testutil.NewScanResultRepo()
+
+	// Seed one row so Aggregate returns something non-zero.
+	_ = scanResults.Insert(context.Background(), &domain.ScanResultRow{
+		ComponentID: "comp-1", Scanner: "osv", Status: domain.ScanStatusOK,
+		Critical: 2, High: 1, Total: 3,
+	})
+
+	svc := service.NewScanService(comps, "").WithScanResults(scanResults)
+	r := buildScanRouter(svc)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/security/summary", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200 got %d body=%s", w.Code, w.Body.String())
+	}
+	var s domain.SecuritySummary
+	if err := json.Unmarshal(w.Body.Bytes(), &s); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if s.ScannedTotal != 1 {
+		t.Errorf("want scanned_total=1 got %d", s.ScannedTotal)
+	}
+	if s.Critical != 2 || s.High != 1 {
+		t.Errorf("unexpected severity counts: %+v", s)
+	}
+}
+
+// TestScanHandler_Vulnerabilities verifies GET /api/v1/security/vulnerabilities returns 200 with items+total.
+func TestScanHandler_Vulnerabilities(t *testing.T) {
+	t.Parallel()
+	comps := testutil.NewComponentRepo()
+	scanResults := testutil.NewScanResultRepo()
+
+	_ = scanResults.Insert(context.Background(), &domain.ScanResultRow{
+		ComponentID: "comp-2", Scanner: "trivy", Status: domain.ScanStatusOK,
+		High: 3, Total: 3,
+	})
+
+	svc := service.NewScanService(comps, "").WithScanResults(scanResults)
+	r := buildScanRouter(svc)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/security/vulnerabilities?limit=10&offset=0", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200 got %d body=%s", w.Code, w.Body.String())
+	}
+	var body struct {
+		Items []*domain.VulnRow `json:"items"`
+		Total int               `json:"total"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	// items is always a non-nil JSON array (never null)
+	if body.Items == nil {
+		t.Error("want items array, got null")
+	}
+}
+
+// TestScanHandler_BulkScan verifies POST /api/v1/security/scan/bulk returns 200 with scanned/failed counts.
+func TestScanHandler_BulkScan(t *testing.T) {
+	t.Parallel()
+	comps := testutil.NewComponentRepo()
+	// One maven component — scanOSV will be called but OSVClient is real; it will fail on network.
+	// We just want to confirm the handler parses the response shape correctly even with all failed.
+	comp := &domain.Component{Format: "maven", Name: "junit", Version: "4.13.2", Repository: "maven-releases"}
+	comps.Create(context.Background(), comp)
+
+	svc := service.NewScanService(comps, "")
+	// Point OSVClient at a non-existent host so the scan fails fast.
+	svc.OSVClient.BaseURL = "http://127.0.0.1:0"
+	r := buildScanRouter(svc)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/security/scan/bulk",
+		strings.NewReader(`{"repo":"maven-releases"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200 got %d body=%s", w.Code, w.Body.String())
+	}
+	var body struct {
+		Scanned int `json:"scanned"`
+		Failed  int `json:"failed"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	// Network call fails → scanned=0, failed=1
+	if body.Scanned+body.Failed != 1 {
+		t.Errorf("want scanned+failed=1 got scanned=%d failed=%d", body.Scanned, body.Failed)
 	}
 }
