@@ -58,7 +58,10 @@ func (c *OSVClient) Query(ctx context.Context, name, version, ecosystem string) 
 	req.Package.Ecosystem = ecosystem
 	req.Version = version
 
-	body, _ := json.Marshal(req)
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("osv: marshal request: %w", err)
+	}
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/v1/query", bytes.NewReader(body))
 	if err != nil {
 		return nil, err
