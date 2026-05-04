@@ -3,8 +3,10 @@ package postgres
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nexspence-oss/nexspence/internal/domain"
 )
@@ -45,6 +47,9 @@ func (r *scanResultRepo) GetLatestByComponent(ctx context.Context, componentID s
 		&row.ScannedAt, &raw, &row.Error,
 	)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
 		return nil, err
 	}
 	row.Status = domain.ScanStatus(st)
