@@ -402,5 +402,6 @@ migration_jobs      — source_url, status, progress JSONB
 routing_rules       — name, mode (ALLOW|BLOCK), matchers[]
 content_selectors   — name, expression (CEL)
 webhooks            — name, url, events[], secret, active
+scan_results        — component_id, scanner (trivy|osv), status, critical/high/medium/low/unknown/total counts, scanned_at, raw JSONB, error
 ldap_servers        — host, port, bind_dn, search_base, group_map JSONB
 ```

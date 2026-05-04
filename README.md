@@ -369,7 +369,7 @@ MinIO console: http://localhost:9001 (`minioadmin` / `minioadmin`)
 - **Browse UI** — tree view for raw and Docker repositories; file details with download, copy-link, and usage examples
 - **Audit log** — every API action logged; filterable by date/user/path; NDJSON streaming export; 90-day retention
 - **Webhooks** — `artifact.published`, `artifact.deleted`, `repo.created` events; HMAC-SHA256 signatures
-- **Vulnerability scanning** — Trivy integration for Docker images; CVE results cached in component metadata
+- **Vulnerability scanning** — Trivy (Docker images) + OSV.dev (Maven/npm/PyPI/Cargo); CVE results cached in `scan_results` DB table; aggregated dashboard with bulk re-scan
 - **Dark glassmorphism UI** — sidebar collapse/expand; tabbed admin pages; wizard-style create flows
 
 ---
@@ -739,7 +739,7 @@ Full OpenAPI 3.1 spec: [`docs/api-spec.yaml`](docs/api-spec.yaml)
 | Database | PostgreSQL 16+ (pgx, goose migrations) |
 | Storage | Local filesystem · S3-compatible (AWS S3, MinIO, Ceph) |
 | Auth | JWT + bcrypt · LDAP/AD · OIDC + PKCE · API tokens |
-| Scanning | Trivy (Docker CVE) |
+| Scanning | Trivy (Docker CVE) · OSV.dev (Maven / npm / PyPI / Cargo) |
 | Container | Docker + Docker Compose |
 
 ---
@@ -756,6 +756,8 @@ Full OpenAPI 3.1 spec: [`docs/api-spec.yaml`](docs/api-spec.yaml)
 | 39 | Sidebar collapse — icon rail (260px ↔ 48px, persisted) | ✓ complete |
 | 40 | Stepped wizard — Create Repository / Migration Job / Cleanup Policy | ✓ complete |
 | 41–47 | UI polish: token expiry, transfer lists, empty states, a11y, z-index | ✓ complete |
+| 48–51 | Blob store groups, S3 routing, repo blob-store migration, group writes, Docker subdomain connector | ✓ complete |
+| 54 | Vulnerability dashboard — OSV.dev for Maven/npm/PyPI/Cargo, `scan_results` table, bulk re-scan | ✓ complete |
 | next | SBOM generation, cosign image signing, Terraform provider | planned |
 | next | Prometheus metrics endpoint, OpenTelemetry traces | planned |
 | next | `nexctl` CLI, multi-node HA, blob GC | planned |
