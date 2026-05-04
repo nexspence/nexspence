@@ -13,6 +13,30 @@ interface Role { id: string; name: string; description: string; privileges: stri
 interface CVEFinding { id: string; severity: string; pkgName: string; installedVersion: string; fixedVersion?: string; title?: string }
 interface ScanSummary { critical: number; high: number; medium: number; low: number; unknown: number; total: number }
 interface ScanResult { scannedAt: string; imageRef: string; status: string; error?: string; summary: ScanSummary; findings: CVEFinding[] }
+
+interface SecuritySummary {
+  critical: number
+  high: number
+  medium: number
+  low: number
+  unknown: number
+  scanned_total: number
+}
+
+interface VulnRow {
+  repoName: string
+  format: string
+  componentId: string
+  name: string
+  version: string
+  critical: number
+  high: number
+  medium: number
+  low: number
+  unknown: number
+  scannedAt: string
+}
+
 interface WebhookDef { id: string; name: string; url: string; events: string[]; active: boolean; secret?: string }
 interface Privilege {
   id: string
@@ -550,6 +574,167 @@ function ScanTab() {
 
       {result && result.status === 'failed' && !result.error && (
         <div style={emptyStyle}>Scan failed — no details from scanner</div>
+      )}
+    </div>
+  )
+}
+
+function VulnDashTab() {
+  const [summary, setSummary] = useState<SecuritySummary | null>(null)
+  const [items, setItems] = useState<VulnRow[]>([])
+  const [total, setTotal] = useState(0)
+  const [offset, setOffset] = useState(0)
+  const [repoFilter, setRepoFilter] = useState('')
+  const [severityFilter, setSeverityFilter] = useState('')
+  const [scanning, setScanning] = useState(false)
+  const [error, setError] = useState('')
+
+  const LIMIT = 50
+
+  async function loadSummary() {
+    try {
+      const res = await apiClient.get<SecuritySummary>('/api/v1/security/summary')
+      setSummary(res.data)
+    } catch { /* ignore */ }
+  }
+
+  async function loadVulns(reset = false) {
+    const newOffset = reset ? 0 : offset
+    if (reset) setOffset(0)
+    try {
+      const params: Record<string, string | number> = { limit: LIMIT, offset: newOffset }
+      if (repoFilter) params.repo = repoFilter
+      if (severityFilter) params.severity = severityFilter
+      const res = await apiClient.get<{ items: VulnRow[]; total: number }>('/api/v1/security/vulnerabilities', { params })
+      setItems(reset ? res.data.items : [...items, ...res.data.items])
+      setTotal(res.data.total)
+    } catch (e: unknown) {
+      if (axios.isAxiosError(e)) setError(e.response?.data?.error ?? e.message)
+    }
+  }
+
+  useEffect(() => {
+    loadSummary()
+    loadVulns(true)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [repoFilter, severityFilter])
+
+  async function rescanAll() {
+    setScanning(true)
+    setError('')
+    try {
+      const body = repoFilter ? { repo: repoFilter } : {}
+      await apiClient.post('/api/v1/security/scan/bulk', body)
+      await loadSummary()
+      await loadVulns(true)
+    } catch (e: unknown) {
+      if (axios.isAxiosError(e)) setError(e.response?.data?.error ?? e.message)
+    } finally {
+      setScanning(false)
+    }
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* Summary cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 8 }}>
+        {(['critical','high','medium','low','unknown'] as const).map(sev => (
+          <HoloCard key={sev} style={{ padding: '12px 16px', textAlign: 'center' as const }}>
+            <div style={{ fontSize: 20, fontWeight: 700, color: sevColor(sev.toUpperCase()) }}>
+              {summary ? summary[sev] : '—'}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--holo-text-dim)', marginTop: 2 }}>{sev.toUpperCase()}</div>
+          </HoloCard>
+        ))}
+        <HoloCard style={{ padding: '12px 16px', textAlign: 'center' as const }}>
+          <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--holo-text)' }}>
+            {summary ? summary.scanned_total : '—'}
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--holo-text-dim)', marginTop: 2 }}>SCANNED</div>
+        </HoloCard>
+      </div>
+
+      {/* Toolbar */}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' as const, alignItems: 'center' }}>
+        <HoloInput
+          placeholder="Filter by repo"
+          value={repoFilter}
+          onChange={e => setRepoFilter(e.target.value)}
+          style={{ flex: '1 1 160px' }}
+        />
+        <select
+          value={severityFilter}
+          onChange={e => setSeverityFilter(e.target.value)}
+          style={{
+            padding: '8px 12px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)',
+            background: 'rgba(255,255,255,0.05)', color: 'var(--holo-text)', fontSize: 13,
+          }}
+        >
+          <option value="">All severities</option>
+          {['CRITICAL','HIGH','MEDIUM','LOW'].map(s => (
+            <option key={s} value={s}>{s}</option>
+          ))}
+        </select>
+        <HoloButton variant="primary" onClick={rescanAll} disabled={scanning}>
+          {scanning ? <Loader size={14} className="spin" /> : <Shield size={14} />}
+          {scanning ? 'Scanning…' : 'Rescan All'}
+        </HoloButton>
+      </div>
+
+      {error && (
+        <div role="alert" style={{ padding: '8px 12px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, color: '#ef4444', fontSize: 13 }}>
+          {error}
+        </div>
+      )}
+
+      {/* Vulnerabilities table */}
+      {items.length === 0 ? (
+        <div style={emptyStyle}>No vulnerabilities found — run a scan to populate this view</div>
+      ) : (
+        <HoloCard>
+          <div style={{ fontSize: 12, color: 'var(--holo-text-dim)', marginBottom: 10 }}>
+            Showing {items.length} of {total}
+          </div>
+          <table className="holo-table" style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: 13 }}>
+            <thead>
+              <tr style={{ color: 'var(--holo-text-faint)', textAlign: 'left' as const }}>
+                <th style={{ padding: '0 8px 10px 0', fontWeight: 600 }}>Repo</th>
+                <th style={{ padding: '0 8px 10px 0', fontWeight: 600 }}>Format</th>
+                <th style={{ padding: '0 8px 10px 0', fontWeight: 600 }}>Component</th>
+                <th style={{ padding: '0 8px 10px 0', fontWeight: 600 }}>Version</th>
+                <th style={{ padding: '0 8px 10px 0', fontWeight: 600, color: sevColor('CRITICAL') }}>C</th>
+                <th style={{ padding: '0 8px 10px 0', fontWeight: 600, color: sevColor('HIGH') }}>H</th>
+                <th style={{ padding: '0 8px 10px 0', fontWeight: 600, color: sevColor('MEDIUM') }}>M</th>
+                <th style={{ padding: '0 8px 10px 0', fontWeight: 600, color: sevColor('LOW') }}>L</th>
+                <th style={{ padding: '0 0 10px', fontWeight: 600 }}>Scanned</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((row, i) => (
+                <tr key={row.componentId + i} style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                  <td style={{ padding: '8px 8px 8px 0', color: 'var(--holo-a)' }}>{row.repoName}</td>
+                  <td style={{ padding: '8px 8px 8px 0', color: 'var(--holo-text-dim)' }}>{row.format}</td>
+                  <td style={{ padding: '8px 8px 8px 0', color: 'var(--holo-text)' }}>{row.name}</td>
+                  <td style={{ padding: '8px 8px 8px 0', ...monoStyle, color: 'var(--holo-text-dim)' }}>{row.version}</td>
+                  <td style={{ padding: '8px 8px 8px 0', fontWeight: 700, color: row.critical > 0 ? sevColor('CRITICAL') : 'var(--holo-text-faint)' }}>{row.critical}</td>
+                  <td style={{ padding: '8px 8px 8px 0', fontWeight: row.high > 0 ? 700 : 400, color: row.high > 0 ? sevColor('HIGH') : 'var(--holo-text-faint)' }}>{row.high}</td>
+                  <td style={{ padding: '8px 8px 8px 0', color: row.medium > 0 ? sevColor('MEDIUM') : 'var(--holo-text-faint)' }}>{row.medium}</td>
+                  <td style={{ padding: '8px 8px 8px 0', color: row.low > 0 ? sevColor('LOW') : 'var(--holo-text-faint)' }}>{row.low}</td>
+                  <td style={{ padding: '8px 0', color: 'var(--holo-text-dim)', fontSize: 11 }}>
+                    {new Date(row.scannedAt).toLocaleDateString()}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {items.length < total && (
+            <div style={{ marginTop: 12, textAlign: 'center' as const }}>
+              <HoloButton onClick={() => { const next = offset + LIMIT; setOffset(next); loadVulns() }}>
+                Load more
+              </HoloButton>
+            </div>
+          )}
+        </HoloCard>
       )}
     </div>
   )
@@ -1257,7 +1442,7 @@ function ContentSelectorsTab({ admin }: { admin: boolean }) {
 }
 
 /* ─── Main page ──────────────────────────────────────────── */
-type Tab = 'roles' | 'privileges' | 'selectors' | 'users' | 'scan' | 'webhooks'
+type Tab = 'roles' | 'privileges' | 'selectors' | 'users' | 'scan' | 'vulndash' | 'webhooks'
 
 export default function SecurityPage() {
   const { isAdmin } = useAuthStore()
@@ -1274,8 +1459,9 @@ export default function SecurityPage() {
     { value: 'selectors',  label: 'Content Selectors' },
     ...(admin ? [
       { value: 'users',    label: 'Users' },
-      { value: 'scan',     label: 'CVE Scan' },
-      { value: 'webhooks', label: 'Webhooks' },
+      { value: 'scan',      label: 'CVE Scan' },
+      { value: 'vulndash',  label: 'Vulnerability Dashboard' },
+      { value: 'webhooks',  label: 'Webhooks' },
     ] : []),
   ]
 
@@ -1304,6 +1490,7 @@ export default function SecurityPage() {
         {tab === 'selectors'  && <ContentSelectorsTab admin={admin} />}
         {tab === 'users'      && admin && <UsersTab />}
         {tab === 'scan'       && admin && <ScanTab />}
+        {tab === 'vulndash'   && admin && <VulnDashTab />}
         {tab === 'webhooks'   && admin && <WebhooksTab />}
       </div>
     </div>
