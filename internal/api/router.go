@@ -505,6 +505,9 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 		ui(c)
 	})
 
+	if cfg.Docker.SubdomainConnector.Enabled && cfg.Docker.SubdomainConnector.BaseDomain != "" {
+		return NewSubdomainRewriter(r, cfg.Docker.SubdomainConnector.BaseDomain)
+	}
 	return r
 }
 
