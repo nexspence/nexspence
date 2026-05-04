@@ -15,8 +15,7 @@ CREATE TABLE scan_results (
     error        TEXT
 );
 
-CREATE INDEX ON scan_results (component_id);
-CREATE INDEX ON scan_results (scanned_at DESC);
+CREATE INDEX idx_scan_results_component_scanned ON scan_results (component_id, scanned_at DESC);
 
 -- +goose Down
 DROP TABLE IF EXISTS scan_results;
