@@ -148,8 +148,10 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 	browseH    := handlers.NewBrowseHandler(repoRepo, componentRepo, assetRepo, blobRepo, localBlob, rbacSvc)
 	cleanupH   := handlers.NewCleanupHandler(cleanupRepo, repoRepo, cleanupSvc)
 	auditH     := handlers.NewAuditHandler(auditRepo)
-	scanSvc    := service.NewScanService(componentRepo, cfg.HTTP.BaseURL)
-	scanH      := handlers.NewScanHandler(scanSvc)
+	scanResultRepo := postgres.NewScanResultRepo(pool)
+	scanSvc        := service.NewScanService(componentRepo, cfg.HTTP.BaseURL)
+	scanSvc.WithScanResults(scanResultRepo)
+	scanH          := handlers.NewScanHandler(scanSvc)
 	tokenH     := handlers.NewTokenHandler(tokenSvc, userSvc, cfg.Auth.TokenMaxDays)
 	webhookH   := handlers.NewWebhookHandler(webhookSvc)
 	roleH      := handlers.NewRoleHandler(roleRepo, userRepo)
@@ -382,6 +384,11 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 
 		// ── Vulnerability scan (trigger) ──────────────────────
 		admin.POST("/api/v1/components/:id/scan", scanH.Scan)
+
+		// ── Vulnerability dashboard ────────────────────────────
+		admin.GET("/api/v1/security/summary",         scanH.Summary)
+		admin.GET("/api/v1/security/vulnerabilities", scanH.Vulnerabilities)
+		admin.POST("/api/v1/security/scan/bulk",      scanH.BulkScanHandler)
 
 		// ── System ────────────────────────────────────────────
 		admin.GET("/service/rest/v1/tasks", stubHandler("tasks"))
