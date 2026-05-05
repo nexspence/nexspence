@@ -97,6 +97,18 @@ export interface BlobStoreMigration {
   updatedAt: string;
 }
 
+export interface RoutingRule {
+  id: string
+  name: string
+  description?: string
+  mode: 'ALLOW' | 'BLOCK'
+  matchers: string[]
+  createdAt: string
+  updatedAt: string
+}
+
+export type RoutingRuleInput = Omit<RoutingRule, 'id' | 'createdAt' | 'updatedAt'>
+
 // ── API helpers ──────────────────────────────────────────────
 
 export const nexusApi = {
@@ -228,6 +240,16 @@ export const nexusApi = {
     apiClient.post(`/service/rest/v1/cleanup-policies/${id}/run`),
   previewCleanupPolicy: (id: string) =>
     apiClient.post<CleanupPreviewResponse>(`/api/v1/cleanup-policies/${id}/preview`),
+
+  // Routing rules
+  listRoutingRules: () =>
+    apiClient.get<RoutingRule[]>('/service/rest/v1/routing-rules'),
+  createRoutingRule: (data: RoutingRuleInput) =>
+    apiClient.post<RoutingRule>('/service/rest/v1/routing-rules', data),
+  updateRoutingRule: (id: string, data: RoutingRuleInput) =>
+    apiClient.put<RoutingRule>(`/service/rest/v1/routing-rules/${id}`, data),
+  deleteRoutingRule: (id: string) =>
+    apiClient.delete(`/service/rest/v1/routing-rules/${id}`),
 
   // Audit log
   listAuditEvents: (params?: {
