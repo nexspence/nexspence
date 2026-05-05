@@ -56,6 +56,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 	privilegeRepo  := postgres.NewPrivilegeRepo(pool)
 	csRepo        := postgres.NewContentSelectorRepo(pool)
 	rbacRepo      := postgres.NewRBACRepo(pool)
+	rrRepo        := postgres.NewRoutingRuleRepo(pool)
 	selectorSvc, svcErr := service.NewContentSelectorService(csRepo)
 	if svcErr != nil {
 		panic("content selector service init: " + svcErr.Error())
@@ -120,6 +121,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 		Registry:   blobRegistry,
 		BaseURL:    cfg.HTTP.BaseURL,
 		Webhooks:   webhookSvc,
+		RoutingRules: rrRepo,
 	}
 	formatRegistry := map[string]formats.FormatHandler{
 		"raw":    raw.New(formatDeps),
@@ -157,6 +159,8 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 	roleH      := handlers.NewRoleHandler(roleRepo, userRepo)
 	privH      := handlers.NewPrivilegeHandler(privilegeRepo, roleRepo)
 	csH        := handlers.NewContentSelectorHandler(selectorSvc)
+	rrSvc      := service.NewRoutingRuleService(rrRepo)
+	rrH        := handlers.NewRoutingRuleHandler(rrSvc)
 	systemH    := handlers.NewSystemHandler(cfg, pool, ldapSvc, oidcSvc).WithBlobStores(blobRepo)
 	migrationH := handlers.NewMigrationHandler(migrationRepo)
 	blobMigrationRepo := postgres.NewBlobStoreMigrationRepo(pool)
@@ -394,7 +398,11 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 		admin.GET("/service/rest/v1/tasks", stubHandler("tasks"))
 		admin.POST("/service/rest/v1/tasks/:id/run", stubHandler("tasks"))
 		admin.GET("/service/rest/v1/security/ldap", stubHandler("ldap"))
-		admin.GET("/service/rest/v1/routing-rules", stubHandler("routing"))
+		admin.GET("/service/rest/v1/routing-rules",        rrH.List)
+		admin.GET("/service/rest/v1/routing-rules/:id",    rrH.Get)
+		admin.POST("/service/rest/v1/routing-rules",       rrH.Create)
+		admin.PUT("/service/rest/v1/routing-rules/:id",    rrH.Update)
+		admin.DELETE("/service/rest/v1/routing-rules/:id", rrH.Delete)
 
 		// Migration
 		admin.GET("/api/v1/migration/jobs", migrationH.ListJobs)
