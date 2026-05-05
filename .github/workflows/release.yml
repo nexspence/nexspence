@@ -93,6 +93,44 @@ jobs:
           zip "nexspence-${{ github.ref_name }}.zip" docker-compose.yml config.yaml.example
           cd ..
 
+      - name: Generate release notes
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+        run: |
+          # Ask GitHub to auto-generate notes (commits + PRs since previous tag).
+          gh api \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            /repos/skensell201/nexspence/releases/generate-notes \
+            -f tag_name="${{ github.ref_name }}" \
+            --jq '.body' > auto-notes.md
+
+          # Build final release notes: static header + auto-generated changelog.
+          cat > release-notes.md <<'NOTES'
+          ## Docker image
+
+          ```
+          ghcr.io/skensell201/nexspence:${{ github.ref_name }}
+          ```
+
+          ```bash
+          docker pull ghcr.io/skensell201/nexspence:${{ github.ref_name }}
+          ```
+
+          ## Quick start
+
+          1. Download `docker-compose.yml` and `config.yaml.example` from this release
+          2. Rename `config.yaml.example` → `config.yaml` and edit: admin password, JWT secret, DB DSN
+          3. `docker compose up -d`
+
+          Web UI: `http://localhost:8081`
+
+          ---
+
+          NOTES
+
+          cat auto-notes.md >> release-notes.md
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PAT }}
@@ -100,21 +138,5 @@ jobs:
           gh release create "${{ github.ref_name }}" \
             --repo skensell201/nexspence \
             --title "Nexspence ${{ github.ref_name }}" \
-            --notes "## Docker image
-
-          \`\`\`
-          ghcr.io/skensell201/nexspence:${{ github.ref_name }}
-          \`\`\`
-
-          \`\`\`bash
-          docker pull ghcr.io/skensell201/nexspence:${{ github.ref_name }}
-          \`\`\`
-
-          ## Quick start
-
-          1. Download \`docker-compose.yml\` and \`config.yaml.example\` from this release
-          2. Rename \`config.yaml.example\` → \`config.yaml\` and edit: admin password, JWT secret, DB DSN
-          3. \`docker compose up -d\`
-
-          Web UI: \`http://localhost:8081\`" \
+            --notes-file release-notes.md \
             "release-assets/nexspence-${{ github.ref_name }}.zip"
