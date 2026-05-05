@@ -3,7 +3,7 @@ import * as React from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Database, Download, Plus, Trash2, RefreshCw, Settings2, Power } from 'lucide-react'
-import { nexusApi, nexspenceApi, apiClient, BlobStoreMigration, startBlobStoreMigration, getBlobStoreMigration, cancelBlobStoreMigration } from '@/api/client'
+import { nexusApi, nexspenceApi, apiClient, BlobStoreMigration, startBlobStoreMigration, getBlobStoreMigration, cancelBlobStoreMigration, RoutingRule } from '@/api/client'
 import { useAuthStore } from '@/store/authStore'
 import styles from './RepositoriesPage.module.css'
 import { Select } from '../components/Select'
@@ -20,6 +20,7 @@ interface Repository {
   cleanupPolicyIds?: string[]
   quotaBytes?: number | null
   blobStoreId?: string | null
+  routingRuleId?: string | null
 }
 
 interface BlobStoreLite {
@@ -388,6 +389,10 @@ function CreateRepoModal({ onClose, onCreated }: {
     queryKey: ['blobstores'],
     queryFn: () => nexusApi.listBlobStores().then(r => r.data),
   })
+  const { data: routingRules = [] } = useQuery<RoutingRule[]>({
+    queryKey: ['routing-rules'],
+    queryFn: () => nexusApi.listRoutingRules().then(r => r.data),
+  })
 
   const defaultStoreId = blobStores.find(b => b.name === 'default')?.id ?? blobStores[0]?.id ?? ''
 
@@ -399,6 +404,7 @@ function CreateRepoModal({ onClose, onCreated }: {
     quotaGB: '',
     allowAnonymous: false,
     blobStoreId: '',
+    routingRuleId: '' as string,
   })
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -457,6 +463,9 @@ function CreateRepoModal({ onClose, onCreated }: {
       if (effectiveStoreId) body.blobStoreId = effectiveStoreId
       if (form.type === 'proxy') body.proxyConfig = { remote_url: form.remoteUrl.trim() }
       if (form.type === 'group') body.formatConfig = { member_names: form.memberNames }
+      if (form.type === 'group' && form.routingRuleId) {
+        body.routingRuleId = form.routingRuleId
+      }
       if (form.type !== 'group' && form.cleanupPolicyIds.length > 0) body.cleanupPolicyIds = form.cleanupPolicyIds
       if (form.quotaGB.trim() !== '') {
         const gb = parseFloat(form.quotaGB)
@@ -558,6 +567,21 @@ function CreateRepoModal({ onClose, onCreated }: {
               ))}
             </div>
           )}
+        </div>
+      )}
+      {form.type === 'group' && (
+        <div style={{ marginTop: 12 }}>
+          <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--holo-text-dim)', display: 'block', marginBottom: 5 }}>
+            ROUTING RULE
+          </label>
+          <Select
+            value={form.routingRuleId}
+            onChange={v => setField('routingRuleId', v)}
+            options={[
+              { value: '', label: 'None' },
+              ...routingRules.map(r => ({ value: r.id, label: `${r.name} (${r.mode})` })),
+            ]}
+          />
         </div>
       )}
     </div>
@@ -677,6 +701,10 @@ function EditRepoModal({
     queryKey: ['blobstores'],
     queryFn: () => nexusApi.listBlobStores().then(r => r.data),
   })
+  const { data: routingRules = [] } = useQuery<RoutingRule[]>({
+    queryKey: ['routing-rules'],
+    queryFn: () => nexusApi.listRoutingRules().then(r => r.data),
+  })
 
   const applicable = cleanupPoliciesForFormat(policies, repo.format)
   const [description, setDescription] = useState(repo.description ?? '')
@@ -687,6 +715,7 @@ function EditRepoModal({
     repo.quotaBytes != null ? String(repo.quotaBytes / (1024 * 1024 * 1024)) : ''
   )
   const [blobStoreId, setBlobStoreId] = useState<string>(repo.blobStoreId ?? '')
+  const [routingRuleId, setRoutingRuleId] = useState<string>(repo.routingRuleId ?? '')
   const originalStoreId = repo.blobStoreId ?? ''
   const storeChanged = blobStoreId !== originalStoreId
   const [error, setError] = useState('')
@@ -776,6 +805,9 @@ function EditRepoModal({
       }
       if (repo.type !== 'group' && blobStoreId) {
         updateBody.blobStoreId = blobStoreId
+      }
+      if (repo.type === 'group') {
+        updateBody.routingRuleId = routingRuleId || null
       }
       await nexusApi.updateRepository(repo.format, repo.type, repo.name, updateBody)
       onSaved()
@@ -950,6 +982,20 @@ function EditRepoModal({
           )}
           <span className={styles.hint}>Scheduled and manual runs only affect attached repositories.</span>
         </div>
+        {repo.type === 'group' && (
+          <div className={styles.formRow}>
+            <label style={LABEL_STYLE}>Routing Rule</label>
+            <Select
+              value={routingRuleId}
+              onChange={setRoutingRuleId}
+              options={[
+                { value: '', label: 'None' },
+                ...routingRules.map(r => ({ value: r.id, label: `${r.name} (${r.mode})` })),
+              ]}
+            />
+            <span className={styles.hint}>Route requests through this routing rule before dispatching to members.</span>
+          </div>
+        )}
         {error && <div style={ERROR_STYLE}>{error}</div>}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 8 }}>
           <HoloButton type="button" onClick={onClose}>Cancel</HoloButton>
