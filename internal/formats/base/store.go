@@ -374,6 +374,22 @@ func resolveBlobStoreObj(ctx context.Context, d formats.Deps, repo *domain.Repos
 	return bs, nil
 }
 
+// ResolveBlobStore returns the physical BlobStore, its DB id, and its DB name for repo.
+// It mirrors the blob store resolution used inside StoreArtifact, so callers that need to
+// write blobs directly (e.g. proxy cache) use the same store that RegisterStoredBlob records.
+func ResolveBlobStore(ctx context.Context, d formats.Deps, repo *domain.Repository) (id, name string, store storage.BlobStore) {
+	id, name, _ = resolveBlobStoreRef(ctx, d, repo)
+	if id != "" {
+		if bsMeta, err := d.Blobs.GetByID(ctx, id); err == nil {
+			store = PhysicalStore(ctx, d, bsMeta)
+		}
+	}
+	if store == nil {
+		store = d.BlobStore
+	}
+	return id, name, store
+}
+
 // PhysicalStore returns the physical BlobStore for the given domain blob store.
 // If the registry is set and the descriptor is valid, it returns the cached/created instance.
 // Falls back to d.BlobStore (the global default) on any error or missing registry.

@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -131,6 +132,11 @@ func cmdServe() *cobra.Command {
 				// Non-fatal — server still starts
 			}
 
+			if err := syncBlobStorePaths(cmd.Context(), pool, cfg, log); err != nil {
+				log.Warn("blob store path sync failed", "err", err)
+				// Non-fatal — server still starts
+			}
+
 			router := api.NewRouter(cfg, pool, log, Version)
 
 			srv := &http.Server{
@@ -191,6 +197,48 @@ func cmdMigrate() *cobra.Command {
 	cmd.Flags().StringVarP(&cfgPath, "config", "c", "config.yaml", "Path to config file")
 	cmd.Flags().StringVarP(&direction, "direction", "d", "up", "Migration direction: up | down | status")
 	return cmd
+}
+
+// syncBlobStorePaths ensures every local blob store in DB has an absolute "path"
+// derived from cfg.Storage.Local.BasePath. The migration seed uses relative paths
+// (e.g. "./data/blobs/default") which resolve to the wrong location when the app
+// runs in Docker (WORKDIR=/app, volume mounted at /data/blobs). This sync runs on
+// every startup so the DB always reflects the path the app was configured with.
+func syncBlobStorePaths(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config, log logger.Logger) error {
+	if cfg.Storage.DefaultType != "" && cfg.Storage.DefaultType != "local" {
+		return nil
+	}
+	basePath := cfg.Storage.Local.BasePath
+	if basePath == "" {
+		basePath = "./data/blobs"
+	}
+
+	blobRepo := postgres.NewBlobStoreRepo(pool)
+	stores, err := blobRepo.List(ctx)
+	if err != nil {
+		return err
+	}
+	for i := range stores {
+		bs := &stores[i]
+		if bs.Type != "local" {
+			continue
+		}
+		expectedPath := filepath.Join(basePath, bs.Name)
+		if bs.Config == nil {
+			bs.Config = map[string]any{}
+		}
+		currentPath, _ := bs.Config["path"].(string)
+		if currentPath == expectedPath {
+			continue
+		}
+		bs.Config["path"] = expectedPath
+		if updateErr := blobRepo.Update(ctx, bs); updateErr != nil {
+			log.Warn("blob store path sync failed", "name", bs.Name, "err", updateErr)
+		} else {
+			log.Info("blob store path synced", "name", bs.Name, "old", currentPath, "new", expectedPath)
+		}
+	}
+	return nil
 }
 
 // bootstrapAdmin ensures the admin user exists with the configured password.

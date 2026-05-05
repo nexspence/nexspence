@@ -153,29 +153,30 @@ func ServeGET(c *gin.Context, d formats.Deps, repo *domain.Repository, repoRelat
 		if fetchStore == nil {
 			fetchStore = d.BlobStore
 		}
-		rc, _, err := fetchStore.Get(ctx, asset.BlobKey)
-		if err != nil {
-			return fmt.Errorf("repoproxy: blob get: %w", err)
-		}
-		defer rc.Close()
-		// Count only real GETs so HEAD probe + GET pulls don't double-count.
-		// Use context.Background so the UPDATE survives request cancellation after streaming.
-		if c.Request.Method == http.MethodGet {
-			go func(assetID string) {
-				_ = d.Assets.IncrementDownload(context.Background(), assetID)
-			}(asset.ID)
-		}
-		applyChecksumHeaders(c, asset)
-		if c.Request.Method == http.MethodHead {
-			c.Header("Content-Type", asset.ContentType)
-			if asset.SizeBytes > 0 {
-				c.Header("Content-Length", fmt.Sprintf("%d", asset.SizeBytes))
+		rc, _, blobErr := fetchStore.Get(ctx, asset.BlobKey)
+		if blobErr == nil {
+			defer rc.Close()
+			// Count only real GETs so HEAD probe + GET pulls don't double-count.
+			// Use context.Background so the UPDATE survives request cancellation after streaming.
+			if c.Request.Method == http.MethodGet {
+				go func(assetID string) {
+					_ = d.Assets.IncrementDownload(context.Background(), assetID)
+				}(asset.ID)
 			}
-			c.Status(http.StatusOK)
+			applyChecksumHeaders(c, asset)
+			if c.Request.Method == http.MethodHead {
+				c.Header("Content-Type", asset.ContentType)
+				if asset.SizeBytes > 0 {
+					c.Header("Content-Length", fmt.Sprintf("%d", asset.SizeBytes))
+				}
+				c.Status(http.StatusOK)
+				return nil
+			}
+			c.DataFromReader(http.StatusOK, asset.SizeBytes, asset.ContentType, rc, nil)
 			return nil
 		}
-		c.DataFromReader(http.StatusOK, asset.SizeBytes, asset.ContentType, rc, nil)
-		return nil
+		// Blob file missing from cache storage (storage path changed or file deleted).
+		// Fall through to upstream fetch so the client gets content and the cache is repaired.
 	}
 
 	baseRemote, err := RemoteURL(repo)
@@ -252,10 +253,14 @@ func ServeGET(c *gin.Context, d formats.Deps, repo *domain.Repository, repoRelat
 	sha1h := sha1.New()
 	md5h := md5.New()
 
+	// Resolve the physical blob store for this repo so the write location matches
+	// what RegisterStoredBlob will record in the DB asset row.
+	resolvedID, resolvedName, physStore := base.ResolveBlobStore(ctx, d, repo)
+
 	pr, pw := io.Pipe()
 	putErrCh := make(chan error, 1)
 	go func() {
-		putErrCh <- d.BlobStore.Put(ctx, blobKey, pr, resp.ContentLength)
+		putErrCh <- physStore.Put(ctx, blobKey, pr, resp.ContentLength)
 	}()
 
 	hashes := io.MultiWriter(sha256h, sha1h, md5h)
@@ -270,7 +275,7 @@ func ServeGET(c *gin.Context, d formats.Deps, repo *domain.Repository, repoRelat
 	putErr := <-putErrCh
 
 	if copyErr != nil || putErr != nil {
-		_ = d.BlobStore.Delete(ctx, blobKey)
+		_ = physStore.Delete(ctx, blobKey)
 		return fmt.Errorf("proxy cache write: copyErr=%v putErr=%v", copyErr, putErr)
 	}
 
@@ -280,14 +285,14 @@ func ServeGET(c *gin.Context, d formats.Deps, repo *domain.Repository, repoRelat
 
 	size := written
 	if size <= 0 {
-		if s, e := d.BlobStore.Size(ctx, blobKey); e == nil {
+		if s, e := physStore.Size(ctx, blobKey); e == nil {
 			size = s
 		}
 	}
 
 	// Use context.Background so DB registration survives request context cancellation
 	// after streaming (client closes connection once all bytes are received).
-	regAsset, regErr := base.RegisterStoredBlob(context.Background(), d, repo, repoRelativePath, ct, coords, blobKey, sha256sum, sha1sum, md5sum, size, "", "")
+	regAsset, regErr := base.RegisterStoredBlob(context.Background(), d, repo, repoRelativePath, ct, coords, blobKey, sha256sum, sha1sum, md5sum, size, resolvedID, resolvedName)
 	if regErr != nil {
 		return regErr
 	}
