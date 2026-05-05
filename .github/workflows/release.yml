@@ -19,6 +19,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # Full history so we can switch to main after the tag-triggered detached HEAD
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_PAT }}
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -135,12 +139,15 @@ jobs:
             "release-assets/nexspence-${{ github.ref_name }}.zip"
 
       - name: Reset changelog for next release
-        env:
-          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
         run: |
-          > NEXT_RELEASE.md
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          # Switch from detached tag HEAD to the actual main branch
+          git switch main
+          > NEXT_RELEASE.md
           git add NEXT_RELEASE.md
-          git commit -m "chore: reset NEXT_RELEASE.md after ${{ github.ref_name }}" || true
-          git push origin HEAD:main || true
+          # Commit only if there is something to commit (file was non-empty)
+          git diff --staged --quiet || \
+            git commit -m "chore: reset NEXT_RELEASE.md after ${{ github.ref_name }}"
+          # PAT is already baked into the remote URL by the checkout step
+          git push origin main
