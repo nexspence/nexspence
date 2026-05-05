@@ -36,7 +36,7 @@ import (
 )
 
 // NewRouter wires all routes and returns a ready http.Handler.
-func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.Handler {
+func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, version string) http.Handler {
 	if cfg.Log.Level != "debug" {
 		gin.SetMode(gin.ReleaseMode)
 	}
@@ -418,7 +418,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger) http.H
 		// System info + service health
 		admin.GET("/api/v1/system/info", func(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{
-				"version": "1.0.0",
+				"version": version,
 				"edition": "OSS",
 				"product": "Nexspence",
 			})

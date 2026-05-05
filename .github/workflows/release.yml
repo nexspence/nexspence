@@ -51,7 +51,7 @@ jobs:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
-          build-args: VERSION=${{ github.ref_name }}
+          build-args: VERSION=${{ steps.meta.outputs.version }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
@@ -73,7 +73,7 @@ jobs:
               content = f.read()
 
           patched, n = re.subn(
-              r'(?m)(  nexspence:\n    )build:\n      context: \.\n      dockerfile: Dockerfile\n',
+              r'(?m)(    )build:\n(?:[ ]{6,}[^\n]*\n)+',
               lambda m: m.group(1) + f'image: {image}\n',
               content,
           )

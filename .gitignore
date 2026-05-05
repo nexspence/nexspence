@@ -3,7 +3,7 @@
 
 # Binary
 bin/
-server
+/server
 *.exe
 
 # Config with secrets (use config.yaml.example as template)

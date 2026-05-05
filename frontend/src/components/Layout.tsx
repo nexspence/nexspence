@@ -212,6 +212,13 @@ export default function Layout() {
     localStorage.getItem('sidebar-collapsed') === 'true'
   )
 
+  const { data: systemInfo } = useQuery<{ version: string }>({
+    queryKey: ['system-info'],
+    queryFn: () => apiClient.get<{ version: string }>('/api/v1/system/info').then(r => r.data),
+    staleTime: Infinity,
+    enabled: admin,
+  })
+
   function toggleCollapse() {
     const next = !collapsed
     setCollapsed(next)
@@ -319,7 +326,7 @@ export default function Layout() {
             <LogOut size={16} />
             <span className={styles.navLabel}>Sign Out</span>
           </button>
-          <span className={styles.version}>Nexspence v1.0.0 · OSS</span>
+          <span className={styles.version}>Nexspence v{systemInfo?.version ?? '…'} · OSS</span>
           <button
             className={styles.collapseBtn}
             onClick={toggleCollapse}

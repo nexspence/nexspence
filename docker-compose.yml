@@ -59,6 +59,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        VERSION: ${NEXSPENCE_VERSION:-dev}
     restart: unless-stopped
     # Не cgroup-лимит памяти/CPU, а снятие узких мест по умолчанию у Docker:
     shm_size: "2gb"

@@ -131,7 +131,7 @@ func cmdServe() *cobra.Command {
 				// Non-fatal — server still starts
 			}
 
-			router := api.NewRouter(cfg, pool, log)
+			router := api.NewRouter(cfg, pool, log, Version)
 
 			srv := &http.Server{
 				Addr:         cfg.HTTP.Addr,
