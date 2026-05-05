@@ -95,6 +95,8 @@ type ScanService struct {
 	TrivyTimeout time.Duration // per-scan wall-clock limit (0 = no extra timeout); default 10m
 	ScanResults  repository.ScanResultRepo // may be nil; if set, each scan is persisted here
 	OSVClient    *OSVClient                // used for non-Docker formats
+	scanUsername string                    // registry credentials passed to trivy --username
+	scanPassword string
 
 	// trivyMu serializes Trivy CLI runs. Trivy's on-disk cache (BoltDB) is not safe for concurrent
 	// processes; parallel scans caused "cache may be in use by another process: timeout".
@@ -113,6 +115,12 @@ func NewScanService(components repository.ComponentRepo, httpBaseURL string) *Sc
 
 func (s *ScanService) WithScanResults(repo repository.ScanResultRepo) *ScanService {
 	s.ScanResults = repo
+	return s
+}
+
+func (s *ScanService) WithCredentials(username, password string) *ScanService {
+	s.scanUsername = username
+	s.scanPassword = password
 	return s
 }
 
@@ -164,9 +172,13 @@ func (s *ScanService) Scan(ctx context.Context, componentID, imageRef string) (*
 		"--exit-code", "0", // do not use non-zero exit when CVEs exist; we rely on JSON
 		"--quiet",
 		"--no-progress",
+		"--image-src", "remote", // no Docker/containerd socket inside the container
 	}
 	if httpBaseURLInsecure(s.HTTPBaseURL) {
 		args = append(args, "--insecure")
+	}
+	if s.scanUsername != "" {
+		args = append(args, "--username", s.scanUsername, "--password", s.scanPassword)
 	}
 	args = append(args, ref)
 
@@ -321,6 +333,10 @@ func (s *ScanService) BulkScan(ctx context.Context, repoName string) (scanned in
 		return 0, 0, err
 	}
 	for _, comp := range page.Items {
+		// Skip SHA digest aliases — they duplicate the tagged image and clutter the dashboard.
+		if strings.HasPrefix(comp.Version, "sha256:") {
+			continue
+		}
 		_, scanErr := s.Scan(ctx, comp.ID, "")
 		if scanErr != nil {
 			failed++

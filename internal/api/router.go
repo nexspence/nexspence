@@ -148,7 +148,9 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 	browseH    := handlers.NewBrowseHandler(repoRepo, componentRepo, assetRepo, blobRepo, localBlob, rbacSvc)
 	cleanupH   := handlers.NewCleanupHandler(cleanupRepo, repoRepo, cleanupSvc)
 	auditH     := handlers.NewAuditHandler(auditRepo)
-	scanSvc  := service.NewScanService(componentRepo, cfg.HTTP.BaseURL).WithScanResults(postgres.NewScanResultRepo(pool))
+	scanSvc  := service.NewScanService(componentRepo, cfg.HTTP.BaseURL).
+		WithScanResults(postgres.NewScanResultRepo(pool)).
+		WithCredentials(cfg.Bootstrap.AdminUsername, cfg.Bootstrap.AdminPassword)
 	scanH    := handlers.NewScanHandler(scanSvc)
 	tokenH     := handlers.NewTokenHandler(tokenSvc, userSvc, cfg.Auth.TokenMaxDays)
 	webhookH   := handlers.NewWebhookHandler(webhookSvc)
