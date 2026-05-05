@@ -93,20 +93,9 @@ jobs:
           zip "nexspence-${{ github.ref_name }}.zip" docker-compose.yml config.yaml.example
           cd ..
 
-      - name: Generate release notes
-        env:
-          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+      - name: Build release notes
         run: |
-          # Ask GitHub to auto-generate notes (commits + PRs since previous tag).
-          gh api \
-            --method POST \
-            -H "Accept: application/vnd.github+json" \
-            /repos/skensell201/nexspence/releases/generate-notes \
-            -f tag_name="${{ github.ref_name }}" \
-            --jq '.body' > auto-notes.md
-
-          # Build final release notes: static header + auto-generated changelog.
-          cat > release-notes.md <<'NOTES'
+          cat > release-notes.md <<'HEADER'
           ## Docker image
 
           ```
@@ -127,9 +116,13 @@ jobs:
 
           ---
 
-          NOTES
+          HEADER
 
-          cat auto-notes.md >> release-notes.md
+          if [ -s NEXT_RELEASE.md ]; then
+            cat NEXT_RELEASE.md >> release-notes.md
+          else
+            echo "_No changelog entries recorded for this release._" >> release-notes.md
+          fi
 
       - name: Create GitHub Release
         env:
@@ -140,3 +133,14 @@ jobs:
             --title "Nexspence ${{ github.ref_name }}" \
             --notes-file release-notes.md \
             "release-assets/nexspence-${{ github.ref_name }}.zip"
+
+      - name: Reset changelog for next release
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+        run: |
+          > NEXT_RELEASE.md
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add NEXT_RELEASE.md
+          git commit -m "chore: reset NEXT_RELEASE.md after ${{ github.ref_name }}" || true
+          git push origin HEAD:main || true
