@@ -2,7 +2,7 @@
   <img src="frontend/src/assets/logo.png" alt="Nexspence" width="380">
   <br><br>
   <p><strong>Free, open-source universal artifact repository manager</strong></p>
-  <p>A full-featured self-hosted alternative to Sonatype Nexus Repository OSS / Pro</p>
+  <p>A full-featured self-hosted alternative to Sonatype Nexus Repository</p>
   <br>
 
   ![Go](https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat-square&logo=go&logoColor=white)
@@ -20,7 +20,7 @@
 
 Nexspence is a self-hosted artifact repository manager that supports **12 package formats**, three repository types (hosted, proxy, group), fine-grained RBAC, SSO via OIDC/LDAP, audit logging, S3-compatible storage, and a modern dark-theme web UI — all in a single binary backed by PostgreSQL.
 
-It exposes the full **Sonatype Nexus OSS v1 REST API** at `/service/rest/v1/` for drop-in compatibility with existing CI/CD pipelines, Maven/Gradle settings, and npm/pip configurations.
+It exposes the full **Sonatype Nexus v1 REST API** at `/service/rest/v1/` for drop-in compatibility with existing CI/CD pipelines, Maven/Gradle settings, and npm/pip configurations.
 
 ---
 
@@ -361,10 +361,10 @@ MinIO console: http://localhost:9001 (`minioadmin` / `minioadmin`)
 - **Per-repository export** — streaming `.tar.gz` download (metadata + blobs)
 - **Per-repository import** — multipart upload; skip or rename conflict resolution; deduplication by SHA-256
 - **Full system backup / restore** — complete database + blob export
-- **Live migration from Nexus** — import repositories, users, roles, cleanup policies from a running Nexus OSS/Pro instance
+- **Live migration from Nexus** — import repositories, users, roles, cleanup policies from a running Nexus/Pro instance
 
 ### Developer Experience
-- **Nexus OSS v1 REST API** — `/service/rest/v1/` compatible; drop-in replacement
+- **Nexus v1 REST API** — `/service/rest/v1/` compatible; drop-in replacement
 - **Full-text search** — PostgreSQL tsvector across components and assets
 - **Browse UI** — tree view for raw and Docker repositories; file details with download, copy-link, and usage examples
 - **Audit log** — every API action logged; filterable by date/user/path; NDJSON streaming export; 90-day retention
@@ -665,13 +665,13 @@ npm install lodash --registry http://localhost:8081/repository/npm-all/
 
 ## REST API
 
-Nexspence implements the Nexus OSS v1 REST API — existing Nexus clients work without modification.
+Nexspence implements the Nexus v1 REST API — existing Nexus clients work without modification.
 
 ### API paths
 
 | Path prefix | Purpose |
 |-------------|---------|
-| `/service/rest/v1/` | Nexus OSS v1 REST — drop-in compatible |
+| `/service/rest/v1/` | Nexus v1 REST — drop-in compatible |
 | `/service/rest/beta/` | Nexus beta endpoints |
 | `/api/v1/` | Nexspence-native API (migration, backup, extended admin) |
 | `/repository/:name/*` | Artifact protocol endpoints |

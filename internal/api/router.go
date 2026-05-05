@@ -220,7 +220,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 	authed := r.Group("", authMW)
 	{
 		authed.GET("/service/rest/v1/status", func(c *gin.Context) {
-			c.JSON(http.StatusOK, gin.H{"status": "ok", "edition": "OSS"})
+			c.JSON(http.StatusOK, gin.H{"status": "ok"})
 		})
 		authed.GET("/service/rest/v1/status/writable", func(c *gin.Context) {
 			c.Status(http.StatusOK)
@@ -419,7 +419,6 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 		admin.GET("/api/v1/system/info", func(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{
 				"version": version,
-				"edition": "OSS",
 				"product": "Nexspence",
 			})
 		})

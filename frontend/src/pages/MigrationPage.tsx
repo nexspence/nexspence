@@ -54,7 +54,7 @@ export default function MigrationPage() {
           <div className="holo-section-label" style={{ marginBottom: 4 }}>ADMINISTRATION / MIGRATION</div>
           <h1 style={{ fontSize: 20, fontWeight: 700, margin: '0 0 3px', letterSpacing: '-0.01em', lineHeight: 1.2, background: 'linear-gradient(110deg, #7c5cff, #22d3ee 60%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' as const }}>Migration from Nexus</h1>
           <p style={{ fontSize: 12, color: 'var(--holo-text-faint)', margin: 0 }}>
-            Import repositories, users, and artifacts from a live Nexus OSS instance
+            Import repositories, users, and artifacts from a live Nexus instance
           </p>
         </div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>

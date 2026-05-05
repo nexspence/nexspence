@@ -179,7 +179,7 @@ Implementations:
 
 | Path prefix | Purpose |
 |-------------|---------|
-| `/service/rest/v1/` | Nexus OSS v1 REST API — 100% drop-in compatible |
+| `/service/rest/v1/` | Nexus v1 REST API — 100% drop-in compatible |
 | `/service/rest/beta/` | Nexus beta endpoints — partial |
 | `/api/v1/` | Native Nexspence API |
 | `/repository/:name/*` | Artifact protocol endpoints |

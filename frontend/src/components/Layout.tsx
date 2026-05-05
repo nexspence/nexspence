@@ -326,7 +326,7 @@ export default function Layout() {
             <LogOut size={16} />
             <span className={styles.navLabel}>Sign Out</span>
           </button>
-          <span className={styles.version}>Nexspence v{systemInfo?.version ?? '…'} · OSS</span>
+          <span className={styles.version}>Nexspence v{systemInfo?.version ?? '…'}</span>
           <button
             className={styles.collapseBtn}
             onClick={toggleCollapse}

@@ -3,7 +3,7 @@ info:
   title: Nexspence API
   description: |
     Nexspence REST API — two surfaces:
-    - `/service/rest/v1/` — **Nexus OSS v1 compatible** (drop-in replacement)
+    - `/service/rest/v1/` — **Nexus v1 compatible** (drop-in replacement)
     - `/api/v1/` — **Native Nexspence API** (extended features + migration)
 
     ## Authentication
@@ -12,7 +12,7 @@ info:
     - **Bearer token** — `Authorization: Bearer <api-token>`
   version: 1.0.0
   contact:
-    name: Nexspence OSS
+    name: Nexspence
 
 servers:
   - url: http://localhost:8081
@@ -999,7 +999,7 @@ paths:
 
   # ================================================================
   # NEXSPENCE NATIVE API — /api/v1/
-  # Extended features not in Nexus OSS
+  # Extended features not in Nexus
   # ================================================================
 
   # ── Migration ───────────────────────────────────────────────
@@ -1022,7 +1022,7 @@ paths:
       summary: Start a new migration from Nexus source
       operationId: createMigrationJob
       description: |
-        Connects to a live Nexus OSS/Pro instance and pulls:
+        Connects to a live Nexus/Pro instance and pulls:
         - Repository definitions
         - User accounts and roles
         - Cleanup policies
@@ -1213,5 +1213,5 @@ tags:
   - { name: LDAP,          description: "LDAP server configuration (Nexus-compatible, stub)" }
   - { name: RoutingRules,  description: "Routing rules for proxy repos (Nexus Pro → free in Nexspence, stub)" }
   - { name: Status,        description: "Health and status endpoints (Nexus-compatible)" }
-  - { name: Migration,     description: "Nexspence-native: migrate from Nexus OSS/Pro (stub)" }
+  - { name: Migration,     description: "Nexspence-native: migrate from Nexus/Pro (stub)" }
   - { name: System,        description: "Nexspence-native: system info and metrics" }

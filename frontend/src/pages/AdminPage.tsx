@@ -21,7 +21,7 @@ interface UsageResp {
   memberTotalUsed?: number
   memberTotalQuota?: number
 }
-interface SystemInfo { version: string; edition: string; product: string }
+interface SystemInfo { version: string; product: string }
 
 type AdminTab = 'info' | 'blobs' | 'backup' | 'monitoring' | 'migration'
 const VALID_TABS: AdminTab[] = ['info', 'blobs', 'backup', 'monitoring', 'migration']
@@ -193,9 +193,6 @@ export default function AdminPage() {
                 <span style={{ fontSize: 14, fontWeight: 600, color: isOnline ? '#22c55e' : '#ef4444' }}>
                   {isOnline ? 'Online' : 'Offline'}
                 </span>
-                <span style={{ fontSize: 12, color: 'var(--holo-text-faint)', marginLeft: 4 }}>
-                  {status?.edition ?? ''}
-                </span>
               </div>
             )}
           </HoloCard>
@@ -214,10 +211,6 @@ export default function AdminPage() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.05)', fontSize: 13 }}>
                   <span style={{ color: 'var(--holo-text-dim)' }}>Version</span>
                   <span style={{ color: 'var(--holo-text)', fontWeight: 500 }}>{info.version}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: 'none', fontSize: 13 }}>
-                  <span style={{ color: 'var(--holo-text-dim)' }}>Edition</span>
-                  <span style={{ color: 'var(--holo-text)', fontWeight: 500 }}>{info.edition}</span>
                 </div>
               </>
             ) : (
