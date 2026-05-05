@@ -38,13 +38,28 @@ func trivyExecMissing(err error) bool {
 		strings.Contains(msg, "cannot find the file")
 }
 
-// scanTrivyErrorMessage prefers stderr from trivy (real diagnostics); stdout is empty on many failures.
+// scanTrivyErrorMessage returns a concise error string from a failed Trivy run.
+// It detects well-known OCI registry errors and returns a human-readable message
+// instead of the full verbose Trivy output.
 func scanTrivyErrorMessage(runErr error, stderr string) string {
 	stderr = strings.TrimSpace(stderr)
-	if stderr != "" {
-		return stderr
+	msg := stderr
+	if msg == "" {
+		msg = runErr.Error()
 	}
-	return runErr.Error()
+	switch {
+	case strings.Contains(msg, "MANIFEST_UNKNOWN"):
+		return "image manifest not found in registry — re-push the image to make it scannable"
+	case strings.Contains(msg, "UNAUTHORIZED"):
+		return "registry authentication failed — check scan credentials in config"
+	case strings.Contains(msg, "MANIFEST_INVALID"):
+		return "image manifest is invalid or corrupted"
+	case strings.Contains(msg, "unable to find the specified image"):
+		return "image not found in registry — re-push the image to make it scannable"
+	case strings.Contains(msg, "no such file or directory") && strings.Contains(msg, "docker.sock"):
+		return "Docker socket not available — ensure --image-src remote is set (internal error)"
+	}
+	return msg
 }
 
 const scanErrorMaxLen = 8000
