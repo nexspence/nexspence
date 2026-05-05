@@ -1,8 +1,8 @@
 import { useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Activity, Archive, ArrowRightLeft, CheckCircle, Database, Download, HardDrive, Info, Network, Paperclip, Pause, Pencil, Play, Plus, RefreshCw, Trash2, Upload, Wifi, X } from 'lucide-react'
-import { nexusApi, nexspenceApi, ImportRepoStats, ServiceStatus } from '@/api/client'
+import { Activity, Archive, ArrowRightLeft, CheckCircle, Database, Download, GitBranch, HardDrive, Info, Network, Paperclip, Pause, Pencil, Play, Plus, RefreshCw, Trash2, Upload, Wifi, X } from 'lucide-react'
+import { nexusApi, nexspenceApi, ImportRepoStats, ServiceStatus, RoutingRule, RoutingRuleInput } from '@/api/client'
 import { MonitoringView } from '@/pages/MonitoringPage'
 import { Select } from '@/components/Select'
 import { HoloButton, HoloInput, HoloModal, HoloTabs, HoloCard, HoloTabItem, Wizard } from '@/components/holo'
@@ -23,8 +23,8 @@ interface UsageResp {
 }
 interface SystemInfo { version: string; product: string }
 
-type AdminTab = 'info' | 'blobs' | 'backup' | 'monitoring' | 'migration'
-const VALID_TABS: AdminTab[] = ['info', 'blobs', 'backup', 'monitoring', 'migration']
+type AdminTab = 'info' | 'blobs' | 'backup' | 'monitoring' | 'migration' | 'routing-rules'
+const VALID_TABS: AdminTab[] = ['info', 'blobs', 'backup', 'monitoring', 'migration', 'routing-rules']
 
 function fmtGB(b: number) {
   return (b / 1024 / 1024 / 1024).toFixed(2) + ' GB'
@@ -37,6 +37,207 @@ function fmtBytes(b: number) {
   if (b < 1024 * 1024) return (b / 1024).toFixed(1) + ' KB'
   if (b < 1024 * 1024 * 1024) return fmtMB(b)
   return fmtGB(b)
+}
+
+function RoutingRulesTab() {
+  const qc = useQueryClient()
+  const { data: rules = [], isLoading } = useQuery<RoutingRule[]>({
+    queryKey: ['routing-rules'],
+    queryFn: () => nexusApi.listRoutingRules().then(r => r.data),
+  })
+
+  const [modalOpen, setModalOpen] = useState(false)
+  const [editing, setEditing] = useState<RoutingRule | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<RoutingRule | null>(null)
+  const [form, setForm] = useState<{ name: string; description: string; mode: 'ALLOW' | 'BLOCK'; matchers: string[] }>({
+    name: '', description: '', mode: 'ALLOW', matchers: [''],
+  })
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState('')
+
+  const openCreate = () => {
+    setEditing(null)
+    setForm({ name: '', description: '', mode: 'ALLOW', matchers: [''] })
+    setErr('')
+    setModalOpen(true)
+  }
+
+  const openEdit = (r: RoutingRule) => {
+    setEditing(r)
+    setForm({ name: r.name, description: r.description ?? '', mode: r.mode, matchers: r.matchers.length ? r.matchers : [''] })
+    setErr('')
+    setModalOpen(true)
+  }
+
+  const setMatcher = (i: number, v: string) =>
+    setForm(f => { const m = [...f.matchers]; m[i] = v; return { ...f, matchers: m } })
+
+  const addMatcher = () =>
+    setForm(f => ({ ...f, matchers: [...f.matchers, ''] }))
+
+  const removeMatcher = (i: number) =>
+    setForm(f => ({ ...f, matchers: f.matchers.filter((_, idx) => idx !== i) }))
+
+  const handleSave = async () => {
+    setErr('')
+    if (!form.name.trim()) { setErr('Name is required'); return }
+    const matchers = form.matchers.filter(m => m.trim())
+    const payload: RoutingRuleInput = {
+      name: form.name.trim(),
+      description: form.description.trim() || undefined,
+      mode: form.mode,
+      matchers,
+    }
+    setSaving(true)
+    try {
+      if (editing) {
+        await nexusApi.updateRoutingRule(editing.id, payload)
+      } else {
+        await nexusApi.createRoutingRule(payload)
+      }
+      qc.invalidateQueries({ queryKey: ['routing-rules'] })
+      setModalOpen(false)
+    } catch (e: any) {
+      setErr(e.response?.data?.error ?? 'Save failed')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return
+    try {
+      await nexusApi.deleteRoutingRule(deleteTarget.id)
+      qc.invalidateQueries({ queryKey: ['routing-rules'] })
+    } finally {
+      setDeleteTarget(null)
+    }
+  }
+
+  const modeBadge = (mode: string) => (
+    <span style={{
+      fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 4,
+      background: mode === 'ALLOW' ? 'rgba(59,130,246,0.15)' : 'rgba(245,158,11,0.15)',
+      color: mode === 'ALLOW' ? '#60a5fa' : '#fbbf24',
+      border: `1px solid ${mode === 'ALLOW' ? 'rgba(59,130,246,0.3)' : 'rgba(245,158,11,0.3)'}`,
+    }}>{mode}</span>
+  )
+
+  return (
+    <HoloCard>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+        <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--holo-text-dim)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+          Routing Rules
+        </span>
+        <HoloButton variant="primary" icon={<Plus size={13} />} onClick={openCreate}>
+          Create Routing Rule
+        </HoloButton>
+      </div>
+
+      {isLoading ? (
+        <div className="holo-skeleton holo-skeleton--text" style={{ width: '60%' }} />
+      ) : rules.length === 0 ? (
+        <div style={{ color: 'var(--holo-text-faint)', fontSize: 13, textAlign: 'center', padding: '24px 0' }}>
+          No routing rules configured
+        </div>
+      ) : (
+        <table style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: 13 }}>
+          <thead>
+            <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+              {['Name', 'Mode', 'Matchers', 'Actions'].map(h => (
+                <th key={h} style={{ textAlign: 'left' as const, padding: '6px 10px', color: 'var(--holo-text-dim)', fontWeight: 600, fontSize: 11, textTransform: 'uppercase' as const }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rules.map(r => (
+              <tr key={r.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                <td style={{ padding: '8px 10px', color: 'var(--holo-text)', fontWeight: 500 }}>{r.name}</td>
+                <td style={{ padding: '8px 10px' }}>{modeBadge(r.mode)}</td>
+                <td style={{ padding: '8px 10px', color: 'var(--holo-text-dim)', fontFamily: 'monospace', fontSize: 11 }}>
+                  {r.matchers.length === 0 ? '—' : r.matchers.slice(0, 2).join(', ') + (r.matchers.length > 2 ? ` +${r.matchers.length - 2}` : '')}
+                </td>
+                <td style={{ padding: '8px 10px' }}>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <HoloButton icon={<Pencil size={12} />} onClick={() => openEdit(r)}>Edit</HoloButton>
+                    <HoloButton icon={<Trash2 size={12} />} onClick={() => setDeleteTarget(r)}>Delete</HoloButton>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      {modalOpen && (
+        <ModalShell title={editing ? `Edit — ${editing.name}` : 'Create Routing Rule'} onClose={() => setModalOpen(false)} width={460}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--holo-text-dim)', display: 'block', marginBottom: 5 }}>NAME *</label>
+              <HoloInput value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="block-snapshots" />
+            </div>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--holo-text-dim)', display: 'block', marginBottom: 5 }}>DESCRIPTION</label>
+              <HoloInput value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Optional" />
+            </div>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--holo-text-dim)', display: 'block', marginBottom: 5 }}>MODE *</label>
+              <Select
+                value={form.mode}
+                onChange={v => setForm(f => ({ ...f, mode: v as 'ALLOW' | 'BLOCK' }))}
+                options={[
+                  { value: 'ALLOW', label: 'ALLOW — only matching paths pass' },
+                  { value: 'BLOCK', label: 'BLOCK — matching paths are skipped' },
+                ]}
+              />
+            </div>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--holo-text-dim)', display: 'block', marginBottom: 5 }}>MATCHERS (regex)</label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {form.matchers.map((m, i) => (
+                  <div key={i} style={{ display: 'flex', gap: 6 }}>
+                    <HoloInput
+                      value={m}
+                      onChange={e => setMatcher(i, e.target.value)}
+                      placeholder=".*-SNAPSHOT.*"
+                      style={{ flex: 1, fontFamily: 'monospace', fontSize: 12 }}
+                    />
+                    {form.matchers.length > 1 && (
+                      <HoloButton icon={<X size={12} />} onClick={() => removeMatcher(i)} />
+                    )}
+                  </div>
+                ))}
+                <HoloButton icon={<Plus size={12} />} onClick={addMatcher} style={{ alignSelf: 'flex-start' }}>
+                  Add matcher
+                </HoloButton>
+              </div>
+            </div>
+            {err && <div style={{ color: '#ef4444', fontSize: 12 }}>{err}</div>}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
+              <HoloButton onClick={() => setModalOpen(false)}>Cancel</HoloButton>
+              <HoloButton variant="primary" onClick={handleSave} disabled={saving}>
+                {saving ? 'Saving…' : editing ? 'Save' : 'Create'}
+              </HoloButton>
+            </div>
+          </div>
+        </ModalShell>
+      )}
+
+      {deleteTarget && (
+        <ModalShell title="Delete Routing Rule" onClose={() => setDeleteTarget(null)} width={380}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <p style={{ margin: 0, fontSize: 13, color: 'var(--holo-text)' }}>
+              Delete <strong>{deleteTarget.name}</strong>? Repositories using this rule will have it removed automatically.
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <HoloButton onClick={() => setDeleteTarget(null)}>Cancel</HoloButton>
+              <HoloButton variant="danger" onClick={handleDelete}>Delete</HoloButton>
+            </div>
+          </div>
+        </ModalShell>
+      )}
+    </HoloCard>
+  )
 }
 
 export default function AdminPage() {
@@ -168,6 +369,7 @@ export default function AdminPage() {
           { value: 'backup',     label: <><Database size={13} style={{ marginRight: 5 }} />Backup &amp; Restore</> },
           { value: 'monitoring', label: <><Activity size={13} style={{ marginRight: 5 }} />Monitoring</> },
           { value: 'migration',  label: <><ArrowRightLeft size={13} style={{ marginRight: 5 }} />Migration</> },
+          { value: 'routing-rules', label: <><GitBranch size={13} style={{ marginRight: 5 }} />Routing Rules</> },
         ] as HoloTabItem[]}
         value={tab}
         onChange={v => setTab(v as AdminTab)}
@@ -586,6 +788,9 @@ export default function AdminPage() {
 
       {/* Migration */}
       {tab === 'migration' && <MigrationTab />}
+
+      {/* Routing Rules */}
+      {tab === 'routing-rules' && <RoutingRulesTab />}
 
       {detailName && <BlobStoreDetailModal name={detailName} blobStores={blobs} onClose={() => setDetailName(null)} />}
       {createOpen && <CreateBlobStoreModal blobStores={blobs} onClose={() => setCreateOpen(false)} />}
