@@ -18,6 +18,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/formats"
+	"github.com/nexspence-oss/nexspence/internal/service"
 )
 
 // Handler implements the group repository type.
@@ -63,7 +64,15 @@ func (h *Handler) serveGet(c *gin.Context) {
 		return
 	}
 
+	var rule *domain.RoutingRule
+	if repoDef.RoutingRuleID != nil && h.deps.RoutingRules != nil {
+		rule, _ = h.deps.RoutingRules.Get(ctx, *repoDef.RoutingRuleID)
+	}
+
 	for _, memberName := range members {
+		if !service.Allow(rule, filePath) {
+			continue
+		}
 		memberRepo, err := h.deps.Repos.Get(ctx, memberName)
 		if err != nil || memberRepo == nil || !memberRepo.Online {
 			continue

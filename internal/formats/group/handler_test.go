@@ -1,6 +1,7 @@
 package group_test
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -221,4 +222,96 @@ func TestGroup_HEAD_NoBody(t *testing.T) {
 	r.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Empty(t, w.Body.String())
+}
+
+func makeBlockRule(id string, matchers ...string) *domain.RoutingRule {
+	return &domain.RoutingRule{ID: id, Mode: "BLOCK", Matchers: matchers}
+}
+
+func makeAllowRule(id string, matchers ...string) *domain.RoutingRule {
+	return &domain.RoutingRule{ID: id, Mode: "ALLOW", Matchers: matchers}
+}
+
+func buildEngineWithRule(rule *domain.RoutingRule, repos ...*domain.Repository) *gin.Engine {
+	repoRepo := testutil.NewRepoRepo(repos...)
+	rrRepo := testutil.NewRoutingRuleRepo()
+	if rule != nil {
+		_ = rrRepo.Create(context.Background(), rule)
+	}
+	d := formats.Deps{
+		Repos:        repoRepo,
+		Blobs:        testutil.NewBlobStoreRepo(),
+		Components:   testutil.NewComponentRepo(),
+		Assets:       testutil.NewAssetRepo(),
+		BlobStore:    testutil.NewBlobStore(),
+		BaseURL:      "http://localhost:8080",
+		RoutingRules: rrRepo,
+	}
+
+	rawH := raw.New(d)
+	registry := map[string]formats.FormatHandler{"raw": rawH}
+	groupH := group.New(d, registry)
+
+	r := gin.New()
+	r.Any("/repository/:repoName/*path", func(c *gin.Context) {
+		repoName := c.Param("repoName")
+		repo, _ := repoRepo.Get(c.Request.Context(), repoName)
+		if repo == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+			return
+		}
+		if repo.Type == domain.TypeGroup {
+			groupH.ServeHTTP(c)
+		} else {
+			rawH.ServeHTTP(c)
+		}
+	})
+	return r
+}
+
+func TestGroupHandler_RoutingRule_BlocksPath(t *testing.T) {
+	rule := makeBlockRule("rule-1", `.*-SNAPSHOT.*`)
+
+	member := testutil.SimpleRepo("snapshots", "raw")
+	ruleID := "rule-1"
+	grp := &domain.Repository{
+		ID: "repo-grp", Name: "mygroup", Format: "raw",
+		Type: domain.TypeGroup, Online: true,
+		RoutingRuleID: &ruleID,
+		FormatConfig:  map[string]any{"member_names": []any{"snapshots"}},
+	}
+
+	r := buildEngineWithRule(rule, member, grp)
+	require.Equal(t, http.StatusCreated, put(r, "snapshots", "/foo-1.0-SNAPSHOT.jar", "data"))
+
+	req := httptest.NewRequest(http.MethodGet, "/repository/mygroup/foo-1.0-SNAPSHOT.jar", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestGroupHandler_RoutingRule_AllowsMatchingPath(t *testing.T) {
+	rule := makeAllowRule("rule-2", `^/releases/`)
+
+	member := testutil.SimpleRepo("releases", "raw")
+	ruleID := "rule-2"
+	grp := &domain.Repository{
+		ID: "repo-grp2", Name: "mygroup2", Format: "raw",
+		Type: domain.TypeGroup, Online: true,
+		RoutingRuleID: &ruleID,
+		FormatConfig:  map[string]any{"member_names": []any{"releases"}},
+	}
+
+	r := buildEngineWithRule(rule, member, grp)
+	require.Equal(t, http.StatusCreated, put(r, "releases", "/releases/foo-1.0.jar", "data"))
+
+	req := httptest.NewRequest(http.MethodGet, "/repository/mygroup2/releases/foo-1.0.jar", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	req2 := httptest.NewRequest(http.MethodGet, "/repository/mygroup2/snapshots/bar.jar", nil)
+	w2 := httptest.NewRecorder()
+	r.ServeHTTP(w2, req2)
+	assert.Equal(t, http.StatusNotFound, w2.Code)
 }
