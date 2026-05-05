@@ -12,6 +12,7 @@ interface SearchAsset {
   fileSize: number
   contentType: string
   lastModified: string
+  lastDownloaded?: string | null
 }
 
 interface SearchComponent {
@@ -22,6 +23,7 @@ interface SearchComponent {
   name: string
   version: string
   tags?: string[]
+  lastDownloaded?: string | null
   assets?: SearchAsset[]
 }
 
@@ -419,7 +421,12 @@ export default function SearchPage() {
                           <div style={S.muted}>{c.group || '—'}</div>
                           <div style={{ color: '#a5b4fc', fontFamily: 'monospace', fontSize: 12 }}>{c.version || '—'}</div>
                           <div style={S.path}>{firstAsset?.path ?? '—'}{hasMulti ? ` +${c.assets!.length - 1}` : ''}</div>
-                          <div style={S.muted}>{fmtDate(firstAsset?.lastModified)} {firstAsset ? `· ${fmtSize(firstAsset.fileSize)}` : ''}</div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                            <span style={S.muted}>{fmtDate(firstAsset?.lastModified)} {firstAsset ? `· ${fmtSize(firstAsset.fileSize)}` : ''}</span>
+                            {(firstAsset?.lastDownloaded ?? c.lastDownloaded) && (
+                              <span style={{ fontSize: 10, color: 'var(--holo-text-faint)' }}>↓ {fmtDate(firstAsset?.lastDownloaded ?? c.lastDownloaded ?? undefined)}</span>
+                            )}
+                          </div>
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
                             {(c.tags ?? []).map(t => (
                               <span key={t} style={{
@@ -436,7 +443,10 @@ export default function SearchPage() {
                             {(c.assets ?? []).map(a => (
                               <div key={a.id} style={S.assetRow}>
                                 <span style={S.path}>{a.path}</span>
-                                <span style={{ ...S.muted, whiteSpace: 'nowrap' as const }}>{fmtSize(a.fileSize)} · {a.contentType || '—'} · {fmtDate(a.lastModified)}</span>
+                                <span style={{ ...S.muted, whiteSpace: 'nowrap' as const }}>
+                                  {fmtSize(a.fileSize)} · {a.contentType || '—'} · {fmtDate(a.lastModified)}
+                                  {a.lastDownloaded && <span style={{ color: 'var(--holo-text-faint)', marginLeft: 4 }}>↓ {fmtDate(a.lastDownloaded)}</span>}
+                                </span>
                               </div>
                             ))}
                             {(() => {
