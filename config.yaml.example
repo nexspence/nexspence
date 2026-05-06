@@ -157,3 +157,12 @@ oidc:
   cookie_secure: true                 # set false for local HTTP dev only
   cookie_key: ""                      # base64-encoded 32 bytes; set via NEXSPENCE_OIDC_COOKIE_KEY env var
   allowed_skew_seconds: 60
+
+# Redis — required for multi-node (HA) deployments.
+# Set enabled: true when running multiple Nexspence instances behind a load balancer.
+# With enabled: false (default), the server runs fully without Redis.
+redis:
+  enabled: false
+  addr: "localhost:6379"
+  password: ""
+  db: 0

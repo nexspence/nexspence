@@ -22,6 +22,7 @@ type Config struct {
 	Cleanup   CleanupConfig   `mapstructure:"cleanup"`
 	Audit     AuditConfig     `mapstructure:"audit"`
 	Docker    DockerConfig    `mapstructure:"docker"`
+	Redis     RedisConfig     `mapstructure:"redis"`
 }
 
 type BootstrapConfig struct {
@@ -206,6 +207,13 @@ type SubdomainConnectorConfig struct {
 	BaseDomain string `mapstructure:"base_domain"`
 }
 
+type RedisConfig struct {
+	Enabled  bool   `mapstructure:"enabled"`
+	Addr     string `mapstructure:"addr"`
+	Password string `mapstructure:"password"`
+	DB       int    `mapstructure:"db"`
+}
+
 func Load(path string) (*Config, error) {
 	v := viper.New()
 
@@ -260,6 +268,9 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("bootstrap.admin_password", "admin123")
 	v.SetDefault("bootstrap.admin_email", "admin@example.com")
 	v.SetDefault("bootstrap.admin_first_name", "Admin")
+	v.SetDefault("redis.enabled", false)
+	v.SetDefault("redis.addr", "localhost:6379")
+	v.SetDefault("redis.db", 0)
 
 	// Config file
 	v.SetConfigFile(path)
