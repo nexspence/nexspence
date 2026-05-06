@@ -11,6 +11,7 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/auth"
 	"github.com/nexspence-oss/nexspence/internal/config"
 	"github.com/nexspence-oss/nexspence/internal/logger"
+	"github.com/nexspence-oss/nexspence/internal/redisclient"
 	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/service"
 )
@@ -229,7 +230,9 @@ func DockerV2Auth(
 	users *service.UserService,
 	tokens *service.TokenService,
 	repos repository.RepositoryRepo,
+	rdb *redisclient.Client, // nil = use in-process cache
 ) gin.HandlerFunc {
+	const redisKey = "nexspence:docker:anon_allowed"
 	var (
 		cachedValue   atomic.Bool
 		cachedExpires atomic.Int64 // UnixNano
@@ -239,18 +242,38 @@ func DockerV2Auth(
 		if repos == nil {
 			return false
 		}
-		now := time.Now().UnixNano()
-		if now < cachedExpires.Load() {
-			return cachedValue.Load()
+
+		if rdb != nil {
+			val, err := rdb.Get(ctx, redisKey)
+			if err == nil {
+				return val == "1"
+			}
+			// Cache miss or Redis error — fall through to DB.
+		} else {
+			now := time.Now().UnixNano()
+			if now < cachedExpires.Load() {
+				return cachedValue.Load()
+			}
 		}
+
 		v, err := repos.HasAnyAnonymousDocker(ctx)
 		if err != nil {
 			// Fail closed: when the DB is unreachable, require auth rather than
 			// silently opening the registry.
 			return false
 		}
-		cachedValue.Store(v)
-		cachedExpires.Store(now + dockerV2AnonTTL.Nanoseconds())
+
+		if rdb != nil {
+			val := "0"
+			if v {
+				val = "1"
+			}
+			_ = rdb.Set(ctx, redisKey, val, dockerV2AnonTTL)
+		} else {
+			cachedValue.Store(v)
+			cachedExpires.Store(time.Now().UnixNano() + dockerV2AnonTTL.Nanoseconds())
+		}
+
 		return v
 	}
 

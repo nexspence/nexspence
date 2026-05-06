@@ -246,7 +246,7 @@ var _ = stringReader // used in Login tests above
 
 func buildDockerV2AuthRouter(svc *service.UserService, repos ...*domain.Repository) *gin.Engine {
 	r := gin.New()
-	h := handlers.DockerV2Auth(svc, nil, testutil.NewRepoRepo(repos...))
+	h := handlers.DockerV2Auth(svc, nil, testutil.NewRepoRepo(repos...), nil)
 	r.GET("/v2/", h)
 	r.HEAD("/v2/", h)
 	return r

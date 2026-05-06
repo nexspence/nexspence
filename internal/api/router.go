@@ -14,6 +14,7 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/config"
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/formats"
+	"github.com/nexspence-oss/nexspence/internal/redisclient"
 	"github.com/nexspence-oss/nexspence/internal/formats/apt"
 	"github.com/nexspence-oss/nexspence/internal/formats/cargo"
 	"github.com/nexspence-oss/nexspence/internal/formats/conan"
@@ -39,6 +40,18 @@ import (
 func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, version string) http.Handler {
 	if cfg.Log.Level != "debug" {
 		gin.SetMode(gin.ReleaseMode)
+	}
+
+	// ── Redis client (optional, for HA deployments) ───────────────────────────
+	var rdb *redisclient.Client
+	if cfg.Redis.Enabled {
+		var err error
+		rdb, err = redisclient.New(cfg.Redis)
+		if err != nil {
+			log.Warn("redis connection failed, running without Redis (single-node mode)", "err", err)
+		} else {
+			log.Info("redis connected", "addr", cfg.Redis.Addr)
+		}
 	}
 
 	// ── Repositories / services ───────────────────────────────
@@ -186,7 +199,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 	r := gin.New()
 	// Health probes — no auth, no middleware.
 	r.GET("/healthz", handlers.LivenessHandler())
-	r.GET("/readyz", handlers.ReadinessHandler(pool, nil)) // redis wired in Task 6
+	r.GET("/readyz", handlers.ReadinessHandler(pool, rdb))
 	r.Use(gin.Recovery())
 	r.Use(requestLogger(log))
 	r.Use(corsMiddleware())
@@ -502,7 +515,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 	// `repoRepo` lets DockerV2Auth fall through to 200 when at least one
 	// Docker repository has allow_anonymous=true — restoring anonymous
 	// `docker pull` against public proxies (see Phase 26).
-	dockerV2Root := handlers.DockerV2Auth(userSvc, tokenSvc, repoRepo)
+	dockerV2Root := handlers.DockerV2Auth(userSvc, tokenSvc, repoRepo, rdb)
 	r.GET("/v2/", dockerV2Root)
 	r.HEAD("/v2/", dockerV2Root)
 
