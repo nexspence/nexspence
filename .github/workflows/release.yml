@@ -126,6 +126,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PAT }}
         run: |
+          gh release delete "${{ github.ref_name }}" \
+            --repo skensell201/nexspence \
+            --yes 2>/dev/null || true
+
           gh release create "${{ github.ref_name }}" \
             --repo skensell201/nexspence \
             --title "Nexspence ${{ github.ref_name }}" \
