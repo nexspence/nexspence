@@ -1,8 +1,8 @@
 import { useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Activity, Archive, ArrowRightLeft, CheckCircle, Database, Download, GitBranch, HardDrive, Info, Network, Paperclip, Pause, Pencil, Play, Plus, RefreshCw, Trash2, Upload, Wifi, X } from 'lucide-react'
-import { nexusApi, nexspenceApi, ImportRepoStats, ServiceStatus, RoutingRule, RoutingRuleInput } from '@/api/client'
+import { Activity, Archive, ArrowRightLeft, CheckCircle, Database, Download, GitBranch, HardDrive, Info, Network, Paperclip, Pause, Pencil, Play, Plus, RefreshCw, Share2, Trash2, Upload, Wifi, X } from 'lucide-react'
+import { nexusApi, nexspenceApi, ImportRepoStats, ServiceStatus, RoutingRule, RoutingRuleInput, ReplicationRule, ReplicationHistory, ReplicationRuleInput } from '@/api/client'
 import { MonitoringView } from '@/pages/MonitoringPage'
 import { Select } from '@/components/Select'
 import { HoloButton, HoloInput, HoloModal, HoloTabs, HoloCard, HoloTabItem, Wizard } from '@/components/holo'
@@ -23,8 +23,8 @@ interface UsageResp {
 }
 interface SystemInfo { version: string; product: string }
 
-type AdminTab = 'info' | 'blobs' | 'backup' | 'monitoring' | 'migration' | 'routing-rules'
-const VALID_TABS: AdminTab[] = ['info', 'blobs', 'backup', 'monitoring', 'migration', 'routing-rules']
+type AdminTab = 'info' | 'blobs' | 'backup' | 'monitoring' | 'migration' | 'routing-rules' | 'replication'
+const VALID_TABS: AdminTab[] = ['info', 'blobs', 'backup', 'monitoring', 'migration', 'routing-rules', 'replication']
 
 function fmtGB(b: number) {
   return (b / 1024 / 1024 / 1024).toFixed(2) + ' GB'
@@ -240,6 +240,264 @@ function RoutingRulesTab() {
   )
 }
 
+function ReplicationTab() {
+  const qc = useQueryClient()
+  const { data: rules = [], isLoading } = useQuery<ReplicationRule[]>({
+    queryKey: ['replication-rules'],
+    queryFn: () => nexspenceApi.listReplicationRules().then(r => r.data),
+  })
+
+  const [modalOpen, setModalOpen] = useState(false)
+  const [editing, setEditing] = useState<ReplicationRule | null>(null)
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [history, setHistory] = useState<ReplicationHistory[]>([])
+  const [histLoading, setHistLoading] = useState(false)
+  const [testResult, setTestResult] = useState<Record<string, string>>({})
+
+  const [form, setForm] = useState<ReplicationRuleInput>({
+    name: '', source_repo: '', target_url: '', target_repo: '',
+    target_username: '', target_password: '', cron_expr: '0 2 * * *', enabled: true,
+  })
+
+  const { data: repos = [] } = useQuery({
+    queryKey: ['repos-list'],
+    queryFn: () => nexusApi.listRepositories().then(r => r.data as Array<{ name: string }>),
+  })
+
+  const createMutation = useMutation({
+    mutationFn: (data: ReplicationRuleInput) => nexspenceApi.createReplicationRule(data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['replication-rules'] }); setModalOpen(false) },
+  })
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: ReplicationRuleInput }) =>
+      nexspenceApi.updateReplicationRule(id, data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['replication-rules'] }); setModalOpen(false) },
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => nexspenceApi.deleteReplicationRule(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['replication-rules'] }),
+  })
+
+  const runMutation = useMutation({
+    mutationFn: (id: string) => nexspenceApi.runReplicationRule(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['replication-rules'] }),
+  })
+
+  function openCreate() {
+    setEditing(null)
+    setForm({ name: '', source_repo: '', target_url: '', target_repo: '', target_username: '', target_password: '', cron_expr: '0 2 * * *', enabled: true })
+    setModalOpen(true)
+  }
+
+  function openEdit(rule: ReplicationRule) {
+    setEditing(rule)
+    setForm({
+      name: rule.name, source_repo: rule.source_repo, target_url: rule.target_url,
+      target_repo: rule.target_repo, target_username: rule.target_username,
+      target_password: '', cron_expr: rule.cron_expr, enabled: rule.enabled,
+    })
+    setModalOpen(true)
+  }
+
+  async function toggleHistory(rule: ReplicationRule) {
+    if (expandedId === rule.id) { setExpandedId(null); return }
+    setExpandedId(rule.id)
+    setHistLoading(true)
+    try {
+      const r = await nexspenceApi.listReplicationHistory(rule.id)
+      setHistory(r.data)
+    } finally {
+      setHistLoading(false)
+    }
+  }
+
+  async function testConn(id: string) {
+    setTestResult(prev => ({ ...prev, [id]: 'testing…' }))
+    try {
+      await nexspenceApi.testReplicationRule(id)
+      setTestResult(prev => ({ ...prev, [id]: '✓ Connected' }))
+    } catch (e: unknown) {
+      const msg = (e as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Failed'
+      setTestResult(prev => ({ ...prev, [id]: `✗ ${msg}` }))
+    }
+    setTimeout(() => setTestResult(prev => { const n = { ...prev }; delete n[id]; return n }), 5000)
+  }
+
+  function handleSubmit() {
+    if (editing) {
+      updateMutation.mutate({ id: editing.id, data: form })
+    } else {
+      createMutation.mutate(form)
+    }
+  }
+
+  const fmtDate = (s: string | null) => s ? new Date(s).toLocaleString() : '—'
+  const fmtDur = (ms: number) => ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+        <span style={{ color: '#94a3b8', fontSize: 13 }}>
+          Push artifacts from local repositories to remote Nexspence instances on a cron schedule.
+        </span>
+        <HoloButton onClick={openCreate}>
+          <Plus size={13} style={{ marginRight: 5 }} /> New Rule
+        </HoloButton>
+      </div>
+
+      {isLoading && <p style={{ color: '#64748b' }}>Loading…</p>}
+
+      {!isLoading && rules.length === 0 && (
+        <p style={{ color: '#64748b', fontSize: 13 }}>No replication rules configured.</p>
+      )}
+
+      {rules.map(rule => (
+        <HoloCard key={rule.id} style={{ marginBottom: 10 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div>
+              <div style={{ fontWeight: 600, color: '#e2e8f0', marginBottom: 4 }}>{rule.name}</div>
+              <div style={{ fontSize: 12, color: '#64748b' }}>
+                <span style={{ color: '#94a3b8' }}>{rule.source_repo}</span>
+                {' → '}
+                <span style={{ color: '#94a3b8' }}>{rule.target_url}/{rule.target_repo}</span>
+              </div>
+              <div style={{ fontSize: 11, color: '#475569', marginTop: 4 }}>
+                <span>cron: {rule.cron_expr}</span>
+                {' · '}
+                <span style={{ color: rule.enabled ? '#22c55e' : '#ef4444' }}>
+                  {rule.enabled ? 'enabled' : 'disabled'}
+                </span>
+                {rule.last_run_at && (
+                  <>
+                    {' · last run: '}
+                    <span style={{ color: rule.last_run_status === 'ok' ? '#22c55e' : rule.last_run_status === 'error' ? '#ef4444' : '#f59e0b' }}>
+                      {rule.last_run_status}
+                    </span>
+                    {' '}{fmtDate(rule.last_run_at)}
+                  </>
+                )}
+                {testResult[rule.id] && (
+                  <span style={{ marginLeft: 8, color: testResult[rule.id].startsWith('✓') ? '#22c55e' : '#ef4444' }}>
+                    {testResult[rule.id]}
+                  </span>
+                )}
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <HoloButton onClick={() => testConn(rule.id)} title="Test connection">
+                <Wifi size={12} />
+              </HoloButton>
+              <HoloButton onClick={() => runMutation.mutate(rule.id)} title="Run now">
+                <Play size={12} />
+              </HoloButton>
+              <HoloButton onClick={() => toggleHistory(rule)} title="History">
+                <Activity size={12} />
+              </HoloButton>
+              <HoloButton onClick={() => openEdit(rule)} title="Edit">
+                <Pencil size={12} />
+              </HoloButton>
+              <HoloButton onClick={() => deleteMutation.mutate(rule.id)} title="Delete">
+                <Trash2 size={12} />
+              </HoloButton>
+            </div>
+          </div>
+
+          {expandedId === rule.id && (
+            <div style={{ marginTop: 12, borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 10 }}>
+              {histLoading && <p style={{ color: '#64748b', fontSize: 12 }}>Loading history…</p>}
+              {!histLoading && history.length === 0 && (
+                <p style={{ color: '#64748b', fontSize: 12 }}>No runs recorded yet.</p>
+              )}
+              {!histLoading && history.length > 0 && (
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                  <thead>
+                    <tr style={{ color: '#64748b', textAlign: 'left' }}>
+                      <th style={{ padding: '4px 8px' }}>Started</th>
+                      <th style={{ padding: '4px 8px' }}>Duration</th>
+                      <th style={{ padding: '4px 8px' }}>Pushed</th>
+                      <th style={{ padding: '4px 8px' }}>Skipped</th>
+                      <th style={{ padding: '4px 8px' }}>Failed</th>
+                      <th style={{ padding: '4px 8px' }}>Bytes</th>
+                      <th style={{ padding: '4px 8px' }}>Error</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {history.map(h => (
+                      <tr key={h.id} style={{ color: '#94a3b8', borderTop: '1px solid rgba(255,255,255,0.04)' }}>
+                        <td style={{ padding: '4px 8px' }}>{fmtDate(h.started_at)}</td>
+                        <td style={{ padding: '4px 8px' }}>{fmtDur(h.duration_ms)}</td>
+                        <td style={{ padding: '4px 8px', color: '#22c55e' }}>{h.pushed_count}</td>
+                        <td style={{ padding: '4px 8px' }}>{h.skipped_count}</td>
+                        <td style={{ padding: '4px 8px', color: h.failed_count > 0 ? '#ef4444' : '#94a3b8' }}>{h.failed_count}</td>
+                        <td style={{ padding: '4px 8px' }}>{fmtBytes(h.transferred_bytes)}</td>
+                        <td style={{ padding: '4px 8px', color: '#ef4444', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{h.error || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
+        </HoloCard>
+      ))}
+
+      {modalOpen && (
+        <ModalShell title={editing ? 'Edit Replication Rule' : 'New Replication Rule'} onClose={() => setModalOpen(false)} width={480}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--holo-text-dim)', display: 'block', marginBottom: 5 }}>RULE NAME *</label>
+              <HoloInput value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="prod-mirror" />
+            </div>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--holo-text-dim)', display: 'block', marginBottom: 5 }}>SOURCE REPOSITORY *</label>
+              <Select
+                value={form.source_repo}
+                onChange={v => setForm(f => ({ ...f, source_repo: v }))}
+                options={repos.map((r: { name: string }) => ({ value: r.name, label: r.name }))}
+                placeholder="Select repository…"
+              />
+            </div>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--holo-text-dim)', display: 'block', marginBottom: 5 }}>TARGET URL *</label>
+              <HoloInput value={form.target_url} onChange={e => setForm(f => ({ ...f, target_url: e.target.value }))} placeholder="https://nexspence.example.com" />
+            </div>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--holo-text-dim)', display: 'block', marginBottom: 5 }}>TARGET REPOSITORY *</label>
+              <HoloInput value={form.target_repo} onChange={e => setForm(f => ({ ...f, target_repo: e.target.value }))} placeholder="my-repo-mirror" />
+            </div>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--holo-text-dim)', display: 'block', marginBottom: 5 }}>TARGET USERNAME</label>
+              <HoloInput value={form.target_username} onChange={e => setForm(f => ({ ...f, target_username: e.target.value }))} placeholder="admin" />
+            </div>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--holo-text-dim)', display: 'block', marginBottom: 5 }}>
+                {editing ? 'TARGET PASSWORD (leave blank to keep existing)' : 'TARGET PASSWORD'}
+              </label>
+              <HoloInput type="password" value={form.target_password} onChange={e => setForm(f => ({ ...f, target_password: e.target.value }))} />
+            </div>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--holo-text-dim)', display: 'block', marginBottom: 5 }}>CRON EXPRESSION</label>
+              <HoloInput value={form.cron_expr} onChange={e => setForm(f => ({ ...f, cron_expr: e.target.value }))} placeholder="0 2 * * *" style={{ fontFamily: 'monospace' }} />
+            </div>
+            <label style={{ fontSize: 12, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input type="checkbox" checked={form.enabled} onChange={e => setForm(f => ({ ...f, enabled: e.target.checked }))} />
+              Enabled
+            </label>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
+              <HoloButton onClick={() => setModalOpen(false)}>Cancel</HoloButton>
+              <HoloButton variant="primary" onClick={handleSubmit} disabled={createMutation.isPending || updateMutation.isPending}>
+                {editing ? 'Save' : 'Create'}
+              </HoloButton>
+            </div>
+          </div>
+        </ModalShell>
+      )}
+    </div>
+  )
+}
+
 export default function AdminPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const tabParam = searchParams.get('tab') as AdminTab | null
@@ -370,6 +628,7 @@ export default function AdminPage() {
           { value: 'monitoring', label: <><Activity size={13} style={{ marginRight: 5 }} />Monitoring</> },
           { value: 'migration',  label: <><ArrowRightLeft size={13} style={{ marginRight: 5 }} />Migration</> },
           { value: 'routing-rules', label: <><GitBranch size={13} style={{ marginRight: 5 }} />Routing Rules</> },
+          { value: 'replication',   label: <><Share2 size={13} style={{ marginRight: 5 }} />Replication</> },
         ] as HoloTabItem[]}
         value={tab}
         onChange={v => setTab(v as AdminTab)}
@@ -791,6 +1050,9 @@ export default function AdminPage() {
 
       {/* Routing Rules */}
       {tab === 'routing-rules' && <RoutingRulesTab />}
+
+      {/* Replication */}
+      {tab === 'replication' && <ReplicationTab />}
 
       {detailName && <BlobStoreDetailModal name={detailName} blobStores={blobs} onClose={() => setDetailName(null)} />}
       {createOpen && <CreateBlobStoreModal blobStores={blobs} onClose={() => setCreateOpen(false)} />}
