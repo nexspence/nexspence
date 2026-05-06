@@ -42,7 +42,7 @@ func (r *replicationRepo) ListRules(ctx context.Context) ([]domain.ReplicationRu
 	}
 	defer rows.Close()
 
-	var out []domain.ReplicationRule
+	out := make([]domain.ReplicationRule, 0)
 	for rows.Next() {
 		rule, err := scanRule(rows)
 		if err != nil {
@@ -122,7 +122,7 @@ func (r *replicationRepo) ListHistory(ctx context.Context, ruleID string, limit 
 	}
 	defer rows.Close()
 
-	var out []domain.ReplicationHistory
+	out := make([]domain.ReplicationHistory, 0)
 	for rows.Next() {
 		var h domain.ReplicationHistory
 		if err := rows.Scan(&h.ID, &h.RuleID, &h.StartedAt, &h.FinishedAt, &h.DurationMs,

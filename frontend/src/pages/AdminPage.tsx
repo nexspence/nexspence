@@ -244,7 +244,7 @@ function ReplicationTab() {
   const qc = useQueryClient()
   const { data: rules = [], isLoading } = useQuery<ReplicationRule[]>({
     queryKey: ['replication-rules'],
-    queryFn: () => nexspenceApi.listReplicationRules().then(r => r.data),
+    queryFn: () => nexspenceApi.listReplicationRules().then(r => r.data ?? []),
   })
 
   const [modalOpen, setModalOpen] = useState(false)
@@ -307,7 +307,7 @@ function ReplicationTab() {
     setHistLoading(true)
     try {
       const r = await nexspenceApi.listReplicationHistory(rule.id)
-      setHistory(r.data)
+      setHistory(r.data ?? [])
     } finally {
       setHistLoading(false)
     }
