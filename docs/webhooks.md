@@ -9,6 +9,8 @@ Nexspence fires HTTP POST callbacks to registered URLs when repository events oc
 | `artifact.published` | A new artifact is pushed to a hosted or proxy-cached repo |
 | `artifact.deleted` | An artifact is deleted |
 | `repo.created` | A repository is created |
+| `repo.updated` | A repository configuration is updated |
+| `repo.deleted` | A repository is deleted |
 | `proxy.error` | A proxy repo fails to fetch from upstream |
 
 ## Payload
@@ -34,7 +36,7 @@ All events share this JSON structure (unused fields are omitted):
 }
 ```
 
-`repo.created` payload only contains `event`, `timestamp`, `repository`.
+`repo.created`, `repo.updated`, and `repo.deleted` payloads only contain `event`, `timestamp`, `repository`.
 
 ## API — CRUD
 

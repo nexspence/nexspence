@@ -91,6 +91,8 @@ const (
 	EventArtifactPublished WebhookEvent = "artifact.published"
 	EventArtifactDeleted   WebhookEvent = "artifact.deleted"
 	EventRepoCreated       WebhookEvent = "repo.created"
+	EventRepoUpdated       WebhookEvent = "repo.updated"
+	EventRepoDeleted       WebhookEvent = "repo.deleted"
 	// EventProxyError is fired when a proxy repository fails to fetch from
 	// upstream — useful for the SSE realtime feed; webhooks may also subscribe.
 	EventProxyError WebhookEvent = "proxy.error"

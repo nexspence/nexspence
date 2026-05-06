@@ -206,6 +206,13 @@ func (s *RepositoryService) Update(ctx context.Context, name string, updates *do
 	if err := s.repos.Update(ctx, r); err != nil {
 		return nil, err
 	}
+	if s.webhooks != nil {
+		s.webhooks.Dispatch(domain.WebhookPayload{
+			Event:      domain.EventRepoUpdated,
+			Timestamp:  time.Now().UTC(),
+			Repository: r.Name,
+		})
+	}
 	return r, nil
 }
 
@@ -270,10 +277,18 @@ func (s *RepositoryService) validateGroupMembers(ctx context.Context, group *dom
 }
 
 func (s *RepositoryService) Delete(ctx context.Context, name string) error {
-	r, err := s.Get(ctx, name)
-	if err != nil {
+	if _, err := s.Get(ctx, name); err != nil {
 		return err
 	}
-	_ = r
-	return s.repos.Delete(ctx, name)
+	if err := s.repos.Delete(ctx, name); err != nil {
+		return err
+	}
+	if s.webhooks != nil {
+		s.webhooks.Dispatch(domain.WebhookPayload{
+			Event:      domain.EventRepoDeleted,
+			Timestamp:  time.Now().UTC(),
+			Repository: name,
+		})
+	}
+	return nil
 }

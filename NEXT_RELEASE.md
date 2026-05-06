@@ -1,3 +1,19 @@
+## Webhook handler tests (Phase 14B.1)
+
+New `internal/api/handlers/webhooks_test.go` with 5 httptest-based cases:
+
+- `GET /webhooks/:id` — 200 with full body, 404 on unknown ID
+- `POST /webhooks/:id/test` — 200 with `TestResult` (status + latency_ms) against a live local receiver, 404 on unknown ID, 502 when delivery fails (connection refused)
+
+## Webhook events: repo.updated and repo.deleted (Phase 14B.2+14B.3)
+
+`RepositoryService` now dispatches webhook events on repository lifecycle changes:
+
+- `repo.updated` fired after a successful `Update()` call
+- `repo.deleted` fired after a successful `Delete()` call
+- New domain constants: `EventRepoUpdated`, `EventRepoDeleted`
+- Consistent with existing `repo.created` — fire-and-forget async dispatch, only when a `WebhookDispatcher` is wired
+
 ## Search — Last Downloaded timestamp
 
 SearchPage now shows when an artifact was last downloaded:

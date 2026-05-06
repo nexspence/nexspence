@@ -368,7 +368,7 @@ MinIO console: http://localhost:9001 (`minioadmin` / `minioadmin`)
 - **Full-text search** — PostgreSQL tsvector across components and assets
 - **Browse UI** — tree view for raw and Docker repositories; file details with download, copy-link, and usage examples
 - **Audit log** — every API action logged; filterable by date/user/path; NDJSON streaming export; 90-day retention
-- **Webhooks** — `artifact.published`, `artifact.deleted`, `repo.created` events; HMAC-SHA256 signatures
+- **Webhooks** — `artifact.published`, `artifact.deleted`, `repo.created`, `repo.updated`, `repo.deleted` events; HMAC-SHA256 signatures
 - **Vulnerability scanning** — Trivy (Docker images) + OSV.dev (Maven/npm/PyPI/Cargo); CVE results cached in `scan_results` DB table; aggregated dashboard with bulk re-scan
 - **Dark glassmorphism UI** — sidebar collapse/expand; tabbed admin pages; wizard-style create flows
 
