@@ -275,3 +275,15 @@ type ScanResultRepo interface {
 	// Returns (rows, totalCount, error).
 	List(ctx context.Context, f domain.VulnFilter) ([]*domain.VulnRow, int, error)
 }
+
+// ReplicationRepo manages replication rules and their run history.
+type ReplicationRepo interface {
+	ListRules(ctx context.Context) ([]domain.ReplicationRule, error)
+	GetRule(ctx context.Context, id string) (*domain.ReplicationRule, error)
+	CreateRule(ctx context.Context, r *domain.ReplicationRule) error
+	UpdateRule(ctx context.Context, r *domain.ReplicationRule) error
+	DeleteRule(ctx context.Context, id string) error
+	UpdateRuleStatus(ctx context.Context, id, status string, at time.Time) error
+	AddHistory(ctx context.Context, h *domain.ReplicationHistory) error
+	ListHistory(ctx context.Context, ruleID string, limit int) ([]domain.ReplicationHistory, error)
+}
