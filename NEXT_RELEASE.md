@@ -4,4 +4,5 @@
 
 ### 🐛 Bug Fixes
 
-_No bug fixes in this release._
+- **Monitoring page blank screen:** Backend never included `artifacts_deleted` in `GET /api/v1/metrics`; frontend called `.toLocaleString()` on `undefined`, throwing `TypeError` and crashing the React tree. Fixed by adding `ArtifactsDeleted` atomic counter to the metrics package (incremented on every `DeleteArtifact` call) and guarding the frontend render with `?? 0`.
+- **Replication tab blank screen:** Go nil slices serialise to JSON `null`; `ListRules`/`ListHistory` returned `null` instead of `[]`, causing `rules.map()` to throw `TypeError`. Fixed with `make([]T, 0)` on the backend and a `?? []` guard in the frontend query function.

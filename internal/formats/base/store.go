@@ -15,6 +15,7 @@ import (
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/formats"
+	"github.com/nexspence-oss/nexspence/internal/metrics"
 	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/requestctx"
 	"github.com/nexspence-oss/nexspence/internal/storage"
@@ -261,6 +262,7 @@ func DeleteArtifact(ctx context.Context, d formats.Deps, repoName, filePath stri
 	if err := d.Assets.Delete(ctx, asset.ID); err != nil {
 		return err
 	}
+	metrics.ArtifactsDeleted.Add(1)
 	_ = DecrementBlobStoreUsage(ctx, d.Blobs, asset)
 	if d.Webhooks != nil {
 		d.Webhooks.Dispatch(domain.WebhookPayload{

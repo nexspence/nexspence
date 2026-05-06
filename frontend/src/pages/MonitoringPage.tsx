@@ -177,7 +177,7 @@ export function MonitoringView() {
               </div>
               <div style={S.row}>
                 <span style={S.rowKey}>Artifacts deleted</span>
-                <span style={S.rowVal}>{m.artifacts_deleted.toLocaleString()}</span>
+                <span style={S.rowVal}>{(m.artifacts_deleted ?? 0).toLocaleString()}</span>
               </div>
               <div style={{ ...S.row, borderBottom: 'none' }}>
                 <span style={S.rowKey}>Error rate</span>

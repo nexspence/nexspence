@@ -10,6 +10,7 @@ var (
 	RequestsTotal    atomic.Int64
 	RequestErrors    atomic.Int64
 	AuditEventsCount atomic.Int64
+	ArtifactsDeleted atomic.Int64
 
 	startTime = time.Now()
 )
@@ -23,6 +24,7 @@ func Snapshot() Map {
 		"requests_total":     RequestsTotal.Load(),
 		"request_errors":     RequestErrors.Load(),
 		"audit_events_count": AuditEventsCount.Load(),
+		"artifacts_deleted":  ArtifactsDeleted.Load(),
 		"goroutines":         runtime.NumGoroutine(),
 		"memory": Map{
 			"alloc_bytes":       mem.Alloc,
