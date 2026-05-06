@@ -109,6 +109,44 @@ export interface RoutingRule {
 
 export type RoutingRuleInput = Omit<RoutingRule, 'id' | 'createdAt' | 'updatedAt'>
 
+export interface ReplicationRule {
+  id: string
+  name: string
+  source_repo: string
+  target_url: string
+  target_repo: string
+  target_username: string
+  cron_expr: string
+  enabled: boolean
+  last_run_at: string | null
+  last_run_status: string
+  created_at: string
+}
+
+export interface ReplicationHistory {
+  id: string
+  rule_id: string
+  started_at: string
+  finished_at: string | null
+  duration_ms: number
+  pushed_count: number
+  skipped_count: number
+  failed_count: number
+  transferred_bytes: number
+  error: string
+}
+
+export interface ReplicationRuleInput {
+  name: string
+  source_repo: string
+  target_url: string
+  target_repo: string
+  target_username: string
+  target_password: string
+  cron_expr: string
+  enabled: boolean
+}
+
 // ── API helpers ──────────────────────────────────────────────
 
 export const nexusApi = {
@@ -386,6 +424,22 @@ export const nexspenceApi = {
       `/api/v1/components/${encodeURIComponent(componentId)}/scan`,
       body ?? {},
     ),
+
+  // Replication rules
+  listReplicationRules: () =>
+    apiClient.get<ReplicationRule[]>('/api/v1/replication/rules'),
+  createReplicationRule: (data: ReplicationRuleInput) =>
+    apiClient.post<ReplicationRule>('/api/v1/replication/rules', data),
+  updateReplicationRule: (id: string, data: ReplicationRuleInput) =>
+    apiClient.put<ReplicationRule>(`/api/v1/replication/rules/${id}`, data),
+  deleteReplicationRule: (id: string) =>
+    apiClient.delete(`/api/v1/replication/rules/${id}`),
+  runReplicationRule: (id: string) =>
+    apiClient.post(`/api/v1/replication/rules/${id}/run`),
+  testReplicationRule: (id: string) =>
+    apiClient.post<{ ok: boolean }>(`/api/v1/replication/rules/${id}/test`),
+  listReplicationHistory: (id: string) =>
+    apiClient.get<ReplicationHistory[]>(`/api/v1/replication/rules/${id}/history`),
 }
 
 export async function startBlobStoreMigration(
