@@ -2,9 +2,12 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
+	"time"
 
+	"github.com/nexspence-oss/nexspence/internal/distlock"
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/storage"
@@ -18,6 +21,7 @@ type BlobStoreMigrationService struct {
 	repos      repository.RepositoryRepo
 	blobs      repository.BlobStoreRepo
 	registry   *storage.Registry
+	locker     distlock.Locker
 
 	mu      sync.Mutex
 	cancels map[string]context.CancelFunc
@@ -38,6 +42,12 @@ func NewBlobStoreMigrationService(
 		registry:   registry,
 		cancels:    make(map[string]context.CancelFunc),
 	}
+}
+
+// WithLocker sets the distributed locker used to prevent concurrent migrations on the same repo across nodes.
+func (s *BlobStoreMigrationService) WithLocker(l distlock.Locker) *BlobStoreMigrationService {
+	s.locker = l
+	return s
 }
 
 // Start validates inputs, creates a migration record, and launches the background goroutine.
@@ -94,7 +104,19 @@ func (s *BlobStoreMigrationService) Start(ctx context.Context, repoName, targetS
 	s.cancels[m.ID] = cancel
 	s.mu.Unlock()
 
-	go s.runMigration(migCtx, m)
+	var migLock distlock.Lock
+	if s.locker != nil {
+		var lockErr error
+		migLock, lockErr = s.locker.Acquire(ctx, "nexspence:lock:blobmig:"+repoName, 2*time.Hour)
+		if errors.Is(lockErr, distlock.ErrLockHeld) {
+			return nil, fmt.Errorf("blob store migration for %q is already running on another node", repoName)
+		}
+		if lockErr != nil {
+			return nil, fmt.Errorf("acquire migration lock: %w", lockErr)
+		}
+	}
+
+	go s.runMigration(migCtx, m, migLock)
 	return m, nil
 }
 
@@ -128,7 +150,12 @@ func (s *BlobStoreMigrationService) ResumeAll(ctx context.Context) error {
 	return nil
 }
 
-func (s *BlobStoreMigrationService) runMigration(ctx context.Context, m *domain.BlobStoreMigration) {
+func (s *BlobStoreMigrationService) runMigration(ctx context.Context, m *domain.BlobStoreMigration, lock distlock.Lock) {
+	defer func() {
+		if lock != nil {
+			_ = lock.Release(context.Background())
+		}
+	}()
 	defer func() {
 		s.mu.Lock()
 		delete(s.cancels, m.ID)

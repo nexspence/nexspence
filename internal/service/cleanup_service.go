@@ -2,10 +2,12 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
 
+	"github.com/nexspence-oss/nexspence/internal/distlock"
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/formats/base"
 	"github.com/nexspence-oss/nexspence/internal/logger"
@@ -22,6 +24,7 @@ type CleanupService struct {
 	blobs     repository.BlobStoreRepo
 	blobStore storage.BlobStore
 	log       logger.Logger
+	locker    distlock.Locker
 
 	mu              sync.Mutex
 	cronScheduler   *cron.Cron
@@ -46,6 +49,12 @@ func NewCleanupService(
 		log:       log,
 		entryIDs:  make(map[string]cron.EntryID),
 	}
+}
+
+// WithLocker sets the distributed locker used to prevent concurrent cleanup runs across nodes.
+func (s *CleanupService) WithLocker(l distlock.Locker) *CleanupService {
+	s.locker = l
+	return s
 }
 
 // StartCronScheduler starts cron-based per-policy scheduling. Run as a goroutine.
@@ -121,8 +130,23 @@ func (s *CleanupService) addEntryLocked(p domain.CleanupPolicy) {
 	s.entryIDs[p.ID] = id
 }
 
+const cleanupLockKey = "nexspence:lock:cleanup:run"
+const cleanupLockTTL = 30 * time.Minute
+
 // RunAll executes all enabled cleanup policies once and returns a summary.
 func (s *CleanupService) RunAll(ctx context.Context) error {
+	if s.locker != nil {
+		lock, err := s.locker.Acquire(ctx, cleanupLockKey, cleanupLockTTL)
+		if errors.Is(err, distlock.ErrLockHeld) {
+			s.log.Info("cleanup skipped: another node is running cleanup")
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("cleanup: acquire lock: %w", err)
+		}
+		defer lock.Release(ctx)
+	}
+
 	policies, err := s.policies.List(ctx)
 	if err != nil {
 		return fmt.Errorf("cleanup: list policies: %w", err)

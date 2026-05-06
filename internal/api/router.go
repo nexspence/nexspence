@@ -12,6 +12,7 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/api/handlers"
 	"github.com/nexspence-oss/nexspence/internal/auth"
 	"github.com/nexspence-oss/nexspence/internal/config"
+	"github.com/nexspence-oss/nexspence/internal/distlock"
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/formats"
 	"github.com/nexspence-oss/nexspence/internal/redisclient"
@@ -52,6 +53,12 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 		} else {
 			log.Info("redis connected", "addr", cfg.Redis.Addr)
 		}
+	}
+
+	// ── Distributed locker ────────────────────────────────────
+	var locker distlock.Locker = distlock.NoopLocker{}
+	if rdb != nil {
+		locker = distlock.NewRedisLocker(rdb)
 	}
 
 	// ── Repositories / services ───────────────────────────────
@@ -120,6 +127,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 	webhookSvc := service.NewWebhookService(webhookRepo)
 	repoSvc.WithWebhooks(webhookSvc)
 	cleanupSvc := service.NewCleanupService(cleanupRepo, repoRepo, assetRepo, blobRepo, localBlob, log)
+	cleanupSvc.WithLocker(locker)
 
 	// Start per-policy cron scheduler in background (default: cfg.Cleanup.DefaultSchedule).
 	go cleanupSvc.StartCronScheduler(context.Background(), cfg.Cleanup.DefaultSchedule)
@@ -178,6 +186,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 	migrationH := handlers.NewMigrationHandler(migrationRepo)
 	blobMigrationRepo := postgres.NewBlobStoreMigrationRepo(pool)
 	blobMigSvc  := service.NewBlobStoreMigrationService(blobMigrationRepo, assetRepo, repoRepo, blobRepo, blobRegistry)
+	blobMigSvc.WithLocker(locker)
 	blobMigH    := handlers.NewBlobStoreMigrationHandler(blobMigSvc)
 
 	// Resume any migrations that were interrupted by a server restart.
