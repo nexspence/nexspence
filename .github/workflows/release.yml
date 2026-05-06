@@ -72,29 +72,29 @@ jobs:
           import re, os, sys
 
           image = os.environ['IMAGE']
+          build_re = re.compile(r'(?m)(    )build:\n(?:[ ]{6,}[^\n]*\n)+')
 
-          with open('docker-compose.yml') as f:
-              content = f.read()
-
-          patched, n = re.subn(
-              r'(?m)(    )build:\n(?:[ ]{6,}[^\n]*\n)+',
-              lambda m: m.group(1) + f'image: {image}\n',
-              content,
-          )
-
-          if n == 0:
-              print('WARNING: build block not found — check docker-compose.yml format', file=sys.stderr)
-
-          with open('release-assets/docker-compose.yml', 'w') as f:
-              f.write(patched)
-
-          print(f'Generated docker-compose.yml with image={image}')
+          for src, dst in [
+              ('docker-compose.yml',    'release-assets/docker-compose.yml'),
+              ('docker-compose.ha.yml', 'release-assets/docker-compose.ha.yml'),
+          ]:
+              with open(src) as f:
+                  content = f.read()
+              patched, n = build_re.subn(
+                  lambda m: m.group(1) + f'image: {image}\n',
+                  content,
+              )
+              if n == 0:
+                  print(f'WARNING: build block not found in {src}', file=sys.stderr)
+              with open(dst, 'w') as f:
+                  f.write(patched)
+              print(f'Generated {dst} with image={image}')
           PYEOF
 
           cp config.yaml.example release-assets/config.yaml.example
 
           cd release-assets
-          zip "nexspence-${{ github.ref_name }}.zip" docker-compose.yml config.yaml.example
+          zip "nexspence-${{ github.ref_name }}.zip" docker-compose.yml docker-compose.ha.yml config.yaml.example
           cd ..
 
       - name: Build release notes

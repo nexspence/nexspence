@@ -81,11 +81,12 @@ git clone https://github.com/nexspence-oss/nexspence
 cd nexspence
 ```
 
-The repository includes two ready-to-use files in the root:
+The repository includes ready-to-use files in the root:
 
 | File | Purpose |
 |------|---------|
-| `docker-compose.yml` | Starts PostgreSQL + Nexspence (with optional Keycloak / MinIO profiles) |
+| `docker-compose.yml` | Single-node: PostgreSQL + Nexspence (optional Keycloak / MinIO profiles) |
+| `docker-compose.ha.yml` | HA cluster: 2 × Nexspence + nginx + Redis + MinIO + PostgreSQL |
 | `config.yaml` | Full application configuration — mounted read-only into the container |
 
 ### 2. Configure before first launch
@@ -314,6 +315,30 @@ storage:
 
 MinIO console: http://localhost:9001 (`minioadmin` / `minioadmin`)
 
+### High Availability (multi-node cluster)
+
+```bash
+docker compose -f docker-compose.ha.yml up --build
+```
+
+Starts: 2 × Nexspence nodes + nginx (round-robin on :8080) + Redis + MinIO + PostgreSQL.  
+All nodes are stateless at the application layer — shared state lives in PostgreSQL, Redis, and S3.
+
+Enable Redis in `config.yaml` (or via env vars) for each node:
+
+```yaml
+redis:
+  enabled: true
+  addr: "redis:6379"
+```
+
+| Env var | Default | Description |
+|---------|---------|-------------|
+| `NEXSPENCE_REDIS_ENABLED` | `false` | Enable Redis (required for HA) |
+| `NEXSPENCE_REDIS_ADDR` | `localhost:6379` | Redis address |
+
+See [`docs/ha-setup.md`](docs/ha-setup.md) for the full HA guide including Kubernetes probe examples.
+
 ---
 
 ## Supported Package Formats
@@ -356,6 +381,13 @@ MinIO console: http://localhost:9001 (`minioadmin` / `minioadmin`)
 - **Group** — ordered union of hosted + proxy repos under a single URL
 - **Cleanup policies** — by age, last-downloaded, format; retain-N-versions; cron scheduler; **dry-run preview**
 - **Component tags** — free-form text tags on components, searchable via the API and UI
+
+### High Availability
+- **Multi-node clustering** — stateless nodes behind any load balancer; all shared state in PostgreSQL + Redis + S3
+- **Redis integration** — shared DockerV2Auth anonymous-check cache (`nexspence:docker:anon_allowed`, 30s TTL); graceful degradation when Redis is unavailable (falls back to single-node in-process cache)
+- **Distributed locking** — cleanup runs and blob-store migrations acquire per-operation Redis locks so only one node executes at a time; `ErrLockHeld` = silent skip (cleanup) or user-facing error (migration)
+- **Health probes** — `GET /healthz` (liveness, always 200) and `GET /readyz` (readiness, parallel DB + Redis ping, 503 on failure); registered before auth middleware for k8s/load-balancer access
+- **Reference deployment** — `docker-compose.ha.yml`: 2 × Nexspence + nginx (`least_conn`) + Redis + MinIO + PostgreSQL
 
 ### Backup & Migration
 - **Per-repository export** — streaming `.tar.gz` download (metadata + blobs)
@@ -680,7 +712,9 @@ Nexspence implements the Nexus v1 REST API — existing Nexus clients work witho
 ### Key endpoints
 
 ```
-GET  /api/v1/status                                    # Health check
+GET  /healthz                                          # Liveness probe (always 200)
+GET  /readyz                                           # Readiness probe (DB + Redis, 503 on failure)
+GET  /api/v1/status                                    # Application status
 GET  /api/v1/metrics                                   # Metrics (public)
 POST /api/v1/login                                     # JWT login
 
@@ -710,22 +744,25 @@ Full OpenAPI 3.1 spec: [`docs/api-spec.yaml`](docs/api-spec.yaml)
 ## Architecture
 
 ```
-┌────────────┐   JWT/Basic   ┌──────────────────────────┐
-│  Client    │ ────────────▶ │  Gin HTTP Router           │
-│ (curl/mvn/ │               │  + Auth Middleware          │
-│  pip/npm…) │ ◀──────────── │  + Audit Middleware         │
-└────────────┘               └──────────────┬────────────┘
-                                             │
-                        ┌────────────────────▼──────────────┐
-                        │      Format Handler Registry        │
-                        │  maven│npm│pypi│go│docker│helm│…  │
-                        └────────────────────┬──────────────┘
-                                   ┌──────────▼──────────┐
-                         ┌─────────▼──────┐  ┌───────────▼──────────┐
-                         │  BlobStore     │  │  PostgreSQL            │
-                         │  Local / S3    │  │  Repos, Components,    │
-                         └────────────────┘  │  Assets, Users, …     │
-                                             └──────────────────────┘
+                         ┌─────────────────────┐
+                         │   Load Balancer      │  (nginx / k8s Ingress / ALB)
+                         └──────────┬──────────┘
+                    ┌───────────────┴───────────────┐
+                    ▼                               ▼
+┌────────────┐  JWT/Basic  ┌──────────────────┐   ┌──────────────────┐
+│  Client    │ ──────────▶ │  Nexspence node 1 │   │  Nexspence node 2│  (HA)
+│ (curl/mvn/ │             │  Gin + Auth +     │   │  identical       │
+│  pip/npm…) │ ◀────────── │  Audit + RBAC     │   └────────┬─────────┘
+└────────────┘             └────────┬──────────┘            │
+                                    │                        │
+                    ┌───────────────▼────────────────────────▼──────┐
+                    │           Shared State                          │
+                    │  ┌──────────────┐  ┌─────────┐  ┌──────────┐ │
+                    │  │  PostgreSQL  │  │  Redis  │  │  S3/MinIO│ │
+                    │  │  (all data)  │  │  (locks │  │  (blobs) │ │
+                    │  └──────────────┘  │  cache) │  └──────────┘ │
+                    │                    └─────────┘                │
+                    └────────────────────────────────────────────────┘
 ```
 
 ---
@@ -739,6 +776,7 @@ Full OpenAPI 3.1 spec: [`docs/api-spec.yaml`](docs/api-spec.yaml)
 | Database | PostgreSQL 16+ (pgx, goose migrations) |
 | Storage | Local filesystem · S3-compatible (AWS S3, MinIO, Ceph) |
 | Auth | JWT + bcrypt · LDAP/AD · OIDC + PKCE · API tokens |
+| HA / Clustering | Redis (go-redis v9) — distributed locks + shared cache |
 | Scanning | Trivy (Docker CVE) · OSV.dev (Maven / npm / PyPI / Cargo) |
 | Container | Docker + Docker Compose |
 
@@ -757,10 +795,11 @@ Full OpenAPI 3.1 spec: [`docs/api-spec.yaml`](docs/api-spec.yaml)
 | 40 | Stepped wizard — Create Repository / Migration Job / Cleanup Policy | ✓ complete |
 | 41–47 | UI polish: token expiry, transfer lists, empty states, a11y, z-index | ✓ complete |
 | 48–51 | Blob store groups, S3 routing, repo blob-store migration, group writes, Docker subdomain connector | ✓ complete |
+| 53 | High Availability — Redis cluster mode, distributed locks, `/healthz` + `/readyz`, `docker-compose.ha.yml` | ✓ complete |
 | 54 | Vulnerability dashboard — OSV.dev for Maven/npm/PyPI/Cargo, `scan_results` table, bulk re-scan | ✓ complete |
 | next | SBOM generation, cosign image signing, Terraform provider | planned |
 | next | Prometheus metrics endpoint, OpenTelemetry traces | planned |
-| next | `nexctl` CLI, multi-node HA, blob GC | planned |
+| next | `nexctl` CLI, blob GC, content replication | planned |
 
 See [`task_plan.md`](task_plan.md) for detailed task lists per phase.
 
