@@ -184,6 +184,9 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 
 	// ── Gin engine ────────────────────────────────────────────
 	r := gin.New()
+	// Health probes — no auth, no middleware.
+	r.GET("/healthz", handlers.LivenessHandler())
+	r.GET("/readyz", handlers.ReadinessHandler(pool, nil)) // redis wired in Task 6
 	r.Use(gin.Recovery())
 	r.Use(requestLogger(log))
 	r.Use(corsMiddleware())
