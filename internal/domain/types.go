@@ -540,3 +540,35 @@ type SearchParams struct {
 	Offset int
 	Limit  int
 }
+
+// ── Replication ──────────────────────────────────────────────────
+
+// ReplicationRule defines a push-replication job from a local repo to a remote Nexspence instance.
+type ReplicationRule struct {
+	ID                string
+	Name              string
+	SourceRepo        string
+	TargetURL         string
+	TargetRepo        string
+	TargetUsername    string
+	TargetPasswordEnc string // AES-256-GCM encrypted, base64url; never returned in API responses
+	CronExpr          string
+	Enabled           bool
+	LastRunAt         *time.Time
+	LastRunStatus     string // "ok", "error", "running", ""
+	CreatedAt         time.Time
+}
+
+// ReplicationHistory records the outcome of a single replication run.
+type ReplicationHistory struct {
+	ID               string
+	RuleID           string
+	StartedAt        time.Time
+	FinishedAt       *time.Time
+	DurationMs       int64
+	PushedCount      int
+	SkippedCount     int
+	FailedCount      int
+	TransferredBytes int64
+	Error            string
+}
