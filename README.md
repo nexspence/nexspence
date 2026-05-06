@@ -797,9 +797,10 @@ Full OpenAPI 3.1 spec: [`docs/api-spec.yaml`](docs/api-spec.yaml)
 | 48–51 | Blob store groups, S3 routing, repo blob-store migration, group writes, Docker subdomain connector | ✓ complete |
 | 53 | High Availability — Redis cluster mode, distributed locks, `/healthz` + `/readyz`, `docker-compose.ha.yml` | ✓ complete |
 | 54 | Vulnerability dashboard — OSV.dev for Maven/npm/PyPI/Cargo, `scan_results` table, bulk re-scan | ✓ complete |
+| 55 | Content Replication — push artifacts to a remote Nexspence instance on cron schedule, AES-256-GCM credentials, per-asset diff, run history | ✓ complete |
 | next | SBOM generation, cosign image signing, Terraform provider | planned |
 | next | Prometheus metrics endpoint, OpenTelemetry traces | planned |
-| next | `nexctl` CLI, blob GC, content replication | planned |
+| next | `nexctl` CLI, blob GC | planned |
 
 See [`task_plan.md`](task_plan.md) for detailed task lists per phase.
 
