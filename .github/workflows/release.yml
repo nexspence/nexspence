@@ -99,34 +99,33 @@ jobs:
 
       - name: Build release notes
         run: |
-          cat > release-notes.md <<'HEADER'
-          ## Docker image
-
-          ```
-          ghcr.io/skensell201/nexspence:${{ github.ref_name }}
-          ```
-
-          ```bash
-          docker pull ghcr.io/skensell201/nexspence:${{ github.ref_name }}
-          ```
-
-          ## Quick start
-
-          1. Download `docker-compose.yml` and `config.yaml.example` from this release
-          2. Rename `config.yaml.example` → `config.yaml` and edit: admin password, JWT secret, DB DSN
-          3. `docker compose up -d`
-
-          Web UI: `http://localhost:8081`
-
-          ---
-
-          HEADER
-
           if [ -s NEXT_RELEASE.md ]; then
-            cat NEXT_RELEASE.md >> release-notes.md
+            cat NEXT_RELEASE.md > release-notes.md
           else
-            echo "_No changelog entries recorded for this release._" >> release-notes.md
+            printf '### ✨ Features\n\n_No changes recorded._\n\n### 🐛 Bug Fixes\n\n_No bug fixes in this release._\n' > release-notes.md
           fi
+
+          cat >> release-notes.md <<EOF
+
+### 🐳 Docker
+
+| | |
+|---|---|
+| **Image** | \`ghcr.io/skensell201/nexspence:${{ github.ref_name }}\` |
+| **Platforms** | linux/amd64, linux/arm64 |
+
+\`\`\`bash
+docker pull ghcr.io/skensell201/nexspence:${{ github.ref_name }}
+\`\`\`
+
+#### Quick start
+
+1. Download \`docker-compose.yml\` and \`config.yaml.example\` from this release
+2. Rename \`config.yaml.example\` → \`config.yaml\` and edit: admin password, JWT secret, DB DSN
+3. \`docker compose up -d\`
+
+Web UI: \`http://localhost:8081\`
+EOF
 
       - name: Create GitHub Release
         env:
@@ -144,9 +143,9 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           # Switch from detached tag HEAD to the actual main branch
           git switch main
-          > NEXT_RELEASE.md
+          printf '### ✨ Features\n\n\n### 🐛 Bug Fixes\n\n_No bug fixes in this release._\n' > NEXT_RELEASE.md
           git add NEXT_RELEASE.md
-          # Commit only if there is something to commit (file was non-empty)
+          # Commit only if there is something to commit
           git diff --staged --quiet || \
             git commit -m "chore: reset NEXT_RELEASE.md after ${{ github.ref_name }}"
           # PAT is already baked into the remote URL by the checkout step
