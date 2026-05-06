@@ -9,7 +9,6 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/formats/base"
 	"github.com/nexspence-oss/nexspence/internal/logger"
-	"github.com/nexspence-oss/nexspence/internal/metrics"
 	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/storage"
 	"github.com/robfig/cron/v3"
@@ -208,7 +207,6 @@ func (s *CleanupService) runPolicy(ctx context.Context, p domain.CleanupPolicy) 
 			}
 			asset := a
 			_ = base.DecrementBlobStoreUsage(ctx, s.blobs, &asset)
-			metrics.ArtifactsDeleted.Add(1)
 			freed += a.SizeBytes
 			deleted++
 		}

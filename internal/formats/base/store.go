@@ -15,7 +15,6 @@ import (
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/formats"
-	"github.com/nexspence-oss/nexspence/internal/metrics"
 	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/requestctx"
 	"github.com/nexspence-oss/nexspence/internal/storage"
@@ -205,8 +204,6 @@ func RegisterStoredBlob(ctx context.Context, d formats.Deps, repo *domain.Reposi
 	}
 
 	_ = d.Blobs.UpdateUsedBytes(ctx, blobStoreName, size)
-	metrics.ArtifactsStored.Add(1)
-	metrics.BytesStored.Add(size)
 	return asset, nil
 }
 
@@ -239,7 +236,6 @@ func FetchArtifact(ctx context.Context, d formats.Deps, repoName, filePath strin
 	go func(assetID string) {
 		_ = d.Assets.IncrementDownload(context.Background(), assetID)
 	}(asset.ID)
-	metrics.DownloadsTotal.Add(1)
 	return rc, asset, nil
 }
 
@@ -266,7 +262,6 @@ func DeleteArtifact(ctx context.Context, d formats.Deps, repoName, filePath stri
 		return err
 	}
 	_ = DecrementBlobStoreUsage(ctx, d.Blobs, asset)
-	metrics.ArtifactsDeleted.Add(1)
 	if d.Webhooks != nil {
 		d.Webhooks.Dispatch(domain.WebhookPayload{
 			Event:      domain.EventArtifactDeleted,
@@ -284,7 +279,7 @@ func DeleteArtifact(ctx context.Context, d formats.Deps, repoName, filePath stri
 
 // DecrementBlobStoreUsage reduces the owning blob store's used_bytes by asset.SizeBytes.
 // Symmetric to the UpdateUsedBytes(+size) call in RegisterStoredBlob. Best-effort — callers
-// typically ignore the error (same contract as ArtifactsDeleted metric increments).
+// typically ignore the error.
 func DecrementBlobStoreUsage(ctx context.Context, blobs repository.BlobStoreRepo, asset *domain.Asset) error {
 	if asset == nil || asset.SizeBytes <= 0 {
 		return nil

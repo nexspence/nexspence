@@ -1,5 +1,3 @@
-// Package metrics holds in-process atomic counters readable by any package.
-// No dependencies on internal packages — safe to import from anywhere.
 package metrics
 
 import (
@@ -11,29 +9,21 @@ import (
 var (
 	RequestsTotal    atomic.Int64
 	RequestErrors    atomic.Int64
-	ArtifactsStored  atomic.Int64
-	BytesStored      atomic.Int64
-	DownloadsTotal   atomic.Int64
-	ArtifactsDeleted atomic.Int64
 	AuditEventsCount atomic.Int64
 
 	startTime = time.Now()
 )
 
-// Snapshot returns a point-in-time snapshot of all metrics.
+// Snapshot returns a point-in-time snapshot of session and runtime metrics.
 func Snapshot() Map {
 	var mem runtime.MemStats
 	runtime.ReadMemStats(&mem)
 	return Map{
-		"uptime_seconds":   time.Since(startTime).Seconds(),
-		"requests_total":    RequestsTotal.Load(),
-		"request_errors":    RequestErrors.Load(),
-		"artifacts_stored":  ArtifactsStored.Load(),
-		"bytes_stored":      BytesStored.Load(),
-		"downloads_total":   DownloadsTotal.Load(),
-		"artifacts_deleted": ArtifactsDeleted.Load(),
+		"uptime_seconds":     time.Since(startTime).Seconds(),
+		"requests_total":     RequestsTotal.Load(),
+		"request_errors":     RequestErrors.Load(),
 		"audit_events_count": AuditEventsCount.Load(),
-		"goroutines":       runtime.NumGoroutine(),
+		"goroutines":         runtime.NumGoroutine(),
 		"memory": Map{
 			"alloc_bytes":       mem.Alloc,
 			"total_alloc_bytes": mem.TotalAlloc,

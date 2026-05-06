@@ -15,10 +15,7 @@ func TestSnapshot_ContainsExpectedKeys(t *testing.T) {
 		"uptime_seconds",
 		"requests_total",
 		"request_errors",
-		"artifacts_stored",
-		"bytes_stored",
-		"downloads_total",
-		"artifacts_deleted",
+		"audit_events_count",
 		"goroutines",
 		"memory",
 	}
@@ -39,18 +36,6 @@ func TestSnapshot_UptimePositive(t *testing.T) {
 	uptime, ok := snap["uptime_seconds"].(float64)
 	require.True(t, ok)
 	assert.Greater(t, uptime, 0.0)
-}
-
-func TestCounters_Increment(t *testing.T) {
-	before := metrics.ArtifactsStored.Load()
-	metrics.ArtifactsStored.Add(5)
-	assert.Equal(t, before+5, metrics.ArtifactsStored.Load())
-	metrics.ArtifactsStored.Add(-5) // restore
-
-	beforeBytes := metrics.BytesStored.Load()
-	metrics.BytesStored.Add(1024)
-	assert.Equal(t, beforeBytes+1024, metrics.BytesStored.Load())
-	metrics.BytesStored.Add(-1024)
 }
 
 func TestCounters_Requests(t *testing.T) {

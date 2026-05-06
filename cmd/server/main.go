@@ -19,7 +19,6 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/db"
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/logger"
-	"github.com/nexspence-oss/nexspence/internal/metrics"
 	"github.com/nexspence-oss/nexspence/internal/repository/postgres"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/spf13/cobra"
@@ -104,15 +103,6 @@ func cmdServe() *cobra.Command {
 			} else {
 				log.Info("oidc disabled")
 			}
-
-			// Seed cumulative metrics from DB so counters survive restarts.
-			var assetCount, sumBytes, sumDownloads int64
-			_ = pool.QueryRow(cmd.Context(),
-				`SELECT COUNT(*), COALESCE(SUM(size_bytes),0), COALESCE(SUM(download_count),0) FROM assets`).
-				Scan(&assetCount, &sumBytes, &sumDownloads)
-			metrics.ArtifactsStored.Store(assetCount)
-			metrics.BytesStored.Store(sumBytes)
-			metrics.DownloadsTotal.Store(sumDownloads)
 
 			// Audit retention — pre-create future partitions, drop expired,
 			// observe row count. Synchronous first tick guarantees the

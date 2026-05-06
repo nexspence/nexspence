@@ -223,7 +223,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 	}
 
 	// Metrics (public — useful for monitoring without auth)
-	r.GET("/api/v1/metrics", handlers.MetricsHandler)
+	r.GET("/api/v1/metrics", handlers.MetricsHandler(pool))
 
 	// ── Authenticated endpoints (all valid users) ────────────
 	authed := r.Group("", authMW)

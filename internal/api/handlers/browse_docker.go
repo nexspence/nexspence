@@ -10,7 +10,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/formats/base"
-	"github.com/nexspence-oss/nexspence/internal/metrics"
 	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/service"
 	"github.com/nexspence-oss/nexspence/internal/storage"
@@ -307,7 +306,6 @@ func (h *BrowseHandler) DeleteByPath(c *gin.Context) {
 		}
 		asset := a
 		_ = base.DecrementBlobStoreUsage(ctx, h.blobs, &asset)
-		metrics.ArtifactsDeleted.Add(1)
 	}
 	if err := h.components.DeleteOrphans(ctx, repoName); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -345,7 +343,6 @@ func (h *BrowseHandler) DeleteDockerTag(c *gin.Context) {
 	manifestBlobKey := tagAsset.BlobKey
 	if err := h.assets.Delete(ctx, tagAsset.ID); err == nil {
 		_ = base.DecrementBlobStoreUsage(ctx, h.blobs, tagAsset)
-		metrics.ArtifactsDeleted.Add(1)
 	}
 
 	digestAliasPath := "/manifests/" + imageName + "/sha256:" + tagAsset.SHA256
@@ -353,7 +350,6 @@ func (h *BrowseHandler) DeleteDockerTag(c *gin.Context) {
 		if aliasAsset, aerr := h.assets.GetByPath(ctx, repoName, digestAliasPath); aerr == nil && aliasAsset != nil {
 			if err := h.assets.Delete(ctx, aliasAsset.ID); err == nil {
 				_ = base.DecrementBlobStoreUsage(ctx, h.blobs, aliasAsset)
-				metrics.ArtifactsDeleted.Add(1)
 			}
 		}
 	}
@@ -383,7 +379,6 @@ func (h *BrowseHandler) DeleteDockerTag(c *gin.Context) {
 		_ = h.blobStore.Delete(ctx, blobAsset.BlobKey)
 		if err := h.assets.Delete(ctx, blobAsset.ID); err == nil {
 			_ = base.DecrementBlobStoreUsage(ctx, h.blobs, blobAsset)
-			metrics.ArtifactsDeleted.Add(1)
 		}
 	}
 
@@ -440,7 +435,6 @@ func (h *BrowseHandler) DeleteDockerImage(c *gin.Context) {
 		if err := h.assets.Delete(ctx, a.ID); err == nil {
 			asset := a
 			_ = base.DecrementBlobStoreUsage(ctx, h.blobs, &asset)
-			metrics.ArtifactsDeleted.Add(1)
 		}
 	}
 
@@ -451,7 +445,6 @@ func (h *BrowseHandler) DeleteDockerImage(c *gin.Context) {
 		if err := h.assets.Delete(ctx, a.ID); err == nil {
 			asset := a
 			_ = base.DecrementBlobStoreUsage(ctx, h.blobs, &asset)
-			metrics.ArtifactsDeleted.Add(1)
 		}
 	}
 
