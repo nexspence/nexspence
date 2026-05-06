@@ -77,6 +77,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 	csRepo        := postgres.NewContentSelectorRepo(pool)
 	rbacRepo      := postgres.NewRBACRepo(pool)
 	rrRepo        := postgres.NewRoutingRuleRepo(pool)
+	replRepo      := postgres.NewReplicationRepo(pool)
 	selectorSvc, svcErr := service.NewContentSelectorService(csRepo)
 	if svcErr != nil {
 		panic("content selector service init: " + svcErr.Error())
@@ -132,6 +133,9 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 	// Start per-policy cron scheduler in background (default: cfg.Cleanup.DefaultSchedule).
 	go cleanupSvc.StartCronScheduler(context.Background(), cfg.Cleanup.DefaultSchedule)
 
+	replSvc := service.NewReplicationService(replRepo, assetRepo, localBlob, cfg.Auth.JWTSecret, log)
+	go replSvc.StartCronScheduler(context.Background())
+
 	// ── Format handlers ───────────────────────────────────────
 	formatDeps := formats.Deps{
 		Repos:      repoRepo,
@@ -177,6 +181,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 	scanH    := handlers.NewScanHandler(scanSvc)
 	tokenH     := handlers.NewTokenHandler(tokenSvc, userSvc, cfg.Auth.TokenMaxDays)
 	webhookH   := handlers.NewWebhookHandler(webhookSvc)
+	replH      := handlers.NewReplicationHandler(replSvc)
 	roleH      := handlers.NewRoleHandler(roleRepo, userRepo)
 	privH      := handlers.NewPrivilegeHandler(privilegeRepo, roleRepo)
 	csH        := handlers.NewContentSelectorHandler(selectorSvc)
@@ -335,6 +340,10 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 		// ── Content Selectors (read) ──────────────────────────
 		authed.GET("/service/rest/v1/security/content-selectors", csH.List)
 		authed.GET("/service/rest/v1/security/content-selectors/:id", csH.Get)
+
+		// ── Replication rules (read) ──────────────────────────
+		authed.GET("/api/v1/replication/rules", replH.List)
+		authed.GET("/api/v1/replication/rules/:id/history", replH.ListHistory)
 	}
 
 	// ── Admin-only endpoints (nx-admin role required) ─────────
@@ -407,6 +416,13 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 		admin.PUT("/api/v1/webhooks/:id", webhookH.Update)
 		admin.DELETE("/api/v1/webhooks/:id", webhookH.Delete)
 		admin.POST("/api/v1/webhooks/:id/test", webhookH.Test)
+
+		// ── Replication rules (write) ─────────────────────────
+		admin.POST("/api/v1/replication/rules", replH.Create)
+		admin.PUT("/api/v1/replication/rules/:id", replH.Update)
+		admin.DELETE("/api/v1/replication/rules/:id", replH.Delete)
+		admin.POST("/api/v1/replication/rules/:id/run", replH.ManualRun)
+		admin.POST("/api/v1/replication/rules/:id/test", replH.TestConnection)
 
 		// ── Audit log ─────────────────────────────────────────
 		admin.GET("/service/rest/v1/audit", auditH.List)
