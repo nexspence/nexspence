@@ -105,27 +105,22 @@ jobs:
             printf '### ✨ Features\n\n_No changes recorded._\n\n### 🐛 Bug Fixes\n\n_No bug fixes in this release._\n' > release-notes.md
           fi
 
-          cat >> release-notes.md <<EOF
-
-### 🐳 Docker
-
-| | |
-|---|---|
-| **Image** | \`ghcr.io/skensell201/nexspence:${{ github.ref_name }}\` |
-| **Platforms** | linux/amd64, linux/arm64 |
-
-\`\`\`bash
-docker pull ghcr.io/skensell201/nexspence:${{ github.ref_name }}
-\`\`\`
-
-#### Quick start
-
-1. Download \`docker-compose.yml\` and \`config.yaml.example\` from this release
-2. Rename \`config.yaml.example\` → \`config.yaml\` and edit: admin password, JWT secret, DB DSN
-3. \`docker compose up -d\`
-
-Web UI: \`http://localhost:8081\`
-EOF
+          TAG="${{ github.ref_name }}"
+          {
+            printf '\n### 🐳 Docker\n\n'
+            printf '| | |\n'
+            printf '|---|---|\n'
+            printf '| **Image** | `ghcr.io/skensell201/nexspence:%s` |\n' "$TAG"
+            printf '| **Platforms** | linux/amd64, linux/arm64 |\n\n'
+            printf '```bash\n'
+            printf 'docker pull ghcr.io/skensell201/nexspence:%s\n' "$TAG"
+            printf '```\n\n'
+            printf '#### Quick start\n\n'
+            printf '1. Download `docker-compose.yml` and `config.yaml.example` from this release\n'
+            printf '2. Rename `config.yaml.example` → `config.yaml` and edit: admin password, JWT secret, DB DSN\n'
+            printf '3. `docker compose up -d`\n\n'
+            printf 'Web UI: `http://localhost:8081`\n'
+          } >> release-notes.md
 
       - name: Create GitHub Release
         env:
