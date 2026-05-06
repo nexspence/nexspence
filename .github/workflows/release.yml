@@ -63,7 +63,7 @@ jobs:
 
       - name: Prepare release assets
         env:
-          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
         run: |
           mkdir release-assets
 
@@ -94,7 +94,7 @@ jobs:
           cp config.yaml.example release-assets/config.yaml.example
 
           cd release-assets
-          zip "nexspence-${{ github.ref_name }}.zip" docker-compose.yml docker-compose.ha.yml config.yaml.example
+          zip "nexspence-${{ steps.meta.outputs.version }}.zip" docker-compose.yml docker-compose.ha.yml config.yaml.example
           cd ..
 
       - name: Build release notes
@@ -105,7 +105,7 @@ jobs:
             printf '### ✨ Features\n\n_No changes recorded._\n\n### 🐛 Bug Fixes\n\n_No bug fixes in this release._\n' > release-notes.md
           fi
 
-          TAG="${{ github.ref_name }}"
+          TAG="${{ steps.meta.outputs.version }}"
           {
             printf '\n### 🐳 Docker\n\n'
             printf '| | |\n'
@@ -134,7 +134,7 @@ jobs:
             --repo skensell201/nexspence \
             --title "Nexspence ${{ github.ref_name }}" \
             --notes-file release-notes.md \
-            "release-assets/nexspence-${{ github.ref_name }}.zip"
+            "release-assets/nexspence-${{ steps.meta.outputs.version }}.zip"
 
       - name: Reset changelog for next release
         run: |
