@@ -1,6 +1,5 @@
 ### ✨ Features
 
-_No new features in this release._
 
 ### 🐛 Bug Fixes
 
