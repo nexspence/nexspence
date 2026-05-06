@@ -225,6 +225,17 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("http.write_timeout_sec", 1800)
 	v.SetDefault("http.max_body_mb", 1024)
 	v.SetDefault("http.base_url", "http://localhost:8081")
+	// Viper bug: AutomaticEnv + Unmarshal silently skips keys that have no
+	// default/config-file value (not in AllKeys). Empty-string defaults ensure
+	// these keys are always resolved from env vars when no config file is present.
+	v.SetDefault("database.dsn", "")
+	v.SetDefault("auth.jwt_secret", "")
+	v.SetDefault("storage.s3.endpoint", "")
+	v.SetDefault("storage.s3.bucket", "")
+	v.SetDefault("storage.s3.region", "")
+	v.SetDefault("storage.s3.access_key_id", "")
+	v.SetDefault("storage.s3.secret_access_key", "")
+	v.SetDefault("storage.s3.force_path_style", false)
 	v.SetDefault("database.max_conns", 100)
 	v.SetDefault("database.min_conns", 5)
 	v.SetDefault("database.max_idle_sec", 300)
