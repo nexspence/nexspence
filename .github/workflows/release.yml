@@ -43,8 +43,8 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern=v{{version}}
+            type=semver,pattern=v{{major}}.{{minor}}
             type=raw,value=latest
           labels: |
             org.opencontainers.image.source=https://github.com/skensell201/nexspence
@@ -63,7 +63,7 @@ jobs:
 
       - name: Prepare release assets
         env:
-          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
         run: |
           mkdir release-assets
 
@@ -94,7 +94,7 @@ jobs:
           cp config.yaml.example release-assets/config.yaml.example
 
           cd release-assets
-          zip "nexspence-${{ steps.meta.outputs.version }}.zip" docker-compose.yml docker-compose.ha.yml config.yaml.example
+          zip "nexspence-${{ github.ref_name }}.zip" docker-compose.yml docker-compose.ha.yml config.yaml.example
           cd ..
 
       - name: Build release notes
@@ -105,7 +105,7 @@ jobs:
             printf '### ✨ Features\n\n_No changes recorded._\n\n### 🐛 Bug Fixes\n\n_No bug fixes in this release._\n' > release-notes.md
           fi
 
-          TAG="${{ steps.meta.outputs.version }}"
+          TAG="${{ github.ref_name }}"
           {
             printf '\n### 🐳 Docker\n\n'
             printf '| | |\n'
@@ -134,7 +134,7 @@ jobs:
             --repo skensell201/nexspence \
             --title "Nexspence ${{ github.ref_name }}" \
             --notes-file release-notes.md \
-            "release-assets/nexspence-${{ steps.meta.outputs.version }}.zip"
+            "release-assets/nexspence-${{ github.ref_name }}.zip"
 
       - name: Reset changelog for next release
         run: |
