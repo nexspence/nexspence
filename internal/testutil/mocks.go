@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/repository"
@@ -33,6 +34,7 @@ var (
 	_ repository.PrivilegeRepo          = (*PrivilegeRepo)(nil)
 	_ repository.BlobStoreMigrationRepo = (*BlobStoreMigrationRepo)(nil)
 	_ repository.ScanResultRepo         = (*ScanResultRepo)(nil)
+	_ repository.ReplicationRepo        = (*ReplicationRepo)(nil)
 	_ storage.BlobStore                 = (*BlobStore)(nil)
 )
 
@@ -477,8 +479,16 @@ func (a *AssetRepo) ListPathsByRepo(_ context.Context, repoName, q string) ([]st
 	return out, nil
 }
 
-func (a *AssetRepo) ListByRepoAndPath(_ context.Context, _, _ string) ([]domain.Asset, error) {
-	return nil, nil
+func (a *AssetRepo) ListByRepoAndPath(_ context.Context, repoName, pathPrefix string) ([]domain.Asset, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	var out []domain.Asset
+	for _, asset := range a.byID {
+		if asset.Repository == repoName && strings.HasPrefix(asset.Path, pathPrefix) {
+			out = append(out, *asset)
+		}
+	}
+	return out, nil
 }
 
 func (a *AssetRepo) ListRawBrowseAssets(_ context.Context, _ []string) ([]domain.RawBrowseAsset, error) {
@@ -1460,11 +1470,102 @@ func (r *ScanResultRepo) List(_ context.Context, f domain.VulnFilter) ([]*domain
 	return nil, 0, nil
 }
 
-// Rows returns all inserted rows (for assertions in tests).
+// Rows returns all inserted scan rows (for assertions in tests).
 func (r *ScanResultRepo) Rows() []*domain.ScanResultRow {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	cp := make([]*domain.ScanResultRow, len(r.rows))
 	copy(cp, r.rows)
 	return cp
+}
+
+// ── ReplicationRepo ──────────────────────────────────────────────
+
+type ReplicationRepo struct {
+	mu      sync.Mutex
+	rules   map[string]*domain.ReplicationRule
+	history []domain.ReplicationHistory
+}
+
+func NewReplicationRepo() *ReplicationRepo {
+	return &ReplicationRepo{rules: make(map[string]*domain.ReplicationRule)}
+}
+
+func (r *ReplicationRepo) ListRules(_ context.Context) ([]domain.ReplicationRule, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]domain.ReplicationRule, 0, len(r.rules))
+	for _, v := range r.rules {
+		out = append(out, *v)
+	}
+	return out, nil
+}
+
+func (r *ReplicationRepo) GetRule(_ context.Context, id string) (*domain.ReplicationRule, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	v, ok := r.rules[id]
+	if !ok {
+		return nil, nil
+	}
+	cp := *v
+	return &cp, nil
+}
+
+func (r *ReplicationRepo) CreateRule(_ context.Context, rule *domain.ReplicationRule) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	rule.ID = fmt.Sprintf("rule-%d", len(r.rules)+1)
+	rule.CreatedAt = time.Now()
+	cp := *rule
+	r.rules[rule.ID] = &cp
+	return nil
+}
+
+func (r *ReplicationRepo) UpdateRule(_ context.Context, rule *domain.ReplicationRule) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.rules[rule.ID]; !ok {
+		return fmt.Errorf("rule not found: %s", rule.ID)
+	}
+	cp := *rule
+	r.rules[rule.ID] = &cp
+	return nil
+}
+
+func (r *ReplicationRepo) DeleteRule(_ context.Context, id string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.rules, id)
+	return nil
+}
+
+func (r *ReplicationRepo) UpdateRuleStatus(_ context.Context, id, status string, at time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if v, ok := r.rules[id]; ok {
+		v.LastRunStatus = status
+		v.LastRunAt = &at
+	}
+	return nil
+}
+
+func (r *ReplicationRepo) AddHistory(_ context.Context, h *domain.ReplicationHistory) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	h.ID = fmt.Sprintf("hist-%d", len(r.history)+1)
+	r.history = append(r.history, *h)
+	return nil
+}
+
+func (r *ReplicationRepo) ListHistory(_ context.Context, ruleID string, limit int) ([]domain.ReplicationHistory, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []domain.ReplicationHistory
+	for i := len(r.history) - 1; i >= 0 && len(out) < limit; i-- {
+		if r.history[i].RuleID == ruleID {
+			out = append(out, r.history[i])
+		}
+	}
+	return out, nil
 }
