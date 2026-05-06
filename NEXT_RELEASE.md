@@ -3,4 +3,4 @@
 
 ### 🐛 Bug Fixes
 
-_No bug fixes in this release._
+* Fix tags of images
