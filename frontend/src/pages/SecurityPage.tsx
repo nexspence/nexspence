@@ -277,7 +277,6 @@ function RolesTab({ roles, loading, onRefresh, admin }: { roles: Role[]; loading
     }
   }
 
-  useMemo(() => ({ expandedRoles, rolePrivCache, loadingExpand, toggleExpand }), [expandedRoles, rolePrivCache, loadingExpand, toggleExpand])
 
   async function loadPrivs() {
     setLoadingPrivs(true)
@@ -393,14 +392,23 @@ function RolesTab({ roles, loading, onRefresh, admin }: { roles: Role[]; loading
                 </div>
                 {r.description && <div style={{ fontSize: 11, color: 'var(--holo-text-faint)', marginTop: 1 }}>{r.description}</div>}
                 {(r.privileges ?? []).length > 0 && (
-                  <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' as const, marginTop: 4 }}>
-                    {(r.privileges ?? []).slice(0, 4).map(p => (
-                      <span key={p} style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, background: 'rgba(99,102,241,0.12)', color: '#a5b4fc', fontFamily: 'monospace' }}>{p}</span>
-                    ))}
-                    {(r.privileges ?? []).length > 4 && (
-                      <span style={{ fontSize: 10, color: 'var(--holo-text-faint)' }}>+{(r.privileges ?? []).length - 4} more</span>
-                    )}
-                  </div>
+                  <button
+                    onClick={e => { e.stopPropagation(); void toggleExpand(r.id) }}
+                    style={{
+                      marginTop: 4, display: 'inline-flex', alignItems: 'center', gap: 5,
+                      background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(99,102,241,0.25)',
+                      borderRadius: 6, padding: '2px 8px', cursor: 'pointer', fontSize: 11,
+                      color: '#a5b4fc', transition: 'background 0.15s',
+                    }}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'rgba(99,102,241,0.22)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'rgba(99,102,241,0.12)')}
+                  >
+                    {loadingExpand.has(r.id)
+                      ? <Loader size={11} style={{ animation: 'spin 1s linear infinite' }} />
+                      : <span style={{ fontSize: 10 }}>{expandedRoles.has(r.id) ? '▲' : '▼'}</span>
+                    }
+                    {(r.privileges ?? []).length} privilege{(r.privileges ?? []).length !== 1 ? 's' : ''}
+                  </button>
                 )}
               </div>
               <div style={{ display: 'flex', gap: 6 }}>
