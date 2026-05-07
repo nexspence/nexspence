@@ -22,6 +22,8 @@ type UserService struct {
 	ldapAdminGroup string                 // LDAP group name that maps to nx-admin role
 	oidc           auth.OIDCAuthenticator // nil when OIDC is disabled
 	oidcCfg        config.OIDCConfig      // empty when OIDC is disabled
+	saml           auth.SAMLAuthenticator // nil when SAML is disabled
+	samlCfg        config.SAMLConfig      // empty when SAML is disabled
 	log            logger.Logger
 }
 
@@ -48,6 +50,13 @@ func (s *UserService) WithLDAP(l auth.LDAPAuthenticator, adminGroup string) *Use
 func (s *UserService) WithOIDC(a auth.OIDCAuthenticator, cfg config.OIDCConfig) *UserService {
 	s.oidc = a
 	s.oidcCfg = cfg
+	return s
+}
+
+// WithSAML attaches a SAML authenticator and its config.
+func (s *UserService) WithSAML(a auth.SAMLAuthenticator, cfg config.SAMLConfig) *UserService {
+	s.saml = a
+	s.samlCfg = cfg
 	return s
 }
 
@@ -513,4 +522,131 @@ func ldapGroupMatch(name, configured string) bool {
 		}
 	}
 	return false
+}
+
+// LoginSAML upserts the user and assigns roles based on SAML assertion claims.
+// Roles are REPLACED on every login — IdP is source of truth.
+func (s *UserService) LoginSAML(ctx context.Context, claims *auth.SAMLClaims) (string, *domain.User, error) {
+	if s.saml == nil {
+		return "", nil, fmt.Errorf("%w: saml not configured", ErrInvalidInput)
+	}
+	username := strings.ToLower(strings.TrimSpace(claims.Username))
+	email := strings.ToLower(strings.TrimSpace(claims.Email))
+	if username == "" || email == "" {
+		return "", nil, fmt.Errorf("%w: saml claims missing username or email", ErrInvalidInput)
+	}
+
+	existing, err := s.users.Get(ctx, username)
+	if err != nil {
+		return "", nil, err
+	}
+	if existing != nil && existing.Source != domain.UserSourceSAML {
+		return "", nil, fmt.Errorf("%w: username %q is claimed by %s",
+			ErrProvisioningConflict, username, existing.Source)
+	}
+
+	if existing == nil {
+		if err := s.checkSAMLProvisioning(email); err != nil {
+			return "", nil, err
+		}
+		existing = &domain.User{
+			Username:  username,
+			Email:     email,
+			FirstName: claims.Name, // store display name in FirstName
+			Status:    domain.UserStatusActive,
+			Source:    domain.UserSourceSAML,
+		}
+		if err := s.users.Create(ctx, existing); err != nil {
+			return "", nil, fmt.Errorf("create saml user: %w", err)
+		}
+	} else {
+		existing.Email = email
+		existing.FirstName = claims.Name
+		_ = s.users.Update(ctx, existing)
+	}
+
+	if existing.Status != domain.UserStatusActive {
+		return "", nil, fmt.Errorf("%w: user account is not active", ErrInvalidInput)
+	}
+
+	if err := s.syncSAMLRoles(ctx, existing.ID, claims.Groups); err != nil {
+		s.log.Warnw("syncSAMLRoles failed", "username", username, "err", err)
+	}
+
+	// Reload roles from DB — SetUserRoles does not update the in-memory user.
+	if fresh, err2 := s.roles.GetUserRoles(ctx, existing.ID); err2 == nil {
+		names := make([]string, 0, len(fresh))
+		for _, r := range fresh {
+			names = append(names, r.Name)
+		}
+		existing.Roles = names
+	}
+
+	s.log.Infow("saml login complete", "username", username, "roles", existing.Roles)
+
+	token, err := s.auth.GenerateTokenWithMethod(existing.ID, existing.Username, existing.Roles, "saml")
+	if err != nil {
+		return "", nil, err
+	}
+	_ = s.users.UpdateLastLogin(ctx, username)
+	return token, existing, nil
+}
+
+// checkSAMLProvisioning gates new-user creation based on saml.provisioning mode.
+func (s *UserService) checkSAMLProvisioning(email string) error {
+	mode := s.samlCfg.Provisioning
+	if mode == "" {
+		mode = "jit"
+	}
+	switch mode {
+	case "jit":
+		return nil
+	case "allowlist":
+		for _, pat := range s.samlCfg.EmailAllowlist {
+			ok, _ := path.Match(strings.ToLower(pat), email)
+			if ok {
+				return nil
+			}
+		}
+		return fmt.Errorf("%w: email %q not in allowlist", ErrProvisioningRejected, email)
+	case "manual":
+		return fmt.Errorf("%w: user must be pre-created by an admin", ErrProvisioningRejected)
+	default:
+		return fmt.Errorf("%w: unknown saml provisioning mode %q", ErrInvalidInput, mode)
+	}
+}
+
+// syncSAMLRoles replaces the user's roles derived from SAML groups.
+// REPLACE semantics: IdP is source of truth.
+func (s *UserService) syncSAMLRoles(ctx context.Context, userID string, groups []string) error {
+	want := make(map[string]struct{})
+	for _, g := range groups {
+		if s.samlCfg.AdminGroup != "" && strings.EqualFold(g, s.samlCfg.AdminGroup) {
+			want["nx-admin"] = struct{}{}
+		}
+		for mapKey, roleName := range s.samlCfg.RoleMappings {
+			if roleName != "" && strings.EqualFold(g, mapKey) {
+				want[roleName] = struct{}{}
+			}
+		}
+	}
+
+	allRoles, err := s.roles.List(ctx)
+	if err != nil {
+		return err
+	}
+	ids := make([]string, 0, len(want))
+	matched := make(map[string]bool)
+	for _, r := range allRoles {
+		if _, ok := want[r.Name]; ok {
+			ids = append(ids, r.ID)
+			matched[r.Name] = true
+		}
+	}
+	for name := range want {
+		if !matched[name] {
+			s.log.Warnw("saml role mapping references unknown role", "role", name)
+		}
+	}
+	return s.roles.SetUserRoles(ctx, userID, ids)
 }
