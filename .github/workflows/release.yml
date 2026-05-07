@@ -132,7 +132,6 @@ jobs:
             printf '**Web UI:** single-node → `http://localhost:8081` · HA → `http://localhost:8080`  \n'
             printf '**Keycloak admin:** `http://localhost:8180` (admin / admin)  \n'
             printf '**Test SSO user:** testuser / testpass (member of `nexspence-admins` → nx-admin role)  \n\n'
-            printf 'See [`docs/ha-setup.md`](https://github.com/skensell201/nexspence/blob/main/docs/ha-setup.md) for production HA configuration.\n'
           } >> release-notes.md
 
       - name: Create GitHub Release
