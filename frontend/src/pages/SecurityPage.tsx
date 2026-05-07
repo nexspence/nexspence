@@ -1557,9 +1557,10 @@ function AccessMapTab() {
   const [search,  setSearch]  = useState('')
   const [open,    setOpen]    = useState(false)
 
-  const { data: graph, isLoading } = useQuery<AccessGraph>({
+  const { data: graph, isLoading, isError } = useQuery<AccessGraph>({
     queryKey: ['access-graph'],
     queryFn: () => apiClient.get<AccessGraph>('/api/v1/security/access-graph').then(r => r.data),
+    staleTime: 60_000,
   })
 
   // Combobox options filtered by search.
@@ -1596,8 +1597,13 @@ function AccessMapTab() {
       user?.roleIds.forEach(rid => { set.add(rid); roleDown(rid) })
     } else if (selType === 'role') {
       roleDown(selId)
-      g.users.filter(u => u.roleIds.includes(selId)).forEach(u => set.add(u.id))
-      g.roles.filter(r => r.roleIds.includes(selId)).forEach(r => set.add(r.id))
+      function roleUp(rid: string) {
+        g.roles.filter(r => r.roleIds.includes(rid)).forEach(r => {
+          if (!set.has(r.id)) { set.add(r.id); roleUp(r.id) }
+        })
+        g.users.filter(u => u.roleIds.includes(rid)).forEach(u => set.add(u.id))
+      }
+      roleUp(selId)
     } else if (selType === 'privilege') {
       const priv = g.privileges.find(p => p.id === selId)
       if (priv?.contentSelectorId) set.add(priv.contentSelectorId)
@@ -1764,6 +1770,8 @@ function AccessMapTab() {
             value={search}
             onChange={e => { setSearch(e.target.value); setOpen(true) }}
             onFocus={() => setOpen(true)}
+            onBlur={() => setTimeout(() => setOpen(false), 150)}
+            onKeyDown={(e) => e.key === 'Escape' && setOpen(false)}
             placeholder={`Search ${selType}s…`}
             style={{width:'100%', background:'#0d1829', border:`1px solid ${selType?NODE_COLORS[selType].stroke:'#1e3a5f'}`, borderRadius: open && options.length ? '6px 6px 0 0' : 6, color:'#e2e8f0', fontSize:12, padding:'7px 10px', outline:'none', boxSizing:'border-box'}}
           />
@@ -1786,7 +1794,9 @@ function AccessMapTab() {
       {/* Graph area */}
       {isLoading && <div style={{color:'#475569', fontSize:12}}>Loading graph…</div>}
 
-      {!isLoading && !hasGraph && (
+      {isError && <div style={{color:'#ef4444', fontSize:12}}>Failed to load access graph.</div>}
+
+      {!isLoading && !isError && !hasGraph && (
         <div style={{height:200, border:'1px dashed #1e3a5f', borderRadius:8, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:8}}>
           <div style={{color:'#1e3a5f', fontSize:24}}>⬡</div>
           <div style={{color:'#334155', fontSize:12}}>Select a node to explore the access graph</div>
