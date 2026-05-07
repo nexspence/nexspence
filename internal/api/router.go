@@ -199,6 +199,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 	roleH      := handlers.NewRoleHandler(roleRepo, userRepo)
 	privH      := handlers.NewPrivilegeHandler(privilegeRepo, roleRepo)
 	csH        := handlers.NewContentSelectorHandler(selectorSvc)
+	accessGraphH := handlers.NewAccessGraphHandler(userRepo, roleRepo, privilegeRepo, csRepo)
 	rrSvc      := service.NewRoutingRuleService(rrRepo)
 	rrH        := handlers.NewRoutingRuleHandler(rrSvc)
 	systemH    := handlers.NewSystemHandler(cfg, pool, ldapSvc, oidcSvc).WithBlobStores(blobRepo).WithSAML(samlSvc)
@@ -429,6 +430,9 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 		admin.DELETE("/service/rest/v1/security/content-selectors/:id", csH.Delete)
 		admin.PUT("/service/rest/v1/security/privileges/:id/content-selector/:selectorId", csH.AttachToPrivilege)
 		admin.DELETE("/service/rest/v1/security/privileges/:id/content-selector", csH.DetachFromPrivilege)
+
+		// ── Security access graph (admin) ────────────────────
+		admin.GET("/api/v1/security/access-graph", accessGraphH.Get)
 
 		// ── Webhooks (admin) ──────────────────────────────────
 		admin.GET("/api/v1/webhooks", webhookH.List)
