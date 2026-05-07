@@ -256,6 +256,12 @@ function RolesTab({ roles, loading, onRefresh, admin }: { roles: Role[]; loading
   const [rolePrivCache, setRolePrivCache] = useState<Map<string, Privilege[]>>(new Map())
   const [loadingExpand, setLoadingExpand] = useState<Set<string>>(new Set())
 
+  const { data: allSelectors = [] } = useQuery<{ id: string; name: string }[]>({
+    queryKey: ['content-selectors'],
+    queryFn: () => nexusApi.listContentSelectors().then(r => r.data),
+    staleTime: 60_000,
+  })
+
   const filtered = roles.filter(r =>
     r.name.toLowerCase().includes(roleSearch.toLowerCase())
   )
@@ -410,6 +416,49 @@ function RolesTab({ roles, loading, onRefresh, admin }: { roles: Role[]; loading
                     }
                     {(r.privileges ?? []).length} privilege{(r.privileges ?? []).length !== 1 ? 's' : ''}
                   </button>
+                )}
+                {expandedRoles.has(r.id) && (
+                  <div style={{
+                    marginTop: 8, borderTop: '1px solid rgba(124,92,255,0.15)',
+                    paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 4,
+                  }}>
+                    {(rolePrivCache.get(r.id) ?? []).length === 0 && !loadingExpand.has(r.id) && (
+                      <span style={{ fontSize: 11, color: 'var(--holo-text-faint)' }}>No privileges assigned</span>
+                    )}
+                    {(rolePrivCache.get(r.id) ?? []).map(p => {
+                      const actions = (p.attrs?.actions as string[] | undefined) ?? []
+                      const typeColor = PRIV_TYPE_COLOR[p.type] ?? '#6b7280'
+                      const csName = allSelectors.find(s => s.id === p.contentSelectorId)?.name
+                      return (
+                        <div key={p.id} style={{
+                          display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' as const,
+                          padding: '4px 0',
+                        }}>
+                          <span style={{
+                            fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 3,
+                            textTransform: 'uppercase' as const, letterSpacing: '0.4px',
+                            background: typeColor + '22', color: typeColor, whiteSpace: 'nowrap' as const,
+                          }}>
+                            {(p.type as string) === 'repository-content-selector' ? 'cs' : p.type.replace('repository-', '')}
+                          </span>
+                          <span style={{ fontSize: 12, color: 'var(--holo-text)', fontWeight: 500 }}>{p.name}</span>
+                          {csName && (
+                            <span style={{ fontSize: 10, color: '#67e8f9', padding: '1px 5px', background: 'rgba(6,182,212,0.1)', borderRadius: 3 }}>
+                              {csName}
+                            </span>
+                          )}
+                          {actions.map(a => {
+                            const ac = (a === 'write' || a === 'delete') ? '#f59e0b' : '#22c55e'
+                            return (
+                              <span key={a} style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3, background: ac + '22', color: ac }}>
+                                {a}
+                              </span>
+                            )
+                          })}
+                        </div>
+                      )
+                    })}
+                  </div>
                 )}
               </div>
               <div style={{ display: 'flex', gap: 6 }}>
