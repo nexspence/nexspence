@@ -19,8 +19,12 @@ func NewRoleRepo(db *pgxpool.Pool) *roleRepo {
 
 func (r *roleRepo) List(ctx context.Context) ([]domain.Role, error) {
 	rows, err := r.db.Query(ctx, `
-		SELECT id, name, description, source, builtin, created_at, updated_at
-		FROM roles ORDER BY name`)
+		SELECT r.id, r.name, r.description, r.source, r.builtin, r.created_at, r.updated_at,
+		       COALESCE(array_agg(rp.privilege_id::text) FILTER (WHERE rp.privilege_id IS NOT NULL), '{}') AS privilege_ids
+		FROM roles r
+		LEFT JOIN role_privileges rp ON rp.role_id = r.id
+		GROUP BY r.id
+		ORDER BY r.name`)
 	if err != nil {
 		return nil, err
 	}
@@ -28,11 +32,16 @@ func (r *roleRepo) List(ctx context.Context) ([]domain.Role, error) {
 
 	var roles []domain.Role
 	for rows.Next() {
-		ro, err := scanRole(rows)
+		var ro domain.Role
+		var privIDs []string
+		err := rows.Scan(&ro.ID, &ro.Name, &ro.Description, &ro.Source, &ro.ReadOnly,
+			&ro.CreatedAt, &ro.UpdatedAt, &privIDs)
 		if err != nil {
 			return nil, err
 		}
-		roles = append(roles, *ro)
+		ro.Privileges = privIDs
+		ro.Roles = []string{}
+		roles = append(roles, ro)
 	}
 	return roles, rows.Err()
 }
