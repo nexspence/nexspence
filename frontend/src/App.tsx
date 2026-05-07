@@ -4,6 +4,7 @@ import Layout from '@/components/Layout'
 import LoginPage from '@/pages/LoginPage'
 import RepositoriesPage from '@/pages/RepositoriesPage'
 import OIDCCallbackPage from '@/pages/OIDCCallbackPage'
+import SAMLCallbackPage from '@/pages/SAMLCallbackPage'
 import { useAuthStore } from '@/store/authStore'
 
 // Lazy-load large page components for code splitting
@@ -38,6 +39,7 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/oidc/callback" element={<OIDCCallbackPage />} />
+        <Route path="/saml/callback" element={<SAMLCallbackPage />} />
         <Route
           path="/"
           element={

@@ -158,6 +158,27 @@ oidc:
   cookie_key: ""                      # base64-encoded 32 bytes; set via NEXSPENCE_OIDC_COOKIE_KEY env var
   allowed_skew_seconds: 60
 
+saml:
+  enabled: false
+  display_name: "SAML SSO"
+  show_login_button: true
+  frontend_base_url: "http://localhost:5173"
+  idp_metadata_url: ""
+  idp_metadata_xml: ""
+  sp_entity_id: ""
+  acs_url: ""
+  sp_cert_pem: ""
+  sp_key_pem: ""
+  provisioning: "jit"
+  email_allowlist: []
+  groups_attribute: "groups"
+  email_attribute: "email"
+  username_attribute: "uid"
+  name_attribute: "displayName"
+  admin_group: ""
+  role_mappings: {}
+  hmac_key: ""
+
 # Redis — required for multi-node (HA) deployments.
 # Set enabled: true when running multiple Nexspence instances behind a load balancer.
 # With enabled: false (default), the server runs fully without Redis.

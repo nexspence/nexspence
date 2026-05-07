@@ -124,6 +124,18 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 		oidcSealer = sealer
 		userSvc.WithOIDC(oidcSvc, cfg.OIDC)
 	}
+
+	// SAML is optional; fails startup if IdP metadata is unreachable or misconfigured.
+	var samlSvc auth.SAMLAuthenticator
+	if cfg.SAML.Enabled {
+		svc, err := auth.NewSAMLService(cfg.SAML)
+		if err != nil {
+			panic("saml init: " + err.Error())
+		}
+		samlSvc = svc
+		userSvc.WithSAML(svc, cfg.SAML)
+	}
+
 	tokenSvc   := service.NewTokenService(userTokenRepo, userRepo)
 	webhookSvc := service.NewWebhookService(webhookRepo)
 	repoSvc.WithWebhooks(webhookSvc)
@@ -187,7 +199,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 	csH        := handlers.NewContentSelectorHandler(selectorSvc)
 	rrSvc      := service.NewRoutingRuleService(rrRepo)
 	rrH        := handlers.NewRoutingRuleHandler(rrSvc)
-	systemH    := handlers.NewSystemHandler(cfg, pool, ldapSvc, oidcSvc).WithBlobStores(blobRepo)
+	systemH    := handlers.NewSystemHandler(cfg, pool, ldapSvc, oidcSvc).WithBlobStores(blobRepo).WithSAML(samlSvc)
 	migrationH := handlers.NewMigrationHandler(migrationRepo)
 	blobMigrationRepo := postgres.NewBlobStoreMigrationRepo(pool)
 	blobMigSvc  := service.NewBlobStoreMigrationService(blobMigrationRepo, assetRepo, repoRepo, blobRepo, blobRegistry)
@@ -247,6 +259,13 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 		oidcH = handlers.NewOIDCHandler(oidcSvc, userSvc, userRepo, oidcSealer, cfg.OIDC, log)
 		r.GET("/api/v1/auth/oidc/login", oidcH.Login)
 		r.GET("/api/v1/auth/oidc/callback", oidcH.Callback)
+	}
+
+	if samlSvc != nil {
+		samlH := handlers.NewSAMLHandler(samlSvc, userSvc, cfg.SAML, log)
+		r.GET("/api/v1/auth/saml/metadata", samlH.Metadata)
+		r.GET("/api/v1/auth/saml/login",    samlH.Login)
+		r.POST("/api/v1/auth/saml/acs",     samlH.ACS)
 	}
 
 	// Metrics (public — useful for monitoring without auth)

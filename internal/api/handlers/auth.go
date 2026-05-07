@@ -39,12 +39,24 @@ func (h *AuthHandler) WithConfig(cfg config.Config) *AuthHandler {
 // show the "Sign in with {provider}" button.
 func (h *AuthHandler) Config(c *gin.Context) {
 	oidcOn := h.cfg.OIDC.Enabled && h.cfg.OIDC.ShowLoginButton
-	c.JSON(http.StatusOK, gin.H{
+	samlOn := h.cfg.SAML.Enabled && h.cfg.SAML.ShowLoginButton
+	resp := gin.H{
 		"oidcEnabled":     oidcOn,
 		"oidcDisplayName": h.cfg.OIDC.DisplayName,
 		"oidcLoginUrl":    "/api/v1/auth/oidc/login",
 		"ldapEnabled":     h.cfg.LDAP.Enabled,
-	})
+		"samlEnabled":     samlOn,
+		"samlDisplayName": h.cfg.SAML.DisplayName,
+		"samlLoginUrl":    "/api/v1/auth/saml/login",
+	}
+	if h.cfg.SAML.Enabled {
+		resp["samlEntityId"]      = h.cfg.SAML.SPEntityID
+		resp["samlAcsUrl"]        = h.cfg.SAML.ACSURL
+		resp["samlIdpMetadataUrl"] = h.cfg.SAML.IDPMetadataURL
+		resp["samlProvisioning"]  = h.cfg.SAML.Provisioning
+		resp["samlMetadataUrl"]   = "/api/v1/auth/saml/metadata"
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
 // Login handles POST /api/v1/login  and  POST /service/rest/v1/security/users/login

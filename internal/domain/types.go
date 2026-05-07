@@ -317,6 +317,7 @@ const (
 	UserSourceLocal UserSource = "local"
 	UserSourceLDAP  UserSource = "ldap"
 	UserSourceOIDC  UserSource = "oidc"
+	UserSourceSAML  UserSource = "saml"
 )
 
 type User struct {

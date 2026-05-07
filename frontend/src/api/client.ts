@@ -40,6 +40,14 @@ export interface AuthConfig {
   oidcDisplayName: string
   oidcLoginUrl: string
   ldapEnabled: boolean
+  samlEnabled?: boolean
+  samlDisplayName?: string
+  samlLoginUrl?: string
+  samlEntityId?: string
+  samlAcsUrl?: string
+  samlIdpMetadataUrl?: string
+  samlProvisioning?: string
+  samlMetadataUrl?: string
 }
 
 export interface ServiceStatus {
