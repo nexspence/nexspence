@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Activity, Archive, ArrowRightLeft, CheckCircle, Database, Download, ExternalLink, GitBranch, HardDrive, Info, Network, Paperclip, Pause, Pencil, Play, Plus, RefreshCw, Server, Share2, Shield, Trash2, Upload, Wifi, X } from 'lucide-react'
+import { Activity, Archive, ArrowRightLeft, CheckCircle, Database, Download, ExternalLink, GitBranch, HardDrive, Info, Network, Paperclip, Pause, Pencil, Play, Plus, RefreshCw, Share2, Shield, Trash2, Upload, Wifi, X } from 'lucide-react'
 import { nexusApi, nexspenceApi, ImportRepoStats, ServiceStatus, RoutingRule, RoutingRuleInput, ReplicationRule, ReplicationHistory, ReplicationRuleInput, AuthConfig } from '@/api/client'
 import { MonitoringView } from '@/pages/MonitoringPage'
 import { Select } from '@/components/Select'
@@ -52,7 +52,6 @@ function SamlTab() {
   })
 
   const samlSvc = services?.find(s => s.name.startsWith('SAML'))
-  const redisSvc = services?.find(s => s.name === 'Redis')
 
   const row = (label: string, value?: string | null) => (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '9px 0', borderBottom: '1px solid rgba(255,255,255,0.05)', fontSize: 13, gap: 16 }}>
@@ -132,18 +131,6 @@ function SamlTab() {
         </HoloCard>
       )}
 
-      {/* Redis */}
-      <HoloCard>
-        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--holo-text-dim)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Server size={14} /> Redis
-          {redisSvc && <span style={{ marginLeft: 'auto' }}>{statusDot(redisSvc.status)}</span>}
-        </div>
-        {redisSvc ? (
-          <div style={{ fontSize: 12, color: 'var(--holo-text-dim)', lineHeight: 1.6 }}>{redisSvc.detail}</div>
-        ) : (
-          <div style={{ fontSize: 12, color: 'var(--holo-text-faint)' }}>Loading…</div>
-        )}
-      </HoloCard>
     </div>
   )
 }

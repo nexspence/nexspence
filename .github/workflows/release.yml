@@ -93,9 +93,14 @@ jobs:
 
           cp config.yaml.example release-assets/config.yaml.example
           cp -r deploy release-assets/
+          cp -r keycloak release-assets/
 
           cd release-assets
-          zip -r "nexspence-${{ github.ref_name }}.zip" docker-compose.yml docker-compose.ha.yml config.yaml.example deploy/
+          zip -r "nexspence-${{ github.ref_name }}.zip" \
+            docker-compose.yml docker-compose.ha.yml \
+            config.yaml.example \
+            deploy/ \
+            keycloak/
           cd ..
 
       - name: Build release notes
@@ -116,17 +121,18 @@ jobs:
             printf '```bash\n'
             printf 'docker pull ghcr.io/skensell201/nexspence:%s\n' "$TAG"
             printf '```\n\n'
-            printf '#### Quick start (Single-node)\n\n'
-            printf '1. Download `docker-compose.yml` and `config.yaml.example` from this release\n'
-            printf '2. Rename `config.yaml.example` → `config.yaml` and edit: admin password, JWT secret, DB DSN\n'
-            printf '3. `docker compose up -d`\n\n'
-            printf 'Web UI: `http://localhost:8081`\n\n'
-            printf '#### High Availability (Multi-node cluster)\n\n'
-            printf '1. Download `docker-compose.ha.yml`, `config.yaml.example`, and `deploy/nginx-ha.conf`\n'
-            printf '2. Rename `config.yaml.example` → `config.yaml` and configure (same as above)\n'
-            printf '3. `docker compose -f docker-compose.ha.yml up --build`\n\n'
-            printf 'Web UI via nginx load balancer: `http://localhost:8080`\n\n'
-            printf 'See [`docs/ha-setup.md`](https://github.com/skensell201/nexspence/blob/main/docs/ha-setup.md) for production configuration.\n'
+            printf '#### Quick start\n\n'
+            printf 'Download the zip, extract it, rename `config.yaml.example` → `config.yaml` and edit the admin password and JWT secret.\n\n'
+            printf '| Mode | Command |\n'
+            printf '|------|---------|\n'
+            printf '| Single-node | `docker compose up -d` |\n'
+            printf '| Single-node + Keycloak SSO | `OIDC_ENABLED=true docker compose --profile keycloak up -d` |\n'
+            printf '| HA (2 nodes + nginx) | `docker compose -f docker-compose.ha.yml up -d` |\n'
+            printf '| HA + Keycloak SSO | `OIDC_ENABLED=true docker compose -f docker-compose.ha.yml --profile keycloak up -d` |\n\n'
+            printf '**Web UI:** single-node → `http://localhost:8081` · HA → `http://localhost:8080`  \n'
+            printf '**Keycloak admin:** `http://localhost:8180` (admin / admin)  \n'
+            printf '**Test SSO user:** testuser / testpass (member of `nexspence-admins` → nx-admin role)  \n\n'
+            printf 'See [`docs/ha-setup.md`](https://github.com/skensell201/nexspence/blob/main/docs/ha-setup.md) for production HA configuration.\n'
           } >> release-notes.md
 
       - name: Create GitHub Release

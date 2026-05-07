@@ -1,7 +1,10 @@
-# Nexspence HA reference deployment — 2 nodes + shared Postgres + Redis + MinIO
-# Usage: docker compose -f docker-compose.ha.yml up --build
+# Nexspence HA deployment — 2 nodes + Postgres + Redis + MinIO + nginx
 #
-# Web UI available at http://localhost:8080 (nginx rounds between both nodes)
+# Run modes:
+#   Without Keycloak (default):  docker compose -f docker-compose.ha.yml up
+#   With Keycloak SSO:           OIDC_ENABLED=true docker compose -f docker-compose.ha.yml --profile keycloak up
+#
+# Web UI: http://localhost:8080 (nginx load balancer, round-robin across both nodes)
 
 services:
 
@@ -28,6 +31,35 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
+  # ── Keycloak (optional OIDC IdP, profile: keycloak) ─────────────────
+  # Start with: OIDC_ENABLED=true docker compose -f docker-compose.ha.yml --profile keycloak up
+  # Realm "nexspence" is auto-imported on first start from keycloak/nexspence-realm.json.
+  # Admin UI: http://localhost:8180  (admin / admin)
+  # Test user: testuser / testpass  (in group nexspence-admins → gets nx-admin role)
+  keycloak:
+    profiles: [keycloak]
+    image: quay.io/keycloak/keycloak:24.0
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_HTTP_PORT: "8080"
+      KC_HOSTNAME: "localhost"
+      KC_HOSTNAME_PORT: "8180"
+      KC_HOSTNAME_STRICT: "false"
+      KC_HOSTNAME_STRICT_HTTPS: "false"
+      KC_HTTP_ENABLED: "true"
+    ports:
+      - "8180:8080"
+    volumes:
+      - ./keycloak:/opt/keycloak/data/import:ro
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/8080 && printf 'GET /realms/nexspence/.well-known/openid-configuration HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && cat <&3 | grep -q issuer"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
 
   minio:
     image: minio/minio:latest
@@ -83,6 +115,25 @@ services:
       NEXSPENCE_REDIS_ENABLED: "true"
       NEXSPENCE_REDIS_ADDR: "redis:6379"
       NEXSPENCE_AUTH_JWT_SECRET: "${NEXSPENCE_JWT_SECRET:-change-me-in-production-32chars}"
+      # ── OIDC (Keycloak dev IdP, active when OIDC_ENABLED=true) ──────
+      # In HA mode the load balancer (nginx :8080) fronts both nodes,
+      # so redirect_url and frontend_base_url point to nginx, not to a node.
+      NEXSPENCE_OIDC_ENABLED: "${OIDC_ENABLED:-false}"
+      NEXSPENCE_OIDC_DISPLAY_NAME: "Keycloak"
+      NEXSPENCE_OIDC_ISSUER: "http://keycloak:8080/realms/nexspence"
+      NEXSPENCE_OIDC_PUBLIC_ISSUER_URL: "http://localhost:8180/realms/nexspence"
+      NEXSPENCE_OIDC_CLIENT_ID: "nexspence"
+      NEXSPENCE_OIDC_CLIENT_SECRET: "dev-oidc-secret-nexspence"
+      NEXSPENCE_OIDC_REDIRECT_URL: "http://localhost:8080/api/v1/auth/oidc/callback"
+      NEXSPENCE_OIDC_FRONTEND_BASE_URL: "http://localhost:8080"
+      NEXSPENCE_OIDC_COOKIE_SECURE: "false"
+      NEXSPENCE_OIDC_COOKIE_KEY: "YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY="
+      NEXSPENCE_OIDC_ADMIN_GROUP: "nexspence-admins"
+      NEXSPENCE_OIDC_GROUPS_CLAIM: "groups"
+      NEXSPENCE_OIDC_PROVISIONING: "jit"
+      NEXSPENCE_OIDC_SCOPES: "openid,profile,email"
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8081/healthz"]
       interval: 10s

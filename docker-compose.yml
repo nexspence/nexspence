@@ -1,6 +1,10 @@
-# Лимиты CPU/RAM для сервисов здесь не задаём — каждый контейнер может расти до лимита,
-# который выставляет демон Docker (на Docker Desktop это RAM/CPU всей Linux-ВМ:
-# Settings → Resources → Memory / CPUs).
+# Nexspence single-node deployment
+#
+# Run modes:
+#   Without Keycloak (default):  docker compose up
+#   With Keycloak SSO:           OIDC_ENABLED=true docker compose --profile keycloak up
+#
+# Web UI: http://localhost:8081
 services:
 
   # ── PostgreSQL ────────────────────────────────────────────────
@@ -21,11 +25,13 @@ services:
       timeout: 5s
       retries: 10
 
-  # ── Keycloak (dev OIDC IdP) ───────────────────────────────────────
+  # ── Keycloak (optional OIDC IdP, profile: keycloak) ─────────────────
+  # Start with: OIDC_ENABLED=true docker compose --profile keycloak up
   # Realm "nexspence" is auto-imported on first start from keycloak/nexspence-realm.json.
   # Admin UI: http://localhost:8180  (admin / admin)
   # Test user: testuser / testpass  (in group nexspence-admins → gets nx-admin role)
   keycloak:
+    profiles: [keycloak]
     image: quay.io/keycloak/keycloak:24.0
     command: ["start-dev", "--import-realm"]
     environment:
@@ -71,8 +77,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      keycloak:
-        condition: service_healthy
     environment:
       NEXSPENCE_DATABASE_DSN: "postgres://nexspence:nexspence@postgres:5432/nexspence?sslmode=disable"
       NEXSPENCE_AUTH_JWT_SECRET: "change-me-in-production-min-32-chars"
@@ -82,8 +86,8 @@ services:
       NEXSPENCE_STORAGE_LOCAL_BASE_PATH: "/data/blobs"
       NEXSPENCE_LOG_LEVEL: "info"
       NEXSPENCE_LOG_FORMAT: "json"
-      # ── OIDC (Keycloak dev IdP) ──────────────────────────────────
-      NEXSPENCE_OIDC_ENABLED: "true"
+      # ── OIDC (Keycloak dev IdP, active when OIDC_ENABLED=true) ──────
+      NEXSPENCE_OIDC_ENABLED: "${OIDC_ENABLED:-false}"
       NEXSPENCE_OIDC_DISPLAY_NAME: "Keycloak"
       # Internal URL — used for discovery + token exchange inside Docker network
       NEXSPENCE_OIDC_ISSUER: "http://keycloak:8080/realms/nexspence"

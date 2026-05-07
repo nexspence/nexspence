@@ -20,10 +20,12 @@
       "serviceAccountsEnabled": false,
       "redirectUris": [
         "http://localhost:8081/api/v1/auth/oidc/callback",
+        "http://localhost:8080/api/v1/auth/oidc/callback",
         "http://localhost:5173/oidc/callback"
       ],
       "webOrigins": [
         "http://localhost:8081",
+        "http://localhost:8080",
         "http://localhost:5173"
       ],
       "attributes": {
