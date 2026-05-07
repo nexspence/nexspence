@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -108,9 +109,9 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 	var oidcSvc auth.OIDCAuthenticator
 	var oidcSealer *auth.CookieSealer
 	if cfg.OIDC.Enabled {
-		svc, err := auth.NewOIDCService(context.Background(), cfg.OIDC)
+		svc, err := oidcInitWithRetry(context.Background(), cfg.OIDC, log)
 		if err != nil {
-			log.Error("oidc init failed — check that IdP is reachable and OIDC config is correct", "err", err)
+			log.Error("oidc init failed — IdP unreachable or misconfigured", "err", err)
 			os.Exit(1)
 		}
 		oidcSvc = svc
@@ -698,5 +699,29 @@ func serveUI(cfg *config.Config) gin.HandlerFunc {
 		}
 		c.Request.URL.Path = path
 		fileServer.ServeHTTP(c.Writer, c.Request)
+	}
+}
+
+// oidcInitWithRetry retries OIDC discovery for up to 60 seconds.
+// Keycloak takes ~30s to start in Docker, so nexspence would otherwise
+// crash before the IdP is ready.
+func oidcInitWithRetry(ctx context.Context, cfg config.OIDCConfig, log logger.Logger) (auth.OIDCAuthenticator, error) {
+	deadline := time.Now().Add(60 * time.Second)
+	var err error
+	for {
+		var svc auth.OIDCAuthenticator
+		svc, err = auth.NewOIDCService(ctx, cfg)
+		if err == nil {
+			return svc, nil
+		}
+		if time.Now().After(deadline) {
+			return nil, err
+		}
+		log.Warn("oidc discovery not ready, retrying in 3s", "err", err)
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(3 * time.Second):
+		}
 	}
 }
