@@ -18,6 +18,7 @@ type Config struct {
 	Auth      AuthConfig      `mapstructure:"auth"`
 	LDAP      LDAPConfig      `mapstructure:"ldap"`
 	OIDC      OIDCConfig      `mapstructure:"oidc"`
+	SAML      SAMLConfig      `mapstructure:"saml"`
 	Bootstrap BootstrapConfig `mapstructure:"bootstrap"`
 	Log       LogConfig       `mapstructure:"log"`
 	Search    SearchConfig    `mapstructure:"search"`
@@ -183,6 +184,64 @@ func ValidateOIDC(c OIDCConfig) error {
 	return nil
 }
 
+// SAMLConfig configures SAML 2.0 SP-initiated SSO.
+// One IdP per deployment; coexists with local, LDAP, and OIDC.
+type SAMLConfig struct {
+	Enabled         bool   `mapstructure:"enabled"`
+	DisplayName     string `mapstructure:"display_name"`
+	ShowLoginButton bool   `mapstructure:"show_login_button"`
+	FrontendBaseURL string `mapstructure:"frontend_base_url"`
+
+	// IdP metadata source — one of these is required when enabled=true.
+	IDPMetadataURL string `mapstructure:"idp_metadata_url"`
+	IDPMetadataXML string `mapstructure:"idp_metadata_xml"`
+
+	// SP identity.
+	SPEntityID string `mapstructure:"sp_entity_id"`
+	ACSURL     string `mapstructure:"acs_url"`
+
+	// SP signing key pair. If empty, an ephemeral RSA-2048 pair is generated at startup.
+	SPCertPEM string `mapstructure:"sp_cert_pem"`
+	SPKeyPEM  string `mapstructure:"sp_key_pem"`
+
+	// Provisioning: jit (default) | allowlist | manual.
+	Provisioning   string   `mapstructure:"provisioning"`
+	EmailAllowlist []string `mapstructure:"email_allowlist"`
+
+	// SAML attribute names.
+	GroupsAttribute   string `mapstructure:"groups_attribute"`
+	EmailAttribute    string `mapstructure:"email_attribute"`
+	UsernameAttribute string `mapstructure:"username_attribute"`
+	NameAttribute     string `mapstructure:"name_attribute"`
+
+	// Role resolution.
+	AdminGroup   string            `mapstructure:"admin_group"`
+	RoleMappings map[string]string `mapstructure:"role_mappings"`
+
+	// HMACKey is base64-encoded 32 bytes for signing RelayState. Auto-generated if empty.
+	HMACKey string `mapstructure:"hmac_key"`
+}
+
+// ValidateSAML returns nil when the SAML config is usable.
+func ValidateSAML(c SAMLConfig) error {
+	if !c.Enabled {
+		return nil
+	}
+	if c.SPEntityID == "" {
+		return fmt.Errorf("saml.sp_entity_id is required when saml.enabled=true")
+	}
+	if c.ACSURL == "" {
+		return fmt.Errorf("saml.acs_url is required when saml.enabled=true")
+	}
+	if c.IDPMetadataURL == "" && c.IDPMetadataXML == "" {
+		return fmt.Errorf("saml.idp_metadata_url or saml.idp_metadata_xml is required when saml.enabled=true")
+	}
+	if c.Provisioning == "allowlist" && len(c.EmailAllowlist) == 0 {
+		return fmt.Errorf("saml.email_allowlist must be non-empty when saml.provisioning=allowlist")
+	}
+	return nil
+}
+
 type SearchConfig struct {
 	// Full-text search is built into PostgreSQL — no external deps
 	// MinQueryLen is the minimum characters before trigram search kicks in
@@ -268,6 +327,14 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("oidc.show_login_button", true)
 	v.SetDefault("oidc.cookie_secure", true)
 	v.SetDefault("oidc.allowed_skew_seconds", 60)
+	v.SetDefault("saml.enabled", false)
+	v.SetDefault("saml.display_name", "SAML SSO")
+	v.SetDefault("saml.show_login_button", true)
+	v.SetDefault("saml.provisioning", "jit")
+	v.SetDefault("saml.groups_attribute", "groups")
+	v.SetDefault("saml.email_attribute", "email")
+	v.SetDefault("saml.username_attribute", "uid")
+	v.SetDefault("saml.name_attribute", "displayName")
 	v.SetDefault("ldap.enabled", false)
 	v.SetDefault("ldap.port", 389)
 	v.SetDefault("ldap.search_filter", "(uid={0})")
@@ -316,6 +383,9 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("auth.jwt_secret is required (or set NEXSPENCE_AUTH_JWT_SECRET)")
 	}
 	if err := ValidateOIDC(cfg.OIDC); err != nil {
+		return nil, err
+	}
+	if err := ValidateSAML(cfg.SAML); err != nil {
 		return nil, err
 	}
 
