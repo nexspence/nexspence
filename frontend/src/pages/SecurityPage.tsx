@@ -319,7 +319,12 @@ function RolesTab({ roles, loading, onRefresh, admin }: { roles: Role[]; loading
       await nexusApi.updateRole(editRole.id, editForm)
       await nexusApi.setRolePrivileges(editRole.id, editPrivIds)
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['roles'] }); onRefresh(); setEditRole(null) },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['roles'] })
+      onRefresh()
+      if (editRole) setRolePrivCache(prev => { const next = new Map(prev); next.delete(editRole.id); return next })
+      setEditRole(null)
+    },
     onError: (e: unknown) => {
       let msg = 'Error saving role'
       if (axios.isAxiosError(e)) {
