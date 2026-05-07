@@ -393,6 +393,7 @@ function RolesTab({ roles, loading, onRefresh, admin }: { roles: Role[]; loading
                 {r.description && <div style={{ fontSize: 11, color: 'var(--holo-text-faint)', marginTop: 1 }}>{r.description}</div>}
                 {(r.privileges ?? []).length > 0 && (
                   <button
+                    type="button"
                     onClick={e => { e.stopPropagation(); void toggleExpand(r.id) }}
                     style={{
                       marginTop: 4, display: 'inline-flex', alignItems: 'center', gap: 5,
