@@ -43,6 +43,11 @@ export interface AuthConfig {
   samlEnabled?: boolean
   samlDisplayName?: string
   samlLoginUrl?: string
+  samlEntityId?: string
+  samlAcsUrl?: string
+  samlIdpMetadataUrl?: string
+  samlProvisioning?: string
+  samlMetadataUrl?: string
 }
 
 export interface ServiceStatus {

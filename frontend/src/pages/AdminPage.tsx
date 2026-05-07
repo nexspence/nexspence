@@ -1,8 +1,8 @@
 import { useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Activity, Archive, ArrowRightLeft, CheckCircle, Database, Download, GitBranch, HardDrive, Info, Network, Paperclip, Pause, Pencil, Play, Plus, RefreshCw, Share2, Trash2, Upload, Wifi, X } from 'lucide-react'
-import { nexusApi, nexspenceApi, ImportRepoStats, ServiceStatus, RoutingRule, RoutingRuleInput, ReplicationRule, ReplicationHistory, ReplicationRuleInput } from '@/api/client'
+import { Activity, Archive, ArrowRightLeft, CheckCircle, Database, Download, ExternalLink, GitBranch, HardDrive, Info, Network, Paperclip, Pause, Pencil, Play, Plus, RefreshCw, Server, Share2, Shield, Trash2, Upload, Wifi, X } from 'lucide-react'
+import { nexusApi, nexspenceApi, ImportRepoStats, ServiceStatus, RoutingRule, RoutingRuleInput, ReplicationRule, ReplicationHistory, ReplicationRuleInput, AuthConfig } from '@/api/client'
 import { MonitoringView } from '@/pages/MonitoringPage'
 import { Select } from '@/components/Select'
 import { HoloButton, HoloInput, HoloModal, HoloTabs, HoloCard, HoloTabItem, Wizard } from '@/components/holo'
@@ -23,8 +23,8 @@ interface UsageResp {
 }
 interface SystemInfo { version: string; product: string }
 
-type AdminTab = 'info' | 'blobs' | 'backup' | 'monitoring' | 'migration' | 'routing-rules' | 'replication'
-const VALID_TABS: AdminTab[] = ['info', 'blobs', 'backup', 'monitoring', 'migration', 'routing-rules', 'replication']
+type AdminTab = 'info' | 'blobs' | 'backup' | 'monitoring' | 'migration' | 'routing-rules' | 'replication' | 'saml'
+const VALID_TABS: AdminTab[] = ['info', 'blobs', 'backup', 'monitoring', 'migration', 'routing-rules', 'replication', 'saml']
 
 function fmtGB(b: number) {
   return (b / 1024 / 1024 / 1024).toFixed(2) + ' GB'
@@ -37,6 +37,115 @@ function fmtBytes(b: number) {
   if (b < 1024 * 1024) return (b / 1024).toFixed(1) + ' KB'
   if (b < 1024 * 1024 * 1024) return fmtMB(b)
   return fmtGB(b)
+}
+
+function SamlTab() {
+  const { data: authCfg, isLoading } = useQuery<AuthConfig>({
+    queryKey: ['authConfig'],
+    queryFn: () => nexusApi.getAuthConfig(),
+    staleTime: 60_000,
+  })
+  const { data: services } = useQuery<ServiceStatus[]>({
+    queryKey: ['systemServices'],
+    queryFn: () => nexspenceApi.getServiceStatuses().then(r => r.data),
+    staleTime: 30_000,
+  })
+
+  const samlSvc = services?.find(s => s.name.startsWith('SAML'))
+  const redisSvc = services?.find(s => s.name === 'Redis')
+
+  const row = (label: string, value?: string | null) => (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '9px 0', borderBottom: '1px solid rgba(255,255,255,0.05)', fontSize: 13, gap: 16 }}>
+      <span style={{ color: 'var(--holo-text-dim)', flexShrink: 0 }}>{label}</span>
+      <span style={{ color: 'var(--holo-text)', fontWeight: 500, wordBreak: 'break-all', textAlign: 'right' as const }}>{value || '—'}</span>
+    </div>
+  )
+
+  const statusDot = (status?: string) => {
+    const color = status === 'ok' ? '#22c55e' : status === 'error' ? '#ef4444' : status === 'warn' ? '#f59e0b' : 'rgba(255,255,255,0.25)'
+    const label = status === 'ok' ? 'Connected' : status === 'error' ? 'Error' : status === 'warn' ? 'Warning' : status === 'disabled' ? 'Disabled' : 'Unknown'
+    return (
+      <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color }}>
+        <span style={{ width: 7, height: 7, borderRadius: '50%', background: color, boxShadow: status === 'ok' ? `0 0 5px ${color}66` : 'none', flexShrink: 0 }} />
+        {label}
+      </span>
+    )
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* SAML SP Configuration */}
+      <HoloCard>
+        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--holo-text-dim)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Shield size={14} style={{ color: 'var(--holo-primary)' }} />
+          SAML 2.0 Service Provider
+          <span style={{ marginLeft: 'auto' }}>
+            {isLoading ? null : authCfg?.samlEnabled ? (
+              <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 4, background: 'rgba(34,197,94,0.15)', color: '#22c55e' }}>ENABLED</span>
+            ) : (
+              <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 4, background: 'rgba(255,255,255,0.07)', color: 'var(--holo-text-dim)' }}>DISABLED</span>
+            )}
+          </span>
+        </div>
+
+        {isLoading ? (
+          <>
+            <div className="holo-skeleton holo-skeleton--text" style={{ width: '80%' }} />
+            <div className="holo-skeleton holo-skeleton--text" style={{ width: '65%', marginTop: 8 }} />
+            <div className="holo-skeleton holo-skeleton--text" style={{ width: '75%', marginTop: 8 }} />
+          </>
+        ) : authCfg?.samlEnabled ? (
+          <>
+            {row('Display Name',   authCfg.samlDisplayName)}
+            {row('SP Entity ID',   authCfg.samlEntityId)}
+            {row('ACS URL',        authCfg.samlAcsUrl)}
+            {row('IdP Metadata URL', authCfg.samlIdpMetadataUrl)}
+            {row('Provisioning',   authCfg.samlProvisioning)}
+            <div style={{ marginTop: 14 }}>
+              <a
+                href="/api/v1/auth/saml/metadata"
+                target="_blank"
+                rel="noreferrer"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color: 'var(--holo-primary)', textDecoration: 'none', padding: '6px 12px', background: 'rgba(59,130,246,0.1)', borderRadius: 6, border: '1px solid rgba(59,130,246,0.2)' }}
+              >
+                <Download size={12} />
+                Download SP Metadata XML
+                <ExternalLink size={11} style={{ opacity: 0.7 }} />
+              </a>
+            </div>
+          </>
+        ) : (
+          <div style={{ fontSize: 13, color: 'var(--holo-text-faint)', lineHeight: 1.6 }}>
+            SAML SSO is not enabled. Set <code style={{ background: 'rgba(255,255,255,0.06)', padding: '1px 4px', borderRadius: 3 }}>saml.enabled: true</code> in <code style={{ background: 'rgba(255,255,255,0.06)', padding: '1px 4px', borderRadius: 3 }}>config.yaml</code> to activate.
+          </div>
+        )}
+      </HoloCard>
+
+      {/* SAML service health */}
+      {samlSvc && (
+        <HoloCard>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--holo-text-dim)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Wifi size={14} /> SAML IdP Connection
+            <span style={{ marginLeft: 'auto' }}>{statusDot(samlSvc.status)}</span>
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--holo-text-dim)', lineHeight: 1.6, wordBreak: 'break-all' }}>{samlSvc.detail}</div>
+        </HoloCard>
+      )}
+
+      {/* Redis */}
+      <HoloCard>
+        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--holo-text-dim)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Server size={14} /> Redis
+          {redisSvc && <span style={{ marginLeft: 'auto' }}>{statusDot(redisSvc.status)}</span>}
+        </div>
+        {redisSvc ? (
+          <div style={{ fontSize: 12, color: 'var(--holo-text-dim)', lineHeight: 1.6 }}>{redisSvc.detail}</div>
+        ) : (
+          <div style={{ fontSize: 12, color: 'var(--holo-text-faint)' }}>Loading…</div>
+        )}
+      </HoloCard>
+    </div>
+  )
 }
 
 function RoutingRulesTab() {
@@ -629,6 +738,7 @@ export default function AdminPage() {
           { value: 'migration',  label: <><ArrowRightLeft size={13} style={{ marginRight: 5 }} />Migration</> },
           { value: 'routing-rules', label: <><GitBranch size={13} style={{ marginRight: 5 }} />Routing Rules</> },
           { value: 'replication',   label: <><Share2 size={13} style={{ marginRight: 5 }} />Replication</> },
+          { value: 'saml',          label: <><Shield size={13} style={{ marginRight: 5 }} />SAML SSO</> },
         ] as HoloTabItem[]}
         value={tab}
         onChange={v => setTab(v as AdminTab)}
@@ -1053,6 +1163,9 @@ export default function AdminPage() {
 
       {/* Replication */}
       {tab === 'replication' && <ReplicationTab />}
+
+      {/* SAML SSO */}
+      {tab === 'saml' && <SamlTab />}
 
       {detailName && <BlobStoreDetailModal name={detailName} blobStores={blobs} onClose={() => setDetailName(null)} />}
       {createOpen && <CreateBlobStoreModal blobStores={blobs} onClose={() => setCreateOpen(false)} />}
