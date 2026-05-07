@@ -412,7 +412,7 @@ export default function UsersPage() {
 
 /* ─── Create user modal ──────────────────────────────────────── */
 export function CreateUserModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
-  const [form, setForm] = useState({ username: '', email: '', firstName: '', lastName: '', password: '', status: 'active' })
+  const [form, setForm] = useState({ userId: '', email: '', firstName: '', lastName: '', password: '', status: 'active' })
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -432,7 +432,7 @@ export function CreateUserModal({ onClose, onCreated }: { onClose: () => void; o
       <form onSubmit={handleSubmit} className={styles.form}>
         <div className={styles.formRow}>
           <label className={styles.label}>Username *</label>
-          <HoloInput value={form.username} onChange={e => setForm(f => ({ ...f, username: e.target.value }))} required />
+          <HoloInput value={form.userId} onChange={e => setForm(f => ({ ...f, userId: e.target.value }))} required />
         </div>
         <div className={styles.formRow}>
           <label className={styles.label}>Password *</label>
