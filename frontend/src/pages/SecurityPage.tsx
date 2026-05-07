@@ -252,9 +252,33 @@ function RolesTab({ roles, loading, onRefresh, admin }: { roles: Role[]; loading
   const [createError, setCreateError] = useState<string | null>(null)
 
   const [roleSearch, setRoleSearch] = useState('')
+  const [expandedRoles, setExpandedRoles] = useState<Set<string>>(new Set())
+  const [rolePrivCache, setRolePrivCache] = useState<Map<string, Privilege[]>>(new Map())
+  const [loadingExpand, setLoadingExpand] = useState<Set<string>>(new Set())
+
+  void expandedRoles, void loadingExpand
+
   const filtered = roles.filter(r =>
     r.name.toLowerCase().includes(roleSearch.toLowerCase())
   )
+
+  async function toggleExpand(roleId: string) {
+    setExpandedRoles(prev => {
+      const next = new Set(prev)
+      if (next.has(roleId)) { next.delete(roleId) } else { next.add(roleId) }
+      return next
+    })
+    if (!rolePrivCache.has(roleId)) {
+      setLoadingExpand(prev => new Set(prev).add(roleId))
+      try {
+        const privs = await nexusApi.listRolePrivileges(roleId).then(r => r.data as Privilege[])
+        setRolePrivCache(prev => new Map(prev).set(roleId, privs))
+      } finally {
+        setLoadingExpand(prev => { const next = new Set(prev); next.delete(roleId); return next })
+      }
+    }
+  }
+  void toggleExpand
 
   async function loadPrivs() {
     setLoadingPrivs(true)
