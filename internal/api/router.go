@@ -110,7 +110,8 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 	if cfg.OIDC.Enabled {
 		svc, err := auth.NewOIDCService(context.Background(), cfg.OIDC)
 		if err != nil {
-			panic("oidc init: " + err.Error())
+			log.Error("oidc init failed — check that IdP is reachable and OIDC config is correct", "err", err)
+			os.Exit(1)
 		}
 		oidcSvc = svc
 		keyBytes, decErr := base64.StdEncoding.DecodeString(cfg.OIDC.CookieKey)
