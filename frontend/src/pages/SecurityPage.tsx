@@ -1551,6 +1551,53 @@ function ContentSelectorsTab({ admin }: { admin: boolean }) {
 }
 
 /* ─── Access Map tab ─────────────────────────────────────── */
+
+// Pure function: returns set of all node IDs reachable from (type, id) in both directions.
+function buildChain(g: AccessGraph, type: GNodeType, id: string): Set<string> {
+  const set = new Set<string>([id])
+
+  function roleDown(rid: string) {
+    const role = g.roles.find(r => r.id === rid)
+    if (!role) return
+    role.privilegeIds.forEach(pid => {
+      set.add(pid)
+      const priv = g.privileges.find(p => p.id === pid)
+      if (priv?.contentSelectorId) set.add(priv.contentSelectorId)
+    })
+    role.roleIds.forEach(nid => { if (!set.has(nid)) { set.add(nid); roleDown(nid) } })
+  }
+
+  function roleUp(rid: string) {
+    g.roles.filter(r => r.roleIds.includes(rid)).forEach(r => {
+      if (!set.has(r.id)) { set.add(r.id); roleUp(r.id) }
+    })
+    g.users.filter(u => u.roleIds.includes(rid)).forEach(u => set.add(u.id))
+  }
+
+  if (type === 'user') {
+    const user = g.users.find(u => u.id === id)
+    user?.roleIds.forEach(rid => { set.add(rid); roleDown(rid) })
+  } else if (type === 'role') {
+    roleDown(id); roleUp(id)
+  } else if (type === 'privilege') {
+    const priv = g.privileges.find(p => p.id === id)
+    if (priv?.contentSelectorId) set.add(priv.contentSelectorId)
+    g.roles.filter(r => r.privilegeIds.includes(id)).forEach(r => {
+      set.add(r.id); roleDown(r.id)
+      g.users.filter(u => u.roleIds.includes(r.id)).forEach(u => set.add(u.id))
+    })
+  } else {
+    g.privileges.filter(p => p.contentSelectorId === id).forEach(p => {
+      set.add(p.id)
+      g.roles.filter(r => r.privilegeIds.includes(p.id)).forEach(r => {
+        set.add(r.id)
+        g.users.filter(u => u.roleIds.includes(r.id)).forEach(u => set.add(u.id))
+      })
+    })
+  }
+  return set
+}
+
 function AccessMapTab() {
   const [selType, setSelType] = useState<GNodeType|null>(null)
   const [selId,   setSelId]   = useState<string|null>(null)
@@ -1575,73 +1622,43 @@ function AccessMapTab() {
     return src.filter(o => o.label.toLowerCase().includes(q))
   }, [graph, selType, search])
 
-  // Traverse graph in both directions from selected node; returns set of node IDs in chain.
+  // Chain of node IDs to render. When nothing is selected, shows admin + anonymous by default.
   const chainIds = useMemo((): Set<string> => {
-    if (!graph || !selId || !selType) return new Set()
-    const g = graph
-    const set = new Set<string>([selId])
-
-    function roleDown(rid: string) {
-      const role = g.roles.find(r => r.id === rid)
-      if (!role) return
-      role.privilegeIds.forEach(pid => {
-        set.add(pid)
-        const priv = g.privileges.find(p => p.id === pid)
-        if (priv?.contentSelectorId) set.add(priv.contentSelectorId)
-      })
-      role.roleIds.forEach(nid => { if (!set.has(nid)) { set.add(nid); roleDown(nid) } })
-    }
-
-    if (selType === 'user') {
-      const user = g.users.find(u => u.id === selId)
-      user?.roleIds.forEach(rid => { set.add(rid); roleDown(rid) })
-    } else if (selType === 'role') {
-      roleDown(selId)
-      function roleUp(rid: string) {
-        g.roles.filter(r => r.roleIds.includes(rid)).forEach(r => {
-          if (!set.has(r.id)) { set.add(r.id); roleUp(r.id) }
-        })
-        g.users.filter(u => u.roleIds.includes(rid)).forEach(u => set.add(u.id))
-      }
-      roleUp(selId)
-    } else if (selType === 'privilege') {
-      const priv = g.privileges.find(p => p.id === selId)
-      if (priv?.contentSelectorId) set.add(priv.contentSelectorId)
-      g.roles.filter(r => r.privilegeIds.includes(selId)).forEach(r => {
-        set.add(r.id)
-        roleDown(r.id)
-        g.users.filter(u => u.roleIds.includes(r.id)).forEach(u => set.add(u.id))
-      })
-    } else {
-      g.privileges.filter(p => p.contentSelectorId === selId).forEach(p => {
-        set.add(p.id)
-        g.roles.filter(r => r.privilegeIds.includes(p.id)).forEach(r => {
-          set.add(r.id)
-          g.users.filter(u => u.roleIds.includes(r.id)).forEach(u => set.add(u.id))
-        })
-      })
-    }
+    if (!graph) return new Set()
+    if (selId && selType) return buildChain(graph, selType, selId)
+    // Default view: union of admin + anonymous chains.
+    const set = new Set<string>()
+    graph.users
+      .filter(u => u.username === 'admin' || u.username === 'anonymous')
+      .forEach(u => buildChain(graph, 'user', u.id).forEach(id => set.add(id)))
     return set
   }, [graph, selId, selType])
 
-  // Node center positions: id → {cx, cy}.
+  // Node center positions: only chain nodes are placed (non-chain nodes are not rendered).
   const posMap = useMemo(() => {
     const m = new Map<string, {cx:number; cy:number}>()
     if (!graph) return m
     const place = (items:{id:string}[], cx:number) =>
-      items.forEach((it, i) => m.set(it.id, { cx, cy: ROW_Y0 + i * ROW_GAP + NODE_H / 2 }))
+      items.filter(it => chainIds.has(it.id))
+           .forEach((it, i) => m.set(it.id, { cx, cy: ROW_Y0 + i * ROW_GAP + NODE_H / 2 }))
     place(graph.users,      COL_CX.user)
     place(graph.roles,      COL_CX.role)
     place(graph.privileges, COL_CX.privilege)
     place(graph.selectors,  COL_CX.selector)
     return m
-  }, [graph])
+  }, [graph, chainIds])
 
   const svgH = useMemo(() => {
     if (!graph) return 200
-    const max = Math.max(graph.users.length, graph.roles.length, graph.privileges.length, graph.selectors.length, 1)
+    const max = Math.max(
+      graph.users.filter(u => chainIds.has(u.id)).length,
+      graph.roles.filter(r => chainIds.has(r.id)).length,
+      graph.privileges.filter(p => chainIds.has(p.id)).length,
+      graph.selectors.filter(s => chainIds.has(s.id)).length,
+      1,
+    )
     return ROW_Y0 + max * ROW_GAP + 20
-  }, [graph])
+  }, [graph, chainIds])
 
   function pick(type: GNodeType, id: string) {
     setSelType(type); setSelId(id); setSearch(''); setOpen(false)
@@ -1654,18 +1671,16 @@ function AccessMapTab() {
     {key:'privilege', label:'Privilege'}, {key:'selector', label:'Content Selector'},
   ]
 
-  // Render a single node <rect>+<text>.
+  // Render a single node <rect>+<text>. Only chain nodes have a posMap entry.
   function GNode({ id, label, type }: {id:string; label:string; type:GNodeType}) {
     const pos = posMap.get(id)
     if (!pos) return null
     const { stroke, fill, text } = NODE_COLORS[type]
     const active = id === selId
-    const inChain = chainIds.size === 0 || chainIds.has(id)
-    const opacity = inChain ? 1 : 0.12
     const x = pos.cx - NODE_W / 2
     const y = pos.cy - NODE_H / 2
     return (
-      <g style={{ cursor: 'pointer', opacity }} onClick={() => pick(type, id)}>
+      <g style={{ cursor: 'pointer' }} onClick={() => pick(type, id)}>
         <rect x={x} y={y} width={NODE_W} height={NODE_H} rx={6}
           fill={fill} stroke={stroke} strokeWidth={active ? 2 : 1} />
         <text x={pos.cx} y={pos.cy + 4} textAnchor="middle"
@@ -1677,16 +1692,13 @@ function AccessMapTab() {
     )
   }
 
-  // Render an edge line between two nodes.
+  // Render an edge line between two nodes. Returns null if either end is not in the chain.
   function Edge({ fromId, toId }: {fromId:string; toId:string}) {
     const a = posMap.get(fromId), b = posMap.get(toId)
     if (!a || !b) return null
-    const inChain = chainIds.size === 0 || (chainIds.has(fromId) && chainIds.has(toId))
-    // from right edge of source, to left edge of target
     const x1 = a.cx + NODE_W / 2, x2 = b.cx - NODE_W / 2
     return <line x1={x1} y1={a.cy} x2={x2} y2={b.cy}
-      stroke="#334155" strokeWidth={inChain ? 1.5 : 0.4}
-      markerEnd="url(#arr)" opacity={inChain ? 0.7 : 0.15} />
+      stroke="#334155" strokeWidth={1.5} markerEnd="url(#arr)" opacity={0.7} />
   }
 
   // Sidebar detail panel content.
@@ -1796,15 +1808,22 @@ function AccessMapTab() {
 
       {isError && <div style={{color:'#ef4444', fontSize:12}}>Failed to load access graph.</div>}
 
-      {!isLoading && !isError && !hasGraph && (
+      {!isLoading && !isError && hasGraph && chainIds.size === 0 && (
         <div style={{height:200, border:'1px dashed #1e3a5f', borderRadius:8, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:8}}>
           <div style={{color:'#1e3a5f', fontSize:24}}>⬡</div>
-          <div style={{color:'#334155', fontSize:12}}>Select a node to explore the access graph</div>
+          <div style={{color:'#334155', fontSize:12}}>Select a node above to explore the access graph</div>
           <div style={{color:'#1e3a5f', fontSize:10}}>User → Roles → Privileges → Content Selectors</div>
         </div>
       )}
 
-      {!isLoading && hasGraph && graph && (
+      {!isLoading && !isError && !hasGraph && (
+        <div style={{height:200, border:'1px dashed #1e3a5f', borderRadius:8, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:8}}>
+          <div style={{color:'#1e3a5f', fontSize:24}}>⬡</div>
+          <div style={{color:'#334155', fontSize:12}}>No data — system has no users, roles, or privileges yet</div>
+        </div>
+      )}
+
+      {!isLoading && hasGraph && graph && chainIds.size > 0 && (
         <div style={{display:'flex', gap:12, alignItems:'flex-start'}}>
           {/* SVG graph */}
           <div style={{flex:1, overflowX:'auto', background:'#070b14', borderRadius:8, border:'1px solid #1e3a5f'}}>
