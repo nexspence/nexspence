@@ -94,8 +94,45 @@ func TestAccessGraphHandler_Get_EmptyGraph(t *testing.T) {
 		t.Fatalf("want 200 got %d", w.Code)
 	}
 	var resp handlers.AccessGraphResponse
-	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
 	if len(resp.Users) != 0 || len(resp.Roles) != 0 || len(resp.Privileges) != 0 || len(resp.Selectors) != 0 {
 		t.Fatalf("want empty arrays, got %+v", resp)
+	}
+}
+
+func TestAccessGraphHandler_Get_OrphanRoleName(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	// User has a stale role name that no longer exists as a role.
+	userRepo := testutil.NewUserRepo(
+		&domain.User{ID: "u1", Username: "bob", Status: domain.UserStatusActive,
+			Source: domain.UserSourceLocal, Roles: []string{"deleted-role"}},
+	)
+	h := handlers.NewAccessGraphHandler(
+		userRepo,
+		testutil.NewRoleRepo(), // no roles — "deleted-role" won't resolve
+		testutil.NewPrivilegeRepo(),
+		testutil.NewContentSelectorRepo(),
+	)
+	r := gin.New()
+	r.GET("/access-graph", h.Get)
+
+	req := httptest.NewRequest(http.MethodGet, "/access-graph", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200 got %d", w.Code)
+	}
+	var resp handlers.AccessGraphResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(resp.Users) != 1 {
+		t.Fatalf("want 1 user got %d", len(resp.Users))
+	}
+	if len(resp.Users[0].RoleIDs) != 0 {
+		t.Fatalf("want empty roleIds for orphan role, got %v", resp.Users[0].RoleIDs)
 	}
 }
