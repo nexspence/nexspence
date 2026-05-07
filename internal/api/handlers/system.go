@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nexspence-oss/nexspence/internal/auth"
 	"github.com/nexspence-oss/nexspence/internal/config"
+	"github.com/nexspence-oss/nexspence/internal/redisclient"
 	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/storage"
 )
@@ -32,8 +33,9 @@ type ServiceStatus struct {
 type SystemHandler struct {
 	cfg        *config.Config
 	pool       *pgxpool.Pool
-	ldap       auth.LDAPAuthenticator // nil when LDAP disabled
-	oidc       auth.OIDCAuthenticator // nil when OIDC disabled
+	ldap       auth.LDAPAuthenticator  // nil when LDAP disabled
+	oidc       auth.OIDCAuthenticator  // nil when OIDC disabled
+	saml       auth.SAMLAuthenticator  // nil when SAML disabled
 	blobStores repository.BlobStoreRepo
 }
 
@@ -43,6 +45,11 @@ func NewSystemHandler(cfg *config.Config, pool *pgxpool.Pool, ldap auth.LDAPAuth
 
 func (h *SystemHandler) WithBlobStores(r repository.BlobStoreRepo) *SystemHandler {
 	h.blobStores = r
+	return h
+}
+
+func (h *SystemHandler) WithSAML(s auth.SAMLAuthenticator) *SystemHandler {
+	h.saml = s
 	return h
 }
 
@@ -71,6 +78,14 @@ func (h *SystemHandler) Services(c *gin.Context) {
 			return disabled("OIDC")
 		})
 	}
+	if h.saml != nil {
+		checks = append(checks, h.checkSAML)
+	} else if h.cfg.SAML.Enabled {
+		checks = append(checks, func(_ context.Context) ServiceStatus {
+			return disabled("SAML")
+		})
+	}
+	checks = append(checks, h.checkRedis)
 
 	// Docker Subdomain Connector status.
 	checks = append(checks, func(_ context.Context) ServiceStatus {
@@ -284,6 +299,32 @@ func dsnDetail(dsn string) string {
 		return host + "/" + db
 	}
 	return host
+}
+
+func (h *SystemHandler) checkSAML(_ context.Context) ServiceStatus {
+	now := time.Now().UTC().Format(time.RFC3339)
+	name := "SAML"
+	if h.cfg.SAML.DisplayName != "" {
+		name = "SAML · " + h.cfg.SAML.DisplayName
+	}
+	detail := fmt.Sprintf("entity=%s · acs=%s", h.cfg.SAML.SPEntityID, h.cfg.SAML.ACSURL)
+	_, err := h.saml.MetadataXML()
+	if err != nil {
+		return ServiceStatus{Name: name, Status: "error", Detail: detail + " · " + err.Error(), CheckedAt: now}
+	}
+	return ServiceStatus{Name: name, Status: "ok", Detail: detail, CheckedAt: now}
+}
+
+func (h *SystemHandler) checkRedis(_ context.Context) ServiceStatus {
+	now := time.Now().UTC().Format(time.RFC3339)
+	if !h.cfg.Redis.Enabled {
+		return ServiceStatus{Name: "Redis", Status: "disabled", Detail: "set redis.enabled=true to activate", CheckedAt: now}
+	}
+	_, err := redisclient.New(h.cfg.Redis)
+	if err != nil {
+		return ServiceStatus{Name: "Redis", Status: "error", Detail: h.cfg.Redis.Addr + " · " + err.Error(), CheckedAt: now}
+	}
+	return ServiceStatus{Name: "Redis", Status: "ok", Detail: h.cfg.Redis.Addr, CheckedAt: now}
 }
 
 func fmtBytes(b uint64) string {

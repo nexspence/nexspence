@@ -39,11 +39,15 @@ func (h *AuthHandler) WithConfig(cfg config.Config) *AuthHandler {
 // show the "Sign in with {provider}" button.
 func (h *AuthHandler) Config(c *gin.Context) {
 	oidcOn := h.cfg.OIDC.Enabled && h.cfg.OIDC.ShowLoginButton
+	samlOn := h.cfg.SAML.Enabled && h.cfg.SAML.ShowLoginButton
 	c.JSON(http.StatusOK, gin.H{
 		"oidcEnabled":     oidcOn,
 		"oidcDisplayName": h.cfg.OIDC.DisplayName,
 		"oidcLoginUrl":    "/api/v1/auth/oidc/login",
 		"ldapEnabled":     h.cfg.LDAP.Enabled,
+		"samlEnabled":     samlOn,
+		"samlDisplayName": h.cfg.SAML.DisplayName,
+		"samlLoginUrl":    "/api/v1/auth/saml/login",
 	})
 }
 
