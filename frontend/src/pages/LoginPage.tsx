@@ -14,14 +14,17 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [authConfig, setAuthConfig] = useState<AuthConfig | null>(null)
   const [oidcError, setOidcError] = useState<string | null>(null)
+  const [samlError, setSamlError] = useState<string | null>(null)
   const { login } = useAuthStore()
   const navigate = useNavigate()
 
   useEffect(() => {
-    // Read OIDC redirect-error from URL.
+    // Read OIDC/SAML redirect-errors from URL.
     const params = new URLSearchParams(window.location.search)
     const err = params.get('oidc_error')
     if (err) setOidcError(err)
+    const serr = params.get('saml_error')
+    if (serr) setSamlError(serr)
     nexusApi.getAuthConfig().then(setAuthConfig).catch(() => setAuthConfig(null))
   }, [])
 
@@ -43,6 +46,12 @@ export default function LoginPage() {
     if (!authConfig?.oidcLoginUrl) return
     const returnTo = encodeURIComponent('/repositories')
     window.location.href = `${authConfig.oidcLoginUrl}?return_to=${returnTo}`
+  }
+
+  const handleSAML = () => {
+    if (!authConfig?.samlLoginUrl) return
+    const returnTo = encodeURIComponent('/repositories')
+    window.location.href = `${authConfig.samlLoginUrl}?return_to=${returnTo}`
   }
 
   return (
@@ -84,6 +93,11 @@ export default function LoginPage() {
               SSO login failed: {oidcError}
             </div>
           )}
+          {samlError && (
+            <div className={styles.error} role="alert">
+              SSO login failed: {samlError}
+            </div>
+          )}
 
           <HoloButton variant="primary" type="submit" disabled={loading} style={{ width: '100%', justifyContent: 'center' }}>
             {loading ? 'Signing in…' : 'Sign in'}
@@ -99,6 +113,20 @@ export default function LoginPage() {
                 style={{ width: '100%', justifyContent: 'center' }}
               >
                 Sign in with {authConfig.oidcDisplayName}
+              </HoloButton>
+            </>
+          )}
+
+          {authConfig?.samlEnabled && (
+            <>
+              <div className={styles.divider}>or</div>
+              <HoloButton
+                type="button"
+                icon={<KeyRound size={16} />}
+                onClick={handleSAML}
+                style={{ width: '100%', justifyContent: 'center' }}
+              >
+                Sign in with {authConfig.samlDisplayName}
               </HoloButton>
             </>
           )}
