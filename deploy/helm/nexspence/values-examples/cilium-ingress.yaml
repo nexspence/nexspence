@@ -1,0 +1,20 @@
+# Cilium ingress-controller mode (uses standard K8s Ingress)
+# Requires: Cilium >= 1.12 with ingress controller enabled
+# kubectl -n kube-system patch configmap cilium-config --patch '{"data":{"enable-ingress-controller":"true"}}'
+# Helm usage: helm install nexspence deploy/helm/nexspence -f values-examples/cilium-ingress.yaml
+
+ingress:
+  enabled: true
+  className: "cilium"
+  annotations:
+    # Cilium LoadBalancer mode: "dedicated" (one LB per Ingress) or "shared"
+    ingress.cilium.io/loadbalancer-mode: "dedicated"
+  hosts:
+    - host: nexspence.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+config:
+  baseURL: "http://nexspence.example.com"
