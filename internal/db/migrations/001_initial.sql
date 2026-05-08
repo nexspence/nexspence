@@ -32,7 +32,8 @@ CREATE TABLE repositories (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name                TEXT NOT NULL UNIQUE,
     format              TEXT NOT NULL CHECK (format IN (
-                            'maven2','npm','docker','pypi','go','nuget','helm','raw','apt','yum'
+                            'maven2','npm','docker','pypi','go','nuget','helm','raw',
+                            'apt','yum','cargo','conan','conda','terraform'
                         )),
     type                TEXT NOT NULL CHECK (type IN ('hosted','proxy','group')),
     blob_store_id       UUID REFERENCES blob_stores(id),
