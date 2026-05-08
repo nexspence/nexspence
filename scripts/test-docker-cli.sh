@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Docker repository RBAC test — docker CLI
 # Tests: hosted (push/pull/tags/manifest/delete), proxy (pull/push→405), group (pull/push→405)
-# Three users: admin (full), user-b (da/bas/* only), user-c (da/rbi/* only)
+# Three users: admin (full), user-b (da/dev/* only), user-c (da/prod/* only)
 set -uo pipefail
 
 # ── Configuration ──────────────────────────────────────────────────────────
@@ -14,13 +14,13 @@ ADMIN_USER="${ADMIN_USER:-admin}"
 ADMIN_PASS="${ADMIN_PASS:-admin123}"
 
 USER_B="svcdevops"
-USER_B_PASS="7C76QA4x5nkf"    # scope: da/bas/*
+USER_B_PASS="7C76QA4x5nkf"    # scope: da/dev/*
 
 USER_C="user4tfsdr"
-USER_C_PASS="Hyh6qq8esXy15PjOZz2b"    # scope: da/rbi/*
+USER_C_PASS="Hyh6qq8esXy15PjOZz2b"    # scope: da/prod/*
 
-SCOPE_B="${SCOPE_B:-da/bas}"
-SCOPE_C="${SCOPE_C:-da/rbi}"
+SCOPE_B="${SCOPE_B:-da/dev}"
+SCOPE_C="${SCOPE_C:-da/prod}"
 
 SOURCE_IMAGE="alpine:3"
 TAGS=("v1.0" "v2.0" "latest")
@@ -177,12 +177,12 @@ else
     fail "admin: could not obtain Docker-Content-Digest for $SCOPE_B/alpine:v1.0"
 fi
 
-# ── HOSTED: User B (da/bas allowed, da/rbi denied) ─────────────────────────
+# ── HOSTED: User B (da/dev allowed, da/prod denied) ─────────────────────────
 section "Hosted — User B (scope: $SCOPE_B/*)"
 
 dlogin "$USER_B" "$USER_B_PASS"
 
-# Allowed: da/bas
+# Allowed: da/dev
 expect_pass "user-b: push $SCOPE_B/alpine:v2.0" \
     docker push "$REGISTRY/$REPO_HOSTED/$SCOPE_B/alpine:v2.0"
 
@@ -197,7 +197,7 @@ st=$(manifest_status "$USER_B" "$USER_B_PASS" "$REPO_HOSTED" "$SCOPE_B/alpine" "
 [[ "$st" == "200" ]] && pass "user-b: manifest GET $SCOPE_B/alpine:v1.0 → 200" \
                       || fail "user-b: manifest GET $SCOPE_B/alpine:v1.0 → $st (expected 200)"
 
-# Denied: da/rbi
+# Denied: da/prod
 expect_deny "user-b: push $SCOPE_C/alpine:v2.0 (should be denied)" \
     docker push "$REGISTRY/$REPO_HOSTED/$SCOPE_C/alpine:v2.0"
 
@@ -214,12 +214,12 @@ st=$(manifest_status "$USER_B" "$USER_B_PASS" "$REPO_HOSTED" "$SCOPE_C/alpine" "
     && deny "user-b: manifest GET $SCOPE_C/alpine:v1.0 → $st (denied as expected ✓)" \
     || fail "user-b: manifest GET $SCOPE_C/alpine:v1.0 → $st (expected 401/403)"
 
-# ── HOSTED: User C (da/rbi allowed, da/bas denied) ─────────────────────────
+# ── HOSTED: User C (da/prod allowed, da/dev denied) ─────────────────────────
 section "Hosted — User C (scope: $SCOPE_C/*)"
 
 dlogin "$USER_C" "$USER_C_PASS"
 
-# Allowed: da/rbi
+# Allowed: da/prod
 expect_pass "user-c: push $SCOPE_C/alpine:v2.0" \
     docker push "$REGISTRY/$REPO_HOSTED/$SCOPE_C/alpine:v2.0"
 
@@ -234,7 +234,7 @@ st=$(manifest_status "$USER_C" "$USER_C_PASS" "$REPO_HOSTED" "$SCOPE_C/alpine" "
 [[ "$st" == "200" ]] && pass "user-c: manifest GET $SCOPE_C/alpine:v1.0 → 200" \
                       || fail "user-c: manifest GET $SCOPE_C/alpine:v1.0 → $st (expected 200)"
 
-# Denied: da/bas
+# Denied: da/dev
 expect_deny "user-c: push $SCOPE_B/alpine:v2.0 (should be denied)" \
     docker push "$REGISTRY/$REPO_HOSTED/$SCOPE_B/alpine:v2.0"
 
@@ -263,7 +263,7 @@ DEL_DIGEST=$(curl -sI -u "$ADMIN_USER:$ADMIN_PASS" \
     | grep -i "^docker-content-digest:" | tr -d '\r' | awk '{print $2}')
 
 if [[ -n "$DEL_DIGEST" ]]; then
-    # user-b denied to delete in da/rbi
+    # user-b denied to delete in da/prod
     st=$(delete_manifest "$USER_B" "$USER_B_PASS" "$REPO_HOSTED" "$SCOPE_C/alpine" "$DEL_DIGEST")
     [[ "$st" == "401" || "$st" == "403" ]] \
         && deny "user-b: DELETE $SCOPE_C manifest → $st (denied as expected ✓)" \
