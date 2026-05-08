@@ -84,7 +84,22 @@ func (h *Handler) serveHostedProvider(c *gin.Context, repoName, p string) {
 		h.handleProviderVersions(c, repoName, p)
 		return
 	}
+	// GET /v1/providers/<ns>/<type>/<ver>/<os>_<arch>.zip → serve provider binary
+	if c.Request.Method == http.MethodGet && strings.HasSuffix(p, ".zip") {
+		h.serveProviderBinary(c, repoName, p)
+		return
+	}
 	c.JSON(http.StatusNotFound, gin.H{"error": "unknown provider endpoint"})
+}
+
+func (h *Handler) serveProviderBinary(c *gin.Context, repoName, filePath string) {
+	rc, asset, err := base.FetchArtifact(c.Request.Context(), h.deps, repoName, filePath)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	defer rc.Close()
+	c.DataFromReader(http.StatusOK, asset.SizeBytes, "application/zip", rc, nil)
 }
 
 func (h *Handler) handleProviderUpload(c *gin.Context, repoName, p string) {
@@ -208,12 +223,27 @@ func (h *Handler) serveHostedModule(c *gin.Context, repoName, p string) {
 		h.handleModuleDownload(c, repoName, p)
 		return
 	}
+	// GET /v1/modules/<ns>/<name>/<provider>/<ver>.tar.gz → serve module archive
+	if c.Request.Method == http.MethodGet && strings.HasSuffix(p, ".tar.gz") {
+		h.serveModuleArchive(c, repoName, p)
+		return
+	}
 	// PUT /v1/modules/<ns>/<name>/<provider>/<ver>
 	if c.Request.Method == http.MethodPut {
 		h.handleModuleUpload(c, repoName, p)
 		return
 	}
 	c.JSON(http.StatusNotFound, gin.H{"error": "unknown module endpoint"})
+}
+
+func (h *Handler) serveModuleArchive(c *gin.Context, repoName, filePath string) {
+	rc, asset, err := base.FetchArtifact(c.Request.Context(), h.deps, repoName, filePath)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	defer rc.Close()
+	c.DataFromReader(http.StatusOK, asset.SizeBytes, "application/x-tar", rc, nil)
 }
 
 func (h *Handler) handleModuleVersions(c *gin.Context, repoName, p string) {
@@ -308,10 +338,8 @@ func (h *Handler) serveProxy(c *gin.Context, repo *domain.Repository, repoName, 
 		}
 		return
 	}
-	// Module downloads: cache in blob store.
-	// Pattern: /v1/modules/<ns>/<name>/<provider>/<ver>/download (redirect target)
-	if strings.HasPrefix(p, "/v1/modules/") && !strings.HasSuffix(p, "/download") {
-		// Module source archives (the actual .tar.gz URLs, not the /download redirect)
+	// Module source archives (actual .tar.gz, not the /download redirect or /versions JSON):
+	if strings.HasPrefix(p, "/v1/modules/") && strings.HasSuffix(p, ".tar.gz") {
 		coords := base.Coords{Name: p}
 		if err := repoproxy.ServeGET(c, h.deps, repo, p, "", coords, "application/x-tar"); err != nil {
 			c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
@@ -360,12 +388,10 @@ func (h *Handler) serveProxy(c *gin.Context, repo *domain.Repository, repoName, 
 	c.JSON(http.StatusOK, body)
 }
 
-// rewriteTerraformURLs rewrites download_url fields so provider binaries route through Nexspence.
+// rewriteTerraformURLs rewrites download_url fields so provider binary fetches
+// route through Nexspence and get cached.
 func rewriteTerraformURLs(body map[string]any, localBase string) {
-	// Provider download response has "download_url" pointing to releases.hashicorp.com.
-	// We rewrite it to route through our proxy so the binary gets cached.
 	if u, ok := body["download_url"].(string); ok {
-		// Extract the path portion and route through our /v1/providers-dl/ prefix.
 		if parsed, err := url.Parse(u); err == nil {
 			body["download_url"] = localBase + parsed.Path
 		}

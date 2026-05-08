@@ -30,11 +30,11 @@ func hostedRepo(name string) *domain.Repository {
 
 func proxyRepo(name, upstream string) *domain.Repository {
 	return &domain.Repository{
-		ID:     "tf-2",
-		Name:   name,
-		Format: "terraform",
-		Type:   domain.TypeProxy,
-		Online: true,
+		ID:          "tf-2",
+		Name:        name,
+		Format:      "terraform",
+		Type:        domain.TypeProxy,
+		Online:      true,
 		ProxyConfig: map[string]any{"remote_url": upstream},
 	}
 }
@@ -162,4 +162,44 @@ func TestTerraform_Hosted_ModuleUploadAndDownload(t *testing.T) {
 	assert.Equal(t, http.StatusNoContent, w2.Code)
 	xGet := w2.Header().Get("X-Terraform-Get")
 	assert.Contains(t, xGet, "/repository/tf-hosted/v1/modules/mynamespace/mymodule/aws/2.0.0.tar.gz")
+}
+
+func TestTerraform_Hosted_ProviderBinaryFetch(t *testing.T) {
+	r := setup(hostedRepo("tf-hosted"))
+	body := []byte("provider-zip-bytes")
+	req := httptest.NewRequest(http.MethodPut,
+		"/repository/tf-hosted/v1/providers/ns/myprov/1.0.0/upload/linux/amd64",
+		bytes.NewReader(body))
+	req.ContentLength = int64(len(body))
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusCreated, w.Code)
+
+	// Fetch the binary directly (simulates Terraform CLI following download_url)
+	req2 := httptest.NewRequest(http.MethodGet,
+		"/repository/tf-hosted/v1/providers/ns/myprov/1.0.0/linux_amd64.zip", nil)
+	w2 := httptest.NewRecorder()
+	r.ServeHTTP(w2, req2)
+	require.Equal(t, http.StatusOK, w2.Code)
+	assert.Equal(t, body, w2.Body.Bytes())
+}
+
+func TestTerraform_Hosted_ModuleArchiveFetch(t *testing.T) {
+	r := setup(hostedRepo("tf-hosted"))
+	body := []byte("module-tar-gz-bytes")
+	req := httptest.NewRequest(http.MethodPut,
+		"/repository/tf-hosted/v1/modules/ns/mymod/aws/3.0.0",
+		bytes.NewReader(body))
+	req.ContentLength = int64(len(body))
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusCreated, w.Code)
+
+	// Fetch the archive directly (simulates Terraform CLI following X-Terraform-Get)
+	req2 := httptest.NewRequest(http.MethodGet,
+		"/repository/tf-hosted/v1/modules/ns/mymod/aws/3.0.0.tar.gz", nil)
+	w2 := httptest.NewRecorder()
+	r.ServeHTTP(w2, req2)
+	require.Equal(t, http.StatusOK, w2.Code)
+	assert.Equal(t, body, w2.Body.Bytes())
 }

@@ -151,7 +151,7 @@ func (h *Handler) handleDelete(c *gin.Context, repoName, filePath string) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"deleted": true})
+	c.Status(http.StatusNoContent)
 }
 
 func (h *Handler) serveProxy(c *gin.Context, repo *domain.Repository, repoName, p string) {
