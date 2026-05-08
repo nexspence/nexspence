@@ -1,11 +1,12 @@
 // Package conda implements the Conda channel repository protocol.
 //
 // Conda channel layout:
-//   GET /repository/<repo>/<platform>/repodata.json      → channel index
-//   GET /repository/<repo>/<platform>/repodata.json.bz2  → bz2-compressed index (returns 404)
-//   GET /repository/<repo>/<platform>/<filename>          → download package
-//   PUT /repository/<repo>/<platform>/<filename>          → upload package
-//   DELETE /repository/<repo>/<platform>/<filename>       → delete package
+//
+//	GET /repository/<repo>/<platform>/repodata.json      → channel index
+//	GET /repository/<repo>/<platform>/repodata.json.bz2  → bz2-compressed index (returns 404)
+//	GET /repository/<repo>/<platform>/<filename>          → download package
+//	PUT /repository/<repo>/<platform>/<filename>          → upload package
+//	DELETE /repository/<repo>/<platform>/<filename>       → delete package
 //
 // Supported platforms: linux-64, linux-aarch64, osx-64, osx-arm64, win-64, noarch, etc.
 // Supported file types: .conda (zip+zstd), .tar.bz2 (legacy)
