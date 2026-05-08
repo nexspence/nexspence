@@ -1,6 +1,7 @@
 package terraform_test
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -107,4 +108,58 @@ func TestTerraform_Proxy_ProviderVersions(t *testing.T) {
 	versions, ok := body["versions"].([]any)
 	require.True(t, ok)
 	assert.Len(t, versions, 1)
+}
+
+func TestTerraform_Hosted_ProviderUploadAndVersions(t *testing.T) {
+	r := setup(hostedRepo("tf-hosted"))
+
+	// Upload a provider binary.
+	body := []byte("fake-provider-zip-content")
+	req := httptest.NewRequest(http.MethodPut,
+		"/repository/tf-hosted/v1/providers/mynamespace/myprovider/1.0.0/upload/linux/amd64",
+		bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/zip")
+	req.ContentLength = int64(len(body))
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusCreated, w.Code)
+
+	// List versions.
+	req2 := httptest.NewRequest(http.MethodGet,
+		"/repository/tf-hosted/v1/providers/mynamespace/myprovider/versions", nil)
+	w2 := httptest.NewRecorder()
+	r.ServeHTTP(w2, req2)
+	require.Equal(t, http.StatusOK, w2.Code)
+
+	var vBody map[string]any
+	require.NoError(t, json.NewDecoder(w2.Body).Decode(&vBody))
+	versions, ok := vBody["versions"].([]any)
+	require.True(t, ok, "versions must be an array")
+	require.Len(t, versions, 1)
+	v := versions[0].(map[string]any)
+	assert.Equal(t, "1.0.0", v["version"])
+}
+
+func TestTerraform_Hosted_ModuleUploadAndDownload(t *testing.T) {
+	r := setup(hostedRepo("tf-hosted"))
+
+	// Upload a module.
+	body := []byte("fake-module-tar-gz")
+	req := httptest.NewRequest(http.MethodPut,
+		"/repository/tf-hosted/v1/modules/mynamespace/mymodule/aws/2.0.0",
+		bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/x-tar")
+	req.ContentLength = int64(len(body))
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusCreated, w.Code)
+
+	// Module download redirect.
+	req2 := httptest.NewRequest(http.MethodGet,
+		"/repository/tf-hosted/v1/modules/mynamespace/mymodule/aws/2.0.0/download", nil)
+	w2 := httptest.NewRecorder()
+	r.ServeHTTP(w2, req2)
+	assert.Equal(t, http.StatusNoContent, w2.Code)
+	xGet := w2.Header().Get("X-Terraform-Get")
+	assert.Contains(t, xGet, "/repository/tf-hosted/v1/modules/mynamespace/mymodule/aws/2.0.0.tar.gz")
 }
