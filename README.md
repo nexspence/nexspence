@@ -148,6 +148,25 @@ docker compose down -v
 
 ---
 
+## Quick Start — Kubernetes (Helm)
+
+**Requirements:** Helm 3.x, Kubernetes ≥ 1.26
+
+```bash
+# nginx ingress-controller
+helm install nexspence deploy/helm/nexspence \
+  -f deploy/helm/nexspence/values-examples/nginx.yaml \
+  --set config.jwtSecret="$(openssl rand -hex 32)" \
+  --set config.adminPassword="changeme" \
+  --namespace nexspence --create-namespace
+```
+
+Other networking options: `values-examples/traefik.yaml`, `cilium-ingress.yaml`, `istio-gateway.yaml`, `cilium-gateway.yaml`.
+
+See [`deploy/helm/nexspence/README.md`](deploy/helm/nexspence/README.md) and [`docs/deployment.md`](docs/deployment.md) for the full Helm reference.
+
+---
+
 ## Quick Start — From Source
 
 **Requirements:** Go 1.22+, Node.js 22+, PostgreSQL 16+
@@ -858,6 +877,7 @@ Full OpenAPI 3.1 spec: [`docs/api-spec.yaml`](docs/api-spec.yaml)
 | 60 | LDAP external role mapping — sync all group memberships on every login; `role_mappings` config; REPLACE semantics | ✓ complete |
 | 61 | Conda format — hosted channel (`repodata.json`, `.tar.bz2`, `.conda`), proxy with URL rewriting | ✓ complete |
 | 62 | Terraform Registry Mirror — service discovery, provider + module proxy/hosted, `terraform init` compatible | ✓ complete |
+| 63 | Helm chart — `deploy/helm/nexspence/`; nginx/Traefik/Cilium Ingress + Istio/Cilium Gateway API; bitnami/postgresql sub-chart; HPA | ✓ complete |
 | next | SBOM generation, cosign image signing | planned |
 | next | Prometheus metrics endpoint, OpenTelemetry traces | planned |
 | next | `nexctl` CLI, blob GC | planned |
