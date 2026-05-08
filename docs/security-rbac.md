@@ -303,6 +303,39 @@ Content-Type: application/json
 
 ---
 
+## LDAP External Role Mapping
+
+При каждом логине LDAP-пользователя Nexspence автоматически синхронизирует его роли из группового членства LDAP (REPLACE-семантика — старые роли заменяются).
+
+### Стратегии маппинга (применяются все три)
+
+| Приоритет | Стратегия | Конфиг |
+|-----------|----------|--------|
+| 1 | `admin_group` → `nx-admin` | `ldap.admin_group` |
+| 2 | Явный маппинг group → role | `ldap.role_mappings` |
+| 3 | Имя группы = имя роли | автоматически |
+
+### Конфигурация
+
+```yaml
+ldap:
+  enabled: true
+  admin_group: "nexus-administrators"   # plain CN или полный DN
+  role_mappings:
+    "dev-team":  "developers"   # LDAP group → Nexspence role name
+    "qa-team":   "testers"
+    "ops-group": "operators"
+```
+
+### Поведение
+
+- Роли назначаются через `SetUserRoles` (REPLACE): на каждом логине список ролей пользователя полностью пересчитывается из его текущих LDAP-групп.
+- Если LDAP-группа не найдена среди ролей ни одной из стратегий — она игнорируется (не создаёт новых ролей).
+- `admin_group` принимает как plain CN (`"nexus-administrators"`), так и полный DN (`"CN=nexus-administrators,OU=Groups,DC=example,DC=com"`) — первый RDN сравнивается case-insensitive.
+- Ошибка синхронизации ролей не блокирует вход (best-effort, логируется).
+
+---
+
 ## Troubleshooting
 
 | Проблема | Причина | Решение |

@@ -248,7 +248,19 @@ ldap:
   search_filter: "(sAMAccountName={0})"   # AD; for OpenLDAP use: (uid={0})
   auto_create_users: true
   admin_group: ""              # group CN whose members get nx-admin role
+  # role_mappings: optional explicit group→role overrides (DN or plain name)
+  # role_mappings:
+  #   "nexus-administrators": "nx-admin"
+  #   "dev-team": "developers"
 ```
+
+> **LDAP role mapping** — on every login, Nexspence syncs the user's roles from their LDAP group membership using three strategies (REPLACE semantics):
+> 1. `admin_group` match → `nx-admin` role
+> 2. Explicit `role_mappings[group]` → mapped role name
+> 3. Group name exactly matches a role name → that role
+>
+> `admin_group` accepts either a plain CN (`"nexus-administrators"`) or a full DN (`"CN=nexus-administrators,OU=Groups,DC=example,DC=com"`).
+
 
 ### OIDC / OAuth2 SSO (optional)
 
