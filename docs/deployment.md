@@ -382,3 +382,58 @@ Migrations are idempotent and backward-compatible within a minor version.
 | TLS | Always use HTTPS in production (via reverse proxy) |
 | DB password | Use a strong password; restrict DB user to `nexspence` database only |
 | Blob storage | Restrict filesystem/S3 bucket access to the nexspence process |
+
+---
+
+## Helm (Kubernetes — recommended)
+
+### Quick install (nginx ingress)
+
+```bash
+cd deploy/helm/nexspence
+helm dependency update
+helm install nexspence . \
+  -f values-examples/nginx.yaml \
+  --set config.jwtSecret="$(openssl rand -hex 32)" \
+  --set config.adminPassword="changeme" \
+  --namespace nexspence --create-namespace
+```
+
+### Networking options
+
+| Provider | Example values file |
+|----------|-------------------|
+| nginx ingress-controller | `values-examples/nginx.yaml` |
+| Traefik ingress-controller | `values-examples/traefik.yaml` |
+| Cilium ingress-controller | `values-examples/cilium-ingress.yaml` |
+| Istio API Gateway | `values-examples/istio-gateway.yaml` |
+| Cilium API Gateway (Gateway API) | `values-examples/cilium-gateway.yaml` |
+
+### External PostgreSQL
+
+```bash
+helm install nexspence . \
+  --set postgresql.enabled=false \
+  --set externalDatabase.dsn="postgres://user:pass@pg-host:5432/nexspence" \
+  -f values-examples/nginx.yaml
+```
+
+### S3 blob storage
+
+```bash
+helm install nexspence . \
+  --set storage.type=s3 \
+  --set storage.s3.endpoint="https://minio.example.com" \
+  --set storage.s3.bucket="nexspence-blobs" \
+  --set storage.s3.accessKey="minio" \
+  --set storage.s3.secretKey="minio123" \
+  -f values-examples/nginx.yaml
+```
+
+### Upgrading
+
+```bash
+helm upgrade nexspence . -f your-values.yaml
+```
+
+Migrations run automatically on pod restart.
