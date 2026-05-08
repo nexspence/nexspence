@@ -1,6 +1,7 @@
 package conda_test
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -11,6 +12,7 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/formats/conda"
 	"github.com/nexspence-oss/nexspence/internal/testutil"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func init() { gin.SetMode(gin.TestMode) }
@@ -54,4 +56,22 @@ func TestConda_Bz2Returns404(t *testing.T) {
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestConda_IndexEmpty(t *testing.T) {
+	r := setup(hostedRepo("conda-hosted"))
+	req := httptest.NewRequest(http.MethodGet, "/repository/conda-hosted/linux-64/repodata.json", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "application/json", w.Header().Get("Content-Type"))
+
+	var body map[string]any
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&body))
+	info, ok := body["info"].(map[string]any)
+	require.True(t, ok, "info must be a map")
+	assert.Equal(t, "linux-64", info["subdir"])
+	assert.NotNil(t, body["packages"])
+	assert.NotNil(t, body["packages.conda"])
 }

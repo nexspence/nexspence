@@ -51,8 +51,7 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 
 	switch {
 	case c.Request.Method == http.MethodGet && filename == "repodata.json":
-		// index generation — Task 2
-		c.JSON(http.StatusNotImplemented, gin.H{"error": "not yet implemented"})
+		h.serveIndex(c, repoName, platform)
 	case c.Request.Method == http.MethodGet && filename == "repodata.json.bz2":
 		c.JSON(http.StatusNotFound, gin.H{"error": "repodata.json.bz2 not supported; use repodata.json"})
 	case c.Request.Method == http.MethodGet || c.Request.Method == http.MethodHead:
