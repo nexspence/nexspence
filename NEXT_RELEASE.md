@@ -3,5 +3,4 @@
 
 ### 🐛 Bug Fixes
 
-* Fix docker-compose files
-* Fix blob in scripts
+_No bug fixes in this release._
