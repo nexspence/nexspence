@@ -94,13 +94,17 @@ jobs:
           cp config.yaml.example release-assets/config.yaml.example
           cp -r deploy release-assets/
           cp -r keycloak release-assets/
+          cp -r scripts release-assets/
+          cp -r docs release-assets/
 
           cd release-assets
           zip -r "nexspence-${{ github.ref_name }}.zip" \
             docker-compose.yml docker-compose.ha.yml \
             config.yaml.example \
             deploy/ \
-            keycloak/
+            keycloak/ \
+            scripts/ \
+            docs/
           cd ..
 
       - name: Build release notes
@@ -132,6 +136,15 @@ jobs:
             printf '**Web UI:** single-node → `http://localhost:8081` · HA → `http://localhost:8080`  \n'
             printf '**Keycloak admin:** `http://localhost:8180` (admin / admin)  \n'
             printf '**Test SSO user:** testuser / testpass (member of `nexspence-admins` → nx-admin role)  \n\n'
+            printf '#### Demo seed (optional)\n\n'
+            printf 'The zip includes `scripts/` and `docs/` directories.\n\n'
+            printf '| Script | Purpose |\n'
+            printf '|--------|---------|\n'
+            printf '| `scripts/seed-all.sh` | Full demo: 42 repos + test packages + RBAC for dev/stage/test/prod |\n'
+            printf '| `scripts/seed-repos.sh` | Repositories only (all 14 formats) |\n'
+            printf '| `scripts/seed-rbac.sh` | RBAC for dev/stage/test/prod environments |\n'
+            printf '| `scripts/seed-cleanup.sh --all` | Remove everything created by seed scripts |\n\n'
+            printf 'See `docs/seed-testing-guide.md` for a full testing walkthrough.\n\n'
           } >> release-notes.md
 
       - name: Create GitHub Release
