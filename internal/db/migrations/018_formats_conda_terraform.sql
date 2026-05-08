@@ -1,11 +1,12 @@
--- Migration 018: add conda and terraform to repositories format check constraint
--- PostgreSQL does not support ALTER CONSTRAINT — drop and recreate.
+-- +goose Up
+ALTER TABLE repositories DROP CONSTRAINT IF EXISTS repositories_format_check;
+ALTER TABLE repositories ADD CONSTRAINT repositories_format_check CHECK (format IN (
+    'maven2','npm','docker','pypi','go','nuget','helm','raw',
+    'apt','yum','cargo','conan','conda','terraform'
+));
 
-ALTER TABLE repositories
-    DROP CONSTRAINT IF EXISTS repositories_format_check;
-
-ALTER TABLE repositories
-    ADD CONSTRAINT repositories_format_check CHECK (format IN (
-        'maven2','npm','docker','pypi','go','nuget','helm','raw',
-        'apt','yum','cargo','conan','conda','terraform'
-    ));
+-- +goose Down
+ALTER TABLE repositories DROP CONSTRAINT IF EXISTS repositories_format_check;
+ALTER TABLE repositories ADD CONSTRAINT repositories_format_check CHECK (format IN (
+    'maven2','npm','docker','pypi','go','nuget','helm','raw','apt','yum'
+));
