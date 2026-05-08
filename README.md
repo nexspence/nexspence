@@ -18,7 +18,7 @@
 
 ## What is Nexspence?
 
-Nexspence is a self-hosted artifact repository manager that supports **12 package formats**, three repository types (hosted, proxy, group), fine-grained RBAC, SSO via OIDC/LDAP, audit logging, S3-compatible storage, and a modern dark-theme web UI — all in a single binary backed by PostgreSQL.
+Nexspence is a self-hosted artifact repository manager that supports **14 package formats**, three repository types (hosted, proxy, group), fine-grained RBAC, SSO via OIDC/LDAP, audit logging, S3-compatible storage, and a modern dark-theme web UI — all in a single binary backed by PostgreSQL.
 
 It exposes the full **Sonatype Nexus v1 REST API** at `/service/rest/v1/` for drop-in compatibility with existing CI/CD pipelines, Maven/Gradle settings, and npm/pip configurations.
 
@@ -368,6 +368,8 @@ See [`docs/ha-setup.md`](docs/ha-setup.md) for the full HA guide including Kuber
 | APT (Debian/Ubuntu) | ✓ | ✓ | — |
 | Yum / RPM | ✓ | ✓ | — |
 | Conan (C/C++) | ✓ | ✓ | — |
+| Conda | ✓ | ✓ | — |
+| Terraform Registry | ✓ | ✓ | — |
 | Raw files | ✓ | ✓ | ✓ |
 
 ---
@@ -617,6 +619,47 @@ conan upload my-lib/1.0.0@ -r nexspence --all
 conan install my-lib/1.0.0@ -r nexspence
 ```
 
+### Conda
+
+```bash
+# Add Nexspence as a conda channel
+conda config --add channels http://admin:changeme@localhost:8081/repository/my-conda/
+conda install numpy
+
+# Upload a package (hosted repo)
+curl -u admin:changeme -X PUT \
+  "http://localhost:8081/repository/my-conda/linux-64/numpy-1.24.0-py311_0.tar.bz2" \
+  --upload-file numpy-1.24.0-py311_0.tar.bz2
+
+# Proxy conda-forge through Nexspence (create proxy repo with remote_url=https://conda.anaconda.org/conda-forge/)
+conda config --add channels http://localhost:8081/repository/conda-forge-proxy/
+conda install scipy
+```
+
+### Terraform Registry (Mirror)
+
+```bash
+# Create a mirror pointing to registry.terraform.io:
+# UI → Repositories → New → Format: terraform, Type: proxy,
+# Remote URL: https://registry.terraform.io/
+
+# Configure Terraform CLI to use the mirror (~/.terraformrc):
+cat >> ~/.terraformrc <<'EOF'
+provider_installation {
+  network_mirror {
+    url = "http://localhost:8081/repository/tf-mirror/"
+  }
+}
+EOF
+
+terraform init   # providers now fetched through Nexspence
+
+# For a hosted (air-gapped) registry, upload provider binaries:
+curl -u admin:changeme -X PUT \
+  "http://localhost:8081/repository/tf-hosted/v1/providers/hashicorp/aws/5.0.0/upload/linux/amd64" \
+  --upload-file terraform-provider-aws_5.0.0_linux_amd64.zip
+```
+
 ---
 
 ## Proxy Repositories
@@ -678,6 +721,8 @@ curl -u admin:changeme -X POST \
 | apt | ✓ | `http://archive.ubuntu.com/ubuntu/` |
 | yum | ✓ | `https://dl.fedoraproject.org/pub/epel/…` |
 | conan | ✓ | `https://center2.conan.io/` |
+| conda | ✓ | `https://conda.anaconda.org/conda-forge/` |
+| terraform | ✓ | `https://registry.terraform.io/` |
 | raw | ✓ | any HTTP server |
 
 ---
@@ -810,7 +855,10 @@ Full OpenAPI 3.1 spec: [`docs/api-spec.yaml`](docs/api-spec.yaml)
 | 53 | High Availability — Redis cluster mode, distributed locks, `/healthz` + `/readyz`, `docker-compose.ha.yml` | ✓ complete |
 | 54 | Vulnerability dashboard — OSV.dev for Maven/npm/PyPI/Cargo, `scan_results` table, bulk re-scan | ✓ complete |
 | 55 | Content Replication — push artifacts to a remote Nexspence instance on cron schedule, AES-256-GCM credentials, per-asset diff, run history | ✓ complete |
-| next | SBOM generation, cosign image signing, Terraform provider | planned |
+| 60 | LDAP external role mapping — sync all group memberships on every login; `role_mappings` config; REPLACE semantics | ✓ complete |
+| 61 | Conda format — hosted channel (`repodata.json`, `.tar.bz2`, `.conda`), proxy with URL rewriting | ✓ complete |
+| 62 | Terraform Registry Mirror — service discovery, provider + module proxy/hosted, `terraform init` compatible | ✓ complete |
+| next | SBOM generation, cosign image signing | planned |
 | next | Prometheus metrics endpoint, OpenTelemetry traces | planned |
 | next | `nexctl` CLI, blob GC | planned |
 

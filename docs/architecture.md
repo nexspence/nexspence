@@ -36,6 +36,8 @@ Nexspence follows a clean layered architecture. Each layer depends only on the l
 │  │ AptHandler          │ │   │  SBOMService         AnalyticsService    │
 │  │ YumHandler          │ │   │  BlobGCService       ReplicationService  │
 │  │ ConanHandler        │ │   │                                          │
+│  │ CondaHandler        │ │   │                                          │
+│  │ TerraformHandler    │ │   │                                          │
 │  │ RawHandler          │ │   └────────────────┬─────────────────────────┘
 │  │ GroupHandler        │ │                    │
 │  │ ReproxyHandler      │ │   ┌────────────────▼─────────────────────────┐
