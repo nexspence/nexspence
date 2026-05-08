@@ -18,8 +18,8 @@ type UserService struct {
 	users          repository.UserRepo
 	roles          repository.RoleRepo
 	auth           *auth.Service
-	ldap           auth.LDAPAuthenticator // nil when LDAP is disabled
-	ldapAdminGroup string                 // LDAP group name that maps to nx-admin role
+	ldap    auth.LDAPAuthenticator // nil when LDAP is disabled
+	ldapCfg config.LDAPConfig     // empty when LDAP is disabled
 	oidc           auth.OIDCAuthenticator // nil when OIDC is disabled
 	oidcCfg        config.OIDCConfig      // empty when OIDC is disabled
 	saml           auth.SAMLAuthenticator // nil when SAML is disabled
@@ -36,12 +36,11 @@ func NewUserService(
 	return &UserService{users: users, roles: roles, auth: auth, log: log}
 }
 
-// WithLDAP attaches an LDAP authenticator. adminGroup, when non-empty, grants the
-// nx-admin role to any LDAP user whose groups include that name.
+// WithLDAP attaches an LDAP authenticator and its config.
 // Returns the same service for chaining.
-func (s *UserService) WithLDAP(l auth.LDAPAuthenticator, adminGroup string) *UserService {
+func (s *UserService) WithLDAP(l auth.LDAPAuthenticator, cfg config.LDAPConfig) *UserService {
 	s.ldap = l
-	s.ldapAdminGroup = adminGroup
+	s.ldapCfg = cfg
 	return s
 }
 
@@ -117,7 +116,6 @@ func (s *UserService) loginLDAP(ctx context.Context, username, password string, 
 			LastName:  lu.LastName,
 			Status:    domain.UserStatusActive,
 			Source:    domain.UserSourceLDAP,
-			Roles:     lu.Groups,
 		}
 		if err := s.users.Create(ctx, existing); err != nil {
 			return "", nil, fmt.Errorf("create ldap user: %w", err)
@@ -145,9 +143,9 @@ func (s *UserService) loginLDAP(ctx context.Context, username, password string, 
 	}
 	s.log.Infow("ldap user authenticated", "username", username, "ldap_groups", lu.Groups, "user_dn", lu.DN)
 
-	// Best-effort: grant nx-admin if user is in the configured admin LDAP group.
-	if err := s.syncLDAPAdminRole(ctx, existing.ID, lu.Groups); err != nil {
-		s.log.Warnw("syncLDAPAdminRole failed", "username", username, "err", err)
+	// Best-effort: sync roles from LDAP groups (by name, role_mappings, admin_group).
+	if err := s.syncLDAPRoles(ctx, existing.ID, lu.Groups); err != nil {
+		s.log.Warnw("syncLDAPRoles failed", "username", username, "err", err)
 	}
 
 	// Reload roles so the JWT reflects any just-granted nx-admin role.
@@ -169,55 +167,39 @@ func (s *UserService) loginLDAP(ctx context.Context, username, password string, 
 	return token, existing, nil
 }
 
-// syncLDAPAdminRole grants the nx-admin role to the user when their LDAP groups
-// contain the configured admin group. It is best-effort; errors are returned but
-// do not block login.
-func (s *UserService) syncLDAPAdminRole(ctx context.Context, userID string, ldapGroups []string) error {
-	if s.ldapAdminGroup == "" {
-		return nil
-	}
-	isAdmin := false
+// syncLDAPRoles replaces the user's roles with those derived from LDAP group membership.
+// Resolution order (all applied, REPLACE semantics):
+//  1. admin_group match → nx-admin
+//  2. role_mappings[group] → mapped role name
+//  3. group name matches a role name exactly → that role
+func (s *UserService) syncLDAPRoles(ctx context.Context, userID string, ldapGroups []string) error {
+	want := make(map[string]struct{})
 	for _, g := range ldapGroups {
-		if ldapGroupMatch(g, s.ldapAdminGroup) {
-			isAdmin = true
-			break
+		// 1. admin group
+		if s.ldapCfg.AdminGroup != "" && ldapGroupMatch(g, s.ldapCfg.AdminGroup) {
+			want["nx-admin"] = struct{}{}
 		}
-	}
-	s.log.Infow("ldap admin group check", "user", userID, "admin_group", s.ldapAdminGroup, "ldap_groups", ldapGroups, "is_admin", isAdmin)
-	if !isAdmin {
-		return nil
+		// 2. explicit role_mappings
+		for mapKey, roleName := range s.ldapCfg.RoleMappings {
+			if roleName != "" && ldapGroupMatch(g, mapKey) {
+				want[roleName] = struct{}{}
+			}
+		}
+		// 3. implicit by-name: group name = role name
+		want[g] = struct{}{}
 	}
 
 	allRoles, err := s.roles.List(ctx)
 	if err != nil {
 		return err
 	}
-	adminRoleID := ""
+	ids := make([]string, 0, len(want))
 	for _, r := range allRoles {
-		if r.Name == "nx-admin" {
-			adminRoleID = r.ID
-			break
+		if _, ok := want[r.Name]; ok {
+			ids = append(ids, r.ID)
 		}
 	}
-	if adminRoleID == "" {
-		return nil
-	}
-
-	userRoles, err := s.roles.GetUserRoles(ctx, userID)
-	if err != nil {
-		return err
-	}
-	for _, r := range userRoles {
-		if r.ID == adminRoleID {
-			return nil // already has admin
-		}
-	}
-
-	ids := make([]string, 0, len(userRoles)+1)
-	for _, r := range userRoles {
-		ids = append(ids, r.ID)
-	}
-	ids = append(ids, adminRoleID)
+	s.log.Infow("ldap role sync", "user", userID, "ldap_groups", ldapGroups, "assigned_role_ids", ids)
 	return s.roles.SetUserRoles(ctx, userID, ids)
 }
 

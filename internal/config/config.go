@@ -111,7 +111,9 @@ type LDAPConfig struct {
 	TimeoutSec       int               `mapstructure:"timeout_sec"`
 	// AdminGroup, when set, automatically grants the nx-admin role to any LDAP user
 	// whose group membership includes this group name.
-	AdminGroup       string            `mapstructure:"admin_group"`
+	AdminGroup   string            `mapstructure:"admin_group"`
+	// RoleMappings maps LDAP group names to Nexspence role names (like OIDC/SAML).
+	RoleMappings map[string]string `mapstructure:"role_mappings"`
 }
 
 type LDAPUserAttrMap struct {

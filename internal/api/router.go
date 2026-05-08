@@ -101,7 +101,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 	var ldapSvc auth.LDAPAuthenticator
 	if svc := auth.NewLDAPService(cfg.LDAP); svc != nil {
 		ldapSvc = svc
-		userSvc.WithLDAP(svc, cfg.LDAP.AdminGroup)
+		userSvc.WithLDAP(svc, cfg.LDAP)
 	}
 
 	// OIDC is optional; NewOIDCService performs discovery and will fail
