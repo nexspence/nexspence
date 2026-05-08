@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
-# seed-all.sh — запускает все seed-скрипты последовательно.
+# seed-all.sh — runs all seed scripts in sequence.
 #
-# Порядок:
-#   1. seed-repos.sh    — создаёт репозитории всех 14 форматов
-#   2. seed-packages.sh — загружает тестовые пакеты в hosted репозитории
-#   3. seed-rbac.sh     — создаёт RBAC-структуру для 4 проектов
+# Order:
+#   1. seed-repos.sh    — creates repositories for all 14 formats
+#   2. seed-packages.sh — uploads test packages to hosted repositories
+#   3. seed-rbac.sh     — creates RBAC structure for 4 environments
 #
-# Переменные окружения:
-#   BASE_URL       — URL сервера        (default: http://localhost:8080)
-#   ADMIN_USER     — admin логин        (default: admin)
-#   ADMIN_PASS     — admin пароль       (default: admin123)
-#   BLOB_PRIMARY   — первый blob store  (default: s3-primary)
-#   BLOB_SECONDARY — второй blob store  (default: s3-secondary)
+# Environment variables:
+#   BASE_URL       — server URL             (default: http://localhost:8080)
+#   ADMIN_USER     — admin login            (default: admin)
+#   ADMIN_PASS     — admin password         (default: admin123)
+#   BLOB_PRIMARY   — primary blob store     (default: s3-primary)
+#   BLOB_SECONDARY — secondary blob store   (default: s3-secondary)
 #
-# Пример запуска:
+# Example:
 #   ./scripts/seed-all.sh
 #   BASE_URL=http://192.168.1.10:8080 ADMIN_PASS=secret ./scripts/seed-all.sh
 set -uo pipefail

@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
-# seed-repos.sh — создаёт hosted+proxy+group репозитории для всех 14 форматов.
+# seed-repos.sh — creates hosted+proxy+group repositories for all 14 formats.
 #
-# Репозитории распределены по двум S3 blob store'ам для тестирования миграции:
-#   s3-primary   → maven, npm, pypi, docker, helm, cargo, conda   (7 форматов)
-#   s3-secondary → go, nuget, raw, apt, yum, conan, terraform    (7 форматов)
+# Repositories are split across two S3 blob stores for migration testing:
+#   s3-primary   → maven, npm, pypi, docker, helm, cargo, conda   (7 formats)
+#   s3-secondary → go, nuget, raw, apt, yum, conan, terraform    (7 formats)
 #
-# Оба blob store должны существовать до запуска (create их через UI или API).
-# По умолчанию скрипт ожидает s3-primary и s3-secondary; переопределяется:
+# Both blob stores must exist before running (create via UI or API).
+# Defaults to s3-primary and s3-secondary; override with:
 #   BLOB_PRIMARY=my-s3 BLOB_SECONDARY=other-s3 ./scripts/seed-repos.sh
 #
-# Переменные окружения:
-#   BASE_URL       — URL сервера        (default: http://localhost:8080)
-#   ADMIN_USER     — admin логин        (default: admin)
-#   ADMIN_PASS     — admin пароль       (default: admin123)
-#   BLOB_PRIMARY   — первый blob store  (default: s3-primary)
-#   BLOB_SECONDARY — второй blob store  (default: s3-secondary)
+# Environment variables:
+#   BASE_URL       — server URL             (default: http://localhost:8080)
+#   ADMIN_USER     — admin login            (default: admin)
+#   ADMIN_PASS     — admin password         (default: admin123)
+#   BLOB_PRIMARY   — primary blob store     (default: s3-primary)
+#   BLOB_SECONDARY — secondary blob store   (default: s3-secondary)
 set -uo pipefail
 
 BASE_URL="${BASE_URL:-http://localhost:8080}"

@@ -1,22 +1,22 @@
 #!/usr/bin/env bash
-# create-docker-repos.sh — создаёт three Docker-репозитория: hosted, proxy, group.
+# create-docker-repos.sh — creates three Docker repositories: hosted, proxy, group.
 #
-# Использование:
+# Usage:
 #   ./scripts/create-docker-repos.sh
-#   BASE_URL=http://192.168.1.10:8081 HOSTED_NAME=my-docker ./scripts/create-docker-repos.sh
-#   BLOB_STORE=s3-prod ./scripts/create-docker-repos.sh     # положить всё в стор "s3-prod"
+#   BASE_URL=http://192.168.1.10:8080 HOSTED_NAME=my-docker ./scripts/create-docker-repos.sh
+#   BLOB_STORE=s3-primary ./scripts/create-docker-repos.sh
 #
-# Переменные окружения (все с дефолтами):
-#   BASE_URL        — URL сервера                    (default: http://localhost:8081)
-#   ADMIN_USER      — admin логин                    (default: admin)
-#   ADMIN_PASS      — admin пароль                   (default: admin123)
-#   HOSTED_NAME     — имя hosted-репо                (default: docker-hosted)
-#   PROXY_NAME      — имя proxy-репо                 (default: docker-proxy)
-#   GROUP_NAME      — имя group-репо                 (default: docker-group)
-#   PROXY_REMOTE    — remote URL для proxy           (default: https://registry-1.docker.io)
-#   ALLOW_ANON_PUB  — allow_anonymous для proxy/group (default: true)
-#   BLOB_STORE      — имя blob store для hosted+proxy (default: default)
-#                     группа не использует storage, ей blob store не задаётся.
+# Environment variables (all with defaults):
+#   BASE_URL        — server URL                      (default: http://localhost:8080)
+#   ADMIN_USER      — admin login                     (default: admin)
+#   ADMIN_PASS      — admin password                  (default: admin123)
+#   HOSTED_NAME     — hosted repo name                (default: docker-dev)
+#   PROXY_NAME      — proxy repo name                 (default: docker-proxy)
+#   GROUP_NAME      — group repo name                 (default: docker-common)
+#   PROXY_REMOTE    — remote URL for proxy            (default: https://registry-1.docker.io)
+#   ALLOW_ANON_PUB  — allow_anonymous for proxy/group (default: true)
+#   BLOB_STORE      — blob store name for hosted+proxy (default: default)
+#                     groups have no storage, so blobStoreId is not set on them.
 set -uo pipefail
 
 BASE_URL="${BASE_URL:-http://localhost:8080}"
@@ -41,13 +41,12 @@ err()  { echo -e "${RED}[ERR]${NC}   $*"; }
 info() { echo -e "${CYAN}[INFO]${NC}  $*"; }
 warn() { echo -e "${YELLOW}[WARN]${NC}  $*"; }
 
-# Резолвит имя blob store в UUID через GET /service/rest/v1/blobstores/:name.
-# Использует jq если доступен, иначе — портативное извлечение первого "id":"…"
-# поля из JSON. Печатает UUID в stdout, возвращает 1 если стор не найден.
+# Resolves a blob store name to its UUID via GET /service/rest/v1/blobstores/:name.
+# Uses jq when available, falls back to portable sed extraction.
+# Prints UUID to stdout; errors go to stderr.
 resolve_blob_store_id() {
     local name="$1"
     local http_code body
-    # Caller captures our stdout for the UUID — direct any error output to stderr.
     http_code=$(curl -s -o /tmp/nexspence_bs.out -w "%{http_code}" \
         "${AUTH[@]}" "${BLOBS_API}/${name}")
     body=$(cat /tmp/nexspence_bs.out)
@@ -69,8 +68,8 @@ resolve_blob_store_id() {
     echo "${id}"
 }
 
-# Создаёт репозиторий; пропускает если уже существует (409).
-# Аргументы: format type JSON-body
+# Creates a repository; skips if already exists (409).
+# Arguments: format type JSON-body
 create_repo() {
     local format="$1" type="$2" body="$3"
     local http_code
@@ -87,10 +86,10 @@ create_repo() {
     esac
 }
 
-# ── Проверка доступности сервера ──────────────────────────────────────────────
+# ── Server reachability check ─────────────────────────────────────────────────
 info "Connecting to ${BASE_URL} …"
 if ! curl -sf -o /dev/null "${AUTH[@]}" "${BASE_URL}/service/rest/v1/repositories"; then
-    err "Cannot reach ${BASE_URL} — проверьте, что сервер запущен и credentials верные."
+    err "Cannot reach ${BASE_URL} — verify that the server is running and credentials are correct."
     exit 1
 fi
 info "Server OK"
@@ -150,14 +149,14 @@ JSON
 )"
 
 echo
-info "Done. Репозитории доступны по адресам:"
+info "Done. Repositories available at:"
 echo "  hosted : ${BASE_URL}/v2/${HOSTED_NAME}/"
 echo "  proxy  : ${BASE_URL}/v2/${PROXY_NAME}/"
 echo "  group  : ${BASE_URL}/v2/${GROUP_NAME}/"
 echo
-info "Пример push в hosted:"
+info "Example: push to hosted"
 echo "  docker tag alpine:3 ${BASE_URL#http://}/${HOSTED_NAME}/alpine:3"
 echo "  docker push ${BASE_URL#http://}/${HOSTED_NAME}/alpine:3"
 echo
-info "Пример pull через group:"
+info "Example: pull via group"
 echo "  docker pull ${BASE_URL#http://}/${GROUP_NAME}/alpine:3"

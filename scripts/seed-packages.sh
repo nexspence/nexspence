@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# seed-packages.sh — загружает минимальные тестовые артефакты во все hosted репозитории.
+# seed-packages.sh — uploads minimal test artifacts to all hosted repositories.
 #
-# Требования: curl (обязателен), python3 (для zip/tar, опционально)
-# Docker push пропущен — требует отдельного docker login.
+# Requirements: curl (required), python3 (for zip/tar creation, optional)
+# Docker push skipped — requires a separate docker login.
 #
-# Переменные окружения:
-#   BASE_URL   — URL сервера  (default: http://localhost:8080)
-#   ADMIN_USER — логин         (default: admin)
-#   ADMIN_PASS — пароль        (default: admin123)
+# Environment variables:
+#   BASE_URL   — server URL    (default: http://localhost:8080)
+#   ADMIN_USER — admin login   (default: admin)
+#   ADMIN_PASS — admin password (default: admin123)
 set -uo pipefail
 
 BASE_URL="${BASE_URL:-http://localhost:8080}"

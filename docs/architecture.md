@@ -205,18 +205,14 @@ Built-in roles (`nx-admin`, `nx-anonymous`, `nx-developer`) are `readOnly: true`
 
 See [docs/security-rbac.md](security-rbac.md) for full setup guide and CEL expression examples.
 
-**Подробная инструкция по настройке:** [`docs/security-rbac.md`](./security-rbac.md)
-
-API-маршруты:
-| Маршрут | Описание |
-|---------|----------|
+API routes:
+| Route | Description |
+|-------|-------------|
 | `GET/POST /service/rest/v1/security/content-selectors` | CRUD Content Selectors |
 | `GET/POST/PUT/DELETE /service/rest/v1/security/privileges` | CRUD Privileges |
-| `PUT /service/rest/v1/security/privileges/:id/content-selector/:selectorId` | Прикрепить selector |
-| `DELETE /service/rest/v1/security/privileges/:id/content-selector` | Открепить selector |
 | `GET/POST /service/rest/v1/security/roles` | CRUD Roles |
-| `PUT /service/rest/v1/security/roles/:id/privileges` | Назначить привилегии роли |
-| `PUT /service/rest/v1/security/users/:userId/roles` | Назначить роли пользователю |
+| `PUT /service/rest/v1/security/roles/:id/privileges` | Assign privileges to role |
+| `PUT /service/rest/v1/security/users/:userId/roles` | Assign roles to user |
 
 ---
 
