@@ -20,6 +20,7 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/formats/apt"
 	"github.com/nexspence-oss/nexspence/internal/formats/cargo"
 	"github.com/nexspence-oss/nexspence/internal/formats/conan"
+	"github.com/nexspence-oss/nexspence/internal/formats/conda"
 	"github.com/nexspence-oss/nexspence/internal/formats/docker"
 	"github.com/nexspence-oss/nexspence/internal/formats/gomod"
 	"github.com/nexspence-oss/nexspence/internal/formats/group"
@@ -172,6 +173,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 		"nuget":  nuget.New(formatDeps),
 		"cargo":  cargo.New(formatDeps),
 		"conan":  conan.New(formatDeps),
+		"conda":  conda.New(formatDeps),
 		"apt":    apt.New(formatDeps),
 		"yum":    yum.New(formatDeps),
 		"docker": docker.New(formatDeps),
