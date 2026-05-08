@@ -33,6 +33,7 @@ services:
   keycloak:
     profiles: [keycloak]
     image: quay.io/keycloak/keycloak:24.0
+    hostname: keycloak
     command: ["start-dev", "--import-realm"]
     environment:
       KEYCLOAK_ADMIN: admin
@@ -49,6 +50,7 @@ services:
       KC_HOSTNAME_STRICT: "false"
       KC_HOSTNAME_STRICT_HTTPS: "false"
       KC_HTTP_ENABLED: "true"
+      KC_DB: dev-mem
     ports:
       - "8180:8080"
     volumes:
