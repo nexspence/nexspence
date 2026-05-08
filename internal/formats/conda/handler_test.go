@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -100,4 +101,70 @@ func TestConda_IndexEmpty(t *testing.T) {
 	assert.Equal(t, "linux-64", info["subdir"])
 	assert.NotNil(t, body["packages"])
 	assert.NotNil(t, body["packages.conda"])
+}
+
+func TestConda_Proxy_RepoData(t *testing.T) {
+	var upstreamURL string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/linux-64/repodata.json" {
+			w.Header().Set("Content-Type", "application/json")
+			body := map[string]any{
+				"info": map[string]any{"subdir": "linux-64"},
+				"packages": map[string]any{
+					"numpy-1.24.0-py311_0.tar.bz2": map[string]any{
+						"name":    "numpy",
+						"version": "1.24.0",
+						"url":     upstreamURL + "/linux-64/numpy-1.24.0-py311_0.tar.bz2",
+					},
+				},
+				"packages.conda": map[string]any{},
+			}
+			json.NewEncoder(w).Encode(body) //nolint:errcheck
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer upstream.Close()
+	upstreamURL = upstream.URL // set after server starts (closure captures the var)
+
+	proxyRepo := &domain.Repository{
+		ID:     "proxy-1",
+		Name:   "conda-proxy",
+		Format: "conda",
+		Type:   domain.TypeProxy,
+		Online: true,
+		ProxyConfig: map[string]any{
+			"remote_url": upstream.URL,
+		},
+	}
+
+	d := formats.Deps{
+		Repos:      testutil.NewRepoRepo(proxyRepo),
+		Blobs:      testutil.NewBlobStoreRepo(),
+		Components: testutil.NewComponentRepo(),
+		Assets:     testutil.NewAssetRepo(),
+		BlobStore:  testutil.NewBlobStore(),
+		BaseURL:    "http://localhost:8080",
+	}
+	h := conda.New(d)
+	r := gin.New()
+	r.Any("/repository/:repoName/*path", func(c *gin.Context) { h.ServeHTTP(c) })
+
+	req := httptest.NewRequest(http.MethodGet, "/repository/conda-proxy/linux-64/repodata.json", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	var body map[string]any
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&body))
+
+	pkgs, ok := body["packages"].(map[string]any)
+	require.True(t, ok, "packages must be a map")
+	entry, ok := pkgs["numpy-1.24.0-py311_0.tar.bz2"].(map[string]any)
+	require.True(t, ok, "numpy entry must be present")
+	url, ok := entry["url"].(string)
+	require.True(t, ok, "url field must be a string")
+	// URL must be rewritten to point through our proxy
+	assert.True(t, strings.HasPrefix(url, "http://localhost:8080/repository/conda-proxy/linux-64/"),
+		"expected local proxy URL, got: %s", url)
 }

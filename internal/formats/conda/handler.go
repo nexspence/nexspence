@@ -14,6 +14,7 @@ package conda
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -42,8 +43,7 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 		if repoproxy.RejectMutation(c, repo) {
 			return
 		}
-		// proxy implementation comes in Task 4
-		c.JSON(http.StatusNotImplemented, gin.H{"error": "conda proxy not yet implemented"})
+		h.serveProxy(c, repo, repoName, p)
 		return
 	}
 
@@ -152,4 +152,92 @@ func (h *Handler) handleDelete(c *gin.Context, repoName, filePath string) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"deleted": true})
+}
+
+func (h *Handler) serveProxy(c *gin.Context, repo *domain.Repository, repoName, p string) {
+	platform, filename, ok := splitPlatformFile(p)
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "path must be /<platform>/<file>"})
+		return
+	}
+
+	if c.Request.Method == http.MethodGet && filename == "repodata.json" {
+		h.proxyRepodata(c, repo, repoName, platform)
+		return
+	}
+	if filename == "repodata.json.bz2" {
+		c.JSON(http.StatusNotFound, gin.H{"error": "use repodata.json"})
+		return
+	}
+
+	// Package binary: cache via repoproxy
+	coords := base.Coords{Name: filename, Group: platform}
+	if err := repoproxy.ServeGET(c, h.deps, repo, p, "", coords, "application/x-tar"); err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+	}
+}
+
+func (h *Handler) proxyRepodata(c *gin.Context, repo *domain.Repository, repoName, platform string) {
+	remoteBase, err := repoproxy.RemoteURL(repo)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	upstreamURL := remoteBase + "/" + platform + "/repodata.json"
+	req, err := http.NewRequestWithContext(c.Request.Context(), http.MethodGet, upstreamURL, nil)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	resp, err := repoproxy.UpstreamClient.Do(req)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "upstream fetch: " + err.Error()})
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		c.Status(resp.StatusCode)
+		io.Copy(c.Writer, resp.Body) //nolint:errcheck
+		return
+	}
+
+	var doc map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&doc); err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "parse upstream repodata.json: " + err.Error()})
+		return
+	}
+
+	localBase := strings.TrimRight(h.deps.BaseURL, "/") + "/repository/" + repoName + "/" + platform + "/"
+	rewriteCondaURLs(doc, localBase)
+
+	data, _ := json.Marshal(doc)
+	c.Data(http.StatusOK, "application/json", data)
+}
+
+// rewriteCondaURLs rewrites "url" and "urls" fields inside "packages" and "packages.conda"
+// so downloads route through this proxy.
+func rewriteCondaURLs(doc map[string]any, localBase string) {
+	for _, key := range []string{"packages", "packages.conda"} {
+		pkgs, _ := doc[key].(map[string]any)
+		for filename, v := range pkgs {
+			entry, ok := v.(map[string]any)
+			if !ok {
+				continue
+			}
+			if u, ok := entry["url"].(string); ok {
+				entry["url"] = localBase + path.Base(u)
+			}
+			if urls, ok := entry["urls"].([]any); ok {
+				for i, u := range urls {
+					if s, ok := u.(string); ok {
+						urls[i] = localBase + path.Base(s)
+					}
+				}
+				entry["urls"] = urls
+			}
+			doc[key].(map[string]any)[filename] = entry
+		}
+	}
 }
