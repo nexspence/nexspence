@@ -189,19 +189,21 @@ Implementations:
 
 ---
 
-## Security: RBAC Model (Phase 8 — реализовано)
+## Security: RBAC Model
 
-Nexspence использует трёхуровневую модель доступа:
+Nexspence uses a three-level access model:
 
 ```
 Content Selector ──► Privilege ──► Role ──► User
 ```
 
-- **Content Selector** — CEL-выражение, фильтрующее артефакты по `format`, `path`, `repository`.
-- **Privilege** — разрешение с типом (`repository-view`, `repository-admin`, `wildcard`, `application`, `script`) и набором actions. К `repository-view`/`repository-admin` может быть прикреплён Content Selector.
-- **Role** — набор Privilege. Назначается пользователям через `PUT /service/rest/v1/security/users/{userId}/roles`.
+- **Content Selector** — CEL expression filtering artifacts by `format`, `path`, `repository`.
+- **Privilege** — a `repository-content-selector` permission bound to a Content Selector with a set of actions (`browse`, `read`, `write`, `delete`).
+- **Role** — a set of Privileges assigned to users via `PUT /service/rest/v1/security/users/{userId}/roles`.
 
-Встроенные роли (`nx-admin`, `nx-anonymous`, `nx-developer`) — `readOnly: true`, удалить нельзя.
+Built-in roles (`nx-admin`, `nx-anonymous`, `nx-developer`) are `readOnly: true` and cannot be deleted.
+
+See [docs/security-rbac.md](security-rbac.md) for full setup guide and CEL expression examples.
 
 **Подробная инструкция по настройке:** [`docs/security-rbac.md`](./security-rbac.md)
 

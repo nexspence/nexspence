@@ -35,7 +35,7 @@ Raw repositories store arbitrary files without imposing any format-specific stru
 Override defaults as needed:
 
 ```bash
-BASE_URL=http://192.168.1.10:8081 \
+BASE_URL=http://192.168.1.10:8080 \
 HOSTED_NAME=my-raw \
 PROXY_REMOTE=https://releases.example.com \
 ./scripts/create-raw-repos.sh
@@ -53,7 +53,7 @@ Available environment variables:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `BASE_URL` | `http://localhost:8081` | Server URL |
+| `BASE_URL` | `http://localhost:8080` | Server URL |
 | `ADMIN_USER` | `admin` | Admin login |
 | `ADMIN_PASS` | `admin123` | Admin password |
 | `HOSTED_NAME` | `raw-artifacts` | Hosted repo name |
@@ -77,7 +77,7 @@ Upload a release binary:
 ```bash
 curl -u admin:admin123 \
   -T myapp-1.0.0-linux-amd64.tar.gz \
-  http://localhost:8081/repository/raw-artifacts/releases/myapp/1.0.0/myapp-1.0.0-linux-amd64.tar.gz
+  http://localhost:8080/repository/raw-artifacts/releases/myapp/1.0.0/myapp-1.0.0-linux-amd64.tar.gz
 ```
 
 Upload a configuration file:
@@ -85,14 +85,14 @@ Upload a configuration file:
 ```bash
 curl -u admin:admin123 \
   -T config.yml \
-  http://localhost:8081/repository/raw-artifacts/configs/prod/config.yml
+  http://localhost:8080/repository/raw-artifacts/configs/prod/config.yml
 ```
 
 Download a file:
 
 ```bash
 curl -u admin:admin123 -O \
-  http://localhost:8081/repository/raw-artifacts/releases/myapp/1.0.0/myapp-1.0.0-linux-amd64.tar.gz
+  http://localhost:8080/repository/raw-artifacts/releases/myapp/1.0.0/myapp-1.0.0-linux-amd64.tar.gz
 ```
 
 ### Proxy — cache remote files
@@ -106,7 +106,7 @@ PROXY_REMOTE=https://releases.hashicorp.com ./scripts/create-raw-repos.sh
 Download a proxied file (fetched from remote on first access, served from cache thereafter):
 
 ```bash
-curl -O http://localhost:8081/repository/raw-proxy/terraform/1.7.5/terraform_1.7.5_linux_amd64.zip
+curl -O http://localhost:8080/repository/raw-proxy/terraform/1.7.5/terraform_1.7.5_linux_amd64.zip
 ```
 
 ### Group — unified access
@@ -114,13 +114,13 @@ curl -O http://localhost:8081/repository/raw-proxy/terraform/1.7.5/terraform_1.7
 The group repository aggregates hosted and proxy members under a single URL. Clients point to the group and Nexspence resolves requests against each member in order, returning the first match.
 
 ```bash
-curl -O http://localhost:8081/repository/raw-common/releases/myapp/1.0.0/myapp-1.0.0-linux-amd64.tar.gz
+curl -O http://localhost:8080/repository/raw-common/releases/myapp/1.0.0/myapp-1.0.0-linux-amd64.tar.gz
 ```
 
 List available components via the REST API:
 
 ```bash
-curl http://localhost:8081/service/rest/v1/components?repository=raw-common
+curl http://localhost:8080/service/rest/v1/components?repository=raw-common
 ```
 
 ### Real-world examples
@@ -129,24 +129,24 @@ curl http://localhost:8081/service/rest/v1/components?repository=raw-common
 
 ```bash
 # Upload Linux and macOS binaries after CI build
-curl -u admin:admin123 -T dist/myapp-2.1.0-linux-amd64   http://localhost:8081/repository/raw-artifacts/releases/myapp/2.1.0/myapp-2.1.0-linux-amd64
-curl -u admin:admin123 -T dist/myapp-2.1.0-darwin-amd64  http://localhost:8081/repository/raw-artifacts/releases/myapp/2.1.0/myapp-2.1.0-darwin-amd64
-curl -u admin:admin123 -T dist/myapp-2.1.0-windows.exe   http://localhost:8081/repository/raw-artifacts/releases/myapp/2.1.0/myapp-2.1.0-windows.exe
+curl -u admin:admin123 -T dist/myapp-2.1.0-linux-amd64   http://localhost:8080/repository/raw-artifacts/releases/myapp/2.1.0/myapp-2.1.0-linux-amd64
+curl -u admin:admin123 -T dist/myapp-2.1.0-darwin-amd64  http://localhost:8080/repository/raw-artifacts/releases/myapp/2.1.0/myapp-2.1.0-darwin-amd64
+curl -u admin:admin123 -T dist/myapp-2.1.0-windows.exe   http://localhost:8080/repository/raw-artifacts/releases/myapp/2.1.0/myapp-2.1.0-windows.exe
 ```
 
 **Kubernetes bootstrap — store cluster configs:**
 
 ```bash
-curl -u admin:admin123 -T kubeconfig-prod.yaml http://localhost:8081/repository/raw-artifacts/k8s/prod/kubeconfig.yaml
-curl -u admin:admin123 -T kubeconfig-staging.yaml http://localhost:8081/repository/raw-artifacts/k8s/staging/kubeconfig.yaml
+curl -u admin:admin123 -T kubeconfig-prod.yaml http://localhost:8080/repository/raw-artifacts/k8s/prod/kubeconfig.yaml
+curl -u admin:admin123 -T kubeconfig-staging.yaml http://localhost:8080/repository/raw-artifacts/k8s/staging/kubeconfig.yaml
 ```
 
 **Offline installer cache — proxy an upstream downloads site:**
 
 ```bash
 # First request downloads from remote; all subsequent requests hit the cache
-curl -O http://localhost:8081/repository/raw-proxy/node/v20.11.1/node-v20.11.1-linux-x64.tar.gz
-curl -O http://localhost:8081/repository/raw-proxy/python/3.12.2/Python-3.12.2.tar.xz
+curl -O http://localhost:8080/repository/raw-proxy/node/v20.11.1/node-v20.11.1-linux-x64.tar.gz
+curl -O http://localhost:8080/repository/raw-proxy/python/3.12.2/Python-3.12.2.tar.xz
 ```
 
 ---
@@ -176,7 +176,7 @@ Nexspence implements the full GOPROXY v2 protocol. A proxy repository caches dow
 Override defaults as needed:
 
 ```bash
-BASE_URL=http://192.168.1.10:8081 \
+BASE_URL=http://192.168.1.10:8080 \
 PROXY_REMOTE=https://proxy.golang.org \
 ./scripts/create-go-repos.sh
 ```
@@ -191,7 +191,7 @@ Available environment variables:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `BASE_URL` | `http://localhost:8081` | Server URL |
+| `BASE_URL` | `http://localhost:8080` | Server URL |
 | `ADMIN_USER` | `admin` | Admin login |
 | `ADMIN_PASS` | `admin123` | Admin password |
 | `HOSTED_NAME` | `go-hosted` | Hosted repo name |
@@ -213,15 +213,15 @@ This creates three repositories:
 Point `GOPROXY` at the proxy repository. The first `go get` for a module version fetches it from `proxy.golang.org` and caches it locally; all subsequent builds use the cache.
 
 ```bash
-GOPROXY=http://localhost:8081/repository/go-proxy go get github.com/gin-gonic/gin@v1.9.1
-GOPROXY=http://localhost:8081/repository/go-proxy go get github.com/rs/zerolog@v1.32.0
-GOPROXY=http://localhost:8081/repository/go-proxy go get github.com/jackc/pgx/v5@v5.5.4
+GOPROXY=http://localhost:8080/repository/go-proxy go get github.com/gin-gonic/gin@v1.9.1
+GOPROXY=http://localhost:8080/repository/go-proxy go get github.com/rs/zerolog@v1.32.0
+GOPROXY=http://localhost:8080/repository/go-proxy go get github.com/jackc/pgx/v5@v5.5.4
 ```
 
 Check all available versions of a module through the proxy:
 
 ```bash
-GOPROXY=http://localhost:8081/repository/go-proxy go list -m -versions github.com/gin-gonic/gin
+GOPROXY=http://localhost:8080/repository/go-proxy go list -m -versions github.com/gin-gonic/gin
 ```
 
 ### Hosted — publishing custom modules
@@ -230,7 +230,7 @@ Publish an internal module to the hosted repository. Use standard `go mod` tooli
 
 ```bash
 # Tag the release in git, then push the module artifact
-GOPROXY=http://localhost:8081/repository/go-hosted \
+GOPROXY=http://localhost:8080/repository/go-hosted \
   go mod download github.com/myorg/mylib@v1.0.0
 ```
 
@@ -238,7 +238,7 @@ When using hosted modules in builds, set `GONOSUMCHECK` to skip the public check
 
 ```bash
 GONOSUMCHECK=github.com/myorg/* \
-GOPROXY=http://localhost:8081/repository/go-group,direct \
+GOPROXY=http://localhost:8080/repository/go-group,direct \
   go build ./...
 ```
 
@@ -257,13 +257,13 @@ The group repository serves both private hosted modules and public cached module
 Set `GOPROXY` once and forget the distinction between private and public modules:
 
 ```bash
-GOPROXY=http://localhost:8081/repository/go-group,direct go get ./...
+GOPROXY=http://localhost:8080/repository/go-group,direct go get ./...
 ```
 
 Make it permanent in your environment:
 
 ```bash
-go env -w GOPROXY=http://localhost:8081/repository/go-group,direct
+go env -w GOPROXY=http://localhost:8080/repository/go-group,direct
 ```
 
 In CI pipelines, set the variable in your environment config:
@@ -271,7 +271,7 @@ In CI pipelines, set the variable in your environment config:
 ```yaml
 # GitHub Actions example
 env:
-  GOPROXY: http://nexspence.internal:8081/repository/go-group,direct
+  GOPROXY: http://nexspence.internal:8080/repository/go-group,direct
   GONOSUMCHECK: "*"
 ```
 
@@ -280,28 +280,28 @@ env:
 **Fetch popular web framework (gin) through proxy cache:**
 
 ```bash
-GOPROXY=http://localhost:8081/repository/go-proxy \
+GOPROXY=http://localhost:8080/repository/go-proxy \
   go get github.com/gin-gonic/gin@v1.9.1
 ```
 
 **Fetch structured logger (zerolog):**
 
 ```bash
-GOPROXY=http://localhost:8081/repository/go-proxy \
+GOPROXY=http://localhost:8080/repository/go-proxy \
   go get github.com/rs/zerolog@v1.32.0
 ```
 
 **Fetch PostgreSQL driver (pgx) through proxy cache:**
 
 ```bash
-GOPROXY=http://localhost:8081/repository/go-proxy \
+GOPROXY=http://localhost:8080/repository/go-proxy \
   go get github.com/jackc/pgx/v5@v5.5.4
 ```
 
 **Offline build — all dependencies already cached:**
 
 ```bash
-GOPROXY=http://localhost:8081/repository/go-group,off \
+GOPROXY=http://localhost:8080/repository/go-group,off \
   go build ./...
 ```
 
@@ -334,7 +334,7 @@ Charts are standard `helm package` tarballs. Hosted repositories accept uploads 
 Override defaults as needed:
 
 ```bash
-BASE_URL=http://192.168.1.10:8081 \
+BASE_URL=http://192.168.1.10:8080 \
 PROXY_REMOTE=https://charts.helm.sh/stable \
 ./scripts/create-helm-repos.sh
 ```
@@ -349,7 +349,7 @@ Available environment variables:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `BASE_URL` | `http://localhost:8081` | Server URL |
+| `BASE_URL` | `http://localhost:8080` | Server URL |
 | `ADMIN_USER` | `admin` | Admin login |
 | `ADMIN_PASS` | `admin123` | Admin password |
 | `HOSTED_NAME` | `helm-hosted` | Hosted repo name |
@@ -371,7 +371,7 @@ This creates three repositories:
 Add the group or proxy repository as a Helm repo, then use it exactly like any official Helm registry:
 
 ```bash
-helm repo add nexspence http://localhost:8081/repository/helm-charts
+helm repo add nexspence http://localhost:8080/repository/helm-charts
 helm repo update
 ```
 
@@ -394,7 +394,7 @@ Upload a chart package via `curl`:
 ```bash
 curl -u admin:admin123 \
   -F "chart=@mychart-0.1.0.tgz" \
-  http://localhost:8081/repository/helm-hosted/
+  http://localhost:8080/repository/helm-hosted/
 ```
 
 Upload using the `helm-push` plugin (compatible with ChartMuseum-style endpoints):
@@ -416,7 +416,7 @@ helm search repo nexspence/mychart
 With the group repository configured, a single `helm repo add` gives clients access to both internal and upstream-cached charts:
 
 ```bash
-helm repo add nexspence http://localhost:8081/repository/helm-charts
+helm repo add nexspence http://localhost:8080/repository/helm-charts
 helm repo update
 ```
 
@@ -427,7 +427,7 @@ Helm resolves charts against group members in order — internal hosted charts t
 **Install nginx-ingress-controller from cache:**
 
 ```bash
-helm repo add nexspence http://localhost:8081/repository/helm-charts
+helm repo add nexspence http://localhost:8080/repository/helm-charts
 helm repo update
 helm install my-ingress nexspence/nginx-ingress --version 4.11.3
 ```
@@ -456,7 +456,7 @@ helm install redis nexspence/redis \
 helm package ./deploy/helm/myapp
 curl -u admin:admin123 \
   -F "chart=@myapp-1.5.0.tgz" \
-  http://localhost:8081/repository/helm-hosted/
+  http://localhost:8080/repository/helm-hosted/
 helm repo update
 helm upgrade --install myapp nexspence/myapp --version 1.5.0
 ```

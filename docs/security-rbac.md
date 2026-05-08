@@ -1,89 +1,95 @@
 # Nexspence — Security: Content Selectors, Privileges, Roles
 
-## Концепция RBAC
+## RBAC Model
 
 ```
 Content Selector  ──►  Privilege  ──►  Role  ──►  User
-   (CEL фильтр)       (разрешение)   (набор прав)
+  (CEL filter)       (permission)   (permission set)
 ```
 
-1. **Content Selector** — CEL-выражение, описывающее *какие* артефакты попадают под правило (формат, путь, репозиторий).
-2. **Privilege** — разрешение типа `repository-content-selector`, которое всегда привязано к Content Selector. Это **единственный способ создания привилегий** в Nexspence (в отличие от Nexus, где есть wildcard/application/script).
-3. **Role** — набор привилегий. Назначается пользователям.
+1. **Content Selector** — a CEL expression that describes *which* artifacts the rule applies to (by format, path, or repository name).
+2. **Privilege** — a `repository-content-selector` permission always bound to a Content Selector. This is the **only way to create privileges** in Nexspence (unlike Nexus, which has wildcard/application/script types).
+3. **Role** — a set of privileges assigned to users.
 
 ---
 
-## Тип привилегий
+## Privilege Types
 
-В Nexspence поддерживается единственный тип привилегий, создаваемых через UI:
+Nexspence supports a single privilege type for user-created permissions:
 
-| Type | Описание |
-|------|----------|
-| `repository-content-selector` | Привилегия, область действия которой определяется CEL-выражением Content Selector |
+| Type | Description |
+|------|-------------|
+| `repository-content-selector` | Privilege whose scope is defined by a Content Selector CEL expression |
 
-Встроенные (built-in) привилегии могут иметь исторические типы (`wildcard`, `repository-view` и др.), но создавать новые привилегии этих типов через UI нельзя.
+Built-in privileges may have legacy types (`wildcard`, `repository-view`, etc.) but new privileges of those types cannot be created through the UI.
 
-> **Почему так?** Nexspence упрощает модель доступа: вместо двух шагов (создать привилегию + прикрепить Content Selector) — один шаг: выбрать Content Selector при создании привилегии.
+> **Why?** Nexspence simplifies the access model: instead of two steps (create privilege + attach Content Selector), there is one step — choose a Content Selector when creating the privilege.
 
 ---
 
-## CEL-выражения для Content Selector
+## CEL Expressions for Content Selectors
 
-Content Selector использует [CEL (Common Expression Language)](https://github.com/google/cel-spec).
+Content Selectors use [CEL (Common Expression Language)](https://github.com/google/cel-spec).
 
-### Доступные переменные
+### Available variables
 
-| Переменная | Тип | Описание |
-|------------|-----|----------|
-| `format` | string | Формат репозитория: `"maven2"`, `"npm"`, `"docker"`, `"pypi"`, `"raw"`, `"helm"`, `"cargo"`, `"go"`, `"nuget"`, `"apt"`, `"yum"`, `"conan"` |
-| `path` | string | Путь артефакта (начинается с `/`) |
-| `repository` | string | Имя репозитория |
+| Variable | Type | Description |
+|----------|------|-------------|
+| `format` | string | Repository format: `"maven2"`, `"npm"`, `"docker"`, `"pypi"`, `"raw"`, `"helm"`, `"cargo"`, `"go"`, `"nuget"`, `"apt"`, `"yum"`, `"conan"`, `"conda"`, `"terraform"` |
+| `path` | string | Artifact path (starts with `/`) |
+| `repository` | string | Repository name |
 
-### Примеры выражений по форматам
+### Expression examples
 
 ```cel
-# Только Maven
+# Maven only
 format == "maven2"
 
-# Только npm
+# npm only
 format == "npm"
 
-# Только Docker
+# Docker only
 format == "docker"
 
-# PyPI или npm (monorepo-стиль)
+# PyPI or npm (monorepo style)
 format == "pypi" || format == "npm"
 
-# Конкретный репозиторий
+# Specific repository
 repository == "releases"
 
-# Maven из конкретного репозитория
+# Maven from a specific repository
 format == "maven2" && repository == "maven-releases"
 
-# Только SNAPSHOT-артефакты Maven
+# Maven SNAPSHOT artifacts only
 format == "maven2" && path.contains("-SNAPSHOT")
 
-# Helm-чарты из Production-репозитория
+# Helm charts in the production repository
 format == "helm" && repository == "helm-prod"
 
-# Артефакты группы org.example (Maven)
+# Maven artifacts under org.example group
 format == "maven2" && path.startsWith("/org/example/")
 
-# Docker-образы конкретного namespace
+# Docker images under a specific team namespace
 format == "docker" && path.startsWith("/v2/myteam/")
 
-# Все артефакты (нет ограничений)
+# All artifacts (no restriction)
 true
 
-# Только публичные (не SNAPSHOT) релизы Maven
+# Maven release artifacts only (no SNAPSHOTs, no beta)
 format == "maven2" && !path.contains("SNAPSHOT") && !path.contains("-beta")
+
+# Conda packages for a specific channel
+format == "conda" && repository == "conda-hosted"
+
+# Terraform providers only
+format == "terraform"
 ```
 
 ---
 
-## Пошаговая инструкция
+## Step-by-Step Setup
 
-### Шаг 1 — Создать Content Selector (если нужна фильтрация)
+### Step 1 — Create a Content Selector
 
 **UI:** Security → Content Selectors → New Content Selector
 
@@ -99,14 +105,14 @@ Content-Type: application/json
 }
 ```
 
-Ответ содержит `id` — он нужен на шаге 3.
+The response contains `id` — needed in Step 2.
 
 ---
 
-### Шаг 2 — Создать Privilege
+### Step 2 — Create a Privilege
 
-**UI:** Security → Privileges → New Privilege → выбрать Content Selector из списка.  
-CEL-выражение выбранного селектора отображается сразу под dropdown.
+**UI:** Security → Privileges → New Privilege → select Content Selector from the dropdown.
+The CEL expression of the selected selector is shown immediately below the dropdown.
 
 **API:**
 ```http
@@ -117,44 +123,36 @@ Content-Type: application/json
   "name": "view-maven-releases",
   "description": "Read Maven release artifacts",
   "type": "repository-content-selector",
-  "contentSelectorId": "<selector-uuid>"
+  "contentSelectorId": "<selector-uuid>",
+  "attrs": { "actions": ["browse", "read"] }
 }
 ```
 
-Ответ содержит `id` — нужен для шага 3.
+The response contains `id` — needed for Step 3.
 
 ---
 
-### Шаг 3 — Создать Role и назначить Privilege
+### Step 3 — Create a Role and assign the Privilege
 
-**UI:** Security → Roles → Edit → добавить привилегии через чекбоксы.
+**UI:** Security → Roles → Edit → add privileges via checkboxes.
 
-**API — создать роль:**
+**API — create role:**
 ```http
 POST /service/rest/v1/security/roles
 Content-Type: application/json
 
 {
   "name": "maven-reader",
-  "description": "Read-only access to Maven releases"
-}
-```
-
-**API — назначить привилегии роли:**
-```http
-PUT /service/rest/v1/security/roles/{roleId}/privileges
-Content-Type: application/json
-
-{
-  "privilegeIds": ["<privilege-id-1>", "<privilege-id-2>"]
+  "description": "Read-only access to Maven releases",
+  "privileges": ["<privilege-id>"]
 }
 ```
 
 ---
 
-### Шаг 4 — Назначить Role пользователю
+### Step 4 — Assign the Role to a User
 
-**UI:** Users & Roles → Users → кнопка «Assign Roles»
+**UI:** Users & Roles → Users → Assign Roles button
 
 **API:**
 ```http
@@ -168,16 +166,17 @@ Content-Type: application/json
 
 ---
 
-## Готовые сценарии по форматам
+## Common Scenarios by Format
 
-### Maven — Read-only для конкретного репозитория
+### Maven — Read-only for a specific repository
 
 ```json
 // 1. Content Selector
 { "name": "maven-releases", "expression": "format == \"maven2\" && repository == \"maven-releases\"" }
 
-// 2. Privilege (ссылается на selector по id)
-{ "name": "nx-maven-releases-read", "type": "repository-content-selector", "contentSelectorId": "<selector-uuid>" }
+// 2. Privilege
+{ "name": "nx-maven-releases-read", "type": "repository-content-selector",
+  "contentSelectorId": "<uuid>", "attrs": { "actions": ["browse", "read"] } }
 
 // 3. Role
 { "name": "maven-developer", "description": "Read Maven releases" }
@@ -185,14 +184,15 @@ Content-Type: application/json
 
 ---
 
-### npm — Публикация пакетов (CI/CD)
+### npm — Package publishing (CI/CD)
 
 ```json
 // 1. Content Selector
 { "name": "npm-all", "expression": "format == \"npm\"" }
 
 // 2. Privilege
-{ "name": "nx-npm-all-write", "type": "repository-content-selector", "contentSelectorId": "<selector-uuid>" }
+{ "name": "nx-npm-all-write", "type": "repository-content-selector",
+  "contentSelectorId": "<uuid>", "attrs": { "actions": ["browse", "read", "write"] } }
 
 // 3. Role
 { "name": "npm-publisher", "description": "Publish npm packages" }
@@ -200,14 +200,15 @@ Content-Type: application/json
 
 ---
 
-### Docker — Только чтение образов своей команды
+### Docker — Read-only for a team namespace
 
 ```json
 // 1. Content Selector
 { "name": "docker-myteam", "expression": "format == \"docker\" && path.startsWith(\"/v2/myteam/\")" }
 
 // 2. Privilege
-{ "name": "nx-docker-myteam-read", "type": "repository-content-selector", "contentSelectorId": "<selector-uuid>" }
+{ "name": "nx-docker-myteam-read", "type": "repository-content-selector",
+  "contentSelectorId": "<uuid>", "attrs": { "actions": ["browse", "read"] } }
 
 // 3. Role
 { "name": "docker-consumer-myteam" }
@@ -215,14 +216,15 @@ Content-Type: application/json
 
 ---
 
-### PyPI — Upload для poetry/twine
+### PyPI — Upload access for poetry/twine
 
 ```json
 // 1. Content Selector
 { "name": "pypi-hosted", "expression": "format == \"pypi\" && repository == \"pypi-hosted\"" }
 
 // 2. Privilege
-{ "name": "nx-pypi-write", "type": "repository-content-selector", "contentSelectorId": "<selector-uuid>" }
+{ "name": "nx-pypi-write", "type": "repository-content-selector",
+  "contentSelectorId": "<uuid>", "attrs": { "actions": ["browse", "read", "write"] } }
 
 // 3. Role
 { "name": "pypi-publisher" }
@@ -230,14 +232,15 @@ Content-Type: application/json
 
 ---
 
-### Helm — Только чтение для деплоя
+### Helm — Read-only for deployments
 
 ```json
 // 1. Content Selector
 { "name": "helm-all", "expression": "format == \"helm\"" }
 
 // 2. Privilege
-{ "name": "nx-helm-read", "type": "repository-content-selector", "contentSelectorId": "<selector-uuid>" }
+{ "name": "nx-helm-read", "type": "repository-content-selector",
+  "contentSelectorId": "<uuid>", "attrs": { "actions": ["browse", "read"] } }
 
 // 3. Role
 { "name": "helm-deployer" }
@@ -245,14 +248,47 @@ Content-Type: application/json
 
 ---
 
-### Универсальная read-only роль (все форматы)
+### Conda — Channel read access
+
+```json
+// 1. Content Selector
+{ "name": "conda-all", "expression": "format == \"conda\"" }
+
+// 2. Privilege
+{ "name": "nx-conda-read", "type": "repository-content-selector",
+  "contentSelectorId": "<uuid>", "attrs": { "actions": ["browse", "read"] } }
+
+// 3. Role
+{ "name": "conda-consumer" }
+```
+
+---
+
+### Terraform — Provider registry read access
+
+```json
+// 1. Content Selector
+{ "name": "terraform-all", "expression": "format == \"terraform\"" }
+
+// 2. Privilege
+{ "name": "nx-terraform-read", "type": "repository-content-selector",
+  "contentSelectorId": "<uuid>", "attrs": { "actions": ["browse", "read"] } }
+
+// 3. Role
+{ "name": "terraform-consumer" }
+```
+
+---
+
+### Universal read-only role (all formats)
 
 ```json
 // 1. Content Selector
 { "name": "all-artifacts", "expression": "true" }
 
 // 2. Privilege
-{ "name": "nx-all-read", "type": "repository-content-selector", "contentSelectorId": "<selector-uuid>" }
+{ "name": "nx-all-read", "type": "repository-content-selector",
+  "contentSelectorId": "<uuid>", "attrs": { "actions": ["browse", "read"] } }
 
 // 3. Role
 { "name": "anonymous-reader", "description": "Read all public repos" }
@@ -260,14 +296,15 @@ Content-Type: application/json
 
 ---
 
-### Maven SNAPSHOT-артефакты запрещены
+### Maven — Block SNAPSHOT artifacts
 
 ```json
-// 1. Content Selector (только релизы, без SNAPSHOT)
+// 1. Content Selector (releases only, no SNAPSHOT)
 { "name": "maven-releases-only", "expression": "format == \"maven2\" && !path.contains(\"SNAPSHOT\")" }
 
 // 2. Privilege
-{ "name": "nx-maven-no-snapshot", "type": "repository-content-selector", "contentSelectorId": "<selector-uuid>" }
+{ "name": "nx-maven-no-snapshot", "type": "repository-content-selector",
+  "contentSelectorId": "<uuid>", "attrs": { "actions": ["browse", "read"] } }
 
 // 3. Role
 { "name": "maven-release-reader" }
@@ -275,73 +312,76 @@ Content-Type: application/json
 
 ---
 
-## Встроенные роли (readOnly: true)
+## Built-in Roles
 
-| Роль | Описание |
-|------|----------|
-| `nx-admin` | Полный доступ ко всему |
-| `nx-anonymous` | Анонимный пользователь (read-only public repos) |
-| `nx-developer` | Чтение + publish артефактов |
+| Role | Description |
+|------|-------------|
+| `nx-admin` | Full access to everything |
+| `nx-anonymous` | Anonymous user (read-only public repos) |
+| `nx-developer` | Read + publish artifacts |
 
-Встроенные роли нельзя удалить или изменить.
+Built-in roles cannot be deleted or modified.
 
 ---
 
-## Порядок проверки доступа
+## Access Check Order
 
-При запросе к артефакту проверяется:
+When a request is made for an artifact:
 
 ```
-1. Аутентификация (JWT Bearer / API Token / Basic Auth)
-2. Роли пользователя → список привилегий
-3. Для каждой привилегии типа repository-content-selector:
-   a. Получить связанный Content Selector → CEL-выражение
-   b. Вычислить выражение по переменным (format, path, repository)
-   c. Если true → доступ разрешён
-4. Хотя бы одна привилегия даёт доступ → OK
+1. Authentication (JWT Bearer / API Token / Basic Auth)
+2. User roles → list of privileges
+3. For each privilege of type repository-content-selector:
+   a. Fetch associated Content Selector → CEL expression
+   b. Evaluate expression against variables (format, path, repository)
+   c. If true → access granted
+4. At least one privilege grants access → 200 OK
+   No matching privilege → 403 Forbidden
 ```
 
 ---
 
 ## LDAP External Role Mapping
 
-При каждом логине LDAP-пользователя Nexspence автоматически синхронизирует его роли из группового членства LDAP (REPLACE-семантика — старые роли заменяются).
+On every LDAP login, Nexspence automatically syncs the user's roles from their LDAP group memberships (REPLACE semantics — existing roles are fully replaced each time).
 
-### Стратегии маппинга (применяются все три)
+### Mapping strategies (all three applied in order)
 
-| Приоритет | Стратегия | Конфиг |
-|-----------|----------|--------|
+| Priority | Strategy | Config |
+|----------|----------|--------|
 | 1 | `admin_group` → `nx-admin` | `ldap.admin_group` |
-| 2 | Явный маппинг group → role | `ldap.role_mappings` |
-| 3 | Имя группы = имя роли | автоматически |
+| 2 | Explicit group → role mapping | `ldap.role_mappings` |
+| 3 | Group name equals role name | automatic |
 
-### Конфигурация
+### Configuration
 
 ```yaml
 ldap:
   enabled: true
-  admin_group: "nexus-administrators"   # plain CN или полный DN
+  admin_group: "nexus-administrators"   # plain CN or full DN
   role_mappings:
     "dev-team":  "developers"   # LDAP group → Nexspence role name
     "qa-team":   "testers"
     "ops-group": "operators"
 ```
 
-### Поведение
+### Behavior
 
-- Роли назначаются через `SetUserRoles` (REPLACE): на каждом логине список ролей пользователя полностью пересчитывается из его текущих LDAP-групп.
-- Если LDAP-группа не найдена среди ролей ни одной из стратегий — она игнорируется (не создаёт новых ролей).
-- `admin_group` принимает как plain CN (`"nexus-administrators"`), так и полный DN (`"CN=nexus-administrators,OU=Groups,DC=example,DC=com"`) — первый RDN сравнивается case-insensitive.
-- Ошибка синхронизации ролей не блокирует вход (best-effort, логируется).
+- Roles are assigned via `SetUserRoles` (REPLACE): on each login, the user's role list is fully recomputed from their current LDAP groups.
+- If an LDAP group is not matched by any strategy, it is silently ignored (no new roles are created).
+- `admin_group` accepts both plain CN (`"nexus-administrators"`) and full DN (`"CN=nexus-administrators,OU=Groups,DC=example,DC=com"`) — the first RDN is compared case-insensitively.
+- Role sync failure does not block login (best-effort, error is logged).
 
 ---
 
 ## Troubleshooting
 
-| Проблема | Причина | Решение |
-|----------|---------|---------|
-| 403 при чтении артефакта | Нет привилегии, чей Content Selector matches запрос | Проверить CEL-выражение — убедиться что `format`, `repository`, `path` совпадают |
-| Content Selector не работает | CEL-выражение ошибочное | GET /service/rest/v1/security/content-selectors — проверить поле `expression` |
-| Роль назначена, но нет доступа | Privilege не прикреплена к Role | PUT /roles/{id}/privileges с нужными IDs |
-| Docker pull denied | Docker использует `/v2/...` пути | Content Selector с `format == "docker"` |
-| "No content selectors defined" в UI | Сначала нужно создать Content Selector | Security → Content Selectors → New Selector |
+| Problem | Cause | Solution |
+|---------|-------|----------|
+| 403 when reading an artifact | No privilege whose Content Selector matches the request | Check CEL expression — verify `format`, `repository`, `path` values match |
+| Content Selector has no effect | Incorrect CEL expression | `GET /service/rest/v1/security/content-selectors` — verify the `expression` field |
+| Role assigned but no access | Privilege not attached to the Role | `PUT /roles/{id}/privileges` with the correct privilege IDs |
+| Docker pull denied | Docker uses `/v2/...` paths | Use Content Selector with `format == "docker"` |
+| "No content selectors defined" in UI | A Content Selector must exist before creating a Privilege | Security → Content Selectors → New Selector |
+| Conda install fails with 403 | Channel path not matching CEL expression | Verify `format == "conda"` and correct `repository` or `path` in selector |
+| Terraform init fails with 403 | Provider source path not matching selector | Use `format == "terraform"` or narrow by `repository` |

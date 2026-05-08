@@ -15,7 +15,7 @@ info:
     name: Nexspence
 
 servers:
-  - url: http://localhost:8081
+  - url: http://localhost:8080
     description: Local development
 
 # ================================================================
@@ -86,9 +86,9 @@ components:
       required: [name, format, type, url, online]
       properties:
         name:     { type: string, example: maven-central-proxy }
-        format:   { type: string, enum: [maven2, npm, docker, pypi, go, nuget, helm, raw, apt, yum, cargo, conan] }
+        format:   { type: string, enum: [maven2, npm, docker, pypi, go, nuget, helm, raw, apt, yum, cargo, conan, conda, terraform] }
         type:     { type: string, enum: [hosted, proxy, group] }
-        url:      { type: string, example: "http://localhost:8081/repository/maven-central-proxy/" }
+        url:      { type: string, example: "http://localhost:8080/repository/maven-central-proxy/" }
         online:   { type: boolean }
         storage:
           type: object
