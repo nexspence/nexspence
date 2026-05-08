@@ -94,8 +94,23 @@ jobs:
           cp config.yaml.example release-assets/config.yaml.example
           cp -r deploy release-assets/
           cp -r keycloak release-assets/
-          cp -r scripts release-assets/
-          cp -r docs release-assets/
+
+          # Seed & repo-creation scripts
+          mkdir release-assets/scripts
+          cp scripts/seed-all.sh \
+             scripts/seed-repos.sh \
+             scripts/seed-packages.sh \
+             scripts/seed-rbac.sh \
+             scripts/seed-cleanup.sh \
+             scripts/create-*.sh \
+             release-assets/scripts/
+
+          # Docs: seed testing guide + deployment guides
+          mkdir release-assets/docs
+          cp docs/seed-testing-guide.md \
+             docs/deployment.md \
+             docs/ha-setup.md \
+             release-assets/docs/
 
           cd release-assets
           zip -r "nexspence-${{ github.ref_name }}.zip" \
