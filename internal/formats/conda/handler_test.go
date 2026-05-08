@@ -1,7 +1,9 @@
 package conda_test
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -56,6 +58,30 @@ func TestConda_Bz2Returns404(t *testing.T) {
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestConda_UploadAndDownload(t *testing.T) {
+	r := setup(hostedRepo("conda-hosted"))
+
+	body := []byte("fake-tar-bz2-content") // not a real package, but tests the HTTP flow
+	req := httptest.NewRequest(http.MethodPut,
+		"/repository/conda-hosted/linux-64/numpy-1.24.0-py311h_0.tar.bz2",
+		bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/x-tar")
+	req.ContentLength = int64(len(body))
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusCreated, w.Code)
+
+	// Download it back
+	req2 := httptest.NewRequest(http.MethodGet,
+		"/repository/conda-hosted/linux-64/numpy-1.24.0-py311h_0.tar.bz2", nil)
+	w2 := httptest.NewRecorder()
+	r.ServeHTTP(w2, req2)
+	assert.Equal(t, http.StatusOK, w2.Code)
+	got, err := io.ReadAll(w2.Body)
+	require.NoError(t, err)
+	assert.Equal(t, body, got)
 }
 
 func TestConda_IndexEmpty(t *testing.T) {

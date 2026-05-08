@@ -13,6 +13,9 @@
 package conda
 
 import (
+	"bytes"
+	"fmt"
+	"io"
 	"net/http"
 	"path"
 	"strings"
@@ -20,6 +23,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/formats"
+	"github.com/nexspence-oss/nexspence/internal/formats/base"
 	"github.com/nexspence-oss/nexspence/internal/formats/repoproxy"
 )
 
@@ -55,15 +59,11 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 	case c.Request.Method == http.MethodGet && filename == "repodata.json.bz2":
 		c.JSON(http.StatusNotFound, gin.H{"error": "repodata.json.bz2 not supported; use repodata.json"})
 	case c.Request.Method == http.MethodGet || c.Request.Method == http.MethodHead:
-		// download — Task 3
-		_ = platform
-		c.JSON(http.StatusNotImplemented, gin.H{"error": "not yet implemented"})
+		h.servePackage(c, repoName, p)
 	case c.Request.Method == http.MethodPut:
-		// upload — Task 3
-		c.JSON(http.StatusNotImplemented, gin.H{"error": "not yet implemented"})
+		h.handleUpload(c, repoName, platform, filename)
 	case c.Request.Method == http.MethodDelete:
-		// delete — Task 3
-		c.JSON(http.StatusNotImplemented, gin.H{"error": "not yet implemented"})
+		h.handleDelete(c, repoName, p)
 	default:
 		c.Status(http.StatusMethodNotAllowed)
 	}
@@ -82,4 +82,74 @@ func splitPlatformFile(p string) (platform, filename string, ok bool) {
 
 func normPath(p string) string {
 	return path.Clean("/" + strings.TrimPrefix(p, "/"))
+}
+
+func (h *Handler) handleUpload(c *gin.Context, repoName, platform, filename string) {
+	data, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "read body: " + err.Error()})
+		return
+	}
+
+	meta, err := ParseMeta(filename, data)
+	if err != nil || meta == nil {
+		meta = metaFromFilename(filename)
+	}
+
+	filePath := "/" + platform + "/" + filename
+	ct := "application/x-tar"
+	if strings.HasSuffix(filename, ".conda") {
+		ct = "application/zip"
+	}
+
+	coords := base.Coords{
+		Group:   platform,
+		Name:    meta.Name,
+		Version: meta.Version,
+	}
+
+	res, err := base.StoreArtifact(c.Request.Context(), h.deps,
+		repoName, filePath, ct, coords, bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		c.JSON(base.HTTPStatusForError(err), gin.H{"error": err.Error()})
+		return
+	}
+
+	// Persist build/depends in component Extra — best-effort
+	if res != nil && res.Asset != nil && res.Asset.ComponentID != "" {
+		extra := map[string]any{
+			"build":        meta.Build,
+			"build_number": meta.BuildNumber,
+			"depends":      meta.Depends,
+		}
+		_ = h.deps.Components.UpdateExtra(c.Request.Context(), res.Asset.ComponentID, extra)
+	}
+
+	c.JSON(http.StatusCreated, gin.H{"saved": true})
+}
+
+func (h *Handler) servePackage(c *gin.Context, repoName, filePath string) {
+	rc, asset, err := base.FetchArtifact(c.Request.Context(), h.deps, repoName, filePath)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	defer rc.Close()
+	if asset.SHA256 != "" {
+		c.Header("X-Checksum-SHA256", asset.SHA256)
+	}
+	if c.Request.Method == http.MethodHead {
+		c.Header("Content-Length", fmt.Sprintf("%d", asset.SizeBytes))
+		c.Status(http.StatusOK)
+		return
+	}
+	c.DataFromReader(http.StatusOK, asset.SizeBytes, asset.ContentType, rc, nil)
+}
+
+func (h *Handler) handleDelete(c *gin.Context, repoName, filePath string) {
+	if err := base.DeleteArtifact(c.Request.Context(), h.deps, repoName, filePath); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"deleted": true})
 }
