@@ -1,0 +1,26 @@
+# Cilium API Gateway (K8s Gateway API) example
+# Prerequisites:
+#   - Cilium >= 1.14 with Gateway API enabled
+#   - K8s Gateway API CRDs installed:
+#     kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.1.0/standard-install.yaml
+#   - GatewayClass "cilium" must exist (Cilium creates it automatically)
+ingress:
+  enabled: false
+
+gateway:
+  cilium:
+    enabled: true
+    gatewayClassName: "cilium"
+    hosts:
+      - host: nexspence.example.com
+        paths:
+          - path: /
+            pathType: PathPrefix
+    tls: []
+    gatewayAnnotations:
+      cilium.io/lb-ipam-pool: "default"
+
+config:
+  baseURL: "http://nexspence.example.com"
+  jwtSecret: "replace-with-64-char-random-secret"
+  adminPassword: "replace-with-strong-password"
