@@ -157,7 +157,9 @@ services:
       sh -c "
         mc alias set local http://minio:9000 minioadmin minioadmin &&
         mc mb --ignore-existing local/nexspence-blobs &&
-        echo 'bucket ready'
+        mc mb --ignore-existing local/nexspence-s3-1 &&
+        mc mb --ignore-existing local/nexspence-s3-2 &&
+        echo 'all buckets ready'
       "
     restart: "no"
 
