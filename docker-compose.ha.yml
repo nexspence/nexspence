@@ -102,6 +102,9 @@ services:
         condition: service_healthy
       minio-init:
         condition: service_completed_successfully
+      keycloak:
+        condition: service_healthy
+        required: false
     environment:
       NEXSPENCE_DATABASE_DSN: "postgres://nexspence:nexspence@postgres:5432/nexspence?sslmode=disable"
       NEXSPENCE_HTTP_ADDR: ":8081"
@@ -133,12 +136,13 @@ services:
       NEXSPENCE_OIDC_PROVISIONING: "jit"
       NEXSPENCE_OIDC_SCOPES: "openid,profile,email"
     volumes:
-      - ./config.yaml:/app/config.yaml:ro
+      - ${CONFIG_FILE:-./config.yaml.example}:/app/config.yaml:ro
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8081/healthz"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 12
+      start_period: 30s
 
   nexspence_2:
     <<: *nexspence_base

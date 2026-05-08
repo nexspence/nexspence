@@ -68,7 +68,6 @@ services:
       args:
         VERSION: ${NEXSPENCE_VERSION:-dev}
     restart: unless-stopped
-    # Не cgroup-лимит памяти/CPU, а снятие узких мест по умолчанию у Docker:
     shm_size: "2gb"
     ulimits:
       nofile:
@@ -77,6 +76,11 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+      keycloak:
+        condition: service_healthy
+        required: false
     environment:
       NEXSPENCE_DATABASE_DSN: "postgres://nexspence:nexspence@postgres:5432/nexspence?sslmode=disable"
       NEXSPENCE_AUTH_JWT_SECRET: "change-me-in-production-min-32-chars"
@@ -111,12 +115,13 @@ services:
       - "5001:5000"   # Docker registry HTTP port
     volumes:
       - nexspence_blobs:/data/blobs
-      - ./config.yaml:/app/config.yaml:ro
+      - ${CONFIG_FILE:-./config.yaml.example}:/app/config.yaml:ro
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8081/service/rest/v1/status/check"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 12
+      start_period: 30s
 
   # ── MinIO (S3-compatible object storage) ─────────────────────
   # Console: http://localhost:9001  (minioadmin / minioadmin)
