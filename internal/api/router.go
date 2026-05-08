@@ -20,6 +20,7 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/formats/apt"
 	"github.com/nexspence-oss/nexspence/internal/formats/cargo"
 	"github.com/nexspence-oss/nexspence/internal/formats/conan"
+	"github.com/nexspence-oss/nexspence/internal/formats/conda"
 	"github.com/nexspence-oss/nexspence/internal/formats/docker"
 	"github.com/nexspence-oss/nexspence/internal/formats/gomod"
 	"github.com/nexspence-oss/nexspence/internal/formats/group"
@@ -29,6 +30,7 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/formats/nuget"
 	"github.com/nexspence-oss/nexspence/internal/formats/pypi"
 	"github.com/nexspence-oss/nexspence/internal/formats/raw"
+	"github.com/nexspence-oss/nexspence/internal/formats/terraform"
 	"github.com/nexspence-oss/nexspence/internal/formats/yum"
 	"github.com/nexspence-oss/nexspence/internal/logger"
 	"github.com/nexspence-oss/nexspence/internal/repository"
@@ -163,18 +165,20 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 		RoutingRules: rrRepo,
 	}
 	formatRegistry := map[string]formats.FormatHandler{
-		"raw":    raw.New(formatDeps),
-		"maven2": maven.New(formatDeps),
-		"npm":    npm.New(formatDeps),
-		"pypi":   pypi.New(formatDeps),
-		"go":     gomod.New(formatDeps),
-		"helm":   helm.New(formatDeps),
-		"nuget":  nuget.New(formatDeps),
-		"cargo":  cargo.New(formatDeps),
-		"conan":  conan.New(formatDeps),
-		"apt":    apt.New(formatDeps),
-		"yum":    yum.New(formatDeps),
-		"docker": docker.New(formatDeps),
+		"raw":        raw.New(formatDeps),
+		"maven2":     maven.New(formatDeps),
+		"npm":        npm.New(formatDeps),
+		"pypi":       pypi.New(formatDeps),
+		"go":         gomod.New(formatDeps),
+		"helm":       helm.New(formatDeps),
+		"nuget":      nuget.New(formatDeps),
+		"cargo":      cargo.New(formatDeps),
+		"conan":      conan.New(formatDeps),
+		"conda":      conda.New(formatDeps),
+		"apt":        apt.New(formatDeps),
+		"terraform":  terraform.New(formatDeps),
+		"yum":        yum.New(formatDeps),
+		"docker":     docker.New(formatDeps),
 	}
 	// Group handler needs a reference to the registry to fan-out to members.
 	groupHandler := group.New(formatDeps, formatRegistry)
