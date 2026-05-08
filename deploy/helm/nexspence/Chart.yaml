@@ -1,0 +1,23 @@
+apiVersion: v2
+name: nexspence
+description: Nexspence — open-source universal artifact repository manager
+type: application
+version: 0.1.0
+appVersion: "latest"
+home: https://github.com/nexspence-oss/nexspence
+sources:
+  - https://github.com/nexspence-oss/nexspence
+keywords:
+  - artifact-repository
+  - nexus-alternative
+  - maven
+  - npm
+  - docker
+  - helm
+maintainers:
+  - name: nexspence-oss
+dependencies:
+  - name: postgresql
+    version: "15.5.38"
+    repository: "https://charts.bitnami.com/bitnami"
+    condition: postgresql.enabled

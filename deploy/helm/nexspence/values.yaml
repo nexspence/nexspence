@@ -1,0 +1,27 @@
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  name: ""
+
+postgresql:
+  enabled: true
+  auth:
+    username: nexspence
+    password: nexspence
+    database: nexspence
+
+externalDatabase:
+  dsn: ""
+
+ingress:
+  enabled: false
+  hosts: []
+  tls: false
+
+gateway:
+  istio:
+    enabled: false
+  cilium:
+    enabled: false
