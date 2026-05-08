@@ -1,27 +1,177 @@
+# -- Override chart name
 nameOverride: ""
+# -- Override fully qualified app name
 fullnameOverride: ""
 
+image:
+  repository: ghcr.io/nexspence-oss/nexspence
+  pullPolicy: IfNotPresent
+  # -- Overrides the image tag (defaults to chart appVersion)
+  tag: ""
+
+imagePullSecrets: []
+
+replicaCount: 1
+
 serviceAccount:
+  # -- Create a ServiceAccount
   create: true
+  # -- Annotations to add to the service account
+  annotations: {}
+  # -- Override the name
   name: ""
 
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  fsGroup: 1000
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  readOnlyRootFilesystem: false
+  allowPrivilegeEscalation: false
+
+# -- Nexspence application configuration
+config:
+  # -- External URL (used in download links, Docker subdomain connector)
+  baseURL: "http://nexspence.example.com"
+  logLevel: "info"
+  logFormat: "json"
+  httpListen: ":8081"
+  # -- JWT secret — CHANGE IN PRODUCTION (min 32 chars)
+  jwtSecret: "change-me-to-a-random-64-char-string"
+  jwtExpiryHours: 8
+  # -- Bootstrap admin credentials
+  adminUsername: "admin"
+  adminPassword: "admin123"
+  adminEmail: "admin@example.com"
+  adminFirstName: "Admin"
+
+# -- Blob storage: "local" or "s3"
+storage:
+  type: local
+  local:
+    mountPath: "/blobs"
+    # -- PVC size for blob storage
+    size: "100Gi"
+    storageClass: ""
+  s3:
+    # -- Filled when storage.type=s3
+    endpoint: ""
+    bucket: ""
+    region: "us-east-1"
+    accessKey: ""
+    secretKey: ""
+    useSSL: true
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8081
+  annotations: {}
+
+# ── Ingress (nginx / traefik / cilium ingress-controller) ──────────────
+# Exactly ONE of ingress or gateway should be enabled at a time.
+ingress:
+  enabled: false
+  # -- IngressClass name: "nginx" | "traefik" | "cilium"
+  className: "nginx"
+  annotations: {}
+  hosts:
+    - host: nexspence.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+# ── API Gateway: Istio ─────────────────────────────────────────────────
+gateway:
+  istio:
+    enabled: false
+    # -- Name of the existing Istio IngressGateway service selector
+    gatewaySelector:
+      istio: ingressgateway
+    # -- Port exposed on the Istio Gateway
+    port: 80
+    # -- TLS mode: SIMPLE | PASSTHROUGH | MUTUAL | ""
+    tlsMode: ""
+    # -- Secret name for TLS (required when tlsMode=SIMPLE)
+    tlsSecret: ""
+    hosts:
+      - "nexspence.example.com"
+    # -- Extra annotations on the VirtualService
+    vsAnnotations: {}
+    # -- Timeout for VirtualService routes
+    timeout: "300s"
+
+  # ── API Gateway: Cilium (K8s Gateway API) ─────────────────────────────
+  cilium:
+    enabled: false
+    # -- Gateway API GatewayClass name (cilium registers "cilium")
+    gatewayClassName: "cilium"
+    hosts:
+      - host: nexspence.example.com
+        paths:
+          - path: /
+            pathType: PathPrefix
+    tls: []
+    # -- Extra annotations on the Gateway resource
+    gatewayAnnotations: {}
+
+# ── Horizontal Pod Autoscaler ─────────────────────────────────────────
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+resources:
+  requests:
+    cpu: "250m"
+    memory: "256Mi"
+  limits:
+    cpu: "2000m"
+    memory: "1Gi"
+
+# ── Liveness / Readiness probes ───────────────────────────────────────
+livenessProbe:
+  httpGet:
+    path: /service/rest/v1/status/check
+    port: 8081
+  initialDelaySeconds: 20
+  periodSeconds: 30
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /service/rest/v1/status/check
+    port: 8081
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# ── PostgreSQL sub-chart (bitnami) ────────────────────────────────────
+# Set enabled: false and provide externalDatabase.dsn for external Postgres.
 postgresql:
   enabled: true
   auth:
     username: nexspence
     password: nexspence
     database: nexspence
+  primary:
+    persistence:
+      enabled: true
+      size: 10Gi
 
+# -- External PostgreSQL DSN (used when postgresql.enabled=false)
 externalDatabase:
-  dsn: ""
-
-ingress:
-  enabled: false
-  hosts: []
-  tls: false
-
-gateway:
-  istio:
-    enabled: false
-  cilium:
-    enabled: false
+  dsn: "postgres://nexspence:nexspence@external-postgres:5432/nexspence?sslmode=disable"
