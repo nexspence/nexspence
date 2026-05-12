@@ -155,6 +155,24 @@ footer{border-top:1px solid rgba(124,92,255,.12);padding:64px 48px 40px}
 .fcol a{display:block;color:var(--holo-text-dim);font-size:13px;text-decoration:none;margin-bottom:10px;transition:color .15s}
 .fcol a:hover{color:var(--holo-text)}
 .fbot{max-width:1140px;margin:0 auto;display:flex;justify-content:space-between;align-items:center;padding-top:28px;border-top:1px solid rgba(255,255,255,.05);font-size:12px;color:var(--holo-text-faint);font-family:'Geist Mono',monospace}
+
+/* Expandable DC variant panels */
+.dc-panel{display:none;margin-top:12px}
+.dc-panel.open{display:block}
+.dc-panel-inner{
+  background:rgba(0,0,0,.2);border:1px solid rgba(124,92,255,.18);
+  border-radius:10px;padding:18px 20px;
+}
+.dc-panel-title{
+  display:flex;align-items:center;gap:8px;
+  font-size:13px;font-weight:600;margin-bottom:8px;
+}
+.dc-panel-desc{font-size:12px;color:var(--holo-text-dim);line-height:1.6;margin-bottom:12px}
+.dc-panel-desc code{font-family:'Geist Mono',monospace;font-size:11px;color:var(--holo-b)}
+
+/* Active chip highlight */
+.chip.active{background:rgba(124,92,255,.20);border-color:rgba(124,92,255,.45);color:rgba(196,181,253,.95)}
+.helm-chip.on{background:rgba(124,92,255,.20);border-color:rgba(124,92,255,.45);color:rgba(196,181,253,.95)}
 </style>
 </head>
 <body>
@@ -358,23 +376,80 @@ footer{border-top:1px solid rgba(124,92,255,.12);padding:64px 48px 40px}
       </div>
       <div class="qs-bot">
         <div class="chips">
-          <a class="chip chip-m" href="#">
+          <button class="chip chip-m" onclick="toggleDcPanel('minio',this)">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
             With MinIO (S3 storage)
-          </a>
-          <a class="chip chip-m" href="#">
+          </button>
+          <button class="chip chip-m" onclick="toggleDcPanel('ha',this)">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
             HA Cluster
-          </a>
-          <a class="chip chip-m" href="#">
+          </button>
+          <button class="chip chip-m" onclick="toggleDcPanel('keycloak',this)">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
             With Keycloak SSO
-          </a>
+          </button>
         </div>
         <a class="rel-link" href="https://github.com/skensell201/nexspence/releases" target="_blank">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
           All releases &amp; changelogs →
         </a>
+      </div>
+
+      <!-- Expandable DC variant panels -->
+      <div class="dc-panel" id="dc-minio">
+        <div class="dc-panel-inner">
+          <div class="dc-panel-title">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+            With MinIO — S3-compatible storage
+          </div>
+          <p class="dc-panel-desc">MinIO is already included in <code>docker-compose.yml</code>. Override the storage type via environment variable — MinIO starts on port 9000, admin console on 9001.</p>
+          <div class="cb-wrap">
+            <div class="cb-bar"><span>shell</span><button class="copy" onclick="copyCode(this)">Copy</button></div>
+            <div class="cb-body">
+              <div><span class="cp">$ </span>NEXSPENCE_STORAGE_DEFAULT_TYPE=s3 docker compose up -d</div>
+              <div><span class="cc"># MinIO S3 API:     http://localhost:9000</span></div>
+              <div><span class="cc"># MinIO console:   http://localhost:9001  (minioadmin / minioadmin)</span></div>
+              <div><span class="cc"># Nexspence UI:    http://localhost:8081</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="dc-panel" id="dc-ha">
+        <div class="dc-panel-inner">
+          <div class="dc-panel-title">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+            HA Cluster — High Availability
+          </div>
+          <p class="dc-panel-desc">Uses <code>docker-compose.ha.yml</code>: 2 × Nexspence instances, nginx load balancer, Redis, MinIO, PostgreSQL. Requires configuring a shared <code>jwt_secret</code> in both nodes.</p>
+          <div class="cb-wrap">
+            <div class="cb-bar"><span>shell</span><button class="copy" onclick="copyCode(this)">Copy</button></div>
+            <div class="cb-body">
+              <div><span class="cp">$ </span>docker compose -f docker-compose.ha.yml up -d</div>
+              <div><span class="cc"># 2 × Nexspence + nginx LB + Redis + MinIO + PostgreSQL</span></div>
+              <div><span class="cc"># Load balancer:  http://localhost:8081</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="dc-panel" id="dc-keycloak">
+        <div class="dc-panel-inner">
+          <div class="dc-panel-title">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            With Keycloak SSO
+          </div>
+          <p class="dc-panel-desc">Starts a preconfigured Keycloak dev instance with the <code>nexspence</code> realm auto-imported. The "Sign in with Keycloak" button appears on the login page.</p>
+          <div class="cb-wrap">
+            <div class="cb-bar"><span>shell</span><button class="copy" onclick="copyCode(this)">Copy</button></div>
+            <div class="cb-body">
+              <div><span class="cp">$ </span>OIDC_ENABLED=true docker compose --profile keycloak up -d</div>
+              <div><span class="cc"># Nexspence UI:      http://localhost:8081</span></div>
+              <div><span class="cc"># Keycloak admin:   http://localhost:8180  (admin / admin)</span></div>
+              <div><span class="cc"># Test user:        testuser / testpass  →  nx-admin role</span></div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
     <div class="qp qp-hide" id="p-helm">
@@ -392,17 +467,75 @@ footer{border-top:1px solid rgba(124,92,255,.12);padding:64px 48px 40px}
           <div style="padding-left:20px">--namespace nexspence --create-namespace</div>
         </div>
       </div>
-      <div style="margin-top:14px;margin-bottom:20px">
-        <div style="font-size:11px;color:var(--holo-text-faint);font-family:'Geist Mono',monospace;margin-bottom:8px;letter-spacing:.08em">OTHER NETWORKING OPTIONS</div>
-        <div class="chips">
-          <a class="chip chip-m" href="#">traefik.yaml</a>
-          <a class="chip chip-m" href="#">cilium-ingress.yaml</a>
-          <a class="chip chip-m" href="#">istio-gateway.yaml</a>
-          <a class="chip chip-m" href="#">cilium-gateway.yaml</a>
+      <div style="margin-top:20px;margin-bottom:4px">
+        <div style="font-size:11px;color:var(--holo-text-faint);font-family:'Geist Mono',monospace;margin-bottom:10px;letter-spacing:.08em">NETWORKING OPTIONS</div>
+        <div class="chips helm-chips">
+          <button class="chip chip-m helm-chip on" onclick="switchHelm('nginx',this)">nginx</button>
+          <button class="chip chip-m helm-chip" onclick="switchHelm('traefik',this)">traefik.yaml</button>
+          <button class="chip chip-m helm-chip" onclick="switchHelm('cilium-ingress',this)">cilium-ingress.yaml</button>
+          <button class="chip chip-m helm-chip" onclick="switchHelm('istio',this)">istio-gateway.yaml</button>
+          <button class="chip chip-m helm-chip" onclick="switchHelm('cilium-gw',this)">cilium-gateway.yaml</button>
         </div>
       </div>
-      <div class="qs-bot">
-        <a class="chip chip-a" href="#">
+
+      <!-- Helm networking code blocks (only active one shown) -->
+      <div class="cb-wrap helm-code" id="helm-nginx">
+        <div class="cb-bar"><span>shell — nginx ingress</span><button class="copy" onclick="copyCode(this)">Copy</button></div>
+        <div class="cb-body">
+          <div><span class="cp">$ </span>helm install nexspence deploy/helm/nexspence \</div>
+          <div style="padding-left:20px">-f deploy/helm/nexspence/values-examples/nginx.yaml \</div>
+          <div style="padding-left:20px">--set config.jwtSecret="$(openssl rand -hex 32)" \</div>
+          <div style="padding-left:20px">--set config.adminPassword="changeme" \</div>
+          <div style="padding-left:20px">--namespace nexspence --create-namespace</div>
+        </div>
+      </div>
+      <div class="cb-wrap helm-code" id="helm-traefik" style="display:none">
+        <div class="cb-bar"><span>shell — traefik ingress (HTTPS)</span><button class="copy" onclick="copyCode(this)">Copy</button></div>
+        <div class="cb-body">
+          <div><span class="cp">$ </span>helm install nexspence deploy/helm/nexspence \</div>
+          <div style="padding-left:20px">-f deploy/helm/nexspence/values-examples/traefik.yaml \</div>
+          <div style="padding-left:20px">--set config.jwtSecret="$(openssl rand -hex 32)" \</div>
+          <div style="padding-left:20px">--set config.adminPassword="changeme" \</div>
+          <div style="padding-left:20px">--namespace nexspence --create-namespace</div>
+          <div><span class="cc"># Routes via websecure entrypoint + TLS secret nexspence-tls</span></div>
+        </div>
+      </div>
+      <div class="cb-wrap helm-code" id="helm-cilium-ingress" style="display:none">
+        <div class="cb-bar"><span>shell — cilium ingress-controller</span><button class="copy" onclick="copyCode(this)">Copy</button></div>
+        <div class="cb-body">
+          <div><span class="cc"># Requires: Cilium ≥ 1.12, ingress controller enabled</span></div>
+          <div><span class="cp">$ </span>helm install nexspence deploy/helm/nexspence \</div>
+          <div style="padding-left:20px">-f deploy/helm/nexspence/values-examples/cilium-ingress.yaml \</div>
+          <div style="padding-left:20px">--set config.jwtSecret="$(openssl rand -hex 32)" \</div>
+          <div style="padding-left:20px">--set config.adminPassword="changeme" \</div>
+          <div style="padding-left:20px">--namespace nexspence --create-namespace</div>
+        </div>
+      </div>
+      <div class="cb-wrap helm-code" id="helm-istio" style="display:none">
+        <div class="cb-bar"><span>shell — istio gateway</span><button class="copy" onclick="copyCode(this)">Copy</button></div>
+        <div class="cb-body">
+          <div><span class="cc"># Requires: istioctl install --set profile=default</span></div>
+          <div><span class="cp">$ </span>helm install nexspence deploy/helm/nexspence \</div>
+          <div style="padding-left:20px">-f deploy/helm/nexspence/values-examples/istio-gateway.yaml \</div>
+          <div style="padding-left:20px">--set config.jwtSecret="$(openssl rand -hex 32)" \</div>
+          <div style="padding-left:20px">--set config.adminPassword="changeme" \</div>
+          <div style="padding-left:20px">--namespace nexspence --create-namespace</div>
+        </div>
+      </div>
+      <div class="cb-wrap helm-code" id="helm-cilium-gw" style="display:none">
+        <div class="cb-bar"><span>shell — cilium gateway API (K8s Gateway API)</span><button class="copy" onclick="copyCode(this)">Copy</button></div>
+        <div class="cb-body">
+          <div><span class="cc"># Requires: Cilium ≥ 1.14, K8s Gateway API CRDs</span></div>
+          <div><span class="cp">$ </span>helm install nexspence deploy/helm/nexspence \</div>
+          <div style="padding-left:20px">-f deploy/helm/nexspence/values-examples/cilium-gateway.yaml \</div>
+          <div style="padding-left:20px">--set config.jwtSecret="$(openssl rand -hex 32)" \</div>
+          <div style="padding-left:20px">--set config.adminPassword="changeme" \</div>
+          <div style="padding-left:20px">--namespace nexspence --create-namespace</div>
+        </div>
+      </div>
+
+      <div class="qs-bot" style="margin-top:16px">
+        <a class="chip chip-a" href="https://github.com/skensell201/nexspence/blob/main/deploy/helm/nexspence/README.md" target="_blank">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
           Full Helm reference →
         </a>
@@ -462,6 +595,20 @@ function copyCode(btn){
   navigator.clipboard.writeText(text).catch(()=>{});
   btn.textContent='Copied!';
   setTimeout(()=>btn.textContent='Copy',2000);
+}
+function toggleDcPanel(id,btn){
+  const panel=document.getElementById('dc-'+id);
+  const isOpen=panel.classList.contains('open');
+  // close all panels and deactivate all chips
+  document.querySelectorAll('.dc-panel').forEach(p=>p.classList.remove('open'));
+  document.querySelectorAll('.qs-bot button.chip').forEach(b=>b.classList.remove('active'));
+  if(!isOpen){panel.classList.add('open');btn.classList.add('active')}
+}
+function switchHelm(id,btn){
+  document.querySelectorAll('.helm-code').forEach(c=>c.style.display='none');
+  document.querySelectorAll('.helm-chip').forEach(b=>b.classList.remove('on'));
+  document.getElementById('helm-'+id).style.display='block';
+  btn.classList.add('on');
 }
 </script>
 </body>
