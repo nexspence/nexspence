@@ -878,6 +878,7 @@ Full OpenAPI 3.1 spec: [`docs/api-spec.yaml`](docs/api-spec.yaml)
 | 61 | Conda format — hosted channel (`repodata.json`, `.tar.bz2`, `.conda`), proxy with URL rewriting | ✓ complete |
 | 62 | Terraform Registry Mirror — service discovery, provider + module proxy/hosted, `terraform init` compatible | ✓ complete |
 | 63 | Helm chart — `deploy/helm/nexspence/`; nginx/Traefik/Cilium Ingress + Istio/Cilium Gateway API; bitnami/postgresql sub-chart; HPA | ✓ complete |
+| 64 | Landing page — `landing/`; Holo dark design, app UI mockup, 14 format brand icons, Demo video placeholder, Docker Compose + Helm quick start with inline variant panels; `docker compose --profile landing up -d` on port 8080 | ✓ complete |
 | next | SBOM generation, cosign image signing | planned |
 | next | Prometheus metrics endpoint, OpenTelemetry traces | planned |
 | next | `nexctl` CLI, blob GC | planned |
