@@ -181,6 +181,17 @@ services:
     environment:
       VITE_API_BASE: "http://localhost:8081"
 
+  # ── Landing page ──────────────────────────────────────────────
+  # Start with: docker compose --profile landing up -d landing
+  # URL: http://localhost:8080
+  landing:
+    profiles: [landing]
+    build:
+      context: ./landing
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+
 volumes:
   postgres_data:
   nexspence_blobs:
