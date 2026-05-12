@@ -92,7 +92,8 @@ nav{position:sticky;top:0;z-index:100;display:flex;align-items:center;justify-co
 .fmt-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:10px;margin-top:48px}
 .fmt{background:var(--holo-bg-2);border:1px solid rgba(255,255,255,.06);border-radius:12px;padding:16px 8px;text-align:center;transition:border-color .2s,background .2s;cursor:default}
 .fmt:hover{border-color:var(--holo-border);background:rgba(124,92,255,.06)}
-.fi{font-size:24px;margin-bottom:8px}
+.fi{height:36px;margin-bottom:8px;display:flex;align-items:center;justify-content:center}
+.fi img{display:block;filter:drop-shadow(0 0 4px rgba(0,0,0,.3))}
 .fn{font-size:10px;color:var(--holo-text-dim);font-family:'Geist Mono',monospace}
 .feat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:48px}
 .fc{background:var(--holo-bg-2);border:1px solid rgba(255,255,255,.06);border-radius:var(--holo-radius);padding:24px;position:relative;overflow:hidden;transition:border-color .2s,background .2s}
@@ -294,20 +295,20 @@ footer{border-top:1px solid rgba(124,92,255,.12);padding:64px 48px 40px}
       <div class="sub" style="margin:0 auto;text-align:center">Every major package ecosystem — one server, one admin panel</div>
     </div>
     <div class="fmt-grid">
-      <div class="fmt"><div class="fi">☕</div><div class="fn">Maven</div></div>
-      <div class="fmt"><div class="fi">📦</div><div class="fn">npm</div></div>
-      <div class="fmt"><div class="fi">🐍</div><div class="fn">PyPI</div></div>
-      <div class="fmt"><div class="fi">🐳</div><div class="fn">Docker / OCI</div></div>
-      <div class="fmt"><div class="fi">🐹</div><div class="fn">Go Modules</div></div>
-      <div class="fmt"><div class="fi">🎯</div><div class="fn">NuGet</div></div>
-      <div class="fmt"><div class="fi">📄</div><div class="fn">Raw</div></div>
-      <div class="fmt"><div class="fi">🦀</div><div class="fn">Cargo</div></div>
-      <div class="fmt"><div class="fi">⛵</div><div class="fn">Helm</div></div>
-      <div class="fmt"><div class="fi">🟠</div><div class="fn">Apt / Deb</div></div>
-      <div class="fmt"><div class="fi">🔴</div><div class="fn">Yum / RPM</div></div>
-      <div class="fmt"><div class="fi">🔧</div><div class="fn">Conan</div></div>
-      <div class="fmt"><div class="fi">🐍</div><div class="fn">Conda</div></div>
-      <div class="fmt"><div class="fi">🟣</div><div class="fn">Terraform</div></div>
+      <div class="fmt"><div class="fi"><img src="https://cdn.simpleicons.org/apachemaven/C71A36" alt="Maven" width="28" height="28"></div><div class="fn">Maven</div></div>
+      <div class="fmt"><div class="fi"><img src="https://cdn.simpleicons.org/npm/CB3837" alt="npm" width="28" height="28"></div><div class="fn">npm</div></div>
+      <div class="fmt"><div class="fi"><img src="https://cdn.simpleicons.org/python/3776AB" alt="PyPI" width="28" height="28"></div><div class="fn">PyPI</div></div>
+      <div class="fmt"><div class="fi"><img src="https://cdn.simpleicons.org/docker/2496ED" alt="Docker" width="28" height="28"></div><div class="fn">Docker / OCI</div></div>
+      <div class="fmt"><div class="fi"><img src="https://cdn.simpleicons.org/go/00ADD8" alt="Go" width="28" height="28"></div><div class="fn">Go Modules</div></div>
+      <div class="fmt"><div class="fi"><img src="https://cdn.simpleicons.org/nuget/6EA8DB" alt="NuGet" width="28" height="28"></div><div class="fn">NuGet</div></div>
+      <div class="fmt"><div class="fi"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="rgba(244,240,255,0.55)" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg></div><div class="fn">Raw</div></div>
+      <div class="fmt"><div class="fi"><img src="https://cdn.simpleicons.org/rust/CE4B1C" alt="Cargo" width="28" height="28"></div><div class="fn">Cargo</div></div>
+      <div class="fmt"><div class="fi"><img src="https://cdn.simpleicons.org/helm/f4f0ff" alt="Helm" width="28" height="28"></div><div class="fn">Helm</div></div>
+      <div class="fmt"><div class="fi"><img src="https://cdn.simpleicons.org/debian/A81D33" alt="Debian" width="28" height="28"></div><div class="fn">Apt / Deb</div></div>
+      <div class="fmt"><div class="fi"><img src="https://cdn.simpleicons.org/redhat/EE0000" alt="Red Hat" width="28" height="28"></div><div class="fn">Yum / RPM</div></div>
+      <div class="fmt"><div class="fi"><img src="https://cdn.simpleicons.org/conan/6699CB" alt="Conan" width="28" height="28"></div><div class="fn">Conan</div></div>
+      <div class="fmt"><div class="fi"><img src="https://cdn.simpleicons.org/anaconda/44A833" alt="Conda" width="28" height="28"></div><div class="fn">Conda</div></div>
+      <div class="fmt"><div class="fi"><img src="https://cdn.simpleicons.org/terraform/844FBA" alt="Terraform" width="28" height="28"></div><div class="fn">Terraform</div></div>
     </div>
   </div>
 </div>
@@ -427,7 +428,7 @@ footer{border-top:1px solid rgba(124,92,255,.12);padding:64px 48px 40px}
             <div class="cb-body">
               <div><span class="cp">$ </span>docker compose -f docker-compose.ha.yml up -d</div>
               <div><span class="cc"># 2 × Nexspence + nginx LB + Redis + MinIO + PostgreSQL</span></div>
-              <div><span class="cc"># Load balancer:  http://localhost:8081</span></div>
+              <div><span class="cc"># Load balancer:  http://localhost:8080</span></div>
             </div>
           </div>
         </div>
@@ -443,7 +444,7 @@ footer{border-top:1px solid rgba(124,92,255,.12);padding:64px 48px 40px}
           <div class="cb-wrap">
             <div class="cb-bar"><span>shell</span><button class="copy" onclick="copyCode(this)">Copy</button></div>
             <div class="cb-body">
-              <div><span class="cp">$ </span>OIDC_ENABLED=true docker compose --profile keycloak up -d</div>
+              <div><span class="cp">$ </span>OIDC_ENABLED=true docker compose -f docker-compose.ha.yml --profile keycloak up -d</div>
               <div><span class="cc"># Nexspence UI:      http://localhost:8081</span></div>
               <div><span class="cc"># Keycloak admin:   http://localhost:8180  (admin / admin)</span></div>
               <div><span class="cc"># Test user:        testuser / testpass  →  nx-admin role</span></div>
