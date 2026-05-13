@@ -8,8 +8,17 @@ interface Format {
   id: string
   name: string
   icon: string
+  iconUrl?: string
   description: string
   sections: (base: string) => FormatSection[]
+}
+interface StepProps {
+  num: number
+  title: string
+  text: string
+  screenshot?: { src: string; alt: string; caption?: string }
+  code?: { lang: string; content: string }
+  note?: string
 }
 
 function CodeBlock({ lang, content }: { lang: string; content: string }) {
@@ -67,6 +76,50 @@ function SectionBlock({ section }: { section: FormatSection }) {
           <CodeBlock lang={c.lang} content={c.content} />
         </div>
       ))}
+    </div>
+  )
+}
+
+function ScreenshotPlaceholder({ alt, src }: { alt: string; src: string }) {
+  const filename = src.split('/').pop() ?? src
+  return (
+    <div className={styles.screenshotPlaceholder}>
+      <span className={styles.screenshotPlaceholderLabel}>📸 Screenshot</span>
+      <span className={styles.screenshotPlaceholderName}>{alt}</span>
+      <span className={styles.screenshotPlaceholderPath}>
+        frontend/public/docs/screenshots/{filename}
+      </span>
+    </div>
+  )
+}
+
+function Screenshot({ src, alt, caption }: { src: string; alt: string; caption?: string }) {
+  const [failed, setFailed] = useState(false)
+  if (failed) return <ScreenshotPlaceholder alt={alt} src={src} />
+  return (
+    <div className={styles.screenshotWrap}>
+      <img
+        src={src}
+        alt={alt}
+        className={styles.screenshotImg}
+        onError={() => setFailed(true)}
+      />
+      {caption && <p className={styles.screenshotCaption}>{caption}</p>}
+    </div>
+  )
+}
+
+export function Step({ num, title, text, screenshot, code, note }: StepProps) {
+  return (
+    <div className={styles.step}>
+      <div className={styles.stepNum}>{num}</div>
+      <div className={styles.stepBody}>
+        <p className={styles.stepTitle}>{title}</p>
+        <p className={styles.stepText}>{text}</p>
+        {note && <div className={styles.noteBox}>⚠ {note}</div>}
+        {code && <CodeBlock lang={code.lang} content={code.content} />}
+        {screenshot && <Screenshot {...screenshot} />}
+      </div>
     </div>
   )
 }
