@@ -129,6 +129,7 @@ const FORMATS: Format[] = [
     id: 'maven',
     name: 'Maven 2/3',
     icon: '☕',
+    iconUrl: 'https://cdn.simpleicons.org/apachemaven/C71A36',
     description: 'Host, proxy, and group Maven repositories for Java artifacts (JAR, WAR, POM files). Fully compatible with Maven 2 and Maven 3.',
     sections: (base) => [
       {
@@ -182,6 +183,7 @@ const FORMATS: Format[] = [
     id: 'npm',
     name: 'npm',
     icon: '📦',
+    iconUrl: 'https://cdn.simpleicons.org/npm/CB3837',
     description: 'Host and proxy npm packages. Supports npm publish, install, and the full npm registry protocol.',
     sections: (base) => [
       {
@@ -219,6 +221,7 @@ curl -u admin:admin123 \\
     id: 'pypi',
     name: 'PyPI',
     icon: '🐍',
+    iconUrl: 'https://cdn.simpleicons.org/pypi/3775A9',
     description: 'Host Python packages and proxy PyPI. Supports pip, twine, and the PyPI Simple API.',
     sections: (base) => {
       const host = base.replace(/^https?:\/\//, '').split(':')[0]
@@ -260,6 +263,7 @@ twine upload \\
     id: 'docker',
     name: 'Docker / OCI',
     icon: '🐳',
+    iconUrl: 'https://cdn.simpleicons.org/docker/2496ED',
     description: 'OCI Distribution Spec v2 compliant registry. Supports docker pull/push, image tagging, and multi-arch manifests.',
     sections: (base) => {
       const regHost = base.replace(/^https?:\/\//, '')
@@ -303,6 +307,7 @@ docker push ${regHost}/docker-hosted/myapp:latest` }],
     id: 'go',
     name: 'Go Modules',
     icon: '🔵',
+    iconUrl: 'https://cdn.simpleicons.org/go/00ADD8',
     description: 'GOPROXY v2 protocol. Cache and proxy Go modules with version resolution and mod file serving.',
     sections: (base) => [
       {
@@ -340,6 +345,7 @@ curl -u admin:admin123 \\
     id: 'nuget',
     name: 'NuGet',
     icon: '💜',
+    iconUrl: 'https://cdn.simpleicons.org/nuget/004880',
     description: 'NuGet v2/v3 repository for .NET packages. Compatible with dotnet CLI, nuget.exe, and MSBuild PackageReference.',
     sections: (base) => [
       {
@@ -422,6 +428,7 @@ curl -u admin:admin123 \\
     id: 'helm',
     name: 'Helm',
     icon: '⚓',
+    iconUrl: 'https://cdn.simpleicons.org/helm/0F1689',
     description: 'Helm chart repository for Kubernetes. Serves Helm charts with auto-generated index.yaml.',
     sections: (base) => [
       {
@@ -461,6 +468,7 @@ helm cm-push mychart/ nexspence` },
     id: 'cargo',
     name: 'Cargo (Rust)',
     icon: '🦀',
+    iconUrl: 'https://cdn.simpleicons.org/rust/b7410e',
     description: 'Rust Cargo sparse registry. Supports cargo publish, cargo add, and the sparse index protocol.',
     sections: (base) => [
       {
@@ -496,6 +504,7 @@ default = "nexspence"` }],
     id: 'apt',
     name: 'Apt / Debian',
     icon: '🐧',
+    iconUrl: 'https://cdn.simpleicons.org/debian/A81D33',
     description: 'Debian APT repository. Serves .deb packages with auto-generated Packages index.',
     sections: (base) => [
       {
@@ -532,6 +541,7 @@ sudo dpkg -i mypackage_1.0_amd64.deb` },
     id: 'yum',
     name: 'Yum / RPM',
     icon: '🔴',
+    iconUrl: 'https://cdn.simpleicons.org/fedora/51A2DA',
     description: 'Yum/DNF RPM repository. Serves RPM packages with auto-generated repomd.xml metadata.',
     sections: (base) => [
       {
@@ -572,6 +582,7 @@ sudo rpm -ivh mypackage-1.0-1.x86_64.rpm` },
     id: 'conan',
     name: 'Conan C/C++',
     icon: '🔧',
+    iconUrl: 'https://cdn.simpleicons.org/conan/6699CB',
     description: 'Conan v1 package manager repository for C and C++ libraries. Supports upload/download protocol.',
     sections: (base) => [
       {
@@ -598,6 +609,81 @@ conan user admin -p admin123 -r nexspence` }],
           { label: 'Get download URLs with curl:', lang: 'bash', content: `curl -u admin:admin123 \\
   "${base}/repository/conan-hosted/v1/conans/mylib/1.0/user/stable/download_urls"` },
         ],
+      },
+    ],
+  },
+  {
+    id: 'conda',
+    name: 'Conda',
+    icon: '🐍',
+    iconUrl: 'https://cdn.simpleicons.org/anaconda/44A833',
+    description: 'Conda channel repository for Python and data science packages. Serves repodata.json index and .conda/.tar.bz2 binaries organized by platform subdirectory.',
+    sections: (base) => [
+      {
+        title: 'Channel URL',
+        text: 'Channels are organized by platform. Replace the subdirectory with your target architecture:',
+        codes: [{ lang: 'text', content: `${base}/repository/conda-hosted/linux-64/\n${base}/repository/conda-hosted/osx-arm64/\n${base}/repository/conda-hosted/win-64/\n${base}/repository/conda-hosted/noarch/      ← platform-independent packages` }],
+      },
+      {
+        title: 'Configure ~/.condarc',
+        text: 'Add Nexspence as a channel. Prepend it so your hosted packages take priority:',
+        codes: [{ lang: 'yaml', content: `channels:\n  - ${base}/repository/conda-hosted/\n  - defaults\nssl_verify: true` }],
+      },
+      {
+        title: 'Publish a Package',
+        codes: [
+          { label: 'Build the package:', lang: 'bash', content: `conda build myrecipe/` },
+          { label: 'Upload the built .conda file:', lang: 'bash', content: `PKG=$(conda build myrecipe/ --output)\n\ncurl -u admin:admin123 \\\n  -T "$PKG" \\\n  "${base}/repository/conda-hosted/linux-64/$(basename $PKG)"` },
+        ],
+      },
+      {
+        title: 'Install a Package',
+        codes: [
+          { label: 'Using conda:', lang: 'bash', content: `conda install mypackage \\\n  -c ${base}/repository/conda-hosted/ \\\n  --override-channels` },
+          { label: 'Using mamba (faster resolver):', lang: 'bash', content: `mamba install mypackage \\\n  -c ${base}/repository/conda-hosted/ \\\n  --override-channels` },
+          { label: 'Direct download with curl:', lang: 'bash', content: `curl -u admin:admin123 \\\n  -O "${base}/repository/conda-hosted/linux-64/mypackage-1.0.0-py311_0.conda"` },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'terraform',
+    name: 'Terraform',
+    icon: '🏗',
+    iconUrl: 'https://cdn.simpleicons.org/terraform/7B42BC',
+    description: 'Terraform Registry Protocol v1 for providers and modules. Supports service discovery at /.well-known/terraform.json, version listing, and binary hosting for both hosted and proxy types.',
+    sections: (base) => [
+      {
+        title: 'Repository URL',
+        codes: [{ lang: 'text', content: `${base}/repository/terraform-hosted/\nService discovery: ${base}/.well-known/terraform.json` }],
+      },
+      {
+        title: 'Configure .terraformrc',
+        text: 'Tell Terraform to use Nexspence for provider installation. Add to ~/.terraformrc (macOS/Linux) or %APPDATA%/terraform.rc (Windows):',
+        codes: [{ lang: 'hcl', content: `credentials "${base.replace(/^https?:\/\//, '')}" {\n  token = "nxs_your_token_here"\n}\n\nprovider_installation {\n  network_mirror {\n    url = "${base}/repository/terraform-hosted/"\n  }\n}` }],
+      },
+      {
+        title: 'Use a Provider',
+        text: 'Reference the provider in your Terraform configuration, then run terraform init:',
+        codes: [
+          { label: 'main.tf:', lang: 'hcl', content: `terraform {\n  required_providers {\n    aws = {\n      source  = "hashicorp/aws"\n      version = "~> 5.0"\n    }\n  }\n}` },
+          { label: 'Initialize:', lang: 'bash', content: `terraform init` },
+        ],
+      },
+      {
+        title: 'Use a Module',
+        codes: [
+          { label: 'main.tf:', lang: 'hcl', content: `module "vpc" {\n  source  = "${base.replace(/^https?:\/\//, '')}/myorg/vpc/aws"\n  version = "1.0.0"\n}` },
+          { label: 'Initialize:', lang: 'bash', content: `terraform init` },
+        ],
+      },
+      {
+        title: 'Publish a Provider',
+        codes: [{ label: 'Upload binary for linux_amd64:', lang: 'bash', content: `curl -u admin:admin123 \\\n  -X PUT \\\n  --data-binary @terraform-provider-myprovider_1.0.0_linux_amd64.zip \\\n  "${base}/repository/terraform-hosted/v1/providers/myorg/myprovider/1.0.0/upload/linux/amd64"` }],
+      },
+      {
+        title: 'Publish a Module',
+        codes: [{ label: 'Upload module archive:', lang: 'bash', content: `tar -czf mymodule-1.0.0.tar.gz -C mymodule/ .\ncurl -u admin:admin123 \\\n  -X PUT \\\n  --data-binary @mymodule-1.0.0.tar.gz \\\n  "${base}/repository/terraform-hosted/v1/modules/myorg/mymodule/aws/1.0.0"` }],
       },
     ],
   },
