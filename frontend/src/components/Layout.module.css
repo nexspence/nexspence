@@ -243,6 +243,7 @@
 
 .commandBarSep {
   width: 1px;
+  max-width: 1px;
   height: 20px;
   background: rgba(124,92,255,0.22);
   flex-shrink: 0;
@@ -251,6 +252,7 @@
 
 .commandBarAction {
   width: 32px;
+  max-width: 32px;
   height: 34px;
   border: none;
   background: transparent;
@@ -308,6 +310,12 @@
 
 .collapseHandle:hover::after {
   background: rgba(124,92,255,0.65);
+}
+
+.collapseHandle:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+  border-radius: 2px;
 }
 
 .footer {
