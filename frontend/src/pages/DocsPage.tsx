@@ -40,12 +40,13 @@ function CodeBlock({ lang, content }: { lang: string; content: string }) {
 
 function UrlBlock({ url }: { url: string }) {
   const [copied, setCopied] = useState(false)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   return (
     <div className={styles.urlBlock}>
       <span className={styles.urlValue}>{url}</span>
       <button
         className={styles.urlCopyBtn}
-        onClick={() => { void navigator.clipboard.writeText(url).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000) }) }}
+        onClick={() => { void navigator.clipboard.writeText(url).then(() => { setCopied(true); if (timerRef.current) clearTimeout(timerRef.current); timerRef.current = setTimeout(() => setCopied(false), 2000) }) }}
       >
         {copied ? <Check size={11} /> : <Copy size={11} />}
         {copied ? 'Copied' : 'Copy'}
@@ -232,9 +233,9 @@ docker push ${regHost}/docker-hosted/myapp:latest` }],
         {
           title: 'Pull an Image',
           codes: [
-            { label: 'Using docker pull:', lang: 'bash', content: `docker pull ${regHost}/myapp:latest` },
+            { label: 'Using docker pull:', lang: 'bash', content: `docker pull ${regHost}/docker-hosted/myapp:latest` },
             { label: 'Inspect manifest with curl:', lang: 'bash', content: `curl -u admin:admin123 \\
-  "${base}/v2/myapp/manifests/latest" \\
+  "${base}/v2/docker-hosted/myapp/manifests/latest" \\
   -H "Accept: application/vnd.docker.distribution.manifest.v2+json"` },
           ],
         },
