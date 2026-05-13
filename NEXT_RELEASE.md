@@ -9,3 +9,7 @@
 ### 🐛 Bug Fixes
 
 * **Go modules docs** — corrected environment variable from `GONOSUMCHECK` (invalid) to `GONOSUMDB` in both the in-app docs and README.
+
+### 🔒 Security
+
+* **Directory listing blocked** — `http.FileServer` previously exposed directory contents at any path that mapped to a directory in `frontend/dist/` (e.g. `/docs/screenshots/`). The static file handler now returns the SPA root for any directory request that does not contain an `index.html`, preventing enumeration of static asset paths.
