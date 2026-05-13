@@ -42,6 +42,9 @@
 
 .root.collapsed .commandBar {
   justify-content: center;
+  background: transparent;
+  border-color: transparent;
+  padding: 0;
 }
 
 .root.collapsed .commandBarUser {
