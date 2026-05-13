@@ -234,3 +234,145 @@
   font-size: 12px;
   color: var(--holo-a);
 }
+
+/* ─── Guide Steps ─────────────────────────────── */
+.step {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.stepNum {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #7c5cff, #22d3ee);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.stepBody {
+  flex: 1;
+  min-width: 0;
+}
+
+.stepTitle {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--holo-text);
+  margin: 0 0 4px;
+}
+
+.stepText {
+  font-size: 13px;
+  color: var(--holo-text-dim);
+  line-height: 1.65;
+  margin: 0 0 10px;
+}
+
+/* ─── Screenshots ─────────────────────────────── */
+.screenshotWrap {
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--holo-border);
+  margin-top: 10px;
+  margin-bottom: 4px;
+}
+
+.screenshotImg {
+  width: 100%;
+  display: block;
+}
+
+.screenshotCaption {
+  font-size: 11px;
+  color: var(--holo-text-faint);
+  text-align: center;
+  padding: 5px 0;
+  font-style: italic;
+  background: rgba(255,255,255,0.015);
+  border-top: 1px solid var(--holo-border);
+}
+
+.screenshotPlaceholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 18px 20px;
+  background: rgba(124,92,255,0.04);
+  border: 2px dashed rgba(124,92,255,0.25);
+  border-radius: 10px;
+  margin-top: 10px;
+  text-align: center;
+}
+
+.screenshotPlaceholderLabel {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(124,92,255,0.6);
+}
+
+.screenshotPlaceholderName {
+  font-size: 12px;
+  color: var(--holo-text-faint);
+  font-style: italic;
+}
+
+.screenshotPlaceholderPath {
+  font-family: 'Geist Mono', monospace;
+  font-size: 10px;
+  color: rgba(124,92,255,0.4);
+  background: rgba(124,92,255,0.08);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+/* ─── Type cards (Hosted / Proxy / Group) ─────── */
+.typeCards {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+  margin: 10px 0 14px 44px;
+}
+
+.typeCard {
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--holo-border);
+  background: rgba(255,255,255,0.02);
+}
+
+.typeCardName {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--holo-text);
+  margin-bottom: 4px;
+}
+
+.typeCardDesc {
+  font-size: 11.5px;
+  color: var(--holo-text-dim);
+  line-height: 1.5;
+}
+
+/* ─── Format brand icons in nav ───────────────── */
+.navBrandIcon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  object-fit: contain;
+  filter: brightness(0.85);
+}
+
+.docsNavBtn.active .navBrandIcon {
+  filter: brightness(1.2);
+}
