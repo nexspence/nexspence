@@ -15,6 +15,7 @@ const CleanupPage = lazy(() => import('@/pages/CleanupPage'))
 const AdminPage = lazy(() => import('@/pages/AdminPage'))
 const SecurityPage = lazy(() => import('@/pages/SecurityPage'))
 const AuditPage = lazy(() => import('@/pages/AuditPage'))
+const DocsPage = lazy(() => import('@/pages/DocsPage'))
 
 function PageSkeleton() {
   return (
@@ -108,6 +109,14 @@ export default function App() {
             }
           />
           <Route path="monitoring" element={<Navigate to="/admin?tab=monitoring" replace />} />
+          <Route
+            path="docs"
+            element={
+              <Suspense fallback={<PageSkeleton />}>
+                <DocsPage />
+              </Suspense>
+            }
+          />
         </Route>
       </Routes>
     </BrowserRouter>

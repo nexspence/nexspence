@@ -4,7 +4,7 @@ import {
   Home, Search, FolderOpen, Trash2,
   Settings, Shield, FileText, LogOut,
   Key, Plus, X, Copy, Check,
-  ChevronLeft, ChevronRight,
+  ChevronLeft, ChevronRight, BookOpen,
 } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import styles from './Layout.module.css'
@@ -281,6 +281,16 @@ export default function Layout() {
 
         {/* Footer */}
         <div className={styles.footer}>
+          <NavLink
+            to="/docs"
+            className={({ isActive }) =>
+              `${styles.navBtn} ${isActive ? styles.active : ''}`
+            }
+            title={collapsed ? 'Documentation' : undefined}
+          >
+            <BookOpen size={16} />
+            <span className={styles.navLabel}>Documentation</span>
+          </NavLink>
           {user && (
             <div className={styles.userInfo}>
               <div className={styles.userInfoText} style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
