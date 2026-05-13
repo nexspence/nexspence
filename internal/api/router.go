@@ -701,9 +701,19 @@ func serveUI(cfg *config.Config) gin.HandlerFunc {
 
 	return func(c *gin.Context) {
 		path := c.Request.URL.Path
-		if _, err := os.Stat(filepath.Join(distDir, path)); err != nil {
+		fullPath := filepath.Join(distDir, path)
+		info, err := os.Stat(fullPath)
+		if err != nil {
 			c.File(filepath.Join(distDir, "index.html"))
 			return
+		}
+		// Block directory listing: only serve a directory if it contains index.html.
+		// Without this, http.FileServer exposes directory contents to any visitor.
+		if info.IsDir() {
+			if _, err := os.Stat(filepath.Join(fullPath, "index.html")); err != nil {
+				c.File(filepath.Join(distDir, "index.html"))
+				return
+			}
 		}
 		c.Request.URL.Path = path
 		fileServer.ServeHTTP(c.Writer, c.Request)
