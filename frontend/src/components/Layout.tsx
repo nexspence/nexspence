@@ -4,7 +4,7 @@ import {
   Home, Search, FolderOpen, Trash2,
   Settings, Shield, FileText, LogOut,
   Key, Plus, X, Copy, Check,
-  ChevronLeft, ChevronRight, BookOpen,
+  BookOpen,
 } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import styles from './Layout.module.css'
@@ -230,121 +230,130 @@ export default function Layout() {
     <div className={`${styles.root}${collapsed ? ' ' + styles.collapsed : ''}`}>
       <a href="#main-content" className={styles.skipLink}>Skip to content</a>
       <aside className={styles.sidebar}>
-        {/* Brand */}
-        <div className={styles.brand}>
-          <img
-            src={collapsed ? miniLogo : logo}
-            alt="Nexspence"
-            className={collapsed ? styles.brandLogoMini : styles.brandLogo}
-          />
-        </div>
+        <div className={styles.navScrollArea}>
+          {/* Brand */}
+          <div className={styles.brand}>
+            <img
+              src={collapsed ? miniLogo : logo}
+              alt="Nexspence"
+              className={collapsed ? styles.brandLogoMini : styles.brandLogo}
+            />
+          </div>
 
-        {/* Primary nav */}
-        <span className={styles.sectionLabel}>Browse</span>
-        <nav className={styles.nav}>
-          {navItems.map(({ to, icon: Icon, label }) => (
+          {/* Primary nav */}
+          <span className={styles.sectionLabel}>Browse</span>
+          <nav className={styles.nav}>
+            {navItems.map(({ to, icon: Icon, label }) => (
+              <NavLink
+                key={to}
+                to={to}
+                title={collapsed ? label : undefined}
+                className={({ isActive }) =>
+                  `${styles.navBtn} ${isActive ? styles.active : ''}`
+                }
+              >
+                <Icon size={16} />
+                <span className={styles.navLabel}>{label}</span>
+              </NavLink>
+            ))}
+          </nav>
+
+          {admin && (
+            <>
+              <hr className={styles.divider} />
+              <span className={styles.sectionLabel}>System</span>
+              <nav className={styles.nav}>
+                {systemItems.map(({ to, icon: Icon, label }) => (
+                  <NavLink
+                    key={to}
+                    to={to}
+                    title={collapsed ? label : undefined}
+                    className={({ isActive }) =>
+                      `${styles.navBtn} ${isActive ? styles.active : ''}`
+                    }
+                  >
+                    <Icon size={16} />
+                    <span className={styles.navLabel}>{label}</span>
+                  </NavLink>
+                ))}
+              </nav>
+            </>
+          )}
+
+          {/* Docs */}
+          <hr className={styles.divider} />
+          <span className={`${styles.sectionLabel} ${styles.sectionLabelDocs}`}>Docs</span>
+          <nav className={styles.nav}>
             <NavLink
-              key={to}
-              to={to}
-              title={collapsed ? label : undefined}
+              to="/docs"
+              title={collapsed ? 'Documentation' : undefined}
               className={({ isActive }) =>
-                `${styles.navBtn} ${isActive ? styles.active : ''}`
+                `${styles.navBtn} ${styles.navBtnDocs}${isActive ? ' ' + styles.active : ''}`
               }
             >
-              <Icon size={16} />
-              <span className={styles.navLabel}>{label}</span>
+              <BookOpen size={16} />
+              <span className={styles.navLabel}>Documentation</span>
             </NavLink>
-          ))}
-        </nav>
+          </nav>
+        </div>
 
-        {admin && (
-          <>
-            <hr className={styles.divider} />
-            <span className={styles.sectionLabel}>System</span>
-            <nav className={styles.nav}>
-              {systemItems.map(({ to, icon: Icon, label }) => (
-                <NavLink
-                  key={to}
-                  to={to}
-                  title={collapsed ? label : undefined}
-                  className={({ isActive }) =>
-                    `${styles.navBtn} ${isActive ? styles.active : ''}`
-                  }
-                >
-                  <Icon size={16} />
-                  <span className={styles.navLabel}>{label}</span>
-                </NavLink>
-              ))}
-            </nav>
-          </>
-        )}
-
-        {/* Footer */}
-        <div className={styles.footer}>
-          <NavLink
-            to="/docs"
-            className={({ isActive }) =>
-              `${styles.navBtn} ${isActive ? styles.active : ''}`
-            }
-            title={collapsed ? 'Documentation' : undefined}
-          >
-            <BookOpen size={16} />
-            <span className={styles.navLabel}>Documentation</span>
-          </NavLink>
-          {user && (
-            <div className={styles.userInfo}>
-              <div className={styles.userInfoText} style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
-                <span className={styles.userName}>
-                  {user.firstName || user.username}
-                </span>
-                <span className={styles.userRole}>
-                  {user.roles?.includes('nx-admin') ? 'Admin' : user.roles?.length === 0 ? 'No access' : 'User'}
-                </span>
-                {user.roles?.length === 0 && (
-                  <span style={{ fontSize: 11, color: 'rgba(229,231,235,0.4)', marginTop: 2, lineHeight: 1.3 }}>
-                    Contact admin to grant permissions
-                  </span>
-                )}
-              </div>
-              <button
-                title="API Tokens & Profile"
-                onClick={() => setProfileOpen(true)}
-                className={styles.profileBtn}
-                style={{ background: 'rgba(124,92,255,0.12)', border: '1px solid rgba(124,92,255,0.25)', borderRadius: 7, padding: '5px 7px', cursor: 'pointer', color: 'var(--holo-a)', display: 'flex', alignItems: 'center', flexShrink: 0 }}
-              >
-                <Key size={14} />
-              </button>
+        {/* Command bar */}
+        {user && (
+          <div className={styles.commandBar}>
+            <button
+              className={styles.commandBarAvatar}
+              onClick={() => setProfileOpen(true)}
+              title="Profile"
+            >
+              {(user.firstName || user.username || '?')[0].toUpperCase()}
+            </button>
+            <div className={styles.commandBarUser}>
+              <span className={styles.commandBarUserName}>
+                {user.firstName || user.username}
+              </span>
+              <span className={styles.commandBarUserRole}>
+                {user.roles?.includes('nx-admin') ? 'Admin' : user.roles?.length === 0 ? 'No access' : 'User'}
+              </span>
             </div>
-          )}
-          <button
-            className={`${styles.navBtn} ${styles.danger}`}
-            title={collapsed ? 'Sign Out' : undefined}
-            onClick={async () => {
-              if (isOIDC()) {
-                try {
-                  const res = await apiClient.get('/api/v1/auth/oidc/logout')
-                  logout()
-                  window.location.href = res.data.logout_url
-                } catch {
+            <div className={styles.commandBarSep} />
+            <button
+              className={styles.commandBarAction}
+              onClick={() => setProfileOpen(true)}
+              title="API Tokens & Profile"
+            >
+              <Key size={12} />
+            </button>
+            <div className={styles.commandBarSep} />
+            <button
+              className={`${styles.commandBarAction} ${styles.commandBarActionDanger}`}
+              title="Sign Out"
+              onClick={async () => {
+                if (isOIDC()) {
+                  try {
+                    const res = await apiClient.get('/api/v1/auth/oidc/logout')
+                    logout()
+                    window.location.href = res.data.logout_url
+                  } catch {
+                    logout()
+                  }
+                } else {
                   logout()
                 }
-              } else {
-                logout()
-              }
-            }}
-          >
-            <LogOut size={16} />
-            <span className={styles.navLabel}>Sign Out</span>
-          </button>
-          <span className={styles.version}>Nexspence v{systemInfo?.version ?? '…'}</span>
-          <button
-            className={styles.collapseBtn}
-            onClick={toggleCollapse}
-            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          >
-            {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
-          </button>
-        </div>
+              }}
+            >
+              <LogOut size={12} />
+            </button>
+          </div>
+        )}
+        <span className={styles.version}>Nexspence v{systemInfo?.version ?? '…'}</span>
+        <div
+          className={styles.collapseHandle}
+          onClick={toggleCollapse}
+          role="button"
+          tabIndex={0}
+          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && toggleCollapse()}
+        />
       </aside>
 
       <main id="main-content" className={styles.main}>
