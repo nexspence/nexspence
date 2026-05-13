@@ -1,7 +1,8 @@
 .root {
   display: grid;
   grid-template-columns: 260px minmax(0, 1fr);
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
   transition: grid-template-columns 0.2s cubic-bezier(0.23, 1, 0.32, 1);
 }
 
@@ -10,8 +11,6 @@
 }
 
 .sidebar {
-  position: sticky;
-  top: 0;
   height: 100vh;
   background: rgba(8,6,18,0.6);
   backdrop-filter: blur(30px);
@@ -20,14 +19,49 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: hidden;
   z-index: 20;
   transition: padding 0.2s cubic-bezier(0.23, 1, 0.32, 1);
 }
 
+.navScrollArea {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  scrollbar-width: thin;
+  scrollbar-color: #3b82f6 rgba(255,255,255,0.03);
+}
+
 .root.collapsed .sidebar {
   padding: 14px 4px;
+}
+
+.root.collapsed .commandBar {
+  justify-content: center;
+}
+
+.root.collapsed .commandBarUser {
+  opacity: 0;
+  max-width: 0;
+  padding: 0;
+}
+
+.root.collapsed .commandBarSep {
+  opacity: 0;
+  max-width: 0;
+}
+
+.root.collapsed .commandBarAction {
+  opacity: 0;
+  max-width: 0;
+}
+
+.root.collapsed .collapseHandle {
+  margin: 4px 6px 0;
 }
 
 .brand {
@@ -68,6 +102,10 @@
   max-height: 0;
   margin: 0;
   padding: 0;
+}
+
+.sectionLabelDocs {
+  color: rgba(34,211,238,0.45);
 }
 
 .nav {
@@ -123,10 +161,153 @@
   font-weight: 600;
 }
 
+.navBtnDocs {
+  background: rgba(34,211,238,0.04);
+  border-color: rgba(34,211,238,0.12);
+  color: rgba(34,211,238,0.8);
+}
+
+.navBtnDocs:hover {
+  background: rgba(34,211,238,0.08);
+  color: rgba(34,211,238,0.95);
+}
+
+.navBtnDocs.active {
+  background: rgba(34,211,238,0.12);
+  border-color: rgba(34,211,238,0.35);
+  color: rgba(34,211,238,1);
+}
+
 .divider {
   border: none;
   border-top: 1px solid rgba(124,92,255,0.15);
   margin: 2px 0;
+}
+
+.commandBar {
+  display: flex;
+  align-items: center;
+  height: 34px;
+  border-radius: 9px;
+  border: 1px solid rgba(124,92,255,0.22);
+  background: rgba(124,92,255,0.05);
+  overflow: hidden;
+  margin-top: 8px;
+  flex-shrink: 0;
+  transition: justify-content 0.2s;
+}
+
+.commandBarAvatar {
+  width: 34px;
+  height: 34px;
+  background: linear-gradient(135deg, #7c5cff, #22d3ee);
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.commandBarAvatar:hover {
+  opacity: 0.85;
+}
+
+.commandBarUser {
+  flex: 1;
+  padding: 0 8px;
+  min-width: 0;
+  overflow: hidden;
+  transition: opacity 0.15s, max-width 0.2s cubic-bezier(0.23, 1, 0.32, 1), padding 0.2s;
+}
+
+.commandBarUserName {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--holo-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+}
+
+.commandBarUserRole {
+  font-size: 9px;
+  color: rgba(124,92,255,0.9);
+  display: block;
+}
+
+.commandBarSep {
+  width: 1px;
+  height: 20px;
+  background: rgba(124,92,255,0.22);
+  flex-shrink: 0;
+  transition: opacity 0.15s, max-width 0.15s;
+}
+
+.commandBarAction {
+  width: 32px;
+  height: 34px;
+  border: none;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  cursor: pointer;
+  color: rgba(229,231,235,0.4);
+  transition: color 0.15s, background 0.15s, opacity 0.15s, max-width 0.15s;
+}
+
+.commandBarAction:hover {
+  color: rgba(229,231,235,0.8);
+  background: rgba(255,255,255,0.05);
+}
+
+.commandBarActionDanger {
+  background: rgba(239,68,68,0.05);
+  color: rgba(239,68,68,0.65);
+}
+
+.commandBarActionDanger:hover {
+  background: rgba(239,68,68,0.12);
+  color: rgba(239,68,68,0.9);
+}
+
+.collapseHandle {
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(124,92,255,0.13);
+  margin: 4px 20px 0;
+  position: relative;
+  overflow: hidden;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: margin 0.2s cubic-bezier(0.23, 1, 0.32, 1), background 0.15s;
+}
+
+.collapseHandle::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 30px;
+  height: 100%;
+  background: rgba(124,92,255,0.42);
+  border-radius: 2px;
+  transition: background 0.15s;
+}
+
+.collapseHandle:hover {
+  background: rgba(124,92,255,0.2);
+}
+
+.collapseHandle:hover::after {
+  background: rgba(124,92,255,0.65);
 }
 
 .footer {
@@ -188,9 +369,9 @@
 
 .version {
   text-align: center;
-  font-size: 10px;
-  color: var(--holo-text-faint);
-  padding: 4px 0 0;
+  font-size: 8px;
+  color: rgba(229,231,235,0.17);
+  padding: 3px 0 2px;
   overflow: hidden;
   max-height: 20px;
   transition: opacity 0.15s, max-height 0.2s, padding 0.2s;
@@ -225,8 +406,8 @@
 .main {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
-  overflow: hidden;
+  height: 100vh;
+  overflow-y: auto;
 }
 
 .skipLink {
