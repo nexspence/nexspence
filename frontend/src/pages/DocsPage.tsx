@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { BookOpen, Check, Copy } from 'lucide-react'
 import styles from './DocsPage.module.css'
 
@@ -14,10 +14,13 @@ interface Format {
 
 function CodeBlock({ lang, content }: { lang: string; content: string }) {
   const [copied, setCopied] = useState(false)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const copy = () => {
-    navigator.clipboard.writeText(content)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+    void navigator.clipboard.writeText(content).then(() => {
+      setCopied(true)
+      if (timerRef.current) clearTimeout(timerRef.current)
+      timerRef.current = setTimeout(() => setCopied(false), 2000)
+    })
   }
   return (
     <div className={styles.codeBlock}>
@@ -42,7 +45,7 @@ function UrlBlock({ url }: { url: string }) {
       <span className={styles.urlValue}>{url}</span>
       <button
         className={styles.urlCopyBtn}
-        onClick={() => { navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 2000) }}
+        onClick={() => { void navigator.clipboard.writeText(url).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000) }) }}
       >
         {copied ? <Check size={11} /> : <Copy size={11} />}
         {copied ? 'Copied' : 'Copy'}
@@ -210,7 +213,7 @@ twine upload \\
         {
           title: 'Registry Host',
           text: 'Docker uses the host:port directly — no /repository/ prefix. The image name includes the repository.',
-          codes: [{ lang: 'text', content: `${regHost}/<image-name>:<tag>` }],
+          codes: [{ lang: 'text', content: `${regHost}/<repository-name>/<image-name>:<tag>` }],
         },
         {
           title: 'Login',
@@ -220,11 +223,11 @@ docker login ${regHost} -u admin -p nxs_your_token_here` }],
         },
         {
           title: 'Push an Image',
-          codes: [{ lang: 'bash', content: `# Tag your local image
-docker tag myapp:latest ${regHost}/myapp:latest
+          codes: [{ lang: 'bash', content: `# Tag your local image (docker-hosted is the Nexspence repository name)
+docker tag myapp:latest ${regHost}/docker-hosted/myapp:latest
 
 # Push to Nexspence
-docker push ${regHost}/myapp:latest` }],
+docker push ${regHost}/docker-hosted/myapp:latest` }],
         },
         {
           title: 'Pull an Image',
@@ -256,7 +259,7 @@ docker push ${regHost}/myapp:latest` }],
         title: 'Configure Go Proxy',
         codes: [
           { label: 'Set environment variable:', lang: 'bash', content: `export GOPROXY="${base}/repository/go-proxy/|direct"
-export GONOSUMCHECK="*"  # for self-signed TLS` },
+export GONOSUMDB="*"    # bypass sum database for all modules (self-signed TLS)` },
           { label: 'Persist with go env -w:', lang: 'bash', content: `go env -w GOPROXY="${base}/repository/go-proxy/|direct"` },
         ],
       },
@@ -427,9 +430,6 @@ default = "nexspence"` }],
         title: 'Publish a Crate',
         codes: [
           { label: 'Using cargo publish:', lang: 'bash', content: `cargo publish --registry nexspence` },
-          { label: 'Manual upload with curl:', lang: 'bash', content: `curl -u admin:admin123 \\
-  -T mycrate-0.1.0.crate \\
-  "${base}/repository/cargo-hosted/api/v1/crates/new"` },
         ],
       },
       {
