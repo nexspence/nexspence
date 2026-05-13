@@ -4,7 +4,7 @@ import {
   Home, Search, FolderOpen, Trash2,
   Settings, Shield, FileText, LogOut,
   Key, Plus, X, Copy, Check,
-  BookOpen,
+  BookOpen, ChevronLeft, ChevronRight,
 } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import styles from './Layout.module.css'
@@ -297,7 +297,7 @@ export default function Layout() {
           </nav>
         </div>
 
-        {/* Command bar */}
+        {/* Command bar — pill */}
         {user && (
           <div className={styles.commandBar}>
             <button
@@ -311,19 +311,14 @@ export default function Layout() {
               <span className={styles.commandBarUserName}>
                 {user.firstName || user.username}
               </span>
-              <span className={styles.commandBarUserRole}>
-                {user.roles?.includes('nx-admin') ? 'Admin' : user.roles?.length === 0 ? 'No access' : 'User'}
-              </span>
             </div>
-            <div className={styles.commandBarSep} />
             <button
               className={styles.commandBarAction}
               onClick={() => setProfileOpen(true)}
               title="API Tokens & Profile"
             >
-              <Key size={12} />
+              <Key size={11} />
             </button>
-            <div className={styles.commandBarSep} />
             <button
               className={`${styles.commandBarAction} ${styles.commandBarActionDanger}`}
               title="Sign Out"
@@ -341,19 +336,18 @@ export default function Layout() {
                 }
               }}
             >
-              <LogOut size={12} />
+              <LogOut size={11} />
             </button>
           </div>
         )}
         <span className={styles.version}>Nexspence v{systemInfo?.version ?? '…'}</span>
-        <div
-          className={styles.collapseHandle}
+        <button
+          className={styles.collapseButton}
           onClick={toggleCollapse}
-          role="button"
-          tabIndex={0}
           title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && toggleCollapse()}
-        />
+        >
+          {collapsed ? <ChevronRight size={13} /> : <ChevronLeft size={13} />}
+        </button>
       </aside>
 
       <main id="main-content" className={styles.main}>
