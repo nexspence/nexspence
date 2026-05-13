@@ -435,6 +435,7 @@ See [`docs/ha-setup.md`](docs/ha-setup.md) for the full HA guide including Kuber
 - **Audit log** — every API action logged; filterable by date/user/path; NDJSON streaming export; 90-day retention
 - **Webhooks** — `artifact.published`, `artifact.deleted`, `repo.created`, `repo.updated`, `repo.deleted` events; HMAC-SHA256 signatures
 - **Vulnerability scanning** — Trivy (Docker images) + OSV.dev (Maven/npm/PyPI/Cargo); CVE results cached in `scan_results` DB table; aggregated dashboard with bulk re-scan
+- **In-app documentation** — `/docs` page (accessible to all users); Getting Started guide, 14 format reference pages with curl examples and copy-to-clipboard, 7 how-to guides (Creating Repos, Users, RBAC, Content Selectors, Security Scanning, Cleanup Policies, API Tokens) with numbered steps and screenshot placeholders
 - **Dark glassmorphism UI** — sidebar collapse/expand; tabbed admin pages; wizard-style create flows
 
 ---
@@ -535,7 +536,7 @@ pip install my-package \
 
 ```bash
 export GOPROXY=http://localhost:8081/repository/my-go/,direct
-export GONOSUMCHECK=localhost
+export GONOSUMDB=localhost
 go get github.com/some/module@v1.2.3
 ```
 
@@ -879,6 +880,8 @@ Full OpenAPI 3.1 spec: [`docs/api-spec.yaml`](docs/api-spec.yaml)
 | 62 | Terraform Registry Mirror — service discovery, provider + module proxy/hosted, `terraform init` compatible | ✓ complete |
 | 63 | Helm chart — `deploy/helm/nexspence/`; nginx/Traefik/Cilium Ingress + Istio/Cilium Gateway API; bitnami/postgresql sub-chart; HPA | ✓ complete |
 | 64 | Landing page — `landing/`; Holo dark design, app UI mockup, 14 format brand icons, Demo video placeholder, Docker Compose + Helm quick start with inline variant panels; `docker compose --profile landing up -d` on port 8080 | ✓ complete |
+| 65 | In-app documentation page — `/docs` route; `CodeBlock` with copy-to-clipboard; Getting Started + 12 format pages (URL, auth, publish, download curl examples); dynamic base URL via `window.location.origin` | ✓ complete |
+| 66 | Docs guides + Conda/Terraform + brand icons — 7 how-to guide articles with numbered steps and screenshot placeholder system; Conda + Terraform format docs; Simple Icons CDN brand icons on all 14 format nav items | ✓ complete |
 | next | SBOM generation, cosign image signing | planned |
 | next | Prometheus metrics endpoint, OpenTelemetry traces | planned |
 | next | `nexctl` CLI, blob GC | planned |
