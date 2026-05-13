@@ -45,6 +45,8 @@
   background: transparent;
   border-color: transparent;
   padding: 0;
+  gap: 0;
+  overflow: hidden;
 }
 
 .root.collapsed .commandBarUser {
