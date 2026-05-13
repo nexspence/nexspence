@@ -672,8 +672,8 @@ function GuideUsers() {
           Create local user accounts, assign roles, and manage API token access. Requires admin. Users can also be provisioned automatically via LDAP or OIDC/SAML SSO.
         </p>
       </div>
-      <Step num={1} title="Open System Admin → Users"
-        text='Click "System Admin" in the sidebar (admin only), then select the "Users" tab.'
+      <Step num={1} title="Open Security → Users"
+        text='Click "Security" in the sidebar, then select the "Users" tab (visible to admins only).'
         screenshot={{ src: '/docs/screenshots/admin-users-tab.png', alt: 'System Admin page with Users tab selected' }}
       />
       <hr className={styles.divider} />
@@ -688,7 +688,7 @@ function GuideUsers() {
       />
       <hr className={styles.divider} />
       <Step num={4} title="View or revoke a user's API tokens"
-        text="Each user manages their own API tokens from their profile. As an admin you can view token names and last-used timestamps, and revoke any token from the Users tab."
+        text="Each user manages their own API tokens from the profile modal (the key icon in the sidebar). Admins do not have a separate token revocation interface — each user is responsible for their own tokens."
         note="Token values are shown only once at creation. If a user loses a token, they must create a new one."
       />
     </>
@@ -724,7 +724,7 @@ function GuideRolesPrivileges() {
       />
       <hr className={styles.divider} />
       <Step num={5} title="Assign the Role to a User"
-        text="Go to Security → Users (or System Admin → Users). Click the Assign Roles button for the target user and add the new role. Changes take effect on the user's next API request."
+        text="Go to Security → Users tab. Click the Assign Roles button (shield icon) for the target user and add the new role. Changes take effect on the user's next API request."
         screenshot={{ src: '/docs/screenshots/assign-roles-dialog.png', alt: 'Assign Roles dialog with the new role selected' }}
       />
     </>
@@ -771,7 +771,7 @@ function GuideSecurityScanning() {
         </p>
       </div>
       <Step num={1} title="Open the Vulnerability Dashboard"
-        text='Navigate to Security → CVE Scan tab. The dashboard shows 6 severity cards and a paginated table of all findings across your repositories.'
+        text='Navigate to Security → Vulnerability Dashboard tab. The dashboard shows 6 severity cards and a paginated table of all findings across your repositories.'
         screenshot={{ src: '/docs/screenshots/vuln-dashboard.png', alt: 'Vulnerability Dashboard with severity cards (Critical, High, Medium, Low, Negligible, Unknown)' }}
       />
       <hr className={styles.divider} />
@@ -812,7 +812,7 @@ function GuideCleanupPolicies() {
       />
       <hr className={styles.divider} />
       <Step num={2} title="Create a new policy"
-        text='Click "+ New Policy". The wizard has three steps: Identification (name + format filter), Criteria, and Schedule.'
+        text='Click "+ New Policy". The wizard has three steps: Identity (name + format filter), Criteria, and Schedule.'
         screenshot={{ src: '/docs/screenshots/cleanup-policy-wizard.png', alt: 'Create Policy wizard — Identification step' }}
       />
       <hr className={styles.divider} />
@@ -827,12 +827,12 @@ function GuideCleanupPolicies() {
       />
       <hr className={styles.divider} />
       <Step num={5} title="Attach the policy to a repository"
-        text="On the Repositories page, click the gear icon on a repository card. Select your policy from the Cleanup Policy dropdown and save."
+        text="On the Repositories page, click the gear icon on a repository card. Check your policy in the Cleanup Policy checklist and save. Multiple policies can be attached to one repository."
         screenshot={{ src: '/docs/screenshots/repo-attach-cleanup.png', alt: 'Repository settings panel with Cleanup Policy dropdown' }}
       />
       <hr className={styles.divider} />
-      <Step num={6} title='Run manually with "Run Now"'
-        text='On the Cleanup Policies page, click "Run Now" on any policy card to execute immediately. A summary shows how many artifacts were deleted.'
+      <Step num={6} title='Run manually with "Run"'
+        text='On the Cleanup Policies page, click "Run" on any policy card to execute immediately. A summary shows how many artifacts were deleted.'
         screenshot={{ src: '/docs/screenshots/cleanup-run-now.png', alt: 'Policy card with Run Now button and deletion summary' }}
       />
     </>
@@ -848,7 +848,7 @@ function GuideApiTokens() {
         </p>
       </div>
       <Step num={1} title="Open your profile"
-        text="Click the key icon (🔑) at the bottom of the sidebar to open your profile modal. Select the API Tokens tab."
+        text="Click the key icon (🔑) at the bottom of the sidebar to open your profile modal. The modal shows your API tokens and a form to create new ones."
         screenshot={{ src: '/docs/screenshots/profile-api-tokens.png', alt: 'Profile modal with API Tokens tab open' }}
       />
       <hr className={styles.divider} />
