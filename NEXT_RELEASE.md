@@ -1,3 +1,10 @@
+### 🎨 UI / UX
+
+* **Sidebar footer redesign** — replaced the cluttered footer with a pill-shaped command bar: circular gradient avatar, username, two circular icon buttons (API Tokens / Sign Out). Collapse is now an explicit chevron button. In collapsed mode the bar becomes a single avatar circle.
+* **Documentation moved to nav** — "Documentation" promoted to its own **DOCS** section in the sidebar nav with cyan accent styling.
+* **Sidebar scroll fix** — footer always pinned at the bottom; only the nav list area scrolls internally.
+* **Profile modal** — token creation form restructured to two rows (Token name / Expiry + Create); Create button replaced animated holographic gradient with calm blue.
+
 ### ✨ Features
 
 * **Helm chart** — production-ready Helm chart under `deploy/helm/nexspence/` with pluggable ingress (nginx, Traefik, Cilium ingress-controller) and API Gateway support (Istio Gateway + VirtualService, Cilium K8s Gateway API with HTTPRoute). Includes bitnami/postgresql sub-chart, HPA, PVC for blob storage, S3 mode, and 5 ready-to-use example values files.
