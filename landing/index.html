@@ -175,6 +175,102 @@ footer{border-top:1px solid rgba(124,92,255,.12);padding:64px 48px 40px}
 /* Active chip highlight */
 .chip.active{background:rgba(124,92,255,.20);border-color:rgba(124,92,255,.45);color:rgba(196,181,253,.95)}
 .helm-chip.on{background:rgba(124,92,255,.20);border-color:rgba(124,92,255,.45);color:rgba(196,181,253,.95)}
+
+/* ── Mobile nav ── */
+.nav-right{display:flex;align-items:center;gap:10px}
+.nav-mob-btn{display:none;align-items:center;justify-content:center;width:36px;height:36px;border-radius:8px;border:1px solid rgba(255,255,255,.10);background:transparent;color:var(--holo-text);cursor:pointer;flex-shrink:0;transition:background .15s}
+.nav-mob-btn:hover{background:var(--holo-bg-3)}
+.mob-menu{display:none;position:fixed;top:62px;left:0;right:0;z-index:99;background:rgba(8,6,18,.97);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-bottom:1px solid rgba(124,92,255,.15);padding:12px 20px 20px;flex-direction:column;gap:2px}
+.mob-menu.open{display:flex}
+.mob-menu a{color:var(--holo-text-dim);text-decoration:none;font-size:15px;font-weight:500;padding:13px 10px;border-radius:8px;transition:color .15s,background .15s;display:block;border-bottom:1px solid rgba(255,255,255,.04)}
+.mob-menu a:last-child{border-bottom:none}
+.mob-menu a:hover{color:var(--holo-text);background:rgba(255,255,255,.04)}
+
+/* ── Tablet ≤900px ── */
+@media(max-width:900px){
+  nav{padding:0 28px}
+  .hero{padding:72px 28px 56px}
+  .sec{padding:64px 28px}
+  footer{padding:48px 28px 32px}
+  .feat-grid{grid-template-columns:repeat(2,1fr)}
+  .fmt-grid{grid-template-columns:repeat(4,1fr)}
+  .fg{grid-template-columns:1.5fr 1fr 1fr;gap:32px}
+  .fg>div:first-child{grid-column:1/-1}
+}
+
+/* ── Mobile ≤768px ── */
+@media(max-width:768px){
+  nav{padding:0 20px;height:56px}
+  .mob-menu{top:56px}
+  .nav-links{display:none}
+  .nav-mob-btn{display:flex}
+  .nav-gh-text{display:none}
+  .nav-gh{padding:8px 10px}
+
+  .hero{padding:56px 20px 40px}
+  .hero h1{font-size:34px;letter-spacing:-.02em}
+  .hero-sub{font-size:15px;max-width:100%}
+  .stats{gap:24px}
+  .stat-n{font-size:22px}
+
+  .win{animation:none}
+  .win-body{flex-direction:column;height:auto}
+  .w-sb{width:100%;flex-direction:row;flex-wrap:nowrap;overflow-x:auto;border-right:none;border-bottom:1px solid rgba(124,92,255,.10);padding:6px 10px;height:auto}
+  .sb-logo{display:none}
+  .ns{display:none}
+  .ni{white-space:nowrap;padding:6px 10px;font-size:11px;flex-shrink:0}
+  .w-main{padding:12px}
+  .rg{grid-template-columns:repeat(2,1fr);gap:8px}
+  .rn{font-size:10px}
+
+  .sec{padding:48px 20px}
+  .ttl{font-size:26px}
+  .sub{font-size:15px;max-width:100%}
+
+  .fmt-grid{grid-template-columns:repeat(4,1fr);gap:8px;margin-top:32px}
+  .feat-grid{grid-template-columns:1fr;gap:12px;margin-top:32px}
+
+  .qs-tabs{overflow-x:auto}
+  .qt{white-space:nowrap;padding:10px 14px}
+  .qs-steps{grid-template-columns:1fr;gap:10px;margin-bottom:18px}
+  .cb-wrap{overflow:hidden}
+  .cb-body{font-size:11px;line-height:1.8;padding:12px 14px;overflow-x:auto;white-space:pre}
+  .cb-body>div{white-space:nowrap}
+  .dl-card{flex-direction:column;align-items:flex-start;gap:12px;padding:16px}
+  .dl-btn{width:100%;justify-content:center}
+  .qs-bot{flex-direction:column;align-items:flex-start}
+
+  .demo-video-area{height:240px}
+
+  footer{padding:40px 20px 28px}
+  .fg{grid-template-columns:1fr 1fr;gap:24px}
+  .fg>div:first-child{grid-column:1/-1}
+  .ft{max-width:100%}
+  .fbot{flex-direction:column;gap:8px;align-items:flex-start;text-align:left}
+}
+
+/* ── Small phones ≤480px ── */
+@media(max-width:480px){
+  nav{padding:0 16px}
+  .hero{padding:44px 16px 32px}
+  .hero h1{font-size:26px}
+  .hero-sub{font-size:14px}
+  .btn-p,.btn-s{width:100%;justify-content:center}
+  .hero-btns{gap:10px}
+  .stats{gap:14px}
+  .stat-n{font-size:18px}
+  .stat-l{font-size:10px}
+  .w-sb{display:none}
+  .rg{grid-template-columns:1fr;gap:7px}
+  .sec{padding:36px 16px}
+  .ttl{font-size:22px}
+  .fmt-grid{grid-template-columns:repeat(3,1fr);gap:6px}
+  .fmt{padding:12px 6px}
+  .fi img{width:22px;height:22px}
+  footer{padding:32px 16px 20px}
+  .fg{grid-template-columns:1fr;gap:20px}
+  .dl-card-left{flex-direction:column;gap:8px}
+}
 </style>
 </head>
 <body>
@@ -186,11 +282,23 @@ footer{border-top:1px solid rgba(124,92,255,.12);padding:64px 48px 40px}
     <a href="#features">Features</a>
     <a href="#install">Installation</a>
   </div>
-  <a class="nav-gh" href="https://github.com/skensell201/nexspence" target="_blank">
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.477 2 12c0 4.418 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.342-3.369-1.342-.454-1.155-1.11-1.463-1.11-1.463-.908-.62.069-.608.069-.608 1.003.07 1.531 1.031 1.531 1.031.892 1.529 2.341 1.087 2.91.831.092-.646.35-1.086.636-1.336-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.268 2.75 1.026A9.578 9.578 0 0 1 12 6.836c.85.004 1.705.115 2.504.337 1.909-1.294 2.747-1.026 2.747-1.026.546 1.377.202 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.742 0 .267.18.578.688.48C19.138 20.163 22 16.418 22 12c0-5.523-4.477-10-10-10z"/></svg>
-    Star on GitHub — it's really important ❤️
-  </a>
+  <div class="nav-right">
+    <a class="nav-gh" href="https://github.com/skensell201/nexspence" target="_blank">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.477 2 12c0 4.418 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.342-3.369-1.342-.454-1.155-1.11-1.463-1.11-1.463-.908-.62.069-.608.069-.608 1.003.07 1.531 1.031 1.531 1.031.892 1.529 2.341 1.087 2.91.831.092-.646.35-1.086.636-1.336-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.268 2.75 1.026A9.578 9.578 0 0 1 12 6.836c.85.004 1.705.115 2.504.337 1.909-1.294 2.747-1.026 2.747-1.026.546 1.377.202 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.742 0 .267.18.578.688.48C19.138 20.163 22 16.418 22 12c0-5.523-4.477-10-10-10z"/></svg>
+      <span class="nav-gh-text">Star on GitHub — it's really important ❤️</span>
+    </a>
+    <button class="nav-mob-btn" onclick="toggleMobMenu()" aria-label="Open menu">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+    </button>
+  </div>
 </nav>
+<div class="mob-menu" id="mob-menu">
+  <a href="#demo" onclick="closeMobMenu()">Demo</a>
+  <a href="#formats" onclick="closeMobMenu()">Formats</a>
+  <a href="#features" onclick="closeMobMenu()">Features</a>
+  <a href="#install" onclick="closeMobMenu()">Installation</a>
+  <a href="https://github.com/skensell201/nexspence" target="_blank" onclick="closeMobMenu()">Star on GitHub</a>
+</div>
 <section class="hero">
   <div class="hero-bg"></div>
   <div class="hero-badge">
@@ -612,6 +720,18 @@ function switchHelm(id,btn){
   document.getElementById('helm-'+id).style.display='block';
   btn.classList.add('on');
 }
+function toggleMobMenu(){
+  document.getElementById('mob-menu').classList.toggle('open');
+}
+function closeMobMenu(){
+  document.getElementById('mob-menu').classList.remove('open');
+}
+document.addEventListener('click',function(e){
+  const menu=document.getElementById('mob-menu');
+  if(menu.classList.contains('open')&&!menu.contains(e.target)&&!e.target.closest('.nav-mob-btn')){
+    menu.classList.remove('open');
+  }
+});
 </script>
 </body>
 </html>
