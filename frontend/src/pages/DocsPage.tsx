@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { BookOpen, Check, Copy } from 'lucide-react'
 import styles from './DocsPage.module.css'
 
@@ -24,6 +24,7 @@ interface StepProps {
 function CodeBlock({ lang, content }: { lang: string; content: string }) {
   const [copied, setCopied] = useState(false)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current) }, [])
   const copy = () => {
     void navigator.clipboard.writeText(content).then(() => {
       setCopied(true)
@@ -50,6 +51,7 @@ function CodeBlock({ lang, content }: { lang: string; content: string }) {
 function UrlBlock({ url }: { url: string }) {
   const [copied, setCopied] = useState(false)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current) }, [])
   return (
     <div className={styles.urlBlock}>
       <span className={styles.urlValue}>{url}</span>
