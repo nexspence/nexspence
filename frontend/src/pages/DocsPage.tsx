@@ -603,6 +603,77 @@ conan user admin -p admin123 -r nexspence` }],
   },
 ]
 
+function GuideRepositories() {
+  return (
+    <>
+      <div className={styles.sectionHeader}>
+        <h1 className={styles.sectionTitle}>Creating Repositories</h1>
+        <p className={styles.sectionDesc}>Step-by-step guide to creating Hosted, Proxy, and Group repositories for any supported format.</p>
+      </div>
+    </>
+  )
+}
+function GuideUsers() {
+  return (
+    <>
+      <div className={styles.sectionHeader}>
+        <h1 className={styles.sectionTitle}>Managing Users</h1>
+        <p className={styles.sectionDesc}>Create local user accounts, assign roles, and manage API token access.</p>
+      </div>
+    </>
+  )
+}
+function GuideRolesPrivileges() {
+  return (
+    <>
+      <div className={styles.sectionHeader}>
+        <h1 className={styles.sectionTitle}>Roles &amp; Privileges</h1>
+        <p className={styles.sectionDesc}>Set up RBAC with Content Selectors → Privileges → Roles → Users.</p>
+      </div>
+    </>
+  )
+}
+function GuideContentSelectors() {
+  return (
+    <>
+      <div className={styles.sectionHeader}>
+        <h1 className={styles.sectionTitle}>Content Selectors</h1>
+        <p className={styles.sectionDesc}>Write CEL expressions to scope artifact path access for privileges.</p>
+      </div>
+    </>
+  )
+}
+function GuideSecurityScanning() {
+  return (
+    <>
+      <div className={styles.sectionHeader}>
+        <h1 className={styles.sectionTitle}>Security Scanning</h1>
+        <p className={styles.sectionDesc}>Scan artifacts for CVE vulnerabilities using the OSV database.</p>
+      </div>
+    </>
+  )
+}
+function GuideCleanupPolicies() {
+  return (
+    <>
+      <div className={styles.sectionHeader}>
+        <h1 className={styles.sectionTitle}>Cleanup Policies</h1>
+        <p className={styles.sectionDesc}>Automate artifact retention with scheduled cleanup rules.</p>
+      </div>
+    </>
+  )
+}
+function GuideApiTokens() {
+  return (
+    <>
+      <div className={styles.sectionHeader}>
+        <h1 className={styles.sectionTitle}>API Tokens</h1>
+        <p className={styles.sectionDesc}>Generate nxs_* tokens and use them for Basic Auth or Bearer authentication.</p>
+      </div>
+    </>
+  )
+}
+
 function GettingStarted({ base }: { base: string }) {
   return (
     <>
@@ -691,9 +762,29 @@ export default function DocsPage() {
           className={`${styles.docsNavBtn} ${active === 'getting-started' ? styles.active : ''}`}
           onClick={() => setActive('getting-started')}
         >
-          <BookOpen size={14} />
+          <BookOpen size={14} style={{ flexShrink: 0 }} />
           Getting Started
         </button>
+
+        <div className={styles.docsNavSection}>Guides</div>
+        {([
+          { id: 'guide-repos',     label: '🗄 Creating Repositories' },
+          { id: 'guide-users',     label: '👥 Managing Users' },
+          { id: 'guide-roles',     label: '🛡 Roles & Privileges' },
+          { id: 'guide-selectors', label: '🔍 Content Selectors' },
+          { id: 'guide-security',  label: '🔐 Security Scanning' },
+          { id: 'guide-cleanup',   label: '🗑 Cleanup Policies' },
+          { id: 'guide-tokens',    label: '🔑 API Tokens' },
+        ] as { id: string; label: string }[]).map(g => (
+          <button
+            key={g.id}
+            className={`${styles.docsNavBtn} ${active === g.id ? styles.active : ''}`}
+            onClick={() => setActive(g.id)}
+          >
+            {g.label}
+          </button>
+        ))}
+
         <div className={styles.docsNavSection}>Formats</div>
         {FORMATS.map(f => (
           <button
@@ -701,16 +792,25 @@ export default function DocsPage() {
             className={`${styles.docsNavBtn} ${active === f.id ? styles.active : ''}`}
             onClick={() => setActive(f.id)}
           >
-            <span style={{ fontSize: 14, lineHeight: 1 }}>{f.icon}</span>
+            {f.iconUrl
+              ? <img src={f.iconUrl} alt="" width={14} height={14} className={styles.navBrandIcon} onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none' }} />
+              : <span style={{ fontSize: 14, lineHeight: 1, flexShrink: 0 }}>{f.icon}</span>
+            }
             {f.name}
           </button>
         ))}
       </nav>
+
       <div className={styles.docsContent}>
-        {active === 'getting-started'
-          ? <GettingStarted base={base} />
-          : FORMATS.map(f => active === f.id && <FormatContent key={f.id} format={f} base={base} />)
-        }
+        {active === 'getting-started' && <GettingStarted base={base} />}
+        {active === 'guide-repos'     && <GuideRepositories />}
+        {active === 'guide-users'     && <GuideUsers />}
+        {active === 'guide-roles'     && <GuideRolesPrivileges />}
+        {active === 'guide-selectors' && <GuideContentSelectors />}
+        {active === 'guide-security'  && <GuideSecurityScanning />}
+        {active === 'guide-cleanup'   && <GuideCleanupPolicies />}
+        {active === 'guide-tokens'    && <GuideApiTokens />}
+        {FORMATS.map(f => active === f.id && <FormatContent key={f.id} format={f} base={base} />)}
       </div>
     </div>
   )
