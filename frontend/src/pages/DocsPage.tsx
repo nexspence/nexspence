@@ -608,8 +608,58 @@ function GuideRepositories() {
     <>
       <div className={styles.sectionHeader}>
         <h1 className={styles.sectionTitle}>Creating Repositories</h1>
-        <p className={styles.sectionDesc}>Step-by-step guide to creating Hosted, Proxy, and Group repositories for any supported format.</p>
+        <p className={styles.sectionDesc}>
+          Repositories are the core building blocks of Nexspence. Choose from Hosted (store your own artifacts), Proxy (cache a remote registry), or Group (combine multiple repos under one URL).
+        </p>
       </div>
+      <Step num={1} title="Open the Repositories page"
+        text='Click "Repositories" in the sidebar. Then click the "+ New Repository" button in the top-right corner.'
+        screenshot={{ src: '/docs/screenshots/repo-list-new-btn.png', alt: 'Repositories page with + New Repository button' }}
+      />
+      <hr className={styles.divider} />
+      <Step num={2} title="Select the repository type"
+        text="The wizard opens on the Type step. Choose one of three types:"
+      />
+      <div className={styles.typeCards}>
+        <div className={styles.typeCard}>
+          <div className={styles.typeCardName}>🗄 Hosted</div>
+          <div className={styles.typeCardDesc}>Stores artifacts locally. Use for publishing your own packages.</div>
+        </div>
+        <div className={styles.typeCard} style={{ borderColor: 'rgba(34,211,238,0.2)', background: 'rgba(34,211,238,0.03)' }}>
+          <div className={styles.typeCardName}>🔄 Proxy</div>
+          <div className={styles.typeCardDesc}>Caches a remote registry (npmjs.com, PyPI, Docker Hub, etc.)</div>
+        </div>
+        <div className={styles.typeCard} style={{ borderColor: 'rgba(255,92,240,0.18)', background: 'rgba(255,92,240,0.03)' }}>
+          <div className={styles.typeCardName}>🗂 Group</div>
+          <div className={styles.typeCardDesc}>Merges several repos into one URL. Single endpoint for clients.</div>
+        </div>
+      </div>
+      <Screenshot src="/docs/screenshots/create-repo-step1-type.png" alt="Wizard Step 1 — select Hosted, Proxy, or Group" />
+      <hr className={styles.divider} />
+      <Step num={3} title="Enter a name and select a format"
+        text="On the Details step, enter a unique repository name (used in the URL) and select the format (Maven, npm, PyPI, Docker, etc.)."
+        screenshot={{ src: '/docs/screenshots/create-repo-step2-details.png', alt: 'Wizard Step 2 — name and format fields' }}
+      />
+      <hr className={styles.divider} />
+      <Step num={4} title="(Proxy) Set the Remote URL"
+        text="If you chose Proxy, enter the upstream registry URL on the Storage step. Common values:"
+        code={{ lang: 'text', content: `Maven Central  → https://repo1.maven.org/maven2/\nnpm            → https://registry.npmjs.org/\nPyPI           → https://pypi.org/\nDocker Hub     → https://registry-1.docker.io/\nGo proxy       → https://proxy.golang.org/\nHelm stable    → https://charts.helm.sh/stable/\nCargo          → https://index.crates.io/` }}
+      />
+      <hr className={styles.divider} />
+      <Step num={5} title="(Group) Add member repositories"
+        text="If you chose Group, select member repositories on the Storage step. All members must share the same format. Order determines lookup priority — first match wins."
+        note="A group cannot contain another group. Members must already exist."
+        screenshot={{ src: '/docs/screenshots/create-repo-step3-group.png', alt: 'Wizard Step 3 — group member selection' }}
+      />
+      <hr className={styles.divider} />
+      <Step num={6} title="Choose a blob store (optional)"
+        text='The Storage step lets you pick which blob store holds the artifacts. Leave as "default" unless you have multiple blob stores configured (System Admin → Blob Stores).'
+      />
+      <hr className={styles.divider} />
+      <Step num={7} title="Click Create and copy the URL"
+        text="Click Create Repository. The new repo appears in the list. Click on it to see its URL — copy it to configure your build tool."
+        screenshot={{ src: '/docs/screenshots/repo-detail-url.png', alt: 'Repository detail card with URL and copy button' }}
+      />
     </>
   )
 }
@@ -618,8 +668,29 @@ function GuideUsers() {
     <>
       <div className={styles.sectionHeader}>
         <h1 className={styles.sectionTitle}>Managing Users</h1>
-        <p className={styles.sectionDesc}>Create local user accounts, assign roles, and manage API token access.</p>
+        <p className={styles.sectionDesc}>
+          Create local user accounts, assign roles, and manage API token access. Requires admin. Users can also be provisioned automatically via LDAP or OIDC/SAML SSO.
+        </p>
       </div>
+      <Step num={1} title="Open System Admin → Users"
+        text='Click "System Admin" in the sidebar (admin only), then select the "Users" tab.'
+        screenshot={{ src: '/docs/screenshots/admin-users-tab.png', alt: 'System Admin page with Users tab selected' }}
+      />
+      <hr className={styles.divider} />
+      <Step num={2} title="Create a new user"
+        text='Click "+ Create User". Fill in username, first name, last name, email, and password. The username must be unique and is used for login and Basic Auth.'
+        screenshot={{ src: '/docs/screenshots/create-user-form.png', alt: 'Create User form with all fields' }}
+      />
+      <hr className={styles.divider} />
+      <Step num={3} title="Assign roles"
+        text='After saving, click the shield icon (Assign Roles) in the user row. The transfer list lets you move roles from Available to Assigned. Click Save.'
+        screenshot={{ src: '/docs/screenshots/assign-roles-dialog.png', alt: 'Assign Roles transfer list dialog' }}
+      />
+      <hr className={styles.divider} />
+      <Step num={4} title="View or revoke a user's API tokens"
+        text="Each user manages their own API tokens from their profile. As an admin you can view token names and last-used timestamps, and revoke any token from the Users tab."
+        note="Token values are shown only once at creation. If a user loses a token, they must create a new one."
+      />
     </>
   )
 }
@@ -627,9 +698,35 @@ function GuideRolesPrivileges() {
   return (
     <>
       <div className={styles.sectionHeader}>
-        <h1 className={styles.sectionTitle}>Roles &amp; Privileges</h1>
-        <p className={styles.sectionDesc}>Set up RBAC with Content Selectors → Privileges → Roles → Users.</p>
+        <h1 className={styles.sectionTitle}>Roles & Privileges</h1>
+        <p className={styles.sectionDesc}>
+          Nexspence uses a three-layer RBAC model: Content Selector (what paths) → Privilege (permission scoped to a selector) → Role (bundle of privileges) → User (assigned roles).
+        </p>
       </div>
+      <Step num={1} title="Understand the model"
+        text="Before creating anything, understand the chain: a Content Selector defines which artifact paths are in scope (via CEL expression). A Privilege links a Content Selector to a permission type. A Role bundles multiple privileges. A User is assigned one or more roles."
+      />
+      <hr className={styles.divider} />
+      <Step num={2} title="Create a Content Selector first"
+        text='Go to Security → Content Selectors → click "+ New". Write a CEL expression. Example — allow all Maven artifacts:'
+        code={{ lang: 'cel', content: 'format == "maven2"' }}
+        screenshot={{ src: '/docs/screenshots/content-selector-form.png', alt: 'Content Selector form with CEL expression input' }}
+      />
+      <hr className={styles.divider} />
+      <Step num={3} title="Create a Privilege"
+        text='Go to Security → Privileges → click "+ New". Select the Content Selector you just created. The privilege is automatically scoped to the paths matched by that selector.'
+        screenshot={{ src: '/docs/screenshots/create-privilege-form.png', alt: 'Create Privilege form with Content Selector dropdown' }}
+      />
+      <hr className={styles.divider} />
+      <Step num={4} title="Create a Role"
+        text='Go to Security → Roles → click "+ New Role". Give it a name (e.g. "maven-reader"), then add the privilege from Step 3.'
+        screenshot={{ src: '/docs/screenshots/create-role-form.png', alt: 'Create Role form with privilege assignment list' }}
+      />
+      <hr className={styles.divider} />
+      <Step num={5} title="Assign the Role to a User"
+        text="Go to Security → Users (or System Admin → Users). Click the Assign Roles button for the target user and add the new role. Changes take effect on the user's next API request."
+        screenshot={{ src: '/docs/screenshots/assign-roles-dialog.png', alt: 'Assign Roles dialog with the new role selected' }}
+      />
     </>
   )
 }
@@ -638,8 +735,29 @@ function GuideContentSelectors() {
     <>
       <div className={styles.sectionHeader}>
         <h1 className={styles.sectionTitle}>Content Selectors</h1>
-        <p className={styles.sectionDesc}>Write CEL expressions to scope artifact path access for privileges.</p>
+        <p className={styles.sectionDesc}>
+          Content Selectors use CEL (Common Expression Language) to match artifact paths. They are the foundation of the privilege system — every privilege must reference a selector.
+        </p>
       </div>
+      <Step num={1} title="Open Content Selectors"
+        text='Navigate to Security → Content Selectors. Click "+ New Content Selector".'
+        screenshot={{ src: '/docs/screenshots/content-selectors-list.png', alt: 'Content Selectors list page with + New button' }}
+      />
+      <hr className={styles.divider} />
+      <Step num={2} title="CEL expression fields"
+        text="Expressions can reference these fields to match artifacts:"
+        code={{ lang: 'text', content: `format      — repository format  ("maven2", "npm", "docker", "pypi", "helm", …)\npath        — artifact path      ("/com/example/myapp/1.0/myapp-1.0.jar")\nrepository  — repository name   ("maven-releases", "docker-hosted", …)` }}
+      />
+      <hr className={styles.divider} />
+      <Step num={3} title="Example expressions"
+        text="Copy any of these into the CEL expression field:"
+        code={{ lang: 'cel', content: `# All artifacts (wildcard)\ntrue\n\n# All Maven artifacts\nformat == "maven2"\n\n# Specific Maven group only\nformat == "maven2" && path.startsWith("/com/mycompany/")\n\n# npm scoped packages only\nformat == "npm" && path.startsWith("/@myorg/")\n\n# Docker images in a specific repository\nformat == "docker" && repository == "docker-hosted"\n\n# Helm charts from any hosted repo\nformat == "helm" && repository.endsWith("-hosted")` }}
+      />
+      <hr className={styles.divider} />
+      <Step num={4} title="Save and use in a Privilege"
+        text='Click Save. The selector appears in the Content Selector dropdown when creating a Privilege. See the Roles & Privileges guide for next steps.'
+        screenshot={{ src: '/docs/screenshots/content-selector-saved.png', alt: 'Content Selectors list showing the newly created selector' }}
+      />
     </>
   )
 }
@@ -648,8 +766,34 @@ function GuideSecurityScanning() {
     <>
       <div className={styles.sectionHeader}>
         <h1 className={styles.sectionTitle}>Security Scanning</h1>
-        <p className={styles.sectionDesc}>Scan artifacts for CVE vulnerabilities using the OSV database.</p>
+        <p className={styles.sectionDesc}>
+          Nexspence scans artifacts for known CVE vulnerabilities using the OSV (Open Source Vulnerabilities) database at api.osv.dev. Supported formats: Maven, npm, PyPI, Cargo.
+        </p>
       </div>
+      <Step num={1} title="Open the Vulnerability Dashboard"
+        text='Navigate to Security → CVE Scan tab. The dashboard shows 6 severity cards and a paginated table of all findings across your repositories.'
+        screenshot={{ src: '/docs/screenshots/vuln-dashboard.png', alt: 'Vulnerability Dashboard with severity cards (Critical, High, Medium, Low, Negligible, Unknown)' }}
+      />
+      <hr className={styles.divider} />
+      <Step num={2} title="Run a bulk scan"
+        text='Click "Rescan All" to queue a scan of all components in supported formats. Nexspence queries api.osv.dev for each package name + version. Results appear as the scan progresses.'
+        note="Bulk scans call an external API (api.osv.dev). Ensure outbound HTTPS is allowed from your Nexspence host."
+      />
+      <hr className={styles.divider} />
+      <Step num={3} title="Filter and inspect findings"
+        text="Use the severity filter buttons to narrow the table. Each row shows the CVE ID, package, affected version, fix version (if available), and severity."
+        screenshot={{ src: '/docs/screenshots/vuln-table-filter.png', alt: 'Vulnerability table with severity filter toolbar' }}
+      />
+      <hr className={styles.divider} />
+      <Step num={4} title="Scan a single component"
+        text='From Search or Browse, open a component detail panel and click "Scan". Results are cached — click "Rescan" to force a fresh check against OSV.'
+        screenshot={{ src: '/docs/screenshots/component-scan-result.png', alt: 'Component detail panel showing scan result with severity badges' }}
+      />
+      <hr className={styles.divider} />
+      <Step num={5} title="Interpret severity levels"
+        text="OSV maps each vulnerability to one of the following severity levels:"
+        code={{ lang: 'text', content: `CRITICAL    — Actively exploitable. Immediate action required.\nHIGH        — Serious risk. Patch as soon as possible.\nMEDIUM      — Moderate risk. Patch in next release cycle.\nLOW         — Minor risk. Patch opportunistically.\nNEGLIGIBLE  — Theoretical risk. No known active exploits.\nUNKNOWN     — Severity not determined by OSV database.` }}
+      />
     </>
   )
 }
@@ -658,8 +802,39 @@ function GuideCleanupPolicies() {
     <>
       <div className={styles.sectionHeader}>
         <h1 className={styles.sectionTitle}>Cleanup Policies</h1>
-        <p className={styles.sectionDesc}>Automate artifact retention with scheduled cleanup rules.</p>
+        <p className={styles.sectionDesc}>
+          Cleanup Policies delete old or unused artifacts automatically based on age, download inactivity, or version count. Policies run on a cron schedule or on demand.
+        </p>
       </div>
+      <Step num={1} title="Open Cleanup Policies"
+        text='Click "Cleanup Policies" in the sidebar. Existing policies appear as cards showing their criteria and schedule.'
+        screenshot={{ src: '/docs/screenshots/cleanup-policies-list.png', alt: 'Cleanup Policies page with policy cards' }}
+      />
+      <hr className={styles.divider} />
+      <Step num={2} title="Create a new policy"
+        text='Click "+ New Policy". The wizard has three steps: Identification (name + format filter), Criteria, and Schedule.'
+        screenshot={{ src: '/docs/screenshots/cleanup-policy-wizard.png', alt: 'Create Policy wizard — Identification step' }}
+      />
+      <hr className={styles.divider} />
+      <Step num={3} title="Set cleanup criteria"
+        text="On the Criteria step, configure one or more rules. An artifact is a deletion candidate if it matches ANY enabled criterion (set to 0 to disable):"
+        code={{ lang: 'text', content: `Last Downloaded  — delete if not downloaded in N days\nLast Modified    — delete if not updated in N days\nRetain N Versions — keep only the N newest versions per artifact name\n                    (older versions are deleted regardless of age)` }}
+      />
+      <hr className={styles.divider} />
+      <Step num={4} title="Set a schedule"
+        text='On the Schedule step, enter a cron expression for automatic runs. Leave blank to run manually only.'
+        code={{ lang: 'text', content: `0 2 * * *    — daily at 2:00 AM\n0 3 * * 0    — every Sunday at 3:00 AM\n0 0 1 * *    — first of every month at midnight` }}
+      />
+      <hr className={styles.divider} />
+      <Step num={5} title="Attach the policy to a repository"
+        text="On the Repositories page, click the gear icon on a repository card. Select your policy from the Cleanup Policy dropdown and save."
+        screenshot={{ src: '/docs/screenshots/repo-attach-cleanup.png', alt: 'Repository settings panel with Cleanup Policy dropdown' }}
+      />
+      <hr className={styles.divider} />
+      <Step num={6} title='Run manually with "Run Now"'
+        text='On the Cleanup Policies page, click "Run Now" on any policy card to execute immediately. A summary shows how many artifacts were deleted.'
+        screenshot={{ src: '/docs/screenshots/cleanup-run-now.png', alt: 'Policy card with Run Now button and deletion summary' }}
+      />
     </>
   )
 }
@@ -668,8 +843,40 @@ function GuideApiTokens() {
     <>
       <div className={styles.sectionHeader}>
         <h1 className={styles.sectionTitle}>API Tokens</h1>
-        <p className={styles.sectionDesc}>Generate nxs_* tokens and use them for Basic Auth or Bearer authentication.</p>
+        <p className={styles.sectionDesc}>
+          API tokens let you authenticate without using your password. Tokens start with <span className={styles.inlineCode}>nxs_</span> and work as a Basic Auth password or as a Bearer token header.
+        </p>
       </div>
+      <Step num={1} title="Open your profile"
+        text="Click the key icon (🔑) at the bottom of the sidebar to open your profile modal. Select the API Tokens tab."
+        screenshot={{ src: '/docs/screenshots/profile-api-tokens.png', alt: 'Profile modal with API Tokens tab open' }}
+      />
+      <hr className={styles.divider} />
+      <Step num={2} title="Create a token"
+        text='Click "+ Create Token". Enter a descriptive name (e.g. "ci-pipeline") and an optional expiry in days. The maximum allowed expiry is shown next to the input field.'
+        screenshot={{ src: '/docs/screenshots/create-token-form.png', alt: 'Create Token dialog with name and expiry fields' }}
+      />
+      <hr className={styles.divider} />
+      <Step num={3} title="Copy the token immediately"
+        text="After creation, the full token is displayed once. Click the Copy button — it will not be shown again. Store it in a secrets manager or CI secrets vault."
+        note="If you lose the token value, delete it and create a new one. There is no way to retrieve the value after closing this dialog."
+        screenshot={{ src: '/docs/screenshots/token-created-copy.png', alt: 'Newly created token value with copy button highlighted' }}
+      />
+      <hr className={styles.divider} />
+      <Step num={4} title="Use the token as Basic Auth password"
+        text="Pass the token as the HTTP Basic Auth password. Your username stays the same:"
+        code={{ lang: 'bash', content: `# curl\ncurl -u admin:nxs_your_token_here \\\n  "https://nexspence.example.com/service/rest/v1/repositories"\n\n# Maven ~/.m2/settings.xml\n<password>nxs_your_token_here</password>\n\n# npm ~/.npmrc\n//nexspence.example.com/repository/npm-hosted/:_authToken=nxs_your_token_here` }}
+      />
+      <hr className={styles.divider} />
+      <Step num={5} title="Use the token as a Bearer header"
+        text="Alternatively, pass the token as an Authorization: Bearer header (no username needed):"
+        code={{ lang: 'bash', content: `curl -H "Authorization: Bearer nxs_your_token_here" \\\n  "https://nexspence.example.com/service/rest/v1/repositories"` }}
+      />
+      <hr className={styles.divider} />
+      <Step num={6} title="Revoke a token"
+        text="On the API Tokens tab, click the ✕ button next to any token to revoke it immediately. Revoked tokens are rejected on the next API call."
+        screenshot={{ src: '/docs/screenshots/token-revoke.png', alt: 'API Tokens list with revoke (X) button' }}
+      />
     </>
   )
 }
