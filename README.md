@@ -18,9 +18,37 @@
 
 ## What is Nexspence?
 
-Nexspence is a self-hosted artifact repository manager that supports **12 package formats**, three repository types (hosted, proxy, group), fine-grained RBAC, SSO via OIDC/LDAP, audit logging, S3-compatible storage, and a modern dark-theme web UI — all in a single binary backed by PostgreSQL.
+Nexspence is a self-hosted artifact repository manager that supports **14 package formats**, three repository types (hosted, proxy, group), fine-grained RBAC, SSO via OIDC/LDAP/SAML, audit logging, S3-compatible storage, and a modern dark-theme web UI — all in a single binary backed by PostgreSQL.
 
 It exposes the full **Sonatype Nexus v1 REST API** at `/service/rest/v1/` for drop-in compatibility with existing CI/CD pipelines, Maven/Gradle settings, and npm/pip configurations.
+
+---
+
+## Architecture
+
+```
+                         ┌─────────────────────┐
+                         │   Load Balancer      │  (nginx / k8s Ingress / ALB)
+                         └──────────┬──────────┘
+                    ┌───────────────┴───────────────┐
+                    ▼                               ▼
+┌────────────┐  JWT/Basic  ┌──────────────────┐   ┌──────────────────┐
+│  Client    │ ──────────▶ │  Nexspence node 1 │   │  Nexspence node 2│  (HA)
+│ (curl/mvn/ │             │  Gin + Auth +     │   │  identical       │
+│  pip/npm…) │ ◀────────── │  Audit + RBAC     │   └────────┬─────────┘
+└────────────┘             └────────┬──────────┘            │
+                                    │                        │
+                    ┌───────────────▼────────────────────────▼──────┐
+                    │           Shared State                          │
+                    │  ┌──────────────┐  ┌─────────┐  ┌──────────┐ │
+                    │  │  PostgreSQL  │  │  Redis  │  │  S3/MinIO│ │
+                    │  │  (all data)  │  │  (locks │  │  (blobs) │ │
+                    │  └──────────────┘  │  cache) │  └──────────┘ │
+                    │                    └─────────┘                │
+                    └────────────────────────────────────────────────┘
+```
+
+View the [interactive architecture diagram](https://skensell201.github.io/nexspence/docs/) →
 
 ---
 
@@ -738,32 +766,6 @@ POST /api/v1/repositories/import                       # Import repo from .tar.g
 ```
 
 Full OpenAPI 3.1 spec: [`docs/api-spec.yaml`](docs/api-spec.yaml)
-
----
-
-## Architecture
-
-```
-                         ┌─────────────────────┐
-                         │   Load Balancer      │  (nginx / k8s Ingress / ALB)
-                         └──────────┬──────────┘
-                    ┌───────────────┴───────────────┐
-                    ▼                               ▼
-┌────────────┐  JWT/Basic  ┌──────────────────┐   ┌──────────────────┐
-│  Client    │ ──────────▶ │  Nexspence node 1 │   │  Nexspence node 2│  (HA)
-│ (curl/mvn/ │             │  Gin + Auth +     │   │  identical       │
-│  pip/npm…) │ ◀────────── │  Audit + RBAC     │   └────────┬─────────┘
-└────────────┘             └────────┬──────────┘            │
-                                    │                        │
-                    ┌───────────────▼────────────────────────▼──────┐
-                    │           Shared State                          │
-                    │  ┌──────────────┐  ┌─────────┐  ┌──────────┐ │
-                    │  │  PostgreSQL  │  │  Redis  │  │  S3/MinIO│ │
-                    │  │  (all data)  │  │  (locks │  │  (blobs) │ │
-                    │  └──────────────┘  │  cache) │  └──────────┘ │
-                    │                    └─────────┘                │
-                    └────────────────────────────────────────────────┘
-```
 
 ---
 
