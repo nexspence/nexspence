@@ -192,6 +192,17 @@ services:
     ports:
       - "8080:80"
 
+  # ── nexspence.online website ───────────────────────────────────
+  # Start with: docker compose --profile website up -d website
+  # URL: http://localhost:8079
+  website:
+    profiles: [website]
+    build:
+      context: ./website
+    restart: unless-stopped
+    ports:
+      - "8079:80"
+
 volumes:
   postgres_data:
   nexspence_blobs:
