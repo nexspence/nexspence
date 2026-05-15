@@ -1,439 +1,173 @@
 # Nexspence — Deployment Guide
 
-## Quick Start (Docker Compose)
+## Quick Start
 
 ```bash
 git clone https://github.com/nexspence-oss/nexspence
 cd nexspence
-docker compose up --build
+docker compose up -d
 ```
 
-Services:
-- **Nexspence**: http://localhost:8081 (admin / admin123)
-- **PostgreSQL**: localhost:5432
-
-The backend automatically runs database migrations on startup — no manual step needed.
+Open http://localhost:8081 — login `admin` / `admin123`.
 
 ---
 
-## Prerequisites
-
-| Dependency | Version  | Notes |
-|------------|----------|-------|
-| Go         | 1.22+    | Backend build (`go build -o nexspence ./cmd/server`) |
-| Node.js    | 20+      | Frontend build (`npm run build` in `frontend/`) |
-| PostgreSQL | 16+      | Primary datastore |
-| Docker     | 24+      | Container builds (optional) |
-
----
-
-## Build from Source
+## Docker Compose — Standard
 
 ```bash
 # 1. Clone
-git clone https://github.com/nexspence-oss/nexspence && cd nexspence
+git clone https://github.com/nexspence-oss/nexspence
+cd nexspence
 
-# 2. Build frontend
-cd frontend && npm install && npm run build && cd ..
+# 2. Edit config.yaml — change at minimum:
+#      auth.jwt_secret        (min 32 characters)
+#      bootstrap.admin_password
 
-# 3. Build backend binary
+# 3. Start PostgreSQL + Nexspence (auto-migrates schema on first run)
+docker compose up -d
+
+# 4. Verify
+docker compose ps
+docker compose logs -f nexspence
+```
+
+| Service | URL | Default credentials |
+|---------|-----|---------------------|
+| Web UI & REST API | http://localhost:8081 | `admin` / `admin123` |
+| Docker registry | localhost:5000 | same credentials |
+| PostgreSQL | localhost:5437 | `nexspence` / `nexspence` |
+
+> Change the admin password immediately after first login via **Admin → Security → Users**.
+
+---
+
+## Docker Compose — With MinIO (S3)
+
+MinIO is included in `docker-compose.yml` as an optional profile. Enable it
+by setting the storage type env var before starting:
+
+```bash
+# Start with MinIO as the default blob store
+NEXSPENCE_STORAGE_DEFAULT_TYPE=s3 \
+  docker compose up -d
+
+# MinIO S3 API:    http://localhost:9000
+# MinIO console:   http://localhost:9001  (minioadmin / minioadmin)
+# Nexspence UI:    http://localhost:8081
+```
+
+---
+
+## Docker Compose — HA Cluster
+
+`docker-compose.ha.yml` runs 2 Nexspence nodes, nginx (`least_conn` load
+balancer), Redis, MinIO, and PostgreSQL. All nodes are stateless — shared
+state lives in PostgreSQL, Redis, and S3.
+
+```bash
+# Start 2-node HA cluster
+docker compose \
+  -f docker-compose.ha.yml \
+  up -d
+
+# Load balancer:  http://localhost:8080
+# 2 x Nexspence + nginx LB + Redis + MinIO + PostgreSQL
+```
+
+Enable Redis in `config.yaml` for each node:
+
+```yaml
+redis:
+  enabled: true
+  addr: "redis:6379"
+  password: ""
+  db: 0
+```
+
+See [docs/ha-setup.md](ha-setup.md) for the full HA guide including
+Kubernetes probe examples.
+
+---
+
+## Docker Compose — With Keycloak SSO
+
+Starts a pre-configured Keycloak dev instance with the `nexspence` realm
+imported. "Sign in with Keycloak" appears on the login page automatically.
+
+```bash
+# Start with Keycloak OIDC provider
+OIDC_ENABLED=true \
+  docker compose \
+  --profile keycloak \
+  up -d
+
+# Nexspence UI:    http://localhost:8081  (admin / admin123)
+# Keycloak admin:  http://localhost:8180  (admin / admin)
+# Test SSO user:   testuser / testpass (mapped to nx-admin role)
+```
+
+See [docs/oidc-setup.md](oidc-setup.md) for manual OIDC config and all
+supported providers (Keycloak, Google, Entra ID, Okta).
+
+---
+
+## From Source
+
+**Requirements:** Go 1.22+, Node.js 22+, PostgreSQL 16+
+
+```bash
+# 1. Clone
+git clone https://github.com/nexspence-oss/nexspence
+cd nexspence
+
+# 2. Start PostgreSQL only (skip if you have a local instance)
+docker compose up -d db
+
+# 3. Run backend — applies DB migrations automatically
+go run ./cmd/server serve
+
+# 4. In a separate terminal — frontend dev server with HMR
+cd frontend && npm ci
+npm run dev       # http://localhost:5173
+
+# — or — production build
+npm run build     # output → frontend/dist/
+```
+
+To produce a self-contained binary:
+
+```bash
 go build -o nexspence ./cmd/server
-
-# 4. Run
 ./nexspence serve
 ```
 
-The binary serves both the REST API and the frontend SPA from `./frontend/dist`.
-
-**Docker / CI:** The multi-stage `Dockerfile` runs `go build ./cmd/server` with `CGO_ENABLED=0`. Ensure the tree includes full `internal/repository/interfaces.go` and `router.go` middleware wiring (`UserTokenRepo`, `TokenService` passed into `AuthMiddleware` / `OptionalAuth`) or the image build will fail.
-
----
-
-## Configuration
-
-### config.yaml (default location: `./config.yaml`)
-
-```yaml
-http:
-  listen: ":8081"
-  base_url: "https://nexspence.example.com"  # External URL for download links
-
-database:
-  dsn: "postgres://nexspence:nexspence@localhost:5432/nexspence?sslmode=disable"
-
-storage:
-  local:
-    base_path: "/var/nexspence/blobs"
-
-auth:
-  jwt_secret: "change-me-to-a-random-64-char-string"
-  jwt_expiry_hours: 8
-  bcrypt_cost: 12
-
-bootstrap:
-  admin_username: "admin"
-  admin_password: "admin123"   # Change on first deploy!
-  admin_email:    "admin@example.com"
-  admin_first_name: "Admin"
-
-log:
-  level: "info"    # debug | info | warn | error
-  format: "json"   # json | text
-```
-
-### Environment overrides
-
-Every config key is overridable via `NEXSPENCE_` prefixed env vars using `_` as separator:
-
-```bash
-NEXSPENCE_DATABASE_DSN="postgres://..."
-NEXSPENCE_AUTH_JWT_SECRET="my-secret"
-NEXSPENCE_BOOTSTRAP_ADMIN_PASSWORD="newpass"
-NEXSPENCE_HTTP_LISTEN=":9090"
-NEXSPENCE_LOG_LEVEL="debug"
-```
+The binary serves both the REST API and the built frontend SPA from
+`./frontend/dist`.
 
 ---
 
-## Docker
+## Configuration Reference
 
-### Single container
+`config.yaml` is the primary configuration file. Every key can be
+overridden via an environment variable using the pattern
+`NEXSPENCE_<SECTION>_<KEY>` (uppercase, underscore-separated).
 
-```dockerfile
-FROM golang:1.22-alpine AS builder
-WORKDIR /src
-COPY . .
-RUN go build -o /nexspence ./cmd/server
-
-FROM alpine:3.19
-RUN apk add --no-cache ca-certificates
-COPY --from=builder /nexspence /usr/local/bin/nexspence
-COPY config.yaml /etc/nexspence/config.yaml
-EXPOSE 8081
-ENTRYPOINT ["nexspence", "serve"]
-```
-
-```bash
-docker build -t nexspence:latest .
-docker run -d \
-  -p 8081:8081 \
-  -e NEXSPENCE_DATABASE_DSN="postgres://nexspence:nexspence@db:5432/nexspence?sslmode=disable" \
-  -e NEXSPENCE_AUTH_JWT_SECRET="$(openssl rand -hex 32)" \
-  -v /data/nexspence/blobs:/var/nexspence/blobs \
-  nexspence:latest
-```
-
-### Docker Compose (production)
-
-```yaml
-services:
-  postgres:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: nexspence
-      POSTGRES_PASSWORD: nexspence
-      POSTGRES_DB: nexspence
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U nexspence"]
-      interval: 5s
-      retries: 10
-
-  nexspence:
-    image: nexspence:latest
-    ports:
-      - "8081:8081"
-    environment:
-      NEXSPENCE_DATABASE_DSN: "postgres://nexspence:nexspence@postgres:5432/nexspence?sslmode=disable"
-      NEXSPENCE_AUTH_JWT_SECRET: "${JWT_SECRET}"
-      NEXSPENCE_BOOTSTRAP_ADMIN_PASSWORD: "${ADMIN_PASSWORD}"
-      NEXSPENCE_HTTP_BASE_URL: "https://nexspence.example.com"
-      NEXSPENCE_STORAGE_LOCAL_BASE_PATH: "/blobs"
-    volumes:
-      - blobdata:/blobs
-    depends_on:
-      postgres:
-        condition: service_healthy
-
-volumes:
-  pgdata:
-  blobdata:
-```
-
----
-
-## Kubernetes
-
-### ConfigMap + Secret
-
-```yaml
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: nexspence-config
-data:
-  NEXSPENCE_HTTP_LISTEN: ":8081"
-  NEXSPENCE_HTTP_BASE_URL: "https://nexspence.example.com"
-  NEXSPENCE_LOG_LEVEL: "info"
-  NEXSPENCE_LOG_FORMAT: "json"
-  NEXSPENCE_STORAGE_LOCAL_BASE_PATH: "/blobs"
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: nexspence-secrets
-stringData:
-  NEXSPENCE_DATABASE_DSN: "postgres://nexspence:nexspence@postgres-svc:5432/nexspence?sslmode=disable"
-  NEXSPENCE_AUTH_JWT_SECRET: "replace-with-64-char-random-string"
-  NEXSPENCE_BOOTSTRAP_ADMIN_PASSWORD: "admin123"
-```
-
-### Deployment
-
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: nexspence
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: nexspence
-  template:
-    metadata:
-      labels:
-        app: nexspence
-    spec:
-      containers:
-        - name: nexspence
-          image: nexspence:latest
-          ports:
-            - containerPort: 8081
-          envFrom:
-            - configMapRef:
-                name: nexspence-config
-            - secretRef:
-                name: nexspence-secrets
-          volumeMounts:
-            - name: blobs
-              mountPath: /blobs
-          livenessProbe:
-            httpGet:
-              path: /service/rest/v1/status/check
-              port: 8081
-            initialDelaySeconds: 10
-            periodSeconds: 30
-          readinessProbe:
-            httpGet:
-              path: /service/rest/v1/status/check
-              port: 8081
-            initialDelaySeconds: 5
-            periodSeconds: 10
-      volumes:
-        - name: blobs
-          persistentVolumeClaim:
-            claimName: nexspence-blobs-pvc
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: nexspence-svc
-spec:
-  selector:
-    app: nexspence
-  ports:
-    - port: 80
-      targetPort: 8081
-```
-
-### PersistentVolumeClaim
-
-```yaml
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: nexspence-blobs-pvc
-spec:
-  accessModes: [ReadWriteOnce]
-  resources:
-    requests:
-      storage: 100Gi
-```
-
-> **Note**: For multi-replica deployments, use S3-compatible storage (MinIO, AWS S3) instead of local filesystem. S3 adapter is on the roadmap.
-
----
-
-## Database
-
-### PostgreSQL setup
-
-```sql
-CREATE USER nexspence WITH PASSWORD 'nexspence';
-CREATE DATABASE nexspence OWNER nexspence;
-```
-
-Migrations run automatically on `nexspence serve`. To run manually:
-
-```bash
-nexspence migrate --dsn "postgres://nexspence:nexspence@localhost:5432/nexspence"
-```
-
-### Backup
-
-```bash
-# Full backup
-pg_dump -U nexspence -d nexspence -F custom -f nexspence_$(date +%Y%m%d).dump
-
-# Restore
-pg_restore -U nexspence -d nexspence nexspence_20260417.dump
-```
-
----
-
-## Reverse Proxy (nginx)
-
-```nginx
-server {
-    listen 443 ssl http2;
-    server_name nexspence.example.com;
-
-    ssl_certificate     /etc/ssl/nexspence.crt;
-    ssl_certificate_key /etc/ssl/nexspence.key;
-
-    client_max_body_size 10g;   # Large artifact uploads
-
-    location / {
-        proxy_pass         http://localhost:8081;
-        proxy_set_header   Host $host;
-        proxy_set_header   X-Real-IP $remote_addr;
-        proxy_set_header   X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header   X-Forwarded-Proto $scheme;
-        proxy_read_timeout 600s;
-        proxy_send_timeout 600s;
-    }
-}
-```
-
----
-
-## Monitoring
-
-### Health check
-
-```
-GET /service/rest/v1/status/check   # no auth — for load balancers
-GET /service/rest/v1/status         # auth required — full status
-```
-
-### Metrics
-
-```
-GET /api/v1/metrics   # no auth — JSON snapshot
-```
-
-Example response:
-```json
-{
-  "uptime_seconds": 3600,
-  "requests_total": 12450,
-  "request_errors": 3,
-  "artifacts_stored": 892,
-  "bytes_stored": 4831838208,
-  "goroutines": 14,
-  "memory": {
-    "alloc_bytes": 8388608,
-    "total_alloc_bytes": 134217728,
-    "sys_bytes": 67108864,
-    "gc_cycles": 42
-  }
-}
-```
-
----
-
-## First Login
-
-1. Open `http://localhost:8081` (or your configured URL)
-2. Login: **admin** / **admin123** (or your bootstrap password)
-3. Change the admin password immediately: Settings → Security → Users → admin → Change Password
-
----
-
-## Upgrade
-
-1. Pull the new image or build from source
-2. Stop the running instance
-3. Start the new instance — migrations run automatically
-
-Migrations are idempotent and backward-compatible within a minor version.
-
----
-
-## Security Recommendations
-
-| Setting | Recommendation |
-|---------|----------------|
-| `jwt_secret` | 64+ random characters, stored in a secret manager |
-| `bcrypt_cost` | 12 (default) — increase to 14 on high-end hardware |
-| Admin password | Change immediately after first deploy |
-| TLS | Always use HTTPS in production (via reverse proxy) |
-| DB password | Use a strong password; restrict DB user to `nexspence` database only |
-| Blob storage | Restrict filesystem/S3 bucket access to the nexspence process |
-
----
-
-## Helm (Kubernetes — recommended)
-
-### Quick install (nginx ingress)
-
-```bash
-cd deploy/helm/nexspence
-helm dependency update
-helm install nexspence . \
-  -f values-examples/nginx.yaml \
-  --set config.jwtSecret="$(openssl rand -hex 32)" \
-  --set config.adminPassword="changeme" \
-  --namespace nexspence --create-namespace
-```
-
-### Networking options
-
-| Provider | Example values file |
-|----------|-------------------|
-| nginx ingress-controller | `values-examples/nginx.yaml` |
-| Traefik ingress-controller | `values-examples/traefik.yaml` |
-| Cilium ingress-controller | `values-examples/cilium-ingress.yaml` |
-| Istio API Gateway | `values-examples/istio-gateway.yaml` |
-| Cilium API Gateway (Gateway API) | `values-examples/cilium-gateway.yaml` |
-
-### External PostgreSQL
-
-```bash
-helm install nexspence . \
-  --set postgresql.enabled=false \
-  --set externalDatabase.dsn="postgres://user:pass@pg-host:5432/nexspence" \
-  -f values-examples/nginx.yaml
-```
-
-### S3 blob storage
-
-```bash
-helm install nexspence . \
-  --set storage.type=s3 \
-  --set storage.s3.endpoint="https://minio.example.com" \
-  --set storage.s3.bucket="nexspence-blobs" \
-  --set storage.s3.accessKey="minio" \
-  --set storage.s3.secretKey="minio123" \
-  -f values-examples/nginx.yaml
-```
-
-### Upgrading
-
-```bash
-helm upgrade nexspence . -f your-values.yaml
-```
-
-Migrations run automatically on pod restart.
+| Key | Default | Description |
+|-----|---------|-------------|
+| `http.addr` | `:8081` | Listen address |
+| `http.base_url` | `http://localhost:8081` | Public URL used in download links |
+| `database.dsn` | postgres://nexspence:nexspence@localhost:5437/nexspence | PostgreSQL connection string |
+| `storage.default_type` | `local` | `local` or `s3` |
+| `storage.local.base_path` | `./data/blobs` | Filesystem path for local blob store |
+| `storage.s3.bucket` | — | S3 bucket name (required when type=s3) |
+| `storage.s3.endpoint` | — | S3 endpoint URL (e.g. `http://minio:9000`) |
+| `storage.s3.force_path_style` | `true` | Required for MinIO / non-AWS S3 |
+| `auth.jwt_secret` | — | JWT signing key — **change before production** |
+| `auth.jwt_expiry_hours` | `24` | JWT token lifetime |
+| `auth.anonymous_enabled` | `true` | Allow unauthenticated read on public repos |
+| `auth.token_max_days` | `180` | Maximum lifetime for user API tokens (`nxs_*`) |
+| `bootstrap.admin_password` | `admin123` | Auto-created admin password — **change this** |
+| `cleanup.default_schedule` | `0 2 * * *` | Default cron for cleanup policies |
+| `audit.retention_days` | `90` | Audit log partition retention |
+| `redis.enabled` | `false` | Enable Redis (required for HA) |
+| `redis.addr` | `localhost:6379` | Redis address |
