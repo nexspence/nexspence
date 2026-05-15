@@ -287,3 +287,23 @@ type ReplicationRepo interface {
 	AddHistory(ctx context.Context, h *domain.ReplicationHistory) error
 	ListHistory(ctx context.Context, ruleID string, limit int) ([]domain.ReplicationHistory, error)
 }
+
+// PromotionRepo manages promotion rules and requests.
+type PromotionRepo interface {
+	// Rules
+	ListRules(ctx context.Context) ([]domain.PromotionRule, error)
+	GetRule(ctx context.Context, id string) (*domain.PromotionRule, error)
+	// ListRulesByFromRepo returns rules where from_repo matches the given name.
+	ListRulesByFromRepo(ctx context.Context, fromRepo string) ([]domain.PromotionRule, error)
+	CreateRule(ctx context.Context, r *domain.PromotionRule) error
+	UpdateRule(ctx context.Context, r *domain.PromotionRule) error
+	DeleteRule(ctx context.Context, id string) error
+	// Requests
+	CreateRequest(ctx context.Context, r *domain.PromotionRequest) error
+	GetRequest(ctx context.Context, id string) (*domain.PromotionRequest, error)
+	// ListRequests returns requests filtered by status ("" = all).
+	ListRequests(ctx context.Context, status string) ([]domain.PromotionRequest, error)
+	// UpdateRequestStatus sets status and optional review/completion metadata.
+	UpdateRequestStatus(ctx context.Context, id string, status domain.PromotionStatus,
+		reviewedBy *string, reviewedAt, completedAt *time.Time, errMsg string) error
+}
