@@ -135,6 +135,15 @@ interface ScanResult {
   findings?: CVEFinding[]
 }
 
+interface PromotionRule {
+  id: string
+  name: string
+  from_repo: string
+  to_repo: string
+  require_scan_pass: boolean
+  require_manual_approval: boolean
+}
+
 const SEV_COLOR = {
   critical: '#ef4444',
   high: '#f97316',
@@ -446,7 +455,7 @@ const S = {
   },
   thead: {
     display: 'grid',
-    gridTemplateColumns: '2fr 1.5fr 1fr 1fr 2fr 32px',
+    gridTemplateColumns: '24px 2fr 1.5fr 1fr 1fr 2fr 32px',
     padding: '10px 16px',
     background: 'rgba(255,255,255,0.03)',
     borderBottom: '1px solid rgba(255,255,255,0.07)',
@@ -458,7 +467,7 @@ const S = {
   },
   trow: {
     display: 'grid',
-    gridTemplateColumns: '2fr 1.5fr 1fr 1fr 2fr 32px',
+    gridTemplateColumns: '24px 2fr 1.5fr 1fr 1fr 2fr 32px',
     padding: '11px 16px',
     borderBottom: '1px solid rgba(255,255,255,0.05)',
     fontSize: 13,
@@ -1015,6 +1024,12 @@ export default function BrowsePage() {
   } | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [selectedComponentIDs, setSelectedComponentIDs] = useState<Set<string>>(new Set())
+  const [promoteModalOpen, setPromoteModalOpen] = useState(false)
+  const [promoteComponentIDs, setPromoteComponentIDs] = useState<string[]>([])
+  const [promotionRules, setPromotionRules] = useState<PromotionRule[]>([])
+  const [selectedRuleID, setSelectedRuleID] = useState('')
+  const [promotionResult, setPromotionResult] = useState<string | null>(null)
   const limit = 25
 
   const { isAdmin } = useAuthStore()
@@ -1310,9 +1325,22 @@ export default function BrowsePage() {
               ) : dockerDetail ? (
                 <>
                   <DockerBrowseDetailBody comp={dockerDetail} sel={dockerSelection} />
-                  <div style={{ marginTop: 12 }}>
+                  <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     <PanelBtn onClick={() => setUsageTarget({ format: dockerDetail.format, name: dockerDetail.name })}>
                       <BookOpen size={13} /> Example Usage
+                    </PanelBtn>
+                    <PanelBtn onClick={async () => {
+                      try {
+                        const res = await apiClient.get(`/api/v1/components/${dockerSelection.componentId}/promotion-rules`)
+                        if (res.data.length === 0) { alert('No promotion rules defined for this repository.'); return }
+                        setPromotionRules(res.data)
+                      } catch { setPromotionRules([]) }
+                      setPromoteComponentIDs([dockerSelection.componentId])
+                      setSelectedRuleID(promotionRules[0]?.id ?? '')
+                      setPromotionResult(null)
+                      setPromoteModalOpen(true)
+                    }}>
+                      Promote
                     </PanelBtn>
                   </div>
                   <TagEditor
@@ -1424,6 +1452,21 @@ export default function BrowsePage() {
                       <PanelBtn onClick={() => setUsageTarget({ format: selectedRepo?.format ?? 'raw', name: node.label })}>
                         <BookOpen size={13} /> Usage
                       </PanelBtn>
+                      {node.componentId && (
+                        <PanelBtn onClick={async () => {
+                          try {
+                            const res = await apiClient.get(`/api/v1/components/${node.componentId}/promotion-rules`)
+                            if (res.data.length === 0) { alert('No promotion rules defined for this repository.'); return }
+                            setPromotionRules(res.data)
+                          } catch { setPromotionRules([]) }
+                          setPromoteComponentIDs([node.componentId!])
+                          setSelectedRuleID(promotionRules[0]?.id ?? '')
+                          setPromotionResult(null)
+                          setPromoteModalOpen(true)
+                        }}>
+                          Promote
+                        </PanelBtn>
+                      )}
                     </div>
                     {node.componentId && (
                       <RawTagSection componentId={node.componentId} isAdmin={isAdmin()} />
@@ -1450,8 +1493,28 @@ export default function BrowsePage() {
         </div>
       ) : (
         <>
+          {selectedComponentIDs.size > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px', background: 'rgba(59,130,246,0.1)', borderRadius: 8, marginBottom: 8, border: '1px solid rgba(59,130,246,0.3)' }}>
+              <span style={{ fontSize: 13, color: '#93c5fd' }}>{selectedComponentIDs.size} selected</span>
+              <HoloButton variant="primary" onClick={async () => {
+                const ids = Array.from(selectedComponentIDs)
+                try {
+                  const res = await apiClient.get(`/api/v1/components/${ids[0]}/promotion-rules`)
+                  setPromotionRules(res.data)
+                } catch { setPromotionRules([]) }
+                setPromoteComponentIDs(ids)
+                setSelectedRuleID('')
+                setPromotionResult(null)
+                setPromoteModalOpen(true)
+              }}>
+                Promote selected ({selectedComponentIDs.size})
+              </HoloButton>
+              <HoloButton onClick={() => setSelectedComponentIDs(new Set())}>Clear</HoloButton>
+            </div>
+          )}
           <div className="holo-card" style={S.table}>
             <div style={S.thead}>
+              <div />
               <div>Name</div>
               <div>Group</div>
               <div>Version</div>
@@ -1476,6 +1539,19 @@ export default function BrowsePage() {
                       : {}),
                   }}
                 >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <input
+                      type="checkbox"
+                      checked={selectedComponentIDs.has(c.id)}
+                      onChange={e => {
+                        const next = new Set(selectedComponentIDs)
+                        if (e.target.checked) next.add(c.id)
+                        else next.delete(c.id)
+                        setSelectedComponentIDs(next)
+                      }}
+                      style={{ cursor: 'pointer', accentColor: '#3b82f6' }}
+                    />
+                  </div>
                   <div style={{ fontWeight: 600, color: 'var(--holo-text)' }}>{c.name}</div>
                   <div style={S.muted}>{c.group || '—'}</div>
                   <div>{c.version}</div>
@@ -1594,6 +1670,61 @@ export default function BrowsePage() {
               </HoloButton>
             </div>
           </div>}
+      </HoloModal>
+
+      <HoloModal open={promoteModalOpen} onClose={() => setPromoteModalOpen(false)}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: 'var(--holo-text)' }}>
+            Promote {promoteComponentIDs.length} component(s)
+          </h3>
+          {promotionRules.length === 0 ? (
+            <div style={{ color: '#64748b', fontSize: 13 }}>No promotion rules available for this repository.</div>
+          ) : (
+            <>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--holo-text-faint)', letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 6 }}>Promotion Rule</div>
+                <Select
+                  value={selectedRuleID}
+                  onChange={setSelectedRuleID}
+                  options={promotionRules.map(r => ({ value: r.id, label: `${r.name} (${r.from_repo} → ${r.to_repo})` }))}
+                  placeholder="Select a rule"
+                />
+              </div>
+              {promotionResult && (
+                <div style={{ fontSize: 13, color: promotionResult.startsWith('Error') ? '#ef4444' : '#4ade80' }}>
+                  {promotionResult}
+                </div>
+              )}
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <HoloButton onClick={() => setPromoteModalOpen(false)}>Cancel</HoloButton>
+                <HoloButton
+                  disabled={!selectedRuleID}
+                  onClick={async () => {
+                    try {
+                      const res = await apiClient.post('/api/v1/promotion/promote', {
+                        rule_id: selectedRuleID,
+                        component_ids: promoteComponentIDs,
+                      })
+                      const reqs = res.data.requests as { status: string }[]
+                      const rule = promotionRules.find(r => r.id === selectedRuleID)
+                      if (rule?.require_manual_approval) {
+                        setPromotionResult(`Approval requested for ${reqs.length} component(s). An admin must approve.`)
+                      } else {
+                        setPromotionResult(`Promoted ${reqs.length} component(s) successfully.`)
+                      }
+                      setSelectedComponentIDs(new Set())
+                    } catch (e: unknown) {
+                      const err = e as { response?: { data?: { error?: string } } }
+                      setPromotionResult(`Error: ${err?.response?.data?.error ?? 'Promotion failed'}`)
+                    }
+                  }}
+                >
+                  Promote
+                </HoloButton>
+              </div>
+            </>
+          )}
+        </div>
       </HoloModal>
 
       {uploadOpen && isRaw && (
