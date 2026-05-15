@@ -1,8 +1,8 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Activity, Archive, ArrowRightLeft, CheckCircle, Database, Download, ExternalLink, GitBranch, HardDrive, Info, Network, Paperclip, Pause, Pencil, Play, Plus, RefreshCw, Share2, Shield, Trash2, Upload, Wifi, X } from 'lucide-react'
-import { nexusApi, nexspenceApi, ImportRepoStats, ServiceStatus, RoutingRule, RoutingRuleInput, ReplicationRule, ReplicationHistory, ReplicationRuleInput, AuthConfig } from '@/api/client'
+import { Activity, Archive, ArrowRightLeft, ArrowUpCircle, CheckCircle, Database, Download, ExternalLink, GitBranch, HardDrive, Info, Network, Paperclip, Pause, Pencil, Play, Plus, RefreshCw, Share2, Shield, Trash2, Upload, Wifi, X } from 'lucide-react'
+import { nexusApi, nexspenceApi, apiClient, ImportRepoStats, ServiceStatus, RoutingRule, RoutingRuleInput, ReplicationRule, ReplicationHistory, ReplicationRuleInput, AuthConfig } from '@/api/client'
 import { MonitoringView } from '@/pages/MonitoringPage'
 import { Select } from '@/components/Select'
 import { HoloButton, HoloInput, HoloModal, HoloTabs, HoloCard, HoloTabItem, Wizard } from '@/components/holo'
@@ -23,8 +23,8 @@ interface UsageResp {
 }
 interface SystemInfo { version: string; product: string }
 
-type AdminTab = 'info' | 'blobs' | 'backup' | 'monitoring' | 'migration' | 'routing-rules' | 'replication' | 'saml'
-const VALID_TABS: AdminTab[] = ['info', 'blobs', 'backup', 'monitoring', 'migration', 'routing-rules', 'replication', 'saml']
+type AdminTab = 'info' | 'blobs' | 'backup' | 'monitoring' | 'migration' | 'routing-rules' | 'replication' | 'saml' | 'promotion'
+const VALID_TABS: AdminTab[] = ['info', 'blobs', 'backup', 'monitoring', 'migration', 'routing-rules', 'replication', 'saml', 'promotion']
 
 function fmtGB(b: number) {
   return (b / 1024 / 1024 / 1024).toFixed(2) + ' GB'
@@ -594,6 +594,413 @@ function ReplicationTab() {
   )
 }
 
+// ── Promotion interfaces ──────────────────────────────────────────
+
+interface PromotionRule {
+  id: string
+  name: string
+  from_repo: string
+  to_repo: string
+  path_filter?: string
+  require_scan_pass: boolean
+  require_manual_approval: boolean
+  created_at: string
+}
+
+interface PromotionRequest {
+  id: string
+  rule_id: string
+  component_id: string
+  status: 'pending' | 'approved' | 'rejected' | 'completed' | 'failed'
+  requested_by: string
+  reviewed_by?: string
+  completed_at?: string
+  error?: string
+  created_at: string
+}
+
+// ── PromotionRuleModal ────────────────────────────────────────────
+
+function PromotionRuleModal({
+  open,
+  rule,
+  repos,
+  onClose,
+  onSaved,
+}: {
+  open: boolean
+  rule: PromotionRule | null
+  repos: Array<{ name: string }>
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [name, setName] = useState('')
+  const [fromRepo, setFromRepo] = useState('')
+  const [toRepo, setToRepo] = useState('')
+  const [pathFilter, setPathFilter] = useState('')
+  const [requireScanPass, setRequireScanPass] = useState(false)
+  const [requireManualApproval, setRequireManualApproval] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState('')
+
+  // Reset form when rule or open changes
+  useEffect(() => {
+    if (open) {
+      setName(rule?.name ?? '')
+      setFromRepo(rule?.from_repo ?? '')
+      setToRepo(rule?.to_repo ?? '')
+      setPathFilter(rule?.path_filter ?? '')
+      setRequireScanPass(rule?.require_scan_pass ?? false)
+      setRequireManualApproval(rule?.require_manual_approval ?? false)
+      setErr('')
+    }
+  }, [open, rule])
+
+  if (!open) return null
+
+  const handleSave = async () => {
+    setErr('')
+    if (!name.trim()) { setErr('Name is required'); return }
+    if (!fromRepo) { setErr('From repository is required'); return }
+    if (!toRepo) { setErr('To repository is required'); return }
+    const payload = {
+      name: name.trim(),
+      from_repo: fromRepo,
+      to_repo: toRepo,
+      path_filter: pathFilter.trim() || undefined,
+      require_scan_pass: requireScanPass,
+      require_manual_approval: requireManualApproval,
+    }
+    setSaving(true)
+    try {
+      if (rule) {
+        await apiClient.put(`/api/v1/promotion/rules/${rule.id}`, payload)
+      } else {
+        await apiClient.post('/api/v1/promotion/rules', payload)
+      }
+      onSaved()
+      onClose()
+    } catch (e: unknown) {
+      const msg = (e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Save failed'
+      setErr(msg)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <ModalShell title={rule ? `Edit — ${rule.name}` : 'Create Promotion Rule'} onClose={onClose} width={460}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div>
+          <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--holo-text-dim)', display: 'block', marginBottom: 5 }}>NAME *</label>
+          <HoloInput value={name} onChange={e => setName(e.target.value)} placeholder="promote-to-release" />
+        </div>
+        <div>
+          <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--holo-text-dim)', display: 'block', marginBottom: 5 }}>FROM REPOSITORY *</label>
+          <Select
+            value={fromRepo}
+            onChange={setFromRepo}
+            options={repos.map(r => ({ value: r.name, label: r.name }))}
+            placeholder="Select source repository…"
+          />
+        </div>
+        <div>
+          <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--holo-text-dim)', display: 'block', marginBottom: 5 }}>TO REPOSITORY *</label>
+          <Select
+            value={toRepo}
+            onChange={setToRepo}
+            options={repos.map(r => ({ value: r.name, label: r.name }))}
+            placeholder="Select target repository…"
+          />
+        </div>
+        <div>
+          <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--holo-text-dim)', display: 'block', marginBottom: 5 }}>PATH FILTER (CEL)</label>
+          <HoloInput
+            value={pathFilter}
+            onChange={e => setPathFilter(e.target.value)}
+            placeholder='path.startsWith("/com/example/")'
+            style={{ fontFamily: 'monospace', fontSize: 12 }}
+          />
+        </div>
+        <label style={{ fontSize: 12, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <input type="checkbox" checked={requireScanPass} onChange={e => setRequireScanPass(e.target.checked)} />
+          Require scan pass (no HIGH/CRITICAL CVEs)
+        </label>
+        <label style={{ fontSize: 12, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <input type="checkbox" checked={requireManualApproval} onChange={e => setRequireManualApproval(e.target.checked)} />
+          Require manual approval
+        </label>
+        {err && <div style={{ color: '#ef4444', fontSize: 12 }}>{err}</div>}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
+          <HoloButton onClick={onClose}>Cancel</HoloButton>
+          <HoloButton variant="primary" onClick={handleSave} disabled={saving}>
+            {saving ? 'Saving…' : rule ? 'Save' : 'Create'}
+          </HoloButton>
+        </div>
+      </div>
+    </ModalShell>
+  )
+}
+
+// ── PromotionTab ──────────────────────────────────────────────────
+
+function PromotionTab() {
+  const qc = useQueryClient()
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [ruleModalOpen, setRuleModalOpen] = useState(false)
+  const [editingRule, setEditingRule] = useState<PromotionRule | null>(null)
+  const [deleteRuleTarget, setDeleteRuleTarget] = useState<PromotionRule | null>(null)
+  const [rejectTarget, setRejectTarget] = useState<PromotionRequest | null>(null)
+  const [rejectReason, setRejectReason] = useState('')
+
+  const { data: rules = [], isLoading: rulesLoading } = useQuery<PromotionRule[]>({
+    queryKey: ['promotion-rules'],
+    queryFn: () => apiClient.get('/api/v1/promotion/rules').then(r => r.data),
+  })
+
+  const { data: requests = [], isLoading: requestsLoading } = useQuery<PromotionRequest[]>({
+    queryKey: ['promotion-requests', statusFilter],
+    queryFn: () => {
+      const params = statusFilter !== 'all' ? { status: statusFilter } : {}
+      return apiClient.get('/api/v1/promotion/requests', { params }).then(r => r.data)
+    },
+    refetchInterval: 10_000,
+  })
+
+  const { data: repos = [] } = useQuery({
+    queryKey: ['repos-list'],
+    queryFn: () => nexusApi.listRepositories().then(r => r.data as Array<{ name: string }>),
+  })
+
+  const approveMutation = useMutation({
+    mutationFn: (req: PromotionRequest) =>
+      apiClient.post(`/api/v1/promotion/requests/${req.id}/approve`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['promotion-requests'] }),
+  })
+
+  const rejectMutation = useMutation({
+    mutationFn: ({ req, reason }: { req: PromotionRequest; reason: string }) =>
+      apiClient.post(`/api/v1/promotion/requests/${req.id}/reject`, { reason }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['promotion-requests'] })
+      setRejectTarget(null)
+      setRejectReason('')
+    },
+  })
+
+  const deleteRuleMutation = useMutation({
+    mutationFn: (id: string) => apiClient.delete(`/api/v1/promotion/rules/${id}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['promotion-rules'] })
+      setDeleteRuleTarget(null)
+    },
+  })
+
+  const ruleNameById = (id: string) => rules.find(r => r.id === id)?.name ?? id.slice(0, 8)
+
+  const statusColor = (s: PromotionRequest['status']) => {
+    const map: Record<string, string> = {
+      pending:   '#f59e0b',
+      approved:  '#3b82f6',
+      rejected:  '#ef4444',
+      completed: '#22c55e',
+      failed:    '#ef4444',
+    }
+    return map[s] ?? '#94a3b8'
+  }
+
+  const openCreateRule = () => { setEditingRule(null); setRuleModalOpen(true) }
+  const openEditRule = (r: PromotionRule) => { setEditingRule(r); setRuleModalOpen(true) }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+      {/* Rules section */}
+      <HoloCard>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--holo-text-dim)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+            Promotion Rules
+          </span>
+          <HoloButton variant="primary" icon={<Plus size={13} />} onClick={openCreateRule}>
+            Create Rule
+          </HoloButton>
+        </div>
+
+        {rulesLoading ? (
+          <div className="holo-skeleton holo-skeleton--text" style={{ width: '60%' }} />
+        ) : rules.length === 0 ? (
+          <div style={{ color: 'var(--holo-text-faint)', fontSize: 13, textAlign: 'center', padding: '24px 0' }}>
+            No promotion rules configured
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {rules.map(rule => (
+              <div key={rule.id} style={{ padding: '12px 14px', background: 'rgba(255,255,255,0.03)', borderRadius: 10, border: '1px solid rgba(255,255,255,0.07)' }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, color: 'var(--holo-text)', marginBottom: 4 }}>{rule.name}</div>
+                    <div style={{ fontSize: 12, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ color: 'var(--holo-text-dim)' }}>{rule.from_repo}</span>
+                      <ArrowUpCircle size={11} style={{ color: 'var(--holo-primary)', flexShrink: 0 }} />
+                      <span style={{ color: 'var(--holo-text-dim)' }}>{rule.to_repo}</span>
+                    </div>
+                    {rule.path_filter && (
+                      <div style={{ fontSize: 11, fontFamily: 'monospace', color: '#94a3b8', marginTop: 4, background: 'rgba(255,255,255,0.04)', padding: '2px 6px', borderRadius: 4, display: 'inline-block' }}>
+                        {rule.path_filter}
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                      {rule.require_scan_pass && (
+                        <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 4, background: 'rgba(34,197,94,0.12)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.25)' }}>
+                          Scan Pass
+                        </span>
+                      )}
+                      {rule.require_manual_approval && (
+                        <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 4, background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.25)' }}>
+                          Manual Approval
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                    <HoloButton icon={<Pencil size={12} />} onClick={() => openEditRule(rule)}>Edit</HoloButton>
+                    <HoloButton icon={<Trash2 size={12} />} onClick={() => setDeleteRuleTarget(rule)}>Delete</HoloButton>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </HoloCard>
+
+      {/* Requests section */}
+      <HoloCard>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--holo-text-dim)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+            Promotion Requests
+          </span>
+          <Select
+            value={statusFilter}
+            onChange={setStatusFilter}
+            options={[
+              { value: 'all',       label: 'All' },
+              { value: 'pending',   label: 'Pending' },
+              { value: 'completed', label: 'Completed' },
+              { value: 'rejected',  label: 'Rejected' },
+              { value: 'failed',    label: 'Failed' },
+            ]}
+            style={{ width: 140 }}
+          />
+        </div>
+
+        {requestsLoading ? (
+          <div className="holo-skeleton holo-skeleton--text" style={{ width: '60%' }} />
+        ) : requests.length === 0 ? (
+          <div style={{ color: 'var(--holo-text-faint)', fontSize: 13, textAlign: 'center', padding: '24px 0' }}>
+            No promotion requests
+          </div>
+        ) : (
+          <table style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: 13 }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                {['Component', 'Rule', 'Status', 'Requested', 'Actions'].map(h => (
+                  <th key={h} style={{ textAlign: 'left' as const, padding: '6px 10px', color: 'var(--holo-text-dim)', fontWeight: 600, fontSize: 11, textTransform: 'uppercase' as const }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {requests.map(req => (
+                <tr key={req.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                  <td style={{ padding: '8px 10px', fontFamily: 'monospace', fontSize: 11, color: 'var(--holo-text)' }}>
+                    {req.component_id.slice(0, 8)}&hellip;
+                  </td>
+                  <td style={{ padding: '8px 10px', color: 'var(--holo-text-dim)' }}>
+                    {ruleNameById(req.rule_id)}
+                  </td>
+                  <td style={{ padding: '8px 10px' }}>
+                    <span style={{ fontWeight: 600, color: statusColor(req.status) }}>{req.status}</span>
+                  </td>
+                  <td style={{ padding: '8px 10px', color: 'var(--holo-text-faint)', fontSize: 11 }}>
+                    {new Date(req.created_at).toLocaleString()}
+                  </td>
+                  <td style={{ padding: '8px 10px' }}>
+                    {req.status === 'pending' && (
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <HoloButton
+                          variant="primary"
+                          icon={<CheckCircle size={12} />}
+                          onClick={() => approveMutation.mutate(req)}
+                          disabled={approveMutation.isPending}
+                        >
+                          Approve
+                        </HoloButton>
+                        <HoloButton
+                          icon={<X size={12} />}
+                          onClick={() => { setRejectTarget(req); setRejectReason('') }}
+                        >
+                          Reject
+                        </HoloButton>
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </HoloCard>
+
+      {/* Rule modal */}
+      <PromotionRuleModal
+        open={ruleModalOpen}
+        rule={editingRule}
+        repos={repos}
+        onClose={() => setRuleModalOpen(false)}
+        onSaved={() => qc.invalidateQueries({ queryKey: ['promotion-rules'] })}
+      />
+
+      {/* Delete rule confirm */}
+      {deleteRuleTarget && (
+        <ModalShell title="Delete Promotion Rule" onClose={() => setDeleteRuleTarget(null)} width={380}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <p style={{ margin: 0, fontSize: 13, color: 'var(--holo-text)' }}>
+              Delete rule <strong>{deleteRuleTarget.name}</strong>? Pending requests using this rule will not be processed.
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <HoloButton onClick={() => setDeleteRuleTarget(null)}>Cancel</HoloButton>
+              <HoloButton variant="danger" onClick={() => deleteRuleMutation.mutate(deleteRuleTarget.id)} disabled={deleteRuleMutation.isPending}>
+                Delete
+              </HoloButton>
+            </div>
+          </div>
+        </ModalShell>
+      )}
+
+      {/* Reject modal */}
+      {rejectTarget && (
+        <ModalShell title="Reject Promotion Request" onClose={() => setRejectTarget(null)} width={400}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--holo-text-dim)', display: 'block', marginBottom: 5 }}>REASON</label>
+              <HoloInput
+                value={rejectReason}
+                onChange={e => setRejectReason(e.target.value)}
+                placeholder="Optional reason for rejection"
+              />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <HoloButton onClick={() => setRejectTarget(null)}>Cancel</HoloButton>
+              <HoloButton variant="danger" onClick={() => rejectMutation.mutate({ req: rejectTarget, reason: rejectReason })} disabled={rejectMutation.isPending}>
+                Reject
+              </HoloButton>
+            </div>
+          </div>
+        </ModalShell>
+      )}
+    </div>
+  )
+}
+
 export default function AdminPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const tabParam = searchParams.get('tab') as AdminTab | null
@@ -726,6 +1133,7 @@ export default function AdminPage() {
           { value: 'routing-rules', label: <><GitBranch size={13} style={{ marginRight: 5 }} />Routing Rules</> },
           { value: 'replication',   label: <><Share2 size={13} style={{ marginRight: 5 }} />Replication</> },
           { value: 'saml',          label: <><Shield size={13} style={{ marginRight: 5 }} />SAML SSO</> },
+          { value: 'promotion',     label: <><ArrowUpCircle size={13} style={{ marginRight: 5 }} />Promotion</> },
         ] as HoloTabItem[]}
         value={tab}
         onChange={v => setTab(v as AdminTab)}
@@ -1153,6 +1561,9 @@ export default function AdminPage() {
 
       {/* SAML SSO */}
       {tab === 'saml' && <SamlTab />}
+
+      {/* Promotion */}
+      {tab === 'promotion' && <PromotionTab />}
 
       {detailName && <BlobStoreDetailModal name={detailName} blobStores={blobs} onClose={() => setDetailName(null)} />}
       {createOpen && <CreateBlobStoreModal blobStores={blobs} onClose={() => setCreateOpen(false)} />}
