@@ -35,6 +35,7 @@ var (
 	_ repository.BlobStoreMigrationRepo = (*BlobStoreMigrationRepo)(nil)
 	_ repository.ScanResultRepo         = (*ScanResultRepo)(nil)
 	_ repository.ReplicationRepo        = (*ReplicationRepo)(nil)
+	_ repository.PromotionRepo          = (*PromotionRepo)(nil)
 	_ storage.BlobStore                 = (*BlobStore)(nil)
 )
 
@@ -1568,4 +1569,142 @@ func (r *ReplicationRepo) ListHistory(_ context.Context, ruleID string, limit in
 		}
 	}
 	return out, nil
+}
+
+// ── PromotionRepo mock ────────────────────────────────────────
+
+type PromotionRepo struct {
+	mu       sync.Mutex
+	Rules    map[string]*domain.PromotionRule
+	Requests map[string]*domain.PromotionRequest
+	nextID   int
+}
+
+func NewPromotionRepo() *PromotionRepo {
+	return &PromotionRepo{
+		Rules:    make(map[string]*domain.PromotionRule),
+		Requests: make(map[string]*domain.PromotionRequest),
+	}
+}
+
+func (r *PromotionRepo) genID() string {
+	r.nextID++
+	return fmt.Sprintf("promo-%d", r.nextID)
+}
+
+func (r *PromotionRepo) ListRules(_ context.Context) ([]domain.PromotionRule, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]domain.PromotionRule, 0, len(r.Rules))
+	for _, v := range r.Rules {
+		out = append(out, *v)
+	}
+	return out, nil
+}
+
+func (r *PromotionRepo) GetRule(_ context.Context, id string) (*domain.PromotionRule, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if v, ok := r.Rules[id]; ok {
+		cp := *v
+		return &cp, nil
+	}
+	return nil, nil
+}
+
+func (r *PromotionRepo) ListRulesByFromRepo(_ context.Context, fromRepo string) ([]domain.PromotionRule, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []domain.PromotionRule
+	for _, v := range r.Rules {
+		if v.FromRepo == fromRepo {
+			out = append(out, *v)
+		}
+	}
+	return out, nil
+}
+
+func (r *PromotionRepo) CreateRule(_ context.Context, rule *domain.PromotionRule) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if rule.ID == "" {
+		rule.ID = r.genID()
+	}
+	rule.CreatedAt = time.Now()
+	rule.UpdatedAt = rule.CreatedAt
+	cp := *rule
+	r.Rules[rule.ID] = &cp
+	return nil
+}
+
+func (r *PromotionRepo) UpdateRule(_ context.Context, rule *domain.PromotionRule) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	rule.UpdatedAt = time.Now()
+	cp := *rule
+	r.Rules[rule.ID] = &cp
+	return nil
+}
+
+func (r *PromotionRepo) DeleteRule(_ context.Context, id string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.Rules, id)
+	return nil
+}
+
+func (r *PromotionRepo) CreateRequest(_ context.Context, req *domain.PromotionRequest) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if req.ID == "" {
+		req.ID = r.genID()
+	}
+	req.CreatedAt = time.Now()
+	cp := *req
+	r.Requests[req.ID] = &cp
+	return nil
+}
+
+func (r *PromotionRepo) GetRequest(_ context.Context, id string) (*domain.PromotionRequest, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if v, ok := r.Requests[id]; ok {
+		cp := *v
+		return &cp, nil
+	}
+	return nil, nil
+}
+
+func (r *PromotionRepo) ListRequests(_ context.Context, status string) ([]domain.PromotionRequest, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []domain.PromotionRequest
+	for _, v := range r.Requests {
+		if status == "" || string(v.Status) == status {
+			out = append(out, *v)
+		}
+	}
+	return out, nil
+}
+
+func (r *PromotionRepo) UpdateRequestStatus(_ context.Context, id string, status domain.PromotionStatus,
+	reviewedBy *string, reviewedAt, completedAt *time.Time, errMsg string,
+) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	req, ok := r.Requests[id]
+	if !ok {
+		return fmt.Errorf("not found: %s", id)
+	}
+	req.Status = status
+	req.ReviewedBy = reviewedBy
+	req.ReviewedAt = reviewedAt
+	req.CompletedAt = completedAt
+	req.Error = errMsg
+	return nil
+}
+
+// PutBytes is a test helper that stores raw bytes under key in the BlobStore mock.
+func (b *BlobStore) PutBytes(ctx context.Context, key string, data []byte) error {
+	return b.Put(ctx, key, bytes.NewReader(data), int64(len(data)))
 }
