@@ -573,3 +573,42 @@ type ReplicationHistory struct {
 	TransferredBytes int64
 	Error            string
 }
+
+// ── Promotion ────────────────────────────────────────────────
+
+// PromotionRule defines a promotion route between two repositories.
+type PromotionRule struct {
+	ID                    string    `json:"id"`
+	Name                  string    `json:"name"`
+	FromRepo              string    `json:"from_repo"`
+	ToRepo                string    `json:"to_repo"`
+	PathFilter            string    `json:"path_filter,omitempty"` // CEL expression; empty = all paths
+	RequireScanPass       bool      `json:"require_scan_pass"`
+	RequireManualApproval bool      `json:"require_manual_approval"`
+	CreatedAt             time.Time `json:"created_at"`
+	UpdatedAt             time.Time `json:"updated_at"`
+}
+
+type PromotionStatus string
+
+const (
+	PromotionPending   PromotionStatus = "pending"
+	PromotionApproved  PromotionStatus = "approved"
+	PromotionRejected  PromotionStatus = "rejected"
+	PromotionCompleted PromotionStatus = "completed"
+	PromotionFailed    PromotionStatus = "failed"
+)
+
+// PromotionRequest is one artifact copy task produced by a Promote action.
+type PromotionRequest struct {
+	ID          string          `json:"id"`
+	RuleID      string          `json:"rule_id"`
+	ComponentID string          `json:"component_id"`
+	Status      PromotionStatus `json:"status"`
+	RequestedBy string          `json:"requested_by"`
+	ReviewedBy  *string         `json:"reviewed_by,omitempty"`
+	ReviewedAt  *time.Time      `json:"reviewed_at,omitempty"`
+	CompletedAt *time.Time      `json:"completed_at,omitempty"`
+	Error       string          `json:"error,omitempty"`
+	CreatedAt   time.Time       `json:"created_at"`
+}
