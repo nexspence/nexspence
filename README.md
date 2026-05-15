@@ -414,6 +414,7 @@ See [`docs/ha-setup.md`](docs/ha-setup.md) for the full HA guide including Kuber
 - **Group** — ordered union of hosted + proxy repos under a single URL
 - **Cleanup policies** — by age, last-downloaded, format; retain-N-versions; cron scheduler; **dry-run preview**
 - **Component tags** — free-form text tags on components, searchable via the API and UI
+- **Staging & Build Promotion** — promotion rules (`from_repo → to_repo`, CEL path filter, scan pass gate, manual approval gate); promote single or bulk-selected components from Browse; auto-approved or queued for admin review; blobs shared via reference (no data duplication); webhook events on each state transition
 
 ### High Availability
 - **Multi-node clustering** — stateless nodes behind any load balancer; all shared state in PostgreSQL + Redis + S3
@@ -433,7 +434,7 @@ See [`docs/ha-setup.md`](docs/ha-setup.md) for the full HA guide including Kuber
 - **Full-text search** — PostgreSQL tsvector across components and assets
 - **Browse UI** — tree view for raw and Docker repositories; file details with download, copy-link, and usage examples
 - **Audit log** — every API action logged; filterable by date/user/path; NDJSON streaming export; 90-day retention
-- **Webhooks** — `artifact.published`, `artifact.deleted`, `repo.created`, `repo.updated`, `repo.deleted` events; HMAC-SHA256 signatures
+- **Webhooks** — `artifact.published`, `artifact.deleted`, `repo.created`, `repo.updated`, `repo.deleted`, `promotion.requested`, `promotion.approved`, `promotion.rejected`, `promotion.done` events; HMAC-SHA256 signatures
 - **Vulnerability scanning** — Trivy (Docker images) + OSV.dev (Maven/npm/PyPI/Cargo); CVE results cached in `scan_results` DB table; aggregated dashboard with bulk re-scan
 - **In-app documentation** — `/docs` page (accessible to all users); Getting Started guide, 14 format reference pages with curl examples and copy-to-clipboard, 7 how-to guides (Creating Repos, Users, RBAC, Content Selectors, Security Scanning, Cleanup Policies, API Tokens) with numbered steps and screenshot placeholders
 - **Dark glassmorphism UI** — sidebar collapse/expand; tabbed admin pages; wizard-style create flows
@@ -882,6 +883,7 @@ Full OpenAPI 3.1 spec: [`docs/api-spec.yaml`](docs/api-spec.yaml)
 | 64 | Landing page — `landing/`; Holo dark design, app UI mockup, 14 format brand icons, Demo video placeholder, Docker Compose + Helm quick start with inline variant panels; `docker compose --profile landing up -d` on port 8080 | ✓ complete |
 | 65 | In-app documentation page — `/docs` route; `CodeBlock` with copy-to-clipboard; Getting Started + 12 format pages (URL, auth, publish, download curl examples); dynamic base URL via `window.location.origin` | ✓ complete |
 | 66 | Docs guides + Conda/Terraform + brand icons — 7 how-to guide articles with numbered steps and screenshot placeholder system; Conda + Terraform format docs; Simple Icons CDN brand icons on all 14 format nav items | ✓ complete |
+| 56 | Staging & Build Promotion — promotion rules (from/to repo, CEL path filter, scan pass gate, manual approval), single + bulk promote from Browse, AdminPage Promotion tab (Rules CRUD + Requests queue), webhook events | ✓ complete |
 | next | SBOM generation, cosign image signing | planned |
 | next | Prometheus metrics endpoint, OpenTelemetry traces | planned |
 | next | `nexctl` CLI, blob GC | planned |
