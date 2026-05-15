@@ -111,7 +111,7 @@ docker compose up -d
 
 > Change the admin password immediately after first login.
 
-For all deployment variants (MinIO, HA cluster, Keycloak SSO, from source) see **[docs/deployment.md](https://github.com/nexspence-oss/nexspence/blob/main/docs/deployment.md)**.
+For all deployment variants (MinIO, HA cluster, Keycloak SSO, from source) see **[docs/deployment.md](docs/deployment.md)**.
 
 ---
 
@@ -130,7 +130,7 @@ helm install nexspence \
   --create-namespace
 ```
 
-Five networking options (nginx, Traefik, Cilium ingress, Istio Gateway, Cilium Gateway API), external PostgreSQL, S3 storage, and HPA — see **[deploy/helm/nexspence/README.md](https://github.com/nexspence-oss/nexspence/blob/main/deploy/helm/nexspence/README.md)**.
+Five networking options (nginx, Traefik, Cilium ingress, Istio Gateway, Cilium Gateway API), external PostgreSQL, S3 storage, and HPA — see **[deploy/helm/nexspence/README.md](deploy/helm/nexspence/README.md)**.
 
 ---
 
@@ -190,14 +190,14 @@ Five networking options (nginx, Traefik, Cilium ingress, Istio Gateway, Cilium G
 
 | Document | Description |
 |----------|-------------|
-| [Deployment guide](https://github.com/nexspence-oss/nexspence/blob/main/docs/deployment.md) | All deployment variants — Docker Compose, HA, Keycloak, from source |
-| [HA setup](https://github.com/nexspence-oss/nexspence/blob/main/docs/ha-setup.md) | High Availability — Redis, health probes, scaling |
-| [OIDC setup](https://github.com/nexspence-oss/nexspence/blob/main/docs/oidc-setup.md) | OIDC SSO — Keycloak, Google, Entra ID, Okta |
-| [Webhooks](https://github.com/nexspence-oss/nexspence/blob/main/docs/webhooks.md) | Webhook events, payload format, HMAC verification |
-| [Security & RBAC](https://github.com/nexspence-oss/nexspence/blob/main/docs/security-rbac.md) | RBAC guide — Roles, Privileges, Content Selectors, CEL examples |
-| [API spec](https://github.com/nexspence-oss/nexspence/blob/main/docs/api-spec.yaml) | OpenAPI 3.1 spec (Nexus-compat + Nexspence-native) |
-| [Architecture](https://github.com/nexspence-oss/nexspence/blob/main/docs/architecture.md) | System diagram, layer responsibilities, request flow |
-| [Helm chart](https://github.com/nexspence-oss/nexspence/blob/main/deploy/helm/nexspence/README.md) | Full Helm chart reference |
+| [Deployment guide](docs/deployment.md) | All deployment variants — Docker Compose, HA, Keycloak, from source |
+| [HA setup](docs/ha-setup.md) | High Availability — Redis, health probes, scaling |
+| [OIDC setup](docs/oidc-setup.md) | OIDC SSO — Keycloak, Google, Entra ID, Okta |
+| [Webhooks](docs/webhooks.md) | Webhook events, payload format, HMAC verification |
+| [Security & RBAC](docs/security-rbac.md) | RBAC guide — Roles, Privileges, Content Selectors, CEL examples |
+| [API spec](docs/api-spec.yaml) | OpenAPI 3.1 spec (Nexus-compat + Nexspence-native) |
+| [Architecture](docs/architecture.md) | System diagram, layer responsibilities, request flow |
+| [Helm chart](deploy/helm/nexspence/README.md) | Full Helm chart reference |
 
 ---
 
