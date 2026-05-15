@@ -81,6 +81,8 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 	rbacRepo      := postgres.NewRBACRepo(pool)
 	rrRepo        := postgres.NewRoutingRuleRepo(pool)
 	replRepo      := postgres.NewReplicationRepo(pool)
+	promotionRepo  := postgres.NewPromotionRepo(pool)
+	scanRepo       := postgres.NewScanResultRepo(pool)
 	selectorSvc, svcErr := service.NewContentSelectorService(csRepo)
 	if svcErr != nil {
 		panic("content selector service init: " + svcErr.Error())
@@ -152,6 +154,14 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 	replSvc := service.NewReplicationService(replRepo, assetRepo, localBlob, cfg.Auth.JWTSecret, log)
 	go replSvc.StartCronScheduler(context.Background())
 
+	promotionSvc, err := service.NewPromotionService(
+		promotionRepo, componentRepo, assetRepo, repoRepo, blobRepo, scanRepo, localBlob, blobRegistry,
+	)
+	if err != nil {
+		panic("promotion service init: " + err.Error())
+	}
+	promotionSvc.WithWebhooks(webhookSvc)
+
 	// ── Format handlers ───────────────────────────────────────
 	formatDeps := formats.Deps{
 		Repos:      repoRepo,
@@ -194,12 +204,13 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 	cleanupH   := handlers.NewCleanupHandler(cleanupRepo, repoRepo, cleanupSvc)
 	auditH     := handlers.NewAuditHandler(auditRepo)
 	scanSvc  := service.NewScanService(componentRepo, cfg.HTTP.BaseURL).
-		WithScanResults(postgres.NewScanResultRepo(pool)).
+		WithScanResults(scanRepo).
 		WithCredentials(cfg.Bootstrap.AdminUsername, cfg.Bootstrap.AdminPassword)
 	scanH    := handlers.NewScanHandler(scanSvc)
 	tokenH     := handlers.NewTokenHandler(tokenSvc, userSvc, cfg.Auth.TokenMaxDays)
 	webhookH   := handlers.NewWebhookHandler(webhookSvc)
 	replH      := handlers.NewReplicationHandler(replSvc)
+	promotionH := handlers.NewPromotionHandler(promotionSvc)
 	roleH      := handlers.NewRoleHandler(roleRepo, userRepo)
 	privH      := handlers.NewPrivilegeHandler(privilegeRepo, roleRepo)
 	csH        := handlers.NewContentSelectorHandler(selectorSvc)
@@ -370,6 +381,12 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 		// ── Replication rules (read) ──────────────────────────
 		authed.GET("/api/v1/replication/rules", replH.List)
 		authed.GET("/api/v1/replication/rules/:id/history", replH.ListHistory)
+
+		// ── Promotion (authed) ──────────────────────────────────────
+		authed.GET("/api/v1/promotion/rules",                promotionH.ListRules)
+		authed.GET("/api/v1/promotion/requests",             promotionH.ListRequests)
+		authed.GET("/api/v1/components/:id/promotion-rules", promotionH.GetComponentRules)
+		authed.POST("/api/v1/promotion/promote",             promotionH.Promote)
 	}
 
 	// ── Admin-only endpoints (nx-admin role required) ─────────
@@ -452,6 +469,13 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 		admin.DELETE("/api/v1/replication/rules/:id", replH.Delete)
 		admin.POST("/api/v1/replication/rules/:id/run", replH.ManualRun)
 		admin.POST("/api/v1/replication/rules/:id/test", replH.TestConnection)
+
+		// ── Promotion (admin) ───────────────────────────────────────
+		admin.POST("/api/v1/promotion/rules",                          promotionH.CreateRule)
+		admin.PUT("/api/v1/promotion/rules/:id",                       promotionH.UpdateRule)
+		admin.DELETE("/api/v1/promotion/rules/:id",                    promotionH.DeleteRule)
+		admin.POST("/api/v1/promotion/requests/:id/approve",           promotionH.Approve)
+		admin.POST("/api/v1/promotion/requests/:id/reject",            promotionH.Reject)
 
 		// ── Audit log ─────────────────────────────────────────
 		admin.GET("/service/rest/v1/audit", auditH.List)
