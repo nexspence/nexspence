@@ -1,23 +1,24 @@
 # Nexspence — Deployment Guide
 
-## Quick Start
+## Download
 
-```bash
-git clone https://github.com/nexspence-oss/nexspence
-cd nexspence
-docker compose up -d
-```
+All releases — Docker images, `docker-compose.yml`, `config.yaml.example` — are at:
 
-Open http://localhost:8081 — login `admin` / `admin123`.
+**[github.com/skensell201/nexspence/releases](https://github.com/skensell201/nexspence/releases)**
+
+Download `docker-compose.yml` and `config.yaml.example` from the latest release, then follow the relevant section below.
 
 ---
 
 ## Docker Compose — Standard
 
 ```bash
-# 1. Clone
-git clone https://github.com/nexspence-oss/nexspence
-cd nexspence
+# 1. Download files from the latest release:
+#    https://github.com/skensell201/nexspence/releases/latest
+#    → docker-compose.yml
+#    → config.yaml.example  (rename to config.yaml and edit)
+
+cp config.yaml.example config.yaml
 
 # 2. Edit config.yaml — change at minimum:
 #      auth.jwt_secret        (min 32 characters)
@@ -43,8 +44,7 @@ docker compose logs -f nexspence
 
 ## Docker Compose — With MinIO (S3)
 
-MinIO is included in `docker-compose.yml` as an optional profile. Enable it
-by setting the storage type env var before starting:
+MinIO is included in `docker-compose.yml` as an optional profile:
 
 ```bash
 # Start with MinIO as the default blob store
@@ -60,15 +60,11 @@ NEXSPENCE_STORAGE_DEFAULT_TYPE=s3 \
 
 ## Docker Compose — HA Cluster
 
-`docker-compose.ha.yml` runs 2 Nexspence nodes, nginx (`least_conn` load
-balancer), Redis, MinIO, and PostgreSQL. All nodes are stateless — shared
-state lives in PostgreSQL, Redis, and S3.
+`docker-compose.ha.yml` (included in the release) runs 2 Nexspence nodes, nginx (`least_conn` load balancer), Redis, MinIO, and PostgreSQL. All nodes are stateless — shared state lives in PostgreSQL, Redis, and S3.
 
 ```bash
-# Start 2-node HA cluster
-docker compose \
-  -f docker-compose.ha.yml \
-  up -d
+# Download docker-compose.ha.yml from the latest release, then:
+docker compose -f docker-compose.ha.yml up -d
 
 # Load balancer:  http://localhost:8080
 # 2 x Nexspence + nginx LB + Redis + MinIO + PostgreSQL
@@ -84,79 +80,53 @@ redis:
   db: 0
 ```
 
-See [docs/ha-setup.md](ha-setup.md) for the full HA guide including
-Kubernetes probe examples.
+See [docs/ha-setup.md](ha-setup.md) for the full HA guide including Kubernetes probe examples.
 
 ---
 
 ## Docker Compose — With Keycloak SSO
 
-Starts a pre-configured Keycloak dev instance with the `nexspence` realm
-imported. "Sign in with Keycloak" appears on the login page automatically.
+Starts a pre-configured Keycloak dev instance with the `nexspence` realm imported. "Sign in with Keycloak" appears on the login page automatically.
 
 ```bash
-# Start with Keycloak OIDC provider
 OIDC_ENABLED=true \
-  docker compose \
-  --profile keycloak \
-  up -d
+  docker compose --profile keycloak up -d
 
 # Nexspence UI:    http://localhost:8081  (admin / admin123)
 # Keycloak admin:  http://localhost:8180  (admin / admin)
 # Test SSO user:   testuser / testpass (mapped to nx-admin role)
 ```
 
-See [docs/oidc-setup.md](oidc-setup.md) for manual OIDC config and all
-supported providers (Keycloak, Google, Entra ID, Okta).
+See [docs/oidc-setup.md](oidc-setup.md) for manual OIDC config and all supported providers (Keycloak, Google, Entra ID, Okta).
 
 ---
 
-## From Source
-
-**Requirements:** Go 1.22+, Node.js 22+, PostgreSQL 16+
+## Kubernetes (Helm)
 
 ```bash
-# 1. Clone
-git clone https://github.com/nexspence-oss/nexspence
-cd nexspence
-
-# 2. Start PostgreSQL only (skip if you have a local instance)
-docker compose up -d db
-
-# 3. Run backend — applies DB migrations automatically
-go run ./cmd/server serve
-
-# 4. In a separate terminal — frontend dev server with HMR
-cd frontend && npm ci
-npm run dev       # http://localhost:5173
-
-# — or — production build
-npm run build     # output → frontend/dist/
+cd deploy/helm/nexspence && helm dependency update
+helm install nexspence \
+  deploy/helm/nexspence \
+  -f deploy/helm/nexspence/values-examples/nginx.yaml \
+  --set config.jwtSecret="$(openssl rand -hex 32)" \
+  --set config.adminPassword="changeme" \
+  --namespace nexspence \
+  --create-namespace
 ```
 
-To produce a self-contained binary:
-
-```bash
-go build -o nexspence ./cmd/server
-./nexspence serve
-```
-
-The binary serves both the REST API and the built frontend SPA from
-`./frontend/dist`.
+Five networking options (nginx, Traefik, Cilium ingress, Istio Gateway, Cilium Gateway API), external PostgreSQL, S3 storage, and HPA — see [deploy/helm/nexspence/README.md](../deploy/helm/nexspence/README.md).
 
 ---
 
 ## Configuration Reference
 
-`config.yaml` is the primary configuration file. Every key can be
-overridden via an environment variable using the pattern
-`NEXSPENCE_<SECTION>_<KEY>` (uppercase, underscore-separated).
+`config.yaml` is the primary configuration file. Every key can be overridden via an environment variable using the pattern `NEXSPENCE_<SECTION>_<KEY>` (uppercase, underscore-separated).
 
 | Key | Default | Description |
 |-----|---------|-------------|
 | `http.addr` | `:8081` | Listen address |
 | `http.base_url` | `http://localhost:8081` | Public URL used in download links |
-| `database.dsn` | postgres://nexspence:nexspence@localhost:5437/nexspence | PostgreSQL connection string |
+| `database.dsn` | `postgres://nexspence:nexspence@localhost:5437/nexspence` | PostgreSQL connection string |
 | `storage.default_type` | `local` | `local` or `s3` |
 | `storage.local.base_path` | `./data/blobs` | Filesystem path for local blob store |
 | `storage.s3.bucket` | — | S3 bucket name (required when type=s3) |
