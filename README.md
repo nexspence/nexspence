@@ -98,7 +98,7 @@ View the full site with interactive architecture diagram, install guide, and com
 **Requirements:** [Docker](https://docs.docker.com/get-docker/) 24+ with Compose v2
 
 ```bash
-git clone https://github.com/nexspence-oss/nexspence
+git clone https://github.com/skensell201/nexspence
 cd nexspence
 docker compose up -d
 ```
