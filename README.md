@@ -115,6 +115,25 @@ For all deployment variants (MinIO, HA cluster, Keycloak SSO, from source) see *
 
 ---
 
+## CLI Tool — `nxs`
+
+Manage Nexspence from the terminal or CI/CD pipelines:
+
+```bash
+# Install
+curl -sSfL https://raw.githubusercontent.com/skensell201/nxs/main/install.sh | sh
+
+# Login and use
+nxs login --url http://localhost:8081 --user admin
+nxs repo list
+nxs push my-repo path/to/artifact.jar artifact.jar
+nxs search --repo maven-releases --q mylib --json | jq '.[].version'
+```
+
+Full command reference and CI/CD examples: **[github.com/skensell201/nxs](https://github.com/skensell201/nxs)**
+
+---
+
 ## Kubernetes (Helm)
 
 **Requirements:** Helm 3.x, Kubernetes >= 1.26
@@ -212,9 +231,10 @@ Five networking options (nginx, Traefik, Cilium ingress, Istio Gateway, Cilium G
 | 56 | Staging & Build Promotion — CEL filter, scan gate, approval queue | ✓ complete |
 | 60–63 | LDAP role mapping, Conda, Terraform, Helm chart | ✓ complete |
 | 64–67 | Landing page, in-app docs, security hardening | ✓ complete |
+| CLI | [`nxs` CLI](https://github.com/skensell201/nxs) — terminal & CI/CD client, v0.1.0 | ✓ complete |
 | next | SBOM generation, cosign image signing | planned |
 | next | Prometheus metrics endpoint, OpenTelemetry traces | planned |
-| next | `nexctl` CLI, blob GC | planned |
+| next | blob GC | planned |
 
 ---
 
