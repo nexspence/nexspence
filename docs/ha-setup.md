@@ -15,13 +15,12 @@ all shared state lives in the database, Redis, and object storage.
 
 ## Quick Start (Docker Compose)
 
-```bash
-# Clone the repo
-git clone https://github.com/skensell201/nexspence-core.git
-cd nexspence-core
+Download `docker-compose.ha.yml` from the latest release:
+**[github.com/skensell201/nexspence/releases](https://github.com/skensell201/nexspence/releases)**
 
+```bash
 # Start 2-node HA cluster
-docker compose -f docker-compose.ha.yml up --build
+docker compose -f docker-compose.ha.yml up -d
 ```
 
 Web UI: http://localhost:8080 (nginx load balances between both nodes)
