@@ -176,6 +176,29 @@ jobs:
             --notes-file release-notes.md \
             "release-assets/nexspence-${{ github.ref_name }}.zip"
 
+      - name: Sync docs and README to nexspence repo
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git clone https://x-access-token:${{ secrets.RELEASE_PAT }}@github.com/skensell201/nexspence.git /tmp/nexspence-pub
+
+          # Sync docs/
+          rsync -a --delete docs/ /tmp/nexspence-pub/docs/
+
+          # Sync Helm chart README
+          mkdir -p /tmp/nexspence-pub/deploy/helm/nexspence
+          cp deploy/helm/nexspence/README.md /tmp/nexspence-pub/deploy/helm/nexspence/README.md
+
+          # Sync root README
+          cp README.md /tmp/nexspence-pub/README.md
+
+          cd /tmp/nexspence-pub
+          git add docs/ deploy/helm/nexspence/README.md README.md
+          git diff --staged --quiet || \
+            git commit -m "docs: sync from nexspence-core ${{ github.ref_name }}"
+          git push origin main
+
       - name: Reset changelog for next release
         run: |
           git config user.name  "github-actions[bot]"
