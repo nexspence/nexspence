@@ -11,4 +11,5 @@
 
 ### 🐛 Bug Fixes
 
-_No bug fixes in this release._
+- **User creation now persists roles** — `UserService.Create` was silently ignoring the `roles` field; users created via the REST API or seed scripts now get their role assignments saved
+- **System Admin blank screen fixed** — `recharts` was missing from `node_modules`; running `npm install` in `frontend/` after pulling is required; added React `ErrorBoundary` so future render errors show a recoverable fallback instead of wiping the entire page
