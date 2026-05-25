@@ -111,6 +111,38 @@ docker compose up -d
 
 > Change the admin password immediately after first login.
 
+### Docker Compose Profiles
+
+The compose file uses profiles to opt into optional services. Combine as needed:
+
+| Profile | Adds | Command |
+|---------|------|---------|
+| _(none)_ | Nexspence + PostgreSQL + MinIO | `docker compose up -d` |
+| `monitoring` | Prometheus + Grafana | `docker compose --profile monitoring up -d` |
+| `keycloak` | Keycloak OIDC IdP | `OIDC_ENABLED=true docker compose --profile keycloak up -d` |
+| `keycloak` + `monitoring` | Both | `OIDC_ENABLED=true docker compose --profile keycloak --profile monitoring up -d` |
+| `dev` | Vite frontend dev server | `docker compose --profile dev up` |
+| `landing` | Landing page (port 8080) | `docker compose --profile landing up -d` |
+
+**Monitoring setup** — before starting the `monitoring` profile, create a Bearer token:
+
+```bash
+# Copy the example and fill in a valid nxs_* API token
+cp deploy/monitoring/prometheus-token.example deploy/monitoring/prometheus-token
+# edit the file and paste your token
+```
+
+Once running: Prometheus at **http://localhost:9090** · Grafana at **http://localhost:3000** (admin / admin)
+
+The pre-built Grafana dashboard (`Nexspence Overview`) loads automatically with 8 panels: requests/sec, error rate, latency p95, artifacts, storage, downloads, goroutines, memory.
+
+**Standalone monitoring** (target an existing Nexspence instance):
+
+```bash
+cd deploy/monitoring
+NEXSPENCE_URL=http://my-server:8081 docker compose up -d
+```
+
 For all deployment variants (MinIO, HA cluster, Keycloak SSO, from source) see **[docs/deployment.md](docs/deployment.md)**.
 
 ---
@@ -202,6 +234,7 @@ Five networking options (nginx, Traefik, Cilium ingress, Istio Gateway, Cilium G
 - Audit log — every action logged; NDJSON streaming export; 90-day partition rotation
 - Webhooks — HMAC-SHA256 signed; `artifact.published`, `artifact.deleted`, repo events
 - Content Replication — push to remote instance on cron schedule
+- **Monitoring** — Prometheus `/metrics` endpoint (Bearer-auth); pre-built Grafana dashboard; ring-buffer history API; UI Charts + Repositories tabs
 
 ---
 
@@ -231,9 +264,10 @@ Five networking options (nginx, Traefik, Cilium ingress, Istio Gateway, Cilium G
 | 56 | Staging & Build Promotion — CEL filter, scan gate, approval queue | ✓ complete |
 | 60–63 | LDAP role mapping, Conda, Terraform, Helm chart | ✓ complete |
 | 64–67 | Landing page, in-app docs, security hardening | ✓ complete |
+| 68 | Extended monitoring — Prometheus endpoint, Grafana dashboard, UI Charts tab | ✓ complete |
 | CLI | [`nxs` CLI](https://github.com/skensell201/nxs) — terminal & CI/CD client, v0.1.0 | ✓ complete |
 | next | SBOM generation, cosign image signing | planned |
-| next | Prometheus metrics endpoint, OpenTelemetry traces | planned |
+| next | OpenTelemetry traces | planned |
 | next | blob GC | planned |
 
 ---
