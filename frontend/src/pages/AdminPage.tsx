@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, lazy, Suspense } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Activity, Archive, ArrowRightLeft, ArrowUpCircle, CheckCircle, Database, Download, ExternalLink, GitBranch, HardDrive, Info, Network, Paperclip, Pause, Pencil, Play, Plus, RefreshCw, Share2, Shield, Trash2, Upload, Wifi, X } from 'lucide-react'
 import { nexusApi, nexspenceApi, apiClient, ImportRepoStats, ServiceStatus, RoutingRule, RoutingRuleInput, ReplicationRule, ReplicationHistory, ReplicationRuleInput, AuthConfig } from '@/api/client'
-import { MonitoringView } from '@/pages/MonitoringPage'
+const MonitoringView = lazy(() => import('@/pages/MonitoringPage').then(m => ({ default: m.MonitoringView })))
 import { Select } from '@/components/Select'
 import { HoloButton, HoloInput, HoloModal, HoloTabs, HoloCard, HoloTabItem, Wizard } from '@/components/holo'
 
@@ -1548,7 +1548,11 @@ export default function AdminPage() {
       )}
 
       {/* Monitoring */}
-      {tab === 'monitoring' && <MonitoringView />}
+      {tab === 'monitoring' && (
+        <Suspense fallback={<div style={{ color: 'var(--holo-text-faint)', fontSize: 13, padding: 24 }}>Loading…</div>}>
+          <MonitoringView />
+        </Suspense>
+      )}
 
       {/* Migration */}
       {tab === 'migration' && <MigrationTab />}
