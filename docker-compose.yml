@@ -203,8 +203,51 @@ services:
     ports:
       - "8079:80"
 
+  # ── Prometheus (profile: monitoring) ─────────────────────────
+  # Start with: docker compose --profile monitoring up
+  # UI: http://localhost:9090
+  prometheus:
+    profiles: [monitoring]
+    image: prom/prometheus:v2.51.0
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+    volumes:
+      - ./deploy/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/monitoring/prometheus-token:/etc/prometheus/token:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    depends_on:
+      nexspence:
+        condition: service_healthy
+
+  # ── Grafana (profile: monitoring) ─────────────────────────────
+  # Start with: docker compose --profile monitoring up
+  # UI: http://localhost:3000  (admin / admin)
+  grafana:
+    profiles: [monitoring]
+    image: grafana/grafana:10.4.0
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - ./deploy/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+
 volumes:
   postgres_data:
   nexspence_blobs:
   minio_data:
   frontend_node_modules:
+  prometheus_data:
+  grafana_data:
