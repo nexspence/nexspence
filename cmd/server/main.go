@@ -19,6 +19,7 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/db"
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/logger"
+	"github.com/nexspence-oss/nexspence/internal/metrics"
 	"github.com/nexspence-oss/nexspence/internal/repository/postgres"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/spf13/cobra"
@@ -126,6 +127,21 @@ func cmdServe() *cobra.Command {
 				log.Warn("blob store path sync failed", "err", err)
 				// Non-fatal — server still starts
 			}
+
+			// Seed Prometheus gauges from DB on startup.
+			{
+				var artifacts, bytes, downloads int64
+				_ = pool.QueryRow(cmd.Context(),
+					`SELECT COUNT(*), COALESCE(SUM(size_bytes),0), COALESCE(SUM(download_count),0) FROM assets`,
+				).Scan(&artifacts, &bytes, &downloads)
+				metrics.UpdateGauges(artifacts, bytes, downloads)
+				log.Info("metrics gauges seeded", "artifacts", artifacts, "bytes", bytes)
+			}
+
+			// Start background metrics sampler — stops on context cancellation.
+			samplerCtx, cancelSampler := context.WithCancel(cmd.Context())
+			defer cancelSampler()
+			metrics.StartSampler(samplerCtx, pool)
 
 			router := api.NewRouter(cfg, pool, log, Version)
 

@@ -33,11 +33,13 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/formats/terraform"
 	"github.com/nexspence-oss/nexspence/internal/formats/yum"
 	"github.com/nexspence-oss/nexspence/internal/logger"
+	"github.com/nexspence-oss/nexspence/internal/metrics"
 	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/repository/postgres"
 	"github.com/nexspence-oss/nexspence/internal/requestctx"
 	"github.com/nexspence-oss/nexspence/internal/service"
 	"github.com/nexspence-oss/nexspence/internal/storage"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 // NewRouter wires all routes and returns a ready http.Handler.
@@ -288,6 +290,8 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 
 	// Metrics (public — useful for monitoring without auth)
 	r.GET("/api/v1/metrics", handlers.MetricsHandler(pool))
+	// Prometheus scrape endpoint — requires Bearer auth (JWT or nxs_* token)
+	r.GET("/metrics", authMW, gin.WrapH(promhttp.HandlerFor(metrics.Registry, promhttp.HandlerOpts{})))
 
 	// ── Authenticated endpoints (all valid users) ────────────
 	authed := r.Group("", authMW)
@@ -342,6 +346,10 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 		authed.GET("/service/rest/v1/search", componentH.Search)
 		authed.GET("/service/rest/v1/search/assets", componentH.SearchAssets)
 		authed.GET("/service/rest/v1/search/assets/download", stubHandler("search-download"))
+
+		// ── Metrics history (authenticated) ──────────────────
+		authed.GET("/api/v1/metrics/history", handlers.HistoryHandler())
+		authed.GET("/api/v1/metrics/repos", handlers.ReposHandler(pool))
 
 		// ── API tokens (current user) ─────────────────────────
 		authed.GET("/api/v1/tokens", tokenH.List)
