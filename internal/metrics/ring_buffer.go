@@ -78,9 +78,11 @@ func StartSampler(ctx context.Context, pool *pgxpool.Pool) {
 
 func takeSample(ctx context.Context, pool *pgxpool.Pool) {
 	var artifacts, bytes, downloads int64
-	_ = pool.QueryRow(ctx,
+	if err := pool.QueryRow(ctx,
 		`SELECT COUNT(*), COALESCE(SUM(size_bytes),0), COALESCE(SUM(download_count),0) FROM assets`,
-	).Scan(&artifacts, &bytes, &downloads)
+	).Scan(&artifacts, &bytes, &downloads); err != nil {
+		return // skip sample on DB error; keep last-known values in gauges
+	}
 
 	UpdateGauges(artifacts, bytes, downloads)
 

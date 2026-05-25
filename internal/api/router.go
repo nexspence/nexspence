@@ -288,8 +288,6 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 		r.POST("/api/v1/auth/saml/acs",     samlH.ACS)
 	}
 
-	// Metrics (public — useful for monitoring without auth)
-	r.GET("/api/v1/metrics", handlers.MetricsHandler(pool))
 	// Prometheus scrape endpoint — requires Bearer auth (JWT or nxs_* token)
 	r.GET("/metrics", authMW, gin.WrapH(promhttp.HandlerFor(metrics.Registry, promhttp.HandlerOpts{})))
 
@@ -347,7 +345,8 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 		authed.GET("/service/rest/v1/search/assets", componentH.SearchAssets)
 		authed.GET("/service/rest/v1/search/assets/download", stubHandler("search-download"))
 
-		// ── Metrics history (authenticated) ──────────────────
+		// ── Metrics (authenticated) ───────────────────────────
+		authed.GET("/api/v1/metrics", handlers.MetricsHandler(pool))
 		authed.GET("/api/v1/metrics/history", handlers.HistoryHandler())
 		authed.GET("/api/v1/metrics/repos", handlers.ReposHandler(pool))
 

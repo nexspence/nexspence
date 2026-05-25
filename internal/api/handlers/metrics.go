@@ -90,6 +90,11 @@ func ReposHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 			}
 			result = append(result, rm)
 		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
 		c.JSON(http.StatusOK, result)
 	}
 }
