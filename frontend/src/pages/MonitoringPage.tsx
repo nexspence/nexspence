@@ -1,6 +1,11 @@
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Activity, Cpu, Database, Download, HardDrive, RefreshCw, TrendingUp, Upload, Trash2 } from 'lucide-react'
-import { nexusApi } from '@/api/client'
+import {
+  LineChart, Line, AreaChart, Area,
+  XAxis, YAxis, Tooltip, ResponsiveContainer,
+} from 'recharts'
+import { nexusApi, apiClient } from '@/api/client'
 
 interface MemStats {
   alloc_bytes: number
@@ -19,6 +24,24 @@ interface MetricsSnapshot {
   artifacts_deleted: number
   goroutines: number
   memory: MemStats
+}
+
+interface DataPoint {
+  timestamp: number
+  requests_total: number
+  request_errors: number
+  artifacts_stored: number
+  bytes_stored: number
+  downloads_total: number
+  goroutines: number
+}
+
+interface RepoMetric {
+  name: string
+  format: string
+  type: string
+  downloads: number
+  size_bytes: number
 }
 
 const S = {
@@ -63,6 +86,13 @@ function fmtNum(n: number) {
   return String(n)
 }
 
+function formatTimeLabel(ts: number): string {
+  const ageSeconds = Math.floor(Date.now() / 1000) - ts
+  if (ageSeconds < 60) return 'now'
+  const mins = Math.floor(ageSeconds / 60)
+  return `${mins}m ago`
+}
+
 function StatCard({ icon: Icon, color, title, value, sub }: {
   icon: React.ElementType; color: string; title: string; value: string; sub?: string
 }) {
@@ -78,24 +108,30 @@ function StatCard({ icon: Icon, color, title, value, sub }: {
   )
 }
 
-export function MonitoringView() {
-  const { data, isLoading, dataUpdatedAt, refetch } = useQuery<MetricsSnapshot>({
-    queryKey: ['metrics'],
-    queryFn: () => nexusApi.getMetrics().then(r => r.data),
-    refetchInterval: 10_000,
-  })
+const TABS = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'charts',   label: 'Charts' },
+  { id: 'repos',    label: 'Repositories' },
+] as const
 
+type TabId = typeof TABS[number]['id']
+
+function OverviewTab({ data, isLoading, refetch, dataUpdatedAt }: {
+  data: MetricsSnapshot | undefined
+  isLoading: boolean
+  refetch: () => void
+  dataUpdatedAt: number
+}) {
   const m = data
   const errorRate = m && m.requests_total > 0
     ? ((m.request_errors / m.requests_total) * 100).toFixed(1)
     : '0.0'
   const errColor = m && m.request_errors > 0 ? '#f59e0b' : '#22c55e'
   const heapPct = m ? Math.min((m.memory.alloc_bytes / m.memory.sys_bytes) * 100, 100) : 0
-
   const lastUpdate = dataUpdatedAt ? new Date(dataUpdatedAt).toLocaleTimeString() : '—'
 
   return (
-    <div style={S.page}>
+    <>
       <div style={S.header}>
         <div>
           <h1 style={S.title}>Monitoring</h1>
@@ -192,6 +228,203 @@ export function MonitoringView() {
       ) : (
         <p style={{ color: 'rgba(239,68,68,0.7)', fontSize: 14 }}>Failed to load metrics</p>
       )}
+    </>
+  )
+}
+
+const tickStyle = { fontSize: 10, fill: '#64748b' }
+const tooltipStyle = { contentStyle: { background: '#0d1526', border: '1px solid rgba(255,255,255,0.1)', fontSize: 12 } }
+
+function ChartsTab({ tab }: { tab: TabId }) {
+  const { data: history = [] } = useQuery<DataPoint[]>({
+    queryKey: ['metrics-history'],
+    queryFn: () => apiClient.get<DataPoint[]>('/api/v1/metrics/history').then(r => r.data),
+    refetchInterval: 30_000,
+    enabled: tab === 'charts',
+  })
+
+  const chartData = history.map((pt, i) => {
+    const prev = history[i - 1]
+    const dt = prev ? (pt.timestamp - prev.timestamp) || 10 : 10
+    return {
+      time: formatTimeLabel(pt.timestamp),
+      reqPerSec: prev ? Math.max(0, (pt.requests_total - prev.requests_total) / dt) : 0,
+      errPct: prev && (pt.requests_total - prev.requests_total) > 0
+        ? Math.max(0, ((pt.request_errors - prev.request_errors) / (pt.requests_total - prev.requests_total)) * 100)
+        : 0,
+      bytesStored: pt.bytes_stored,
+    }
+  })
+
+  const noData = (
+    <div style={{ height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(229,231,235,0.3)', fontSize: 13 }}>
+      No data yet — collecting samples every 10s
+    </div>
+  )
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {/* Requests/sec */}
+      <div style={S.card}>
+        <div style={S.cardTitle}>Requests / sec</div>
+        {chartData.length === 0 ? noData : (
+          <ResponsiveContainer width="100%" height={200}>
+            <LineChart data={chartData}>
+              <XAxis dataKey="time" tick={tickStyle} />
+              <YAxis tick={tickStyle} />
+              <Tooltip {...tooltipStyle} />
+              <Line type="monotone" dataKey="reqPerSec" stroke="#3b82f6" dot={false} strokeWidth={2} />
+            </LineChart>
+          </ResponsiveContainer>
+        )}
+      </div>
+
+      {/* Error rate % */}
+      <div style={S.card}>
+        <div style={S.cardTitle}>Error Rate %</div>
+        {chartData.length === 0 ? noData : (
+          <ResponsiveContainer width="100%" height={200}>
+            <LineChart data={chartData}>
+              <XAxis dataKey="time" tick={tickStyle} />
+              <YAxis tick={tickStyle} />
+              <Tooltip {...tooltipStyle} />
+              <Line type="monotone" dataKey="errPct" stroke="#f59e0b" dot={false} strokeWidth={2} />
+            </LineChart>
+          </ResponsiveContainer>
+        )}
+      </div>
+
+      {/* Storage growth */}
+      <div style={S.card}>
+        <div style={S.cardTitle}>Storage (bytes)</div>
+        {chartData.length === 0 ? noData : (
+          <ResponsiveContainer width="100%" height={200}>
+            <AreaChart data={chartData}>
+              <XAxis dataKey="time" tick={tickStyle} />
+              <YAxis tick={tickStyle} />
+              <Tooltip {...tooltipStyle} />
+              <Area type="monotone" dataKey="bytesStored" stroke="#22c55e" fill="rgba(34,197,94,0.1)" strokeWidth={2} />
+            </AreaChart>
+          </ResponsiveContainer>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function ReposTab({ tab }: { tab: TabId }) {
+  const [sortBy, setSortBy] = useState<'downloads' | 'size'>('downloads')
+
+  const { data: repos = [] } = useQuery<RepoMetric[]>({
+    queryKey: ['metrics-repos'],
+    queryFn: () => apiClient.get<RepoMetric[]>('/api/v1/metrics/repos').then(r => r.data),
+    refetchInterval: 60_000,
+    enabled: tab === 'repos',
+  })
+
+  const sorted = [...repos].sort((a, b) =>
+    sortBy === 'downloads' ? b.downloads - a.downloads : b.size_bytes - a.size_bytes
+  ).slice(0, 10)
+
+  const toggleBtnStyle = (active: boolean): React.CSSProperties => ({
+    background: active ? 'rgba(59,130,246,0.2)' : 'rgba(255,255,255,0.04)',
+    border: `1px solid ${active ? 'rgba(59,130,246,0.5)' : 'rgba(255,255,255,0.08)'}`,
+    borderRadius: 6,
+    padding: '4px 10px',
+    fontSize: 12,
+    color: active ? '#93c5fd' : 'rgba(229,231,235,0.5)',
+    cursor: 'pointer',
+  })
+
+  return (
+    <div style={S.card}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+        <div style={{ fontSize: 14, fontWeight: 600, color: '#dbeafe' }}>Top Repositories</div>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button style={toggleBtnStyle(sortBy === 'downloads')} onClick={() => setSortBy('downloads')}>Downloads</button>
+          <button style={toggleBtnStyle(sortBy === 'size')} onClick={() => setSortBy('size')}>Storage</button>
+        </div>
+      </div>
+
+      {repos.length === 0 ? (
+        <p style={{ color: 'rgba(229,231,235,0.3)', fontSize: 13 }}>No data yet</p>
+      ) : (
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <thead>
+            <tr>
+              <th style={{ textAlign: 'left', padding: '6px 8px', fontSize: 11, fontWeight: 600, color: 'rgba(229,231,235,0.4)', textTransform: 'uppercase', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>Repository</th>
+              <th style={{ textAlign: 'left', padding: '6px 8px', fontSize: 11, fontWeight: 600, color: 'rgba(229,231,235,0.4)', textTransform: 'uppercase', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>Format</th>
+              <th style={{ textAlign: 'left', padding: '6px 8px', fontSize: 11, fontWeight: 600, color: 'rgba(229,231,235,0.4)', textTransform: 'uppercase', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>Type</th>
+              <th style={{ textAlign: 'right', padding: '6px 8px', fontSize: 11, fontWeight: 600, color: 'rgba(229,231,235,0.4)', textTransform: 'uppercase', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>Downloads</th>
+              <th style={{ textAlign: 'right', padding: '6px 8px', fontSize: 11, fontWeight: 600, color: 'rgba(229,231,235,0.4)', textTransform: 'uppercase', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>Storage Used</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map(row => (
+              <tr key={row.name}>
+                <td style={{ padding: '8px 8px', borderBottom: '1px solid rgba(255,255,255,0.05)', color: '#dbeafe' }}>{row.name}</td>
+                <td style={{ padding: '8px 8px', borderBottom: '1px solid rgba(255,255,255,0.05)', color: '#dbeafe' }}>{row.format.toUpperCase()}</td>
+                <td style={{ padding: '8px 8px', borderBottom: '1px solid rgba(255,255,255,0.05)', color: '#dbeafe' }}>
+                  <span style={{ background: 'rgba(59,130,246,0.15)', color: '#93c5fd', padding: '1px 6px', borderRadius: 4, fontSize: 11 }}>{row.type}</span>
+                </td>
+                <td style={{ padding: '8px 8px', borderBottom: '1px solid rgba(255,255,255,0.05)', color: '#dbeafe', textAlign: 'right' }}>{fmtNum(row.downloads)}</td>
+                <td style={{ padding: '8px 8px', borderBottom: '1px solid rgba(255,255,255,0.05)', color: '#dbeafe', textAlign: 'right' }}>{fmtBytes(row.size_bytes)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  )
+}
+
+export function MonitoringView() {
+  const [tab, setTab] = useState<TabId>('overview')
+
+  const { data, isLoading, dataUpdatedAt, refetch } = useQuery<MetricsSnapshot>({
+    queryKey: ['metrics'],
+    queryFn: () => nexusApi.getMetrics().then(r => r.data),
+    refetchInterval: 10_000,
+  })
+
+  return (
+    <div style={S.page}>
+      {/* Tab bar */}
+      <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid rgba(255,255,255,0.08)', marginBottom: 4 }}>
+        {TABS.map(t => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            style={{
+              background: 'none',
+              border: 'none',
+              borderBottom: tab === t.id ? '2px solid #3b82f6' : '2px solid transparent',
+              color: tab === t.id ? '#dbeafe' : 'rgba(229,231,235,0.45)',
+              padding: '8px 16px',
+              fontSize: 14,
+              fontWeight: tab === t.id ? 600 : 400,
+              cursor: 'pointer',
+              marginBottom: -1,
+              transition: 'color 0.15s',
+            }}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'overview' && (
+        <OverviewTab
+          data={data}
+          isLoading={isLoading}
+          refetch={refetch}
+          dataUpdatedAt={dataUpdatedAt}
+        />
+      )}
+
+      {tab === 'charts' && <ChartsTab tab={tab} />}
+
+      {tab === 'repos' && <ReposTab tab={tab} />}
     </div>
   )
 }
