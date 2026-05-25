@@ -262,7 +262,15 @@ func (s *UserService) Create(ctx context.Context, u *domain.User, plainPassword 
 		u.Source = domain.UserSourceLocal
 	}
 
-	return s.users.Create(ctx, u)
+	if err := s.users.Create(ctx, u); err != nil {
+		return err
+	}
+	if len(u.Roles) > 0 {
+		if err := s.roles.SetUserRoles(ctx, u.ID, u.Roles); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *UserService) Update(ctx context.Context, username string, updates *domain.User) (*domain.User, error) {

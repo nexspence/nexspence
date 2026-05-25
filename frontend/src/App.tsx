@@ -1,4 +1,5 @@
-import { useEffect, Suspense, lazy } from 'react'
+import { useEffect, Suspense, lazy, Component } from 'react'
+import type { ReactNode, ErrorInfo } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import Layout from '@/components/Layout'
 import LoginPage from '@/pages/LoginPage'
@@ -16,6 +17,26 @@ const AdminPage = lazy(() => import('@/pages/AdminPage'))
 const SecurityPage = lazy(() => import('@/pages/SecurityPage'))
 const AuditPage = lazy(() => import('@/pages/AuditPage'))
 const DocsPage = lazy(() => import('@/pages/DocsPage'))
+
+class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+  state = { error: null }
+  static getDerivedStateFromError(error: Error) { return { error } }
+  componentDidCatch(_error: Error, _info: ErrorInfo) {}
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', gap: 12, color: '#64748b', fontSize: 14 }}>
+          <span style={{ fontSize: 24 }}>⚠</span>
+          <span>Something went wrong loading this page.</span>
+          <button onClick={() => { this.setState({ error: null }); window.history.back() }} style={{ marginTop: 8, padding: '6px 16px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.06)', color: '#94a3b8', cursor: 'pointer', fontSize: 13 }}>
+            Go back
+          </button>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
 
 function PageSkeleton() {
   return (
@@ -54,67 +75,67 @@ export default function App() {
           <Route
             path="browse"
             element={
-              <Suspense fallback={<PageSkeleton />}>
+              <ErrorBoundary><Suspense fallback={<PageSkeleton />}>
                 <BrowsePage />
-              </Suspense>
+              </Suspense></ErrorBoundary>
             }
           />
           <Route
             path="search"
             element={
-              <Suspense fallback={<PageSkeleton />}>
+              <ErrorBoundary><Suspense fallback={<PageSkeleton />}>
                 <SearchPage />
-              </Suspense>
+              </Suspense></ErrorBoundary>
             }
           />
           <Route
             path="users"
             element={
-              <Suspense fallback={<PageSkeleton />}>
+              <ErrorBoundary><Suspense fallback={<PageSkeleton />}>
                 <UsersPage />
-              </Suspense>
+              </Suspense></ErrorBoundary>
             }
           />
           <Route
             path="cleanup"
             element={
-              <Suspense fallback={<PageSkeleton />}>
+              <ErrorBoundary><Suspense fallback={<PageSkeleton />}>
                 <CleanupPage />
-              </Suspense>
+              </Suspense></ErrorBoundary>
             }
           />
           <Route
             path="admin"
             element={
-              <Suspense fallback={<PageSkeleton />}>
+              <ErrorBoundary><Suspense fallback={<PageSkeleton />}>
                 <AdminPage />
-              </Suspense>
+              </Suspense></ErrorBoundary>
             }
           />
           <Route path="migration" element={<Navigate to="/admin?tab=migration" replace />} />
           <Route
             path="security"
             element={
-              <Suspense fallback={<PageSkeleton />}>
+              <ErrorBoundary><Suspense fallback={<PageSkeleton />}>
                 <SecurityPage />
-              </Suspense>
+              </Suspense></ErrorBoundary>
             }
           />
           <Route
             path="audit"
             element={
-              <Suspense fallback={<PageSkeleton />}>
+              <ErrorBoundary><Suspense fallback={<PageSkeleton />}>
                 <AuditPage />
-              </Suspense>
+              </Suspense></ErrorBoundary>
             }
           />
           <Route path="monitoring" element={<Navigate to="/admin?tab=monitoring" replace />} />
           <Route
             path="docs"
             element={
-              <Suspense fallback={<PageSkeleton />}>
+              <ErrorBoundary><Suspense fallback={<PageSkeleton />}>
                 <DocsPage />
-              </Suspense>
+              </Suspense></ErrorBoundary>
             }
           />
         </Route>
