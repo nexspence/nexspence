@@ -183,8 +183,8 @@ jobs:
 
       - name: Sync docs and README to nexspence repo
         run: |
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name  "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
           git clone https://x-access-token:${{ secrets.RELEASE_PAT }}@github.com/skensell201/nexspence.git /tmp/nexspence-pub
 
@@ -206,8 +206,8 @@ jobs:
 
       - name: Reset changelog for next release
         run: |
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name  "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
           # Switch from detached tag HEAD to the actual main branch
           git switch main
           printf '### ✨ Features\n\n\n### 🐛 Bug Fixes\n\n_No bug fixes in this release._\n' > NEXT_RELEASE.md
