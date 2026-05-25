@@ -62,6 +62,15 @@ const S = {
   badge:      (color: string) => ({ fontSize: 11, fontWeight: 600, padding: '2px 7px', borderRadius: 4, background: color + '20', color }),
   bar:        { height: 6, borderRadius: 3, background: 'rgba(255,255,255,0.07)', overflow: 'hidden' as const, marginTop: 8 },
   sectionHd:  { fontSize: 14, fontWeight: 600, color: '#dbeafe', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 },
+  toggleBtn:  (active: boolean): React.CSSProperties => ({
+    background: active ? 'rgba(59,130,246,0.2)' : 'rgba(255,255,255,0.04)',
+    border: `1px solid ${active ? 'rgba(59,130,246,0.5)' : 'rgba(255,255,255,0.08)'}`,
+    borderRadius: 6,
+    padding: '4px 10px',
+    fontSize: 12,
+    color: active ? '#93c5fd' : 'rgba(229,231,235,0.5)',
+    cursor: 'pointer',
+  }),
 }
 
 function fmtBytes(b: number) {
@@ -127,7 +136,7 @@ function OverviewTab({ data, isLoading, refetch, dataUpdatedAt }: {
     ? ((m.request_errors / m.requests_total) * 100).toFixed(1)
     : '0.0'
   const errColor = m && m.request_errors > 0 ? '#f59e0b' : '#22c55e'
-  const heapPct = m ? Math.min((m.memory.alloc_bytes / m.memory.sys_bytes) * 100, 100) : 0
+  const heapPct = m ? Math.min((m.memory.alloc_bytes / (m.memory.sys_bytes || 1)) * 100, 100) : 0
   const lastUpdate = dataUpdatedAt ? new Date(dataUpdatedAt).toLocaleTimeString() : '—'
 
   return (
@@ -235,12 +244,11 @@ function OverviewTab({ data, isLoading, refetch, dataUpdatedAt }: {
 const tickStyle = { fontSize: 10, fill: '#64748b' }
 const tooltipStyle = { contentStyle: { background: '#0d1526', border: '1px solid rgba(255,255,255,0.1)', fontSize: 12 } }
 
-function ChartsTab({ tab }: { tab: TabId }) {
+function ChartsTab() {
   const { data: history = [] } = useQuery<DataPoint[]>({
     queryKey: ['metrics-history'],
     queryFn: () => apiClient.get<DataPoint[]>('/api/v1/metrics/history').then(r => r.data),
     refetchInterval: 30_000,
-    enabled: tab === 'charts',
   })
 
   const chartData = history.map((pt, i) => {
@@ -312,37 +320,26 @@ function ChartsTab({ tab }: { tab: TabId }) {
   )
 }
 
-function ReposTab({ tab }: { tab: TabId }) {
+function ReposTab() {
   const [sortBy, setSortBy] = useState<'downloads' | 'size'>('downloads')
 
   const { data: repos = [] } = useQuery<RepoMetric[]>({
     queryKey: ['metrics-repos'],
     queryFn: () => apiClient.get<RepoMetric[]>('/api/v1/metrics/repos').then(r => r.data),
     refetchInterval: 60_000,
-    enabled: tab === 'repos',
   })
 
   const sorted = [...repos].sort((a, b) =>
     sortBy === 'downloads' ? b.downloads - a.downloads : b.size_bytes - a.size_bytes
   ).slice(0, 10)
 
-  const toggleBtnStyle = (active: boolean): React.CSSProperties => ({
-    background: active ? 'rgba(59,130,246,0.2)' : 'rgba(255,255,255,0.04)',
-    border: `1px solid ${active ? 'rgba(59,130,246,0.5)' : 'rgba(255,255,255,0.08)'}`,
-    borderRadius: 6,
-    padding: '4px 10px',
-    fontSize: 12,
-    color: active ? '#93c5fd' : 'rgba(229,231,235,0.5)',
-    cursor: 'pointer',
-  })
-
   return (
     <div style={S.card}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
         <div style={{ fontSize: 14, fontWeight: 600, color: '#dbeafe' }}>Top Repositories</div>
         <div style={{ display: 'flex', gap: 6 }}>
-          <button style={toggleBtnStyle(sortBy === 'downloads')} onClick={() => setSortBy('downloads')}>Downloads</button>
-          <button style={toggleBtnStyle(sortBy === 'size')} onClick={() => setSortBy('size')}>Storage</button>
+          <button style={S.toggleBtn(sortBy === 'downloads')} onClick={() => setSortBy('downloads')}>Downloads</button>
+          <button style={S.toggleBtn(sortBy === 'size')} onClick={() => setSortBy('size')}>Storage</button>
         </div>
       </div>
 
@@ -422,9 +419,9 @@ export function MonitoringView() {
         />
       )}
 
-      {tab === 'charts' && <ChartsTab tab={tab} />}
+      {tab === 'charts' && <ChartsTab />}
 
-      {tab === 'repos' && <ReposTab tab={tab} />}
+      {tab === 'repos' && <ReposTab />}
     </div>
   )
 }
