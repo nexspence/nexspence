@@ -12,6 +12,11 @@ Nexspence — open-source universal artifact repository manager (Nexus OSS alter
 
 ## Installation
 
+Download `nexspence-vX.Y.Z.zip` from the latest release and extract it:
+**[github.com/skensell201/nexspence/releases](https://github.com/skensell201/nexspence/releases)**
+
+The Helm chart is at `deploy/helm/nexspence/` inside the extracted directory.
+
 ```bash
 # Fetch dependencies (bitnami/postgresql sub-chart)
 cd deploy/helm/nexspence
