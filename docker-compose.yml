@@ -204,6 +204,8 @@ services:
       - "8079:80"
 
   # ── Prometheus (profile: monitoring) ─────────────────────────
+  # Setup: cp deploy/monitoring/prometheus-token.example deploy/monitoring/prometheus-token
+  #        then put a valid nxs_* API token in that file (see .example for instructions)
   # Start with: docker compose --profile monitoring up
   # UI: http://localhost:9090
   prometheus:
