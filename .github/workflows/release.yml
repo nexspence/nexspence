@@ -183,9 +183,6 @@ jobs:
 
       - name: Sync docs and README to nexspence repo
         run: |
-          git config --global user.name  "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-
           git clone https://x-access-token:${{ secrets.RELEASE_PAT }}@github.com/skensell201/nexspence.git /tmp/nexspence-pub
 
           # Sync docs/
@@ -199,6 +196,8 @@ jobs:
           cp README.md /tmp/nexspence-pub/README.md
 
           cd /tmp/nexspence-pub
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
           git add docs/ deploy/helm/nexspence/README.md README.md
           git diff --staged --quiet || \
             git commit -m "docs: sync from nexspence-core ${{ github.ref_name }}"
