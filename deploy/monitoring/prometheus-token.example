@@ -1,0 +1,5 @@
+# Copy this file to deploy/monitoring/prometheus-token and replace with a real token.
+# Create an API token via:   POST /api/v1/me/tokens   (with Bearer auth)
+# Write it without trailing newline:
+#   printf 'nxs_your_token_here' > deploy/monitoring/prometheus-token
+nxs_replace_me

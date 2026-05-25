@@ -1,0 +1,76 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "id": 1, "title": "Requests / sec", "type": "timeseries",
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 0},
+      "targets": [{"datasource": {"type": "prometheus", "uid": "nexspence-prom"}, "expr": "sum(rate(nexspence_requests_total[1m]))", "legendFormat": "req/s", "refId": "A"}],
+      "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}, "unit": "reqps"}, "overrides": []},
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "single"}}
+    },
+    {
+      "id": 2, "title": "Error Rate %", "type": "timeseries",
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 0},
+      "targets": [{"datasource": {"type": "prometheus", "uid": "nexspence-prom"}, "expr": "sum(rate(nexspence_requests_total{status_class=\"5xx\"}[1m])) / sum(rate(nexspence_requests_total[1m])) * 100", "legendFormat": "error %", "refId": "A"}],
+      "fieldConfig": {"defaults": {"color": {"fixedColor": "red", "mode": "fixed"}, "unit": "percent", "min": 0, "max": 100}, "overrides": []},
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "single"}}
+    },
+    {
+      "id": 3, "title": "Request Latency p95", "type": "timeseries",
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 0},
+      "targets": [{"datasource": {"type": "prometheus", "uid": "nexspence-prom"}, "expr": "histogram_quantile(0.95, sum(rate(nexspence_request_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p95", "refId": "A"}],
+      "fieldConfig": {"defaults": {"color": {"fixedColor": "yellow", "mode": "fixed"}, "unit": "s"}, "overrides": []},
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "single"}}
+    },
+    {
+      "id": 4, "title": "Storage Used", "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "targets": [{"datasource": {"type": "prometheus", "uid": "nexspence-prom"}, "expr": "nexspence_bytes_stored_bytes", "legendFormat": "bytes", "refId": "A"}],
+      "fieldConfig": {"defaults": {"color": {"fixedColor": "green", "mode": "fixed"}, "unit": "bytes"}, "overrides": []},
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "single"}}
+    },
+    {
+      "id": 5, "title": "Downloads / min", "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "targets": [{"datasource": {"type": "prometheus", "uid": "nexspence-prom"}, "expr": "rate(nexspence_downloads_total[1m]) * 60", "legendFormat": "dl/min", "refId": "A"}],
+      "fieldConfig": {"defaults": {"color": {"fixedColor": "purple", "mode": "fixed"}, "unit": "short"}, "overrides": []},
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "single"}}
+    },
+    {
+      "id": 6, "title": "Artifacts Total", "type": "stat",
+      "gridPos": {"h": 4, "w": 8, "x": 0, "y": 16},
+      "targets": [{"datasource": {"type": "prometheus", "uid": "nexspence-prom"}, "expr": "nexspence_artifacts_total", "refId": "A"}],
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"steps": [{"color": "green", "value": null}]}, "unit": "short"}, "overrides": []},
+      "options": {"colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"}
+    },
+    {
+      "id": 7, "title": "Goroutines", "type": "stat",
+      "gridPos": {"h": 4, "w": 8, "x": 8, "y": 16},
+      "targets": [{"datasource": {"type": "prometheus", "uid": "nexspence-prom"}, "expr": "nexspence_goroutines", "refId": "A"}],
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 100}, {"color": "red", "value": 500}]}, "unit": "short"}, "overrides": []},
+      "options": {"colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"}
+    },
+    {
+      "id": 8, "title": "Memory Alloc", "type": "stat",
+      "gridPos": {"h": 4, "w": 8, "x": 16, "y": 16},
+      "targets": [{"datasource": {"type": "prometheus", "uid": "nexspence-prom"}, "expr": "nexspence_memory_alloc_bytes", "refId": "A"}],
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 536870912}, {"color": "red", "value": 1073741824}]}, "unit": "bytes"}, "overrides": []},
+      "options": {"colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"}
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 38,
+  "tags": ["nexspence"],
+  "templating": {"list": []},
+  "time": {"from": "now-1h", "to": "now"},
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Nexspence",
+  "uid": "nexspence-overview",
+  "version": 1
+}

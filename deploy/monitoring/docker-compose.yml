@@ -1,0 +1,44 @@
+# Standalone monitoring stack — connects to a Nexspence instance running on the host.
+# On Linux, host-gateway resolves to the Docker bridge IP (usually 172.17.0.1).
+# On Mac/Windows Docker Desktop, host-gateway resolves to the host machine's IP.
+#
+# Setup:
+#   printf 'nxs_your_token' > prometheus-token
+#   docker compose up -d
+#
+# Grafana: http://localhost:3000  (admin / admin, anonymous viewer also works)
+# Prometheus: http://localhost:9090
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus-token:/etc/prometheus/token:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=15d"
+    extra_hosts:
+      - "nexspence:host-gateway"
+
+  grafana:
+    image: grafana/grafana:10.4.0
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+
+volumes:
+  prometheus_data:
+  grafana_data:
