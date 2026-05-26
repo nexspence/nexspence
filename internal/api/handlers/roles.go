@@ -47,6 +47,12 @@ func (h *RoleHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	if len(ro.Privileges) > 0 {
+		if err := h.roles.SetPrivileges(c.Request.Context(), ro.ID, ro.Privileges); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
 	c.JSON(http.StatusCreated, ro)
 }
 
@@ -59,6 +65,10 @@ func (h *RoleHandler) Update(c *gin.Context) {
 	}
 	ro.ID = c.Param("id")
 	if err := h.roles.Update(c.Request.Context(), &ro); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := h.roles.SetPrivileges(c.Request.Context(), ro.ID, ro.Privileges); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
