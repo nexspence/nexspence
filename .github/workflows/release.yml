@@ -207,8 +207,10 @@ jobs:
         run: |
           git config --global user.name  "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          # Switch from detached tag HEAD to the actual main branch
+          # Switch from detached tag HEAD to the actual main branch and sync
+          # (main may have advanced since the tag was pushed, e.g. a force-push)
           git switch main
+          git pull --rebase origin main
           printf '### ✨ Features\n\n\n### 🐛 Bug Fixes\n\n_No bug fixes in this release._\n' > NEXT_RELEASE.md
           git add NEXT_RELEASE.md
           # Commit only if there is something to commit
