@@ -3,4 +3,4 @@
 
 ### 🐛 Bug Fixes
 
-- **Docker bind-mount fix** — added `RUN touch /app/config.yaml` to Dockerfile; without a placeholder file in the image, Docker Desktop (Mac) created a directory at that path and failed to mount the host config file with `not a directory` error
+- **Docker bind-mount fix** — `config.yaml.example` is now bundled in the image as `/app/config.yaml`; without a file at that path Docker Desktop (Mac) created a directory and failed with `not a directory` on bind-mount

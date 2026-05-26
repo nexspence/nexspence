@@ -53,8 +53,8 @@ RUN set -eu; \
 WORKDIR /app
 
 COPY --from=builder /nexspence /app/nexspence
+COPY --from=builder /src/config.yaml.example /app/config.yaml
 COPY --from=frontend-builder /frontend/dist /app/frontend/dist
-RUN touch /app/config.yaml
 
 EXPOSE 8081 5000
 
