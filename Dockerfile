@@ -54,6 +54,7 @@ WORKDIR /app
 
 COPY --from=builder /nexspence /app/nexspence
 COPY --from=frontend-builder /frontend/dist /app/frontend/dist
+RUN touch /app/config.yaml
 
 EXPOSE 8081 5000
 
