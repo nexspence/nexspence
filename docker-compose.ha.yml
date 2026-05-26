@@ -3,6 +3,7 @@
 # Run modes:
 #   Without Keycloak (default):  docker compose -f docker-compose.ha.yml up
 #   With Keycloak SSO:           OIDC_ENABLED=true docker compose -f docker-compose.ha.yml --profile keycloak up
+#   With monitoring:             docker compose -f docker-compose.ha.yml --profile monitoring up
 #
 # Web UI: http://localhost:8080 (nginx load balancer, round-robin across both nodes)
 
@@ -167,7 +168,54 @@ services:
       nexspence_2:
         condition: service_healthy
 
+  # ── Prometheus (profile: monitoring) ─────────────────────────
+  # Setup: cp deploy/monitoring/prometheus-token.example deploy/monitoring/prometheus-token
+  #        then put a valid nxs_* API token in that file
+  # Start with: docker compose -f docker-compose.ha.yml --profile monitoring up
+  # UI: http://localhost:9090
+  prometheus:
+    profiles: [monitoring]
+    image: prom/prometheus:v2.51.0
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+    volumes:
+      - ./deploy/monitoring/prometheus-ha.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/monitoring/prometheus-token:/etc/prometheus/token:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    depends_on:
+      nexspence_1:
+        condition: service_healthy
+      nexspence_2:
+        condition: service_healthy
+
+  # ── Grafana (profile: monitoring) ─────────────────────────────
+  # Start with: docker compose -f docker-compose.ha.yml --profile monitoring up
+  # UI: http://localhost:3000  (admin / admin)
+  grafana:
+    profiles: [monitoring]
+    image: grafana/grafana:10.4.0
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - ./deploy/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+
 volumes:
   postgres_data:
   redis_data:
   minio_data:
+  prometheus_data:
+  grafana_data:
