@@ -117,7 +117,7 @@ services:
       - "5001:5000"   # Docker registry HTTP port
     volumes:
       - nexspence_blobs:/data/blobs
-      - ${CONFIG_FILE:-./config.yaml.example}:/app/config.yaml:ro
+      - ${CONFIG_FILE:-./config.yaml}:/app/config.yaml:ro
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8081/service/rest/v1/status/check"]
       interval: 10s

@@ -141,7 +141,7 @@ services:
       NEXSPENCE_OIDC_PROVISIONING: "jit"
       NEXSPENCE_OIDC_SCOPES: "openid,profile,email"
     volumes:
-      - ${CONFIG_FILE:-./config.yaml.example}:/app/config.yaml:ro
+      - ${CONFIG_FILE:-./config.yaml}:/app/config.yaml:ro
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8081/healthz"]
       interval: 10s
