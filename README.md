@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="frontend/src/assets/logo.png" alt="Nexspence" width="380">
+  <img src="docs/assets/logo.png" alt="Nexspence" width="380">
   <br><br>
   <p><strong>Free, open-source universal artifact repository manager</strong></p>
   <p>A full-featured self-hosted alternative to Sonatype Nexus Repository</p>
@@ -293,7 +293,7 @@ AGPLv3 — see [LICENSE](LICENSE)
 ---
 
 <div align="center">
-  <img src="frontend/src/assets/mini_logo.png" alt="Nexspence" width="60">
+  <img src="docs/assets/mini_logo.png" alt="Nexspence" width="60">
   <br>
   <sub>AGPLv3 License · Built with Go + React</sub>
 </div>
