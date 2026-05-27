@@ -192,7 +192,7 @@ services:
     ports:
       - "8080:80"
 
-  # ── nexspence.online website ───────────────────────────────────
+  # ── nexspence.com website ───────────────────────────────────
   # Start with: docker compose --profile website up -d website
   # URL: http://localhost:8079
   website:
