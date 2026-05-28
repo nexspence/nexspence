@@ -350,6 +350,63 @@ open http://localhost:8081  <span class="cc"># default login: admin / admin123</
   <div class="alert-info" data-i18n="qs.note"><strong>Note:</strong> Change the default password immediately after first login. The bootstrap admin credentials are set in <code>config.yaml</code> under the <code>bootstrap</code> key.</div>
 </template>
 
+<template id="tpl-repositories">
+  <div class="doc-section-title" data-i18n="repo.title">Repositories</div>
+  <div class="doc-section-sub" data-i18n="repo.sub">Nexspence organises artifacts into repositories. Each repository has a type (Hosted, Proxy, or Group) and a format (Maven, Docker, npm, etc.).</div>
+
+  <div class="inst-sep" data-i18n="repo.types.sep">Repository Types</div>
+  <div class="step-list">
+    <div class="step-item">
+      <div class="step-num" style="background:linear-gradient(135deg,#22c55e,#16a34a)">H</div>
+      <div>
+        <div class="step-title" data-i18n="repo.hosted.title">Hosted</div>
+        <div class="step-desc" data-i18n="repo.hosted.desc">Stores artifacts you publish directly. Use for internal builds, release binaries, private packages. Supports upload via CI/CD pipelines.</div>
+      </div>
+    </div>
+    <div class="step-item">
+      <div class="step-num" style="background:linear-gradient(135deg,#f59e0b,#d97706)">P</div>
+      <div>
+        <div class="step-title" data-i18n="repo.proxy.title">Proxy</div>
+        <div class="step-desc" data-i18n="repo.proxy.desc">Caches artifacts from a remote registry (Maven Central, npmjs, PyPI, Docker Hub, etc.). First request fetches from upstream; subsequent requests serve from cache. Reduces bandwidth and provides availability even if upstream is down.</div>
+      </div>
+    </div>
+    <div class="step-item">
+      <div class="step-num" style="background:linear-gradient(135deg,#8b5cf6,#7c3aed)">G</div>
+      <div>
+        <div class="step-title" data-i18n="repo.group.title">Group</div>
+        <div class="step-desc" data-i18n="repo.group.desc">Aggregates multiple repositories (hosted + proxy) under one URL. Clients use a single endpoint; Nexspence searches members in order and returns the first match. Ideal for giving developers one URL for all dependencies.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="inst-sep" data-i18n="repo.create.sep">Creating a Repository</div>
+  <div class="step-list">
+    <div class="step-item"><div class="step-num">01</div><div><div class="step-title" data-i18n="repo.create.s1.title">Open the Repositories page</div><div class="step-desc" data-i18n="repo.create.s1.desc">Navigate to <strong>Repositories</strong> in the sidebar. Click the <strong>+ Create</strong> button in the top-right corner.</div></div></div>
+    <div class="step-item"><div class="step-num">02</div><div><div class="step-title" data-i18n="repo.create.s2.title">Choose type and format</div><div class="step-desc" data-i18n="repo.create.s2.desc">Select the repository type (Hosted / Proxy / Group) and format (Maven, npm, Docker, etc.) in the wizard. The name must be unique and URL-safe.</div></div></div>
+    <div class="step-item"><div class="step-num">03</div><div><div class="step-title" data-i18n="repo.create.s3.title">Configure format-specific settings</div><div class="step-desc" data-i18n="repo.create.s3.desc">For <strong>Proxy</strong>: enter the upstream Remote URL (e.g. <code>https://registry.npmjs.org</code>). For <strong>Group</strong>: select member repositories in order. For all types: optionally assign a blob store and cleanup policy.</div></div></div>
+    <div class="step-item"><div class="step-num">04</div><div><div class="step-title" data-i18n="repo.create.s4.title">Use the repository URL</div><div class="step-desc" data-i18n="repo.create.s4.desc">After creation the URL is shown on the repository card: <code>http://localhost:8081/repository/{name}/</code>. Point your build tool at this URL.</div></div></div>
+  </div>
+
+  <div class="inst-sep" data-i18n="repo.urls.sep">Repository URL Patterns</div>
+  <table class="doc-table">
+    <thead><tr><th data-i18n="repo.urls.th.format">Format</th><th data-i18n="repo.urls.th.url">URL pattern</th><th data-i18n="repo.urls.th.notes">Notes</th></tr></thead>
+    <tbody>
+      <tr><td>Maven</td><td><code>/repository/{name}/</code></td><td data-i18n="repo.urls.maven">Use as <code>&lt;url&gt;</code> in <code>pom.xml</code> or <code>settings.xml</code></td></tr>
+      <tr><td>npm</td><td><code>/repository/{name}/</code></td><td data-i18n="repo.urls.npm">Use as <code>registry</code> in <code>.npmrc</code></td></tr>
+      <tr><td>PyPI</td><td><code>/repository/{name}/simple/</code></td><td data-i18n="repo.urls.pypi">Use as <code>index-url</code> in <code>pip.conf</code></td></tr>
+      <tr><td>Docker</td><td><code>localhost:5000/{name}</code></td><td data-i18n="repo.urls.docker">Registry port 5000, image name includes repo</td></tr>
+      <tr><td>Helm</td><td><code>/repository/{name}/</code></td><td data-i18n="repo.urls.helm">Add with <code>helm repo add</code></td></tr>
+      <tr><td>Go</td><td><code>/repository/{name}/</code></td><td data-i18n="repo.urls.go">Set as <code>GOPROXY</code></td></tr>
+      <tr><td>NuGet</td><td><code>/repository/{name}/index.json</code></td><td data-i18n="repo.urls.nuget">v3 flat container endpoint</td></tr>
+      <tr><td>Cargo</td><td><code>/repository/{name}/</code></td><td data-i18n="repo.urls.cargo">Sparse index endpoint</td></tr>
+      <tr><td>Raw</td><td><code>/repository/{name}/</code></td><td data-i18n="repo.urls.raw">PUT/GET any path</td></tr>
+    </tbody>
+  </table>
+
+  <div class="inst-sep" data-i18n="repo.anon.sep">Anonymous Access</div>
+  <div class="alert-info" data-i18n="repo.anon.info">Enable <strong>Allow anonymous access</strong> on a repository to let unauthenticated users download artifacts. Write operations always require authentication. Configure globally in <strong>Admin → Security → Anonymous Access</strong> and per-repository in the repo settings.</div>
+</template>
+
 <template id="tpl-install">
   <div class="doc-section-title" data-i18n="inst.title">Installation</div>
   <div class="doc-section-sub" data-i18n="inst.sub">Docker image: <code>ghcr.io/skensell201/nexspence:latest</code> — linux/amd64 and linux/arm64. Download the release zip from <a href="https://github.com/skensell201/nexspence/releases/latest" target="_blank" rel="noopener" style="color:var(--blue)">GitHub Releases</a>.</div>
@@ -652,6 +709,30 @@ const TRANSLATIONS={
     'qs.s3.title':'Start the stack',
     'qs.s3.desc':'<code>docker compose up -d</code> — waits for PostgreSQL, runs migrations, serves the UI at <code>http://localhost:8081</code>.',
     'qs.note':'<strong>Note:</strong> Change the default password immediately after first login. Bootstrap credentials are set in <code>config.yaml</code> under the <code>bootstrap</code> key.',
+    'repo.title':'Repositories',
+    'repo.sub':'Nexspence organises artifacts into repositories. Each repository has a type (Hosted, Proxy, or Group) and a format (Maven, Docker, npm, etc.).',
+    'repo.types.sep':'Repository Types',
+    'repo.hosted.title':'Hosted','repo.hosted.desc':'Stores artifacts you publish directly. Use for internal builds, release binaries, private packages.',
+    'repo.proxy.title':'Proxy','repo.proxy.desc':'Caches artifacts from a remote registry (Maven Central, npmjs, PyPI, Docker Hub, etc.). First request fetches from upstream; subsequent requests serve from cache.',
+    'repo.group.title':'Group','repo.group.desc':'Aggregates multiple repositories (hosted + proxy) under one URL. Clients use a single endpoint; Nexspence searches members in order and returns the first match.',
+    'repo.create.sep':'Creating a Repository',
+    'repo.create.s1.title':'Open the Repositories page','repo.create.s1.desc':'Navigate to <strong>Repositories</strong> in the sidebar. Click the <strong>+ Create</strong> button in the top-right corner.',
+    'repo.create.s2.title':'Choose type and format','repo.create.s2.desc':'Select the repository type (Hosted / Proxy / Group) and format. The name must be unique and URL-safe.',
+    'repo.create.s3.title':'Configure format-specific settings','repo.create.s3.desc':'For <strong>Proxy</strong>: enter the upstream Remote URL. For <strong>Group</strong>: select member repositories in order. Optionally assign a blob store and cleanup policy.',
+    'repo.create.s4.title':'Use the repository URL','repo.create.s4.desc':'After creation the URL is shown on the repository card: <code>http://localhost:8081/repository/{name}/</code>.',
+    'repo.urls.sep':'Repository URL Patterns',
+    'repo.urls.th.format':'Format','repo.urls.th.url':'URL pattern','repo.urls.th.notes':'Notes',
+    'repo.urls.maven':'Use as <code>&lt;url&gt;</code> in <code>pom.xml</code> or <code>settings.xml</code>',
+    'repo.urls.npm':'Use as <code>registry</code> in <code>.npmrc</code>',
+    'repo.urls.pypi':'Use as <code>index-url</code> in <code>pip.conf</code>',
+    'repo.urls.docker':'Registry port 5000, image name includes repo',
+    'repo.urls.helm':'Add with <code>helm repo add</code>',
+    'repo.urls.go':'Set as <code>GOPROXY</code>',
+    'repo.urls.nuget':'v3 flat container endpoint',
+    'repo.urls.cargo':'Sparse index endpoint',
+    'repo.urls.raw':'PUT/GET any path',
+    'repo.anon.sep':'Anonymous Access',
+    'repo.anon.info':'Enable <strong>Allow anonymous access</strong> on a repository to let unauthenticated users download artifacts. Write operations always require authentication.',
     'inst.title':'Installation',
     'inst.sub':'Docker image: <code>ghcr.io/skensell201/nexspence:latest</code> — linux/amd64 and linux/arm64. Download the release zip from <a href="https://github.com/skensell201/nexspence/releases/latest" target="_blank" rel="noopener" style="color:var(--blue)">GitHub Releases</a>.',
     'inst.v.std':'Standard','inst.v.ha':'HA Cluster','inst.v.mon':'+ Monitoring',
@@ -735,6 +816,30 @@ const TRANSLATIONS={
     'qs.s3.title':'Запустите стек',
     'qs.s3.desc':'<code>docker compose up -d</code> — дождётся PostgreSQL, применит миграции и запустит UI на <code>http://localhost:8081</code>.',
     'qs.note':'<strong>Важно:</strong> смените пароль администратора сразу после первого входа. Учётные данные задаются в <code>config.yaml</code> в разделе <code>bootstrap</code>.',
+    'repo.title':'Репозитории',
+    'repo.sub':'Nexspence хранит артефакты в репозиториях. Каждый репозиторий имеет тип (Hosted, Proxy или Group) и формат (Maven, Docker, npm и др.).',
+    'repo.types.sep':'Типы репозиториев',
+    'repo.hosted.title':'Hosted','repo.hosted.desc':'Хранит артефакты, которые вы публикуете напрямую. Используйте для внутренних сборок, релизных бинарей, приватных пакетов.',
+    'repo.proxy.title':'Proxy','repo.proxy.desc':'Кэширует артефакты из удалённого реестра (Maven Central, npmjs, PyPI, Docker Hub и др.). Первый запрос идёт к upstream, последующие обслуживаются из кэша.',
+    'repo.group.title':'Group','repo.group.desc':'Объединяет несколько репозиториев (hosted + proxy) под одним URL. Клиенты используют единый endpoint; Nexspence ищет в членах по порядку и возвращает первое совпадение.',
+    'repo.create.sep':'Создание репозитория',
+    'repo.create.s1.title':'Откройте страницу Repositories','repo.create.s1.desc':'Перейдите в <strong>Repositories</strong> в сайдбаре. Нажмите кнопку <strong>+ Create</strong> в правом верхнем углу.',
+    'repo.create.s2.title':'Выберите тип и формат','repo.create.s2.desc':'Выберите тип (Hosted / Proxy / Group) и формат. Имя должно быть уникальным и допустимым для URL.',
+    'repo.create.s3.title':'Настройте параметры формата','repo.create.s3.desc':'Для <strong>Proxy</strong>: укажите Remote URL upstream. Для <strong>Group</strong>: выберите репозитории-члены по порядку. Опционально назначьте blob store и политику очистки.',
+    'repo.create.s4.title':'Используйте URL репозитория','repo.create.s4.desc':'После создания URL отображается на карточке репозитория: <code>http://localhost:8081/repository/{name}/</code>.',
+    'repo.urls.sep':'Шаблоны URL репозиториев',
+    'repo.urls.th.format':'Формат','repo.urls.th.url':'Шаблон URL','repo.urls.th.notes':'Примечания',
+    'repo.urls.maven':'Используйте как <code>&lt;url&gt;</code> в <code>pom.xml</code> или <code>settings.xml</code>',
+    'repo.urls.npm':'Используйте как <code>registry</code> в <code>.npmrc</code>',
+    'repo.urls.pypi':'Используйте как <code>index-url</code> в <code>pip.conf</code>',
+    'repo.urls.docker':'Порт реестра 5000, имя образа включает репозиторий',
+    'repo.urls.helm':'Добавьте через <code>helm repo add</code>',
+    'repo.urls.go':'Установите как <code>GOPROXY</code>',
+    'repo.urls.nuget':'Endpoint v3 flat container',
+    'repo.urls.cargo':'Sparse index endpoint',
+    'repo.urls.raw':'PUT/GET любого пути',
+    'repo.anon.sep':'Анонимный доступ',
+    'repo.anon.info':'Включите <strong>Allow anonymous access</strong> для репозитория, чтобы неаутентифицированные пользователи могли скачивать артефакты. Операции записи всегда требуют аутентификации.',
     'inst.title':'Установка',
     'inst.sub':'Docker-образ: <code>ghcr.io/skensell201/nexspence:latest</code> — linux/amd64 и linux/arm64. Скачайте архив релиза с <a href="https://github.com/skensell201/nexspence/releases/latest" target="_blank" rel="noopener" style="color:var(--blue)">GitHub Releases</a>.',
     'inst.v.std':'Стандарт',
