@@ -299,11 +299,11 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
   <div class="step-list">
     <div class="step-item">
       <div class="step-num">01</div>
-      <div><div class="step-title">Clone the demo repository</div><div class="step-desc"><code>git clone https://github.com/skensell201/nexspence.git &amp;&amp; cd nexspence</code></div></div>
+      <div><div class="step-title">Download the latest release</div><div class="step-desc">Go to <a href="https://github.com/skensell201/nexspence/releases/latest" target="_blank" rel="noopener" style="color:var(--blue)">GitHub Releases</a>, download <code>nexspence-vX.Y.Z.zip</code> and unpack it.</div></div>
     </div>
     <div class="step-item">
       <div class="step-num">02</div>
-      <div><div class="step-title">Copy and edit the config</div><div class="step-desc">Copy <code>config.yaml.example</code> → <code>config.yaml</code> and set a strong <code>admin_password</code> and <code>jwt_secret</code>.</div></div>
+      <div><div class="step-title">Configure</div><div class="step-desc">Copy <code>config.yaml.example</code> → <code>config.yaml</code> and set a strong <code>admin_password</code> and <code>jwt_secret</code>.</div></div>
     </div>
     <div class="step-item">
       <div class="step-num">03</div>
@@ -312,9 +312,8 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
   </div>
   <div class="cb">
     <div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
-    <div class="cb-body"><span class="cc"># Clone</span>
-git clone https://github.com/skensell201/nexspence.git
-cd nexspence
+    <div class="cb-body"><span class="cc"># Unpack the release zip</span>
+unzip nexspence-vX.Y.Z.zip &amp;&amp; cd nexspence-vX.Y.Z
 
 <span class="cc"># Config</span>
 cp config.yaml.example config.yaml
