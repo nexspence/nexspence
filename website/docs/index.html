@@ -164,7 +164,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .inst-badge.a{background:rgba(245,158,11,.1);color:var(--amber);border-color:rgba(245,158,11,.28)}
 .inst-sep{display:flex;align-items:center;gap:10px;margin:24px 0 14px;font-size:.67rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--faint)}
 .inst-sep::after{content:'';flex:1;height:1px;background:var(--border)}
-.lang-bar{display:flex;gap:3px;margin-left:auto;flex-shrink:0}
+.lang-bar{display:flex;gap:3px;flex-shrink:0}
 .lang-btn{padding:3px 9px;border-radius:6px;border:1px solid var(--border);background:var(--glass);color:var(--dim);font-size:.68rem;font-weight:700;cursor:pointer;font-family:'Inter',system-ui,sans-serif;transition:all 150ms;letter-spacing:.04em}
 .lang-btn:hover{background:var(--glasm);color:var(--text)}
 .lang-btn.active{background:rgba(139,92,246,.14);border-color:rgba(139,92,246,.4);color:#a78bfa}
@@ -245,11 +245,13 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
     <p class="docs-sub" data-i18n="page.sub">Guides, API reference, and versioned release history.</p>
   </div>
 
-  <div class="ver-bar" id="ver-bar" role="tablist" aria-label="Documentation version">
-    <span class="ver-label">Version:</span>
-    <div class="skeleton" style="width:110px;height:30px;border-radius:100px"></div>
-    <div class="skeleton" style="width:70px;height:30px;border-radius:100px"></div>
-    <div class="skeleton" style="width:70px;height:30px;border-radius:100px"></div>
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:24px;flex-wrap:wrap">
+    <div class="ver-bar" id="ver-bar" role="tablist" aria-label="Documentation version" style="margin-bottom:0;flex:1">
+      <span class="ver-label">Version:</span>
+      <div class="skeleton" style="width:110px;height:30px;border-radius:100px"></div>
+      <div class="skeleton" style="width:70px;height:30px;border-radius:100px"></div>
+      <div class="skeleton" style="width:70px;height:30px;border-radius:100px"></div>
+    </div>
     <div class="lang-bar" id="lang-bar">
       <button type="button" class="lang-btn active" data-lang="en" onclick="switchLang('en',this)">EN</button>
       <button type="button" class="lang-btn" data-lang="ru" onclick="switchLang('ru',this)">RU</button>
