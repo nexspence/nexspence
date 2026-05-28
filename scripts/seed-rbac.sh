@@ -60,6 +60,23 @@ post() {
     esac
 }
 
+# put_privileges <label> <role-id> <privilege-id...> — idempotent privilege assignment
+put_privileges() {
+    local label="$1" role_id="$2"; shift 2
+    local ids_json
+    ids_json=$(printf '"%s",' "$@"); ids_json="[${ids_json%,}]"
+    local code out
+    code=$(curl -s -o "$TMP_OUT" -w "%{http_code}" \
+        "${AUTH[@]}" -X PUT "${API}/security/roles/${role_id}/privileges" \
+        -H "Content-Type: application/json" \
+        -d "{\"privilegeIds\":${ids_json}}")
+    out=$(cat "$TMP_OUT")
+    case "$code" in
+        200|204) ok  "privileges → ${label}" ;;
+        *)       err "privileges → ${label} — HTTP ${code}: ${out}"; FAILED+=("privileges/${label}"); return 1 ;;
+    esac
+}
+
 # get_id <list-url> <name-field> <name-value> — returns id of matching item
 get_id() {
     local url="$1" field="$2" value="$3"
@@ -126,20 +143,36 @@ for PROJECT in dev stage test prod; do
     info "  privilege-read id:  ${PRIV_READ_ID:-<unknown>}"
     info "  privilege-write id: ${PRIV_WRITE_ID:-<unknown>}"
 
+    if [[ -z "${PRIV_READ_ID}" || -z "${PRIV_WRITE_ID}" ]]; then
+        err "Cannot resolve privilege IDs for '${PROJECT}' — skipping roles/users"
+        FAILED+=("privilege-ids/${PROJECT}")
+        continue
+    fi
+
     # 4. Role admins (write privilege)
     post "role/${ROLE_ADMIN}" \
         "${API}/security/roles" \
-        "{\"name\":\"${ROLE_ADMIN}\",\"description\":\"Admins for ${PROJECT} environment\",\"privileges\":[\"${PRIV_WRITE_ID}\"]}"
+        "{\"name\":\"${ROLE_ADMIN}\",\"description\":\"Admins for ${PROJECT} environment\"}"
 
     # 5. Role users (read privilege)
     post "role/${ROLE_USER}" \
         "${API}/security/roles" \
-        "{\"name\":\"${ROLE_USER}\",\"description\":\"Users for ${PROJECT} environment\",\"privileges\":[\"${PRIV_READ_ID}\"]}"
+        "{\"name\":\"${ROLE_USER}\",\"description\":\"Users for ${PROJECT} environment\"}"
 
     ROLE_ADMIN_ID=$(get_id "${API}/security/roles" "name" "${ROLE_ADMIN}")
     ROLE_USER_ID=$(get_id "${API}/security/roles" "name" "${ROLE_USER}")
     info "  role-admins id: ${ROLE_ADMIN_ID:-<unknown>}"
     info "  role-users id:  ${ROLE_USER_ID:-<unknown>}"
+
+    if [[ -z "${ROLE_ADMIN_ID}" || -z "${ROLE_USER_ID}" ]]; then
+        err "Cannot resolve role IDs for '${PROJECT}' — skipping privilege assignment and users"
+        FAILED+=("role-ids/${PROJECT}")
+        continue
+    fi
+
+    # Assign privileges (idempotent — works on both first run and re-runs)
+    put_privileges "${ROLE_ADMIN}" "${ROLE_ADMIN_ID}" "${PRIV_WRITE_ID}"
+    put_privileges "${ROLE_USER}"  "${ROLE_USER_ID}"  "${PRIV_READ_ID}"
 
     # 6. User admin
     post "user/${USER_ADMIN}" \
