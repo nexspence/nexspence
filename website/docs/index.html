@@ -91,7 +91,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 
 .ch-card{background:var(--glass);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:10px;transition:border-color 180ms}
 .ch-card:hover{border-color:var(--borhi)}
-.ch-header{display:flex;align-items:center;gap:12px;padding:15px 18px;cursor:pointer;user-select:none}
+.ch-header{display:flex;align-items:center;gap:12px;padding:15px 18px;cursor:pointer;user-select:none;width:100%;background:transparent;border:none;font-family:'Inter',system-ui,sans-serif;color:inherit;text-align:left}
 .ch-ver{font-size:.95rem;font-weight:800;letter-spacing:-.02em}
 .ch-date{font-size:.68rem;color:var(--faint);font-family:'JetBrains Mono',monospace;margin-top:2px}
 .ch-tag{font-size:.6rem;font-weight:700;padding:2px 7px;border-radius:4px;margin-left:auto;flex-shrink:0}
@@ -229,9 +229,9 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
     <div class="skeleton" style="width:70px;height:30px;border-radius:100px"></div>
   </div>
 
-  <button class="mob-nav-toggle" id="mob-nav-toggle" aria-expanded="false" aria-controls="mob-nav-drawer">
+  <button type="button" class="mob-nav-toggle" id="mob-nav-toggle" aria-expanded="false" aria-controls="mob-nav-drawer">
     <div class="mob-nav-toggle-left">
-      <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+      <svg aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
       Navigation
     </div>
     <div class="mob-nav-toggle-right">
@@ -311,7 +311,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
     </div>
   </div>
   <div class="cb">
-    <div class="cb-bar"><span>shell</span><button class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+    <div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
     <div class="cb-body"><span class="cc"># Clone</span>
 git clone https://github.com/skensell201/nexspence.git
 cd nexspence
@@ -397,6 +397,7 @@ open http://localhost:8081  <span class="cc"># default login: admin / admin123</
 
 <script>
 'use strict';
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 const API_URL='https://api.github.com/repos/skensell201/nexspence/releases?per_page=30';
 const CACHE_KEY='nx_releases_v1';
 const state={releases:[],activeVersion:null,activeSection:'changelog'};
@@ -470,11 +471,12 @@ function renderVersionBar(releases,activeTag){
   bar.innerHTML='<span class="ver-label">Version:</span>';
   for(const{minor,latest,isLatest}of minors){
     const btn=document.createElement('button');
+    btn.type='button';
     btn.className='ver-btn'+(latest===activeTag?' active':'');
     btn.setAttribute('role','tab');
     btn.setAttribute('aria-selected',latest===activeTag?'true':'false');
     btn.dataset.tag=latest;
-    btn.innerHTML=`v${minor}${isLatest?' <span class="ver-badge">current</span>':''}`;
+    btn.innerHTML=`v${esc(minor)}${isLatest?' <span class="ver-badge">current</span>':''}`;
     btn.addEventListener('click',()=>{state.activeVersion=latest;renderVersionBar(releases,latest);if(state.activeSection==='changelog')renderChangelog(latest);});
     bar.appendChild(btn);
   }
@@ -490,10 +492,11 @@ function renderSidebar(releases,activeSection,activeTag){
       const labelEl=document.createElement('span');labelEl.className='dsb-label';labelEl.textContent=group.label;container.appendChild(labelEl);
       for(const item of group.items){
         const btn=document.createElement('button');
+        btn.type='button';
         const isActive=activeSection===item.key&&(!item.tag||item.tag===activeTag);
         btn.className='dsb-link'+(isActive?' active':'');
         if(item.style)btn.setAttribute('style',item.style);
-        btn.innerHTML=(item.icon||'')+item.label;
+        btn.innerHTML=(item.icon||'')+esc(item.label);
         btn.addEventListener('click',()=>{if(item.tag)state.activeVersion=item.tag;setSection(item.key);});
         container.appendChild(btn);
       }
@@ -508,6 +511,7 @@ function renderTabs(activeSection){
   const container=document.getElementById('doc-tabs');container.innerHTML='';
   for(const s of SECTIONS){
     const btn=document.createElement('button');
+    btn.type='button';
     btn.className='dtab'+(s.key===activeSection?' active':'');
     btn.setAttribute('role','tab');btn.setAttribute('aria-selected',s.key===activeSection?'true':'false');
     btn.textContent=s.label;
@@ -530,16 +534,18 @@ function renderChangelog(activeTag){
     const tagLabel=r.isLatest?'latest':patchNum===0?'minor':'patch';
     const featuresHtml=r.features.length?`<div class="ch-group"><div class="ch-group-title">Features</div><ul class="ch-items">${r.features.map(f=>`<li>${inlineMd(f)}</li>`).join('')}</ul></div>`:'';
     const fixesHtml=r.fixes.length?`<div class="ch-group"><div class="ch-group-title fix">Bug Fixes</div><ul class="ch-items">${r.fixes.map(f=>`<li>${inlineMd(f)}</li>`).join('')}</ul></div>`:'';
-    const dockerHtml=r.dockerRaw?`<div class="ch-docker"><button class="ch-docker-toggle" onclick="this.nextElementSibling.classList.toggle('open')">🐳 Docker install info</button><div class="ch-docker-body">${r.dockerRaw.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div></div>`:'';
+    const dockerHtml=r.dockerRaw?`<div class="ch-docker"><button class="ch-docker-toggle" onclick="this.nextElementSibling.classList.toggle('open')">🐳 Docker install info</button><div class="ch-docker-body">${r.dockerRaw.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div></div>`:'';
     const emptyHtml=!r.features.length&&!r.fixes.length?`<p style="font-size:.78rem;color:var(--faint)">No changelog entries recorded.</p>`:'';
-    return `<div class="ch-card${i===0?' open':''}"><div class="ch-header" onclick="this.closest('.ch-card').classList.toggle('open')"><div><div class="ch-ver">${r.tag}</div><div class="ch-date">${r.date}</div></div><span class="ch-tag ${tagClass}">${tagLabel}</span><svg class="ch-chevron" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg></div><div class="ch-body">${featuresHtml}${fixesHtml}${dockerHtml}${emptyHtml}</div></div>`;
+    return `<div class="ch-card${i===0?' open':''}"><button class="ch-header" type="button" onclick="this.closest('.ch-card').classList.toggle('open')"><div><div class="ch-ver">${esc(r.tag)}</div><div class="ch-date">${esc(r.date)}</div></div><span class="ch-tag ${tagClass}">${tagLabel}</span><svg class="ch-chevron" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg></button><div class="ch-body">${featuresHtml}${fixesHtml}${dockerHtml}${emptyHtml}</div></div>`;
   }).join('');
   container.innerHTML=html+`<div style="text-align:center;padding:18px 0;border-top:1px solid var(--border);margin-top:4px"><a href="https://github.com/skensell201/nexspence/releases" target="_blank" rel="noopener" style="font-size:.78rem;color:#a78bfa;text-decoration:none;font-weight:600">View all releases on GitHub →</a></div>`;
 }
 
 function renderStaticSection(key){
   const section=SECTIONS.find(s=>s.key===key);
+  if(!section||!section.templateId)return;
   const tpl=document.getElementById(section.templateId);
+  if(!tpl)return;
   const container=document.getElementById('doc-content');
   container.innerHTML='';
   container.appendChild(tpl.content.cloneNode(true));
@@ -562,7 +568,7 @@ function copyCode(btn){
   navigator.clipboard.writeText(body.innerText).then(()=>{
     const orig=btn.textContent;btn.textContent='Copied!';
     setTimeout(()=>btn.textContent=orig,1800);
-  });
+  }).catch(()=>{btn.textContent='Failed';setTimeout(()=>btn.textContent='Copy',1800);});
 }
 
 document.getElementById('mob-nav-toggle').addEventListener('click',function(){
