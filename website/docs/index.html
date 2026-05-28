@@ -1059,7 +1059,8 @@ helm install nexspence deploy/helm/nexspence \
 'use strict';
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 const API_URL='https://api.github.com/repos/skensell201/nexspence/releases?per_page=30';
-const CACHE_KEY='nx_releases_v1';
+const CACHE_KEY='nx_releases_v2';
+const CACHE_TTL_MS=5*60*1000;
 const state={
   releases:[],activeVersion:null,activeSection:'changelog',
   lang:(()=>{try{return localStorage.getItem('nx_docs_lang')||'en'}catch(_){return'en'}})()
@@ -1542,7 +1543,10 @@ function inlineMd(text){
 }
 
 async function fetchReleases(){
-  try{const c=sessionStorage.getItem(CACHE_KEY);if(c)return JSON.parse(c)}catch(_){}
+  try{
+    const c=JSON.parse(sessionStorage.getItem(CACHE_KEY)||'null');
+    if(c&&Array.isArray(c.releases)&&Date.now()-c.ts<CACHE_TTL_MS)return c.releases;
+  }catch(_){}
   const res=await fetch(API_URL);
   if(!res.ok)throw new Error('GitHub API '+res.status);
   const data=await res.json();
@@ -1550,7 +1554,7 @@ async function fetchReleases(){
     const{features,fixes,dockerRaw}=parseReleaseBody(r.body);
     return{tag:r.tag_name,name:r.name||r.tag_name,date:r.published_at?r.published_at.slice(0,10):'',features,fixes,dockerRaw,isLatest:i===0};
   });
-  try{sessionStorage.setItem(CACHE_KEY,JSON.stringify(releases))}catch(_){}
+  try{sessionStorage.setItem(CACHE_KEY,JSON.stringify({ts:Date.now(),releases}))}catch(_){}
   return releases;
 }
 
