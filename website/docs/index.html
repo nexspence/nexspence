@@ -164,6 +164,10 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .inst-badge.a{background:rgba(245,158,11,.1);color:var(--amber);border-color:rgba(245,158,11,.28)}
 .inst-sep{display:flex;align-items:center;gap:10px;margin:24px 0 14px;font-size:.67rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--faint)}
 .inst-sep::after{content:'';flex:1;height:1px;background:var(--border)}
+.lang-bar{display:flex;gap:3px;margin-left:auto;flex-shrink:0}
+.lang-btn{padding:3px 9px;border-radius:6px;border:1px solid var(--border);background:var(--glass);color:var(--dim);font-size:.68rem;font-weight:700;cursor:pointer;font-family:'Inter',system-ui,sans-serif;transition:all 150ms;letter-spacing:.04em}
+.lang-btn:hover{background:var(--glasm);color:var(--text)}
+.lang-btn.active{background:rgba(139,92,246,.14);border-color:rgba(139,92,246,.4);color:#a78bfa}
 .empty-state{text-align:center;padding:48px 24px;color:var(--faint)}
 .empty-state svg{width:40px;height:40px;margin:0 auto 12px;opacity:.4;display:block}
 .empty-state p{font-size:.85rem;line-height:1.6}
@@ -236,9 +240,9 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 
 <main class="docs-page">
   <div class="docs-header">
-    <div class="stag">Documentation</div>
-    <h1 class="docs-title">Docs &amp; Changelog</h1>
-    <p class="docs-sub">Guides, API reference, and versioned release history.</p>
+    <div class="stag" data-i18n="page.stag">Documentation</div>
+    <h1 class="docs-title" data-i18n="page.title">Docs &amp; Changelog</h1>
+    <p class="docs-sub" data-i18n="page.sub">Guides, API reference, and versioned release history.</p>
   </div>
 
   <div class="ver-bar" id="ver-bar" role="tablist" aria-label="Documentation version">
@@ -246,6 +250,10 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
     <div class="skeleton" style="width:110px;height:30px;border-radius:100px"></div>
     <div class="skeleton" style="width:70px;height:30px;border-radius:100px"></div>
     <div class="skeleton" style="width:70px;height:30px;border-radius:100px"></div>
+    <div class="lang-bar" id="lang-bar">
+      <button type="button" class="lang-btn active" data-lang="en" onclick="switchLang('en',this)">EN</button>
+      <button type="button" class="lang-btn" data-lang="ru" onclick="switchLang('ru',this)">RU</button>
+    </div>
   </div>
 
   <button type="button" class="mob-nav-toggle" id="mob-nav-toggle" aria-expanded="false" aria-controls="mob-nav-drawer">
@@ -313,20 +321,20 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 </nav>
 
 <template id="tpl-quickstart">
-  <div class="doc-section-title">Quick Start</div>
-  <div class="doc-section-sub">Run Nexspence locally in under 2 minutes using Docker Compose.</div>
+  <div class="doc-section-title" data-i18n="qs.title">Quick Start</div>
+  <div class="doc-section-sub" data-i18n="qs.sub">Run Nexspence locally in under 2 minutes using Docker Compose.</div>
   <div class="step-list">
     <div class="step-item">
       <div class="step-num">01</div>
-      <div><div class="step-title">Download the latest release</div><div class="step-desc">Go to <a href="https://github.com/skensell201/nexspence/releases/latest" target="_blank" rel="noopener" style="color:var(--blue)">GitHub Releases</a>, download <code>nexspence-vX.Y.Z.zip</code> and unpack it.</div></div>
+      <div><div class="step-title" data-i18n="qs.s1.title">Download the latest release</div><div class="step-desc" data-i18n="qs.s1.desc">Go to <a href="https://github.com/skensell201/nexspence/releases/latest" target="_blank" rel="noopener" style="color:var(--blue)">GitHub Releases</a>, download <code>nexspence-vX.Y.Z.zip</code> and unpack it.</div></div>
     </div>
     <div class="step-item">
       <div class="step-num">02</div>
-      <div><div class="step-title">Configure</div><div class="step-desc">Copy <code>config.yaml.example</code> → <code>config.yaml</code> and set a strong <code>admin_password</code> and <code>jwt_secret</code>.</div></div>
+      <div><div class="step-title" data-i18n="qs.s2.title">Configure</div><div class="step-desc" data-i18n="qs.s2.desc">Copy <code>config.yaml.example</code> → <code>config.yaml</code> and set a strong <code>admin_password</code> and <code>jwt_secret</code>.</div></div>
     </div>
     <div class="step-item">
       <div class="step-num">03</div>
-      <div><div class="step-title">Start the stack</div><div class="step-desc"><code>docker compose up -d</code> — waits for PostgreSQL, runs migrations, serves the UI at <code>http://localhost:8081</code>.</div></div>
+      <div><div class="step-title" data-i18n="qs.s3.title">Start the stack</div><div class="step-desc" data-i18n="qs.s3.desc"><code>docker compose up -d</code> — waits for PostgreSQL, runs migrations, serves the UI at <code>http://localhost:8081</code>.</div></div>
     </div>
   </div>
   <div class="cb">
@@ -344,12 +352,12 @@ docker compose up -d
 <span class="cc"># Open UI</span>
 open http://localhost:8081  <span class="cc"># default login: admin / admin123</span></div>
   </div>
-  <div class="alert-info"><strong>Note:</strong> Change the default password immediately after first login. The bootstrap admin credentials are set in <code>config.yaml</code> under the <code>bootstrap</code> key.</div>
+  <div class="alert-info" data-i18n="qs.note"><strong>Note:</strong> Change the default password immediately after first login. The bootstrap admin credentials are set in <code>config.yaml</code> under the <code>bootstrap</code> key.</div>
 </template>
 
 <template id="tpl-install">
-  <div class="doc-section-title">Installation</div>
-  <div class="doc-section-sub">Docker image: <code>ghcr.io/skensell201/nexspence:latest</code> — linux/amd64 and linux/arm64. Download the release zip from <a href="https://github.com/skensell201/nexspence/releases/latest" target="_blank" rel="noopener" style="color:var(--blue)">GitHub Releases</a>.</div>
+  <div class="doc-section-title" data-i18n="inst.title">Installation</div>
+  <div class="doc-section-sub" data-i18n="inst.sub">Docker image: <code>ghcr.io/skensell201/nexspence:latest</code> — linux/amd64 and linux/arm64. Download the release zip from <a href="https://github.com/skensell201/nexspence/releases/latest" target="_blank" rel="noopener" style="color:var(--blue)">GitHub Releases</a>.</div>
 
   <div class="inst-platform">
     <!-- Platform switcher -->
@@ -365,17 +373,17 @@ open http://localhost:8081  <span class="cc"># default login: admin / admin123</
     <!-- ══ DOCKER ══ -->
     <div class="inst-pnl active" data-pnl="docker">
       <div class="inst-variant-row">
-        <button type="button" class="inst-vchip active" onclick="installVariant('docker','std',this)">Standard</button>
-        <button type="button" class="inst-vchip" onclick="installVariant('docker','ha',this)">HA Cluster</button>
-        <button type="button" class="inst-vchip" onclick="installVariant('docker','mon',this)">+ Monitoring</button>
-        <button type="button" class="inst-vchip" onclick="installVariant('docker','sso',this)">+ Keycloak SSO</button>
-        <button type="button" class="inst-vchip full" onclick="installVariant('docker','full',this)">⭐ Full Stack</button>
+        <button type="button" class="inst-vchip active" onclick="installVariant('docker','std',this)" data-i18n="inst.v.std">Standard</button>
+        <button type="button" class="inst-vchip" onclick="installVariant('docker','ha',this)" data-i18n="inst.v.ha">HA Cluster</button>
+        <button type="button" class="inst-vchip" onclick="installVariant('docker','mon',this)" data-i18n="inst.v.mon">+ Monitoring</button>
+        <button type="button" class="inst-vchip" onclick="installVariant('docker','sso',this)" data-i18n="inst.v.sso">+ Keycloak SSO</button>
+        <button type="button" class="inst-vchip full" onclick="installVariant('docker','full',this)">⭐ <span data-i18n="inst.v.full">Full Stack</span></button>
       </div>
 
       <div class="inst-vpnl active" data-vpnl="docker-std">
         <div class="step-list">
-          <div class="step-item"><div class="step-num">01</div><div><div class="step-title">Download &amp; configure</div><div class="step-desc">Unpack the release zip. Copy <code>config.yaml.example</code> → <code>config.yaml</code>. Set <code>auth.jwt_secret</code> (min 32 chars) and <code>bootstrap.admin_password</code>.</div></div></div>
-          <div class="step-item"><div class="step-num">02</div><div><div class="step-title">Start</div><div class="step-desc">PostgreSQL starts first, Nexspence waits for it, runs migrations automatically, then serves the UI.</div></div></div>
+          <div class="step-item"><div class="step-num">01</div><div><div class="step-title" data-i18n="inst.std.s1.title">Download &amp; configure</div><div class="step-desc" data-i18n="inst.std.s1.desc">Unpack the release zip. Copy <code>config.yaml.example</code> → <code>config.yaml</code>. Set <code>auth.jwt_secret</code> (min 32 chars) and <code>bootstrap.admin_password</code>.</div></div></div>
+          <div class="step-item"><div class="step-num">02</div><div><div class="step-title" data-i18n="inst.std.s2.title">Start</div><div class="step-desc" data-i18n="inst.std.s2.desc">PostgreSQL starts first, Nexspence waits for it, runs migrations automatically, then serves the UI.</div></div></div>
         </div>
         <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
         <div class="cb-body">cp config.yaml.example config.yaml
@@ -383,7 +391,7 @@ open http://localhost:8081  <span class="cc"># default login: admin / admin123</
 
 docker compose up -d</div></div>
         <table class="doc-table">
-          <thead><tr><th>Service</th><th>URL</th><th>Default credentials</th></tr></thead>
+          <thead><tr><th data-i18n="inst.std.th.svc">Service</th><th data-i18n="inst.std.th.url">URL</th><th data-i18n="inst.std.th.creds">Default credentials</th></tr></thead>
           <tbody>
             <tr><td>Web UI &amp; REST API</td><td><code>http://localhost:8081</code></td><td><code>admin / admin123</code></td></tr>
             <tr><td>Docker registry</td><td><code>localhost:5000</code></td><td>same</td></tr>
@@ -391,11 +399,11 @@ docker compose up -d</div></div>
             <tr><td>MinIO console</td><td><code>http://localhost:9001</code></td><td><code>minioadmin / minioadmin</code></td></tr>
           </tbody>
         </table>
-        <div class="alert-info"><strong>Note:</strong> Change the admin password immediately after first login via <strong>Admin → Security → Users</strong>.</div>
+        <div class="alert-info" data-i18n="inst.std.note"><strong>Note:</strong> Change the admin password immediately after first login via <strong>Admin → Security → Users</strong>.</div>
       </div>
 
       <div class="inst-vpnl" data-vpnl="docker-ha">
-        <div class="alert-info"><strong>Requires Redis</strong> enabled in <code>config.yaml</code>: <code>redis.enabled: true</code> and <code>redis.addr: "redis:6379"</code>. Two stateless Nexspence nodes behind nginx (<code>least_conn</code>) — shared state in PostgreSQL, Redis, and MinIO.</div>
+        <div class="alert-info" data-i18n="inst.ha.info"><strong>Requires Redis</strong> enabled in <code>config.yaml</code>: <code>redis.enabled: true</code> and <code>redis.addr: "redis:6379"</code>. Two stateless Nexspence nodes behind nginx (<code>least_conn</code>) — shared state in PostgreSQL, Redis, and MinIO.</div>
         <div class="cb"><div class="cb-bar"><span>config.yaml</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
         <div class="cb-body"><span class="ck">redis</span>:
   <span class="ck">enabled</span>: <span class="cs">true</span>
@@ -407,7 +415,7 @@ docker compose up -d</div></div>
       </div>
 
       <div class="inst-vpnl" data-vpnl="docker-mon">
-        <div class="alert-info" style="background:rgba(245,158,11,.06);border-color:rgba(245,158,11,.2)"><strong style="color:var(--amber)">Before starting:</strong> create an API token in the UI (<strong>Security → API Tokens</strong>) and paste it into <code>deploy/monitoring/prometheus-token</code>.</div>
+        <div class="alert-info" style="background:rgba(245,158,11,.06);border-color:rgba(245,158,11,.2)" data-i18n="inst.mon.warn"><strong style="color:var(--amber)">Before starting:</strong> create an API token in the UI (<strong>Security → API Tokens</strong>) and paste it into <code>deploy/monitoring/prometheus-token</code>.</div>
         <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
         <div class="cb-body">cp deploy/monitoring/prometheus-token.example \
    deploy/monitoring/prometheus-token
@@ -420,7 +428,7 @@ docker compose --profile monitoring up -d
       </div>
 
       <div class="inst-vpnl" data-vpnl="docker-sso">
-        <p style="font-size:.8rem;color:var(--dim);margin-bottom:12px;line-height:1.6">Pre-configured Keycloak dev instance with the <code>nexspence</code> realm imported. "Sign in with Keycloak" appears on the login page automatically. Supports Keycloak, Google, Entra ID, and Okta.</p>
+        <p style="font-size:.8rem;color:var(--dim);margin-bottom:12px;line-height:1.6" data-i18n="inst.sso.desc">Pre-configured Keycloak dev instance with the <code>nexspence</code> realm imported. "Sign in with Keycloak" appears on the login page automatically. Supports Keycloak, Google, Entra ID, and Okta.</p>
         <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
         <div class="cb-body">OIDC_ENABLED=true docker compose --profile keycloak up -d
 
@@ -430,7 +438,7 @@ docker compose --profile monitoring up -d
       </div>
 
       <div class="inst-vpnl" data-vpnl="docker-full">
-        <div class="alert-info" style="background:rgba(139,92,246,.06);border-color:rgba(139,92,246,.2)"><strong style="color:var(--purple)">Full Stack</strong> — HA Cluster + Keycloak SSO + Prometheus/Grafana monitoring, all in one command.</div>
+        <div class="alert-info" style="background:rgba(139,92,246,.06);border-color:rgba(139,92,246,.2)" data-i18n="inst.full.alert"><strong style="color:var(--purple)">Full Stack</strong> — HA Cluster + Keycloak SSO + Prometheus/Grafana monitoring, all in one command.</div>
         <div class="inst-badges">
           <span class="inst-badge b">2 × Nexspence</span>
           <span class="inst-badge b">nginx LB</span>
@@ -442,9 +450,9 @@ docker compose --profile monitoring up -d
           <span class="inst-badge a">Grafana</span>
         </div>
         <div class="step-list">
-          <div class="step-item"><div class="step-num">01</div><div><div class="step-title">Enable Redis in config.yaml</div><div class="step-desc"><code>redis.enabled: true</code> and <code>redis.addr: "redis:6379"</code></div></div></div>
-          <div class="step-item"><div class="step-num">02</div><div><div class="step-title">Create a Prometheus token</div><div class="step-desc">Start the stack once without monitoring, create an <code>nxs_*</code> API token in <strong>Security → API Tokens</strong>, then paste it into <code>deploy/monitoring/prometheus-token</code>.</div></div></div>
-          <div class="step-item"><div class="step-num">03</div><div><div class="step-title">Launch everything</div><div class="step-desc">Run the command below. All services start in the correct order.</div></div></div>
+          <div class="step-item"><div class="step-num">01</div><div><div class="step-title" data-i18n="inst.full.s1.title">Enable Redis in config.yaml</div><div class="step-desc" data-i18n="inst.full.s1.desc"><code>redis.enabled: true</code> and <code>redis.addr: "redis:6379"</code></div></div></div>
+          <div class="step-item"><div class="step-num">02</div><div><div class="step-title" data-i18n="inst.full.s2.title">Create a Prometheus token</div><div class="step-desc" data-i18n="inst.full.s2.desc">Start the stack once without monitoring, create an <code>nxs_*</code> API token in <strong>Security → API Tokens</strong>, then paste it into <code>deploy/monitoring/prometheus-token</code>.</div></div></div>
+          <div class="step-item"><div class="step-num">03</div><div><div class="step-title" data-i18n="inst.full.s3.title">Launch everything</div><div class="step-desc" data-i18n="inst.full.s3.desc">Run the command below. All services start in the correct order.</div></div></div>
         </div>
         <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
         <div class="cb-body">OIDC_ENABLED=true docker compose \
@@ -463,7 +471,7 @@ docker compose --profile monitoring up -d
 
     <!-- ══ KUBERNETES ══ -->
     <div class="inst-pnl" data-pnl="k8s">
-      <div class="alert-info" style="margin-bottom:16px"><strong>Requirements:</strong> Helm 3.x · Kubernetes ≥ 1.26. Extract the release zip — the chart is at <code>deploy/helm/nexspence/</code>. Run <code>helm dependency update</code> first to fetch the PostgreSQL sub-chart.</div>
+      <div class="alert-info" style="margin-bottom:16px" data-i18n="inst.k8s.info"><strong>Requirements:</strong> Helm 3.x · Kubernetes ≥ 1.26. Extract the release zip — the chart is at <code>deploy/helm/nexspence/</code>. Run <code>helm dependency update</code> first to fetch the PostgreSQL sub-chart.</div>
       <div class="inst-variant-row">
         <button type="button" class="inst-vchip active" onclick="installVariant('k8s','nginx',this)">nginx</button>
         <button type="button" class="inst-vchip" onclick="installVariant('k8s','traefik',this)">Traefik</button>
@@ -484,7 +492,7 @@ helm install nexspence deploy/helm/nexspence \
       </div>
 
       <div class="inst-vpnl" data-vpnl="k8s-traefik">
-        <div class="alert-info" style="background:rgba(245,158,11,.06);border-color:rgba(245,158,11,.2)"><strong style="color:var(--amber)">Requires</strong> TLS secret <code>nexspence-tls</code> in the namespace.</div>
+        <div class="alert-info" style="background:rgba(245,158,11,.06);border-color:rgba(245,158,11,.2)" data-i18n="inst.traefik.warn"><strong style="color:var(--amber)">Requires</strong> TLS secret <code>nexspence-tls</code> in the namespace.</div>
         <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
         <div class="cb-body">cd deploy/helm/nexspence &amp;&amp; helm dependency update
 
@@ -496,7 +504,7 @@ helm install nexspence deploy/helm/nexspence \
       </div>
 
       <div class="inst-vpnl" data-vpnl="k8s-cilium-ing">
-        <div class="alert-info" style="background:rgba(245,158,11,.06);border-color:rgba(245,158,11,.2)"><strong style="color:var(--amber)">Requires</strong> Cilium ≥ 1.12 with ingress controller enabled.</div>
+        <div class="alert-info" style="background:rgba(245,158,11,.06);border-color:rgba(245,158,11,.2)" data-i18n="inst.cilium-ing.warn"><strong style="color:var(--amber)">Requires</strong> Cilium ≥ 1.12 with ingress controller enabled.</div>
         <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
         <div class="cb-body">cd deploy/helm/nexspence &amp;&amp; helm dependency update
 
@@ -519,7 +527,7 @@ helm install nexspence deploy/helm/nexspence \
       </div>
 
       <div class="inst-vpnl" data-vpnl="k8s-cilium-gw">
-        <div class="alert-info" style="background:rgba(245,158,11,.06);border-color:rgba(245,158,11,.2)"><strong style="color:var(--amber)">Requires</strong> Cilium ≥ 1.15 + Gateway API CRDs installed.</div>
+        <div class="alert-info" style="background:rgba(245,158,11,.06);border-color:rgba(245,158,11,.2)" data-i18n="inst.cilium-gw.warn"><strong style="color:var(--amber)">Requires</strong> Cilium ≥ 1.15 + Gateway API CRDs installed.</div>
         <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
         <div class="cb-body">cd deploy/helm/nexspence &amp;&amp; helm dependency update
 
@@ -533,10 +541,10 @@ helm install nexspence deploy/helm/nexspence \
   </div><!-- /inst-platform -->
 
   <!-- ── Config reference ── -->
-  <div class="inst-sep">⚙️ Configuration Reference</div>
-  <p style="font-size:.8rem;color:var(--dim);margin-bottom:14px;line-height:1.6">Every key can be overridden via env var: <code>NEXSPENCE_&lt;SECTION&gt;_&lt;KEY&gt;</code> (uppercase, underscore-separated).</p>
+  <div class="inst-sep" data-i18n="inst.cfg.sep">⚙️ Configuration Reference</div>
+  <p style="font-size:.8rem;color:var(--dim);margin-bottom:14px;line-height:1.6" data-i18n="inst.cfg.desc">Every key can be overridden via env var: <code>NEXSPENCE_&lt;SECTION&gt;_&lt;KEY&gt;</code> (uppercase, underscore-separated).</p>
   <table class="doc-table">
-    <thead><tr><th>Key</th><th>Default</th><th>Description</th></tr></thead>
+    <thead><tr><th data-i18n="inst.cfg.th.key">Key</th><th data-i18n="inst.cfg.th.default">Default</th><th data-i18n="inst.cfg.th.desc">Description</th></tr></thead>
     <tbody>
       <tr><td><code>auth.jwt_secret</code></td><td>—</td><td><strong style="color:var(--red)">Required.</strong> JWT signing key — min 32 chars</td></tr>
       <tr><td><code>bootstrap.admin_password</code></td><td><code>admin123</code></td><td><strong style="color:var(--red)">Change before production.</strong> Auto-created admin password</td></tr>
@@ -558,8 +566,8 @@ helm install nexspence deploy/helm/nexspence \
 </template>
 
 <template id="tpl-formats">
-  <div class="doc-section-title">Supported Formats</div>
-  <div class="doc-section-sub">14 artifact formats — each supports Hosted, Proxy, and Group repository types.</div>
+  <div class="doc-section-title" data-i18n="fmt.title">Supported Formats</div>
+  <div class="doc-section-sub" data-i18n="fmt.sub">14 artifact formats — each supports Hosted, Proxy, and Group repository types.</div>
   <table class="doc-table">
     <thead><tr><th>Format</th><th>Protocol</th><th>Hosted</th><th>Proxy</th><th>Group</th></tr></thead>
     <tbody>
@@ -582,8 +590,8 @@ helm install nexspence deploy/helm/nexspence \
 </template>
 
 <template id="tpl-api">
-  <div class="doc-section-title">API Reference</div>
-  <div class="doc-section-sub">Nexspence exposes two API surfaces.</div>
+  <div class="doc-section-title" data-i18n="api.title">API Reference</div>
+  <div class="doc-section-sub" data-i18n="api.sub">Nexspence exposes two API surfaces.</div>
   <table class="doc-table" style="margin-bottom:20px">
     <thead><tr><th>Base Path</th><th>Purpose</th></tr></thead>
     <tbody>
@@ -594,11 +602,11 @@ helm install nexspence deploy/helm/nexspence \
       <tr><td><code>/v2/</code></td><td>Docker OCI Distribution Spec v2</td></tr>
     </tbody>
   </table>
-  <div class="alert-info"><strong>Full OpenAPI 3.1 spec</strong> is included in the release zip as <code>docs/api-spec.yaml</code>.</div>
+  <div class="alert-info" data-i18n="api.spec"><strong>Full OpenAPI 3.1 spec</strong> is included in the release zip as <code>docs/api-spec.yaml</code>.</div>
   <div class="step-list">
     <div class="step-item">
       <div class="step-num" style="font-size:1rem">🔑</div>
-      <div><div class="step-title">Authentication</div><div class="step-desc">JWT Bearer token (from <code>POST /api/v1/auth/login</code>), API tokens (<code>nxs_*</code> prefix via Bearer or Basic password), or HTTP Basic with username + password.</div></div>
+      <div><div class="step-title" data-i18n="api.auth.title">Authentication</div><div class="step-desc" data-i18n="api.auth.desc">JWT Bearer token (from <code>POST /api/v1/auth/login</code>), API tokens (<code>nxs_*</code> prefix via Bearer or Basic password), or HTTP Basic with username + password.</div></div>
     </div>
   </div>
 </template>
@@ -608,24 +616,185 @@ helm install nexspence deploy/helm/nexspence \
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 const API_URL='https://api.github.com/repos/skensell201/nexspence/releases?per_page=30';
 const CACHE_KEY='nx_releases_v1';
-const state={releases:[],activeVersion:null,activeSection:'changelog'};
+const state={
+  releases:[],activeVersion:null,activeSection:'changelog',
+  lang:(()=>{try{return localStorage.getItem('nx_docs_lang')||'en'}catch(_){return'en'}})()
+};
+
+const TRANSLATIONS={
+  en:{
+    'page.stag':'Documentation','page.title':'Docs &amp; Changelog',
+    'page.sub':'Guides, API reference, and versioned release history.',
+    'sb.getting-started':'Getting Started','sb.reference':'Reference','sb.changelog':'Changelog',
+    'sb.quickstart':'Quick Start','sb.install':'Installation','sb.formats':'Formats',
+    'sb.api':'API Reference','sb.all-versions':'All versions →',
+    'tab.quickstart':'Quick Start','tab.install':'Installation','tab.formats':'Formats',
+    'tab.changelog':'Changelog','tab.api':'API Reference',
+    'crumb.quickstart':'quick start','crumb.install':'installation',
+    'crumb.formats':'formats','crumb.changelog':'changelog','crumb.api':'api reference',
+    'ch.features':'Features','ch.fixes':'Bug Fixes',
+    'ch.docker-toggle':'🐳 Docker install info',
+    'ch.view-all':'View all releases on GitHub →',
+    'ch.empty':'No releases found for this version.',
+    'ch.empty-link':'View all releases on GitHub →',
+    'ch.error':'Could not load release data.',
+    'ch.error-link':'View releases on GitHub →',
+    'ch.no-entries':'No changelog entries recorded.',
+    'qs.title':'Quick Start','qs.sub':'Run Nexspence locally in under 2 minutes using Docker Compose.',
+    'qs.s1.title':'Download the latest release',
+    'qs.s1.desc':'Go to <a href="https://github.com/skensell201/nexspence/releases/latest" target="_blank" rel="noopener" style="color:var(--blue)">GitHub Releases</a>, download <code>nexspence-vX.Y.Z.zip</code> and unpack it.',
+    'qs.s2.title':'Configure',
+    'qs.s2.desc':'Copy <code>config.yaml.example</code> → <code>config.yaml</code> and set a strong <code>admin_password</code> and <code>jwt_secret</code>.',
+    'qs.s3.title':'Start the stack',
+    'qs.s3.desc':'<code>docker compose up -d</code> — waits for PostgreSQL, runs migrations, serves the UI at <code>http://localhost:8081</code>.',
+    'qs.note':'<strong>Note:</strong> Change the default password immediately after first login. Bootstrap credentials are set in <code>config.yaml</code> under the <code>bootstrap</code> key.',
+    'inst.title':'Installation',
+    'inst.sub':'Docker image: <code>ghcr.io/skensell201/nexspence:latest</code> — linux/amd64 and linux/arm64. Download the release zip from <a href="https://github.com/skensell201/nexspence/releases/latest" target="_blank" rel="noopener" style="color:var(--blue)">GitHub Releases</a>.',
+    'inst.v.std':'Standard','inst.v.ha':'HA Cluster','inst.v.mon':'+ Monitoring',
+    'inst.v.sso':'+ Keycloak SSO','inst.v.full':'Full Stack',
+    'inst.std.s1.title':'Download &amp; configure',
+    'inst.std.s1.desc':'Unpack the release zip. Copy <code>config.yaml.example</code> → <code>config.yaml</code>. Set <code>auth.jwt_secret</code> (min 32 chars) and <code>bootstrap.admin_password</code>.',
+    'inst.std.s2.title':'Start',
+    'inst.std.s2.desc':'PostgreSQL starts first, Nexspence waits for it, runs migrations automatically, then serves the UI.',
+    'inst.std.th.svc':'Service','inst.std.th.url':'URL','inst.std.th.creds':'Default credentials',
+    'inst.std.note':'<strong>Note:</strong> Change the admin password immediately after first login via <strong>Admin → Security → Users</strong>.',
+    'inst.ha.info':'<strong>Requires Redis</strong> enabled in <code>config.yaml</code>: <code>redis.enabled: true</code> and <code>redis.addr: "redis:6379"</code>. Two stateless nodes behind nginx (<code>least_conn</code>) — shared state in PostgreSQL, Redis, and MinIO.',
+    'inst.mon.warn':'<strong style="color:var(--amber)">Before starting:</strong> create an API token in the UI (<strong>Security → API Tokens</strong>) and paste it into <code>deploy/monitoring/prometheus-token</code>.',
+    'inst.sso.desc':'Pre-configured Keycloak dev instance with the <code>nexspence</code> realm imported. “Sign in with Keycloak” appears on the login page automatically. Supports Keycloak, Google, Entra ID, and Okta.',
+    'inst.full.alert':'<strong style="color:var(--purple)">Full Stack</strong> — HA Cluster + Keycloak SSO + Prometheus/Grafana monitoring, all in one command.',
+    'inst.full.s1.title':'Enable Redis in config.yaml',
+    'inst.full.s1.desc':'<code>redis.enabled: true</code> and <code>redis.addr: "redis:6379"</code>',
+    'inst.full.s2.title':'Create a Prometheus token',
+    'inst.full.s2.desc':'Start the stack once without monitoring, create an <code>nxs_*</code> API token in <strong>Security → API Tokens</strong>, then paste it into <code>deploy/monitoring/prometheus-token</code>.',
+    'inst.full.s3.title':'Launch everything',
+    'inst.full.s3.desc':'Run the command below. All services start in the correct order.',
+    'inst.k8s.info':'<strong>Requirements:</strong> Helm 3.x · Kubernetes ≥ 1.26. Extract the release zip — the chart is at <code>deploy/helm/nexspence/</code>. Run <code>helm dependency update</code> first.',
+    'inst.traefik.warn':'<strong style="color:var(--amber)">Requires</strong> TLS secret <code>nexspence-tls</code> in the namespace.',
+    'inst.cilium-ing.warn':'<strong style="color:var(--amber)">Requires</strong> Cilium ≥ 1.12 with ingress controller enabled.',
+    'inst.cilium-gw.warn':'<strong style="color:var(--amber)">Requires</strong> Cilium ≥ 1.15 + Gateway API CRDs installed.',
+    'inst.cfg.sep':'⚙️ Configuration Reference',
+    'inst.cfg.desc':'Every key can be overridden via env var: <code>NEXSPENCE_&lt;SECTION&gt;_&lt;KEY&gt;</code> (uppercase, underscore-separated).',
+    'inst.cfg.th.key':'Key','inst.cfg.th.default':'Default','inst.cfg.th.desc':'Description',
+    'fmt.title':'Supported Formats',
+    'fmt.sub':'14 artifact formats — each supports Hosted, Proxy, and Group repository types.',
+    'api.title':'API Reference','api.sub':'Nexspence exposes two API surfaces.',
+    'api.auth.title':'Authentication',
+    'api.auth.desc':'JWT Bearer token (from <code>POST /api/v1/auth/login</code>), API tokens (<code>nxs_*</code> prefix via Bearer or Basic password), or HTTP Basic with username + password.',
+    'api.spec':'<strong>Full OpenAPI 3.1 spec</strong> is included in the release zip as <code>docs/api-spec.yaml</code>.',
+  },
+  ru:{
+    'page.stag':'Документация',
+    'page.title':'Документация',
+    'page.sub':'Руководства, справочник API и история версий.',
+    'sb.getting-started':'Начало работы',
+    'sb.reference':'Справочник',
+    'sb.changelog':'История релизов',
+    'sb.quickstart':'Быстрый старт',
+    'sb.install':'Установка',
+    'sb.formats':'Форматы',
+    'sb.api':'API',
+    'sb.all-versions':'Все версии →',
+    'tab.quickstart':'Быстрый старт',
+    'tab.install':'Установка',
+    'tab.formats':'Форматы',
+    'tab.changelog':'История релизов',
+    'tab.api':'API',
+    'crumb.quickstart':'быстрый старт',
+    'crumb.install':'установка',
+    'crumb.formats':'форматы',
+    'crumb.changelog':'история релизов',
+    'crumb.api':'api',
+    'ch.features':'Новое',
+    'ch.fixes':'Исправления',
+    'ch.docker-toggle':'🐳 Установка Docker',
+    'ch.view-all':'Все релизы на GitHub →',
+    'ch.empty':'Для этой версии релизы не найдены.',
+    'ch.empty-link':'Посмотреть релизы на GitHub →',
+    'ch.error':'Не удалось загрузить данные о релизах.',
+    'ch.error-link':'Посмотреть релизы на GitHub →',
+    'ch.no-entries':'Записей для этого релиза нет.',
+    'qs.title':'Быстрый старт',
+    'qs.sub':'Запустите Nexspence локально за 2 минуты с Docker Compose.',
+    'qs.s1.title':'Скачайте последний релиз',
+    'qs.s1.desc':'Откройте <a href="https://github.com/skensell201/nexspence/releases/latest" target="_blank" rel="noopener" style="color:var(--blue)">GitHub Releases</a>, скачайте <code>nexspence-vX.Y.Z.zip</code> и распакуйте архив.',
+    'qs.s2.title':'Настройте конфигурацию',
+    'qs.s2.desc':'Скопируйте <code>config.yaml.example</code> → <code>config.yaml</code> и задайте надёжные <code>admin_password</code> и <code>jwt_secret</code>.',
+    'qs.s3.title':'Запустите стек',
+    'qs.s3.desc':'<code>docker compose up -d</code> — дождётся PostgreSQL, применит миграции и запустит UI на <code>http://localhost:8081</code>.',
+    'qs.note':'<strong>Важно:</strong> смените пароль администратора сразу после первого входа. Учётные данные задаются в <code>config.yaml</code> в разделе <code>bootstrap</code>.',
+    'inst.title':'Установка',
+    'inst.sub':'Docker-образ: <code>ghcr.io/skensell201/nexspence:latest</code> — linux/amd64 и linux/arm64. Скачайте архив релиза с <a href="https://github.com/skensell201/nexspence/releases/latest" target="_blank" rel="noopener" style="color:var(--blue)">GitHub Releases</a>.',
+    'inst.v.std':'Стандарт',
+    'inst.v.ha':'HA-кластер',
+    'inst.v.mon':'+ Мониторинг',
+    'inst.v.sso':'+ Keycloak SSO',
+    'inst.v.full':'Полный стек',
+    'inst.std.s1.title':'Скачайте и настройте',
+    'inst.std.s1.desc':'Распакуйте архив. Скопируйте <code>config.yaml.example</code> → <code>config.yaml</code>. Задайте <code>auth.jwt_secret</code> (мин. 32 символа) и <code>bootstrap.admin_password</code>.',
+    'inst.std.s2.title':'Запустите',
+    'inst.std.s2.desc':'PostgreSQL стартует первым, Nexspence ждёт его, выполняет миграции автоматически, затем запускает UI.',
+    'inst.std.th.svc':'Сервис',
+    'inst.std.th.url':'URL',
+    'inst.std.th.creds':'Учётные данные',
+    'inst.std.note':'<strong>Важно:</strong> смените пароль админа сразу после первого входа через <strong>Admin → Security → Users</strong>.',
+    'inst.ha.info':'<strong>Требуется Redis</strong> в <code>config.yaml</code>: <code>redis.enabled: true</code> и <code>redis.addr: "redis:6379"</code>. Два stateless-узла за nginx (<code>least_conn</code>) — общее состояние в PostgreSQL, Redis и MinIO.',
+    'inst.mon.warn':'<strong style="color:var(--amber)">Перед запуском:</strong> создайте API-токен в UI (<strong>Security → API Tokens</strong>) и вставьте его в <code>deploy/monitoring/prometheus-token</code>.',
+    'inst.sso.desc':'Преднастроенный dev-экземпляр Keycloak с импортированным realm <code>nexspence</code>. Кнопка «Войти через Keycloak» появится автоматически. Поддерживаются Keycloak, Google, Entra ID и Okta.',
+    'inst.full.alert':'<strong style="color:var(--purple)">Полный стек</strong> — HA-кластер + Keycloak SSO + мониторинг Prometheus/Grafana, одной командой.',
+    'inst.full.s1.title':'Включите Redis в config.yaml',
+    'inst.full.s1.desc':'<code>redis.enabled: true</code> и <code>redis.addr: "redis:6379"</code>',
+    'inst.full.s2.title':'Создайте токен для Prometheus',
+    'inst.full.s2.desc':'Запустите стек без мониторинга, создайте токен <code>nxs_*</code> в <strong>Security → API Tokens</strong> и вставьте его в <code>deploy/monitoring/prometheus-token</code>.',
+    'inst.full.s3.title':'Запустите всё',
+    'inst.full.s3.desc':'Выполните команду ниже. Все сервисы запустятся в правильном порядке.',
+    'inst.k8s.info':'<strong>Требования:</strong> Helm 3.x · Kubernetes ≥ 1.26. Распакуйте архив — chart находится в <code>deploy/helm/nexspence/</code>. Сначала выполните <code>helm dependency update</code>.',
+    'inst.traefik.warn':'<strong style="color:var(--amber)">Требуется</strong> TLS-секрет <code>nexspence-tls</code> в namespace.',
+    'inst.cilium-ing.warn':'<strong style="color:var(--amber)">Требуется</strong> Cilium ≥ 1.12 с включённым ingress controller.',
+    'inst.cilium-gw.warn':'<strong style="color:var(--amber)">Требуется</strong> Cilium ≥ 1.15 + установленные Gateway API CRDs.',
+    'inst.cfg.sep':'⚙️ Справочник конфигурации',
+    'inst.cfg.desc':'Любой ключ можно переопределить через env: <code>NEXSPENCE_SECTION_KEY</code> (заглавными, через цифру подчёркивания).',
+    'inst.cfg.th.key':'Ключ',
+    'inst.cfg.th.default':'По умолчанию',
+    'inst.cfg.th.desc':'Описание',
+    'fmt.title':'Поддерживаемые форматы',
+    'fmt.sub':'14 форматов артефактов — каждый поддерживает типы Hosted, Proxy и Group.',
+    'api.title':'Справочник API',
+    'api.sub':'Nexspence предоставляет два API-интерфейса.',
+    'api.auth.title':'Аутентификация',
+    'api.auth.desc':'JWT Bearer-токен (из <code>POST /api/v1/auth/login</code>), API-токены (префикс <code>nxs_*</code> через Bearer или Basic-пароль) или HTTP Basic.',
+    'api.spec':'<strong>Полная спецификация OpenAPI 3.1</strong> включена в архив релиза как <code>docs/api-spec.yaml</code>.',
+  }
+};
+
+function t(key){const d=TRANSLATIONS[state.lang]||TRANSLATIONS.en;return d[key]!==undefined?d[key]:TRANSLATIONS.en[key]!==undefined?TRANSLATIONS.en[key]:key;}
+function applyTranslations(root){root.querySelectorAll('[data-i18n]').forEach(el=>{const v=t(el.dataset.i18n);if(v!==undefined)el.innerHTML=v;});}
+function switchLang(lang,btn){
+  state.lang=lang;
+  try{localStorage.setItem('nx_docs_lang',lang)}catch(_){}
+  document.querySelectorAll('.lang-btn').forEach(b=>b.classList.toggle('active',b.dataset.lang===lang));
+  applyTranslations(document.querySelector('.docs-header'));
+  setSection(state.activeSection);
+  renderVersionBar(state.releases,state.activeVersion);
+  renderSidebar(state.releases,state.activeSection,state.activeVersion);
+}
+
 const SECTIONS=[
-  {key:'quickstart',label:'Quick Start',templateId:'tpl-quickstart'},
-  {key:'install',label:'Installation',templateId:'tpl-install'},
-  {key:'formats',label:'Formats',templateId:'tpl-formats'},
-  {key:'changelog',label:'Changelog',templateId:null},
-  {key:'api',label:'API Reference',templateId:'tpl-api'},
+  {key:'quickstart',templateId:'tpl-quickstart'},
+  {key:'install',templateId:'tpl-install'},
+  {key:'formats',templateId:'tpl-formats'},
+  {key:'changelog',templateId:null},
+  {key:'api',templateId:'tpl-api'},
 ];
 const SIDEBAR_GROUPS=[
-  {label:'Getting Started',id:'getting-started',items:[
-    {key:'quickstart',label:'Quick Start',icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>'},
-    {key:'install',label:'Installation',icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>'},
+  {id:'getting-started',items:[
+    {key:'quickstart',icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>'},
+    {key:'install',icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>'},
   ]},
-  {label:'Reference',id:'reference',items:[
-    {key:'formats',label:'Formats',icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>'},
-    {key:'api',label:'API Reference',icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>'},
+  {id:'reference',items:[
+    {key:'formats',icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>'},
+    {key:'api',icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>'},
   ]},
-  {label:'Changelog',id:'releases',items:[]},
+  {id:'releases',items:[]},
 ];
 
 function parseReleaseBody(body){
@@ -692,19 +861,20 @@ function renderVersionBar(releases,activeTag){
 
 function renderSidebar(releases,activeSection,activeTag){
   const relGroup=SIDEBAR_GROUPS.find(g=>g.id==='releases');
-  relGroup.items=releases.slice(0,6).map(r=>({key:'changelog',label:r.tag+(r.isLatest?' ← current':''),tag:r.tag,style:r.isLatest?'color:var(--green);font-weight:600':''}));
-  if(releases.length>6)relGroup.items.push({key:'changelog',label:'All versions…',tag:releases[releases.length-1].tag,style:'color:var(--faint)'});
+  relGroup.items=releases.slice(0,6).map(r=>({key:'changelog',label:r.tag+(r.isLatest?' ← '+t('tab.changelog'):''),tag:r.tag,style:r.isLatest?'color:var(--green);font-weight:600':''}));
+  if(releases.length>6)relGroup.items.push({key:'changelog',label:t('sb.all-versions'),tag:releases[releases.length-1].tag,style:'color:var(--faint)'});
   function buildLinks(container){
     container.innerHTML='';
     for(const group of SIDEBAR_GROUPS){
-      const labelEl=document.createElement('span');labelEl.className='dsb-label';labelEl.textContent=group.label;container.appendChild(labelEl);
+      const labelEl=document.createElement('span');labelEl.className='dsb-label';labelEl.textContent=t('sb.'+group.id);container.appendChild(labelEl);
       for(const item of group.items){
         const btn=document.createElement('button');
         btn.type='button';
         const isActive=activeSection===item.key&&(!item.tag||item.tag===activeTag);
         btn.className='dsb-link'+(isActive?' active':'');
         if(item.style)btn.setAttribute('style',item.style);
-        btn.innerHTML=(item.icon||'')+esc(item.label);
+        const label=item.tag?esc(item.label):t('sb.'+item.key);
+        btn.innerHTML=(item.icon||'')+label;
         btn.addEventListener('click',()=>{if(item.tag)state.activeVersion=item.tag;setSection(item.key);});
         container.appendChild(btn);
       }
@@ -722,7 +892,7 @@ function renderTabs(activeSection){
     btn.type='button';
     btn.className='dtab'+(s.key===activeSection?' active':'');
     btn.setAttribute('role','tab');btn.setAttribute('aria-selected',s.key===activeSection?'true':'false');
-    btn.textContent=s.label;
+    btn.textContent=t('tab.'+s.key);
     btn.addEventListener('click',()=>setSection(s.key));
     container.appendChild(btn);
   }
@@ -733,20 +903,20 @@ function renderChangelog(activeTag){
   const activeMinor=activeTag.replace(/^v/,'').split('.').slice(0,2).join('.');
   const tagReleases=state.releases.filter(r=>r.tag.replace(/^v/,'').split('.').slice(0,2).join('.')===activeMinor);
   if(!tagReleases.length){
-    container.innerHTML=`<div class="empty-state"><svg fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><p>No releases found for this version.<br><a href="https://github.com/skensell201/nexspence/releases" target="_blank" rel="noopener">View all releases on GitHub →</a></p></div>`;
+    container.innerHTML=`<div class="empty-state"><svg fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><p>${t('ch.empty')}<br><a href="https://github.com/skensell201/nexspence/releases" target="_blank" rel="noopener">${t('ch.empty-link')}</a></p></div>`;
     return;
   }
   const html=tagReleases.map((r,i)=>{
     const patchNum=parseInt(r.tag.split('.')[2]||'0',10);
     const tagClass=r.isLatest?'latest':patchNum===0?'minor':'patch';
     const tagLabel=r.isLatest?'latest':patchNum===0?'minor':'patch';
-    const featuresHtml=r.features.length?`<div class="ch-group"><div class="ch-group-title">Features</div><ul class="ch-items">${r.features.map(f=>`<li>${inlineMd(f)}</li>`).join('')}</ul></div>`:'';
-    const fixesHtml=r.fixes.length?`<div class="ch-group"><div class="ch-group-title fix">Bug Fixes</div><ul class="ch-items">${r.fixes.map(f=>`<li>${inlineMd(f)}</li>`).join('')}</ul></div>`:'';
-    const dockerHtml=r.dockerRaw?`<div class="ch-docker"><button class="ch-docker-toggle" onclick="this.nextElementSibling.classList.toggle('open')">🐳 Docker install info</button><div class="ch-docker-body">${r.dockerRaw.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div></div>`:'';
-    const emptyHtml=!r.features.length&&!r.fixes.length?`<p style="font-size:.78rem;color:var(--faint)">No changelog entries recorded.</p>`:'';
+    const featuresHtml=r.features.length?`<div class="ch-group"><div class="ch-group-title">${t('ch.features')}</div><ul class="ch-items">${r.features.map(f=>`<li>${inlineMd(f)}</li>`).join('')}</ul></div>`:'';
+    const fixesHtml=r.fixes.length?`<div class="ch-group"><div class="ch-group-title fix">${t('ch.fixes')}</div><ul class="ch-items">${r.fixes.map(f=>`<li>${inlineMd(f)}</li>`).join('')}</ul></div>`:'';
+    const dockerHtml=r.dockerRaw?`<div class="ch-docker"><button class="ch-docker-toggle" onclick="this.nextElementSibling.classList.toggle('open')">${t('ch.docker-toggle')}</button><div class="ch-docker-body">${r.dockerRaw.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div></div>`:'';
+    const emptyHtml=!r.features.length&&!r.fixes.length?`<p style="font-size:.78rem;color:var(--faint)">${t('ch.no-entries')}</p>`:'';
     return `<div class="ch-card${i===0?' open':''}"><button class="ch-header" type="button" onclick="this.closest('.ch-card').classList.toggle('open')"><div><div class="ch-ver">${esc(r.tag)}</div><div class="ch-date">${esc(r.date)}</div></div><span class="ch-tag ${tagClass}">${tagLabel}</span><svg class="ch-chevron" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg></button><div class="ch-body">${featuresHtml}${fixesHtml}${dockerHtml}${emptyHtml}</div></div>`;
   }).join('');
-  container.innerHTML=html+`<div style="text-align:center;padding:18px 0;border-top:1px solid var(--border);margin-top:4px"><a href="https://github.com/skensell201/nexspence/releases" target="_blank" rel="noopener" style="font-size:.78rem;color:#a78bfa;text-decoration:none;font-weight:600">View all releases on GitHub →</a></div>`;
+  container.innerHTML=html+`<div style="text-align:center;padding:18px 0;border-top:1px solid var(--border);margin-top:4px"><a href="https://github.com/skensell201/nexspence/releases" target="_blank" rel="noopener" style="font-size:.78rem;color:#a78bfa;text-decoration:none;font-weight:600">${t('ch.view-all')}</a></div>`;
 }
 
 function renderStaticSection(key){
@@ -756,14 +926,15 @@ function renderStaticSection(key){
   if(!tpl)return;
   const container=document.getElementById('doc-content');
   container.innerHTML='';
-  container.appendChild(tpl.content.cloneNode(true));
+  const node=tpl.content.cloneNode(true);
+  applyTranslations(node);
+  container.appendChild(node);
 }
 
 function setSection(key){
   state.activeSection=key;
-  const section=SECTIONS.find(s=>s.key===key);
-  document.getElementById('breadcrumb-current').textContent=section.label.toLowerCase();
-  document.getElementById('mob-active-page').textContent=section.label;
+  document.getElementById('breadcrumb-current').textContent=t('crumb.'+key);
+  document.getElementById('mob-active-page').textContent=t('tab.'+key);
   renderTabs(key);
   renderSidebar(state.releases,key,state.activeVersion);
   if(key==='changelog')renderChangelog(state.activeVersion);
@@ -778,6 +949,7 @@ function installPlatform(id,btn){
   wrap.querySelectorAll('.inst-ptab').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
   wrap.querySelectorAll('.inst-pnl').forEach(p=>p.classList.toggle('active',p.dataset.pnl===id));
+  applyTranslations(document.getElementById('doc-content'));
 }
 function installVariant(platform,variant,btn){
   const variants=platform==='docker'?INST_DOCKER_VARIANTS:INST_K8S_VARIANTS;
@@ -785,6 +957,7 @@ function installVariant(platform,variant,btn){
   btn.classList.add('active');
   const wrap=btn.closest('.inst-pnl');
   wrap.querySelectorAll('.inst-vpnl').forEach(p=>p.classList.toggle('active',p.dataset.vpnl===platform+'-'+variant));
+  applyTranslations(document.getElementById('doc-content'));
 }
 function copyCode(btn){
   const body=btn.closest('.cb').querySelector('.cb-body');
@@ -808,13 +981,15 @@ document.getElementById('mob-nav-toggle').addEventListener('click',function(){
     if(!state.releases.length)throw new Error('empty');
     state.activeVersion=state.releases[0].tag;
     state.activeSection='changelog';
+    document.querySelectorAll('.lang-btn').forEach(b=>b.classList.toggle('active',b.dataset.lang===state.lang));
+    applyTranslations(document.querySelector('.docs-header'));
     renderVersionBar(state.releases,state.activeVersion);
     renderSidebar(state.releases,state.activeSection,state.activeVersion);
     renderTabs(state.activeSection);
     renderChangelog(state.activeVersion);
   }catch(err){
     document.getElementById('ver-bar').innerHTML='';
-    document.getElementById('doc-content').innerHTML=`<div class="empty-state"><svg fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><p>Could not load release data.<br><a href="https://github.com/skensell201/nexspence/releases" target="_blank" rel="noopener">View releases on GitHub →</a></p></div>`;
+    document.getElementById('doc-content').innerHTML=`<div class="empty-state"><svg fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><p>${t('ch.error')}<br><a href="https://github.com/skensell201/nexspence/releases" target="_blank" rel="noopener">${t('ch.error-link')}</a></p></div>`;
     state.releases=[];state.activeVersion='';
     renderSidebar([],state.activeSection,'');
     renderTabs(state.activeSection);
