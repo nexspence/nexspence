@@ -80,12 +80,6 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .doc-breadcrumb .sep{color:var(--faint)}
 .doc-breadcrumb .current{color:var(--text);font-weight:600}
 
-.doc-tabs{display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:20px;overflow-x:auto;scrollbar-width:none}
-.doc-tabs::-webkit-scrollbar{display:none}
-.dtab{padding:9px 14px;font-size:.78rem;font-weight:600;color:var(--dim);border:none;background:transparent;cursor:pointer;font-family:'Inter',system-ui,sans-serif;transition:all 150ms;border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap;flex-shrink:0}
-.dtab:hover{color:var(--text)}
-.dtab.active{color:#a78bfa;border-bottom-color:#a78bfa}
-
 .tab-panel{display:none}
 .tab-panel.active{display:block}
 
@@ -282,7 +276,6 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
         <span class="sep" aria-hidden="true">/</span>
         <span class="current" id="breadcrumb-current">changelog</span>
       </nav>
-      <div class="doc-tabs" role="tablist" id="doc-tabs"></div>
       <div id="doc-content">
         <div class="skel-card skeleton"></div>
         <div class="skel-card skeleton" style="height:100px"></div>
@@ -630,10 +623,19 @@ const TRANSLATIONS={
     'sb.getting-started':'Getting Started','sb.reference':'Reference','sb.changelog':'Changelog',
     'sb.quickstart':'Quick Start','sb.install':'Installation','sb.formats':'Formats',
     'sb.api':'API Reference','sb.all-versions':'All versions →',
+    'sb.using':'Using Nexspence','sb.admin':'Administration','sb.advanced':'Advanced',
+    'sb.repositories':'Repositories','sb.formats-guide':'Format Setup Guides','sb.browse-search':'Browse & Search',
+    'sb.users':'Users & API Tokens','sb.rbac':'Roles & Privileges','sb.cleanup':'Cleanup Policies',
+    'sb.webhooks':'Webhooks','sb.migration':'Migration from Nexus','sb.monitoring':'Monitoring',
+    'sb.promotion':'Build Promotion','sb.replication':'Content Replication',
     'tab.quickstart':'Quick Start','tab.install':'Installation','tab.formats':'Formats',
     'tab.changelog':'Changelog','tab.api':'API Reference',
     'crumb.quickstart':'quick start','crumb.install':'installation',
     'crumb.formats':'formats','crumb.changelog':'changelog','crumb.api':'api reference',
+    'crumb.repositories':'repositories','crumb.formats-guide':'format setup','crumb.browse-search':'browse & search',
+    'crumb.users':'users & tokens','crumb.rbac':'roles & privileges','crumb.cleanup':'cleanup policies',
+    'crumb.webhooks':'webhooks','crumb.migration':'migration','crumb.monitoring':'monitoring',
+    'crumb.promotion':'build promotion','crumb.replication':'content replication',
     'ch.features':'Features','ch.fixes':'Bug Fixes',
     'ch.docker-toggle':'🐳 Docker install info',
     'ch.view-all':'View all releases on GitHub →',
@@ -696,6 +698,15 @@ const TRANSLATIONS={
     'sb.formats':'Форматы',
     'sb.api':'API',
     'sb.all-versions':'Все версии →',
+    'sb.using':'Использование','sb.admin':'Администрирование','sb.advanced':'Дополнительно',
+    'sb.repositories':'Репозитории','sb.formats-guide':'Настройка форматов','sb.browse-search':'Обзор и поиск',
+    'sb.users':'Пользователи и токены','sb.rbac':'Роли и привилегии','sb.cleanup':'Политики очистки',
+    'sb.webhooks':'Вебхуки','sb.migration':'Миграция из Nexus','sb.monitoring':'Мониторинг',
+    'sb.promotion':'Продвижение сборок','sb.replication':'Репликация контента',
+    'crumb.repositories':'репозитории','crumb.formats-guide':'настройка форматов','crumb.browse-search':'обзор и поиск',
+    'crumb.users':'пользователи и токены','crumb.rbac':'роли и привилегии','crumb.cleanup':'политики очистки',
+    'crumb.webhooks':'вебхуки','crumb.migration':'миграция','crumb.monitoring':'мониторинг',
+    'crumb.promotion':'продвижение сборок','crumb.replication':'репликация контента',
     'tab.quickstart':'Быстрый старт',
     'tab.install':'Установка',
     'tab.formats':'Форматы',
@@ -781,20 +792,48 @@ function switchLang(lang,btn){
 }
 
 const SECTIONS=[
-  {key:'quickstart',templateId:'tpl-quickstart'},
-  {key:'install',templateId:'tpl-install'},
-  {key:'formats',templateId:'tpl-formats'},
-  {key:'changelog',templateId:null},
-  {key:'api',templateId:'tpl-api'},
+  {key:'quickstart',  templateId:'tpl-quickstart'},
+  {key:'install',     templateId:'tpl-install'},
+  {key:'repositories',templateId:'tpl-repositories'},
+  {key:'formats-guide',templateId:'tpl-formats-guide'},
+  {key:'browse-search',templateId:'tpl-browse-search'},
+  {key:'users',       templateId:'tpl-users'},
+  {key:'rbac',        templateId:'tpl-rbac'},
+  {key:'cleanup',     templateId:'tpl-cleanup'},
+  {key:'webhooks',    templateId:'tpl-webhooks'},
+  {key:'migration',   templateId:'tpl-migration'},
+  {key:'monitoring',  templateId:'tpl-monitoring'},
+  {key:'promotion',   templateId:'tpl-promotion'},
+  {key:'replication', templateId:'tpl-replication'},
+  {key:'formats',     templateId:'tpl-formats'},
+  {key:'api',         templateId:'tpl-api'},
+  {key:'changelog',   templateId:null},
 ];
 const SIDEBAR_GROUPS=[
   {id:'getting-started',items:[
-    {key:'quickstart',icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>'},
-    {key:'install',icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>'},
+    {key:'quickstart',  icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>'},
+    {key:'install',     icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>'},
+  ]},
+  {id:'using',items:[
+    {key:'repositories',icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>'},
+    {key:'formats-guide',icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>'},
+    {key:'browse-search',icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>'},
+  ]},
+  {id:'admin',items:[
+    {key:'users',       icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>'},
+    {key:'rbac',        icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>'},
+    {key:'cleanup',     icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>'},
+    {key:'webhooks',    icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>'},
+  ]},
+  {id:'advanced',items:[
+    {key:'migration',   icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/></svg>'},
+    {key:'monitoring',  icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>'},
+    {key:'promotion',   icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="17 11 21 7 17 3"/><line x1="21" y1="7" x2="9" y2="7"/><polyline points="7 21 3 17 7 13"/><line x1="15" y1="17" x2="3" y2="17"/></svg>'},
+    {key:'replication', icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>'},
   ]},
   {id:'reference',items:[
-    {key:'formats',icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>'},
-    {key:'api',icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>'},
+    {key:'formats',     icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>'},
+    {key:'api',         icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>'},
   ]},
   {id:'releases',items:[]},
 ];
@@ -887,19 +926,6 @@ function renderSidebar(releases,activeSection,activeTag){
   buildLinks(document.getElementById('mob-nav-drawer'));
 }
 
-function renderTabs(activeSection){
-  const container=document.getElementById('doc-tabs');container.innerHTML='';
-  for(const s of SECTIONS){
-    const btn=document.createElement('button');
-    btn.type='button';
-    btn.className='dtab'+(s.key===activeSection?' active':'');
-    btn.setAttribute('role','tab');btn.setAttribute('aria-selected',s.key===activeSection?'true':'false');
-    btn.textContent=t('tab.'+s.key);
-    btn.addEventListener('click',()=>setSection(s.key));
-    container.appendChild(btn);
-  }
-}
-
 function renderChangelog(activeTag){
   const container=document.getElementById('doc-content');
   const activeMinor=activeTag.replace(/^v/,'').split('.').slice(0,2).join('.');
@@ -936,8 +962,7 @@ function renderStaticSection(key){
 function setSection(key){
   state.activeSection=key;
   document.getElementById('breadcrumb-current').textContent=t('crumb.'+key);
-  document.getElementById('mob-active-page').textContent=t('tab.'+key);
-  renderTabs(key);
+  document.getElementById('mob-active-page').textContent=t('sb.'+key);
   renderSidebar(state.releases,key,state.activeVersion);
   if(key==='changelog')renderChangelog(state.activeVersion);
   else renderStaticSection(key);
@@ -987,14 +1012,12 @@ document.getElementById('mob-nav-toggle').addEventListener('click',function(){
     applyTranslations(document.querySelector('.docs-header'));
     renderVersionBar(state.releases,state.activeVersion);
     renderSidebar(state.releases,state.activeSection,state.activeVersion);
-    renderTabs(state.activeSection);
     renderChangelog(state.activeVersion);
   }catch(err){
     document.getElementById('ver-bar').innerHTML='';
     document.getElementById('doc-content').innerHTML=`<div class="empty-state"><svg fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><p>${t('ch.error')}<br><a href="https://github.com/skensell201/nexspence/releases" target="_blank" rel="noopener">${t('ch.error-link')}</a></p></div>`;
     state.releases=[];state.activeVersion='';
     renderSidebar([],state.activeSection,'');
-    renderTabs(state.activeSection);
   }
 })();
 </script>
