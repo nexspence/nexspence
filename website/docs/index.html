@@ -660,6 +660,61 @@ curl -u admin:nxs_abc123... \
   </div>
 </template>
 
+<template id="tpl-cleanup">
+  <div class="doc-section-title" data-i18n="cl.title">Cleanup Policies</div>
+  <div class="doc-section-sub" data-i18n="cl.sub">Automatically remove old or unused artifacts to reclaim storage space.</div>
+
+  <div class="inst-sep" data-i18n="cl.criteria.sep">Cleanup Criteria</div>
+  <table class="doc-table">
+    <thead><tr><th data-i18n="cl.th.criterion">Criterion</th><th data-i18n="cl.th.desc">Description</th></tr></thead>
+    <tbody>
+      <tr><td data-i18n="cl.age.label">Published before</td><td data-i18n="cl.age.desc">Remove artifacts published more than N days ago.</td></tr>
+      <tr><td data-i18n="cl.last.label">Last downloaded before</td><td data-i18n="cl.last.desc">Remove artifacts not downloaded in the last N days.</td></tr>
+      <tr><td data-i18n="cl.retain.label">Retain N versions</td><td data-i18n="cl.retain.desc">Keep only the N newest versions of each component. All older versions are eligible for removal.</td></tr>
+    </tbody>
+  </table>
+  <div class="step-list">
+    <div class="step-item"><div class="step-num">01</div><div><div class="step-title" data-i18n="cl.s1.title">Create a policy</div><div class="step-desc" data-i18n="cl.s1.desc">Go to <strong>Admin → Cleanup Policies</strong>. Click <strong>+ Create</strong>. Choose format scope (<code>*</code> for all formats or a specific one), set criteria, and optionally set a cron schedule.</div></div></div>
+    <div class="step-item"><div class="step-num">02</div><div><div class="step-title" data-i18n="cl.s2.title">Attach to repositories</div><div class="step-desc" data-i18n="cl.s2.desc">Open a repository settings (gear icon) and select one or more cleanup policies. Only artifacts in attached repositories are affected.</div></div></div>
+    <div class="step-item"><div class="step-num">03</div><div><div class="step-title" data-i18n="cl.s3.title">Run now or wait for schedule</div><div class="step-desc" data-i18n="cl.s3.desc">On the policy card click <strong>Run Now</strong> to trigger an immediate dry-run (preview) or full run. The default global cron is <code>0 2 * * *</code> (2 AM daily).</div></div></div>
+  </div>
+  <div class="alert-info" data-i18n="cl.dryrun.note"><strong>Dry run:</strong> The first run shows what <em>would</em> be deleted without actually removing anything. Review the preview before enabling full deletion.</div>
+</template>
+
+<template id="tpl-webhooks">
+  <div class="doc-section-title" data-i18n="wh.title">Webhooks</div>
+  <div class="doc-section-sub" data-i18n="wh.sub">Receive HTTP POST callbacks when repository events occur. Use for CI/CD triggers, Slack notifications, audit systems, and more.</div>
+
+  <div class="inst-sep" data-i18n="wh.events.sep">Events</div>
+  <table class="doc-table">
+    <thead><tr><th data-i18n="wh.th.event">Event</th><th data-i18n="wh.th.when">When</th></tr></thead>
+    <tbody>
+      <tr><td><code>artifact.published</code></td><td data-i18n="wh.ev.published">Artifact pushed to hosted or cached by proxy</td></tr>
+      <tr><td><code>artifact.deleted</code></td><td data-i18n="wh.ev.deleted">Artifact deleted</td></tr>
+      <tr><td><code>repo.created</code></td><td data-i18n="wh.ev.repo-created">Repository created</td></tr>
+      <tr><td><code>repo.updated</code></td><td data-i18n="wh.ev.repo-updated">Repository configuration updated</td></tr>
+      <tr><td><code>repo.deleted</code></td><td data-i18n="wh.ev.repo-deleted">Repository deleted</td></tr>
+      <tr><td><code>proxy.error</code></td><td data-i18n="wh.ev.proxy-error">Proxy failed to fetch from upstream</td></tr>
+    </tbody>
+  </table>
+
+  <div class="inst-sep" data-i18n="wh.setup.sep">Setting Up a Webhook</div>
+  <div class="step-list">
+    <div class="step-item"><div class="step-num">01</div><div><div class="step-title" data-i18n="wh.s1.title">Create a webhook</div><div class="step-desc" data-i18n="wh.s1.desc"><strong>Admin → Security → Webhooks → + Create</strong>. Enter a URL, select events to subscribe to, and optionally set a secret for HMAC-SHA256 signature verification.</div></div></div>
+    <div class="step-item"><div class="step-num">02</div><div><div class="step-title" data-i18n="wh.s2.title">Test delivery</div><div class="step-desc" data-i18n="wh.s2.desc">Click the ⚡ button on the webhook card to send a test event. The response status and latency are shown inline.</div></div></div>
+    <div class="step-item"><div class="step-num">03</div><div><div class="step-title" data-i18n="wh.s3.title">Verify the signature</div><div class="step-desc" data-i18n="wh.s3.desc">If a secret is set, each request carries an <code>X-Nexspence-Signature</code> header (HMAC-SHA256 of the body). Verify it on your receiver to reject forged requests.</div></div></div>
+  </div>
+  <div class="cb"><div class="cb-bar"><span>Python — verify HMAC signature</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body">import hashlib, hmac
+
+def verify(secret: str, body: bytes, header: str) -&gt; bool:
+    expected = "sha256=" + hmac.new(
+        secret.encode(), body, hashlib.sha256
+    ).hexdigest()
+    return hmac.compare_digest(expected, header)</div></div>
+  <div class="alert-info" data-i18n="wh.retry.note"><strong>Delivery:</strong> Webhooks are fired asynchronously (fire-and-forget). If your endpoint is unavailable, the event is not retried. Use a queue or durable receiver for critical integrations.</div>
+</template>
+
 <template id="tpl-install">
   <div class="doc-section-title" data-i18n="inst.title">Installation</div>
   <div class="doc-section-sub" data-i18n="inst.sub">Docker image: <code>ghcr.io/skensell201/nexspence:latest</code> — linux/amd64 and linux/arm64. Download the release zip from <a href="https://github.com/skensell201/nexspence/releases/latest" target="_blank" rel="noopener" style="color:var(--blue)">GitHub Releases</a>.</div>
@@ -1019,6 +1074,28 @@ const TRANSLATIONS={
     'rbac.setup.s2.title':'Create a Privilege','rbac.setup.s2.desc':'<strong>Admin → Security → Privileges → + Create</strong>. Select your Content Selector.',
     'rbac.setup.s3.title':'Create a Role','rbac.setup.s3.desc':'<strong>Admin → Security → Roles → + Create</strong>. Add the privilege to the role.',
     'rbac.setup.s4.title':'Assign the Role to a User','rbac.setup.s4.desc':'<strong>Admin → Security → Users</strong>. Open the user, click <strong>Assign Roles</strong>.',
+    'cl.title':'Cleanup Policies','cl.sub':'Automatically remove old or unused artifacts to reclaim storage space.',
+    'cl.criteria.sep':'Cleanup Criteria','cl.th.criterion':'Criterion','cl.th.desc':'Description',
+    'cl.age.label':'Published before','cl.age.desc':'Remove artifacts published more than N days ago.',
+    'cl.last.label':'Last downloaded before','cl.last.desc':'Remove artifacts not downloaded in the last N days.',
+    'cl.retain.label':'Retain N versions','cl.retain.desc':'Keep only the N newest versions of each component.',
+    'cl.s1.title':'Create a policy','cl.s1.desc':'Go to <strong>Admin → Cleanup Policies → + Create</strong>. Choose format scope, set criteria, and optionally set a cron schedule.',
+    'cl.s2.title':'Attach to repositories','cl.s2.desc':'Open a repository settings (gear icon) and select cleanup policies. Only attached repositories are affected.',
+    'cl.s3.title':'Run now or wait for schedule','cl.s3.desc':'Click <strong>Run Now</strong> on the policy card. The default global cron is <code>0 2 * * *</code> (2 AM daily).',
+    'cl.dryrun.note':'<strong>Dry run:</strong> The first run shows what <em>would</em> be deleted without actually removing anything.',
+    'wh.title':'Webhooks','wh.sub':'Receive HTTP POST callbacks when repository events occur.',
+    'wh.events.sep':'Events','wh.setup.sep':'Setting Up a Webhook',
+    'wh.th.event':'Event','wh.th.when':'When',
+    'wh.ev.published':'Artifact pushed to hosted or cached by proxy',
+    'wh.ev.deleted':'Artifact deleted',
+    'wh.ev.repo-created':'Repository created',
+    'wh.ev.repo-updated':'Repository configuration updated',
+    'wh.ev.repo-deleted':'Repository deleted',
+    'wh.ev.proxy-error':'Proxy failed to fetch from upstream',
+    'wh.s1.title':'Create a webhook','wh.s1.desc':'<strong>Admin → Security → Webhooks → + Create</strong>. Enter a URL, select events, and optionally set a secret.',
+    'wh.s2.title':'Test delivery','wh.s2.desc':'Click the ⚡ button on the webhook card to send a test event.',
+    'wh.s3.title':'Verify the signature','wh.s3.desc':'If a secret is set, each request carries an <code>X-Nexspence-Signature</code> header (HMAC-SHA256 of body).',
+    'wh.retry.note':'<strong>Delivery:</strong> Webhooks are fired asynchronously. Events are not retried if your endpoint is unavailable.',
     'inst.title':'Installation',
     'inst.sub':'Docker image: <code>ghcr.io/skensell201/nexspence:latest</code> — linux/amd64 and linux/arm64. Download the release zip from <a href="https://github.com/skensell201/nexspence/releases/latest" target="_blank" rel="noopener" style="color:var(--blue)">GitHub Releases</a>.',
     'inst.v.std':'Standard','inst.v.ha':'HA Cluster','inst.v.mon':'+ Monitoring',
@@ -1159,6 +1236,28 @@ const TRANSLATIONS={
     'rbac.setup.s2.title':'Создайте Privilege','rbac.setup.s2.desc':'<strong>Admin → Security → Privileges → + Create</strong>. Выберите ваш Content Selector.',
     'rbac.setup.s3.title':'Создайте Role','rbac.setup.s3.desc':'<strong>Admin → Security → Roles → + Create</strong>. Добавьте привилегию в роль.',
     'rbac.setup.s4.title':'Назначьте роль пользователю','rbac.setup.s4.desc':'<strong>Admin → Security → Users</strong>. Откройте пользователя, нажмите <strong>Assign Roles</strong>.',
+    'cl.title':'Политики очистки','cl.sub':'Автоматически удаляйте старые или неиспользуемые артефакты для освобождения места.',
+    'cl.criteria.sep':'Критерии очистки','cl.th.criterion':'Критерий','cl.th.desc':'Описание',
+    'cl.age.label':'Опубликован до','cl.age.desc':'Удалять артефакты, опубликованные более N дней назад.',
+    'cl.last.label':'Последнее скачивание до','cl.last.desc':'Удалять артефакты, не скачивавшиеся последние N дней.',
+    'cl.retain.label':'Оставить N версий','cl.retain.desc':'Хранить только N новейших версий каждого компонента.',
+    'cl.s1.title':'Создайте политику','cl.s1.desc':'Перейдите в <strong>Admin → Cleanup Policies → + Create</strong>. Выберите формат, задайте критерии и при необходимости расписание cron.',
+    'cl.s2.title':'Привяжите к репозиториям','cl.s2.desc':'Откройте настройки репозитория (иконка шестерёнки) и выберите политики очистки.',
+    'cl.s3.title':'Запустите сейчас или дождитесь расписания','cl.s3.desc':'Нажмите <strong>Run Now</strong> на карточке политики. Стандартное расписание — <code>0 2 * * *</code> (2:00 ночи ежедневно).',
+    'cl.dryrun.note':'<strong>Dry run:</strong> Первый запуск показывает, что <em>будет</em> удалено, без фактического удаления.',
+    'wh.title':'Вебхуки','wh.sub':'Получайте HTTP POST-уведомления о событиях в репозиториях.',
+    'wh.events.sep':'События','wh.setup.sep':'Настройка вебхука',
+    'wh.th.event':'Событие','wh.th.when':'Когда',
+    'wh.ev.published':'Артефакт опубликован в hosted или закэширован proxy',
+    'wh.ev.deleted':'Артефакт удалён',
+    'wh.ev.repo-created':'Репозиторий создан',
+    'wh.ev.repo-updated':'Конфигурация репозитория обновлена',
+    'wh.ev.repo-deleted':'Репозиторий удалён',
+    'wh.ev.proxy-error':'Proxy не смог получить данные от upstream',
+    'wh.s1.title':'Создайте вебхук','wh.s1.desc':'<strong>Admin → Security → Webhooks → + Create</strong>. Укажите URL, выберите события, задайте секрет для проверки подписи.',
+    'wh.s2.title':'Тест доставки','wh.s2.desc':'Нажмите кнопку ⚡ на карточке вебхука для отправки тестового события.',
+    'wh.s3.title':'Проверка подписи','wh.s3.desc':'При наличии секрета каждый запрос содержит заголовок <code>X-Nexspence-Signature</code> (HMAC-SHA256 тела).',
+    'wh.retry.note':'<strong>Доставка:</strong> Вебхуки отправляются асинхронно. При недоступности endpoint событие не повторяется.',
     'inst.title':'Установка',
     'inst.sub':'Docker-образ: <code>ghcr.io/skensell201/nexspence:latest</code> — linux/amd64 и linux/arm64. Скачайте архив релиза с <a href="https://github.com/skensell201/nexspence/releases/latest" target="_blank" rel="noopener" style="color:var(--blue)">GitHub Releases</a>.',
     'inst.v.std':'Стандарт',
