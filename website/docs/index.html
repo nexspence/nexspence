@@ -617,6 +617,49 @@ curl -u admin:nxs_abc123... \
   <div class="alert-info" data-i18n="usr.token.limit.note"><strong>Token expiry:</strong> Maximum lifetime is controlled by <code>auth.token_max_days</code> in <code>config.yaml</code> (default 180 days). Tokens are hashed (SHA-256) — the plaintext is never stored.</div>
 </template>
 
+<template id="tpl-rbac">
+  <div class="doc-section-title" data-i18n="rbac.title">Roles &amp; Privileges</div>
+  <div class="doc-section-sub" data-i18n="rbac.sub">Nexspence uses a three-layer access control model: Content Selectors → Privileges → Roles → Users.</div>
+
+  <div class="inst-sep" data-i18n="rbac.model.sep">Access Control Model</div>
+  <div class="step-list">
+    <div class="step-item">
+      <div class="step-num" style="background:linear-gradient(135deg,#06b6d4,#0891b2)">1</div>
+      <div><div class="step-title" data-i18n="rbac.cs.title">Content Selector</div><div class="step-desc" data-i18n="rbac.cs.desc">A CEL expression that defines <em>which artifacts</em> the rule applies to. Variables available: <code>format</code>, <code>path</code>, <code>repository</code>. Example: <code>format == "maven2" &amp;&amp; path.startsWith("/com/example/")</code></div></div>
+    </div>
+    <div class="step-item">
+      <div class="step-num" style="background:linear-gradient(135deg,#f59e0b,#d97706)">2</div>
+      <div><div class="step-title" data-i18n="rbac.priv.title">Privilege</div><div class="step-desc" data-i18n="rbac.priv.desc">Binds a Content Selector to a permission. In Nexspence all user-created privileges are of type <code>repository-content-selector</code>. Create in <strong>Admin → Security → Privileges</strong>.</div></div>
+    </div>
+    <div class="step-item">
+      <div class="step-num" style="background:linear-gradient(135deg,#8b5cf6,#7c3aed)">3</div>
+      <div><div class="step-title" data-i18n="rbac.role.title">Role</div><div class="step-desc" data-i18n="rbac.role.desc">A named set of privileges. Assign roles to users. The built-in <code>nx-admin</code> role grants full access to everything.</div></div>
+    </div>
+  </div>
+
+  <div class="inst-sep" data-i18n="rbac.cel.sep">CEL Expression Examples</div>
+  <table class="doc-table">
+    <thead><tr><th data-i18n="rbac.cel.th.desc">What it matches</th><th data-i18n="rbac.cel.th.expr">CEL expression</th></tr></thead>
+    <tbody>
+      <tr><td data-i18n="rbac.cel.ex1.desc">All Maven artifacts</td><td><code>format == "maven2"</code></td></tr>
+      <tr><td data-i18n="rbac.cel.ex2.desc">Specific Maven group</td><td><code>format == "maven2" &amp;&amp; path.startsWith("/com/example/")</code></td></tr>
+      <tr><td data-i18n="rbac.cel.ex3.desc">All Docker images</td><td><code>format == "docker"</code></td></tr>
+      <tr><td data-i18n="rbac.cel.ex4.desc">Specific repository</td><td><code>repository == "npm-releases"</code></td></tr>
+      <tr><td data-i18n="rbac.cel.ex5.desc">All npm packages</td><td><code>format == "npm"</code></td></tr>
+      <tr><td data-i18n="rbac.cel.ex6.desc">PyPI in specific repo</td><td><code>format == "pypi" &amp;&amp; repository == "pypi-releases"</code></td></tr>
+      <tr><td data-i18n="rbac.cel.ex7.desc">Exclude snapshots</td><td><code>format == "maven2" &amp;&amp; !path.contains("SNAPSHOT")</code></td></tr>
+    </tbody>
+  </table>
+
+  <div class="inst-sep" data-i18n="rbac.setup.sep">Setting Up Access Control</div>
+  <div class="step-list">
+    <div class="step-item"><div class="step-num">01</div><div><div class="step-title" data-i18n="rbac.setup.s1.title">Create a Content Selector</div><div class="step-desc" data-i18n="rbac.setup.s1.desc"><strong>Admin → Security → Content Selectors → + Create</strong>. Enter a name and a CEL expression. The preview shows matching artifacts.</div></div></div>
+    <div class="step-item"><div class="step-num">02</div><div><div class="step-title" data-i18n="rbac.setup.s2.title">Create a Privilege</div><div class="step-desc" data-i18n="rbac.setup.s2.desc"><strong>Admin → Security → Privileges → + Create</strong>. Select the Content Selector you just created.</div></div></div>
+    <div class="step-item"><div class="step-num">03</div><div><div class="step-title" data-i18n="rbac.setup.s3.title">Create a Role</div><div class="step-desc" data-i18n="rbac.setup.s3.desc"><strong>Admin → Security → Roles → + Create</strong>. Add the privilege to the role.</div></div></div>
+    <div class="step-item"><div class="step-num">04</div><div><div class="step-title" data-i18n="rbac.setup.s4.title">Assign the Role to a User</div><div class="step-desc" data-i18n="rbac.setup.s4.desc"><strong>Admin → Security → Users</strong>. Open the user, click <strong>Assign Roles</strong>, add the role.</div></div></div>
+  </div>
+</template>
+
 <template id="tpl-install">
   <div class="doc-section-title" data-i18n="inst.title">Installation</div>
   <div class="doc-section-sub" data-i18n="inst.sub">Docker image: <code>ghcr.io/skensell201/nexspence:latest</code> — linux/amd64 and linux/arm64. Download the release zip from <a href="https://github.com/skensell201/nexspence/releases/latest" target="_blank" rel="noopener" style="color:var(--blue)">GitHub Releases</a>.</div>
@@ -964,6 +1007,18 @@ const TRANSLATIONS={
     'usr.token.create.title':'Create a token','usr.token.create.desc':'Open your profile → <strong>API Tokens</strong>. Click <strong>Generate Token</strong>. The token is shown <strong>once</strong> — copy it immediately.',
     'usr.token.use.title':'Use the token','usr.token.use.desc':'Tokens start with <code>nxs_</code>. Use as Bearer token or as HTTP Basic password.',
     'usr.token.limit.note':'<strong>Token expiry:</strong> Maximum lifetime is controlled by <code>auth.token_max_days</code> in <code>config.yaml</code> (default 180 days). Tokens are hashed — never stored as plaintext.',
+    'rbac.title':'Roles & Privileges','rbac.sub':'Nexspence uses a three-layer access control model: Content Selectors → Privileges → Roles → Users.',
+    'rbac.model.sep':'Access Control Model','rbac.cel.sep':'CEL Expression Examples','rbac.setup.sep':'Setting Up Access Control',
+    'rbac.cs.title':'Content Selector','rbac.cs.desc':'A CEL expression that defines <em>which artifacts</em> the rule applies to. Variables: <code>format</code>, <code>path</code>, <code>repository</code>.',
+    'rbac.priv.title':'Privilege','rbac.priv.desc':'Binds a Content Selector to a permission. All user-created privileges are type <code>repository-content-selector</code>.',
+    'rbac.role.title':'Role','rbac.role.desc':'A named set of privileges. The built-in <code>nx-admin</code> role grants full access.',
+    'rbac.cel.th.desc':'What it matches','rbac.cel.th.expr':'CEL expression',
+    'rbac.cel.ex1.desc':'All Maven artifacts','rbac.cel.ex2.desc':'Specific Maven group','rbac.cel.ex3.desc':'All Docker images',
+    'rbac.cel.ex4.desc':'Specific repository','rbac.cel.ex5.desc':'All npm packages','rbac.cel.ex6.desc':'PyPI in specific repo','rbac.cel.ex7.desc':'Exclude snapshots',
+    'rbac.setup.s1.title':'Create a Content Selector','rbac.setup.s1.desc':'<strong>Admin → Security → Content Selectors → + Create</strong>. Enter a CEL expression.',
+    'rbac.setup.s2.title':'Create a Privilege','rbac.setup.s2.desc':'<strong>Admin → Security → Privileges → + Create</strong>. Select your Content Selector.',
+    'rbac.setup.s3.title':'Create a Role','rbac.setup.s3.desc':'<strong>Admin → Security → Roles → + Create</strong>. Add the privilege to the role.',
+    'rbac.setup.s4.title':'Assign the Role to a User','rbac.setup.s4.desc':'<strong>Admin → Security → Users</strong>. Open the user, click <strong>Assign Roles</strong>.',
     'inst.title':'Installation',
     'inst.sub':'Docker image: <code>ghcr.io/skensell201/nexspence:latest</code> — linux/amd64 and linux/arm64. Download the release zip from <a href="https://github.com/skensell201/nexspence/releases/latest" target="_blank" rel="noopener" style="color:var(--blue)">GitHub Releases</a>.',
     'inst.v.std':'Standard','inst.v.ha':'HA Cluster','inst.v.mon':'+ Monitoring',
@@ -1092,6 +1147,18 @@ const TRANSLATIONS={
     'usr.token.create.title':'Создание токена','usr.token.create.desc':'Откройте профиль → <strong>API Tokens</strong>. Нажмите <strong>Generate Token</strong>. Токен показывается <strong>один раз</strong> — скопируйте сразу.',
     'usr.token.use.title':'Использование токена','usr.token.use.desc':'Токены начинаются с <code>nxs_</code>. Используйте как Bearer-токен или пароль в HTTP Basic.',
     'usr.token.limit.note':'<strong>Срок действия:</strong> максимальный срок задаётся параметром <code>auth.token_max_days</code> в <code>config.yaml</code> (по умолчанию 180 дней). Токены хранятся в виде SHA-256 хеша.',
+    'rbac.title':'Роли и привилегии','rbac.sub':'Nexspence использует трёхуровневую модель контроля доступа: Content Selectors → Privileges → Roles → Users.',
+    'rbac.model.sep':'Модель контроля доступа','rbac.cel.sep':'Примеры CEL-выражений','rbac.setup.sep':'Настройка контроля доступа',
+    'rbac.cs.title':'Content Selector','rbac.cs.desc':'CEL-выражение, определяющее <em>какие артефакты</em> покрывает правило. Переменные: <code>format</code>, <code>path</code>, <code>repository</code>.',
+    'rbac.priv.title':'Privilege','rbac.priv.desc':'Связывает Content Selector с разрешением. Все создаваемые пользователем привилегии имеют тип <code>repository-content-selector</code>.',
+    'rbac.role.title':'Role','rbac.role.desc':'Именованный набор привилегий. Встроенная роль <code>nx-admin</code> даёт полный доступ.',
+    'rbac.cel.th.desc':'Что совпадает','rbac.cel.th.expr':'CEL-выражение',
+    'rbac.cel.ex1.desc':'Все Maven-артефакты','rbac.cel.ex2.desc':'Конкретная Maven-группа','rbac.cel.ex3.desc':'Все Docker-образы',
+    'rbac.cel.ex4.desc':'Конкретный репозиторий','rbac.cel.ex5.desc':'Все npm-пакеты','rbac.cel.ex6.desc':'PyPI в конкретном репозитории','rbac.cel.ex7.desc':'Исключить снапшоты',
+    'rbac.setup.s1.title':'Создайте Content Selector','rbac.setup.s1.desc':'<strong>Admin → Security → Content Selectors → + Create</strong>. Введите CEL-выражение.',
+    'rbac.setup.s2.title':'Создайте Privilege','rbac.setup.s2.desc':'<strong>Admin → Security → Privileges → + Create</strong>. Выберите ваш Content Selector.',
+    'rbac.setup.s3.title':'Создайте Role','rbac.setup.s3.desc':'<strong>Admin → Security → Roles → + Create</strong>. Добавьте привилегию в роль.',
+    'rbac.setup.s4.title':'Назначьте роль пользователю','rbac.setup.s4.desc':'<strong>Admin → Security → Users</strong>. Откройте пользователя, нажмите <strong>Assign Roles</strong>.',
     'inst.title':'Установка',
     'inst.sub':'Docker-образ: <code>ghcr.io/skensell201/nexspence:latest</code> — linux/amd64 и linux/arm64. Скачайте архив релиза с <a href="https://github.com/skensell201/nexspence/releases/latest" target="_blank" rel="noopener" style="color:var(--blue)">GitHub Releases</a>.',
     'inst.v.std':'Стандарт',
