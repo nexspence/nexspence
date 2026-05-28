@@ -1,5 +1,7 @@
 ### ✨ Features
 
+- **Website favicon + custom error pages** — added a browser-tab favicon (`/assets/favicon.png`, 64×64 from the logo) and apple-touch-icon, linked from both the main site and `/docs/`. Added styled `404` / `403` / `50x` error pages matching the dark glassmorphism theme; nginx now serves a real 404 for unknown paths (was silently falling back to the homepage).
+
 
 ### 🐛 Bug Fixes
 

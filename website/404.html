@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>404 — Page Not Found · Nexspence</title>
+<link rel="icon" type="image/png" href="/assets/favicon.png">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#070b14;--blue:#3b82f6;--cyan:#06b6d4;--purple:#8b5cf6;--text:#f1f5f9;--dim:#94a3b8;--faint:#475569;--border:rgba(59,130,246,.14);--glass:rgba(255,255,255,.04);--glasm:rgba(255,255,255,.07)}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;padding:24px}
+.bg-glow{position:fixed;inset:0;z-index:0;background:radial-gradient(circle at 50% 30%,rgba(59,130,246,.14),transparent 55%),radial-gradient(circle at 80% 80%,rgba(139,92,246,.1),transparent 50%)}
+.err{position:relative;z-index:1;text-align:center;max-width:520px}
+.logo{display:inline-flex;align-items:center;gap:9px;text-decoration:none;margin-bottom:34px;opacity:.9;transition:opacity 150ms}
+.logo:hover{opacity:1}
+.logo img{width:26px;height:26px;object-fit:contain}
+.logo span{font-size:1.05rem;font-weight:800;letter-spacing:-.02em;color:var(--text)}
+.code{font-size:clamp(5rem,22vw,9rem);font-weight:900;line-height:1;letter-spacing:-.04em;background:linear-gradient(135deg,var(--blue),var(--purple));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:6px}
+h1{font-size:clamp(1.3rem,4vw,1.8rem);font-weight:800;letter-spacing:-.02em;margin-bottom:12px}
+p{font-size:.92rem;color:var(--dim);line-height:1.65;margin-bottom:30px}
+.actions{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+.btn{display:inline-flex;align-items:center;gap:7px;padding:11px 22px;border-radius:100px;font-size:.84rem;font-weight:600;text-decoration:none;border:1px solid var(--border);background:var(--glass);color:var(--dim);transition:all 160ms;font-family:inherit}
+.btn:hover{background:var(--glasm);color:var(--text);border-color:rgba(59,130,246,.38)}
+.btn svg{width:14px;height:14px}
+.btn.primary{background:var(--blue);border-color:var(--blue);color:#fff}
+.btn.primary:hover{background:#2563eb;box-shadow:0 0 18px rgba(59,130,246,.45)}
+@media(prefers-reduced-motion:reduce){.logo,.btn{transition:none}}
+</style>
+</head>
+<body>
+<div class="bg-glow" aria-hidden="true"></div>
+<main class="err">
+  <a class="logo" href="/"><img src="/assets/favicon.png" alt="" width="26" height="26"><span>Nexspence</span></a>
+  <div class="code">404</div>
+  <h1>Page not found</h1>
+  <p>The page you’re looking for doesn’t exist or has been moved. Check the URL, or head back to the homepage.</p>
+  <div class="actions">
+    <a class="btn primary" href="/">
+      <svg fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+      Back to home
+    </a>
+    <a class="btn" href="/docs/">
+      <svg fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+      Documentation
+    </a>
+  </div>
+</main>
+</body>
+</html>
