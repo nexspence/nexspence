@@ -145,8 +145,25 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .alert-info{background:rgba(59,130,246,.06);border:1px solid rgba(59,130,246,.2);border-radius:8px;padding:12px 16px;font-size:.78rem;color:var(--dim);line-height:1.6;margin-bottom:14px}
 .alert-info strong{color:var(--blue)}
 
-.inst-group-label{font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--dim);margin-bottom:10px;display:flex;align-items:center;gap:8px}
-.inst-group-label::after{content:'';flex:1;height:1px;background:var(--border)}
+.inst-platform-row{display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap}
+.inst-ptab{display:inline-flex;align-items:center;gap:7px;padding:9px 18px;border-radius:10px;border:1px solid var(--border);background:var(--glass);color:var(--dim);font-size:.81rem;font-weight:600;cursor:pointer;font-family:'Inter',system-ui,sans-serif;transition:all 150ms}
+.inst-ptab:hover{background:var(--glasm);color:var(--text)}
+.inst-ptab.active{background:rgba(59,130,246,.12);border-color:rgba(59,130,246,.4);color:var(--blue)}
+.inst-ptab .ptab-icon{font-size:1rem;line-height:1}
+.inst-pnl{display:none}.inst-pnl.active{display:block}
+.inst-variant-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:18px;padding:10px 12px;background:var(--glass);border:1px solid var(--border);border-radius:10px}
+.inst-vchip{display:inline-flex;align-items:center;padding:5px 12px;border-radius:6px;font-size:.73rem;font-weight:600;cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--dim);font-family:'Inter',system-ui,sans-serif;transition:all 150ms;white-space:nowrap}
+.inst-vchip:hover{background:var(--glasm);color:var(--text)}
+.inst-vchip.active{background:rgba(59,130,246,.14);border-color:rgba(59,130,246,.4);color:var(--blue)}
+.inst-vchip.full{color:var(--purple)}.inst-vchip.full.active{background:rgba(139,92,246,.14);border-color:rgba(139,92,246,.4);color:var(--purple)}
+.inst-vpnl{display:none}.inst-vpnl.active{display:block}
+.inst-badges{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:14px}
+.inst-badge{display:inline-flex;align-items:center;padding:3px 9px;border-radius:20px;font-size:.67rem;font-weight:700;border:1px solid}
+.inst-badge.b{background:rgba(59,130,246,.1);color:var(--blue);border-color:rgba(59,130,246,.28)}
+.inst-badge.p{background:rgba(139,92,246,.1);color:var(--purple);border-color:rgba(139,92,246,.28)}
+.inst-badge.a{background:rgba(245,158,11,.1);color:var(--amber);border-color:rgba(245,158,11,.28)}
+.inst-sep{display:flex;align-items:center;gap:10px;margin:24px 0 14px;font-size:.67rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--faint)}
+.inst-sep::after{content:'';flex:1;height:1px;background:var(--border)}
 .empty-state{text-align:center;padding:48px 24px;color:var(--faint)}
 .empty-state svg{width:40px;height:40px;margin:0 auto 12px;opacity:.4;display:block}
 .empty-state p{font-size:.85rem;line-height:1.6}
@@ -334,190 +351,200 @@ open http://localhost:8081  <span class="cc"># default login: admin / admin123</
   <div class="doc-section-title">Installation</div>
   <div class="doc-section-sub">Docker image: <code>ghcr.io/skensell201/nexspence:latest</code> — linux/amd64 and linux/arm64. Download the release zip from <a href="https://github.com/skensell201/nexspence/releases/latest" target="_blank" rel="noopener" style="color:var(--blue)">GitHub Releases</a>.</div>
 
-  <!-- ── Docker Compose ── -->
-  <div class="inst-group-label">🐳 Docker Compose</div>
+  <div class="inst-platform">
+    <!-- Platform switcher -->
+    <div class="inst-platform-row">
+      <button type="button" class="inst-ptab active" onclick="installPlatform('docker',this)">
+        <span class="ptab-icon">🐳</span> Docker Compose
+      </button>
+      <button type="button" class="inst-ptab" onclick="installPlatform('k8s',this)">
+        <span class="ptab-icon">☸️</span> Kubernetes / Helm
+      </button>
+    </div>
 
-  <div class="ch-card open">
-    <button type="button" class="ch-header" onclick="this.closest('.ch-card').classList.toggle('open')">
-      <div><div class="ch-ver" style="font-size:.88rem">Standard</div><div class="ch-date">PostgreSQL + MinIO + Nexspence</div></div>
-      <span class="ch-tag latest">recommended</span>
-      <svg class="ch-chevron" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
-    </button>
-    <div class="ch-body">
-      <div class="step-list" style="margin-bottom:14px">
-        <div class="step-item"><div class="step-num">01</div><div><div class="step-title">Download &amp; configure</div><div class="step-desc">Unpack the release zip. Copy <code>config.yaml.example</code> → <code>config.yaml</code>. Set <code>auth.jwt_secret</code> (min 32 chars) and <code>bootstrap.admin_password</code>.</div></div></div>
-        <div class="step-item"><div class="step-num">02</div><div><div class="step-title">Start</div><div class="step-desc">PostgreSQL starts first, Nexspence waits for it, runs migrations automatically, then serves the UI.</div></div></div>
+    <!-- ══ DOCKER ══ -->
+    <div class="inst-pnl active" data-pnl="docker">
+      <div class="inst-variant-row">
+        <button type="button" class="inst-vchip active" onclick="installVariant('docker','std',this)">Standard</button>
+        <button type="button" class="inst-vchip" onclick="installVariant('docker','ha',this)">HA Cluster</button>
+        <button type="button" class="inst-vchip" onclick="installVariant('docker','mon',this)">+ Monitoring</button>
+        <button type="button" class="inst-vchip" onclick="installVariant('docker','sso',this)">+ Keycloak SSO</button>
+        <button type="button" class="inst-vchip full" onclick="installVariant('docker','full',this)">⭐ Full Stack</button>
       </div>
-      <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
-      <div class="cb-body">cp config.yaml.example config.yaml
+
+      <div class="inst-vpnl active" data-vpnl="docker-std">
+        <div class="step-list">
+          <div class="step-item"><div class="step-num">01</div><div><div class="step-title">Download &amp; configure</div><div class="step-desc">Unpack the release zip. Copy <code>config.yaml.example</code> → <code>config.yaml</code>. Set <code>auth.jwt_secret</code> (min 32 chars) and <code>bootstrap.admin_password</code>.</div></div></div>
+          <div class="step-item"><div class="step-num">02</div><div><div class="step-title">Start</div><div class="step-desc">PostgreSQL starts first, Nexspence waits for it, runs migrations automatically, then serves the UI.</div></div></div>
+        </div>
+        <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+        <div class="cb-body">cp config.yaml.example config.yaml
 <span class="cc"># edit config.yaml — set jwt_secret and admin_password</span>
 
 docker compose up -d</div></div>
-      <table class="doc-table">
-        <thead><tr><th>Service</th><th>URL</th><th>Default credentials</th></tr></thead>
-        <tbody>
-          <tr><td>Web UI &amp; REST API</td><td><code>http://localhost:8081</code></td><td><code>admin</code> / <code>admin123</code></td></tr>
-          <tr><td>Docker registry</td><td><code>localhost:5000</code></td><td>same</td></tr>
-          <tr><td>PostgreSQL</td><td><code>localhost:5437</code></td><td><code>nexspence</code> / <code>nexspence</code></td></tr>
-          <tr><td>MinIO console</td><td><code>http://localhost:9001</code></td><td><code>minioadmin</code> / <code>minioadmin</code></td></tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
+        <table class="doc-table">
+          <thead><tr><th>Service</th><th>URL</th><th>Default credentials</th></tr></thead>
+          <tbody>
+            <tr><td>Web UI &amp; REST API</td><td><code>http://localhost:8081</code></td><td><code>admin / admin123</code></td></tr>
+            <tr><td>Docker registry</td><td><code>localhost:5000</code></td><td>same</td></tr>
+            <tr><td>PostgreSQL</td><td><code>localhost:5437</code></td><td><code>nexspence / nexspence</code></td></tr>
+            <tr><td>MinIO console</td><td><code>http://localhost:9001</code></td><td><code>minioadmin / minioadmin</code></td></tr>
+          </tbody>
+        </table>
+        <div class="alert-info"><strong>Note:</strong> Change the admin password immediately after first login via <strong>Admin → Security → Users</strong>.</div>
+      </div>
 
-  <div class="ch-card">
-    <button type="button" class="ch-header" onclick="this.closest('.ch-card').classList.toggle('open')">
-      <div><div class="ch-ver" style="font-size:.88rem">HA Cluster</div><div class="ch-date">2 nodes + nginx LB + Redis + MinIO + PostgreSQL</div></div>
-      <svg class="ch-chevron" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
-    </button>
-    <div class="ch-body">
-      <p style="font-size:.8rem;color:var(--dim);margin-bottom:12px;line-height:1.6">Two stateless Nexspence nodes behind nginx (<code>least_conn</code>). Shared state lives in PostgreSQL, Redis, and MinIO. Requires Redis enabled in <code>config.yaml</code>.</p>
-      <div class="cb"><div class="cb-bar"><span>config.yaml</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
-      <div class="cb-body"><span class="ck">redis</span>:
+      <div class="inst-vpnl" data-vpnl="docker-ha">
+        <div class="alert-info"><strong>Requires Redis</strong> enabled in <code>config.yaml</code>: <code>redis.enabled: true</code> and <code>redis.addr: "redis:6379"</code>. Two stateless Nexspence nodes behind nginx (<code>least_conn</code>) — shared state in PostgreSQL, Redis, and MinIO.</div>
+        <div class="cb"><div class="cb-bar"><span>config.yaml</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+        <div class="cb-body"><span class="ck">redis</span>:
   <span class="ck">enabled</span>: <span class="cs">true</span>
   <span class="ck">addr</span>: <span class="cs">"redis:6379"</span></div></div>
-      <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
-      <div class="cb-body">docker compose -f docker-compose.ha.yml up -d
+        <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+        <div class="cb-body">docker compose -f docker-compose.ha.yml up -d
 
-<span class="cc"># Load balancer:  http://localhost:8080</span>
-<span class="cc"># Grafana:        http://localhost:3000  (with --profile monitoring)</span></div></div>
-    </div>
-  </div>
+<span class="cc"># Load balancer:  http://localhost:8080  (2 nodes + nginx)</span></div></div>
+      </div>
 
-  <div class="ch-card">
-    <button type="button" class="ch-header" onclick="this.closest('.ch-card').classList.toggle('open')">
-      <div><div class="ch-ver" style="font-size:.88rem">With Monitoring</div><div class="ch-date">Prometheus + Grafana, 8-panel dashboard</div></div>
-      <svg class="ch-chevron" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
-    </button>
-    <div class="ch-body">
-      <p style="font-size:.8rem;color:var(--dim);margin-bottom:12px;line-height:1.6">Before starting, create a Bearer token in the UI (<strong>Security → API Tokens</strong>) and paste it into <code>deploy/monitoring/prometheus-token</code>.</p>
-      <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
-      <div class="cb-body">cp deploy/monitoring/prometheus-token.example deploy/monitoring/prometheus-token
-<span class="cc"># paste your nxs_* token into the file</span>
+      <div class="inst-vpnl" data-vpnl="docker-mon">
+        <div class="alert-info" style="background:rgba(245,158,11,.06);border-color:rgba(245,158,11,.2)"><strong style="color:var(--amber)">Before starting:</strong> create an API token in the UI (<strong>Security → API Tokens</strong>) and paste it into <code>deploy/monitoring/prometheus-token</code>.</div>
+        <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+        <div class="cb-body">cp deploy/monitoring/prometheus-token.example \
+   deploy/monitoring/prometheus-token
+<span class="cc"># paste your nxs_* token</span>
 
 docker compose --profile monitoring up -d
 
 <span class="cc"># Prometheus:  http://localhost:9090</span>
 <span class="cc"># Grafana:     http://localhost:3000  (admin / admin)</span></div></div>
-    </div>
-  </div>
+      </div>
 
-  <div class="ch-card">
-    <button type="button" class="ch-header" onclick="this.closest('.ch-card').classList.toggle('open')">
-      <div><div class="ch-ver" style="font-size:.88rem">With Keycloak SSO</div><div class="ch-date">OIDC — Keycloak, Google, Entra ID, Okta</div></div>
-      <svg class="ch-chevron" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
-    </button>
-    <div class="ch-body">
-      <p style="font-size:.8rem;color:var(--dim);margin-bottom:12px;line-height:1.6">Starts a pre-configured Keycloak dev instance with the <code>nexspence</code> realm imported. "Sign in with Keycloak" appears on the login page automatically.</p>
-      <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
-      <div class="cb-body">OIDC_ENABLED=true docker compose --profile keycloak up -d
+      <div class="inst-vpnl" data-vpnl="docker-sso">
+        <p style="font-size:.8rem;color:var(--dim);margin-bottom:12px;line-height:1.6">Pre-configured Keycloak dev instance with the <code>nexspence</code> realm imported. "Sign in with Keycloak" appears on the login page automatically. Supports Keycloak, Google, Entra ID, and Okta.</p>
+        <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+        <div class="cb-body">OIDC_ENABLED=true docker compose --profile keycloak up -d
 
 <span class="cc"># Nexspence:       http://localhost:8081  (admin / admin123)</span>
 <span class="cc"># Keycloak admin:  http://localhost:8180  (admin / admin)</span>
-<span class="cc"># Test SSO user:   testuser / testpass (mapped to nx-admin role)</span>
+<span class="cc"># Test SSO user:   testuser / testpass  →  nx-admin role</span></div></div>
+      </div>
 
-<span class="cc"># Combine with monitoring:</span>
-OIDC_ENABLED=true docker compose --profile keycloak --profile monitoring up -d</div></div>
-    </div>
-  </div>
+      <div class="inst-vpnl" data-vpnl="docker-full">
+        <div class="alert-info" style="background:rgba(139,92,246,.06);border-color:rgba(139,92,246,.2)"><strong style="color:var(--purple)">Full Stack</strong> — HA Cluster + Keycloak SSO + Prometheus/Grafana monitoring, all in one command.</div>
+        <div class="inst-badges">
+          <span class="inst-badge b">2 × Nexspence</span>
+          <span class="inst-badge b">nginx LB</span>
+          <span class="inst-badge b">PostgreSQL</span>
+          <span class="inst-badge b">MinIO</span>
+          <span class="inst-badge b">Redis</span>
+          <span class="inst-badge p">Keycloak</span>
+          <span class="inst-badge a">Prometheus</span>
+          <span class="inst-badge a">Grafana</span>
+        </div>
+        <div class="step-list">
+          <div class="step-item"><div class="step-num">01</div><div><div class="step-title">Enable Redis in config.yaml</div><div class="step-desc"><code>redis.enabled: true</code> and <code>redis.addr: "redis:6379"</code></div></div></div>
+          <div class="step-item"><div class="step-num">02</div><div><div class="step-title">Create a Prometheus token</div><div class="step-desc">Start the stack once without monitoring, create an <code>nxs_*</code> API token in <strong>Security → API Tokens</strong>, then paste it into <code>deploy/monitoring/prometheus-token</code>.</div></div></div>
+          <div class="step-item"><div class="step-num">03</div><div><div class="step-title">Launch everything</div><div class="step-desc">Run the command below. All services start in the correct order.</div></div></div>
+        </div>
+        <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+        <div class="cb-body">OIDC_ENABLED=true docker compose \
+  -f docker-compose.ha.yml \
+  --profile keycloak \
+  --profile monitoring \
+  up -d
 
-  <!-- ── Kubernetes / Helm ── -->
-  <div class="inst-group-label" style="margin-top:28px">☸️ Kubernetes / Helm</div>
-  <p style="font-size:.8rem;color:var(--dim);margin-bottom:14px;line-height:1.6">Requires Helm 3.x and Kubernetes ≥ 1.26. The chart is in <code>deploy/helm/nexspence/</code> inside the release zip. Run <code>helm dependency update</code> first to fetch the PostgreSQL sub-chart.</p>
+<span class="cc"># Load balancer:   http://localhost:8080  (2 nodes)</span>
+<span class="cc"># Keycloak admin:  http://localhost:8180  (admin / admin)</span>
+<span class="cc"># Test SSO user:   testuser / testpass  →  nx-admin role</span>
+<span class="cc"># Prometheus:      http://localhost:9090</span>
+<span class="cc"># Grafana:         http://localhost:3000  (admin / admin)</span></div></div>
+      </div>
+    </div><!-- /docker -->
 
-  <div class="ch-card open">
-    <button type="button" class="ch-header" onclick="this.closest('.ch-card').classList.toggle('open')">
-      <div><div class="ch-ver" style="font-size:.88rem">nginx ingress-controller</div><div class="ch-date">most common</div></div>
-      <span class="ch-tag latest">recommended</span>
-      <svg class="ch-chevron" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
-    </button>
-    <div class="ch-body">
-      <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
-      <div class="cb-body">cd deploy/helm/nexspence &amp;&amp; helm dependency update
+    <!-- ══ KUBERNETES ══ -->
+    <div class="inst-pnl" data-pnl="k8s">
+      <div class="alert-info" style="margin-bottom:16px"><strong>Requirements:</strong> Helm 3.x · Kubernetes ≥ 1.26. Extract the release zip — the chart is at <code>deploy/helm/nexspence/</code>. Run <code>helm dependency update</code> first to fetch the PostgreSQL sub-chart.</div>
+      <div class="inst-variant-row">
+        <button type="button" class="inst-vchip active" onclick="installVariant('k8s','nginx',this)">nginx</button>
+        <button type="button" class="inst-vchip" onclick="installVariant('k8s','traefik',this)">Traefik</button>
+        <button type="button" class="inst-vchip" onclick="installVariant('k8s','cilium-ing',this)">Cilium ingress</button>
+        <button type="button" class="inst-vchip" onclick="installVariant('k8s','istio',this)">Istio Gateway</button>
+        <button type="button" class="inst-vchip" onclick="installVariant('k8s','cilium-gw',this)">Cilium Gateway API</button>
+      </div>
+
+      <div class="inst-vpnl active" data-vpnl="k8s-nginx">
+        <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+        <div class="cb-body">cd deploy/helm/nexspence &amp;&amp; helm dependency update
 
 helm install nexspence deploy/helm/nexspence \
   -f deploy/helm/nexspence/values-examples/nginx.yaml \
   --set config.jwtSecret="$(openssl rand -hex 32)" \
   --set config.adminPassword="changeme" \
   --namespace nexspence --create-namespace</div></div>
-    </div>
-  </div>
+      </div>
 
-  <div class="ch-card">
-    <button type="button" class="ch-header" onclick="this.closest('.ch-card').classList.toggle('open')">
-      <div><div class="ch-ver" style="font-size:.88rem">Traefik</div><div class="ch-date">HTTPS via websecure entrypoint</div></div>
-      <svg class="ch-chevron" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
-    </button>
-    <div class="ch-body">
-      <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
-      <div class="cb-body">helm install nexspence deploy/helm/nexspence \
+      <div class="inst-vpnl" data-vpnl="k8s-traefik">
+        <div class="alert-info" style="background:rgba(245,158,11,.06);border-color:rgba(245,158,11,.2)"><strong style="color:var(--amber)">Requires</strong> TLS secret <code>nexspence-tls</code> in the namespace.</div>
+        <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+        <div class="cb-body">cd deploy/helm/nexspence &amp;&amp; helm dependency update
+
+helm install nexspence deploy/helm/nexspence \
   -f deploy/helm/nexspence/values-examples/traefik.yaml \
   --set config.jwtSecret="$(openssl rand -hex 32)" \
   --set config.adminPassword="changeme" \
-  --namespace nexspence --create-namespace
+  --namespace nexspence --create-namespace</div></div>
+      </div>
 
-<span class="cc"># Requires TLS secret: nexspence-tls</span></div></div>
-    </div>
-  </div>
+      <div class="inst-vpnl" data-vpnl="k8s-cilium-ing">
+        <div class="alert-info" style="background:rgba(245,158,11,.06);border-color:rgba(245,158,11,.2)"><strong style="color:var(--amber)">Requires</strong> Cilium ≥ 1.12 with ingress controller enabled.</div>
+        <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+        <div class="cb-body">cd deploy/helm/nexspence &amp;&amp; helm dependency update
 
-  <div class="ch-card">
-    <button type="button" class="ch-header" onclick="this.closest('.ch-card').classList.toggle('open')">
-      <div><div class="ch-ver" style="font-size:.88rem">Cilium ingress-controller</div><div class="ch-date">Cilium ≥ 1.12</div></div>
-      <svg class="ch-chevron" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
-    </button>
-    <div class="ch-body">
-      <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
-      <div class="cb-body">helm install nexspence deploy/helm/nexspence \
+helm install nexspence deploy/helm/nexspence \
   -f deploy/helm/nexspence/values-examples/cilium-ingress.yaml \
   --set config.jwtSecret="$(openssl rand -hex 32)" \
   --set config.adminPassword="changeme" \
   --namespace nexspence --create-namespace</div></div>
-    </div>
-  </div>
+      </div>
 
-  <div class="ch-card">
-    <button type="button" class="ch-header" onclick="this.closest('.ch-card').classList.toggle('open')">
-      <div><div class="ch-ver" style="font-size:.88rem">Istio Gateway</div><div class="ch-date">Istio service mesh</div></div>
-      <svg class="ch-chevron" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
-    </button>
-    <div class="ch-body">
-      <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
-      <div class="cb-body">helm install nexspence deploy/helm/nexspence \
+      <div class="inst-vpnl" data-vpnl="k8s-istio">
+        <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+        <div class="cb-body">cd deploy/helm/nexspence &amp;&amp; helm dependency update
+
+helm install nexspence deploy/helm/nexspence \
   -f deploy/helm/nexspence/values-examples/istio.yaml \
   --set config.jwtSecret="$(openssl rand -hex 32)" \
   --set config.adminPassword="changeme" \
   --namespace nexspence --create-namespace</div></div>
-    </div>
-  </div>
+      </div>
 
-  <div class="ch-card">
-    <button type="button" class="ch-header" onclick="this.closest('.ch-card').classList.toggle('open')">
-      <div><div class="ch-ver" style="font-size:.88rem">Cilium Gateway API</div><div class="ch-date">Cilium ≥ 1.15 + Gateway API CRDs</div></div>
-      <svg class="ch-chevron" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
-    </button>
-    <div class="ch-body">
-      <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
-      <div class="cb-body">helm install nexspence deploy/helm/nexspence \
+      <div class="inst-vpnl" data-vpnl="k8s-cilium-gw">
+        <div class="alert-info" style="background:rgba(245,158,11,.06);border-color:rgba(245,158,11,.2)"><strong style="color:var(--amber)">Requires</strong> Cilium ≥ 1.15 + Gateway API CRDs installed.</div>
+        <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+        <div class="cb-body">cd deploy/helm/nexspence &amp;&amp; helm dependency update
+
+helm install nexspence deploy/helm/nexspence \
   -f deploy/helm/nexspence/values-examples/cilium-gateway.yaml \
   --set config.jwtSecret="$(openssl rand -hex 32)" \
   --set config.adminPassword="changeme" \
   --namespace nexspence --create-namespace</div></div>
-    </div>
-  </div>
+      </div>
+    </div><!-- /k8s -->
+  </div><!-- /inst-platform -->
 
   <!-- ── Config reference ── -->
-  <div class="inst-group-label" style="margin-top:28px">⚙️ Configuration Reference</div>
+  <div class="inst-sep">⚙️ Configuration Reference</div>
   <p style="font-size:.8rem;color:var(--dim);margin-bottom:14px;line-height:1.6">Every key can be overridden via env var: <code>NEXSPENCE_&lt;SECTION&gt;_&lt;KEY&gt;</code> (uppercase, underscore-separated).</p>
   <table class="doc-table">
     <thead><tr><th>Key</th><th>Default</th><th>Description</th></tr></thead>
     <tbody>
+      <tr><td><code>auth.jwt_secret</code></td><td>—</td><td><strong style="color:var(--red)">Required.</strong> JWT signing key — min 32 chars</td></tr>
+      <tr><td><code>bootstrap.admin_password</code></td><td><code>admin123</code></td><td><strong style="color:var(--red)">Change before production.</strong> Auto-created admin password</td></tr>
       <tr><td><code>http.addr</code></td><td><code>:8081</code></td><td>Listen address</td></tr>
       <tr><td><code>http.base_url</code></td><td><code>http://localhost:8081</code></td><td>Public URL used in download links</td></tr>
-      <tr><td><code>auth.jwt_secret</code></td><td>—</td><td><strong style="color:var(--red)">Required.</strong> JWT signing key — min 32 chars</td></tr>
       <tr><td><code>auth.jwt_expiry_hours</code></td><td><code>24</code></td><td>JWT token lifetime</td></tr>
       <tr><td><code>auth.token_max_days</code></td><td><code>180</code></td><td>Max lifetime for user API tokens (<code>nxs_*</code>)</td></tr>
       <tr><td><code>auth.anonymous_enabled</code></td><td><code>true</code></td><td>Allow unauthenticated read on public repos</td></tr>
-      <tr><td><code>bootstrap.admin_password</code></td><td><code>admin123</code></td><td><strong style="color:var(--red)">Change before production.</strong> Auto-created admin password</td></tr>
       <tr><td><code>storage.default_type</code></td><td><code>local</code></td><td><code>local</code> or <code>s3</code></td></tr>
       <tr><td><code>storage.s3.endpoint</code></td><td>—</td><td>S3 endpoint URL (e.g. <code>http://minio:9000</code>)</td></tr>
       <tr><td><code>storage.s3.bucket</code></td><td>—</td><td>S3 bucket name (required when type=s3)</td></tr>
@@ -744,6 +771,21 @@ function setSection(key){
   if(window.innerWidth<=768)window.scrollTo({top:0,behavior:'smooth'});
 }
 
+const INST_DOCKER_VARIANTS=['std','ha','mon','sso','full'];
+const INST_K8S_VARIANTS=['nginx','traefik','cilium-ing','istio','cilium-gw'];
+function installPlatform(id,btn){
+  const wrap=btn.closest('.inst-platform');
+  wrap.querySelectorAll('.inst-ptab').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  wrap.querySelectorAll('.inst-pnl').forEach(p=>p.classList.toggle('active',p.dataset.pnl===id));
+}
+function installVariant(platform,variant,btn){
+  const variants=platform==='docker'?INST_DOCKER_VARIANTS:INST_K8S_VARIANTS;
+  btn.parentElement.querySelectorAll('.inst-vchip').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  const wrap=btn.closest('.inst-pnl');
+  wrap.querySelectorAll('.inst-vpnl').forEach(p=>p.classList.toggle('active',p.dataset.vpnl===platform+'-'+variant));
+}
 function copyCode(btn){
   const body=btn.closest('.cb').querySelector('.cb-body');
   navigator.clipboard.writeText(body.innerText).then(()=>{
