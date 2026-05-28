@@ -46,7 +46,7 @@ Nexspence is a self-hosted artifact repository manager that supports **14 packag
                     └────────────────────────────────────────────────┘
 ```
 
-View the full site with interactive architecture diagram, install guide, and comparison: **[nexspence.online](https://nexspence.online)** →
+View the full site with interactive architecture diagram, install guide, and comparison: **[nexspence.com](https://nexspence.com)** →
 
 ---
 
