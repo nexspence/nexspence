@@ -546,6 +546,77 @@ curl -u admin:admin123 \
   -O http://localhost:8081/repository/raw-hosted/releases/myfile.tar.gz</div></div>
 </template>
 
+<template id="tpl-browse-search">
+  <div class="doc-section-title" data-i18n="bs.title">Browse &amp; Search</div>
+  <div class="doc-section-sub" data-i18n="bs.sub">Find, inspect, and download artifacts stored in Nexspence repositories.</div>
+
+  <div class="inst-sep" data-i18n="bs.browse.sep">Browse</div>
+  <div class="step-list">
+    <div class="step-item"><div class="step-num">01</div><div><div class="step-title" data-i18n="bs.browse.s1.title">Open Browse</div><div class="step-desc" data-i18n="bs.browse.s1.desc">Click <strong>Browse</strong> in the sidebar. Select a repository from the dropdown on the left.</div></div></div>
+    <div class="step-item"><div class="step-num">02</div><div><div class="step-title" data-i18n="bs.browse.s2.title">Navigate the tree</div><div class="step-desc" data-i18n="bs.browse.s2.desc">For most formats a file tree is shown. For Docker repositories a two-column view shows image names on the left and tags on the right.</div></div></div>
+    <div class="step-item"><div class="step-num">03</div><div><div class="step-title" data-i18n="bs.browse.s3.title">Inspect a component</div><div class="step-desc" data-i18n="bs.browse.s3.desc">Click any file or component to open a detail panel with metadata (size, SHA-256, upload date), download link, and usage examples for common tools.</div></div></div>
+  </div>
+
+  <div class="inst-sep" data-i18n="bs.search.sep">Search</div>
+  <div class="step-list">
+    <div class="step-item"><div class="step-num">01</div><div><div class="step-title" data-i18n="bs.search.s1.title">Open Search</div><div class="step-desc" data-i18n="bs.search.s1.desc">Click <strong>Search</strong> in the sidebar. Enter a keyword in the search box — matches component names, group IDs, and artifact IDs.</div></div></div>
+    <div class="step-item"><div class="step-num">02</div><div><div class="step-title" data-i18n="bs.search.s2.title">Filter by format or repository</div><div class="step-desc" data-i18n="bs.search.s2.desc">Use the <strong>Format</strong> and <strong>Repository</strong> dropdowns to narrow results. You can also filter by tag.</div></div></div>
+    <div class="step-item"><div class="step-num">03</div><div><div class="step-title" data-i18n="bs.search.s3.title">Use the API</div><div class="step-desc" data-i18n="bs.search.s3.desc">Search is also available via the REST API for CI/CD integration.</div></div></div>
+  </div>
+  <div class="cb"><div class="cb-bar"><span>curl — search API</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body"><span class="cc"># Search by keyword</span>
+curl -u admin:admin123 \
+  "http://localhost:8081/service/rest/v1/search?q=mylib"
+
+<span class="cc"># Filter by format and repository</span>
+curl -u admin:admin123 \
+  "http://localhost:8081/service/rest/v1/search?format=maven2&repository=maven-releases&q=spring"
+
+<span class="cc"># List all components in a repository</span>
+curl -u admin:admin123 \
+  "http://localhost:8081/service/rest/v1/components?repository=npm-hosted"</div></div>
+</template>
+
+<template id="tpl-users">
+  <div class="doc-section-title" data-i18n="usr.title">Users &amp; API Tokens</div>
+  <div class="doc-section-sub" data-i18n="usr.sub">Manage user accounts, passwords, and programmatic API tokens for CI/CD pipelines.</div>
+
+  <div class="inst-sep" data-i18n="usr.users.sep">User Management</div>
+  <div class="step-list">
+    <div class="step-item"><div class="step-num">01</div><div><div class="step-title" data-i18n="usr.create.title">Create a user</div><div class="step-desc" data-i18n="usr.create.desc">Go to <strong>Admin → Security → Users</strong>. Click <strong>+ Create User</strong>. Fill in username, email, first/last name, and initial password. Assign roles immediately or later.</div></div></div>
+    <div class="step-item"><div class="step-num">02</div><div><div class="step-title" data-i18n="usr.roles.title">Assign roles</div><div class="step-desc" data-i18n="usr.roles.desc">Open a user and click <strong>Assign Roles</strong>. Select roles from the transfer list. The built-in <code>nx-admin</code> role grants full access; custom roles control per-repository access via privileges.</div></div></div>
+    <div class="step-item"><div class="step-num">03</div><div><div class="step-title" data-i18n="usr.ldap.title">LDAP / Active Directory</div><div class="step-desc" data-i18n="usr.ldap.desc">Configure LDAP in <code>config.yaml</code> under the <code>ldap</code> section. Users are provisioned on first login (JIT). Groups map to Nexspence roles via <code>role_mappings</code>.</div></div></div>
+  </div>
+  <div class="cb"><div class="cb-bar"><span>curl — create user via API</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body">curl -u admin:admin123 -X POST \
+  http://localhost:8081/service/rest/v1/security/users \
+  -H "Content-Type: application/json" \
+  -d '{
+    "userId": "alice",
+    "firstName": "Alice",
+    "lastName": "Smith",
+    "emailAddress": "alice@example.com",
+    "password": "secret",
+    "status": "active",
+    "roles": ["nx-anonymous"]
+  }'</div></div>
+
+  <div class="inst-sep" data-i18n="usr.tokens.sep">API Tokens</div>
+  <div class="step-list">
+    <div class="step-item"><div class="step-num">01</div><div><div class="step-title" data-i18n="usr.token.create.title">Create a token</div><div class="step-desc" data-i18n="usr.token.create.desc">Open your profile (click your username in the bottom-left). Go to <strong>API Tokens</strong> tab. Click <strong>Generate Token</strong>. Set an optional expiry. The token is shown <strong>once</strong> — copy it immediately.</div></div></div>
+    <div class="step-item"><div class="step-num">02</div><div><div class="step-title" data-i18n="usr.token.use.title">Use the token</div><div class="step-desc" data-i18n="usr.token.use.desc">Tokens start with <code>nxs_</code>. Use as Bearer token or as the password in HTTP Basic auth (username = your username, password = token).</div></div></div>
+  </div>
+  <div class="cb"><div class="cb-bar"><span>curl — using an API token</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body"><span class="cc"># Bearer auth</span>
+curl -H "Authorization: Bearer nxs_abc123..." \
+  http://localhost:8081/service/rest/v1/repositories
+
+<span class="cc"># Basic auth (username + token as password)</span>
+curl -u admin:nxs_abc123... \
+  http://localhost:8081/service/rest/v1/components?repository=maven-releases</div></div>
+  <div class="alert-info" data-i18n="usr.token.limit.note"><strong>Token expiry:</strong> Maximum lifetime is controlled by <code>auth.token_max_days</code> in <code>config.yaml</code> (default 180 days). Tokens are hashed (SHA-256) — the plaintext is never stored.</div>
+</template>
+
 <template id="tpl-install">
   <div class="doc-section-title" data-i18n="inst.title">Installation</div>
   <div class="doc-section-sub" data-i18n="inst.sub">Docker image: <code>ghcr.io/skensell201/nexspence:latest</code> — linux/amd64 and linux/arm64. Download the release zip from <a href="https://github.com/skensell201/nexspence/releases/latest" target="_blank" rel="noopener" style="color:var(--blue)">GitHub Releases</a>.</div>
@@ -877,6 +948,22 @@ const TRANSLATIONS={
     'fg.maven.desc':'Add Nexspence as a mirror in <code>~/.m2/settings.xml</code> to route all dependency downloads through your proxy repository.',
     'fg.npm.auth.note':'<strong>Auth token:</strong> <code>_auth</code> is base64 of <code>username:password</code>. Generate: <code>echo -n "admin:admin123" | base64</code>.',
     'fg.docker.insecure.note':'<strong>HTTP registry:</strong> Add <code>"insecure-registries": ["localhost:5000"]</code> to <code>/etc/docker/daemon.json</code> when using HTTP. Restart Docker after.',
+    'bs.title':'Browse & Search','bs.sub':'Find, inspect, and download artifacts stored in Nexspence repositories.',
+    'bs.browse.sep':'Browse','bs.search.sep':'Search',
+    'bs.browse.s1.title':'Open Browse','bs.browse.s1.desc':'Click <strong>Browse</strong> in the sidebar. Select a repository from the dropdown.',
+    'bs.browse.s2.title':'Navigate the tree','bs.browse.s2.desc':'A file tree is shown for most formats. Docker shows image names and tags.',
+    'bs.browse.s3.title':'Inspect a component','bs.browse.s3.desc':'Click any file to open a detail panel with metadata, download link, and usage examples.',
+    'bs.search.s1.title':'Open Search','bs.search.s1.desc':'Click <strong>Search</strong> in the sidebar. Enter a keyword — matches names, group IDs, and artifact IDs.',
+    'bs.search.s2.title':'Filter by format or repository','bs.search.s2.desc':'Use the <strong>Format</strong> and <strong>Repository</strong> dropdowns to narrow results.',
+    'bs.search.s3.title':'Use the API','bs.search.s3.desc':'Search is also available via REST API for CI/CD integration.',
+    'usr.title':'Users & API Tokens','usr.sub':'Manage user accounts, passwords, and programmatic API tokens for CI/CD pipelines.',
+    'usr.users.sep':'User Management','usr.tokens.sep':'API Tokens',
+    'usr.create.title':'Create a user','usr.create.desc':'Go to <strong>Admin → Security → Users</strong>. Click <strong>+ Create User</strong>. Assign roles immediately or later.',
+    'usr.roles.title':'Assign roles','usr.roles.desc':'Open a user and click <strong>Assign Roles</strong>. The built-in <code>nx-admin</code> role grants full access; custom roles control per-repository access.',
+    'usr.ldap.title':'LDAP / Active Directory','usr.ldap.desc':'Configure LDAP in <code>config.yaml</code> under the <code>ldap</code> section. Users are provisioned on first login (JIT).',
+    'usr.token.create.title':'Create a token','usr.token.create.desc':'Open your profile → <strong>API Tokens</strong>. Click <strong>Generate Token</strong>. The token is shown <strong>once</strong> — copy it immediately.',
+    'usr.token.use.title':'Use the token','usr.token.use.desc':'Tokens start with <code>nxs_</code>. Use as Bearer token or as HTTP Basic password.',
+    'usr.token.limit.note':'<strong>Token expiry:</strong> Maximum lifetime is controlled by <code>auth.token_max_days</code> in <code>config.yaml</code> (default 180 days). Tokens are hashed — never stored as plaintext.',
     'inst.title':'Installation',
     'inst.sub':'Docker image: <code>ghcr.io/skensell201/nexspence:latest</code> — linux/amd64 and linux/arm64. Download the release zip from <a href="https://github.com/skensell201/nexspence/releases/latest" target="_blank" rel="noopener" style="color:var(--blue)">GitHub Releases</a>.',
     'inst.v.std':'Standard','inst.v.ha':'HA Cluster','inst.v.mon':'+ Monitoring',
@@ -989,6 +1076,22 @@ const TRANSLATIONS={
     'fg.maven.desc':'Добавьте Nexspence как зеркало в <code>~/.m2/settings.xml</code>, чтобы все зависимости загружались через proxy-репозиторий.',
     'fg.npm.auth.note':'<strong>Токен авторизации:</strong> <code>_auth</code> — это base64 от <code>username:password</code>. Сгенерировать: <code>echo -n "admin:admin123" | base64</code>.',
     'fg.docker.insecure.note':'<strong>HTTP-реестр:</strong> добавьте <code>"insecure-registries": ["localhost:5000"]</code> в <code>/etc/docker/daemon.json</code>. Перезапустите Docker.',
+    'bs.title':'Обзор и поиск','bs.sub':'Находите, просматривайте и скачивайте артефакты из репозиториев Nexspence.',
+    'bs.browse.sep':'Обзор','bs.search.sep':'Поиск',
+    'bs.browse.s1.title':'Откройте Browse','bs.browse.s1.desc':'Нажмите <strong>Browse</strong> в сайдбаре. Выберите репозиторий из выпадающего списка.',
+    'bs.browse.s2.title':'Навигация по дереву','bs.browse.s2.desc':'Для большинства форматов отображается файловое дерево. Docker показывает имена образов и теги.',
+    'bs.browse.s3.title':'Инспекция компонента','bs.browse.s3.desc':'Нажмите на файл — откроется панель с метаданными, ссылкой для скачивания и примерами использования.',
+    'bs.search.s1.title':'Откройте Search','bs.search.s1.desc':'Нажмите <strong>Search</strong> в сайдбаре. Введите ключевое слово — поиск по именам, group ID и artifact ID.',
+    'bs.search.s2.title':'Фильтрация','bs.search.s2.desc':'Используйте выпадающие списки <strong>Format</strong> и <strong>Repository</strong> для сужения результатов.',
+    'bs.search.s3.title':'Использование API','bs.search.s3.desc':'Поиск доступен через REST API для интеграции с CI/CD.',
+    'usr.title':'Пользователи и API-токены','usr.sub':'Управление учётными записями, паролями и программными API-токенами для CI/CD.',
+    'usr.users.sep':'Управление пользователями','usr.tokens.sep':'API-токены',
+    'usr.create.title':'Создание пользователя','usr.create.desc':'Перейдите в <strong>Admin → Security → Users</strong>. Нажмите <strong>+ Create User</strong>.',
+    'usr.roles.title':'Назначение ролей','usr.roles.desc':'Откройте пользователя и нажмите <strong>Assign Roles</strong>. Встроенная роль <code>nx-admin</code> даёт полный доступ.',
+    'usr.ldap.title':'LDAP / Active Directory','usr.ldap.desc':'Настройте LDAP в <code>config.yaml</code> в разделе <code>ldap</code>. Пользователи создаются при первом входе (JIT).',
+    'usr.token.create.title':'Создание токена','usr.token.create.desc':'Откройте профиль → <strong>API Tokens</strong>. Нажмите <strong>Generate Token</strong>. Токен показывается <strong>один раз</strong> — скопируйте сразу.',
+    'usr.token.use.title':'Использование токена','usr.token.use.desc':'Токены начинаются с <code>nxs_</code>. Используйте как Bearer-токен или пароль в HTTP Basic.',
+    'usr.token.limit.note':'<strong>Срок действия:</strong> максимальный срок задаётся параметром <code>auth.token_max_days</code> в <code>config.yaml</code> (по умолчанию 180 дней). Токены хранятся в виде SHA-256 хеша.',
     'inst.title':'Установка',
     'inst.sub':'Docker-образ: <code>ghcr.io/skensell201/nexspence:latest</code> — linux/amd64 и linux/arm64. Скачайте архив релиза с <a href="https://github.com/skensell201/nexspence/releases/latest" target="_blank" rel="noopener" style="color:var(--blue)">GitHub Releases</a>.',
     'inst.v.std':'Стандарт',
