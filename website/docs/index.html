@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nexspence Docs</title>
+<meta name="description" content="Nexspence documentation — guides, API reference, and versioned changelog.">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#070b14;--bg2:#0c1322;
+  --blue:#3b82f6;--cyan:#06b6d4;--green:#22c55e;--amber:#f59e0b;--red:#ef4444;--purple:#8b5cf6;
+  --text:#f1f5f9;--dim:#94a3b8;--faint:#475569;
+  --glass:rgba(255,255,255,.04);--glasm:rgba(255,255,255,.07);
+  --border:rgba(59,130,246,.14);--borhi:rgba(59,130,246,.38);
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--text);overflow-x:hidden;min-height:100vh}
+::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:linear-gradient(180deg,var(--blue),var(--purple));border-radius:3px}
+
+.floatnav{position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:200;display:flex;align-items:center;gap:2px;background:rgba(7,11,20,.85);border:1px solid var(--border);border-radius:100px;padding:5px;backdrop-filter:blur(20px) saturate(160%);box-shadow:0 8px 32px rgba(0,0,0,.5),0 0 0 1px rgba(59,130,246,.1);white-space:nowrap;overflow-x:auto;max-width:calc(100vw - 32px)}
+.floatnav::-webkit-scrollbar{height:0}
+.nav-logo-mini{display:flex;align-items:center;gap:6px;padding:4px 12px 4px 8px;border-right:1px solid var(--border);margin-right:4px;flex-shrink:0;text-decoration:none}
+.nav-logo-mini img{width:20px;height:20px;object-fit:contain}
+.nav-logo-mini span{font-size:.78rem;font-weight:700;color:var(--text)}
+.npill{display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:100px;border:none;background:transparent;color:var(--dim);font-size:.75rem;font-weight:500;cursor:pointer;font-family:'Inter',system-ui,sans-serif;transition:all 180ms;white-space:nowrap;text-decoration:none}
+.npill svg{width:12px;height:12px;flex-shrink:0}
+.npill:hover{color:var(--text);background:var(--glasm)}
+.npill.docs-active{color:#a78bfa;background:rgba(139,92,246,.12)}
+.nav-actions{display:flex;align-items:center;gap:4px;margin-left:4px;padding-left:6px;border-left:1px solid var(--border);flex-shrink:0}
+.nav-gh{display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:100px;background:transparent;border:none;color:var(--dim);font-size:.72rem;font-weight:500;cursor:pointer;font-family:'Inter',system-ui,sans-serif;transition:all 180ms;text-decoration:none;white-space:nowrap}
+.nav-gh:hover{color:var(--text);background:var(--glasm)}
+.nav-gh svg{width:13px;height:13px;flex-shrink:0}
+.nav-deploy{display:inline-flex;align-items:center;gap:5px;padding:5px 13px;border-radius:100px;background:var(--blue);border:none;color:#fff;font-size:.72rem;font-weight:600;cursor:pointer;font-family:'Inter',system-ui,sans-serif;transition:all 180ms;text-decoration:none;white-space:nowrap}
+.nav-deploy:hover{background:#2563eb;box-shadow:0 0 14px rgba(59,130,246,.45)}
+.nav-deploy svg{width:12px;height:12px;flex-shrink:0}
+
+.docs-page{max-width:1200px;margin:0 auto;padding:80px 24px 60px;width:100%}
+.docs-header{margin-bottom:28px}
+.stag{font-size:.66rem;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:var(--purple);display:flex;align-items:center;gap:6px;margin-bottom:8px}
+.stag::before{content:'';width:14px;height:2px;background:var(--purple);border-radius:1px}
+.docs-title{font-size:clamp(1.6rem,4vw,2.4rem);font-weight:900;letter-spacing:-.03em;margin-bottom:6px}
+.docs-sub{font-size:.9rem;color:var(--dim);line-height:1.65}
+
+.ver-bar{display:flex;align-items:center;gap:8px;margin-bottom:24px;flex-wrap:wrap}
+.ver-label{font-size:.67rem;color:var(--faint);font-weight:700;text-transform:uppercase;letter-spacing:.08em;flex-shrink:0}
+.ver-btn{display:inline-flex;align-items:center;gap:5px;padding:5px 13px;border-radius:100px;font-size:.74rem;font-weight:600;border:1px solid var(--border);background:var(--glass);color:var(--dim);cursor:pointer;font-family:'Inter',system-ui,sans-serif;transition:all 150ms;white-space:nowrap}
+.ver-btn:hover{background:var(--glasm);color:var(--text);border-color:var(--borhi)}
+.ver-btn.active{background:rgba(139,92,246,.14);border-color:rgba(139,92,246,.4);color:#a78bfa}
+.ver-badge{font-size:.58rem;padding:1px 5px;border-radius:3px;background:rgba(34,197,94,.15);color:var(--green);font-weight:700;margin-left:2px}
+
+.docs-layout{display:grid;grid-template-columns:220px 1fr;gap:28px;align-items:start}
+.docs-sidebar{position:sticky;top:74px;background:var(--glass);border:1px solid var(--border);border-radius:14px;backdrop-filter:blur(10px);overflow:hidden}
+.dsb-inner{padding:18px 0}
+.dsb-section{padding:0 14px}
+.dsb-label{font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--faint);padding:10px 8px 5px;display:block}
+.dsb-link{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:8px;font-size:.78rem;font-weight:500;color:var(--dim);text-decoration:none;cursor:pointer;transition:all 150ms;margin-bottom:1px;border:none;background:transparent;font-family:'Inter',system-ui,sans-serif;width:100%;text-align:left}
+.dsb-link svg{width:13px;height:13px;flex-shrink:0;opacity:.55}
+.dsb-link:hover{background:var(--glasm);color:var(--text)}
+.dsb-link:hover svg{opacity:.8}
+.dsb-link.active{background:rgba(139,92,246,.1);color:#a78bfa;font-weight:600}
+.dsb-link.active svg{opacity:1;color:#a78bfa}
+.dsb-divider{height:1px;background:var(--border);margin:8px 14px}
+
+.mob-nav-toggle{display:none;align-items:center;justify-content:space-between;padding:10px 16px;background:var(--glass);border:1px solid var(--border);border-radius:10px;cursor:pointer;margin-bottom:16px;font-family:'Inter',system-ui,sans-serif;width:100%}
+.mob-nav-toggle-left{display:flex;align-items:center;gap:8px;font-size:.75rem;color:var(--dim);font-weight:600}
+.mob-nav-toggle-left svg{width:13px;height:13px}
+.mob-nav-toggle-right{display:flex;align-items:center;gap:8px}
+.mob-active-page{font-size:.75rem;font-weight:700;color:#a78bfa}
+.mob-chevron{width:14px;height:14px;color:var(--faint);transition:transform 200ms;flex-shrink:0}
+.mob-nav-toggle.open .mob-chevron{transform:rotate(180deg)}
+.mob-nav-drawer{display:none;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:10px 0 14px;margin-bottom:16px}
+.mob-nav-drawer.open{display:block}
+
+.docs-content{min-width:0}
+.doc-breadcrumb{display:flex;align-items:center;gap:6px;font-size:.7rem;color:var(--faint);margin-bottom:16px;flex-wrap:wrap}
+.doc-breadcrumb a{color:var(--dim);text-decoration:none}
+.doc-breadcrumb a:hover{color:var(--text)}
+.doc-breadcrumb .sep{color:var(--faint)}
+.doc-breadcrumb .current{color:var(--text);font-weight:600}
+
+.doc-tabs{display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:20px;overflow-x:auto;scrollbar-width:none}
+.doc-tabs::-webkit-scrollbar{display:none}
+.dtab{padding:9px 14px;font-size:.78rem;font-weight:600;color:var(--dim);border:none;background:transparent;cursor:pointer;font-family:'Inter',system-ui,sans-serif;transition:all 150ms;border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap;flex-shrink:0}
+.dtab:hover{color:var(--text)}
+.dtab.active{color:#a78bfa;border-bottom-color:#a78bfa}
+
+.tab-panel{display:none}
+.tab-panel.active{display:block}
+
+.ch-card{background:var(--glass);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:10px;transition:border-color 180ms}
+.ch-card:hover{border-color:var(--borhi)}
+.ch-header{display:flex;align-items:center;gap:12px;padding:15px 18px;cursor:pointer;user-select:none}
+.ch-ver{font-size:.95rem;font-weight:800;letter-spacing:-.02em}
+.ch-date{font-size:.68rem;color:var(--faint);font-family:'JetBrains Mono',monospace;margin-top:2px}
+.ch-tag{font-size:.6rem;font-weight:700;padding:2px 7px;border-radius:4px;margin-left:auto;flex-shrink:0}
+.ch-tag.latest{background:rgba(34,197,94,.14);color:var(--green);border:1px solid rgba(34,197,94,.28)}
+.ch-tag.minor{background:rgba(59,130,246,.12);color:var(--blue);border:1px solid rgba(59,130,246,.25)}
+.ch-tag.patch{background:rgba(71,85,105,.14);color:var(--faint);border:1px solid rgba(71,85,105,.28)}
+.ch-chevron{width:15px;height:15px;color:var(--faint);transition:transform 200ms;flex-shrink:0}
+.ch-card.open .ch-chevron{transform:rotate(180deg)}
+.ch-body{padding:0 18px 16px;display:none}
+.ch-card.open .ch-body{display:block}
+.ch-group{margin-bottom:14px}
+.ch-group-title{font-size:.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--blue);margin-bottom:8px;display:flex;align-items:center;gap:5px}
+.ch-group-title.fix{color:var(--green)}
+.ch-group-title::before{content:'';width:10px;height:2px;border-radius:1px;background:currentColor}
+.ch-items{list-style:none;display:flex;flex-direction:column;gap:5px}
+.ch-items li{font-size:.79rem;color:var(--dim);padding-left:14px;position:relative;line-height:1.55}
+.ch-items li::before{content:'–';position:absolute;left:0;color:var(--faint)}
+.ch-items li strong{color:var(--text);font-weight:600}
+.ch-items li code{font-family:'JetBrains Mono',monospace;font-size:.72rem;color:var(--cyan);background:rgba(6,182,212,.1);padding:1px 4px;border-radius:3px}
+.ch-docker{margin-top:10px}
+.ch-docker-toggle{display:inline-flex;align-items:center;gap:5px;font-size:.72rem;color:var(--faint);cursor:pointer;padding:4px 10px;border-radius:6px;background:var(--glasm);border:1px solid var(--border);font-family:'Inter',system-ui,sans-serif;transition:all 150ms}
+.ch-docker-toggle:hover{color:var(--text)}
+.ch-docker-body{display:none;margin-top:8px;background:rgba(0,0,0,.35);border:1px solid var(--border);border-radius:8px;padding:12px 14px;font-size:.74rem;color:var(--dim);line-height:1.7;font-family:'JetBrains Mono',monospace;white-space:pre-wrap;overflow-x:auto}
+.ch-docker-body.open{display:block}
+
+.skeleton{background:linear-gradient(90deg,var(--glass) 25%,var(--glasm) 50%,var(--glass) 75%);background-size:400% 100%;animation:shimmer 1.4s ease infinite;border-radius:8px}
+@keyframes shimmer{0%{background-position:100% 0}100%{background-position:-100% 0}}
+.skel-card{height:58px;margin-bottom:10px;border-radius:12px}
+
+.doc-section-title{font-size:1.2rem;font-weight:800;letter-spacing:-.02em;margin-bottom:6px}
+.doc-section-sub{font-size:.85rem;color:var(--dim);line-height:1.65;margin-bottom:20px}
+.step-list{display:flex;flex-direction:column;gap:10px;margin-bottom:20px}
+.step-item{display:flex;gap:14px;padding:14px 18px;border-radius:12px;background:var(--glass);border:1px solid var(--border)}
+.step-num{width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,var(--purple),var(--blue));display:flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:800;color:#fff;flex-shrink:0;min-width:30px}
+.step-title{font-size:.86rem;font-weight:700;margin-bottom:3px}
+.step-desc{font-size:.76rem;color:var(--dim);line-height:1.6}
+.step-desc code{font-family:'JetBrains Mono',monospace;font-size:.7rem;color:var(--cyan);background:rgba(6,182,212,.1);padding:1px 4px;border-radius:3px}
+.cb{background:rgba(0,0,0,.55);border:1px solid rgba(59,130,246,.18);border-radius:10px;overflow:hidden;margin-bottom:14px}
+.cb-bar{display:flex;align-items:center;justify-content:space-between;padding:7px 14px;background:rgba(255,255,255,.025);border-bottom:1px solid rgba(59,130,246,.1)}
+.cb-bar span{font-size:.63rem;font-weight:600;color:var(--faint);font-family:'JetBrains Mono',monospace}
+.cb-copy{font-size:.65rem;padding:3px 9px;border-radius:4px;background:transparent;border:1px solid var(--border);color:var(--dim);cursor:pointer;font-family:'Inter',system-ui,sans-serif;transition:all 150ms}
+.cb-copy:hover{background:var(--glasm);color:var(--text)}
+.cb-body{padding:14px 16px;font-family:'JetBrains Mono',monospace;font-size:.75rem;line-height:1.85;overflow-x:auto;white-space:pre;color:var(--dim)}
+.cb-body .ck{color:var(--cyan)}.cb-body .cs{color:var(--green)}.cb-body .cc{color:var(--faint)}.cb-body .cm{color:var(--amber)}
+.doc-table{width:100%;border-collapse:collapse;font-size:.8rem;margin-bottom:16px}
+.doc-table th{padding:9px 12px;text-align:left;font-weight:700;font-size:.65rem;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);border-bottom:1px solid var(--border)}
+.doc-table td{padding:10px 12px;border-bottom:1px solid rgba(59,130,246,.05);vertical-align:middle}
+.doc-table tr:last-child td{border-bottom:none}
+.doc-table tr:hover td{background:rgba(255,255,255,.02)}
+.doc-table .y{color:var(--green);font-weight:600}.doc-table .n{color:var(--red)}.doc-table .p{color:var(--amber)}
+.alert-info{background:rgba(59,130,246,.06);border:1px solid rgba(59,130,246,.2);border-radius:8px;padding:12px 16px;font-size:.78rem;color:var(--dim);line-height:1.6;margin-bottom:14px}
+.alert-info strong{color:var(--blue)}
+
+.empty-state{text-align:center;padding:48px 24px;color:var(--faint)}
+.empty-state svg{width:40px;height:40px;margin:0 auto 12px;opacity:.4;display:block}
+.empty-state p{font-size:.85rem;line-height:1.6}
+.empty-state a{color:var(--blue);text-decoration:none}
+.empty-state a:hover{text-decoration:underline}
+
+.docs-footer{border-top:1px solid var(--border);margin-top:48px;padding-top:24px;padding-bottom:32px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}
+.docs-footer-left{font-size:.76rem;color:var(--faint)}
+.docs-footer-right{display:flex;gap:14px}
+.docs-footer-right a{font-size:.76rem;color:var(--faint);text-decoration:none;transition:color 150ms}
+.docs-footer-right a:hover{color:var(--text)}
+
+.mob-bottomnav{display:none;position:fixed;bottom:0;left:0;right:0;background:rgba(7,11,20,.95);border-top:1px solid var(--border);padding:7px 0 max(10px,env(safe-area-inset-bottom));backdrop-filter:blur(12px);z-index:100}
+.mob-bottomnav-inner{display:flex;justify-content:space-around;max-width:480px;margin:0 auto}
+.mob-bnav-item{display:flex;flex-direction:column;align-items:center;gap:3px;padding:2px 10px;color:var(--faint);font-size:.56rem;font-weight:600;cursor:pointer;text-decoration:none;font-family:'Inter',system-ui,sans-serif;transition:color 150ms;letter-spacing:.02em}
+.mob-bnav-item svg{width:18px;height:18px}
+.mob-bnav-item.active{color:#a78bfa}
+
+@media(max-width:768px){
+  .docs-layout{grid-template-columns:1fr}
+  .docs-sidebar{display:none}
+  .mob-nav-toggle{display:flex}
+  .mob-bottomnav{display:block}
+  .docs-page{padding:72px 16px 80px}
+  .floatnav .npill span{display:none}
+  .nav-deploy span{display:none}
+  .nav-gh span{display:none}
+  .ver-bar{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;padding-bottom:2px;-webkit-overflow-scrolling:touch}
+  .ver-bar::-webkit-scrollbar{display:none}
+  .ver-label{display:none}
+}
+@media(max-width:580px){.nav-gh span{display:none}}
+@media(prefers-reduced-motion:reduce){.skeleton{animation:none}.ch-chevron{transition:none}}
+</style>
+</head>
+<body>
+
+<nav class="floatnav" aria-label="Main navigation">
+  <a href="/" class="nav-logo-mini">
+    <img src="../assets/mini_logo.png" alt="Nexspence" width="20" height="20">
+    <span>Nexspence</span>
+  </a>
+  <a href="/" class="npill">
+    <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+    <span>Overview</span>
+  </a>
+  <a href="/#formats" class="npill">
+    <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+    <span>Formats</span>
+  </a>
+  <a href="/#deploy" class="npill">
+    <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+    <span>Install</span>
+  </a>
+  <a href="/docs/" class="npill docs-active" aria-current="page">
+    <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+    <span>Docs</span>
+  </a>
+  <div class="nav-actions">
+    <a href="https://github.com/skensell201/nexspence" target="_blank" rel="noopener" class="nav-gh" aria-label="GitHub repository">
+      <svg fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
+      <span>GitHub</span>
+    </a>
+    <a href="/#deploy" class="nav-deploy">
+      <svg fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" aria-hidden="true"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+      <span>Deploy</span>
+    </a>
+  </div>
+</nav>
+
+<main class="docs-page">
+  <div class="docs-header">
+    <div class="stag">Documentation</div>
+    <h1 class="docs-title">Docs &amp; Changelog</h1>
+    <p class="docs-sub">Guides, API reference, and versioned release history.</p>
+  </div>
+
+  <div class="ver-bar" id="ver-bar" role="tablist" aria-label="Documentation version">
+    <span class="ver-label">Version:</span>
+    <div class="skeleton" style="width:110px;height:30px;border-radius:100px"></div>
+    <div class="skeleton" style="width:70px;height:30px;border-radius:100px"></div>
+    <div class="skeleton" style="width:70px;height:30px;border-radius:100px"></div>
+  </div>
+
+  <button class="mob-nav-toggle" id="mob-nav-toggle" aria-expanded="false" aria-controls="mob-nav-drawer">
+    <div class="mob-nav-toggle-left">
+      <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+      Navigation
+    </div>
+    <div class="mob-nav-toggle-right">
+      <span class="mob-active-page" id="mob-active-page">Changelog</span>
+      <svg class="mob-chevron" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+    </div>
+  </button>
+  <div class="mob-nav-drawer" id="mob-nav-drawer" aria-hidden="true"></div>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar" aria-label="Documentation navigation">
+      <div class="dsb-inner" id="sidebar-inner"></div>
+    </aside>
+    <div class="docs-content">
+      <nav class="doc-breadcrumb" aria-label="Breadcrumb">
+        <a href="/">nexspence.com</a>
+        <span class="sep" aria-hidden="true">/</span>
+        <a href="/docs/">docs</a>
+        <span class="sep" aria-hidden="true">/</span>
+        <span class="current" id="breadcrumb-current">changelog</span>
+      </nav>
+      <div class="doc-tabs" role="tablist" id="doc-tabs"></div>
+      <div id="doc-content">
+        <div class="skel-card skeleton"></div>
+        <div class="skel-card skeleton" style="height:100px"></div>
+        <div class="skel-card skeleton" style="height:80px;opacity:.6"></div>
+      </div>
+    </div>
+  </div>
+
+  <footer class="docs-footer">
+    <div class="docs-footer-left">© 2026 Nexspence Contributors · AGPLv3</div>
+    <div class="docs-footer-right">
+      <a href="/">nexspence.com</a>
+      <a href="https://github.com/skensell201/nexspence" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://github.com/skensell201/nexspence/releases" target="_blank" rel="noopener">All Releases</a>
+    </div>
+  </footer>
+</main>
+
+<nav class="mob-bottomnav" aria-label="Mobile navigation">
+  <div class="mob-bottomnav-inner">
+    <a href="/" class="mob-bnav-item">
+      <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      Overview
+    </a>
+    <a href="/#deploy" class="mob-bnav-item">
+      <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      Install
+    </a>
+    <a href="/docs/" class="mob-bnav-item active" aria-current="page">
+      <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+      Docs
+    </a>
+    <a href="https://github.com/skensell201/nexspence" target="_blank" rel="noopener" class="mob-bnav-item">
+      <svg fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
+      GitHub
+    </a>
+  </div>
+</nav>
+
+<template id="tpl-quickstart">
+  <div class="doc-section-title">Quick Start</div>
+  <div class="doc-section-sub">Run Nexspence locally in under 2 minutes using Docker Compose.</div>
+  <div class="step-list">
+    <div class="step-item">
+      <div class="step-num">01</div>
+      <div><div class="step-title">Clone the demo repository</div><div class="step-desc"><code>git clone https://github.com/skensell201/nexspence.git &amp;&amp; cd nexspence</code></div></div>
+    </div>
+    <div class="step-item">
+      <div class="step-num">02</div>
+      <div><div class="step-title">Copy and edit the config</div><div class="step-desc">Copy <code>config.yaml.example</code> → <code>config.yaml</code> and set a strong <code>admin_password</code> and <code>jwt_secret</code>.</div></div>
+    </div>
+    <div class="step-item">
+      <div class="step-num">03</div>
+      <div><div class="step-title">Start the stack</div><div class="step-desc"><code>docker compose up -d</code> — waits for PostgreSQL, runs migrations, serves the UI at <code>http://localhost:8081</code>.</div></div>
+    </div>
+  </div>
+  <div class="cb">
+    <div class="cb-bar"><span>shell</span><button class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+    <div class="cb-body"><span class="cc"># Clone</span>
+git clone https://github.com/skensell201/nexspence.git
+cd nexspence
+
+<span class="cc"># Config</span>
+cp config.yaml.example config.yaml
+<span class="cc"># Edit config.yaml: set admin_password + jwt_secret</span>
+
+<span class="cc"># Launch</span>
+docker compose up -d
+
+<span class="cc"># Open UI</span>
+open http://localhost:8081  <span class="cc"># default login: admin / admin123</span></div>
+  </div>
+  <div class="alert-info"><strong>Note:</strong> Change the default password immediately after first login. The bootstrap admin credentials are set in <code>config.yaml</code> under the <code>bootstrap</code> key.</div>
+</template>
+
+<template id="tpl-install">
+  <div class="doc-section-title">Installation</div>
+  <div class="doc-section-sub">Choose your deployment method.</div>
+  <div class="step-list">
+    <div class="step-item">
+      <div class="step-num" style="font-size:1rem">🐳</div>
+      <div><div class="step-title">Docker Compose (recommended)</div><div class="step-desc">The simplest path. Includes PostgreSQL, MinIO S3-compatible storage, and optional Prometheus+Grafana monitoring. See <a href="https://github.com/skensell201/nexspence/blob/main/docs/deployment.md" target="_blank" rel="noopener" style="color:var(--blue)">docs/deployment.md</a> for all profile variants.</div></div>
+    </div>
+    <div class="step-item">
+      <div class="step-num" style="font-size:1rem">☸️</div>
+      <div><div class="step-title">Kubernetes / Helm</div><div class="step-desc">Official Helm chart at <code>deploy/helm/nexspence/</code>. Supports nginx, Traefik, Cilium, Istio. See <a href="https://github.com/skensell201/nexspence/blob/main/deploy/helm/nexspence/README.md" target="_blank" rel="noopener" style="color:var(--blue)">Helm README</a>.</div></div>
+    </div>
+    <div class="step-item">
+      <div class="step-num" style="font-size:1rem">⚙️</div>
+      <div><div class="step-title">From Source</div><div class="step-desc">Requires Go 1.22+, Node 18+, PostgreSQL 16+. <code>go run ./cmd/server serve</code> auto-migrates and starts. Frontend: <code>cd frontend &amp;&amp; npm run dev</code>.</div></div>
+    </div>
+  </div>
+  <div class="alert-info"><strong>Docker image:</strong> <code>ghcr.io/skensell201/nexspence:latest</code> — linux/amd64 and linux/arm64.</div>
+</template>
+
+<template id="tpl-formats">
+  <div class="doc-section-title">Supported Formats</div>
+  <div class="doc-section-sub">14 artifact formats — each supports Hosted, Proxy, and Group repository types.</div>
+  <table class="doc-table">
+    <thead><tr><th>Format</th><th>Protocol</th><th>Hosted</th><th>Proxy</th><th>Group</th></tr></thead>
+    <tbody>
+      <tr><td>Maven 2/3</td><td>Maven HTTP</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
+      <tr><td>npm</td><td>npm registry v1</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
+      <tr><td>PyPI</td><td>Simple index + twine</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
+      <tr><td>Docker / OCI</td><td>OCI Distribution v2</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
+      <tr><td>Go Modules</td><td>GOPROXY v2</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
+      <tr><td>NuGet</td><td>v2 OData + v3 flat</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
+      <tr><td>Helm</td><td>chart index.yaml</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
+      <tr><td>Cargo</td><td>Sparse index</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
+      <tr><td>Apt</td><td>Debian Packages index</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
+      <tr><td>Yum / RPM</td><td>repomd.xml</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
+      <tr><td>Conan</td><td>Conan v1</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
+      <tr><td>Raw</td><td>HTTP PUT/GET</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
+      <tr><td>Conda</td><td>conda index</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
+      <tr><td>Terraform</td><td>Registry protocol v1</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
+    </tbody>
+  </table>
+</template>
+
+<template id="tpl-api">
+  <div class="doc-section-title">API Reference</div>
+  <div class="doc-section-sub">Nexspence exposes two API surfaces.</div>
+  <table class="doc-table" style="margin-bottom:20px">
+    <thead><tr><th>Base Path</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td><code>/service/rest/v1/</code></td><td>Nexus OSS v1 REST API — 100% compatible, drop-in for existing pipelines</td></tr>
+      <tr><td><code>/service/rest/beta/</code></td><td>Nexus beta endpoints — partial support</td></tr>
+      <tr><td><code>/api/v1/</code></td><td>Native Nexspence API — migration, extended system info, monitoring</td></tr>
+      <tr><td><code>/repository/:name/*</code></td><td>Artifact protocol endpoints (Maven, npm, Docker, etc.)</td></tr>
+      <tr><td><code>/v2/</code></td><td>Docker OCI Distribution Spec v2</td></tr>
+    </tbody>
+  </table>
+  <div class="alert-info"><strong>Full OpenAPI 3.1 spec:</strong> available at <a href="https://github.com/skensell201/nexspence/blob/main/docs/api-spec.yaml" target="_blank" rel="noopener" style="color:var(--blue)">docs/api-spec.yaml</a> in the repository.</div>
+  <div class="step-list">
+    <div class="step-item">
+      <div class="step-num" style="font-size:1rem">🔑</div>
+      <div><div class="step-title">Authentication</div><div class="step-desc">JWT Bearer token (from <code>POST /api/v1/auth/login</code>), API tokens (<code>nxs_*</code> prefix via Bearer or Basic password), or HTTP Basic with username + password.</div></div>
+    </div>
+  </div>
+</template>
+
+<script>
+'use strict';
+const API_URL='https://api.github.com/repos/skensell201/nexspence/releases?per_page=30';
+const CACHE_KEY='nx_releases_v1';
+const state={releases:[],activeVersion:null,activeSection:'changelog'};
+const SECTIONS=[
+  {key:'quickstart',label:'Quick Start',templateId:'tpl-quickstart'},
+  {key:'install',label:'Installation',templateId:'tpl-install'},
+  {key:'formats',label:'Formats',templateId:'tpl-formats'},
+  {key:'changelog',label:'Changelog',templateId:null},
+  {key:'api',label:'API Reference',templateId:'tpl-api'},
+];
+const SIDEBAR_GROUPS=[
+  {label:'Getting Started',id:'getting-started',items:[
+    {key:'quickstart',label:'Quick Start',icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>'},
+    {key:'install',label:'Installation',icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>'},
+  ]},
+  {label:'Reference',id:'reference',items:[
+    {key:'formats',label:'Formats',icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>'},
+    {key:'api',label:'API Reference',icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>'},
+  ]},
+  {label:'Changelog',id:'releases',items:[]},
+];
+
+function parseReleaseBody(body){
+  if(!body)return{features:[],fixes:[],dockerRaw:''};
+  const lines=body.split('\n');
+  let mode=null;
+  const features=[],fixes=[];
+  let dockerLines=[];
+  for(const raw of lines){
+    const line=raw.trim();
+    if(/^#{1,4}\s+.*[Ff]eature/.test(line)){mode='features';continue}
+    if(/^#{1,4}\s+.*[Bb]ug\s+[Ff]ix/.test(line)){mode='fixes';continue}
+    if(/^#{1,4}\s+.*[Dd]ocker/.test(line)){mode='docker';continue}
+    if(/^#{1,4}/.test(line)&&mode!=='docker'){mode=null;continue}
+    if(mode==='docker'){dockerLines.push(raw);continue}
+    if((mode==='features'||mode==='fixes')&&/^[-*]\s/.test(line)){
+      const text=line.replace(/^[-*]\s+/,'').trim();
+      if(text)(mode==='features'?features:fixes).push(text);
+    }
+  }
+  return{features,fixes,dockerRaw:dockerLines.join('\n').trim()};
+}
+
+function inlineMd(text){
+  return text
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
+    .replace(/`([^`]+)`/g,'<code>$1</code>');
+}
+
+async function fetchReleases(){
+  try{const c=sessionStorage.getItem(CACHE_KEY);if(c)return JSON.parse(c)}catch(_){}
+  const res=await fetch(API_URL);
+  if(!res.ok)throw new Error('GitHub API '+res.status);
+  const data=await res.json();
+  const releases=data.filter(r=>!r.draft&&r.tag_name).map((r,i)=>{
+    const{features,fixes,dockerRaw}=parseReleaseBody(r.body);
+    return{tag:r.tag_name,name:r.name||r.tag_name,date:r.published_at?r.published_at.slice(0,10):'',features,fixes,dockerRaw,isLatest:i===0};
+  });
+  try{sessionStorage.setItem(CACHE_KEY,JSON.stringify(releases))}catch(_){}
+  return releases;
+}
+
+function renderVersionBar(releases,activeTag){
+  const bar=document.getElementById('ver-bar');
+  const seen=new Set();const minors=[];
+  for(const r of releases){
+    const minor=r.tag.replace(/^v/,'').split('.').slice(0,2).join('.');
+    if(!seen.has(minor)){seen.add(minor);minors.push({minor,latest:r.tag,isLatest:r.isLatest});}
+  }
+  bar.innerHTML='<span class="ver-label">Version:</span>';
+  for(const{minor,latest,isLatest}of minors){
+    const btn=document.createElement('button');
+    btn.className='ver-btn'+(latest===activeTag?' active':'');
+    btn.setAttribute('role','tab');
+    btn.setAttribute('aria-selected',latest===activeTag?'true':'false');
+    btn.dataset.tag=latest;
+    btn.innerHTML=`v${minor}${isLatest?' <span class="ver-badge">current</span>':''}`;
+    btn.addEventListener('click',()=>{state.activeVersion=latest;renderVersionBar(releases,latest);if(state.activeSection==='changelog')renderChangelog(latest);});
+    bar.appendChild(btn);
+  }
+}
+
+function renderSidebar(releases,activeSection,activeTag){
+  const relGroup=SIDEBAR_GROUPS.find(g=>g.id==='releases');
+  relGroup.items=releases.slice(0,6).map(r=>({key:'changelog',label:r.tag+(r.isLatest?' ← current':''),tag:r.tag,style:r.isLatest?'color:var(--green);font-weight:600':''}));
+  if(releases.length>6)relGroup.items.push({key:'changelog',label:'All versions…',tag:releases[releases.length-1].tag,style:'color:var(--faint)'});
+  function buildLinks(container){
+    container.innerHTML='';
+    for(const group of SIDEBAR_GROUPS){
+      const labelEl=document.createElement('span');labelEl.className='dsb-label';labelEl.textContent=group.label;container.appendChild(labelEl);
+      for(const item of group.items){
+        const btn=document.createElement('button');
+        const isActive=activeSection===item.key&&(!item.tag||item.tag===activeTag);
+        btn.className='dsb-link'+(isActive?' active':'');
+        if(item.style)btn.setAttribute('style',item.style);
+        btn.innerHTML=(item.icon||'')+item.label;
+        btn.addEventListener('click',()=>{if(item.tag)state.activeVersion=item.tag;setSection(item.key);});
+        container.appendChild(btn);
+      }
+      const div=document.createElement('div');div.className='dsb-divider';container.appendChild(div);
+    }
+  }
+  buildLinks(document.getElementById('sidebar-inner'));
+  buildLinks(document.getElementById('mob-nav-drawer'));
+}
+
+function renderTabs(activeSection){
+  const container=document.getElementById('doc-tabs');container.innerHTML='';
+  for(const s of SECTIONS){
+    const btn=document.createElement('button');
+    btn.className='dtab'+(s.key===activeSection?' active':'');
+    btn.setAttribute('role','tab');btn.setAttribute('aria-selected',s.key===activeSection?'true':'false');
+    btn.textContent=s.label;
+    btn.addEventListener('click',()=>setSection(s.key));
+    container.appendChild(btn);
+  }
+}
+
+function renderChangelog(activeTag){
+  const container=document.getElementById('doc-content');
+  const activeMinor=activeTag.replace(/^v/,'').split('.').slice(0,2).join('.');
+  const tagReleases=state.releases.filter(r=>r.tag.replace(/^v/,'').split('.').slice(0,2).join('.')===activeMinor);
+  if(!tagReleases.length){
+    container.innerHTML=`<div class="empty-state"><svg fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><p>No releases found for this version.<br><a href="https://github.com/skensell201/nexspence/releases" target="_blank" rel="noopener">View all releases on GitHub →</a></p></div>`;
+    return;
+  }
+  const html=tagReleases.map((r,i)=>{
+    const patchNum=parseInt(r.tag.split('.')[2]||'0',10);
+    const tagClass=r.isLatest?'latest':patchNum===0?'minor':'patch';
+    const tagLabel=r.isLatest?'latest':patchNum===0?'minor':'patch';
+    const featuresHtml=r.features.length?`<div class="ch-group"><div class="ch-group-title">Features</div><ul class="ch-items">${r.features.map(f=>`<li>${inlineMd(f)}</li>`).join('')}</ul></div>`:'';
+    const fixesHtml=r.fixes.length?`<div class="ch-group"><div class="ch-group-title fix">Bug Fixes</div><ul class="ch-items">${r.fixes.map(f=>`<li>${inlineMd(f)}</li>`).join('')}</ul></div>`:'';
+    const dockerHtml=r.dockerRaw?`<div class="ch-docker"><button class="ch-docker-toggle" onclick="this.nextElementSibling.classList.toggle('open')">🐳 Docker install info</button><div class="ch-docker-body">${r.dockerRaw.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div></div>`:'';
+    const emptyHtml=!r.features.length&&!r.fixes.length?`<p style="font-size:.78rem;color:var(--faint)">No changelog entries recorded.</p>`:'';
+    return `<div class="ch-card${i===0?' open':''}"><div class="ch-header" onclick="this.closest('.ch-card').classList.toggle('open')"><div><div class="ch-ver">${r.tag}</div><div class="ch-date">${r.date}</div></div><span class="ch-tag ${tagClass}">${tagLabel}</span><svg class="ch-chevron" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg></div><div class="ch-body">${featuresHtml}${fixesHtml}${dockerHtml}${emptyHtml}</div></div>`;
+  }).join('');
+  container.innerHTML=html+`<div style="text-align:center;padding:18px 0;border-top:1px solid var(--border);margin-top:4px"><a href="https://github.com/skensell201/nexspence/releases" target="_blank" rel="noopener" style="font-size:.78rem;color:#a78bfa;text-decoration:none;font-weight:600">View all releases on GitHub →</a></div>`;
+}
+
+function renderStaticSection(key){
+  const section=SECTIONS.find(s=>s.key===key);
+  const tpl=document.getElementById(section.templateId);
+  const container=document.getElementById('doc-content');
+  container.innerHTML='';
+  container.appendChild(tpl.content.cloneNode(true));
+}
+
+function setSection(key){
+  state.activeSection=key;
+  const section=SECTIONS.find(s=>s.key===key);
+  document.getElementById('breadcrumb-current').textContent=section.label.toLowerCase();
+  document.getElementById('mob-active-page').textContent=section.label;
+  renderTabs(key);
+  renderSidebar(state.releases,key,state.activeVersion);
+  if(key==='changelog')renderChangelog(state.activeVersion);
+  else renderStaticSection(key);
+  if(window.innerWidth<=768)window.scrollTo({top:0,behavior:'smooth'});
+}
+
+function copyCode(btn){
+  const body=btn.closest('.cb').querySelector('.cb-body');
+  navigator.clipboard.writeText(body.innerText).then(()=>{
+    const orig=btn.textContent;btn.textContent='Copied!';
+    setTimeout(()=>btn.textContent=orig,1800);
+  });
+}
+
+document.getElementById('mob-nav-toggle').addEventListener('click',function(){
+  const drawer=document.getElementById('mob-nav-drawer');
+  const isOpen=drawer.classList.toggle('open');
+  this.classList.toggle('open',isOpen);
+  this.setAttribute('aria-expanded',String(isOpen));
+  drawer.setAttribute('aria-hidden',String(!isOpen));
+});
+
+(async()=>{
+  try{
+    state.releases=await fetchReleases();
+    if(!state.releases.length)throw new Error('empty');
+    state.activeVersion=state.releases[0].tag;
+    state.activeSection='changelog';
+    renderVersionBar(state.releases,state.activeVersion);
+    renderSidebar(state.releases,state.activeSection,state.activeVersion);
+    renderTabs(state.activeSection);
+    renderChangelog(state.activeVersion);
+  }catch(err){
+    document.getElementById('ver-bar').innerHTML='';
+    document.getElementById('doc-content').innerHTML=`<div class="empty-state"><svg fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><p>Could not load release data.<br><a href="https://github.com/skensell201/nexspence/releases" target="_blank" rel="noopener">View releases on GitHub →</a></p></div>`;
+    state.releases=[];state.activeVersion='';
+    renderSidebar([],state.activeSection,'');
+    renderTabs(state.activeSection);
+  }
+})();
+</script>
+</body>
+</html>
