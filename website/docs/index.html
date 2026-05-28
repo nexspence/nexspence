@@ -715,6 +715,90 @@ def verify(secret: str, body: bytes, header: str) -&gt; bool:
   <div class="alert-info" data-i18n="wh.retry.note"><strong>Delivery:</strong> Webhooks are fired asynchronously (fire-and-forget). If your endpoint is unavailable, the event is not retried. Use a queue or durable receiver for critical integrations.</div>
 </template>
 
+<template id="tpl-migration">
+  <div class="doc-section-title" data-i18n="mig.title">Migration from Nexus</div>
+  <div class="doc-section-sub" data-i18n="mig.sub">Migrate repositories, users, roles, and artifacts from a live Nexus OSS or Pro instance without downtime.</div>
+
+  <div class="inst-sep" data-i18n="mig.what.sep">What Gets Migrated</div>
+  <table class="doc-table">
+    <thead><tr><th data-i18n="mig.th.item">Item</th><th data-i18n="mig.th.detail">Detail</th></tr></thead>
+    <tbody>
+      <tr><td data-i18n="mig.repos.label">Repositories</td><td data-i18n="mig.repos.desc">Hosted, proxy, and group repo definitions (format, type, configuration)</td></tr>
+      <tr><td data-i18n="mig.users.label">Users &amp; Roles</td><td data-i18n="mig.users.desc">Local Nexus users, roles, and privileges</td></tr>
+      <tr><td data-i18n="mig.blobs.label">Artifacts</td><td data-i18n="mig.blobs.desc">All components streamed via Nexus REST API — large repos pause/resume</td></tr>
+      <tr><td data-i18n="mig.cleanup.label">Cleanup policies</td><td data-i18n="mig.cleanup.desc">Imported and attached to the corresponding repositories</td></tr>
+    </tbody>
+  </table>
+  <div class="step-list">
+    <div class="step-item"><div class="step-num">01</div><div><div class="step-title" data-i18n="mig.s1.title">Open the Migration tab</div><div class="step-desc" data-i18n="mig.s1.desc">Go to <strong>Admin → System → Migration</strong>. Enter the source Nexus URL, admin username, and password.</div></div></div>
+    <div class="step-item"><div class="step-num">02</div><div><div class="step-title" data-i18n="mig.s2.title">Select scope</div><div class="step-desc" data-i18n="mig.s2.desc">Choose what to migrate: Repositories, Users, Cleanup Policies, Artifacts (blobs). You can run each separately.</div></div></div>
+    <div class="step-item"><div class="step-num">03</div><div><div class="step-title" data-i18n="mig.s3.title">Start and monitor</div><div class="step-desc" data-i18n="mig.s3.desc">Click <strong>Start Migration</strong>. Progress is shown in the job history table. Large artifact migrations can be paused and resumed.</div></div></div>
+  </div>
+  <div class="alert-info" data-i18n="mig.note"><strong>No downtime:</strong> Migration reads from a live Nexus instance via its REST API. Your existing Nexus continues serving traffic during migration. Switch DNS/clients to Nexspence when ready.</div>
+</template>
+
+<template id="tpl-monitoring">
+  <div class="doc-section-title" data-i18n="mon.title">Monitoring</div>
+  <div class="doc-section-sub" data-i18n="mon.sub">Nexspence exposes a Prometheus metrics endpoint and ships a pre-built Grafana dashboard with 8 panels.</div>
+
+  <div class="inst-sep" data-i18n="mon.metrics.sep">Available Metrics</div>
+  <table class="doc-table">
+    <thead><tr><th data-i18n="mon.th.metric">Metric</th><th data-i18n="mon.th.desc">Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>nexspence_requests_total</code></td><td data-i18n="mon.m.requests">Total HTTP requests (by method, path, status)</td></tr>
+      <tr><td><code>nexspence_request_duration_seconds</code></td><td data-i18n="mon.m.duration">Request latency histogram (p50, p95, p99)</td></tr>
+      <tr><td><code>nexspence_artifacts_total</code></td><td data-i18n="mon.m.artifacts">Total artifacts stored</td></tr>
+      <tr><td><code>nexspence_bytes_stored_bytes</code></td><td data-i18n="mon.m.bytes">Total storage used in bytes</td></tr>
+      <tr><td><code>nexspence_downloads_total</code></td><td data-i18n="mon.m.downloads">Total artifact downloads</td></tr>
+      <tr><td><code>nexspence_artifacts_deleted_total</code></td><td data-i18n="mon.m.deleted">Total artifacts deleted</td></tr>
+      <tr><td><code>nexspence_goroutines</code></td><td data-i18n="mon.m.goroutines">Active Go goroutines</td></tr>
+      <tr><td><code>nexspence_memory_alloc_bytes</code></td><td data-i18n="mon.m.memory">Heap memory in use</td></tr>
+    </tbody>
+  </table>
+  <div class="step-list">
+    <div class="step-item"><div class="step-num">01</div><div><div class="step-title" data-i18n="mon.s1.title">Create an API token for Prometheus</div><div class="step-desc" data-i18n="mon.s1.desc">In the UI go to your profile → <strong>API Tokens → Generate Token</strong>. Paste the <code>nxs_*</code> token into <code>deploy/monitoring/prometheus-token</code>.</div></div></div>
+    <div class="step-item"><div class="step-num">02</div><div><div class="step-title" data-i18n="mon.s2.title">Start the monitoring stack</div><div class="step-desc" data-i18n="mon.s2.desc">Run <code>docker compose --profile monitoring up -d</code>. Prometheus scrapes <code>/metrics</code> every 10 seconds. The Grafana dashboard loads automatically.</div></div></div>
+    <div class="step-item"><div class="step-num">03</div><div><div class="step-title" data-i18n="mon.s3.title">Open the UI Charts tab</div><div class="step-desc" data-i18n="mon.s3.desc">In the Nexspence UI, go to <strong>Admin → Monitoring</strong>. The <strong>Charts</strong> tab shows request rate, error rate, and storage growth without needing Grafana.</div></div></div>
+  </div>
+  <div class="cb"><div class="cb-bar"><span>curl — metrics endpoint</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body">curl -H "Authorization: Bearer nxs_your_token" \
+  http://localhost:8081/metrics</div></div>
+</template>
+
+<template id="tpl-promotion">
+  <div class="doc-section-title" data-i18n="promo.title">Build Promotion</div>
+  <div class="doc-section-sub" data-i18n="promo.sub">Promote artifacts through environments (e.g. staging → production) with optional vulnerability scan gates and approval workflows.</div>
+
+  <div class="inst-sep" data-i18n="promo.how.sep">How It Works</div>
+  <div class="step-list">
+    <div class="step-item"><div class="step-num">01</div><div><div class="step-title" data-i18n="promo.s1.title">Create a Promotion Rule</div><div class="step-desc" data-i18n="promo.s1.desc"><strong>Admin → Promotion → + Create Rule</strong>. Set source repository, target repository, an optional CEL path filter, and whether a passing vulnerability scan is required before promotion.</div></div></div>
+    <div class="step-item"><div class="step-num">02</div><div><div class="step-title" data-i18n="promo.s2.title">Request promotion</div><div class="step-desc" data-i18n="promo.s2.desc">In <strong>Browse</strong>, select an artifact and click <strong>Promote</strong>. Or use the REST API. A promotion request is created in the queue.</div></div></div>
+    <div class="step-item"><div class="step-num">03</div><div><div class="step-title" data-i18n="promo.s3.title">Approve or reject</div><div class="step-desc" data-i18n="promo.s3.desc">Admins review the request queue in <strong>Admin → Promotion → Requests</strong>. Approve to copy the artifact blob to the target repository (no data duplication — shared blob key).</div></div></div>
+  </div>
+  <div class="cb"><div class="cb-bar"><span>curl — promote via API</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body">curl -u admin:admin123 -X POST \
+  http://localhost:8081/api/v1/promotion/promote \
+  -H "Content-Type: application/json" \
+  -d '{
+    "component_id": "abc-123",
+    "rule_id": "rule-456",
+    "note": "Approved for production"
+  }'</div></div>
+  <div class="alert-info" data-i18n="promo.scan.note"><strong>Scan gate:</strong> If <em>Require scan pass</em> is enabled on the rule, components with HIGH or CRITICAL vulnerabilities are blocked from promotion until the issues are resolved.</div>
+</template>
+
+<template id="tpl-replication">
+  <div class="doc-section-title" data-i18n="repl.title">Content Replication</div>
+  <div class="doc-section-sub" data-i18n="repl.sub">Automatically push artifacts from one Nexspence instance to another on a schedule — for geo-distribution, DR, or environment promotion.</div>
+
+  <div class="step-list">
+    <div class="step-item"><div class="step-num">01</div><div><div class="step-title" data-i18n="repl.s1.title">Create a Replication Rule</div><div class="step-desc" data-i18n="repl.s1.desc"><strong>Admin → Replication → + Create</strong>. Set: source repository, target Nexspence URL, target repository name, credentials for the remote instance, and a cron schedule.</div></div></div>
+    <div class="step-item"><div class="step-num">02</div><div><div class="step-title" data-i18n="repl.s2.title">Test the connection</div><div class="step-desc" data-i18n="repl.s2.desc">Click <strong>Test Connection</strong> on the rule card. Nexspence sends a probe request to the remote URL and reports success or error.</div></div></div>
+    <div class="step-item"><div class="step-num">03</div><div><div class="step-title" data-i18n="repl.s3.title">Monitor replication history</div><div class="step-desc" data-i18n="repl.s3.desc">The history table on each rule shows past runs: timestamp, artifacts synced, errors. Click <strong>Run Now</strong> to trigger an immediate sync.</div></div></div>
+  </div>
+  <div class="alert-info" data-i18n="repl.diff.note"><strong>Differential sync:</strong> Each run compares asset paths between source and target and only pushes artifacts that are missing or changed on the remote. Credentials are stored AES-256-GCM encrypted.</div>
+</template>
+
 <template id="tpl-install">
   <div class="doc-section-title" data-i18n="inst.title">Installation</div>
   <div class="doc-section-sub" data-i18n="inst.sub">Docker image: <code>ghcr.io/skensell201/nexspence:latest</code> — linux/amd64 and linux/arm64. Download the release zip from <a href="https://github.com/skensell201/nexspence/releases/latest" target="_blank" rel="noopener" style="color:var(--blue)">GitHub Releases</a>.</div>
@@ -1096,6 +1180,40 @@ const TRANSLATIONS={
     'wh.s2.title':'Test delivery','wh.s2.desc':'Click the ⚡ button on the webhook card to send a test event.',
     'wh.s3.title':'Verify the signature','wh.s3.desc':'If a secret is set, each request carries an <code>X-Nexspence-Signature</code> header (HMAC-SHA256 of body).',
     'wh.retry.note':'<strong>Delivery:</strong> Webhooks are fired asynchronously. Events are not retried if your endpoint is unavailable.',
+    'mig.title':'Migration from Nexus','mig.sub':'Migrate repositories, users, roles, and artifacts from a live Nexus OSS or Pro instance without downtime.',
+    'mig.what.sep':'What Gets Migrated','mig.th.item':'Item','mig.th.detail':'Detail',
+    'mig.repos.label':'Repositories','mig.repos.desc':'Hosted, proxy, and group repo definitions',
+    'mig.users.label':'Users & Roles','mig.users.desc':'Local Nexus users, roles, and privileges',
+    'mig.blobs.label':'Artifacts','mig.blobs.desc':'All components streamed via Nexus REST API — large repos pause/resume',
+    'mig.cleanup.label':'Cleanup policies','mig.cleanup.desc':'Imported and attached to corresponding repositories',
+    'mig.s1.title':'Open the Migration tab','mig.s1.desc':'Go to <strong>Admin → System → Migration</strong>. Enter the source Nexus URL, admin username, and password.',
+    'mig.s2.title':'Select scope','mig.s2.desc':'Choose what to migrate: Repositories, Users, Cleanup Policies, Artifacts. Run each separately.',
+    'mig.s3.title':'Start and monitor','mig.s3.desc':'Click <strong>Start Migration</strong>. Large artifact migrations can be paused and resumed.',
+    'mig.note':'<strong>No downtime:</strong> Migration reads from a live Nexus via its REST API. Switch clients to Nexspence when ready.',
+    'mon.title':'Monitoring','mon.sub':'Nexspence exposes a Prometheus metrics endpoint and ships a pre-built Grafana dashboard with 8 panels.',
+    'mon.metrics.sep':'Available Metrics','mon.th.metric':'Metric','mon.th.desc':'Description',
+    'mon.m.requests':'Total HTTP requests (by method, path, status)',
+    'mon.m.duration':'Request latency histogram (p50, p95, p99)',
+    'mon.m.artifacts':'Total artifacts stored',
+    'mon.m.bytes':'Total storage used in bytes',
+    'mon.m.downloads':'Total artifact downloads',
+    'mon.m.deleted':'Total artifacts deleted',
+    'mon.m.goroutines':'Active Go goroutines',
+    'mon.m.memory':'Heap memory in use',
+    'mon.s1.title':'Create an API token for Prometheus','mon.s1.desc':'Profile → <strong>API Tokens → Generate Token</strong>. Paste the token into <code>deploy/monitoring/prometheus-token</code>.',
+    'mon.s2.title':'Start the monitoring stack','mon.s2.desc':'Run <code>docker compose --profile monitoring up -d</code>. Prometheus scrapes <code>/metrics</code> every 10 seconds.',
+    'mon.s3.title':'Open the UI Charts tab','mon.s3.desc':'In the UI go to <strong>Admin → Monitoring → Charts</strong> for request rate, error rate, and storage growth.',
+    'promo.title':'Build Promotion','promo.sub':'Promote artifacts through environments with optional vulnerability scan gates and approval workflows.',
+    'promo.how.sep':'How It Works',
+    'promo.s1.title':'Create a Promotion Rule','promo.s1.desc':'<strong>Admin → Promotion → + Create Rule</strong>. Set source, target, optional CEL path filter, and scan requirement.',
+    'promo.s2.title':'Request promotion','promo.s2.desc':'In <strong>Browse</strong>, select an artifact and click <strong>Promote</strong>, or use the REST API.',
+    'promo.s3.title':'Approve or reject','promo.s3.desc':'Admins review the queue in <strong>Admin → Promotion → Requests</strong>. Approve to copy the artifact to the target repository.',
+    'promo.scan.note':'<strong>Scan gate:</strong> Components with HIGH or CRITICAL vulnerabilities are blocked from promotion until resolved.',
+    'repl.title':'Content Replication','repl.sub':'Automatically push artifacts from one Nexspence instance to another on a schedule.',
+    'repl.s1.title':'Create a Replication Rule','repl.s1.desc':'<strong>Admin → Replication → + Create</strong>. Set source repo, target URL, target repo, credentials, and a cron schedule.',
+    'repl.s2.title':'Test the connection','repl.s2.desc':'Click <strong>Test Connection</strong> on the rule card.',
+    'repl.s3.title':'Monitor replication history','repl.s3.desc':'The history table shows past runs. Click <strong>Run Now</strong> to trigger an immediate sync.',
+    'repl.diff.note':'<strong>Differential sync:</strong> Only missing or changed artifacts are pushed. Credentials are stored AES-256-GCM encrypted.',
     'inst.title':'Installation',
     'inst.sub':'Docker image: <code>ghcr.io/skensell201/nexspence:latest</code> — linux/amd64 and linux/arm64. Download the release zip from <a href="https://github.com/skensell201/nexspence/releases/latest" target="_blank" rel="noopener" style="color:var(--blue)">GitHub Releases</a>.',
     'inst.v.std':'Standard','inst.v.ha':'HA Cluster','inst.v.mon':'+ Monitoring',
@@ -1258,6 +1376,40 @@ const TRANSLATIONS={
     'wh.s2.title':'Тест доставки','wh.s2.desc':'Нажмите кнопку ⚡ на карточке вебхука для отправки тестового события.',
     'wh.s3.title':'Проверка подписи','wh.s3.desc':'При наличии секрета каждый запрос содержит заголовок <code>X-Nexspence-Signature</code> (HMAC-SHA256 тела).',
     'wh.retry.note':'<strong>Доставка:</strong> Вебхуки отправляются асинхронно. При недоступности endpoint событие не повторяется.',
+    'mig.title':'Миграция из Nexus','mig.sub':'Перенесите репозитории, пользователей, роли и артефакты из работающего Nexus OSS или Pro без остановки сервиса.',
+    'mig.what.sep':'Что переносится','mig.th.item':'Элемент','mig.th.detail':'Описание',
+    'mig.repos.label':'Репозитории','mig.repos.desc':'Определения hosted, proxy и group репозиториев',
+    'mig.users.label':'Пользователи и роли','mig.users.desc':'Локальные пользователи, роли и привилегии Nexus',
+    'mig.blobs.label':'Артефакты','mig.blobs.desc':'Все компоненты через REST API Nexus — большие репозитории с паузой/продолжением',
+    'mig.cleanup.label':'Политики очистки','mig.cleanup.desc':'Импортируются и привязываются к соответствующим репозиториям',
+    'mig.s1.title':'Откройте вкладку Migration','mig.s1.desc':'Перейдите в <strong>Admin → System → Migration</strong>. Введите URL источника Nexus, логин и пароль.',
+    'mig.s2.title':'Выберите область','mig.s2.desc':'Выберите что переносить: Repositories, Users, Cleanup Policies, Artifacts. Можно запускать раздельно.',
+    'mig.s3.title':'Запустите и следите','mig.s3.desc':'Нажмите <strong>Start Migration</strong>. Миграцию больших репозиториев можно ставить на паузу и продолжать.',
+    'mig.note':'<strong>Без простоя:</strong> Миграция читает из работающего Nexus через его REST API. Переключите клиентов на Nexspence когда будете готовы.',
+    'mon.title':'Мониторинг','mon.sub':'Nexspence предоставляет endpoint Prometheus и поставляется с готовым дашбордом Grafana из 8 панелей.',
+    'mon.metrics.sep':'Доступные метрики','mon.th.metric':'Метрика','mon.th.desc':'Описание',
+    'mon.m.requests':'Всего HTTP-запросов (по методу, пути, статусу)',
+    'mon.m.duration':'Гистограмма задержек (p50, p95, p99)',
+    'mon.m.artifacts':'Всего хранимых артефактов',
+    'mon.m.bytes':'Занятое место в байтах',
+    'mon.m.downloads':'Всего скачиваний',
+    'mon.m.deleted':'Всего удалённых артефактов',
+    'mon.m.goroutines':'Активные goroutine Go',
+    'mon.m.memory':'Используемая heap-память',
+    'mon.s1.title':'Создайте API-токен для Prometheus','mon.s1.desc':'Профиль → <strong>API Tokens → Generate Token</strong>. Вставьте токен в <code>deploy/monitoring/prometheus-token</code>.',
+    'mon.s2.title':'Запустите стек мониторинга','mon.s2.desc':'Выполните <code>docker compose --profile monitoring up -d</code>. Prometheus опрашивает <code>/metrics</code> каждые 10 секунд.',
+    'mon.s3.title':'Откройте вкладку Charts','mon.s3.desc':'В UI перейдите в <strong>Admin → Monitoring → Charts</strong> для просмотра запросов, ошибок и роста хранилища.',
+    'promo.title':'Продвижение сборок','promo.sub':'Продвигайте артефакты через среды (staging → production) с проверкой уязвимостей и согласованием.',
+    'promo.how.sep':'Как это работает',
+    'promo.s1.title':'Создайте правило продвижения','promo.s1.desc':'<strong>Admin → Promotion → + Create Rule</strong>. Задайте источник, цель, CEL-фильтр и требование сканирования.',
+    'promo.s2.title':'Запросите продвижение','promo.s2.desc':'В <strong>Browse</strong> выберите артефакт и нажмите <strong>Promote</strong> или используйте REST API.',
+    'promo.s3.title':'Подтвердите или отклоните','promo.s3.desc':'Администраторы просматривают очередь в <strong>Admin → Promotion → Requests</strong> и подтверждают копирование.',
+    'promo.scan.note':'<strong>Проверка сканирования:</strong> Компоненты с HIGH или CRITICAL уязвимостями блокируются до устранения проблем.',
+    'repl.title':'Репликация контента','repl.sub':'Автоматически переносите артефакты с одного экземпляра Nexspence на другой по расписанию.',
+    'repl.s1.title':'Создайте правило репликации','repl.s1.desc':'<strong>Admin → Replication → + Create</strong>. Задайте источник, URL цели, репозиторий, учётные данные и cron-расписание.',
+    'repl.s2.title':'Проверьте соединение','repl.s2.desc':'Нажмите <strong>Test Connection</strong> на карточке правила.',
+    'repl.s3.title':'Следите за историей','repl.s3.desc':'Таблица истории показывает прошлые запуски. Нажмите <strong>Run Now</strong> для немедленной синхронизации.',
+    'repl.diff.note':'<strong>Дифференциальная синхронизация:</strong> Передаются только отсутствующие или изменённые артефакты. Учётные данные хранятся в шифровании AES-256-GCM.',
     'inst.title':'Установка',
     'inst.sub':'Docker-образ: <code>ghcr.io/skensell201/nexspence:latest</code> — linux/amd64 и linux/arm64. Скачайте архив релиза с <a href="https://github.com/skensell201/nexspence/releases/latest" target="_blank" rel="noopener" style="color:var(--blue)">GitHub Releases</a>.',
     'inst.v.std':'Стандарт',
