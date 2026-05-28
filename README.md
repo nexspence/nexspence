@@ -122,7 +122,6 @@ The compose file uses profiles to opt into optional services. Combine as needed:
 | `keycloak` | Keycloak OIDC IdP | `OIDC_ENABLED=true docker compose --profile keycloak up -d` |
 | `keycloak` + `monitoring` | Both | `OIDC_ENABLED=true docker compose --profile keycloak --profile monitoring up -d` |
 | `dev` | Vite frontend dev server | `docker compose --profile dev up` |
-| `landing` | Landing page (port 8080) | `docker compose --profile landing up -d` |
 
 **Monitoring setup** — before starting the `monitoring` profile, create a Bearer token:
 
