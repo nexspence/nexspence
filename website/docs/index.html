@@ -407,6 +407,145 @@ open http://localhost:8081  <span class="cc"># default login: admin / admin123</
   <div class="alert-info" data-i18n="repo.anon.info">Enable <strong>Allow anonymous access</strong> on a repository to let unauthenticated users download artifacts. Write operations always require authentication. Configure globally in <strong>Admin → Security → Anonymous Access</strong> and per-repository in the repo settings.</div>
 </template>
 
+<template id="tpl-formats-guide">
+  <div class="doc-section-title" data-i18n="fg.title">Format Setup Guides</div>
+  <div class="doc-section-sub" data-i18n="fg.sub">How to configure your build tools and package managers to use Nexspence repositories. Replace <code>localhost:8081</code> with your server URL and <code>{repo}</code> with your repository name.</div>
+
+  <!-- Maven -->
+  <div class="inst-sep">Maven / Gradle</div>
+  <p style="font-size:.8rem;color:var(--dim);margin-bottom:10px;line-height:1.6" data-i18n="fg.maven.desc">Add Nexspence as a mirror in <code>~/.m2/settings.xml</code> to route all dependency downloads through your proxy repository.</p>
+  <div class="cb"><div class="cb-bar"><span>~/.m2/settings.xml</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body">&lt;settings&gt;
+  &lt;mirrors&gt;
+    &lt;mirror&gt;
+      &lt;id&gt;nexspence&lt;/id&gt;
+      &lt;url&gt;http://localhost:8081/repository/maven-public/&lt;/url&gt;
+      &lt;mirrorOf&gt;*&lt;/mirrorOf&gt;
+    &lt;/mirror&gt;
+  &lt;/mirrors&gt;
+  &lt;servers&gt;
+    &lt;server&gt;
+      &lt;id&gt;nexspence&lt;/id&gt;
+      &lt;username&gt;admin&lt;/username&gt;
+      &lt;password&gt;admin123&lt;/password&gt;
+    &lt;/server&gt;
+  &lt;/servers&gt;
+&lt;/settings&gt;</div></div>
+  <div class="cb"><div class="cb-bar"><span>pom.xml — deploy</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body">&lt;distributionManagement&gt;
+  &lt;repository&gt;
+    &lt;id&gt;nexspence&lt;/id&gt;
+    &lt;url&gt;http://localhost:8081/repository/maven-releases/&lt;/url&gt;
+  &lt;/repository&gt;
+  &lt;snapshotRepository&gt;
+    &lt;id&gt;nexspence&lt;/id&gt;
+    &lt;url&gt;http://localhost:8081/repository/maven-snapshots/&lt;/url&gt;
+  &lt;/snapshotRepository&gt;
+&lt;/distributionManagement&gt;</div></div>
+
+  <!-- npm -->
+  <div class="inst-sep">npm / yarn</div>
+  <div class="cb"><div class="cb-bar"><span>.npmrc</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body">registry=http://localhost:8081/repository/npm-public/
+//localhost:8081/repository/npm-public/:_auth=YWRtaW46YWRtaW4xMjM=
+//localhost:8081/repository/npm-public/:always-auth=true</div></div>
+  <div class="alert-info" data-i18n="fg.npm.auth.note"><strong>Auth token:</strong> <code>_auth</code> is base64 of <code>username:password</code>. Generate: <code>echo -n "admin:admin123" | base64</code>. To publish: <code>npm publish --registry http://localhost:8081/repository/npm-hosted/</code></div>
+
+  <!-- PyPI -->
+  <div class="inst-sep">PyPI / pip</div>
+  <div class="cb"><div class="cb-bar"><span>~/.config/pip/pip.conf</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body">[global]
+index-url = http://admin:admin123@localhost:8081/repository/pypi-proxy/simple/
+trusted-host = localhost</div></div>
+  <div class="cb"><div class="cb-bar"><span>publish with twine</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body">twine upload \
+  --repository-url http://localhost:8081/repository/pypi-hosted/ \
+  --username admin --password admin123 \
+  dist/*</div></div>
+
+  <!-- Docker -->
+  <div class="inst-sep">Docker / OCI</div>
+  <div class="alert-info" data-i18n="fg.docker.insecure.note"><strong>HTTP registry:</strong> Add <code>"insecure-registries": ["localhost:5000"]</code> to Docker daemon config (<code>/etc/docker/daemon.json</code>) when using HTTP. Restart Docker after.</div>
+  <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body"><span class="cc"># Login</span>
+docker login localhost:5000 -u admin -p admin123
+
+<span class="cc"># Pull through proxy</span>
+docker pull localhost:5000/docker-proxy/library/nginx:latest
+
+<span class="cc"># Push to hosted</span>
+docker tag myimage:1.0 localhost:5000/docker-hosted/myimage:1.0
+docker push localhost:5000/docker-hosted/myimage:1.0</div></div>
+
+  <!-- Helm -->
+  <div class="inst-sep">Helm Charts</div>
+  <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body"><span class="cc"># Add repository</span>
+helm repo add nexspence \
+  http://localhost:8081/repository/helm-public/ \
+  --username admin --password admin123
+
+helm repo update
+
+<span class="cc"># Search and install</span>
+helm search repo nexspence/
+helm install my-release nexspence/my-chart
+
+<span class="cc"># Push chart (requires helm-push plugin)</span>
+helm plugin install https://github.com/chartmuseum/helm-push
+helm cm-push my-chart/ nexspence</div></div>
+
+  <!-- Go -->
+  <div class="inst-sep">Go Modules</div>
+  <div class="cb"><div class="cb-bar"><span>shell / go.env</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body"><span class="cc"># Set GOPROXY</span>
+go env -w GOPROXY=http://localhost:8081/repository/go-proxy/|direct
+go env -w GONOSUMCHECK=localhost:8081
+
+<span class="cc"># Use in project</span>
+go get github.com/some/module@v1.2.3</div></div>
+
+  <!-- Cargo -->
+  <div class="inst-sep">Cargo (Rust)</div>
+  <div class="cb"><div class="cb-bar"><span>~/.cargo/config.toml</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body">[source.crates-io]
+replace-with = "nexspence"
+
+[source.nexspence]
+registry = "sparse+http://localhost:8081/repository/cargo-proxy/"
+
+[net]
+git-fetch-with-cli = true</div></div>
+
+  <!-- NuGet -->
+  <div class="inst-sep">NuGet (.NET)</div>
+  <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body"><span class="cc"># Add source</span>
+dotnet nuget add source \
+  http://localhost:8081/repository/nuget-public/index.json \
+  --name nexspence \
+  --username admin \
+  --password admin123 \
+  --store-password-in-clear-text
+
+<span class="cc"># Push package</span>
+dotnet nuget push mypackage.nupkg \
+  --source http://localhost:8081/repository/nuget-hosted/ \
+  --api-key admin123</div></div>
+
+  <!-- Raw -->
+  <div class="inst-sep">Raw Files</div>
+  <div class="cb"><div class="cb-bar"><span>curl</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body"><span class="cc"># Upload a file</span>
+curl -u admin:admin123 \
+  -T myfile.tar.gz \
+  http://localhost:8081/repository/raw-hosted/releases/myfile.tar.gz
+
+<span class="cc"># Download</span>
+curl -u admin:admin123 \
+  -O http://localhost:8081/repository/raw-hosted/releases/myfile.tar.gz</div></div>
+</template>
+
 <template id="tpl-install">
   <div class="doc-section-title" data-i18n="inst.title">Installation</div>
   <div class="doc-section-sub" data-i18n="inst.sub">Docker image: <code>ghcr.io/skensell201/nexspence:latest</code> — linux/amd64 and linux/arm64. Download the release zip from <a href="https://github.com/skensell201/nexspence/releases/latest" target="_blank" rel="noopener" style="color:var(--blue)">GitHub Releases</a>.</div>
@@ -733,6 +872,11 @@ const TRANSLATIONS={
     'repo.urls.raw':'PUT/GET any path',
     'repo.anon.sep':'Anonymous Access',
     'repo.anon.info':'Enable <strong>Allow anonymous access</strong> on a repository to let unauthenticated users download artifacts. Write operations always require authentication.',
+    'fg.title':'Format Setup Guides',
+    'fg.sub':'How to configure your build tools and package managers to use Nexspence repositories. Replace <code>localhost:8081</code> with your server URL.',
+    'fg.maven.desc':'Add Nexspence as a mirror in <code>~/.m2/settings.xml</code> to route all dependency downloads through your proxy repository.',
+    'fg.npm.auth.note':'<strong>Auth token:</strong> <code>_auth</code> is base64 of <code>username:password</code>. Generate: <code>echo -n "admin:admin123" | base64</code>.',
+    'fg.docker.insecure.note':'<strong>HTTP registry:</strong> Add <code>"insecure-registries": ["localhost:5000"]</code> to <code>/etc/docker/daemon.json</code> when using HTTP. Restart Docker after.',
     'inst.title':'Installation',
     'inst.sub':'Docker image: <code>ghcr.io/skensell201/nexspence:latest</code> — linux/amd64 and linux/arm64. Download the release zip from <a href="https://github.com/skensell201/nexspence/releases/latest" target="_blank" rel="noopener" style="color:var(--blue)">GitHub Releases</a>.',
     'inst.v.std':'Standard','inst.v.ha':'HA Cluster','inst.v.mon':'+ Monitoring',
@@ -840,6 +984,11 @@ const TRANSLATIONS={
     'repo.urls.raw':'PUT/GET любого пути',
     'repo.anon.sep':'Анонимный доступ',
     'repo.anon.info':'Включите <strong>Allow anonymous access</strong> для репозитория, чтобы неаутентифицированные пользователи могли скачивать артефакты. Операции записи всегда требуют аутентификации.',
+    'fg.title':'Настройка форматов',
+    'fg.sub':'Как настроить сборочные инструменты и пакетные менеджеры для работы с репозиториями Nexspence. Замените <code>localhost:8081</code> на адрес вашего сервера.',
+    'fg.maven.desc':'Добавьте Nexspence как зеркало в <code>~/.m2/settings.xml</code>, чтобы все зависимости загружались через proxy-репозиторий.',
+    'fg.npm.auth.note':'<strong>Токен авторизации:</strong> <code>_auth</code> — это base64 от <code>username:password</code>. Сгенерировать: <code>echo -n "admin:admin123" | base64</code>.',
+    'fg.docker.insecure.note':'<strong>HTTP-реестр:</strong> добавьте <code>"insecure-registries": ["localhost:5000"]</code> в <code>/etc/docker/daemon.json</code>. Перезапустите Docker.',
     'inst.title':'Установка',
     'inst.sub':'Docker-образ: <code>ghcr.io/skensell201/nexspence:latest</code> — linux/amd64 и linux/arm64. Скачайте архив релиза с <a href="https://github.com/skensell201/nexspence/releases/latest" target="_blank" rel="noopener" style="color:var(--blue)">GitHub Releases</a>.',
     'inst.v.std':'Стандарт',
