@@ -46,14 +46,21 @@ jobs:
 
       - name: Deploy to droplet over SSH
         uses: appleboy/ssh-action@v1.2.0
+        env:
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           host: ${{ secrets.DROPLET_HOST }}
           username: ${{ secrets.DROPLET_USER }}
           key: ${{ secrets.DROPLET_SSH_KEY }}
           port: ${{ secrets.DROPLET_SSH_PORT }}
+          envs: GHCR_USER,GHCR_TOKEN
           script: |
             set -e
             IMAGE="ghcr.io/skensell201/nexspence-website:latest"
+
+            # Authenticate to GHCR using the ephemeral run token (private image).
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
 
             docker pull "$IMAGE"
 
@@ -69,4 +76,6 @@ jobs:
               -p 127.0.0.1:8080:80 \
               "$IMAGE"
 
+            # Don't leave the GHCR token in ~/.docker/config.json
+            docker logout ghcr.io || true
             docker image prune -f
