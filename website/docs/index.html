@@ -291,9 +291,11 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
         <span class="current" id="breadcrumb-current">changelog</span>
       </nav>
       <div id="doc-content">
-        <div class="skel-card skeleton"></div>
-        <div class="skel-card skeleton" style="height:100px"></div>
-        <div class="skel-card skeleton" style="height:80px;opacity:.6"></div>
+        <div class="doc-section-title">Nexspence Documentation</div>
+        <div class="doc-section-sub">Guides, configuration reference, and versioned changelog for Nexspence — the free, open-source universal artifact repository manager and drop-in alternative to Sonatype Nexus.</div>
+        <p style="color:var(--dim);line-height:1.7;margin:14px 0">Nexspence manages Maven, npm, PyPI, Docker, Go modules, NuGet, Cargo, Helm, Apt, Yum/RPM, Conan, Raw, Conda and Terraform artifacts from a single self-hosted registry. Repositories can be Hosted (your published artifacts), Proxy (cached remote registries) or Group (multiple repositories under one URL).</p>
+        <p style="color:var(--dim);line-height:1.7;margin:14px 0">This documentation covers Quick Start, Installation, Repositories, per-format guides, Browse &amp; Search, Users, Roles &amp; Privileges (RBAC), Cleanup policies, Webhooks, Migration from Nexus, Monitoring, Build Promotion, Replication, and the full REST API reference.</p>
+        <p style="color:var(--dim);line-height:1.7;margin:14px 0">Get started in under two minutes with Docker Compose: download the latest release, set a strong <code>admin_password</code> and <code>jwt_secret</code> in <code>config.yaml</code>, then run <code>docker compose up -d</code> and open the UI at <code>http://localhost:8081</code>.</p>
       </div>
     </div>
   </div>
@@ -1076,7 +1078,7 @@ const API_URL='https://api.github.com/repos/skensell201/nexspence/releases?per_p
 const CACHE_KEY='nx_releases_v2';
 const CACHE_TTL_MS=5*60*1000;
 const state={
-  releases:[],activeVersion:null,activeSection:'changelog',
+  releases:[],activeVersion:null,activeSection:'quickstart',
   lang:(()=>{try{return localStorage.getItem('nx_docs_lang')||'en'}catch(_){return'en'}})()
 };
 
@@ -1696,21 +1698,29 @@ document.getElementById('mob-nav-toggle').addEventListener('click',function(){
 });
 
 (async()=>{
+  // Primary content renders immediately — no dependency on the GitHub API,
+  // so crawlers and offline visitors always see real, indexable content.
+  document.querySelectorAll('.lang-btn').forEach(b=>b.classList.toggle('active',b.dataset.lang===state.lang));
+  applyTranslations(document.querySelector('.docs-header'));
+  state.activeSection='quickstart';
+  document.getElementById('breadcrumb-current').textContent=t('crumb.quickstart');
+  document.getElementById('mob-active-page').textContent=t('sb.quickstart');
+  renderSidebar([],state.activeSection,'');
+  renderStaticSection('quickstart');
+
+  // Releases load in the background for the version bar + changelog section.
+  // Failure (e.g. GitHub API rate limit) is non-fatal: the static docs stay.
   try{
     state.releases=await fetchReleases();
-    if(!state.releases.length)throw new Error('empty');
-    state.activeVersion=state.releases[0].tag;
-    state.activeSection='changelog';
-    document.querySelectorAll('.lang-btn').forEach(b=>b.classList.toggle('active',b.dataset.lang===state.lang));
-    applyTranslations(document.querySelector('.docs-header'));
-    renderVersionBar(state.releases,state.activeVersion);
-    renderSidebar(state.releases,state.activeSection,state.activeVersion);
-    renderChangelog(state.activeVersion);
+    if(state.releases.length){
+      state.activeVersion=state.releases[0].tag;
+      renderVersionBar(state.releases,state.activeVersion);
+      renderSidebar(state.releases,state.activeSection,state.activeVersion);
+    }else{
+      document.getElementById('ver-bar').innerHTML='';
+    }
   }catch(err){
     document.getElementById('ver-bar').innerHTML='';
-    document.getElementById('doc-content').innerHTML=`<div class="empty-state"><svg fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><p>${t('ch.error')}<br><a href="https://github.com/skensell201/nexspence/releases" target="_blank" rel="noopener">${t('ch.error-link')}</a></p></div>`;
-    state.releases=[];state.activeVersion='';
-    renderSidebar([],state.activeSection,'');
   }
 })();
 </script>
