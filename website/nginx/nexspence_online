@@ -1,0 +1,31 @@
+# nexspence.online → 301 редирект на nexspence.com
+# Один и тот же сайт; .com — канонический домен. Редирект консолидирует
+# весь SEO-вес на .com и исключает индексацию дублированного контента.
+
+# ─── HTTP → 301 на .com ───────────────────────────────────────────────────────
+server {
+    listen 80;
+    listen [::]:80;
+    server_name nexspence.online www.nexspence.online;
+    return 301 https://nexspence.com$request_uri;
+}
+
+# ─── HTTPS → 301 на .com (TLS терминируется, затем редирект) ───────────────────
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name nexspence.online www.nexspence.online;
+
+    # SSL (Certbot) — нужен для терминации TLS перед редиректом
+    ssl_certificate     /etc/letsencrypt/live/nexspence.online/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/nexspence.online/privkey.pem;
+    include             /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam         /etc/letsencrypt/ssl-dhparams.pem;
+
+    # HSTS
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" always;
+
+    server_tokens off;
+
+    return 301 https://nexspence.com$request_uri;
+}
