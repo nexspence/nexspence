@@ -58,3 +58,7 @@ docs/superpowers/brainstorm/
 # Monitoring — API token
 deploy/monitoring/prometheus-token
 
+# Build archives
+website.zip
+*.zip
+
