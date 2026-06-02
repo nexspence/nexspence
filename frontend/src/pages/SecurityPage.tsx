@@ -1700,8 +1700,9 @@ function AccessMapTab() {
       stroke="#334155" strokeWidth={1.5} markerEnd="url(#arr)" opacity={0.7} />
   }
 
-  // Sidebar detail panel content.
-  function SidebarDetail() {
+  // Sidebar detail panel content. A render helper (not a component) — it only
+  // reads closure state and returns JSX, so it's invoked, not mounted.
+  function renderSidebarDetail() {
     if (!selId || !selType || !graph) return null
     const s = { fontSize:11, color:'var(--holo-text-faint)' }
     const detailLabel = (t:string) => <div style={{fontSize:9, color:'#475569', textTransform:'uppercase' as const, letterSpacing:1, marginBottom:4, marginTop:10}}>{t}</div>
@@ -1859,7 +1860,7 @@ function AccessMapTab() {
           {/* Sidebar */}
           {selId && (
             <div style={{width:200, background:'#0d1829', border:'1px solid #1e3a5f', borderRadius:8, padding:14, flexShrink:0, fontSize:11}}>
-              <SidebarDetail/>
+              {renderSidebarDetail()}
             </div>
           )}
         </div>
