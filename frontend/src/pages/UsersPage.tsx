@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { UserPlus, Trash2, RefreshCw, Shield, User, AlertTriangle, Plus, Edit2 } from 'lucide-react'
-import { nexusApi, apiClient } from '@/api/client'
+import { nexusApi, apiClient, apiErrorMessage } from '@/api/client'
 import styles from './UsersPage.module.css'
 import { Select } from '../components/Select'
 import { HoloTabs, HoloPill, HoloButton, HoloInput, HoloModal, HoloCard } from '@/components/holo'
@@ -61,8 +61,8 @@ export function AssignRolesModal({ user, roles, onClose, onSaved }: {
     try {
       await apiClient.put(`/service/rest/v1/security/users/${user.userId}/roles`, { roleIds: selected })
       onSaved()
-    } catch (e: any) {
-      setErr(e.response?.data?.error ?? 'Failed to save roles')
+    } catch (e) {
+      setErr(apiErrorMessage(e, 'Failed to save roles'))
     } finally { setSaving(false) }
   }
 
@@ -220,7 +220,7 @@ export function UsersTab() {
       {isError && (
         <div role="alert" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: 'rgba(255,107,107,0.08)', border: '1px solid rgba(255,107,107,0.2)', borderRadius: 10, color: 'var(--holo-red)', fontSize: 13 }}>
           <AlertTriangle size={16} style={{ flexShrink: 0 }} />
-          {(error as any)?.response?.data?.error ?? (error as Error)?.message ?? 'Failed to load users'}
+          {apiErrorMessage(error, 'Failed to load users')}
         </div>
       )}
 
@@ -315,8 +315,8 @@ function RolesTab() {
       await apiClient.post('/service/rest/v1/security/roles', form)
       qc.invalidateQueries({ queryKey: ['roles'] })
       setShowForm(false); setForm({ name: '', description: '' })
-    } catch (e: any) {
-      setFormErr(e.response?.data?.error ?? 'Failed to create role')
+    } catch (e) {
+      setFormErr(apiErrorMessage(e, 'Failed to create role'))
     } finally { setSaving(false) }
   }
 
@@ -336,7 +336,7 @@ function RolesTab() {
       {isError && (
         <div role="alert" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: 'rgba(255,107,107,0.08)', border: '1px solid rgba(255,107,107,0.2)', borderRadius: 10, color: 'var(--holo-red)', fontSize: 13, marginBottom: 16 }}>
           <AlertTriangle size={16} style={{ flexShrink: 0 }} />
-          {(error as any)?.response?.data?.error ?? (error as Error)?.message ?? 'Failed to load roles'}
+          {apiErrorMessage(error, 'Failed to load roles')}
         </div>
       )}
 
@@ -421,8 +421,8 @@ export function CreateUserModal({ onClose, onCreated }: { onClose: () => void; o
     try {
       await nexusApi.createUser({ ...form })
       onCreated()
-    } catch (err: any) {
-      setError(err.response?.data?.error ?? 'Failed to create user')
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Failed to create user'))
     } finally { setLoading(false) }
   }
 

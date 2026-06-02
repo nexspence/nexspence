@@ -184,9 +184,9 @@ export default function SearchPage() {
     try { cid = sessionStorage.getItem(RETURN_KEY) } catch { /* ignore */ }
     if (!cid) return
     const hit = data.items.find(c => c.id === cid)
-    if (!hit) { try { sessionStorage.removeItem(RETURN_KEY) } catch {}; return }
+    if (!hit) { try { sessionStorage.removeItem(RETURN_KEY) } catch { /* sessionStorage may be unavailable */ }; return }
     setReturnHighlight(cid)
-    try { sessionStorage.removeItem(RETURN_KEY) } catch {}
+    try { sessionStorage.removeItem(RETURN_KEY) } catch { /* sessionStorage may be unavailable */ }
     // Fade out highlight after a couple of seconds.
     const t = setTimeout(() => setReturnHighlight(null), 2500)
     return () => clearTimeout(t)
@@ -197,7 +197,7 @@ export default function SearchPage() {
     returnRowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
   }, [returnHighlight])
 
-  const allItems = data?.items ?? []
+  const allItems = useMemo(() => data?.items ?? [], [data])
 
   // Docker digest-alias components (version = "sha256:...") are filtered from the main list
   // but kept in a lookup map so they can appear inside the expanded view of their parent tag.
@@ -246,7 +246,8 @@ export default function SearchPage() {
   function toggleExpand(id: string) {
     setExpanded(prev => {
       const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
       return next
     })
   }

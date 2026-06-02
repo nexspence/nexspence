@@ -1158,7 +1158,7 @@ export default function BrowsePage() {
     })
   }, [])
 
-  const items = components?.items ?? []
+  const items = useMemo(() => components?.items ?? [], [components])
   const hasNext = !!components?.continuationToken
 
   // When arriving from Search with ?asset=/?cid=, scroll the matching row into view.

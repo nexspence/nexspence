@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
 import { Shield, RefreshCw, Webhook, AlertTriangle, CheckCircle, Loader, Trash2, Plus, Bug, Zap, Pencil } from 'lucide-react'
-import { nexusApi, nexspenceApi, apiClient } from '@/api/client'
+import { nexusApi, nexspenceApi, apiClient, apiErrorMessage } from '@/api/client'
 import { UsersTab } from './UsersPage'
 import { useAuthStore } from '@/store/authStore'
 import { Select } from '../components/Select'
@@ -876,9 +876,8 @@ function WebhooksTab() {
       const res = await apiClient.post<{ status: number; latency_ms: number }>(`/api/v1/webhooks/${id}/test`)
       const ok = res.data.status >= 200 && res.data.status < 300
       setTestResults(r => ({ ...r, [id]: { ok, msg: `${ok ? '✓' : '✗'} ${res.data.status} (${res.data.latency_ms}ms)` } }))
-    } catch (e: unknown) {
-      const err = e as any
-      const msg = err?.response?.data?.error ?? err?.message ?? 'error'
+    } catch (e) {
+      const msg = apiErrorMessage(e, 'error')
       setTestResults(r => ({ ...r, [id]: { ok: false, msg: `✗ ${msg}` } }))
     }
     setTimeout(() => setTestResults(r => { const next = { ...r }; delete next[id]; return next }), 5000)

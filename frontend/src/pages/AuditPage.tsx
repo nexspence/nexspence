@@ -15,7 +15,7 @@ interface AuditEvent {
   entityType: string
   entityName: string
   result: string
-  context?: Record<string, any>
+  context?: Record<string, unknown>
 }
 
 const DOMAINS = ['', 'REPOSITORY', 'SECURITY', 'USER', 'BLOBSTORE', 'CLEANUP', 'SYSTEM']

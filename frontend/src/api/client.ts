@@ -1,5 +1,18 @@
 import axios from 'axios'
 
+// Shape of an axios-style error as consumed throughout the UI: the backend puts a
+// human-readable message in `response.data.error`; `message` is axios's own fallback.
+export interface ApiError {
+  response?: { status?: number; data?: { error?: string } }
+  message?: string
+}
+
+// Extract a user-facing message from an unknown caught error, with a fallback.
+export function apiErrorMessage(e: unknown, fallback: string): string {
+  const err = e as ApiError
+  return err?.response?.data?.error ?? err?.message ?? fallback
+}
+
 export const apiClient = axios.create({
   baseURL: import.meta.env.VITE_API_BASE || '',
   headers: { 'Content-Type': 'application/json' },
@@ -469,8 +482,8 @@ export async function getBlobStoreMigration(
       `/api/v1/repositories/${encodeURIComponent(repoName)}/blob-store-migration`,
     )
     return data
-  } catch (err: any) {
-    if (err?.response?.status === 404) return null
+  } catch (err) {
+    if ((err as ApiError)?.response?.status === 404) return null
     throw err
   }
 }

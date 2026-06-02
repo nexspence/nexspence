@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { ArrowRightLeft, Play, Pause, RefreshCw, Plus } from 'lucide-react'
-import { nexspenceApi } from '@/api/client'
+import { nexspenceApi, apiErrorMessage } from '@/api/client'
 import { HoloCard, HoloButton, HoloPill, HoloInput, HoloModal } from '@/components/holo'
 
 interface MigrationJob {
@@ -164,8 +164,8 @@ function CreateMigrationModal({ onClose, onCreated }: { onClose: () => void; onC
         options: { concurrency: parseInt(form.concurrency) || 4 },
       })
       onCreated()
-    } catch (err: any) {
-      setError(err.response?.data?.error ?? 'Failed to create migration job')
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Failed to create migration job'))
     } finally {
       setLoading(false)
     }

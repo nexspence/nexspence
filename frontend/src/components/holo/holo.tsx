@@ -17,7 +17,7 @@ export function HoloApp({ children, className = '', ...rest }: Children & React.
 }
 
 /* ---------- Holographic gradient text ---------- */
-export function HoloText({ children, as: Tag = 'span', className = '', ...rest }: Children & { as?: any; className?: string }) {
+export function HoloText({ children, as: Tag = 'span', className = '', ...rest }: Children & { as?: React.ElementType; className?: string }) {
   return <Tag className={`holo-text ${className}`} {...rest}>{children}</Tag>;
 }
 

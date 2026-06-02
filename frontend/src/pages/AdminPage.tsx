@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, lazy, Suspense } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Activity, Archive, ArrowRightLeft, ArrowUpCircle, CheckCircle, Database, Download, ExternalLink, GitBranch, HardDrive, Info, Network, Paperclip, Pause, Pencil, Play, Plus, RefreshCw, Share2, Shield, Trash2, Upload, Wifi, X } from 'lucide-react'
-import { nexusApi, nexspenceApi, apiClient, ImportRepoStats, ServiceStatus, RoutingRule, RoutingRuleInput, ReplicationRule, ReplicationHistory, ReplicationRuleInput, AuthConfig } from '@/api/client'
+import { nexusApi, nexspenceApi, apiClient, apiErrorMessage, ImportRepoStats, ServiceStatus, RoutingRule, RoutingRuleInput, ReplicationRule, ReplicationHistory, ReplicationRuleInput, AuthConfig } from '@/api/client'
 const MonitoringView = lazy(() => import('@/pages/MonitoringPage').then(m => ({ default: m.MonitoringView })))
 import { Select } from '@/components/Select'
 import { HoloButton, HoloInput, HoloModal, HoloTabs, HoloCard, HoloTabItem, Wizard } from '@/components/holo'
@@ -193,8 +193,8 @@ function RoutingRulesTab() {
       }
       qc.invalidateQueries({ queryKey: ['routing-rules'] })
       setModalOpen(false)
-    } catch (e: any) {
-      setErr(e.response?.data?.error ?? 'Save failed')
+    } catch (e) {
+      setErr(apiErrorMessage(e, 'Save failed'))
     } finally {
       setSaving(false)
     }
@@ -1053,8 +1053,8 @@ export default function AdminPage() {
     try {
       const res = await nexspenceApi.importRepo(importFile, importTargetName, importConflict)
       setImportResult(res.data)
-    } catch (e: any) {
-      setImportError(e.response?.data?.error ?? e.message ?? 'Import failed')
+    } catch (e) {
+      setImportError(apiErrorMessage(e, 'Import failed'))
     } finally {
       setImportBusy(false)
     }

@@ -3,7 +3,7 @@ import * as React from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Database, Download, Plus, Trash2, RefreshCw, Settings2, Power } from 'lucide-react'
-import { nexusApi, nexspenceApi, apiClient, BlobStoreMigration, startBlobStoreMigration, getBlobStoreMigration, cancelBlobStoreMigration, RoutingRule } from '@/api/client'
+import { nexusApi, nexspenceApi, apiClient, apiErrorMessage, BlobStoreMigration, startBlobStoreMigration, getBlobStoreMigration, cancelBlobStoreMigration, RoutingRule } from '@/api/client'
 import { useAuthStore } from '@/store/authStore'
 import styles from './RepositoriesPage.module.css'
 import { Select } from '../components/Select'
@@ -478,8 +478,8 @@ function CreateRepoModal({ onClose, onCreated }: {
       body.allowAnonymous = form.allowAnonymous
       await apiClient.post(`/service/rest/v1/repositories/${form.format}/${form.type}`, body)
       onCreated()
-    } catch (err: any) {
-      setError(err.response?.data?.error ?? 'Failed to create repository')
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Failed to create repository'))
     } finally {
       setLoading(false)
     }
@@ -738,12 +738,13 @@ function EditRepoModal({
   const effectiveStoreId = blobStoreId || originalStoreId
   const selectedStore = blobStores.find(b => b.id === effectiveStoreId)
 
+  const repoName = repo?.name
   React.useEffect(() => {
-    if (!repo) return
-    getBlobStoreMigration(repo.name)
+    if (!repoName) return
+    getBlobStoreMigration(repoName)
       .then(m => setMigration(m))
       .catch(() => {})
-  }, [repo?.name])
+  }, [repoName])
 
   const startPolling = React.useCallback((repoName: string) => {
     if (pollingRef.current) clearInterval(pollingRef.current)
@@ -773,8 +774,8 @@ function EditRepoModal({
       setMigration(m)
       onMigrationStarted?.(repo.name)
       startPolling(repo.name)
-    } catch (err: any) {
-      setMigrError(err?.response?.data?.error ?? 'Failed to start migration')
+    } catch (err) {
+      setMigrError(apiErrorMessage(err, 'Failed to start migration'))
     } finally {
       setMigrLoading(false)
     }

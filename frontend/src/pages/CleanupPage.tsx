@@ -1,7 +1,7 @@
 import { type ChangeEvent, type CSSProperties, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Trash2, RefreshCw, Plus, Play, Pencil, X, Check, AlertCircle, Folder, Search } from 'lucide-react'
-import { nexusApi } from '@/api/client'
+import { nexusApi, apiErrorMessage } from '@/api/client'
 import type { CleanupPreviewResponse } from '@/api/client'
 import { Select } from '../components/Select'
 import { HoloButton, HoloInput, HoloModal, HoloPill, Wizard } from '@/components/holo'
@@ -193,7 +193,7 @@ function PreviewModal({ policyId, policyName, onClose, onRun }: {
       {isError && (
         <div role="alert" style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 12, color: 'var(--holo-red)', background: 'rgba(255,107,107,0.08)', border: '1px solid rgba(255,107,107,0.25)', borderRadius: 8, padding: '10px 14px' }}>
           <AlertCircle size={14} />
-          {(error as any)?.response?.data?.error ?? 'Preview failed'}
+          {apiErrorMessage(error, 'Preview failed')}
         </div>
       )}
 
@@ -339,8 +339,8 @@ function PolicyModal({
       }
       onSaved()
       onClose()
-    } catch (e: any) {
-      setErr(e?.response?.data?.error ?? 'Save failed')
+    } catch (e) {
+      setErr(apiErrorMessage(e, 'Save failed'))
     }
   }
 
@@ -462,8 +462,8 @@ function PolicyModal({
         await nexusApi.createCleanupPolicy(payload())
         onSaved()
         onClose()
-      } catch (e: any) {
-        setWizardError(e?.response?.data?.error ?? 'Save failed')
+      } catch (e) {
+        setWizardError(apiErrorMessage(e, 'Save failed'))
       } finally {
         setWizardLoading(false)
       }
