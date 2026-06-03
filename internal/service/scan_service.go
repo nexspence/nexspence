@@ -105,9 +105,9 @@ func httpBaseURLInsecure(baseURL string) bool {
 // ScanService scans a component for vulnerabilities using Trivy.
 type ScanService struct {
 	Components   repository.ComponentRepo
-	HTTPBaseURL  string        // e.g. http://localhost:8081 — used to build registry pull refs for hosted images
-	TrivyBin     string        // path to trivy binary; defaults to "trivy"
-	TrivyTimeout time.Duration // per-scan wall-clock limit (0 = no extra timeout); default 10m
+	HTTPBaseURL  string                    // e.g. http://localhost:8081 — used to build registry pull refs for hosted images
+	TrivyBin     string                    // path to trivy binary; defaults to "trivy"
+	TrivyTimeout time.Duration             // per-scan wall-clock limit (0 = no extra timeout); default 10m
 	ScanResults  repository.ScanResultRepo // may be nil; if set, each scan is persisted here
 	OSVClient    *OSVClient                // used for non-Docker formats
 	scanUsername string                    // registry credentials passed to trivy --username

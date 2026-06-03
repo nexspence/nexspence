@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/repository"
 )
@@ -19,7 +20,7 @@ func AuditMiddleware(auditRepo repository.AuditRepo) gin.HandlerFunc {
 		if method != "PUT" && method != "POST" && method != "DELETE" && method != "PATCH" {
 			// Also audit OIDC callback GET as a LOGIN event (no mutation on
 			// our side, but it is a security-relevant user-identification event).
-			if !(method == "GET" && strings.HasPrefix(c.Request.URL.Path, "/api/v1/auth/oidc/callback")) {
+			if method != "GET" || !strings.HasPrefix(c.Request.URL.Path, "/api/v1/auth/oidc/callback") {
 				return
 			}
 		}

@@ -1,16 +1,17 @@
 // Package conan implements the Conan C/C++ package manager repository protocol.
 //
 // Conan v1 REST API (under /repository/:repoName/):
-//   GET  /ping                                    → {"ok": true}
-//   GET  /v1/ping                                 → {"ok": true}
-//   GET  /v1/conans/:name/:version/:user/:channel/search → search matching refs
-//   GET  /v1/conans/:name/:version/:user/:channel  → recipe manifest
-//   GET  /v1/conans/:name/:version/:user/:channel/download_urls → download URLs map
-//   POST /v1/conans/:name/:version/:user/:channel/upload_urls   → request upload URLs
-//   PUT  /files/:name/:version/:user/:channel/:revision/export/:file → upload recipe file
-//   PUT  /files/:name/:version/:user/:channel/:revision/package/:pkgid/:prevision/:file → upload package file
-//   GET  /files/:name/:version/:user/:channel/:revision/export/:file → download recipe file
-//   GET  /files/:name/:version/:user/:channel/:revision/package/:pkgid/:prevision/:file → download package file
+//
+//	GET  /ping                                    → {"ok": true}
+//	GET  /v1/ping                                 → {"ok": true}
+//	GET  /v1/conans/:name/:version/:user/:channel/search → search matching refs
+//	GET  /v1/conans/:name/:version/:user/:channel  → recipe manifest
+//	GET  /v1/conans/:name/:version/:user/:channel/download_urls → download URLs map
+//	POST /v1/conans/:name/:version/:user/:channel/upload_urls   → request upload URLs
+//	PUT  /files/:name/:version/:user/:channel/:revision/export/:file → upload recipe file
+//	PUT  /files/:name/:version/:user/:channel/:revision/package/:pkgid/:prevision/:file → upload package file
+//	GET  /files/:name/:version/:user/:channel/:revision/export/:file → download recipe file
+//	GET  /files/:name/:version/:user/:channel/:revision/package/:pkgid/:prevision/:file → download package file
 package conan
 
 import (
@@ -20,6 +21,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/formats"
 	"github.com/nexspence-oss/nexspence/internal/formats/base"
@@ -137,7 +139,7 @@ func (h *Handler) handleDownload(c *gin.Context, repoName, p string) {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
-	defer rc.Close()
+	defer func() { _ = rc.Close() }()
 	c.DataFromReader(http.StatusOK, asset.SizeBytes, asset.ContentType, rc, nil)
 }
 

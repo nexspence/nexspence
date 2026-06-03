@@ -1,15 +1,17 @@
 // Package nuget implements the NuGet v2/v3 repository protocol.
 //
 // NuGet v3 endpoints (under /repository/:repoName/):
-//   GET  /index.json                        → service index (v3)
-//   GET  /v3/registration/:id/index.json    → package registration (metadata)
-//   GET  /v3/flatcontainer/:id/index.json   → version list
-//   GET  /v3/flatcontainer/:id/:ver/:id.:ver.nupkg → download
+//
+//	GET  /index.json                        → service index (v3)
+//	GET  /v3/registration/:id/index.json    → package registration (metadata)
+//	GET  /v3/flatcontainer/:id/index.json   → version list
+//	GET  /v3/flatcontainer/:id/:ver/:id.:ver.nupkg → download
 //
 // NuGet v2 endpoints:
-//   GET  /FindPackagesById()?id='name'      → OData XML
-//   PUT  /v2/package                        → nuget push (multipart)
-//   DELETE /v2/packages/:id/:ver            → delete
+//
+//	GET  /FindPackagesById()?id='name'      → OData XML
+//	PUT  /v2/package                        → nuget push (multipart)
+//	DELETE /v2/packages/:id/:ver            → delete
 package nuget
 
 import (
@@ -24,6 +26,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/formats"
 	"github.com/nexspence-oss/nexspence/internal/formats/base"
@@ -148,7 +151,7 @@ func (h *Handler) serveFlatContainerDownload(c *gin.Context, repoName, p string)
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
-	defer rc.Close()
+	defer func() { _ = rc.Close() }()
 	c.DataFromReader(http.StatusOK, asset.SizeBytes, "application/zip", rc, nil)
 }
 
@@ -178,9 +181,9 @@ func (h *Handler) serveRegistration(c *gin.Context, repoName, p string) {
 			"@id":            entryURL,
 			"packageContent": base2 + "/v3/flatcontainer/" + pkgID + "/" + comp.Version + "/" + pkgID + "." + comp.Version + ".nupkg",
 			"catalogEntry": gin.H{
-				"id":      comp.Name,
-				"version": comp.Version,
-				"listed":  true,
+				"id":        comp.Name,
+				"version":   comp.Version,
+				"listed":    true,
 				"published": comp.CreatedAt.UTC().Format(time.RFC3339),
 			},
 		})
@@ -253,7 +256,7 @@ func (h *Handler) handlePush(c *gin.Context, repoName string) {
 			return
 		}
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	// Filename: id.version.nupkg
 	filename := fh.Filename
@@ -302,7 +305,7 @@ func (h *Handler) fetchAndRewriteNuGetIndex(c *gin.Context, repo *domain.Reposit
 		c.JSON(http.StatusBadGateway, gin.H{"error": "upstream fetch failed: " + err.Error()})
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		c.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("upstream returned %d", resp.StatusCode)})
@@ -347,4 +350,3 @@ func (h *Handler) fetchAndRewriteNuGetIndex(c *gin.Context, repo *domain.Reposit
 func normPath(p string) string {
 	return path.Clean("/" + strings.TrimPrefix(p, "/"))
 }
-

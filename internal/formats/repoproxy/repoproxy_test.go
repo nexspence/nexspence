@@ -1,30 +1,32 @@
 package repoproxy_test
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/formats"
 	"github.com/nexspence-oss/nexspence/internal/formats/base"
 	"github.com/nexspence-oss/nexspence/internal/formats/repoproxy"
 	"github.com/nexspence-oss/nexspence/internal/testutil"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func init() { gin.SetMode(gin.TestMode) }
 
 func proxyRepo(name, remoteURL string) *domain.Repository {
 	return &domain.Repository{
-		ID:     "repo-" + name,
-		Name:   name,
-		Format: "raw",
-		Type:   domain.TypeProxy,
-		Online: true,
+		ID:          "repo-" + name,
+		Name:        name,
+		Format:      "raw",
+		Type:        domain.TypeProxy,
+		Online:      true,
 		ProxyConfig: map[string]any{"remote_url": remoteURL},
 	}
 }
@@ -83,16 +85,16 @@ func serveGET(repo *domain.Repository, assetPath, blobContent string) *httptest.
 
 	if blobContent != "" {
 		key := "cached-key"
-		_ = blobStore.Put(nil, key, strings.NewReader(blobContent), int64(len(blobContent)))
+		_ = blobStore.Put(context.TODO(), key, strings.NewReader(blobContent), int64(len(blobContent)))
 		a := &domain.Asset{
-			Repository:  repo.Name,
+			Repository:   repo.Name,
 			RepositoryID: repo.ID,
-			Path:        assetPath,
-			BlobKey:     key,
-			ContentType: "application/octet-stream",
-			SizeBytes:   int64(len(blobContent)),
+			Path:         assetPath,
+			BlobKey:      key,
+			ContentType:  "application/octet-stream",
+			SizeBytes:    int64(len(blobContent)),
 		}
-		_ = assets.Create(nil, a)
+		_ = assets.Create(context.TODO(), a)
 	}
 
 	w := httptest.NewRecorder()

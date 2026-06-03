@@ -26,6 +26,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/formats"
 	"github.com/nexspence-oss/nexspence/internal/formats/base"
@@ -98,7 +99,7 @@ func (h *Handler) serveProviderBinary(c *gin.Context, repoName, filePath string)
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
-	defer rc.Close()
+	defer func() { _ = rc.Close() }()
 	c.DataFromReader(http.StatusOK, asset.SizeBytes, "application/zip", rc, nil)
 }
 
@@ -199,7 +200,7 @@ func (h *Handler) handleProviderDownload(c *gin.Context, repoName, p string) {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
-	rc.Close() // only need metadata
+	_ = rc.Close() // only need metadata
 
 	downloadURL := strings.TrimRight(h.deps.BaseURL, "/") + "/repository/" + repoName + filePath
 	c.JSON(http.StatusOK, gin.H{
@@ -242,7 +243,7 @@ func (h *Handler) serveModuleArchive(c *gin.Context, repoName, filePath string) 
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
-	defer rc.Close()
+	defer func() { _ = rc.Close() }()
 	c.DataFromReader(http.StatusOK, asset.SizeBytes, "application/x-tar", rc, nil)
 }
 
@@ -361,11 +362,11 @@ func (h *Handler) serveProxy(c *gin.Context, repo *domain.Repository, repoName, 
 		c.JSON(http.StatusBadGateway, gin.H{"error": "upstream: " + err.Error()})
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		c.Status(resp.StatusCode)
-		io.Copy(c.Writer, resp.Body)
+		_, _ = io.Copy(c.Writer, resp.Body)
 		return
 	}
 

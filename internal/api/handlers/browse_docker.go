@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/formats/base"
 	"github.com/nexspence-oss/nexspence/internal/repository"
@@ -174,8 +175,8 @@ func dockerImageDirs(rawAssetPaths []string, q string) []string {
 			if seg == "" {
 				continue
 			}
-			cur += seg + "/"        // e.g. "da/" → "da/bas/" → "da/bas/python/"
-			p := "/" + cur          // e.g. "/da/" → "/da/bas/" → "/da/bas/python/"
+			cur += seg + "/" // e.g. "da/" → "da/bas/" → "da/bas/python/"
+			p := "/" + cur   // e.g. "/da/" → "/da/bas/" → "/da/bas/python/"
 			if q == "" || strings.Contains(strings.ToLower(p), strings.ToLower(q)) {
 				seen[p] = struct{}{}
 			}
@@ -394,10 +395,14 @@ func parseManifestDigests(rc io.ReadCloser, size int64, err error) []string {
 		return nil
 	}
 	data, _ := io.ReadAll(rc)
-	rc.Close()
+	_ = rc.Close()
 	var m struct {
-		Config struct{ Digest string `json:"digest"` } `json:"config"`
-		Layers []struct{ Digest string `json:"digest"` } `json:"layers"`
+		Config struct {
+			Digest string `json:"digest"`
+		} `json:"config"`
+		Layers []struct {
+			Digest string `json:"digest"`
+		} `json:"layers"`
 	}
 	if json.Unmarshal(data, &m) != nil {
 		return nil

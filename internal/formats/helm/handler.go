@@ -16,11 +16,12 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"gopkg.in/yaml.v3"
+
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/formats"
 	"github.com/nexspence-oss/nexspence/internal/formats/base"
 	"github.com/nexspence-oss/nexspence/internal/formats/repoproxy"
-	"gopkg.in/yaml.v3"
 )
 
 type Handler struct{ deps formats.Deps }
@@ -132,16 +133,16 @@ func (h *Handler) handleUpload(c *gin.Context, repoName string) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "missing 'chart' file"})
 			return
 		}
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 		buf := new(bytes.Buffer)
-		buf.ReadFrom(f)
+		_, _ = buf.ReadFrom(f)
 		data = buf.Bytes()
 		size = int64(len(data))
 		filename = fh.Filename
 	} else {
 		// Raw body (helm push --plain-http)
 		buf := new(bytes.Buffer)
-		buf.ReadFrom(c.Request.Body)
+		_, _ = buf.ReadFrom(c.Request.Body)
 		data = buf.Bytes()
 		size = int64(len(data))
 		filename = c.GetHeader("X-Chart-Name")
@@ -195,7 +196,7 @@ func (h *Handler) serveFile(c *gin.Context, repoName, filePath string) {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
-	defer rc.Close()
+	defer func() { _ = rc.Close() }()
 	if asset.SHA256 != "" {
 		c.Header("X-Checksum-SHA256", asset.SHA256)
 	}
@@ -230,7 +231,7 @@ func (h *Handler) fetchAndRewriteHelmIndex(c *gin.Context, repo *domain.Reposito
 		c.JSON(http.StatusBadGateway, gin.H{"error": "upstream fetch failed: " + err.Error()})
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		c.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("upstream returned %d", resp.StatusCode)})

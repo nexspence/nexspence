@@ -1,13 +1,14 @@
 // Package yum implements the Yum/DNF RPM repository protocol.
 //
 // Standard yum repository layout under /repository/:repoName/:
-//   GET  /repodata/repomd.xml                  → repository metadata index
-//   GET  /repodata/primary.xml[.gz]            → primary packages metadata
-//   GET  /repodata/filelists.xml[.gz]          → file lists
-//   GET  /repodata/other.xml[.gz]              → changelog data
-//   GET  /:path/*.rpm                          → download RPM
-//   PUT  /:path/*.rpm                          → upload RPM
-//   DELETE /:path/*.rpm                        → delete RPM
+//
+//	GET  /repodata/repomd.xml                  → repository metadata index
+//	GET  /repodata/primary.xml[.gz]            → primary packages metadata
+//	GET  /repodata/filelists.xml[.gz]          → file lists
+//	GET  /repodata/other.xml[.gz]              → changelog data
+//	GET  /:path/*.rpm                          → download RPM
+//	PUT  /:path/*.rpm                          → upload RPM
+//	DELETE /:path/*.rpm                        → delete RPM
 package yum
 
 import (
@@ -21,6 +22,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/formats"
 	"github.com/nexspence-oss/nexspence/internal/formats/base"
@@ -96,9 +98,9 @@ type repomdXML struct {
 	Data     []repomdEntry `xml:"data"`
 }
 type repomdEntry struct {
-	Type     string       `xml:"type,attr"`
-	Location repomdLoc    `xml:"location"`
-	Checksum repomdCksum  `xml:"checksum"`
+	Type      string      `xml:"type,attr"`
+	Location  repomdLoc   `xml:"location"`
+	Checksum  repomdCksum `xml:"checksum"`
 	Timestamp int64       `xml:"timestamp"`
 }
 type repomdLoc struct {
@@ -131,18 +133,18 @@ func (h *Handler) serveRepomd(c *gin.Context, repoName string) {
 
 // primaryXML is the minimal primary.xml structure
 type primaryXML struct {
-	XMLName  xml.Name      `xml:"metadata"`
-	XMLNS    string        `xml:"xmlns,attr"`
-	Count    int           `xml:"packages,attr"`
-	Packages []rpmPackage  `xml:"package"`
+	XMLName  xml.Name     `xml:"metadata"`
+	XMLNS    string       `xml:"xmlns,attr"`
+	Count    int          `xml:"packages,attr"`
+	Packages []rpmPackage `xml:"package"`
 }
 type rpmPackage struct {
-	Type    string     `xml:"type,attr"`
-	Name    string     `xml:"name"`
-	Arch    string     `xml:"arch"`
-	Version rpmVersion `xml:"version"`
-	Size    rpmSize    `xml:"size"`
-	Location rpmLoc    `xml:"location"`
+	Type     string     `xml:"type,attr"`
+	Name     string     `xml:"name"`
+	Arch     string     `xml:"arch"`
+	Version  rpmVersion `xml:"version"`
+	Size     rpmSize    `xml:"size"`
+	Location rpmLoc     `xml:"location"`
 }
 type rpmVersion struct {
 	Epoch string `xml:"epoch,attr"`
@@ -270,7 +272,7 @@ func (h *Handler) serveFile(c *gin.Context, repoName, p string) {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
-	defer rc.Close()
+	defer func() { _ = rc.Close() }()
 	if c.Request.Method == http.MethodHead {
 		c.Header("Content-Length", fmt.Sprintf("%d", asset.SizeBytes))
 		c.Status(http.StatusOK)

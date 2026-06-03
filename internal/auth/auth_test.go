@@ -3,9 +3,10 @@ package auth_test
 import (
 	"testing"
 
-	"github.com/nexspence-oss/nexspence/internal/auth"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/nexspence-oss/nexspence/internal/auth"
 )
 
 func newSvc() *auth.Service {

@@ -10,10 +10,10 @@ import (
 
 // GCResult reports what was found and removed during a compaction run.
 type GCResult struct {
-	ScannedBlobs int    `json:"scannedBlobs"`
-	Orphans      int    `json:"orphans"`
-	FreedBytes   int64  `json:"freedBytes"`
-	DryRun       bool   `json:"dryRun"`
+	ScannedBlobs int      `json:"scannedBlobs"`
+	Orphans      int      `json:"orphans"`
+	FreedBytes   int64    `json:"freedBytes"`
+	DryRun       bool     `json:"dryRun"`
 	Errors       []string `json:"errors,omitempty"`
 }
 

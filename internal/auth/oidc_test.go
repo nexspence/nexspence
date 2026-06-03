@@ -13,9 +13,10 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/nexspence-oss/nexspence/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/nexspence-oss/nexspence/internal/config"
 )
 
 // fakeIdP is a minimal OIDC provider stub exposing discovery, JWKS, and /token.

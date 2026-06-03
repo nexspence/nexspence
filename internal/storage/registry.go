@@ -17,7 +17,7 @@ type MemberInfo struct {
 // BlobStoreDescriptor carries the minimal DB data needed to instantiate a physical BlobStore.
 type BlobStoreDescriptor struct {
 	ID     string
-	Type   string         // "local" | "s3"
+	Type   string // "local" | "s3"
 	Config map[string]any
 }
 

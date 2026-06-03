@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/formats"
 	"github.com/nexspence-oss/nexspence/internal/formats/base"
@@ -93,7 +94,7 @@ func (h *Handler) handleUpload(c *gin.Context, repoName string) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "missing content file"})
 		return
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	pkgName := normalizePackageName(c.Request.FormValue("name"))
 	version := c.Request.FormValue("version")
@@ -141,8 +142,8 @@ func (h *Handler) serveSimpleIndex(c *gin.Context, repoName string) {
 	var sb strings.Builder
 	sb.WriteString("<!DOCTYPE html><html><head><title>Simple Index</title></head><body><h1>Simple Index</h1>\n")
 	for _, n := range names {
-		sb.WriteString(fmt.Sprintf(`<a href="/repository/%s/simple/%s/">%s</a><br/>`,
-			html.EscapeString(repoName), html.EscapeString(n), html.EscapeString(n)))
+		fmt.Fprintf(&sb, `<a href="/repository/%s/simple/%s/">%s</a><br/>`,
+			html.EscapeString(repoName), html.EscapeString(n), html.EscapeString(n))
 	}
 	sb.WriteString("</body></html>")
 	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(sb.String()))
@@ -159,8 +160,8 @@ func (h *Handler) servePackageIndex(c *gin.Context, repoName, pkgName string) {
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("<!DOCTYPE html><html><head><title>Links for %s</title></head><body><h1>Links for %s</h1>\n",
-		html.EscapeString(pkgName), html.EscapeString(pkgName)))
+	fmt.Fprintf(&sb, "<!DOCTYPE html><html><head><title>Links for %s</title></head><body><h1>Links for %s</h1>\n",
+		html.EscapeString(pkgName), html.EscapeString(pkgName))
 
 	for _, comp := range page.Items {
 		// Get assets for this component
@@ -178,8 +179,8 @@ func (h *Handler) servePackageIndex(c *gin.Context, repoName, pkgName string) {
 			if a.SHA256 != "" {
 				sha = "#sha256=" + a.SHA256
 			}
-			sb.WriteString(fmt.Sprintf(`<a href="%s%s" data-requires-python="">%s</a><br/>`,
-				html.EscapeString(href), sha, html.EscapeString(filename)))
+			fmt.Fprintf(&sb, `<a href="%s%s" data-requires-python="">%s</a><br/>`,
+				html.EscapeString(href), sha, html.EscapeString(filename))
 		}
 	}
 	sb.WriteString("</body></html>")
@@ -206,7 +207,7 @@ func (h *Handler) serveFile(c *gin.Context, repoName, filePath string) {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
-	defer rc.Close()
+	defer func() { _ = rc.Close() }()
 	if asset.SHA256 != "" {
 		c.Header("X-Checksum-SHA256", asset.SHA256)
 	}

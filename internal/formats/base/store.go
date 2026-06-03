@@ -84,8 +84,8 @@ func StoreArtifact(ctx context.Context, d formats.Deps,
 
 	// Stream → hash writers → blob store via pipe
 	sha256h := sha256.New()
-	sha1h   := sha1.New()
-	md5h    := md5.New()
+	sha1h := sha1.New()
+	md5h := md5.New()
 
 	pr, pw := io.Pipe()
 	var pipeErr error
@@ -99,8 +99,8 @@ func StoreArtifact(ctx context.Context, d formats.Deps,
 	}
 
 	sha256sum := hex.EncodeToString(sha256h.Sum(nil))
-	sha1sum   := hex.EncodeToString(sha1h.Sum(nil))
-	md5sum    := hex.EncodeToString(md5h.Sum(nil))
+	sha1sum := hex.EncodeToString(sha1h.Sum(nil))
+	md5sum := hex.EncodeToString(md5h.Sum(nil))
 
 	size := declaredSize
 	if size <= 0 {

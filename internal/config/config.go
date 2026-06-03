@@ -51,10 +51,10 @@ type TLSConfig struct {
 }
 
 type DatabaseConfig struct {
-	DSN         string `mapstructure:"dsn"`
-	MaxConns    int    `mapstructure:"max_conns"`
-	MinConns    int    `mapstructure:"min_conns"`
-	MaxIdleSec  int    `mapstructure:"max_idle_sec"`
+	DSN        string `mapstructure:"dsn"`
+	MaxConns   int    `mapstructure:"max_conns"`
+	MinConns   int    `mapstructure:"min_conns"`
+	MaxIdleSec int    `mapstructure:"max_idle_sec"`
 }
 
 type StorageConfig struct {
@@ -78,12 +78,12 @@ type S3Config struct {
 }
 
 type AuthConfig struct {
-	JWTSecret          string `mapstructure:"jwt_secret"`
-	JWTExpiryHours     int    `mapstructure:"jwt_expiry_hours"`
-	AnonymousEnabled   bool   `mapstructure:"anonymous_enabled"`
-	PasswordMinLength  int    `mapstructure:"password_min_length"`
-	BcryptCost         int    `mapstructure:"bcrypt_cost"`
-	TokenMaxDays       int    `mapstructure:"token_max_days"`
+	JWTSecret         string `mapstructure:"jwt_secret"`
+	JWTExpiryHours    int    `mapstructure:"jwt_expiry_hours"`
+	AnonymousEnabled  bool   `mapstructure:"anonymous_enabled"`
+	PasswordMinLength int    `mapstructure:"password_min_length"`
+	BcryptCost        int    `mapstructure:"bcrypt_cost"`
+	TokenMaxDays      int    `mapstructure:"token_max_days"`
 }
 
 type LogConfig struct {
@@ -93,25 +93,25 @@ type LogConfig struct {
 
 // LDAPConfig configures LDAP/Active Directory authentication.
 type LDAPConfig struct {
-	Enabled          bool              `mapstructure:"enabled"`
-	Host             string            `mapstructure:"host"`
-	Port             int               `mapstructure:"port"`
-	UseTLS           bool              `mapstructure:"use_tls"`    // LDAPS (port 636)
-	StartTLS         bool              `mapstructure:"start_tls"`  // STARTTLS on plain conn
+	Enabled            bool            `mapstructure:"enabled"`
+	Host               string          `mapstructure:"host"`
+	Port               int             `mapstructure:"port"`
+	UseTLS             bool            `mapstructure:"use_tls"`   // LDAPS (port 636)
+	StartTLS           bool            `mapstructure:"start_tls"` // STARTTLS on plain conn
 	InsecureSkipVerify bool            `mapstructure:"insecure_skip_verify"`
-	BindDN           string            `mapstructure:"bind_dn"`
-	BindPassword     string            `mapstructure:"bind_password"`
-	SearchBase       string            `mapstructure:"search_base"`
-	SearchFilter     string            `mapstructure:"search_filter"`   // {0} → username
-	UserAttributes   LDAPUserAttrMap   `mapstructure:"user_attributes"`
-	GroupBase        string            `mapstructure:"group_base"`
-	GroupFilter      string            `mapstructure:"group_filter"`    // {dn} → user DN
-	GroupAttribute   string            `mapstructure:"group_attribute"` // attr holding group name
-	AutoCreateUsers  bool              `mapstructure:"auto_create_users"`
-	TimeoutSec       int               `mapstructure:"timeout_sec"`
+	BindDN             string          `mapstructure:"bind_dn"`
+	BindPassword       string          `mapstructure:"bind_password"`
+	SearchBase         string          `mapstructure:"search_base"`
+	SearchFilter       string          `mapstructure:"search_filter"` // {0} → username
+	UserAttributes     LDAPUserAttrMap `mapstructure:"user_attributes"`
+	GroupBase          string          `mapstructure:"group_base"`
+	GroupFilter        string          `mapstructure:"group_filter"`    // {dn} → user DN
+	GroupAttribute     string          `mapstructure:"group_attribute"` // attr holding group name
+	AutoCreateUsers    bool            `mapstructure:"auto_create_users"`
+	TimeoutSec         int             `mapstructure:"timeout_sec"`
 	// AdminGroup, when set, automatically grants the nx-admin role to any LDAP user
 	// whose group membership includes this group name.
-	AdminGroup   string            `mapstructure:"admin_group"`
+	AdminGroup string `mapstructure:"admin_group"`
 	// RoleMappings maps LDAP group names to Nexspence role names (like OIDC/SAML).
 	RoleMappings map[string]string `mapstructure:"role_mappings"`
 }
@@ -139,9 +139,9 @@ type OIDCConfig struct {
 	EmailAllowlist []string `mapstructure:"email_allowlist"` // glob patterns (path.Match)
 
 	// Role resolution.
-	GroupsClaim  string            `mapstructure:"groups_claim"`   // default "groups"
-	AdminGroup   string            `mapstructure:"admin_group"`    // claim value → nx-admin
-	RoleMappings map[string]string `mapstructure:"role_mappings"`  // claim value → Nexspence role name
+	GroupsClaim  string            `mapstructure:"groups_claim"`  // default "groups"
+	AdminGroup   string            `mapstructure:"admin_group"`   // claim value → nx-admin
+	RoleMappings map[string]string `mapstructure:"role_mappings"` // claim value → Nexspence role name
 
 	// Claim name overrides (provider-specific).
 	UsernameClaim string `mapstructure:"username_claim"`
@@ -150,7 +150,7 @@ type OIDCConfig struct {
 
 	ShowLoginButton    bool   `mapstructure:"show_login_button"`
 	CookieSecure       bool   `mapstructure:"cookie_secure"`
-	CookieKey          string `mapstructure:"cookie_key"`           // base64 32 bytes
+	CookieKey          string `mapstructure:"cookie_key"` // base64 32 bytes
 	AllowedSkewSeconds int    `mapstructure:"allowed_skew_seconds"`
 
 	// PublicIssuerURL, when set, replaces the internal Issuer URL in auth redirect

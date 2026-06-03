@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/repository"
 	pgaudit "github.com/nexspence-oss/nexspence/internal/repository/postgres"
@@ -71,8 +72,8 @@ func isBareDate(s string) bool {
 
 // List GET /service/rest/v1/audit
 //
-//	- format=ndjson  → streaming NDJSON download
-//	- otherwise      → {"items":[...], "total": N}
+//   - format=ndjson  → streaming NDJSON download
+//   - otherwise      → {"items":[...], "total": N}
 //
 // Query params: domain, action, username, from, to, limit, offset, format.
 func (h *AuditHandler) List(c *gin.Context) {

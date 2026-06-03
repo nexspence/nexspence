@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/cel-go/cel"
+
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/formats/base"
 	"github.com/nexspence-oss/nexspence/internal/repository"
@@ -288,10 +289,10 @@ func (s *PromotionService) executeCopy(ctx context.Context, req *domain.Promotio
 			return fmt.Errorf("read blob %s: %w", asset.BlobKey, err)
 		}
 		if putErr := toStore.Put(ctx, newBlobKey, rc, size); putErr != nil {
-			rc.Close()
+			_ = rc.Close()
 			return fmt.Errorf("write blob %s: %w", newBlobKey, putErr)
 		}
-		rc.Close()
+		_ = rc.Close()
 
 		newAsset := &domain.Asset{
 			ComponentID:  newComp.ID,

@@ -12,11 +12,11 @@ type Deps struct {
 	Components repository.ComponentRepo
 	Assets     repository.AssetRepo
 	Blobs      repository.BlobStoreRepo
-	BlobStore  storage.BlobStore    // default / fallback store
-	Registry   *storage.Registry   // optional: per-blob-store routing; nil disables
+	BlobStore  storage.BlobStore // default / fallback store
+	Registry   *storage.Registry // optional: per-blob-store routing; nil disables
 	BaseURL    string
 	// Webhooks is optional — nil disables event delivery.
-	Webhooks     domain.WebhookDispatcher
+	Webhooks domain.WebhookDispatcher
 	// RoutingRules is optional — nil disables routing rule enforcement in group repos.
 	RoutingRules repository.RoutingRuleRepo
 }

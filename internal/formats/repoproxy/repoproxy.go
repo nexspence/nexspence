@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/formats"
 	"github.com/nexspence-oss/nexspence/internal/formats/base"
@@ -155,7 +156,7 @@ func ServeGET(c *gin.Context, d formats.Deps, repo *domain.Repository, repoRelat
 		}
 		rc, _, blobErr := fetchStore.Get(ctx, asset.BlobKey)
 		if blobErr == nil {
-			defer rc.Close()
+			defer func() { _ = rc.Close() }()
 			// Count only real GETs so HEAD probe + GET pulls don't double-count.
 			// Use context.Background so the UPDATE survives request cancellation after streaming.
 			if c.Request.Method == http.MethodGet {
@@ -224,7 +225,7 @@ func ServeGET(c *gin.Context, d formats.Deps, repo *domain.Repository, repoRelat
 		c.JSON(http.StatusBadGateway, gin.H{"error": "upstream fetch failed: " + err.Error()})
 		return nil
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusNotModified {
 		copyRespHeaders(c.Writer.Header(), resp.Header)

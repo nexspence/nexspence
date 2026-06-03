@@ -42,9 +42,9 @@ type osvQueryRequest struct {
 
 type osvQueryResponse struct {
 	Vulns []struct {
-		ID      string   `json:"id"`
-		Aliases []string `json:"aliases"`
-		Summary string   `json:"summary"`
+		ID               string   `json:"id"`
+		Aliases          []string `json:"aliases"`
+		Summary          string   `json:"summary"`
 		DatabaseSpecific struct {
 			Severity string `json:"severity"`
 		} `json:"database_specific"`
@@ -72,7 +72,7 @@ func (c *OSVClient) Query(ctx context.Context, name, version, ecosystem string) 
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("osv.dev returned %d", resp.StatusCode)

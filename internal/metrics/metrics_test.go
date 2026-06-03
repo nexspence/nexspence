@@ -3,9 +3,10 @@ package metrics_test
 import (
 	"testing"
 
-	"github.com/nexspence-oss/nexspence/internal/metrics"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/nexspence-oss/nexspence/internal/metrics"
 )
 
 func TestSnapshot_ContainsExpectedKeys(t *testing.T) {

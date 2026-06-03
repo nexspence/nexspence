@@ -6,13 +6,14 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
+
 	"github.com/nexspence-oss/nexspence/internal/auth"
 	"github.com/nexspence-oss/nexspence/internal/config"
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/testutil"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	"go.uber.org/zap"
 )
 
 // mockSAML satisfies auth.SAMLAuthenticator. LoginSAML never calls back into it.
@@ -21,7 +22,7 @@ type mockSAML struct{}
 func (m *mockSAML) MetadataXML() ([]byte, error)                            { return nil, nil }
 func (m *mockSAML) AuthnRequestURL(rs string) (string, error)               { return "https://idp/sso", nil }
 func (m *mockSAML) ParseResponse(r *http.Request) (*auth.SAMLClaims, error) { return nil, nil }
-func (m *mockSAML) SignRelayState(returnTo string) string                    { return returnTo }
+func (m *mockSAML) SignRelayState(returnTo string) string                   { return returnTo }
 func (m *mockSAML) VerifyRelayState(rs string) (string, error)              { return rs, nil }
 
 func newUserSvcSAML(t *testing.T, cfg config.SAMLConfig, seed ...*domain.User) *UserService {

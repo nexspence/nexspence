@@ -15,16 +15,16 @@ import (
 
 // UserService handles user management and authentication.
 type UserService struct {
-	users          repository.UserRepo
-	roles          repository.RoleRepo
-	auth           *auth.Service
+	users   repository.UserRepo
+	roles   repository.RoleRepo
+	auth    *auth.Service
 	ldap    auth.LDAPAuthenticator // nil when LDAP is disabled
-	ldapCfg config.LDAPConfig     // empty when LDAP is disabled
-	oidc           auth.OIDCAuthenticator // nil when OIDC is disabled
-	oidcCfg        config.OIDCConfig      // empty when OIDC is disabled
-	saml           auth.SAMLAuthenticator // nil when SAML is disabled
-	samlCfg        config.SAMLConfig      // empty when SAML is disabled
-	log            logger.Logger
+	ldapCfg config.LDAPConfig      // empty when LDAP is disabled
+	oidc    auth.OIDCAuthenticator // nil when OIDC is disabled
+	oidcCfg config.OIDCConfig      // empty when OIDC is disabled
+	saml    auth.SAMLAuthenticator // nil when SAML is disabled
+	samlCfg config.SAMLConfig      // empty when SAML is disabled
+	log     logger.Logger
 }
 
 func NewUserService(

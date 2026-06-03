@@ -12,8 +12,8 @@ import (
 // bucket algorithm. Each identity starts with burstSize tokens; tokens refill
 // at refillRate per second up to the burst cap.
 type tokenBucket struct {
-	mu        sync.Mutex
-	tokens    float64
+	mu         sync.Mutex
+	tokens     float64
 	lastRefill time.Time
 }
 
@@ -39,8 +39,8 @@ func (b *tokenBucket) allow(rate, burst float64) bool {
 // rate is tokens/second; burst is the maximum burst size.
 func RateLimitMiddleware(rate, burst float64) gin.HandlerFunc {
 	type entry struct {
-		bucket    *tokenBucket
-		lastSeen  time.Time
+		bucket   *tokenBucket
+		lastSeen time.Time
 	}
 	var (
 		mu      sync.Mutex

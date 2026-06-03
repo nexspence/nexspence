@@ -9,8 +9,9 @@ import (
 	"strings"
 
 	"github.com/coreos/go-oidc/v3/oidc"
-	"github.com/nexspence-oss/nexspence/internal/config"
 	"golang.org/x/oauth2"
+
+	"github.com/nexspence-oss/nexspence/internal/config"
 )
 
 // ErrOIDCVerification is returned by OIDCService.ExchangeAndVerify for any
@@ -112,7 +113,7 @@ func newProviderViaConfig(ctx context.Context, internalIssuer string) (*oidc.Pro
 	if err != nil {
 		return nil, fmt.Errorf("fetch discovery doc: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var doc struct {
 		Issuer   string `json:"issuer"`
@@ -242,7 +243,7 @@ func (s *OIDCService) TestConnection(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("oidc discovery unreachable: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("oidc discovery returned HTTP %d", resp.StatusCode)
 	}

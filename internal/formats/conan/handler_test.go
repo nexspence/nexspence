@@ -8,12 +8,13 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/formats"
 	"github.com/nexspence-oss/nexspence/internal/formats/conan"
 	"github.com/nexspence-oss/nexspence/internal/testutil"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func init() { gin.SetMode(gin.TestMode) }
@@ -80,7 +81,7 @@ func TestConan_UploadURLs(t *testing.T) {
 	r := setup(repo)
 
 	body, _ := json.Marshal(map[string]int64{
-		"conanfile.py":     512,
+		"conanfile.py":      512,
 		"conanmanifest.txt": 128,
 	})
 	req := httptest.NewRequest(http.MethodPost,

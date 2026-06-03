@@ -9,12 +9,13 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
+
 	"github.com/nexspence-oss/nexspence/internal/api/handlers"
 	"github.com/nexspence-oss/nexspence/internal/auth"
 	"github.com/nexspence-oss/nexspence/internal/config"
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/testutil"
-	"go.uber.org/zap"
 )
 
 type stubOIDCLogout struct{ endSessionURL string }
@@ -24,7 +25,7 @@ func (s *stubOIDCLogout) ExchangeAndVerify(_ context.Context, _, _, _ string) (*
 	return nil, "", nil
 }
 func (s *stubOIDCLogout) TestConnection(_ context.Context) error { return nil }
-func (s *stubOIDCLogout) EndSessionEndpoint() string              { return s.endSessionURL }
+func (s *stubOIDCLogout) EndSessionEndpoint() string             { return s.endSessionURL }
 
 func makeLogoutRouter(t *testing.T, oidcSvc auth.OIDCAuthenticator, userRepo *testutil.UserRepo, cfg config.OIDCConfig) *gin.Engine {
 	t.Helper()

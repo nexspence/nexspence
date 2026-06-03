@@ -1,17 +1,18 @@
 // Package docker implements the OCI Distribution Spec v2 (Docker registry v2 protocol).
 //
 // All endpoints under /repository/:repoName/v2/:
-//   GET  /v2/                                   → API version check (200 OK)
-//   GET  /v2/:name/tags/list                    → list tags
-//   GET  /v2/:name/manifests/:reference         → pull manifest
-//   PUT  /v2/:name/manifests/:reference         → push manifest
-//   DELETE /v2/:name/manifests/:reference       → delete manifest
-//   GET  /v2/:name/blobs/:digest                → pull blob (content-addressable)
-//   HEAD /v2/:name/blobs/:digest                → blob exists check
-//   POST /v2/:name/blobs/uploads/               → initiate blob upload
-//   PATCH /v2/:name/blobs/uploads/:uuid         → stream blob chunks
-//   PUT  /v2/:name/blobs/uploads/:uuid?digest=  → finalize blob upload
-//   DELETE /v2/:name/blobs/:digest              → delete blob
+//
+//	GET  /v2/                                   → API version check (200 OK)
+//	GET  /v2/:name/tags/list                    → list tags
+//	GET  /v2/:name/manifests/:reference         → pull manifest
+//	PUT  /v2/:name/manifests/:reference         → push manifest
+//	DELETE /v2/:name/manifests/:reference       → delete manifest
+//	GET  /v2/:name/blobs/:digest                → pull blob (content-addressable)
+//	HEAD /v2/:name/blobs/:digest                → blob exists check
+//	POST /v2/:name/blobs/uploads/               → initiate blob upload
+//	PATCH /v2/:name/blobs/uploads/:uuid         → stream blob chunks
+//	PUT  /v2/:name/blobs/uploads/:uuid?digest=  → finalize blob upload
+//	DELETE /v2/:name/blobs/:digest              → delete blob
 package docker
 
 import (
@@ -25,6 +26,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/formats"
 	"github.com/nexspence-oss/nexspence/internal/formats/base"
@@ -173,7 +175,7 @@ func (h *Handler) pullManifest(c *gin.Context, repoName, imageName, reference st
 		dockerError(c, http.StatusNotFound, "MANIFEST_UNKNOWN", "manifest unknown")
 		return
 	}
-	defer rc.Close()
+	defer func() { _ = rc.Close() }()
 	if asset.SHA256 != "" {
 		c.Header("Docker-Content-Digest", "sha256:"+asset.SHA256)
 	}
@@ -277,7 +279,7 @@ func (h *Handler) pullBlob(c *gin.Context, repoName, imageName, digest string) {
 		}
 		return
 	}
-	defer rc.Close()
+	defer func() { _ = rc.Close() }()
 	c.Header("Docker-Content-Digest", digest)
 	if c.Request.Method == http.MethodHead {
 		c.Header("Content-Length", fmt.Sprintf("%d", asset.SizeBytes))

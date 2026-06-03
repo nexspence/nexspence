@@ -8,17 +8,18 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/storage"
 )
 
 var (
-	ErrNotFound              = errors.New("not found")
-	ErrAlreadyExists         = errors.New("already exists")
-	ErrInvalidInput          = errors.New("invalid input")
-	ErrProvisioningRejected  = errors.New("provisioning rejected")
-	ErrProvisioningConflict  = errors.New("user source conflict")
+	ErrNotFound             = errors.New("not found")
+	ErrAlreadyExists        = errors.New("already exists")
+	ErrInvalidInput         = errors.New("invalid input")
+	ErrProvisioningRejected = errors.New("provisioning rejected")
+	ErrProvisioningConflict = errors.New("user source conflict")
 )
 
 // RepositoryService handles business logic for Nexus-compatible repository management.

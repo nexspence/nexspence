@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/formats"
 	"github.com/nexspence-oss/nexspence/internal/formats/base"
@@ -48,7 +49,7 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 			return
 		}
-		defer rc.Close()
+		defer func() { _ = rc.Close() }()
 		applyChecksumHeaders(c, asset)
 		if c.Request.Method == http.MethodHead {
 			c.Header("Content-Type", asset.ContentType)

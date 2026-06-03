@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+
 	"github.com/nexspence-oss/nexspence/internal/logger"
 )
 
@@ -34,4 +35,3 @@ func corsMiddleware() gin.HandlerFunc {
 		c.Next()
 	}
 }
-

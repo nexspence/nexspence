@@ -7,10 +7,11 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/nexspence-oss/nexspence/internal/api"
-	"github.com/nexspence-oss/nexspence/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/nexspence-oss/nexspence/internal/api"
+	"github.com/nexspence-oss/nexspence/internal/testutil"
 )
 
 func init() { gin.SetMode(gin.TestMode) }

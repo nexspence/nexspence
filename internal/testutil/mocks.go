@@ -19,18 +19,18 @@ import (
 
 // ── compile-time interface assertions ────────────────────────
 var (
-	_ repository.RepositoryRepo      = (*RepoRepo)(nil)
-	_ repository.BlobStoreRepo       = (*BlobStoreRepo)(nil)
-	_ repository.ComponentRepo       = (*ComponentRepo)(nil)
-	_ repository.AssetRepo           = (*AssetRepo)(nil)
-	_ repository.CleanupPolicyRepo   = (*CleanupPolicyRepo)(nil)
-	_ repository.AuditRepo           = (*AuditRepo)(nil)
-	_ repository.UserRepo            = (*UserRepo)(nil)
-	_ repository.RoleRepo            = (*RoleRepo)(nil)
-	_ repository.ContentSelectorRepo = (*ContentSelectorRepo)(nil)
-	_ repository.UserTokenRepo       = (*UserTokenRepo)(nil)
-	_ repository.WebhookRepo         = (*WebhookRepo)(nil)
-	_ repository.RoutingRuleRepo     = (*RoutingRuleRepo)(nil)
+	_ repository.RepositoryRepo         = (*RepoRepo)(nil)
+	_ repository.BlobStoreRepo          = (*BlobStoreRepo)(nil)
+	_ repository.ComponentRepo          = (*ComponentRepo)(nil)
+	_ repository.AssetRepo              = (*AssetRepo)(nil)
+	_ repository.CleanupPolicyRepo      = (*CleanupPolicyRepo)(nil)
+	_ repository.AuditRepo              = (*AuditRepo)(nil)
+	_ repository.UserRepo               = (*UserRepo)(nil)
+	_ repository.RoleRepo               = (*RoleRepo)(nil)
+	_ repository.ContentSelectorRepo    = (*ContentSelectorRepo)(nil)
+	_ repository.UserTokenRepo          = (*UserTokenRepo)(nil)
+	_ repository.WebhookRepo            = (*WebhookRepo)(nil)
+	_ repository.RoutingRuleRepo        = (*RoutingRuleRepo)(nil)
 	_ repository.PrivilegeRepo          = (*PrivilegeRepo)(nil)
 	_ repository.BlobStoreMigrationRepo = (*BlobStoreMigrationRepo)(nil)
 	_ repository.ScanResultRepo         = (*ScanResultRepo)(nil)
@@ -754,11 +754,11 @@ func (a *AuditRepo) Stream(_ context.Context, q repository.AuditQuery, fn func(d
 // ── UserRepo ──────────────────────────────────────────────────
 
 type UserRepo struct {
-	mu          sync.Mutex
-	users       map[string]*domain.User // key: username
-	byID        map[string]*domain.User
-	nextID      int
-	oidcTokens  map[string]string // userID → id_token
+	mu         sync.Mutex
+	users      map[string]*domain.User // key: username
+	byID       map[string]*domain.User
+	nextID     int
+	oidcTokens map[string]string // userID → id_token
 }
 
 func NewUserRepo(users ...*domain.User) *UserRepo {
@@ -850,10 +850,10 @@ func (r *UserRepo) GetOIDCIDToken(_ context.Context, userID string) (string, err
 // ── RoleRepo ──────────────────────────────────────────────────
 
 type RoleRepo struct {
-	mu         sync.Mutex
-	roles      map[string]*domain.Role
-	userRoles  map[string][]string // userID → roleIDs
-	nextID     int
+	mu        sync.Mutex
+	roles     map[string]*domain.Role
+	userRoles map[string][]string // userID → roleIDs
+	nextID    int
 }
 
 func NewRoleRepo(roles ...*domain.Role) *RoleRepo {

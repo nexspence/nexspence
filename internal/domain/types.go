@@ -29,23 +29,23 @@ const (
 )
 
 type Repository struct {
-	ID               string            `json:"id"`
-	Name             string            `json:"name"`
-	Format           RepoFormat        `json:"format"`
-	Type             RepoType          `json:"type"`
-	BlobStoreID      *string           `json:"blobStoreId,omitempty"`
-	Online           bool              `json:"online"`
-	FormatConfig     map[string]any    `json:"formatConfig,omitempty"`
-	HTTPConfig       map[string]any    `json:"httpConfig,omitempty"`
-	ProxyConfig      map[string]any    `json:"proxyConfig,omitempty"`
-	CleanupPolicyIDs []string          `json:"cleanupPolicyIds,omitempty"`
-	QuotaBytes       *int64            `json:"quotaBytes,omitempty"`
-	RoutingRuleID    *string           `json:"routingRuleId,omitempty"`
-	AllowAnonymous   bool              `json:"allowAnonymous"`
-	Description      string            `json:"description,omitempty"`
-	URL              string            `json:"url,omitempty"` // computed
-	CreatedAt        time.Time         `json:"createdAt"`
-	UpdatedAt        time.Time         `json:"updatedAt"`
+	ID               string         `json:"id"`
+	Name             string         `json:"name"`
+	Format           RepoFormat     `json:"format"`
+	Type             RepoType       `json:"type"`
+	BlobStoreID      *string        `json:"blobStoreId,omitempty"`
+	Online           bool           `json:"online"`
+	FormatConfig     map[string]any `json:"formatConfig,omitempty"`
+	HTTPConfig       map[string]any `json:"httpConfig,omitempty"`
+	ProxyConfig      map[string]any `json:"proxyConfig,omitempty"`
+	CleanupPolicyIDs []string       `json:"cleanupPolicyIds,omitempty"`
+	QuotaBytes       *int64         `json:"quotaBytes,omitempty"`
+	RoutingRuleID    *string        `json:"routingRuleId,omitempty"`
+	AllowAnonymous   bool           `json:"allowAnonymous"`
+	Description      string         `json:"description,omitempty"`
+	URL              string         `json:"url,omitempty"` // computed
+	CreatedAt        time.Time      `json:"createdAt"`
+	UpdatedAt        time.Time      `json:"updatedAt"`
 }
 
 // GroupMemberNames returns ordered member repository names from formatConfig["member_names"].
@@ -146,9 +146,10 @@ type RoutingRule struct {
 // is visible for a user. Attached to one or more privileges; the auth gate
 // evaluates every selector attached via the caller's effective privileges
 // and denies if none returns true. CEL variables exposed to the expression:
-//   format     string  — repository format ("maven2", "docker", ...)
-//   path       string  — artifact path below the repo root ("/com/acme/...")
-//   repository string  — repository name
+//
+//	format     string  — repository format ("maven2", "docker", ...)
+//	path       string  — artifact path below the repo root ("/com/acme/...")
+//	repository string  — repository name
 type ContentSelector struct {
 	ID          string    `json:"id"`
 	Name        string    `json:"name"`
@@ -182,11 +183,11 @@ const (
 
 // ScanResult is stored in component.Extra["scan_result"] after a Trivy scan.
 type ScanResult struct {
-	ScannedAt time.Time   `json:"scannedAt"`
-	ImageRef  string      `json:"imageRef"`
-	Status    ScanStatus  `json:"status"`
-	Error     string      `json:"error,omitempty"`
-	Summary   ScanSummary `json:"summary"`
+	ScannedAt time.Time    `json:"scannedAt"`
+	ImageRef  string       `json:"imageRef"`
+	Status    ScanStatus   `json:"status"`
+	Error     string       `json:"error,omitempty"`
+	Summary   ScanSummary  `json:"summary"`
 	Findings  []CVEFinding `json:"findings,omitempty"`
 }
 
@@ -214,7 +215,7 @@ type CVEFinding struct {
 type ScanResultRow struct {
 	ID          string
 	ComponentID string
-	Scanner     string     // "trivy" | "osv"
+	Scanner     string // "trivy" | "osv"
 	Status      ScanStatus
 	Critical    int
 	High        int
@@ -264,45 +265,45 @@ type VulnFilter struct {
 // ── Component ────────────────────────────────────────────────
 
 type Component struct {
-	ID             string     `json:"id"`
-	RepositoryID   string     `json:"repositoryId"`
-	Repository     string     `json:"repository"` // name
-	Format         string     `json:"format"`
-	Group          string     `json:"group"`
-	Name           string     `json:"name"`
-	Version        string     `json:"version"`
-	Tags           []string   `json:"tags"`
+	ID             string         `json:"id"`
+	RepositoryID   string         `json:"repositoryId"`
+	Repository     string         `json:"repository"` // name
+	Format         string         `json:"format"`
+	Group          string         `json:"group"`
+	Name           string         `json:"name"`
+	Version        string         `json:"version"`
+	Tags           []string       `json:"tags"`
 	Extra          map[string]any `json:"extra,omitempty"`
-	LastDownloaded *time.Time `json:"lastDownloaded,omitempty"`
-	DownloadCount  int64      `json:"downloadCount"`
-	Assets         []Asset    `json:"assets,omitempty"`
-	CreatedAt      time.Time  `json:"createdAt"`
+	LastDownloaded *time.Time     `json:"lastDownloaded,omitempty"`
+	DownloadCount  int64          `json:"downloadCount"`
+	Assets         []Asset        `json:"assets,omitempty"`
+	CreatedAt      time.Time      `json:"createdAt"`
 }
 
 // ── Asset ────────────────────────────────────────────────────
 
 type Asset struct {
-	ID             string     `json:"id"`
-	ComponentID    string     `json:"componentId"`
-	RepositoryID   string     `json:"repositoryId"`
-	Repository     string     `json:"repository"` // name
-	Path           string     `json:"path"`
-	BlobStoreID    string     `json:"blobStoreId"`
-	BlobKey        string     `json:"blobKey,omitempty"` // storage reference (admin/browse)
-	SizeBytes      int64      `json:"fileSize"`
-	ContentType    string     `json:"contentType"`
-	SHA1           string     `json:"sha1,omitempty"`
-	SHA256         string     `json:"sha256,omitempty"`
-	MD5            string     `json:"md5,omitempty"`
-	DownloadURL    string     `json:"downloadUrl,omitempty"` // computed
+	ID           string `json:"id"`
+	ComponentID  string `json:"componentId"`
+	RepositoryID string `json:"repositoryId"`
+	Repository   string `json:"repository"` // name
+	Path         string `json:"path"`
+	BlobStoreID  string `json:"blobStoreId"`
+	BlobKey      string `json:"blobKey,omitempty"` // storage reference (admin/browse)
+	SizeBytes    int64  `json:"fileSize"`
+	ContentType  string `json:"contentType"`
+	SHA1         string `json:"sha1,omitempty"`
+	SHA256       string `json:"sha256,omitempty"`
+	MD5          string `json:"md5,omitempty"`
+	DownloadURL  string `json:"downloadUrl,omitempty"` // computed
 	// UploaderID is the users.id UUID when the asset was published (hosted push).
 	UploaderID string `json:"uploaderId,omitempty"`
 	// UploaderUsername is joined for API/browse (Nexus "Uploader" column).
-	UploaderUsername string `json:"uploader,omitempty"`
-	LastModified   time.Time  `json:"lastModified"`
-	LastDownloaded *time.Time `json:"lastDownloaded,omitempty"`
-	DownloadCount  int64      `json:"downloadCount"`
-	CreatedAt      time.Time  `json:"createdAt"`
+	UploaderUsername string     `json:"uploader,omitempty"`
+	LastModified     time.Time  `json:"lastModified"`
+	LastDownloaded   *time.Time `json:"lastDownloaded,omitempty"`
+	DownloadCount    int64      `json:"downloadCount"`
+	CreatedAt        time.Time  `json:"createdAt"`
 }
 
 // ── User ─────────────────────────────────────────────────────
@@ -415,7 +416,7 @@ type CleanupPolicy struct {
 	ID              string         `json:"id"`
 	Name            string         `json:"name"`
 	Description     string         `json:"description,omitempty"`
-	Format          string         `json:"format"` // "*" = all formats
+	Format          string         `json:"format"`   // "*" = all formats
 	Criteria        map[string]any `json:"criteria"` // e.g. {"lastDownloadedDays":30,"artifactAgeDays":90}
 	ScheduleCron    string         `json:"scheduleCron,omitempty"`
 	Enabled         bool           `json:"enabled"`
@@ -455,8 +456,8 @@ type AuditEvent struct {
 	Username   string         `json:"username"`
 	RemoteIP   string         `json:"remoteIp,omitempty"`
 	UserAgent  string         `json:"userAgent,omitempty"`
-	Domain     string         `json:"domain"`  // e.g. "REPOSITORY", "SECURITY", "USER"
-	Action     string         `json:"action"`  // e.g. "CREATE", "DELETE", "LOGIN"
+	Domain     string         `json:"domain"` // e.g. "REPOSITORY", "SECURITY", "USER"
+	Action     string         `json:"action"` // e.g. "CREATE", "DELETE", "LOGIN"
 	EntityType string         `json:"entityType,omitempty"`
 	EntityID   string         `json:"entityId,omitempty"`
 	EntityName string         `json:"entityName,omitempty"`
@@ -521,15 +522,15 @@ type BlobStoreMigration struct {
 // ── Search params ────────────────────────────────────────────
 
 type SearchParams struct {
-	Repository  string
+	Repository string
 	// RepositoryNames filters components/assets to any of these repository names (used when UI/API passes a group repo — expanded to members). When non-empty, Repository is ignored for SQL filtering.
 	RepositoryNames []string
-	Format      string
-	Group       string
-	Name        string
-	Version     string
-	SHA256      string
-	Tag         string   // exact match: $Tag = ANY(tags)
+	Format          string
+	Group           string
+	Name            string
+	Version         string
+	SHA256          string
+	Tag             string // exact match: $Tag = ANY(tags)
 	// Maven
 	MavenGroupID    string
 	MavenArtifactID string

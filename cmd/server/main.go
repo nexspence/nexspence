@@ -12,6 +12,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/spf13/cobra"
+
 	"github.com/nexspence-oss/nexspence/internal/api"
 	"github.com/nexspence-oss/nexspence/internal/audit"
 	"github.com/nexspence-oss/nexspence/internal/auth"
@@ -21,8 +24,6 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/logger"
 	"github.com/nexspence-oss/nexspence/internal/metrics"
 	"github.com/nexspence-oss/nexspence/internal/repository/postgres"
-	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/spf13/cobra"
 )
 
 func main() {

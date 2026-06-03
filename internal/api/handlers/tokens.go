@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+
 	"github.com/nexspence-oss/nexspence/internal/service"
 )
 
@@ -66,9 +67,9 @@ func (h *TokenHandler) Create(c *gin.Context) {
 		return
 	}
 	var req struct {
-		Name         string   `json:"name" binding:"required"`
-		Scopes       []string `json:"scopes"`
-		ExpiresInDays *int    `json:"expiresInDays"`
+		Name          string   `json:"name" binding:"required"`
+		Scopes        []string `json:"scopes"`
+		ExpiresInDays *int     `json:"expiresInDays"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})

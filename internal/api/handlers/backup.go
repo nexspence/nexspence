@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+
 	"github.com/nexspence-oss/nexspence/internal/service"
 )
 
@@ -46,7 +47,7 @@ func (h *BackupHandler) Restore(c *gin.Context) {
 	if c.ContentType() == "multipart/form-data" || c.GetHeader("Content-Type") == "" {
 		if err := c.Request.ParseMultipartForm(512 << 20); err == nil {
 			if f, _, err := c.Request.FormFile("file"); err == nil {
-				defer f.Close()
+				defer func() { _ = f.Close() }()
 				reader = f
 			}
 		}
@@ -101,7 +102,7 @@ func (h *BackupHandler) ImportRepo(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "cannot open uploaded file: " + err.Error()})
 		return
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	targetName := c.PostForm("targetName")
 	conflictMode := c.DefaultPostForm("conflictMode", "skip")

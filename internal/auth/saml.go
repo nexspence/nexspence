@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/crewjam/saml"
+
 	"github.com/nexspence-oss/nexspence/internal/config"
 )
 
@@ -257,7 +258,7 @@ func loadIDPMetadata(cfg config.SAMLConfig) (*saml.EntityDescriptor, error) {
 		if err != nil {
 			return nil, fmt.Errorf("fetch %s: %w", cfg.IDPMetadataURL, err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		xmlData, err = io.ReadAll(resp.Body)
 		if err != nil {
 			return nil, fmt.Errorf("read idp metadata: %w", err)

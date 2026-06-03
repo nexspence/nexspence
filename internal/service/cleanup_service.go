@@ -7,13 +7,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/robfig/cron/v3"
+
 	"github.com/nexspence-oss/nexspence/internal/distlock"
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/formats/base"
 	"github.com/nexspence-oss/nexspence/internal/logger"
 	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/storage"
-	"github.com/robfig/cron/v3"
 )
 
 // CleanupService runs cleanup policies — finds stale assets and removes them.
@@ -144,7 +145,7 @@ func (s *CleanupService) RunAll(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("cleanup: acquire lock: %w", err)
 		}
-		defer lock.Release(ctx)
+		defer func() { _ = lock.Release(ctx) }()
 	}
 
 	policies, err := s.policies.List(ctx)

@@ -1,15 +1,17 @@
 // Package cargo implements the Cargo (Rust) registry protocol.
 //
 // Cargo Alternate Registry API (RFC 2141):
-//   GET  /api/v1/crates                      → search (JSON)
-//   GET  /api/v1/crates/:name/:version/download → download .crate
-//   PUT  /api/v1/crates/new                  → publish
-//   DELETE /api/v1/crates/:name/:version/yank → yank
-//   PUT  /api/v1/crates/:name/:version/unyank → unyank (not implemented)
+//
+//	GET  /api/v1/crates                      → search (JSON)
+//	GET  /api/v1/crates/:name/:version/download → download .crate
+//	PUT  /api/v1/crates/new                  → publish
+//	DELETE /api/v1/crates/:name/:version/yank → yank
+//	PUT  /api/v1/crates/:name/:version/unyank → unyank (not implemented)
 //
 // Index (sparse, RFC 3130):
-//   GET  /index/config.json                  → {"dl":"...", "api":"..."}
-//   GET  /index/:prefix1/:prefix2/:name      → newline-delimited JSON records
+//
+//	GET  /index/config.json                  → {"dl":"...", "api":"..."}
+//	GET  /index/:prefix1/:prefix2/:name      → newline-delimited JSON records
 package cargo
 
 import (
@@ -21,6 +23,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/formats"
 	"github.com/nexspence-oss/nexspence/internal/formats/base"
@@ -88,8 +91,8 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 func (h *Handler) serveIndexConfig(c *gin.Context, repoName string) {
 	baseURL := h.deps.BaseURL + "/repository/" + repoName
 	c.JSON(http.StatusOK, gin.H{
-		"dl":           baseURL + "/api/v1/crates/{crate}/{version}/download",
-		"api":          baseURL,
+		"dl":            baseURL + "/api/v1/crates/{crate}/{version}/download",
+		"api":           baseURL,
 		"auth-required": false,
 	})
 }
@@ -226,7 +229,7 @@ func (h *Handler) handleDownload(c *gin.Context, repoName, p string) {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
-	defer rc.Close()
+	defer func() { _ = rc.Close() }()
 	c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
 	c.DataFromReader(http.StatusOK, asset.SizeBytes, "application/x-tar", rc, nil)
 }

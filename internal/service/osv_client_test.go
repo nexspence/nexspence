@@ -26,15 +26,15 @@ func TestOSVClient_Query_ReturnsCVEs(t *testing.T) {
 		json.NewEncoder(w).Encode(map[string]any{
 			"vulns": []map[string]any{
 				{
-					"id":      "GHSA-abcd-1234-5678",
-					"aliases": []string{"CVE-2023-1234"},
-					"summary": "Remote code execution",
+					"id":                "GHSA-abcd-1234-5678",
+					"aliases":           []string{"CVE-2023-1234"},
+					"summary":           "Remote code execution",
 					"database_specific": map[string]any{"severity": "CRITICAL"},
 				},
 				{
-					"id":      "GHSA-ffff-9999-0000",
-					"aliases": []string{},
-					"summary": "DoS vulnerability",
+					"id":                "GHSA-ffff-9999-0000",
+					"aliases":           []string{},
+					"summary":           "DoS vulnerability",
 					"database_specific": map[string]any{"severity": "HIGH"},
 				},
 			},

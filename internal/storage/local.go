@@ -43,12 +43,12 @@ func (s *LocalBlobStore) Put(_ context.Context, key string, r io.Reader, _ int64
 		return err
 	}
 	if _, err := io.Copy(f, r); err != nil {
-		f.Close()
-		os.Remove(tmp)
+		_ = f.Close()
+		_ = os.Remove(tmp)
 		return err
 	}
 	if err := f.Close(); err != nil {
-		os.Remove(tmp)
+		_ = os.Remove(tmp)
 		return err
 	}
 	return os.Rename(tmp, dst)
@@ -61,7 +61,7 @@ func (s *LocalBlobStore) Get(_ context.Context, key string) (io.ReadCloser, int6
 	}
 	info, err := f.Stat()
 	if err != nil {
-		f.Close()
+		_ = f.Close()
 		return nil, 0, err
 	}
 	return f, info.Size(), nil

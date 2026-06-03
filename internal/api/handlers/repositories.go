@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/service"
 )
@@ -40,7 +41,7 @@ func (h *RepositoryHandler) List(c *gin.Context) {
 	c.JSON(http.StatusOK, repos)
 }
 
-func stringVal(v any) string      { s, _ := v.(string); return s }
+func stringVal(v any) string        { s, _ := v.(string); return s }
 func stringSliceVal(v any) []string { s, _ := v.([]string); return s }
 
 // Get handles GET /service/rest/v1/repositories/:name

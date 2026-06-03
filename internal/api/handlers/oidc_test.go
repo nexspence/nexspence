@@ -10,15 +10,16 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
+
 	"github.com/nexspence-oss/nexspence/internal/api/handlers"
 	"github.com/nexspence-oss/nexspence/internal/auth"
 	"github.com/nexspence-oss/nexspence/internal/config"
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/service"
 	"github.com/nexspence-oss/nexspence/internal/testutil"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	"go.uber.org/zap"
 )
 
 // ── IsSafeReturnPath table-driven ─────────────────────────────
@@ -94,7 +95,7 @@ func (m *mockOIDCAuthenticator) ExchangeAndVerify(ctx context.Context, code, v, 
 	return m.claims, "fake-id-token", nil
 }
 func (m *mockOIDCAuthenticator) TestConnection(ctx context.Context) error { return nil }
-func (m *mockOIDCAuthenticator) EndSessionEndpoint() string                { return "" }
+func (m *mockOIDCAuthenticator) EndSessionEndpoint() string               { return "" }
 
 func mustDecodeB64(s string) []byte {
 	b, _ := base64.StdEncoding.DecodeString(s)

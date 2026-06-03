@@ -3,9 +3,10 @@ package config_test
 import (
 	"testing"
 
-	"github.com/nexspence-oss/nexspence/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/nexspence-oss/nexspence/internal/config"
 )
 
 func TestValidateSAML_Disabled_PassesAlways(t *testing.T) {

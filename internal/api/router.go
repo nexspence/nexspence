@@ -10,13 +10,14 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+
 	"github.com/nexspence-oss/nexspence/internal/api/handlers"
 	"github.com/nexspence-oss/nexspence/internal/auth"
 	"github.com/nexspence-oss/nexspence/internal/config"
 	"github.com/nexspence-oss/nexspence/internal/distlock"
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/formats"
-	"github.com/nexspence-oss/nexspence/internal/redisclient"
 	"github.com/nexspence-oss/nexspence/internal/formats/apt"
 	"github.com/nexspence-oss/nexspence/internal/formats/cargo"
 	"github.com/nexspence-oss/nexspence/internal/formats/conan"
@@ -34,12 +35,12 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/formats/yum"
 	"github.com/nexspence-oss/nexspence/internal/logger"
 	"github.com/nexspence-oss/nexspence/internal/metrics"
+	"github.com/nexspence-oss/nexspence/internal/redisclient"
 	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/repository/postgres"
 	"github.com/nexspence-oss/nexspence/internal/requestctx"
 	"github.com/nexspence-oss/nexspence/internal/service"
 	"github.com/nexspence-oss/nexspence/internal/storage"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 // NewRouter wires all routes and returns a ready http.Handler.
@@ -67,24 +68,24 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 	}
 
 	// ── Repositories / services ───────────────────────────────
-	repoRepo      := postgres.NewRepositoryRepo(pool)
-	blobRepo      := postgres.NewBlobStoreRepo(pool)
-	userRepo      := postgres.NewUserRepo(pool)
-	roleRepo      := postgres.NewRoleRepo(pool)
+	repoRepo := postgres.NewRepositoryRepo(pool)
+	blobRepo := postgres.NewBlobStoreRepo(pool)
+	userRepo := postgres.NewUserRepo(pool)
+	roleRepo := postgres.NewRoleRepo(pool)
 	componentRepo := postgres.NewComponentRepo(pool)
-	assetRepo     := postgres.NewAssetRepo(pool)
-	cleanupRepo   := postgres.NewCleanupPolicyRepo(pool)
-	auditRepo     := postgres.NewAuditRepo(pool)
+	assetRepo := postgres.NewAssetRepo(pool)
+	cleanupRepo := postgres.NewCleanupPolicyRepo(pool)
+	auditRepo := postgres.NewAuditRepo(pool)
 	userTokenRepo := postgres.NewUserTokenRepo(pool)
-	webhookRepo    := postgres.NewWebhookRepo(pool)
-	migrationRepo  := postgres.NewMigrationRepo(pool)
-	privilegeRepo  := postgres.NewPrivilegeRepo(pool)
-	csRepo        := postgres.NewContentSelectorRepo(pool)
-	rbacRepo      := postgres.NewRBACRepo(pool)
-	rrRepo        := postgres.NewRoutingRuleRepo(pool)
-	replRepo      := postgres.NewReplicationRepo(pool)
-	promotionRepo  := postgres.NewPromotionRepo(pool)
-	scanRepo       := postgres.NewScanResultRepo(pool)
+	webhookRepo := postgres.NewWebhookRepo(pool)
+	migrationRepo := postgres.NewMigrationRepo(pool)
+	privilegeRepo := postgres.NewPrivilegeRepo(pool)
+	csRepo := postgres.NewContentSelectorRepo(pool)
+	rbacRepo := postgres.NewRBACRepo(pool)
+	rrRepo := postgres.NewRoutingRuleRepo(pool)
+	replRepo := postgres.NewReplicationRepo(pool)
+	promotionRepo := postgres.NewPromotionRepo(pool)
+	scanRepo := postgres.NewScanResultRepo(pool)
 	selectorSvc, svcErr := service.NewContentSelectorService(csRepo)
 	if svcErr != nil {
 		panic("content selector service init: " + svcErr.Error())
@@ -102,8 +103,8 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 	}
 	blobRegistry := storage.NewRegistry(localBlob)
 
-	repoSvc    := service.NewRepositoryService(repoRepo, blobRepo, localBlob, cleanupRepo)
-	userSvc    := service.NewUserService(userRepo, roleRepo, authSvc, log)
+	repoSvc := service.NewRepositoryService(repoRepo, blobRepo, localBlob, cleanupRepo)
+	userSvc := service.NewUserService(userRepo, roleRepo, authSvc, log)
 	var ldapSvc auth.LDAPAuthenticator
 	if svc := auth.NewLDAPService(cfg.LDAP); svc != nil {
 		ldapSvc = svc
@@ -144,7 +145,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 		userSvc.WithSAML(svc, cfg.SAML)
 	}
 
-	tokenSvc   := service.NewTokenService(userTokenRepo, userRepo)
+	tokenSvc := service.NewTokenService(userTokenRepo, userRepo)
 	webhookSvc := service.NewWebhookService(webhookRepo)
 	repoSvc.WithWebhooks(webhookSvc)
 	cleanupSvc := service.NewCleanupService(cleanupRepo, repoRepo, assetRepo, blobRepo, localBlob, log)
@@ -166,68 +167,68 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 
 	// ── Format handlers ───────────────────────────────────────
 	formatDeps := formats.Deps{
-		Repos:      repoRepo,
-		Components: componentRepo,
-		Assets:     assetRepo,
-		Blobs:      blobRepo,
-		BlobStore:  localBlob,
-		Registry:   blobRegistry,
-		BaseURL:    cfg.HTTP.BaseURL,
-		Webhooks:   webhookSvc,
+		Repos:        repoRepo,
+		Components:   componentRepo,
+		Assets:       assetRepo,
+		Blobs:        blobRepo,
+		BlobStore:    localBlob,
+		Registry:     blobRegistry,
+		BaseURL:      cfg.HTTP.BaseURL,
+		Webhooks:     webhookSvc,
 		RoutingRules: rrRepo,
 	}
 	formatRegistry := map[string]formats.FormatHandler{
-		"raw":        raw.New(formatDeps),
-		"maven2":     maven.New(formatDeps),
-		"npm":        npm.New(formatDeps),
-		"pypi":       pypi.New(formatDeps),
-		"go":         gomod.New(formatDeps),
-		"helm":       helm.New(formatDeps),
-		"nuget":      nuget.New(formatDeps),
-		"cargo":      cargo.New(formatDeps),
-		"conan":      conan.New(formatDeps),
-		"conda":      conda.New(formatDeps),
-		"apt":        apt.New(formatDeps),
-		"terraform":  terraform.New(formatDeps),
-		"yum":        yum.New(formatDeps),
-		"docker":     docker.New(formatDeps),
+		"raw":       raw.New(formatDeps),
+		"maven2":    maven.New(formatDeps),
+		"npm":       npm.New(formatDeps),
+		"pypi":      pypi.New(formatDeps),
+		"go":        gomod.New(formatDeps),
+		"helm":      helm.New(formatDeps),
+		"nuget":     nuget.New(formatDeps),
+		"cargo":     cargo.New(formatDeps),
+		"conan":     conan.New(formatDeps),
+		"conda":     conda.New(formatDeps),
+		"apt":       apt.New(formatDeps),
+		"terraform": terraform.New(formatDeps),
+		"yum":       yum.New(formatDeps),
+		"docker":    docker.New(formatDeps),
 	}
 	// Group handler needs a reference to the registry to fan-out to members.
 	groupHandler := group.New(formatDeps, formatRegistry)
 
 	// ── Handlers ──────────────────────────────────────────────
-	authH      := handlers.NewAuthHandler(userSvc, log).WithConfig(*cfg)
-	rbacSvc    := service.NewRBACService(rbacRepo, repoRepo, log)
-	repoH      := handlers.NewRepositoryHandler(repoSvc, rbacSvc)
-	userH      := handlers.NewUserHandler(userSvc)
-	blobH      := handlers.NewBlobStoreHandler(blobRepo).WithUsageDeps(repoRepo, assetRepo).WithRegistry(blobRegistry)
+	authH := handlers.NewAuthHandler(userSvc, log).WithConfig(*cfg)
+	rbacSvc := service.NewRBACService(rbacRepo, repoRepo, log)
+	repoH := handlers.NewRepositoryHandler(repoSvc, rbacSvc)
+	userH := handlers.NewUserHandler(userSvc)
+	blobH := handlers.NewBlobStoreHandler(blobRepo).WithUsageDeps(repoRepo, assetRepo).WithRegistry(blobRegistry)
 	componentH := handlers.NewComponentHandler(componentRepo, assetRepo, repoRepo, cfg.HTTP.BaseURL).WithRBAC(rbacSvc)
-	browseH    := handlers.NewBrowseHandler(repoRepo, componentRepo, assetRepo, blobRepo, localBlob, rbacSvc)
-	cleanupH   := handlers.NewCleanupHandler(cleanupRepo, repoRepo, cleanupSvc)
-	auditH     := handlers.NewAuditHandler(auditRepo)
-	scanSvc  := service.NewScanService(componentRepo, cfg.HTTP.BaseURL).
+	browseH := handlers.NewBrowseHandler(repoRepo, componentRepo, assetRepo, blobRepo, localBlob, rbacSvc)
+	cleanupH := handlers.NewCleanupHandler(cleanupRepo, repoRepo, cleanupSvc)
+	auditH := handlers.NewAuditHandler(auditRepo)
+	scanSvc := service.NewScanService(componentRepo, cfg.HTTP.BaseURL).
 		WithScanResults(scanRepo).
 		WithCredentials(cfg.Bootstrap.AdminUsername, cfg.Bootstrap.AdminPassword)
-	scanH    := handlers.NewScanHandler(scanSvc)
-	tokenH     := handlers.NewTokenHandler(tokenSvc, userSvc, cfg.Auth.TokenMaxDays)
-	webhookH   := handlers.NewWebhookHandler(webhookSvc)
-	replH      := handlers.NewReplicationHandler(replSvc)
+	scanH := handlers.NewScanHandler(scanSvc)
+	tokenH := handlers.NewTokenHandler(tokenSvc, userSvc, cfg.Auth.TokenMaxDays)
+	webhookH := handlers.NewWebhookHandler(webhookSvc)
+	replH := handlers.NewReplicationHandler(replSvc)
 	promotionH := handlers.NewPromotionHandler(promotionSvc)
-	roleH      := handlers.NewRoleHandler(roleRepo, userRepo)
-	privH      := handlers.NewPrivilegeHandler(privilegeRepo, roleRepo)
-	csH        := handlers.NewContentSelectorHandler(selectorSvc)
+	roleH := handlers.NewRoleHandler(roleRepo, userRepo)
+	privH := handlers.NewPrivilegeHandler(privilegeRepo, roleRepo)
+	csH := handlers.NewContentSelectorHandler(selectorSvc)
 	accessGraphH := handlers.NewAccessGraphHandler(userRepo, roleRepo, privilegeRepo, csRepo)
-	rrSvc      := service.NewRoutingRuleService(rrRepo)
-	rrH        := handlers.NewRoutingRuleHandler(rrSvc)
-	systemH    := handlers.NewSystemHandler(cfg, pool, ldapSvc, oidcSvc).WithBlobStores(blobRepo).WithSAML(samlSvc)
+	rrSvc := service.NewRoutingRuleService(rrRepo)
+	rrH := handlers.NewRoutingRuleHandler(rrSvc)
+	systemH := handlers.NewSystemHandler(cfg, pool, ldapSvc, oidcSvc).WithBlobStores(blobRepo).WithSAML(samlSvc)
 	migrationH := handlers.NewMigrationHandler(migrationRepo)
 	blobMigrationRepo := postgres.NewBlobStoreMigrationRepo(pool)
-	blobMigSvc  := service.NewBlobStoreMigrationService(blobMigrationRepo, assetRepo, repoRepo, blobRepo, blobRegistry)
+	blobMigSvc := service.NewBlobStoreMigrationService(blobMigrationRepo, assetRepo, repoRepo, blobRepo, blobRegistry)
 	blobMigSvc.WithLocker(locker)
-	blobMigH    := handlers.NewBlobStoreMigrationHandler(blobMigSvc)
+	blobMigH := handlers.NewBlobStoreMigrationHandler(blobMigSvc)
 
 	// Resume any migrations that were interrupted by a server restart.
-	go blobMigSvc.ResumeAll(context.Background())
+	go func() { _ = blobMigSvc.ResumeAll(context.Background()) }()
 	backupSvc := &service.BackupService{
 		BlobStores: blobRepo,
 		Repos:      repoRepo,
@@ -238,8 +239,8 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 		Assets:     assetRepo,
 		BlobStore:  localBlob,
 	}
-	backupH    := handlers.NewBackupHandler(backupSvc)
-	rbacMW     := handlers.RBACMiddleware(rbacSvc, repoRepo)
+	backupH := handlers.NewBackupHandler(backupSvc)
+	rbacMW := handlers.RBACMiddleware(rbacSvc, repoRepo)
 
 	// ── Gin engine ────────────────────────────────────────────
 	r := gin.New()
@@ -252,7 +253,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 	r.Use(handlers.MetricsMiddleware())
 	r.Use(AuditMiddleware(auditRepo))
 
-	authMW  := handlers.AuthMiddleware(userSvc, tokenSvc)
+	authMW := handlers.AuthMiddleware(userSvc, tokenSvc)
 	adminMW := handlers.AdminRequired()
 
 	// ── Public endpoints ──────────────────────────────────────
@@ -284,8 +285,8 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 	if samlSvc != nil {
 		samlH := handlers.NewSAMLHandler(samlSvc, userSvc, cfg.SAML, log)
 		r.GET("/api/v1/auth/saml/metadata", samlH.Metadata)
-		r.GET("/api/v1/auth/saml/login",    samlH.Login)
-		r.POST("/api/v1/auth/saml/acs",     samlH.ACS)
+		r.GET("/api/v1/auth/saml/login", samlH.Login)
+		r.POST("/api/v1/auth/saml/acs", samlH.ACS)
 	}
 
 	// Prometheus scrape endpoint — requires Bearer auth (JWT or nxs_* token)
@@ -390,10 +391,10 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 		authed.GET("/api/v1/replication/rules/:id/history", replH.ListHistory)
 
 		// ── Promotion (authed) ──────────────────────────────────────
-		authed.GET("/api/v1/promotion/rules",                promotionH.ListRules)
-		authed.GET("/api/v1/promotion/requests",             promotionH.ListRequests)
+		authed.GET("/api/v1/promotion/rules", promotionH.ListRules)
+		authed.GET("/api/v1/promotion/requests", promotionH.ListRequests)
 		authed.GET("/api/v1/components/:id/promotion-rules", promotionH.GetComponentRules)
-		authed.POST("/api/v1/promotion/promote",             promotionH.Promote)
+		authed.POST("/api/v1/promotion/promote", promotionH.Promote)
 	}
 
 	// ── Admin-only endpoints (nx-admin role required) ─────────
@@ -478,11 +479,11 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 		admin.POST("/api/v1/replication/rules/:id/test", replH.TestConnection)
 
 		// ── Promotion (admin) ───────────────────────────────────────
-		admin.POST("/api/v1/promotion/rules",                          promotionH.CreateRule)
-		admin.PUT("/api/v1/promotion/rules/:id",                       promotionH.UpdateRule)
-		admin.DELETE("/api/v1/promotion/rules/:id",                    promotionH.DeleteRule)
-		admin.POST("/api/v1/promotion/requests/:id/approve",           promotionH.Approve)
-		admin.POST("/api/v1/promotion/requests/:id/reject",            promotionH.Reject)
+		admin.POST("/api/v1/promotion/rules", promotionH.CreateRule)
+		admin.PUT("/api/v1/promotion/rules/:id", promotionH.UpdateRule)
+		admin.DELETE("/api/v1/promotion/rules/:id", promotionH.DeleteRule)
+		admin.POST("/api/v1/promotion/requests/:id/approve", promotionH.Approve)
+		admin.POST("/api/v1/promotion/requests/:id/reject", promotionH.Reject)
 
 		// ── Audit log ─────────────────────────────────────────
 		admin.GET("/service/rest/v1/audit", auditH.List)
@@ -491,18 +492,18 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 		admin.POST("/api/v1/components/:id/scan", scanH.Scan)
 
 		// ── Vulnerability dashboard ────────────────────────────
-		admin.GET("/api/v1/security/summary",         scanH.Summary)
+		admin.GET("/api/v1/security/summary", scanH.Summary)
 		admin.GET("/api/v1/security/vulnerabilities", scanH.Vulnerabilities)
-		admin.POST("/api/v1/security/scan/bulk",      scanH.BulkScanHandler)
+		admin.POST("/api/v1/security/scan/bulk", scanH.BulkScanHandler)
 
 		// ── System ────────────────────────────────────────────
 		admin.GET("/service/rest/v1/tasks", stubHandler("tasks"))
 		admin.POST("/service/rest/v1/tasks/:id/run", stubHandler("tasks"))
 		admin.GET("/service/rest/v1/security/ldap", stubHandler("ldap"))
-		admin.GET("/service/rest/v1/routing-rules",        rrH.List)
-		admin.GET("/service/rest/v1/routing-rules/:id",    rrH.Get)
-		admin.POST("/service/rest/v1/routing-rules",       rrH.Create)
-		admin.PUT("/service/rest/v1/routing-rules/:id",    rrH.Update)
+		admin.GET("/service/rest/v1/routing-rules", rrH.List)
+		admin.GET("/service/rest/v1/routing-rules/:id", rrH.Get)
+		admin.POST("/service/rest/v1/routing-rules", rrH.Create)
+		admin.PUT("/service/rest/v1/routing-rules/:id", rrH.Update)
 		admin.DELETE("/service/rest/v1/routing-rules/:id", rrH.Delete)
 
 		// Migration

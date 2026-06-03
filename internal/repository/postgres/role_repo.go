@@ -6,6 +6,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/nexspence-oss/nexspence/internal/domain"
 )
 
@@ -107,7 +108,7 @@ func (r *roleRepo) SetUserRoles(ctx context.Context, userID string, roleIDs []st
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	if _, err := tx.Exec(ctx, `DELETE FROM user_roles WHERE user_id = $1`, userID); err != nil {
 		return err
@@ -128,7 +129,7 @@ func (r *roleRepo) SetPrivileges(ctx context.Context, roleID string, privilegeID
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	if _, err := tx.Exec(ctx, `DELETE FROM role_privileges WHERE role_id = $1`, roleID); err != nil {
 		return err

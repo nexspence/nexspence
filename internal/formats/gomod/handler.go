@@ -1,23 +1,24 @@
 // Package gomod implements the GOPROXY protocol for Go module repositories.
 //
 // Endpoints (all under /repository/:repoName/):
-//   GET /<module>/@v/list               → newline-separated version list
-//   GET /<module>/@v/<version>.info     → {"Version":"v1.0.0","Time":"2024-01-01T00:00:00Z"}
-//   GET /<module>/@v/<version>.mod      → go.mod content
-//   GET /<module>/@v/<version>.zip      → module source zip
-//   GET /<module>/@latest               → latest version info JSON
-//   PUT /<module>/@v/<version>.zip      → upload zip (Nexspence extension)
-//   PUT /<module>/@v/<version>.mod      → upload go.mod (Nexspence extension)
+//
+//	GET /<module>/@v/list               → newline-separated version list
+//	GET /<module>/@v/<version>.info     → {"Version":"v1.0.0","Time":"2024-01-01T00:00:00Z"}
+//	GET /<module>/@v/<version>.mod      → go.mod content
+//	GET /<module>/@v/<version>.zip      → module source zip
+//	GET /<module>/@latest               → latest version info JSON
+//	PUT /<module>/@v/<version>.zip      → upload zip (Nexspence extension)
+//	PUT /<module>/@v/<version>.mod      → upload go.mod (Nexspence extension)
 package gomod
 
 import (
-	"encoding/json"
 	"net/http"
 	"path"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/formats"
 	"github.com/nexspence-oss/nexspence/internal/formats/base"
@@ -139,7 +140,7 @@ func (h *Handler) serveFile(c *gin.Context, repoName, filePath, modulePath, vers
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
-	defer rc.Close()
+	defer func() { _ = rc.Close() }()
 	ct := "application/octet-stream"
 	if kind == "go.mod" {
 		ct = "text/plain; charset=utf-8"
@@ -230,12 +231,4 @@ func goProxyCoords(pathStr string) base.Coords {
 		}
 	}
 	return base.Coords{Group: mod, Name: rest, Version: "0"}
-}
-
-// infoJSON returns JSON-encoded version info; used inline to avoid extra allocations.
-func infoJSON(version string, t time.Time) ([]byte, error) {
-	return json.Marshal(map[string]string{
-		"Version": version,
-		"Time":    t.UTC().Format(time.RFC3339),
-	})
 }

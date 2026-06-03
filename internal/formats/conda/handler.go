@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/formats"
 	"github.com/nexspence-oss/nexspence/internal/formats/base"
@@ -134,7 +135,7 @@ func (h *Handler) servePackage(c *gin.Context, repoName, filePath string) {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
-	defer rc.Close()
+	defer func() { _ = rc.Close() }()
 	if asset.SHA256 != "" {
 		c.Header("X-Checksum-SHA256", asset.SHA256)
 	}
@@ -195,7 +196,7 @@ func (h *Handler) proxyRepodata(c *gin.Context, repo *domain.Repository, repoNam
 		c.JSON(http.StatusBadGateway, gin.H{"error": "upstream fetch: " + err.Error()})
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		c.Status(resp.StatusCode)

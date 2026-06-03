@@ -11,7 +11,7 @@ import (
 )
 
 func int64Ptr(v int64) *int64 { return &v }
-func strPtr(s string) *string  { return &s }
+func strPtr(s string) *string { return &s }
 
 // svcWithStore builds a RepositoryService wired to a single custom blob store.
 func svcWithStore(bs *domain.BlobStore) *service.RepositoryService {

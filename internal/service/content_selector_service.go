@@ -16,6 +16,7 @@ import (
 	"sync"
 
 	"github.com/google/cel-go/cel"
+
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/repository"
 )

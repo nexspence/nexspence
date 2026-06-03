@@ -34,7 +34,7 @@ func Migrate(dsn, direction string) error {
 		return fmt.Errorf("parse DSN: %w", err)
 	}
 	db := stdlib.OpenDB(*poolCfg.ConnConfig)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	goose.SetBaseFS(migrationsFS)
 	if err := goose.SetDialect("postgres"); err != nil {

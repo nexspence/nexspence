@@ -15,11 +15,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/robfig/cron/v3"
+
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/logger"
 	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/storage"
-	"github.com/robfig/cron/v3"
 )
 
 // ReplicationService pushes artifacts from local repos to remote Nexspence instances.
@@ -270,7 +271,7 @@ func (s *ReplicationService) listTargetPaths(ctx context.Context, rule *domain.R
 			return nil, err
 		}
 		body, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
 			return nil, fmt.Errorf("target returned %d: %s", resp.StatusCode, string(body))
@@ -304,7 +305,7 @@ func (s *ReplicationService) pushAsset(ctx context.Context, client *http.Client,
 	if err != nil {
 		return false, 0, fmt.Errorf("fetch blob %s: %w", asset.BlobKey, err)
 	}
-	defer rc.Close()
+	defer func() { _ = rc.Close() }()
 
 	targetPath := strings.TrimRight(rule.TargetURL, "/") +
 		"/repository/" + rule.TargetRepo + "/" + strings.TrimPrefix(asset.Path, "/")
@@ -327,8 +328,8 @@ func (s *ReplicationService) pushAsset(ctx context.Context, client *http.Client,
 	if err != nil {
 		return false, 0, err
 	}
-	io.Copy(io.Discard, resp.Body)
-	resp.Body.Close()
+	_, _ = io.Copy(io.Discard, resp.Body)
+	_ = resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
 		return false, 0, fmt.Errorf("target PUT %s returned %d", asset.Path, resp.StatusCode)
@@ -364,8 +365,8 @@ func (s *ReplicationService) TestConnection(ctx context.Context, ruleID string) 
 	if err != nil {
 		return fmt.Errorf("connection failed: %w", err)
 	}
-	io.Copy(io.Discard, resp.Body)
-	resp.Body.Close()
+	_, _ = io.Copy(io.Discard, resp.Body)
+	_ = resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("target returned %d", resp.StatusCode)

@@ -5,13 +5,14 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
+
 	"github.com/nexspence-oss/nexspence/internal/auth"
 	"github.com/nexspence-oss/nexspence/internal/config"
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/testutil"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	"go.uber.org/zap"
 )
 
 // mockOIDC satisfies auth.OIDCAuthenticator. LoginOIDC never calls back into
@@ -27,7 +28,7 @@ func (m *mockOIDC) ExchangeAndVerify(ctx context.Context, code, v, n string) (*a
 	}, "fake-id-token", nil
 }
 func (m *mockOIDC) TestConnection(ctx context.Context) error { return nil }
-func (m *mockOIDC) EndSessionEndpoint() string { return "" }
+func (m *mockOIDC) EndSessionEndpoint() string               { return "" }
 
 func newUserSvcOIDC(t *testing.T, cfg config.OIDCConfig, seed ...*domain.User) *UserService {
 	t.Helper()

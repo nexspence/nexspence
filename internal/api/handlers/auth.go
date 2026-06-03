@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+
 	"github.com/nexspence-oss/nexspence/internal/auth"
 	"github.com/nexspence-oss/nexspence/internal/config"
 	"github.com/nexspence-oss/nexspence/internal/logger"
@@ -50,11 +51,11 @@ func (h *AuthHandler) Config(c *gin.Context) {
 		"samlLoginUrl":    "/api/v1/auth/saml/login",
 	}
 	if h.cfg.SAML.Enabled {
-		resp["samlEntityId"]      = h.cfg.SAML.SPEntityID
-		resp["samlAcsUrl"]        = h.cfg.SAML.ACSURL
+		resp["samlEntityId"] = h.cfg.SAML.SPEntityID
+		resp["samlAcsUrl"] = h.cfg.SAML.ACSURL
 		resp["samlIdpMetadataUrl"] = h.cfg.SAML.IDPMetadataURL
-		resp["samlProvisioning"]  = h.cfg.SAML.Provisioning
-		resp["samlMetadataUrl"]   = "/api/v1/auth/saml/metadata"
+		resp["samlProvisioning"] = h.cfg.SAML.Provisioning
+		resp["samlMetadataUrl"] = "/api/v1/auth/saml/metadata"
 	}
 	c.JSON(http.StatusOK, resp)
 }

@@ -3,8 +3,9 @@ package metrics_test
 import (
 	"testing"
 
-	"github.com/nexspence-oss/nexspence/internal/metrics"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/nexspence-oss/nexspence/internal/metrics"
 )
 
 func TestRingBuffer_EmptySnapshot(t *testing.T) {
@@ -30,7 +31,7 @@ func TestRingBuffer_WrapsAround(t *testing.T) {
 	}
 	snap := rb.Snapshot()
 	assert.Len(t, snap, 360)
-	assert.Equal(t, int64(40), snap[0].Timestamp)   // oldest = 400-360=40
+	assert.Equal(t, int64(40), snap[0].Timestamp)    // oldest = 400-360=40
 	assert.Equal(t, int64(399), snap[359].Timestamp) // newest = 399
 }
 

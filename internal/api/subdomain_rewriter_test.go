@@ -5,8 +5,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/nexspence-oss/nexspence/internal/api"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/nexspence-oss/nexspence/internal/api"
 )
 
 func capturePathHandler() (http.Handler, *string) {

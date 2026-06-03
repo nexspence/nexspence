@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/go-ldap/ldap/v3"
+
 	"github.com/nexspence-oss/nexspence/internal/config"
 )
 
@@ -57,7 +58,7 @@ func (s *LDAPService) dial(ctx context.Context) (*ldap.Conn, error) {
 	var err error
 	useTLS := s.cfg.UseTLS || s.cfg.Port == 636
 	if useTLS {
-		conn, err = ldap.DialTLS("tcp", addr, tlsCfg)
+		conn, err = ldap.DialURL("ldaps://"+addr, ldap.DialWithTLSConfig(tlsCfg))
 	} else {
 		conn, err = ldap.DialURL("ldap://" + addr)
 	}
@@ -68,7 +69,7 @@ func (s *LDAPService) dial(ctx context.Context) (*ldap.Conn, error) {
 
 	if s.cfg.StartTLS && !s.cfg.UseTLS {
 		if err := conn.StartTLS(tlsCfg); err != nil {
-			conn.Close()
+			_ = conn.Close()
 			return nil, fmt.Errorf("ldap starttls: %w", err)
 		}
 	}
@@ -92,7 +93,7 @@ func (s *LDAPService) Authenticate(ctx context.Context, username, password strin
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// Service bind to search for the user DN.
 	if err := s.serviceBind(conn); err != nil {
@@ -169,6 +170,6 @@ func (s *LDAPService) TestConnection(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	return s.serviceBind(conn)
 }

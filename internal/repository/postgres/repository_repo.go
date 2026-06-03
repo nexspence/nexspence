@@ -9,6 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/nexspence-oss/nexspence/internal/domain"
 )
 
@@ -36,7 +37,6 @@ func (r *repositoryRepo) List(ctx context.Context, format, repoType string) ([]d
 	if repoType != "" {
 		query += fmt.Sprintf(" AND type = $%d", i)
 		args = append(args, repoType)
-		i++
 	}
 	query += " ORDER BY name"
 

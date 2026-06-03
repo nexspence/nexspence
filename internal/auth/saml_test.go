@@ -6,10 +6,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nexspence-oss/nexspence/internal/auth"
-	"github.com/nexspence-oss/nexspence/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/nexspence-oss/nexspence/internal/auth"
+	"github.com/nexspence-oss/nexspence/internal/config"
 )
 
 // minimalIdPMetaXML is a valid IdP EntityDescriptor with a Redirect SSO binding.

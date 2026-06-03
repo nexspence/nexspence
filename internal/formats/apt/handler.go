@@ -1,11 +1,12 @@
 // Package apt implements the Debian APT repository protocol.
 //
 // Layout under /repository/:repoName/:
-//   GET  /dists/:dist/:component/binary-:arch/Packages[.gz] → packages index
-//   GET  /dists/:dist/Release                               → Release file
-//   GET  /pool/:component/:prefix/:name_ver_arch.deb        → deb download
-//   PUT  /pool/:component/:name_ver_arch.deb                → upload .deb
-//   DELETE /pool/:component/:name_ver_arch.deb              → delete .deb
+//
+//	GET  /dists/:dist/:component/binary-:arch/Packages[.gz] → packages index
+//	GET  /dists/:dist/Release                               → Release file
+//	GET  /pool/:component/:prefix/:name_ver_arch.deb        → deb download
+//	PUT  /pool/:component/:name_ver_arch.deb                → upload .deb
+//	DELETE /pool/:component/:name_ver_arch.deb              → delete .deb
 package apt
 
 import (
@@ -18,6 +19,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/formats"
 	"github.com/nexspence-oss/nexspence/internal/formats/base"
@@ -130,16 +132,16 @@ func (h *Handler) servePackagesIndex(c *gin.Context, repoName, p string) {
 		if parts := strings.Split(strings.TrimSuffix(filename, ".deb"), "_"); len(parts) >= 3 {
 			arch = parts[len(parts)-1]
 		}
-		sb.WriteString(fmt.Sprintf("Package: %s\n", pkgName))
-		sb.WriteString(fmt.Sprintf("Version: %s\n", version))
-		sb.WriteString(fmt.Sprintf("Architecture: %s\n", arch))
-		sb.WriteString(fmt.Sprintf("Filename: %s\n", a.Path))
-		sb.WriteString(fmt.Sprintf("Size: %d\n", a.SizeBytes))
+		fmt.Fprintf(&sb, "Package: %s\n", pkgName)
+		fmt.Fprintf(&sb, "Version: %s\n", version)
+		fmt.Fprintf(&sb, "Architecture: %s\n", arch)
+		fmt.Fprintf(&sb, "Filename: %s\n", a.Path)
+		fmt.Fprintf(&sb, "Size: %d\n", a.SizeBytes)
 		if a.SHA256 != "" {
-			sb.WriteString(fmt.Sprintf("SHA256: %s\n", a.SHA256))
+			fmt.Fprintf(&sb, "SHA256: %s\n", a.SHA256)
 		}
 		if a.MD5 != "" {
-			sb.WriteString(fmt.Sprintf("MD5sum: %s\n", a.MD5))
+			fmt.Fprintf(&sb, "MD5sum: %s\n", a.MD5)
 		}
 		sb.WriteString("\n")
 	}
@@ -203,7 +205,7 @@ func (h *Handler) serveFile(c *gin.Context, repoName, p string) {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
-	defer rc.Close()
+	defer func() { _ = rc.Close() }()
 	if c.Request.Method == http.MethodHead {
 		c.Header("Content-Length", fmt.Sprintf("%d", asset.SizeBytes))
 		c.Status(http.StatusOK)

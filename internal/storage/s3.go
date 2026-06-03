@@ -21,7 +21,7 @@ import (
 // Compatible with AWS S3, MinIO, Ceph S3, and any S3-compatible API.
 type S3BlobStore struct {
 	client         *s3.Client
-	uploader       *manager.Uploader
+	uploader       *manager.Uploader //nolint:staticcheck // migration to feature/s3/transfermanager is a breaking API change; deferred to a dedicated refactor
 	bucket         string
 	forcePathStyle bool
 }
@@ -70,7 +70,7 @@ func NewS3BlobStore(ctx context.Context, opts S3Options) (*S3BlobStore, error) {
 	}
 
 	client := s3.NewFromConfig(awsCfg, s3Opts...)
-	uploader := manager.NewUploader(client, func(u *manager.Uploader) {
+	uploader := manager.NewUploader(client, func(u *manager.Uploader) { //nolint:staticcheck // migration to feature/s3/transfermanager is a breaking API change; deferred to a dedicated refactor
 		// 10 MB per part; AWS minimum is 5 MB; max concurrent parts = 5.
 		u.PartSize = 10 * 1024 * 1024
 		u.Concurrency = 5
@@ -95,7 +95,7 @@ func (s *S3BlobStore) objectKey(key string) string {
 // Put uploads a blob using the S3 multipart manager.
 // Files larger than PartSize (10 MB) are uploaded in parallel parts automatically.
 func (s *S3BlobStore) Put(ctx context.Context, key string, r io.Reader, _ int64) error {
-	_, err := s.uploader.Upload(ctx, &s3.PutObjectInput{
+	_, err := s.uploader.Upload(ctx, &s3.PutObjectInput{ //nolint:staticcheck // migration to feature/s3/transfermanager is a breaking API change; deferred to a dedicated refactor
 		Bucket: aws.String(s.bucket),
 		Key:    aws.String(s.objectKey(key)),
 		Body:   r,
@@ -281,8 +281,5 @@ func isNotFound(err error) bool {
 		return true
 	}
 	var nf *types.NotFound
-	if errors.As(err, &nf) {
-		return true
-	}
-	return false
+	return errors.As(err, &nf)
 }

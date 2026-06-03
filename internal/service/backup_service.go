@@ -61,9 +61,9 @@ func (s *BackupService) Export(ctx context.Context, w io.Writer) error {
 	if err != nil {
 		return err
 	}
-	defer gw.Close()
+	defer func() { _ = gw.Close() }()
 	tw := tar.NewWriter(gw)
-	defer tw.Close()
+	defer func() { _ = tw.Close() }()
 
 	manifest := map[string]any{
 		"version": "1",
@@ -174,14 +174,14 @@ func (s *BackupService) Export(ctx context.Context, w io.Writer) error {
 			Mode:    0o644,
 			ModTime: time.Now(),
 		}); err != nil {
-			rc.Close()
+			_ = rc.Close()
 			return err
 		}
 		if _, err := io.Copy(tw, rc); err != nil {
-			rc.Close()
+			_ = rc.Close()
 			return fmt.Errorf("copy blob %s: %w", a.BlobKey, err)
 		}
-		rc.Close()
+		_ = rc.Close()
 	}
 
 	return nil
@@ -203,9 +203,9 @@ func (s *BackupService) ExportRepo(ctx context.Context, repoName string, w io.Wr
 	if err != nil {
 		return err
 	}
-	defer gw.Close()
+	defer func() { _ = gw.Close() }()
 	tw := tar.NewWriter(gw)
-	defer tw.Close()
+	defer func() { _ = tw.Close() }()
 
 	manifest := map[string]any{
 		"version":  "1",
@@ -268,14 +268,14 @@ func (s *BackupService) ExportRepo(ctx context.Context, repoName string, w io.Wr
 			Mode:    0o644,
 			ModTime: time.Now(),
 		}); err != nil {
-			rc.Close()
+			_ = rc.Close()
 			return err
 		}
 		if _, err := io.Copy(tw, rc); err != nil {
-			rc.Close()
+			_ = rc.Close()
 			return fmt.Errorf("copy blob %s: %w", a.BlobKey, err)
 		}
-		rc.Close()
+		_ = rc.Close()
 	}
 
 	return nil
@@ -310,7 +310,7 @@ func (s *BackupService) ImportRepo(ctx context.Context, r io.Reader, targetName,
 	if err != nil {
 		return nil, fmt.Errorf("not a gzip archive: %w", err)
 	}
-	defer gr.Close()
+	defer func() { _ = gr.Close() }()
 	tr := tar.NewReader(gr)
 
 	var archivedRepo domain.Repository
@@ -478,7 +478,7 @@ func (s *BackupService) Restore(ctx context.Context, r io.Reader) (*RestoreStats
 	if err != nil {
 		return nil, fmt.Errorf("not a gzip archive: %w", err)
 	}
-	defer gr.Close()
+	defer func() { _ = gr.Close() }()
 	tr := tar.NewReader(gr)
 
 	// First pass: read all JSON sections and blob data into memory.

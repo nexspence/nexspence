@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/repository"
 )
@@ -18,24 +19,24 @@ func NewMigrationHandler(repo repository.MigrationRepo) *MigrationHandler {
 }
 
 type migrationJobResp struct {
-	ID              string `json:"id"`
-	SourceURL       string `json:"sourceUrl"`
-	SourceUser      string `json:"sourceUser"`
-	Status          string `json:"status"`
-	MigrateRepos    bool   `json:"migrateRepos"`
-	MigrateUsers    bool   `json:"migrateUsers"`
-	MigrateBlobs    bool   `json:"migrateBlobs"`
-	MigratePolicies bool   `json:"migratePolicies"`
-	RepositoriesTotal int  `json:"repositoriesTotal"`
-	RepositoriesDone  int  `json:"repositoriesDone"`
-	AssetsTotal       int64 `json:"assetsTotal"`
-	AssetsDone        int64 `json:"assetsDone"`
-	ErrorCount        int  `json:"errorCount"`
+	ID                string  `json:"id"`
+	SourceURL         string  `json:"sourceUrl"`
+	SourceUser        string  `json:"sourceUser"`
+	Status            string  `json:"status"`
+	MigrateRepos      bool    `json:"migrateRepos"`
+	MigrateUsers      bool    `json:"migrateUsers"`
+	MigrateBlobs      bool    `json:"migrateBlobs"`
+	MigratePolicies   bool    `json:"migratePolicies"`
+	RepositoriesTotal int     `json:"repositoriesTotal"`
+	RepositoriesDone  int     `json:"repositoriesDone"`
+	AssetsTotal       int64   `json:"assetsTotal"`
+	AssetsDone        int64   `json:"assetsDone"`
+	ErrorCount        int     `json:"errorCount"`
 	LastError         *string `json:"lastError,omitempty"`
 	StartedAt         *string `json:"startedAt,omitempty"`
 	FinishedAt        *string `json:"finishedAt,omitempty"`
-	CreatedAt         string `json:"createdAt"`
-	UpdatedAt         string `json:"updatedAt"`
+	CreatedAt         string  `json:"createdAt"`
+	UpdatedAt         string  `json:"updatedAt"`
 }
 
 func toJobResp(j domain.MigrationJob) migrationJobResp {

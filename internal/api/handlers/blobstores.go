@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/service"
@@ -330,10 +331,10 @@ func (h *BlobStoreHandler) ConfigureLifecycle(c *gin.Context) {
 
 // LinkedRepoInfo is one row in the Usage response: a repository that uses the blob store.
 type LinkedRepoInfo struct {
-	Name       string `json:"name"`
-	Format     string `json:"format"`
-	Type       string `json:"type"`
-	BytesUsed  int64  `json:"bytesUsed"`
+	Name      string `json:"name"`
+	Format    string `json:"format"`
+	Type      string `json:"type"`
+	BytesUsed int64  `json:"bytesUsed"`
 }
 
 // Usage handles GET /api/v1/blob-stores/:name/usage

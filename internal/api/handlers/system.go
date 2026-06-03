@@ -13,6 +13,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/nexspence-oss/nexspence/internal/auth"
 	"github.com/nexspence-oss/nexspence/internal/config"
 	"github.com/nexspence-oss/nexspence/internal/redisclient"
@@ -23,7 +24,7 @@ import (
 // ServiceStatus describes the live health of one external dependency.
 type ServiceStatus struct {
 	Name      string `json:"name"`
-	Status    string `json:"status"`              // "ok" | "error" | "disabled"
+	Status    string `json:"status"` // "ok" | "error" | "disabled"
 	LatencyMs int    `json:"latency_ms,omitempty"`
 	Detail    string `json:"detail"`
 	CheckedAt string `json:"checked_at"`
@@ -33,9 +34,9 @@ type ServiceStatus struct {
 type SystemHandler struct {
 	cfg        *config.Config
 	pool       *pgxpool.Pool
-	ldap       auth.LDAPAuthenticator  // nil when LDAP disabled
-	oidc       auth.OIDCAuthenticator  // nil when OIDC disabled
-	saml       auth.SAMLAuthenticator  // nil when SAML disabled
+	ldap       auth.LDAPAuthenticator // nil when LDAP disabled
+	oidc       auth.OIDCAuthenticator // nil when OIDC disabled
+	saml       auth.SAMLAuthenticator // nil when SAML disabled
 	blobStores repository.BlobStoreRepo
 }
 

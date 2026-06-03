@@ -9,11 +9,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nexspence-oss/nexspence/internal/audit"
-	"github.com/nexspence-oss/nexspence/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
+
+	"github.com/nexspence-oss/nexspence/internal/audit"
+	"github.com/nexspence-oss/nexspence/internal/config"
 )
 
 func nopLog() *zap.SugaredLogger { return zap.NewNop().Sugar() }
