@@ -1,0 +1,30 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  default: standard
+  exclusions:
+    generated: lax
+    paths:
+      - frontend/node_modules
+      - bin
+      - third_party$
+      - builtin$
+    rules:
+      # Test files: allow unchecked errors and weaker security posture
+      - path: _test\.go
+        linters:
+          - errcheck
+          - gosec
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/nexspence-oss/nexspence
