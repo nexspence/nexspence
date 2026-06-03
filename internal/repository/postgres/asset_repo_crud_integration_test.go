@@ -195,15 +195,11 @@ func TestAssetRepo_Create_FieldsRoundTrip(t *testing.T) {
 	}
 }
 
-// TestAssetRepo_Create_NullableChecksums_ScanBug demonstrates a production bug
-// in scanAsset: sha1/sha256/md5 scan into plain string fields, but PostgreSQL
-// stores them as NULL when empty-string is passed via nullStr(). pgx v5 cannot
-// scan SQL NULL into a non-pointer Go string, so Get() on any asset that was
-// created without checksums returns an error instead of empty strings.
-//
-// This test is left as a documented failure; fix scanAsset to use *string or
-// sql.NullString for sha1/sha256/md5 to resolve it.
-func TestAssetRepo_Create_NullableChecksums_ScanBug(t *testing.T) {
+// TestAssetRepo_Create_NullableChecksums verifies that scanAsset correctly handles
+// NULL sha1/sha256/md5 columns. PostgreSQL stores empty-string checksums as NULL
+// via nullStr(); scanAsset must use sql.NullString intermediaries so that pgx v5
+// does not error when scanning NULL into a Go string field.
+func TestAssetRepo_Create_NullableChecksums(t *testing.T) {
 	pool := pgtest.Pool(t)
 	pgtest.Truncate(t, pool, "blob_stores", "repositories", "components")
 	ctx := context.Background()
@@ -226,14 +222,9 @@ func TestAssetRepo_Create_NullableChecksums_ScanBug(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 
-	// BUG: scanAsset scans sha1/sha256/md5 into plain string fields.
-	// pgx v5 cannot scan SQL NULL into *string (non-pointer), so Get errors.
-	// Expected behaviour: return asset with empty checksum strings.
 	got, err := repo.Get(ctx, a.ID)
 	if err != nil {
-		// This is the known bug — document it and skip so the suite can pass.
-		t.Skipf("BUG(scanAsset): cannot scan NULL checksum into string: %v — "+
-			"fix scanAsset sha1/sha256/md5 fields to use *string or sql.NullString", err)
+		t.Fatalf("Get: %v", err)
 	}
 	if got == nil {
 		t.Fatal("Get returned nil")
