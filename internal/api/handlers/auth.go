@@ -342,7 +342,7 @@ func DockerV2Auth(
 
 // QueryTokenAuth authenticates SSE/EventSource style clients that cannot
 // set the Authorization header. It accepts a JWT or API token in `?token=...`.
-// Falls back to AuthMiddleware behaviour (Bearer/Basic) when the query param
+// Falls back to AuthMiddleware behavior (Bearer/Basic) when the query param
 // is absent.
 func QueryTokenAuth(users *service.UserService, tokens *service.TokenService) gin.HandlerFunc {
 	mw := AuthMiddleware(users, tokens)

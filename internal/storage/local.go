@@ -17,7 +17,7 @@ type LocalBlobStore struct {
 }
 
 func NewLocalBlobStore(basePath string) (*LocalBlobStore, error) {
-	if err := os.MkdirAll(basePath, 0o755); err != nil {
+	if err := os.MkdirAll(basePath, 0o750); err != nil {
 		return nil, fmt.Errorf("create blob store dir %s: %w", basePath, err)
 	}
 	return &LocalBlobStore{basePath: basePath}, nil
@@ -33,12 +33,12 @@ func (s *LocalBlobStore) keyPath(key string) string {
 
 func (s *LocalBlobStore) Put(_ context.Context, key string, r io.Reader, _ int64) error {
 	dst := s.keyPath(key)
-	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(dst), 0o750); err != nil {
 		return err
 	}
 	// Write to a temp file first, then rename (atomic on same filesystem)
 	tmp := dst + ".tmp"
-	f, err := os.Create(tmp)
+	f, err := os.Create(tmp) //nolint:gosec // path is an internal content-addressed blob key, not user-controlled
 	if err != nil {
 		return err
 	}

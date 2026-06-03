@@ -359,7 +359,7 @@ func (h *BlobStoreHandler) Usage(c *gin.Context) {
 	}
 
 	if bs.Type == "group" {
-		h.usageGroup(c, ctx, bs)
+		h.usageGroup(ctx, c, bs)
 		return
 	}
 
@@ -400,7 +400,7 @@ type memberUsage struct {
 	QuotaBytes *int64 `json:"quotaBytes,omitempty"`
 }
 
-func (h *BlobStoreHandler) usageGroup(c *gin.Context, ctx context.Context, group *domain.BlobStore) {
+func (h *BlobStoreHandler) usageGroup(ctx context.Context, c *gin.Context, group *domain.BlobStore) {
 	memberIDs := extractMemberIDs(group.Config)
 	var members []memberUsage
 	var totalUsed, totalQuota int64

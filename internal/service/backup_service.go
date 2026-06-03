@@ -56,6 +56,8 @@ type backupUser struct {
 
 // Export writes a gzip-compressed tar archive of all data + blobs to w.
 // The archive contains JSON files for metadata and binary entries under blobs/.
+//
+//nolint:gocyclo // large sequential archive-export function; splitting would hurt readability
 func (s *BackupService) Export(ctx context.Context, w io.Writer) (retErr error) {
 	gw, err := gzip.NewWriterLevel(w, gzip.BestSpeed)
 	if err != nil {
@@ -314,6 +316,8 @@ type ImportRepoStats struct {
 //   - skip: if repo exists, add only absent components (by name+version+group) and assets (by path).
 //   - merge: currently an alias for "skip".
 //   - rename: targetName must be non-empty; returns ErrRepoConflict if targetName is taken.
+//
+//nolint:gocyclo // large sequential archive-import function; splitting would hurt readability
 func (s *BackupService) ImportRepo(ctx context.Context, r io.Reader, targetName, conflictMode string) (*ImportRepoStats, error) {
 	if conflictMode == "" {
 		conflictMode = "skip"
@@ -489,6 +493,8 @@ func (s *BackupService) ImportRepo(ctx context.Context, r io.Reader, targetName,
 // Restore reads a backup archive (as produced by Export) and re-creates all data.
 // Existing records (matched by logical key: name, username, repo+path, etc.) are skipped.
 // Returns stats on what was imported.
+//
+//nolint:gocyclo // large sequential archive-restore function; splitting would hurt readability
 func (s *BackupService) Restore(ctx context.Context, r io.Reader) (*RestoreStats, error) {
 	gr, err := gzip.NewReader(r)
 	if err != nil {
@@ -707,7 +713,7 @@ func (s *BackupService) Restore(ctx context.Context, r io.Reader) (*RestoreStats
 	return stats, nil
 }
 
-// writeJSONEntry serialises v as JSON and appends it as a tar entry named name.
+// writeJSONEntry serializes v as JSON and appends it as a tar entry named name.
 func writeJSONEntry(tw *tar.Writer, name string, v any) error {
 	data, err := json.Marshal(v)
 	if err != nil {

@@ -3,8 +3,8 @@ package repoproxy
 
 import (
 	"context"
-	"crypto/md5"
-	"crypto/sha1"
+	"crypto/md5"  //nolint:gosec // md5/sha1 required for artifact-protocol checksums (Maven .md5/.sha1, npm shasum), not security
+	"crypto/sha1" //nolint:gosec // md5/sha1 required for artifact-protocol checksums (Maven .md5/.sha1, npm shasum), not security
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -122,6 +122,8 @@ func applyChecksumHeaders(c *gin.Context, a *domain.Asset) {
 // and persisting to the blob store on success. repo must be TypeProxy.
 // upstreamPath, when non-empty, is used only for the upstream URL (e.g. npm scoped metadata);
 // the cache key and DB asset path remain repoRelativePath.
+//
+//nolint:gocyclo // large protocol-dispatch function (proxy cache-miss/upstream handling); splitting would hurt readability
 func ServeGET(c *gin.Context, d formats.Deps, repo *domain.Repository, repoRelativePath, upstreamPath string,
 	coords base.Coords, defaultContentType string,
 ) error {
@@ -252,8 +254,8 @@ func ServeGET(c *gin.Context, d formats.Deps, repo *domain.Repository, repoRelat
 
 	blobKey := base.BlobKey(repo.Name, repoRelativePath)
 	sha256h := sha256.New()
-	sha1h := sha1.New()
-	md5h := md5.New()
+	sha1h := sha1.New() //nolint:gosec // protocol checksum, not security
+	md5h := md5.New()   //nolint:gosec // protocol checksum, not security
 
 	// Resolve the physical blob store for this repo so the write location matches
 	// what RegisterStoredBlob will record in the DB asset row.

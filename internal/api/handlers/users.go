@@ -134,17 +134,18 @@ func (h *UserHandler) ChangePassword(c *gin.Context) {
 	isAdmin := hasRole(callerRoles, "nx-admin")
 	callerUsername, _ := c.Get("username")
 
-	if !isAdmin && callerUsername.(string) == username {
+	switch {
+	case !isAdmin && callerUsername.(string) == username:
 		if err := h.svc.ChangePassword(c.Request.Context(), username, req.OldPassword, req.NewPassword); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-	} else if isAdmin {
+	case isAdmin:
 		if err := h.svc.SetPassword(c.Request.Context(), username, req.NewPassword); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-	} else {
+	default:
 		c.JSON(http.StatusForbidden, gin.H{"error": "cannot change another user's password"})
 		return
 	}

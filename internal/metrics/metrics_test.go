@@ -43,6 +43,6 @@ func TestCounters_Requests(t *testing.T) {
 	before := metrics.RequestsTotal.Load()
 	metrics.RequestsTotal.Add(3)
 	snap := metrics.Snapshot()
-	assert.Equal(t, int64(before+3), snap["requests_total"])
+	assert.Equal(t, before+3, snap["requests_total"])
 	metrics.RequestsTotal.Add(-3)
 }

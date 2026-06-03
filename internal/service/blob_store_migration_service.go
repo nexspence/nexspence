@@ -99,7 +99,7 @@ func (s *BlobStoreMigrationService) Start(ctx context.Context, repoName, targetS
 		return nil, fmt.Errorf("create migration record: %w", err)
 	}
 
-	migCtx, cancel := context.WithCancel(context.Background())
+	migCtx, cancel := context.WithCancel(context.Background()) //nolint:gosec // cancel stored in s.cancels and invoked via Cancel() or runMigration's defer on every exit path (no leak)
 	s.mu.Lock()
 	s.cancels[m.ID] = cancel
 	s.mu.Unlock()
@@ -116,7 +116,7 @@ func (s *BlobStoreMigrationService) Start(ctx context.Context, repoName, targetS
 		}
 	}
 
-	go s.runMigration(migCtx, m, migLock)
+	go s.runMigration(migCtx, m, migLock) //nolint:gosec // detached context is intentional: background migration must outlive the request
 	return m, nil
 }
 
@@ -136,7 +136,7 @@ func (s *BlobStoreMigrationService) GetLatestByRepo(ctx context.Context, repoNam
 	return s.migrations.GetLatestByRepo(ctx, repoName)
 }
 
-// ResumeAll is called on server startup to mark interrupted migrations as cancelled
+// ResumeAll is called on server startup to mark interrupted migrations as canceled
 // so users can restart them. Goroutines cannot be safely resumed across process restarts.
 func (s *BlobStoreMigrationService) ResumeAll(ctx context.Context) error {
 	active, err := s.migrations.ListActive(ctx)
@@ -145,7 +145,7 @@ func (s *BlobStoreMigrationService) ResumeAll(ctx context.Context) error {
 	}
 	interrupted := "interrupted by server restart"
 	for _, m := range active {
-		_ = s.migrations.FinishMigration(ctx, m.ID, "cancelled", &interrupted)
+		_ = s.migrations.FinishMigration(ctx, m.ID, "cancelled", &interrupted) //nolint:misspell // API/DB status value consumed by frontend (status === 'cancelled')
 	}
 	return nil
 }
@@ -158,6 +158,9 @@ func (s *BlobStoreMigrationService) runMigration(ctx context.Context, m *domain.
 	}()
 	defer func() {
 		s.mu.Lock()
+		if cancel, ok := s.cancels[m.ID]; ok {
+			cancel() // release the context resources held by WithCancel on all exit paths
+		}
 		delete(s.cancels, m.ID)
 		s.mu.Unlock()
 	}()
@@ -205,7 +208,7 @@ func (s *BlobStoreMigrationService) runMigration(ctx context.Context, m *domain.
 	for _, row := range rows {
 		select {
 		case <-ctx.Done():
-			_ = s.migrations.FinishMigration(bgCtx, m.ID, "cancelled", nil)
+			_ = s.migrations.FinishMigration(bgCtx, m.ID, "cancelled", nil) //nolint:misspell // API/DB status value consumed by frontend (status === 'cancelled')
 			return
 		default:
 		}

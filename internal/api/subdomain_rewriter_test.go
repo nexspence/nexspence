@@ -22,7 +22,7 @@ func TestSubdomainRewriter_NonDockerPath_Passthrough(t *testing.T) {
 	h, captured := capturePathHandler()
 	rw := api.NewSubdomainRewriter(h, "nexspence.example.com")
 
-	req := httptest.NewRequest("GET", "/repository/myrepo/some/file", nil)
+	req := httptest.NewRequest(http.MethodGet, "/repository/myrepo/some/file", nil)
 	req.Host = "myrepo.nexspence.example.com"
 	rw.ServeHTTP(httptest.NewRecorder(), req)
 
@@ -33,7 +33,7 @@ func TestSubdomainRewriter_V2Root_Passthrough(t *testing.T) {
 	h, captured := capturePathHandler()
 	rw := api.NewSubdomainRewriter(h, "nexspence.example.com")
 
-	req := httptest.NewRequest("GET", "/v2/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v2/", nil)
 	req.Host = "myrepo.nexspence.example.com"
 	rw.ServeHTTP(httptest.NewRecorder(), req)
 
@@ -44,7 +44,7 @@ func TestSubdomainRewriter_V2ManifestPath_RepoInjected(t *testing.T) {
 	h, captured := capturePathHandler()
 	rw := api.NewSubdomainRewriter(h, "nexspence.example.com")
 
-	req := httptest.NewRequest("GET", "/v2/alpine/manifests/latest", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v2/alpine/manifests/latest", nil)
 	req.Host = "myrepo.nexspence.example.com"
 	rw.ServeHTTP(httptest.NewRecorder(), req)
 
@@ -55,7 +55,7 @@ func TestSubdomainRewriter_V2BlobPath_RepoInjected(t *testing.T) {
 	h, captured := capturePathHandler()
 	rw := api.NewSubdomainRewriter(h, "nexspence.example.com")
 
-	req := httptest.NewRequest("GET", "/v2/myimage/blobs/sha256:abc123", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v2/myimage/blobs/sha256:abc123", nil)
 	req.Host = "releases.nexspence.example.com"
 	rw.ServeHTTP(httptest.NewRecorder(), req)
 
@@ -66,7 +66,7 @@ func TestSubdomainRewriter_HostWithPort_RepoInjected(t *testing.T) {
 	h, captured := capturePathHandler()
 	rw := api.NewSubdomainRewriter(h, "nexspence.example.com")
 
-	req := httptest.NewRequest("GET", "/v2/alpine/tags/list", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v2/alpine/tags/list", nil)
 	req.Host = "myrepo.nexspence.example.com:443"
 	rw.ServeHTTP(httptest.NewRecorder(), req)
 
@@ -77,7 +77,7 @@ func TestSubdomainRewriter_NonMatchingHost_Passthrough(t *testing.T) {
 	h, captured := capturePathHandler()
 	rw := api.NewSubdomainRewriter(h, "nexspence.example.com")
 
-	req := httptest.NewRequest("GET", "/v2/alpine/manifests/latest", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v2/alpine/manifests/latest", nil)
 	req.Host = "other.example.com"
 	rw.ServeHTTP(httptest.NewRecorder(), req)
 
@@ -88,7 +88,7 @@ func TestSubdomainRewriter_BaseDomainDirectAccess_Passthrough(t *testing.T) {
 	h, captured := capturePathHandler()
 	rw := api.NewSubdomainRewriter(h, "nexspence.example.com")
 
-	req := httptest.NewRequest("GET", "/v2/myrepo/alpine/manifests/latest", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v2/myrepo/alpine/manifests/latest", nil)
 	req.Host = "nexspence.example.com"
 	rw.ServeHTTP(httptest.NewRecorder(), req)
 
@@ -99,7 +99,7 @@ func TestSubdomainRewriter_DeepSubdomain_Passthrough(t *testing.T) {
 	h, captured := capturePathHandler()
 	rw := api.NewSubdomainRewriter(h, "nexspence.example.com")
 
-	req := httptest.NewRequest("GET", "/v2/alpine/manifests/latest", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v2/alpine/manifests/latest", nil)
 	req.Host = "a.b.nexspence.example.com"
 	rw.ServeHTTP(httptest.NewRecorder(), req)
 

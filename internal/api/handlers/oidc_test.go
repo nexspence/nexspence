@@ -193,7 +193,7 @@ func TestOIDCHandler_Callback_IdPError_Redirects(t *testing.T) {
 	r := newOIDCHandlerRig(t, &mockOIDCAuthenticator{})
 
 	req := httptest.NewRequest(http.MethodGet,
-		"/api/v1/auth/oidc/callback?error=access_denied&error_description=user+cancelled", nil)
+		"/api/v1/auth/oidc/callback?error=access_denied&error_description=user+canceled", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 

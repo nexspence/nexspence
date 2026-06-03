@@ -23,7 +23,7 @@ type BlobStoreDescriptor struct {
 
 // Registry creates and caches physical BlobStore instances keyed by blob store ID.
 // Safe for concurrent use. The default store is returned when Get is called with
-// an empty/unrecognised descriptor.
+// an empty/unrecognized descriptor.
 type Registry struct {
 	mu           sync.RWMutex
 	instances    map[string]BlobStore

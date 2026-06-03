@@ -3,8 +3,8 @@ package base
 
 import (
 	"context"
-	"crypto/md5"
-	"crypto/sha1"
+	"crypto/md5"  //nolint:gosec // md5/sha1 required for artifact-protocol checksums (Maven .md5/.sha1, npm shasum), not security
+	"crypto/sha1" //nolint:gosec // md5/sha1 required for artifact-protocol checksums (Maven .md5/.sha1, npm shasum), not security
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -50,7 +50,6 @@ func StoreArtifact(ctx context.Context, d formats.Deps,
 	coords Coords,
 	reader io.Reader, declaredSize int64,
 ) (*StoreResult, error) {
-
 	repo, err := d.Repos.Get(ctx, repoName)
 	if err != nil || repo == nil {
 		return nil, fmt.Errorf("repository %q not found", repoName)
@@ -84,8 +83,8 @@ func StoreArtifact(ctx context.Context, d formats.Deps,
 
 	// Stream → hash writers → blob store via pipe
 	sha256h := sha256.New()
-	sha1h := sha1.New()
-	md5h := md5.New()
+	sha1h := sha1.New() //nolint:gosec // protocol checksum, not security
+	md5h := md5.New()   //nolint:gosec // protocol checksum, not security
 
 	pr, pw := io.Pipe()
 	var pipeErr error
@@ -211,7 +210,6 @@ func RegisterStoredBlob(ctx context.Context, d formats.Deps, repo *domain.Reposi
 // FetchArtifact retrieves a blob from storage and increments download count.
 func FetchArtifact(ctx context.Context, d formats.Deps, repoName, filePath string,
 ) (io.ReadCloser, *domain.Asset, error) {
-
 	asset, err := d.Assets.GetByPath(ctx, repoName, filePath)
 	if err != nil {
 		return nil, nil, err
@@ -234,7 +232,7 @@ func FetchArtifact(ctx context.Context, d formats.Deps, repoName, filePath strin
 		return nil, nil, fmt.Errorf("blob missing: %w", err)
 	}
 
-	go func(assetID string) {
+	go func(assetID string) { //nolint:gosec // detached context is intentional: background download-counter write must outlive the request
 		_ = d.Assets.IncrementDownload(context.Background(), assetID)
 	}(asset.ID)
 	return rc, asset, nil

@@ -200,7 +200,7 @@ func (h *Handler) proxyRepodata(c *gin.Context, repo *domain.Repository, repoNam
 
 	if resp.StatusCode != http.StatusOK {
 		c.Status(resp.StatusCode)
-		io.Copy(c.Writer, resp.Body) //nolint:errcheck
+		_, _ = io.Copy(c.Writer, resp.Body) // best-effort relay of upstream error body; nothing actionable on copy failure
 		return
 	}
 

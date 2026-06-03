@@ -82,5 +82,5 @@ func (h *BlobStoreMigrationHandler) Cancel(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"cancelled": true})
+	c.JSON(http.StatusOK, gin.H{"cancelled": true}) //nolint:misspell // API response key, stable contract
 }

@@ -140,7 +140,7 @@ func TestBackupHandler_ExportRepo_ContextCancelled(t *testing.T) {
 		WithContext(ctx)
 	w := httptest.NewRecorder()
 
-	// Should not panic even with a cancelled context.
+	// Should not panic even with a canceled context.
 	assert.NotPanics(t, func() {
 		r.ServeHTTP(w, req)
 	})

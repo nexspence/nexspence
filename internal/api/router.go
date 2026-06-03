@@ -44,6 +44,8 @@ import (
 )
 
 // NewRouter wires all routes and returns a ready http.Handler.
+//
+//nolint:gocyclo // large router wiring function; splitting would hurt readability
 func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, version string) http.Handler {
 	if cfg.Log.Level != "debug" {
 		gin.SetMode(gin.ReleaseMode)

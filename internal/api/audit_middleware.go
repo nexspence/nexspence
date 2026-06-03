@@ -181,7 +181,7 @@ func classifyPath(method, path string, c *gin.Context) (domainStr, action, entit
 	default:
 		action = method
 	}
-	return
+	return domainStr, action, entityType, entityName, ctxData
 }
 
 func strPtr(s string) *string {

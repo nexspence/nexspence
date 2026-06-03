@@ -21,7 +21,7 @@ func NewRotator(store PartitionStore, cfg config.AuditConfig, log logger.Logger)
 	return &Rotator{store: store, cfg: cfg, log: log, now: time.Now}
 }
 
-// Run blocks until ctx is cancelled, ticking every cfg.RotationInterval.
+// Run blocks until ctx is canceled, ticking every cfg.RotationInterval.
 // Run does NOT execute the first tick — call RunOnce(ctx) before Run if you
 // want the start-up partitions guaranteed before the server accepts traffic.
 func (r *Rotator) Run(ctx context.Context) {

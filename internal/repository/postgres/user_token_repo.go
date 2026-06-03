@@ -18,6 +18,7 @@ func NewUserTokenRepo(db *pgxpool.Pool) *userTokenRepo {
 	return &userTokenRepo{db: db}
 }
 
+//nolint:gosec // not a credential: SQL column list ("token_hash" is a DB column name, no secret value)
 const userTokenColumns = `t.id, t.user_id, u.username, t.name, t.token_hash, t.scopes, t.last_used, t.expires_at, t.created_at`
 
 func scanUserToken(row pgx.Row) (*domain.UserToken, error) {

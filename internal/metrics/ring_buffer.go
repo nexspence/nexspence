@@ -60,7 +60,7 @@ func (r *RingBuffer) Snapshot() []DataPoint {
 var History = &RingBuffer{}
 
 // StartSampler starts a background goroutine that samples metrics every 10s
-// and stops when ctx is cancelled.
+// and stops when ctx is canceled.
 func StartSampler(ctx context.Context, pool *pgxpool.Pool) {
 	go func() {
 		ticker := time.NewTicker(10 * time.Second)
