@@ -56,14 +56,22 @@ type backupUser struct {
 
 // Export writes a gzip-compressed tar archive of all data + blobs to w.
 // The archive contains JSON files for metadata and binary entries under blobs/.
-func (s *BackupService) Export(ctx context.Context, w io.Writer) error {
+func (s *BackupService) Export(ctx context.Context, w io.Writer) (retErr error) {
 	gw, err := gzip.NewWriterLevel(w, gzip.BestSpeed)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = gw.Close() }()
+	defer func() {
+		if cerr := gw.Close(); cerr != nil && retErr == nil {
+			retErr = cerr
+		}
+	}()
 	tw := tar.NewWriter(gw)
-	defer func() { _ = tw.Close() }()
+	defer func() {
+		if cerr := tw.Close(); cerr != nil && retErr == nil {
+			retErr = cerr
+		}
+	}()
 
 	manifest := map[string]any{
 		"version": "1",
@@ -190,7 +198,7 @@ func (s *BackupService) Export(ctx context.Context, w io.Writer) error {
 // ExportRepo writes a gzip-compressed tar archive scoped to one repository.
 // Archive contains: manifest.json, repository.json, components.json, assets.json, blobs/<key>.
 // Returns ErrRepoNotFound if repoName does not exist.
-func (s *BackupService) ExportRepo(ctx context.Context, repoName string, w io.Writer) error {
+func (s *BackupService) ExportRepo(ctx context.Context, repoName string, w io.Writer) (retErr error) {
 	repo, err := s.Repos.Get(ctx, repoName)
 	if err != nil {
 		return err
@@ -203,9 +211,17 @@ func (s *BackupService) ExportRepo(ctx context.Context, repoName string, w io.Wr
 	if err != nil {
 		return err
 	}
-	defer func() { _ = gw.Close() }()
+	defer func() {
+		if cerr := gw.Close(); cerr != nil && retErr == nil {
+			retErr = cerr
+		}
+	}()
 	tw := tar.NewWriter(gw)
-	defer func() { _ = tw.Close() }()
+	defer func() {
+		if cerr := tw.Close(); cerr != nil && retErr == nil {
+			retErr = cerr
+		}
+	}()
 
 	manifest := map[string]any{
 		"version":  "1",
