@@ -605,11 +605,11 @@ func TestComponentRepo_SetTags_NilTreatedAsEmpty(t *testing.T) {
 
 // ── UpdateExtra (JSONB merge) ─────────────────────────────────────────────────
 
-// TestComponentRepo_UpdateExtra_NilExtraBug documents a production bug:
-// Create with nil Extra marshals to JSON null; Postgres `null || jsonb` = null,
-// so UpdateExtra on a nil-extra component silently discards the update.
-// Extra must be initialized to map[string]any{} (i.e. '{}') for merges to work.
-func TestComponentRepo_UpdateExtra_NilExtraBug(t *testing.T) {
+// TestComponentRepo_UpdateExtra_NilExtra verifies the fix for a production bug:
+// Create with nil Extra previously marshalled to JSON null; Postgres `null || jsonb` = null,
+// so UpdateExtra silently discarded the update. Now Create stores '{}' for a nil Extra,
+// and UpdateExtra uses COALESCE(extra,'{}') to handle any legacy null rows.
+func TestComponentRepo_UpdateExtra_NilExtra(t *testing.T) {
 	pool := pgtest.Pool(t)
 	pgtest.Truncate(t, pool, "blob_stores", "repositories")
 	ctx := context.Background()
@@ -617,7 +617,7 @@ func TestComponentRepo_UpdateExtra_NilExtraBug(t *testing.T) {
 	p := makeCompParent(t, ctx, "extra_nilbug")
 	repo := NewComponentRepo(pool)
 
-	// Create with nil Extra — json.Marshal(nil map) → "null" → stored as SQL NULL-ish jsonb
+	// Create with nil Extra — intentionally not initialised
 	c := &domain.Component{
 		RepositoryID: p.RepositoryID,
 		Format:       "raw",
@@ -629,7 +629,7 @@ func TestComponentRepo_UpdateExtra_NilExtraBug(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 
-	if err := repo.UpdateExtra(ctx, c.ID, map[string]any{"key": "value"}); err != nil {
+	if err := repo.UpdateExtra(ctx, c.ID, map[string]any{"scan": "clean"}); err != nil {
 		t.Fatalf("UpdateExtra: %v", err)
 	}
 
@@ -637,13 +637,8 @@ func TestComponentRepo_UpdateExtra_NilExtraBug(t *testing.T) {
 	if err != nil || got == nil {
 		t.Fatalf("Get: err=%v got=%v", err, got)
 	}
-	// BUG: null || jsonb = null in Postgres — the update is silently lost.
-	// This test documents the behavior. When the bug is fixed (Create should
-	// marshal nil Extra as '{}' not 'null'), update the assertion to expect got.Extra["key"] == "value".
-	if _, ok := got.Extra["key"]; ok {
-		t.Log("BUG appears fixed: nil Extra now initializes as {} before merge")
-	} else {
-		t.Log("BUG confirmed: UpdateExtra on nil-extra component silently discards update (null || jsonb = null)")
+	if v, ok := got.Extra["scan"]; !ok || v != "clean" {
+		t.Errorf("UpdateExtra on nil-Extra component: expected Extra[\"scan\"]==\"clean\", got %v", got.Extra)
 	}
 }
 

@@ -190,7 +190,11 @@ func (r *componentRepo) Search(ctx context.Context, p domain.SearchParams) (*dom
 }
 
 func (r *componentRepo) Create(ctx context.Context, c *domain.Component) error {
-	extra, _ := json.Marshal(c.Extra)
+	extraMap := c.Extra
+	if extraMap == nil {
+		extraMap = map[string]any{}
+	}
+	extra, _ := json.Marshal(extraMap)
 	return r.db.QueryRow(ctx, `
 		INSERT INTO components
 		  (repository_id, format, group_id, name, version, extra)
@@ -213,7 +217,7 @@ func (r *componentRepo) UpdateExtra(ctx context.Context, id string, extra map[st
 		return err
 	}
 	_, err = r.db.Exec(ctx,
-		`UPDATE components SET extra = extra || $2::jsonb, updated_at = NOW() WHERE id = $1`,
+		`UPDATE components SET extra = COALESCE(extra, '{}'::jsonb) || $2::jsonb, updated_at = NOW() WHERE id = $1`,
 		id, b,
 	)
 	return err
