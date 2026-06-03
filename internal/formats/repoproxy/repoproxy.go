@@ -7,6 +7,7 @@ import (
 	"crypto/sha1"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -277,7 +278,7 @@ func ServeGET(c *gin.Context, d formats.Deps, repo *domain.Repository, repoRelat
 
 	if copyErr != nil || putErr != nil {
 		_ = physStore.Delete(ctx, blobKey)
-		return fmt.Errorf("proxy cache write: copyErr=%w putErr=%w", copyErr, putErr)
+		return fmt.Errorf("proxy cache write: %w", errors.Join(copyErr, putErr))
 	}
 
 	sha256sum := hex.EncodeToString(sha256h.Sum(nil))
