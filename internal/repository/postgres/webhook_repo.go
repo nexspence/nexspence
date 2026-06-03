@@ -56,7 +56,7 @@ func (r *webhookRepo) Get(ctx context.Context, id string) (*domain.Webhook, erro
 		`SELECT id, name, url, secret, events, active, created_at, updated_at FROM webhooks WHERE id = $1`, id)
 	w, err := scanWebhook(row)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
+		return nil, nil //nolint:nilnil // (nil, nil) signals not-found; callers check the returned value
 	}
 	return w, err
 }

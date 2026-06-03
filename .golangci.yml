@@ -6,6 +6,18 @@ run:
 
 linters:
   default: standard
+  enable:
+    - errorlint
+    - bodyclose
+    - sqlclosecheck
+    - rowserrcheck
+    - nilerr
+    - nilnil
+  settings:
+    errorlint:
+      errorf: true
+      asserts: true
+      comparison: true
   exclusions:
     generated: lax
     paths:

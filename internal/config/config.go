@@ -367,8 +367,8 @@ func Load(path string) (*Config, error) {
 		// Config file is optional when all required values come from env.
 		// viper.ConfigFileNotFoundError: file not found via search paths.
 		// *fs.PathError / errors.Is(ErrNotExist): explicit path given but file absent.
-		_, notFound := err.(viper.ConfigFileNotFoundError)
-		if !notFound && !errors.Is(err, fs.ErrNotExist) {
+		var cfgNotFound viper.ConfigFileNotFoundError
+		if !errors.As(err, &cfgNotFound) && !errors.Is(err, fs.ErrNotExist) {
 			return nil, fmt.Errorf("read config %s: %w", path, err)
 		}
 	}

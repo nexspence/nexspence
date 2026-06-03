@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"errors"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -35,7 +36,7 @@ func (r *blobRefRepo) Decrement(ctx context.Context, blobKey string) (bool, erro
 		RETURNING ref_count
 	`, blobKey).Scan(&newCount)
 
-	if err == pgx.ErrNoRows {
+	if errors.Is(err, pgx.ErrNoRows) {
 		// Key was never tracked (old path-based blob) — caller should delete it.
 		return true, nil
 	}
@@ -54,7 +55,7 @@ func (r *blobRefRepo) Get(ctx context.Context, blobKey string) (int, error) {
 	err := r.pool.QueryRow(ctx, `
 		SELECT ref_count FROM global_blobs WHERE blob_key = $1
 	`, blobKey).Scan(&count)
-	if err == pgx.ErrNoRows {
+	if errors.Is(err, pgx.ErrNoRows) {
 		return 0, nil
 	}
 	return count, err

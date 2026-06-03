@@ -65,7 +65,7 @@ func (r *repositoryRepo) Get(ctx context.Context, name string) (*domain.Reposito
 		FROM repositories WHERE name = $1`, name)
 	repo, err := scanRepository(row)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
+		return nil, nil //nolint:nilnil // (nil, nil) signals not-found; callers check the returned value
 	}
 	return repo, err
 }
@@ -78,7 +78,7 @@ func (r *repositoryRepo) GetByID(ctx context.Context, id string) (*domain.Reposi
 		FROM repositories WHERE id = $1`, id)
 	repo, err := scanRepository(row)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
+		return nil, nil //nolint:nilnil // (nil, nil) signals not-found; callers check the returned value
 	}
 	return repo, err
 }

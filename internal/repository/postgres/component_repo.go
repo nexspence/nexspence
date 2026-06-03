@@ -86,7 +86,7 @@ func (r *componentRepo) Get(ctx context.Context, id string) (*domain.Component, 
 		WHERE c.id = $1`, id)
 	c, err := scanComponent(row)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
+		return nil, nil //nolint:nilnil // (nil, nil) signals not-found; callers check the returned value
 	}
 	return c, err
 }
@@ -232,7 +232,7 @@ func (r *componentRepo) SetTags(ctx context.Context, id string, tags []string) e
 
 func (r *componentRepo) ListDockerBrowseRows(ctx context.Context, repoNames []string, maxRows int) ([]domain.DockerBrowseRow, error) {
 	if len(repoNames) == 0 {
-		return nil, nil
+		return nil, nil //nolint:nilnil // (nil, nil) signals not-found; callers check the returned value
 	}
 	if maxRows <= 0 || maxRows > 5000 {
 		maxRows = 3000

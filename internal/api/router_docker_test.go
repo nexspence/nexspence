@@ -24,7 +24,7 @@ import (
 type allowAllRBACRepo struct{}
 
 func (a *allowAllRBACRepo) GetUserPrivilegesWithSelectors(_ context.Context, _ string) ([]repository.PrivilegeWithSelector, error) {
-	return nil, nil
+	return nil, nil //nolint:nilnil // (nil, nil) signals not-found; callers check the returned value
 }
 
 // stubDockerHandler responds 200 to any request — represents a working Docker format handler.

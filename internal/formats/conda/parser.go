@@ -50,7 +50,7 @@ func parseTarBz2(data []byte) (*PkgMeta, error) {
 		}
 	}
 	// Not found — fall back to filename
-	return nil, nil
+	return nil, nil //nolint:nilnil // (nil, nil) signals not-found; callers check the returned value
 }
 
 type indexJSON struct {

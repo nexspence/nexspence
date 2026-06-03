@@ -336,7 +336,7 @@ func (s *BackupService) ImportRepo(ctx context.Context, r io.Reader, targetName,
 
 	for {
 		hdr, err := tr.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
@@ -511,7 +511,7 @@ func (s *BackupService) Restore(ctx context.Context, r io.Reader) (*RestoreStats
 
 	for {
 		hdr, err := tr.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {

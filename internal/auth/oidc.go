@@ -171,7 +171,7 @@ func (s *OIDCService) ExchangeAndVerify(ctx context.Context, code, codeVerifier,
 		oauth2.SetAuthURLParam("code_verifier", codeVerifier),
 	)
 	if err != nil {
-		return nil, "", fmt.Errorf("%w: token exchange: %v", ErrOIDCVerification, err)
+		return nil, "", fmt.Errorf("%w: token exchange: %w", ErrOIDCVerification, err)
 	}
 	rawID, ok := tok.Extra("id_token").(string)
 	if !ok || rawID == "" {
@@ -179,7 +179,7 @@ func (s *OIDCService) ExchangeAndVerify(ctx context.Context, code, codeVerifier,
 	}
 	idTok, err := s.verifier.Verify(ctx, rawID)
 	if err != nil {
-		return nil, "", fmt.Errorf("%w: id_token verify: %v", ErrOIDCVerification, err)
+		return nil, "", fmt.Errorf("%w: id_token verify: %w", ErrOIDCVerification, err)
 	}
 	if idTok.Nonce != expectedNonce {
 		return nil, "", fmt.Errorf("%w: nonce mismatch", ErrOIDCVerification)
@@ -187,7 +187,7 @@ func (s *OIDCService) ExchangeAndVerify(ctx context.Context, code, codeVerifier,
 
 	var raw map[string]any
 	if err := idTok.Claims(&raw); err != nil {
-		return nil, "", fmt.Errorf("%w: claims decode: %v", ErrOIDCVerification, err)
+		return nil, "", fmt.Errorf("%w: claims decode: %w", ErrOIDCVerification, err)
 	}
 	return s.extractClaims(idTok.Subject, raw), rawID, nil
 }

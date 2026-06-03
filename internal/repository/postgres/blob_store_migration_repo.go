@@ -37,7 +37,7 @@ func (r *blobStoreMigrationRepo) Get(ctx context.Context, id string) (*domain.Bl
 	row := r.db.QueryRow(ctx, `SELECT `+blobStoreMigrationCols+` FROM blob_store_migrations WHERE id = $1`, id)
 	m, err := scanMigration(row)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
+		return nil, nil //nolint:nilnil // (nil, nil) signals not-found; callers check the returned value
 	}
 	return m, err
 }
@@ -49,7 +49,7 @@ func (r *blobStoreMigrationRepo) GetActiveByRepo(ctx context.Context, repoName s
 		ORDER BY created_at DESC LIMIT 1`, repoName)
 	m, err := scanMigration(row)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
+		return nil, nil //nolint:nilnil // (nil, nil) signals not-found; callers check the returned value
 	}
 	return m, err
 }
@@ -61,7 +61,7 @@ func (r *blobStoreMigrationRepo) GetLatestByRepo(ctx context.Context, repoName s
 		ORDER BY created_at DESC LIMIT 1`, repoName)
 	m, err := scanMigration(row)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
+		return nil, nil //nolint:nilnil // (nil, nil) signals not-found; callers check the returned value
 	}
 	return m, err
 }

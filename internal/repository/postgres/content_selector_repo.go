@@ -44,7 +44,7 @@ func (r *ContentSelectorRepo) Get(ctx context.Context, id string) (*domain.Conte
 		 FROM content_selectors WHERE id = $1`, id).
 		Scan(&s.ID, &s.Name, &s.Description, &s.Expression, &s.CreatedAt, &s.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
+		return nil, nil //nolint:nilnil // (nil, nil) signals not-found; callers check the returned value
 	}
 	if err != nil {
 		return nil, fmt.Errorf("content_selectors get: %w", err)
@@ -59,7 +59,7 @@ func (r *ContentSelectorRepo) GetByName(ctx context.Context, name string) (*doma
 		 FROM content_selectors WHERE name = $1`, name).
 		Scan(&s.ID, &s.Name, &s.Description, &s.Expression, &s.CreatedAt, &s.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
+		return nil, nil //nolint:nilnil // (nil, nil) signals not-found; callers check the returned value
 	}
 	if err != nil {
 		return nil, fmt.Errorf("content_selectors get by name: %w", err)
@@ -101,7 +101,7 @@ func (r *ContentSelectorRepo) Delete(ctx context.Context, id string) error {
 // multiple paths to the same selector (nested roles, duplicate grants).
 func (r *ContentSelectorRepo) ListForUser(ctx context.Context, userID string) ([]domain.ContentSelector, error) {
 	if userID == "" {
-		return nil, nil
+		return nil, nil //nolint:nilnil // (nil, nil) signals not-found; callers check the returned value
 	}
 	rows, err := r.pool.Query(ctx, `
 		SELECT DISTINCT cs.id, cs.name, cs.description, cs.expression,

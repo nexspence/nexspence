@@ -42,7 +42,7 @@ func (r *privilegeRepo) Get(ctx context.Context, id string) (*domain.Privilege, 
 		FROM privileges WHERE id = $1`, id)
 	p, err := scanPrivilege(row)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
+		return nil, nil //nolint:nilnil // (nil, nil) signals not-found; callers check the returned value
 	}
 	return p, err
 }
@@ -53,7 +53,7 @@ func (r *privilegeRepo) GetByName(ctx context.Context, name string) (*domain.Pri
 		FROM privileges WHERE name = $1`, name)
 	p, err := scanPrivilege(row)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
+		return nil, nil //nolint:nilnil // (nil, nil) signals not-found; callers check the returned value
 	}
 	return p, err
 }

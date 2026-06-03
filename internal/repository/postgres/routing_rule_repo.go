@@ -46,7 +46,7 @@ func (r *RoutingRuleRepo) Get(ctx context.Context, id string) (*domain.RoutingRu
 			&rr.Matchers, &rr.CreatedAt, &rr.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, nil
+			return nil, nil //nolint:nilnil // (nil, nil) signals not-found; callers check the returned value
 		}
 		return nil, fmt.Errorf("routing_rules get: %w", err)
 	}
@@ -62,7 +62,7 @@ func (r *RoutingRuleRepo) GetByName(ctx context.Context, name string) (*domain.R
 			&rr.Matchers, &rr.CreatedAt, &rr.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, nil
+			return nil, nil //nolint:nilnil // (nil, nil) signals not-found; callers check the returned value
 		}
 		return nil, fmt.Errorf("routing_rules get by name: %w", err)
 	}

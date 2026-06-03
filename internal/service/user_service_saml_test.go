@@ -19,9 +19,9 @@ import (
 // mockSAML satisfies auth.SAMLAuthenticator. LoginSAML never calls back into it.
 type mockSAML struct{}
 
-func (m *mockSAML) MetadataXML() ([]byte, error)                            { return nil, nil }
+func (m *mockSAML) MetadataXML() ([]byte, error)                            { return nil, nil } //nolint:nilnil // not-found stub; callers check the returned value
 func (m *mockSAML) AuthnRequestURL(rs string) (string, error)               { return "https://idp/sso", nil }
-func (m *mockSAML) ParseResponse(r *http.Request) (*auth.SAMLClaims, error) { return nil, nil }
+func (m *mockSAML) ParseResponse(r *http.Request) (*auth.SAMLClaims, error) { return nil, nil } //nolint:nilnil // not-found stub; callers check the returned value
 func (m *mockSAML) SignRelayState(returnTo string) string                   { return returnTo }
 func (m *mockSAML) VerifyRelayState(rs string) (string, error)              { return rs, nil }
 

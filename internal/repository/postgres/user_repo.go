@@ -55,7 +55,7 @@ func (r *userRepo) Get(ctx context.Context, username string) (*domain.User, erro
 	row := r.db.QueryRow(ctx, userSelect+" WHERE username=$1", username)
 	u, err := scanUser(row)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
+		return nil, nil //nolint:nilnil // (nil, nil) signals not-found; callers check the returned value
 	}
 	if err != nil {
 		return nil, err
@@ -69,7 +69,7 @@ func (r *userRepo) GetByID(ctx context.Context, id string) (*domain.User, error)
 	row := r.db.QueryRow(ctx, userSelect+" WHERE id=$1", id)
 	u, err := scanUser(row)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
+		return nil, nil //nolint:nilnil // (nil, nil) signals not-found; callers check the returned value
 	}
 	if err != nil {
 		return nil, err

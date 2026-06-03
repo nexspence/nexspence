@@ -49,7 +49,7 @@ func (r *scanResultRepo) GetLatestByComponent(ctx context.Context, componentID s
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, nil
+			return nil, nil //nolint:nilnil // (nil, nil) signals not-found; callers check the returned value
 		}
 		return nil, err
 	}

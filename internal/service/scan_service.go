@@ -252,7 +252,7 @@ func (s *ScanService) GetResult(ctx context.Context, componentID string) (*domai
 	}
 	raw, ok := comp.Extra["scan_result"]
 	if !ok || raw == nil {
-		return nil, nil
+		return nil, nil //nolint:nilnil // (nil, nil) signals not-found; callers check the returned value
 	}
 	b, err := json.Marshal(raw)
 	if err != nil {
@@ -289,7 +289,7 @@ func (s *ScanService) scanOSV(ctx context.Context, comp *domain.Component) (*dom
 		result.Error = err.Error()
 		_ = s.persistResult(ctx, comp, result)
 		s.persistScanRow(ctx, comp, result, "osv")
-		return result, nil
+		return result, nil //nolint:nilerr // best-effort scan: OSV query failure is recorded in result.Error and returned as a failed-status result; propagating the error would break the UI scan response
 	}
 
 	var findings []domain.CVEFinding

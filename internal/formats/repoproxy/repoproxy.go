@@ -277,7 +277,7 @@ func ServeGET(c *gin.Context, d formats.Deps, repo *domain.Repository, repoRelat
 
 	if copyErr != nil || putErr != nil {
 		_ = physStore.Delete(ctx, blobKey)
-		return fmt.Errorf("proxy cache write: copyErr=%v putErr=%v", copyErr, putErr)
+		return fmt.Errorf("proxy cache write: copyErr=%w putErr=%w", copyErr, putErr)
 	}
 
 	sha256sum := hex.EncodeToString(sha256h.Sum(nil))
