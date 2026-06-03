@@ -59,7 +59,7 @@ func (r *replicationRepo) GetRule(ctx context.Context, id string) (*domain.Repli
 		`SELECT `+ruleColumns+` FROM replication_rules WHERE id = $1`, id)
 	rule, err := scanRule(row)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil //nolint:nilnil // (nil, nil) signals not-found; callers check the returned value
+		return nil, nil
 	}
 	return rule, err
 }

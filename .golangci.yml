@@ -12,7 +12,6 @@ linters:
     - sqlclosecheck
     - rowserrcheck
     - nilerr
-    - nilnil
   settings:
     errorlint:
       errorf: true

@@ -61,7 +61,7 @@ func (r *promotionRepo) GetRule(ctx context.Context, id string) (*domain.Promoti
 		`SELECT `+promotionRuleFields+` FROM promotion_rules WHERE id = $1`, id)
 	rule, err := scanPromotionRule(row)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil //nolint:nilnil // (nil, nil) signals not-found; callers check the returned value
+		return nil, nil
 	}
 	return rule, err
 }
@@ -155,7 +155,7 @@ func (r *promotionRepo) GetRequest(ctx context.Context, id string) (*domain.Prom
 		`SELECT `+promotionReqFields+` FROM promotion_requests WHERE id=$1`, id)
 	req, err := scanPromotionRequest(row)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil //nolint:nilnil // (nil, nil) signals not-found; callers check the returned value
+		return nil, nil
 	}
 	return req, err
 }

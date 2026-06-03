@@ -252,7 +252,7 @@ func (s *ScanService) GetResult(ctx context.Context, componentID string) (*domai
 	}
 	raw, ok := comp.Extra["scan_result"]
 	if !ok || raw == nil {
-		return nil, nil //nolint:nilnil // (nil, nil) signals not-found; callers check the returned value
+		return nil, nil
 	}
 	b, err := json.Marshal(raw)
 	if err != nil {

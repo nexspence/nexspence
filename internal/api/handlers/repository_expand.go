@@ -12,7 +12,7 @@ import (
 // Group repos do not store components — metadata lives on members.
 func expandGroupMemberRepoNames(ctx context.Context, repos repository.RepositoryRepo, name string) ([]string, error) {
 	if name == "" {
-		return nil, nil //nolint:nilnil // (nil, nil) signals not-found; callers check the returned value
+		return nil, nil
 	}
 	rep, err := repos.Get(ctx, name)
 	if err != nil {

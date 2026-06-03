@@ -24,7 +24,7 @@ import (
 type noPrivilegesRBACRepo struct{}
 
 func (n *noPrivilegesRBACRepo) GetUserPrivilegesWithSelectors(_ context.Context, _ string) ([]repository.PrivilegeWithSelector, error) {
-	return nil, nil //nolint:nilnil // (nil, nil) signals not-found; callers check the returned value
+	return nil, nil
 }
 
 func TestRBACMiddleware_UnauthenticatedPrivateDocker_OCIErrorBody(t *testing.T) {

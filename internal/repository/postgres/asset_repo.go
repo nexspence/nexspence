@@ -71,7 +71,7 @@ func (r *assetRepo) Get(ctx context.Context, id string) (*domain.Asset, error) {
 	row := r.db.QueryRow(ctx, q, id)
 	a, err := scanAsset(row)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil //nolint:nilnil // (nil, nil) signals not-found; callers check the returned value
+		return nil, nil
 	}
 	return a, err
 }
@@ -81,7 +81,7 @@ func (r *assetRepo) GetByPath(ctx context.Context, repoName, path string) (*doma
 	row := r.db.QueryRow(ctx, q, repoName, path)
 	a, err := scanAsset(row)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil //nolint:nilnil // (nil, nil) signals not-found; callers check the returned value
+		return nil, nil
 	}
 	return a, err
 }

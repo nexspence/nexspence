@@ -314,7 +314,7 @@ func findRoleByName(ctx context.Context, repo interface {
 			return &r, nil
 		}
 	}
-	return nil, nil //nolint:nilnil // (nil, nil) signals not-found; callers check the returned value
+	return nil, nil
 }
 
 // Version is injected at build time via -ldflags

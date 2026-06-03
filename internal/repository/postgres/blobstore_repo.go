@@ -45,7 +45,7 @@ func (r *blobStoreRepo) Get(ctx context.Context, name string) (*domain.BlobStore
 		FROM blob_stores WHERE name = $1`, name)
 	bs, err := scanBlobStore(row)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil //nolint:nilnil // (nil, nil) signals not-found; callers check the returned value
+		return nil, nil
 	}
 	return bs, err
 }
@@ -56,7 +56,7 @@ func (r *blobStoreRepo) GetByID(ctx context.Context, id string) (*domain.BlobSto
 		FROM blob_stores WHERE id = $1`, id)
 	bs, err := scanBlobStore(row)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil //nolint:nilnil // (nil, nil) signals not-found; callers check the returned value
+		return nil, nil
 	}
 	return bs, err
 }

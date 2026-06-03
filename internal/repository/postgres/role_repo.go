@@ -53,7 +53,7 @@ func (r *roleRepo) Get(ctx context.Context, id string) (*domain.Role, error) {
 		FROM roles WHERE id = $1`, id)
 	ro, err := scanRole(row)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil //nolint:nilnil // (nil, nil) signals not-found; callers check the returned value
+		return nil, nil
 	}
 	return ro, err
 }

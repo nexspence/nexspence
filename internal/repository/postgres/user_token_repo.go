@@ -57,7 +57,7 @@ func (r *userTokenRepo) Get(ctx context.Context, id string) (*domain.UserToken, 
 		  WHERE t.id = $1`, id)
 	t, err := scanUserToken(row)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil //nolint:nilnil // (nil, nil) signals not-found; callers check the returned value
+		return nil, nil
 	}
 	return t, err
 }
@@ -69,7 +69,7 @@ func (r *userTokenRepo) GetByHash(ctx context.Context, tokenHash string) (*domai
 		  WHERE t.token_hash = $1`, tokenHash)
 	t, err := scanUserToken(row)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil //nolint:nilnil // (nil, nil) signals not-found; callers check the returned value
+		return nil, nil
 	}
 	return t, err
 }

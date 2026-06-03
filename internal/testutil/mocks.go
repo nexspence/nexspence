@@ -76,7 +76,7 @@ func (r *RepoRepo) GetByID(_ context.Context, id string) (*domain.Repository, er
 			return v, nil
 		}
 	}
-	return nil, nil //nolint:nilnil // (nil, nil) signals not-found; callers check the returned value
+	return nil, nil
 }
 func (r *RepoRepo) Create(_ context.Context, repo *domain.Repository) error {
 	r.mu.Lock()
@@ -196,7 +196,7 @@ func (b *BlobStoreRepo) GetByID(_ context.Context, id string) (*domain.BlobStore
 			return &cp, nil
 		}
 	}
-	return nil, nil //nolint:nilnil // (nil, nil) signals not-found; callers check the returned value
+	return nil, nil
 }
 
 func (b *BlobStoreRepo) Create(_ context.Context, s *domain.BlobStore) error {
@@ -269,7 +269,7 @@ func (c *ComponentRepo) Search(_ context.Context, params domain.SearchParams) (*
 }
 
 func (c *ComponentRepo) ListDockerBrowseRows(_ context.Context, _ []string, _ int) ([]domain.DockerBrowseRow, error) {
-	return nil, nil //nolint:nilnil // (nil, nil) signals not-found; callers check the returned value
+	return nil, nil
 }
 
 func (c *ComponentRepo) Create(_ context.Context, comp *domain.Component) error {
@@ -370,7 +370,7 @@ func (a *AssetRepo) ListStale(_ context.Context, _ string, _ []string, _, _ int,
 	a.LastRetainN = retainNVersions
 	defer a.mu.Unlock()
 	if len(a.Stale) == 0 {
-		return nil, nil //nolint:nilnil // (nil, nil) signals not-found; callers check the returned value
+		return nil, nil
 	}
 	n := limit
 	if n <= 0 {
@@ -493,7 +493,7 @@ func (a *AssetRepo) ListByRepoAndPath(_ context.Context, repoName, pathPrefix st
 }
 
 func (a *AssetRepo) ListRawBrowseAssets(_ context.Context, _ []string) ([]domain.RawBrowseAsset, error) {
-	return nil, nil //nolint:nilnil // (nil, nil) signals not-found; callers check the returned value
+	return nil, nil
 }
 
 func (a *AssetRepo) CountByBlobKey(_ context.Context, _, _ string) (int, error) {
@@ -970,7 +970,7 @@ func (r *ContentSelectorRepo) GetByName(_ context.Context, name string) (*domain
 			return &cp, nil
 		}
 	}
-	return nil, nil //nolint:nilnil // (nil, nil) signals not-found; callers check the returned value
+	return nil, nil
 }
 func (r *ContentSelectorRepo) Create(_ context.Context, s *domain.ContentSelector) error {
 	r.mu.Lock()
@@ -1180,7 +1180,7 @@ func (r *RoutingRuleRepo) GetByName(_ context.Context, name string) (*domain.Rou
 			return &cp, nil
 		}
 	}
-	return nil, nil //nolint:nilnil // (nil, nil) signals not-found; callers check the returned value
+	return nil, nil
 }
 func (r *RoutingRuleRepo) Create(_ context.Context, rr *domain.RoutingRule) error {
 	r.mu.Lock()
@@ -1237,7 +1237,7 @@ func (r *PrivilegeRepo) Get(_ context.Context, id string) (*domain.Privilege, er
 	defer r.mu.Unlock()
 	p, ok := r.data[id]
 	if !ok {
-		return nil, nil //nolint:nilnil // (nil, nil) signals not-found; callers check the returned value
+		return nil, nil
 	}
 	cp := *p
 	return &cp, nil
@@ -1252,7 +1252,7 @@ func (r *PrivilegeRepo) GetByName(_ context.Context, name string) (*domain.Privi
 			return &cp, nil
 		}
 	}
-	return nil, nil //nolint:nilnil // (nil, nil) signals not-found; callers check the returned value
+	return nil, nil
 }
 
 func (r *PrivilegeRepo) Create(_ context.Context, p *domain.Privilege) error {
@@ -1323,7 +1323,7 @@ func (r *BlobStoreMigrationRepo) Get(_ context.Context, id string) (*domain.Blob
 	defer r.mu.Unlock()
 	m := r.migrations[id]
 	if m == nil {
-		return nil, nil //nolint:nilnil // (nil, nil) signals not-found; callers check the returned value
+		return nil, nil
 	}
 	cp := *m
 	return &cp, nil
@@ -1338,7 +1338,7 @@ func (r *BlobStoreMigrationRepo) GetActiveByRepo(_ context.Context, repoName str
 			return &cp, nil
 		}
 	}
-	return nil, nil //nolint:nilnil // (nil, nil) signals not-found; callers check the returned value
+	return nil, nil
 }
 
 func (r *BlobStoreMigrationRepo) GetLatestByRepo(_ context.Context, repoName string) (*domain.BlobStoreMigration, error) {
@@ -1353,7 +1353,7 @@ func (r *BlobStoreMigrationRepo) GetLatestByRepo(_ context.Context, repoName str
 		}
 	}
 	if latest == nil {
-		return nil, nil //nolint:nilnil // (nil, nil) signals not-found; callers check the returned value
+		return nil, nil
 	}
 	cp := *latest
 	return &cp, nil
@@ -1507,7 +1507,7 @@ func (r *ReplicationRepo) GetRule(_ context.Context, id string) (*domain.Replica
 	defer r.mu.Unlock()
 	v, ok := r.rules[id]
 	if !ok {
-		return nil, nil //nolint:nilnil // (nil, nil) signals not-found; callers check the returned value
+		return nil, nil
 	}
 	cp := *v
 	return &cp, nil
@@ -1609,7 +1609,7 @@ func (r *PromotionRepo) GetRule(_ context.Context, id string) (*domain.Promotion
 		cp := *v
 		return &cp, nil
 	}
-	return nil, nil //nolint:nilnil // (nil, nil) signals not-found; callers check the returned value
+	return nil, nil
 }
 
 func (r *PromotionRepo) ListRulesByFromRepo(_ context.Context, fromRepo string) ([]domain.PromotionRule, error) {
@@ -1672,7 +1672,7 @@ func (r *PromotionRepo) GetRequest(_ context.Context, id string) (*domain.Promot
 		cp := *v
 		return &cp, nil
 	}
-	return nil, nil //nolint:nilnil // (nil, nil) signals not-found; callers check the returned value
+	return nil, nil
 }
 
 func (r *PromotionRepo) ListRequests(_ context.Context, status string) ([]domain.PromotionRequest, error) {
