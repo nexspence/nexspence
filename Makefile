@@ -3,6 +3,7 @@ MODULE    := github.com/nexspence-oss/nexspence
 VERSION   := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS   := -s -w -X main.Version=$(VERSION)
 BUILD_DIR := ./bin
+GOLANGCI_VERSION := v2.12.2
 
 # ── Development ───────────────────────────────────────────────
 
@@ -99,9 +100,14 @@ test-cover: ## Run tests with coverage report
 	@echo "Coverage report: coverage.html"
 
 .PHONY: lint
-lint: ## Run golangci-lint
-	@which golangci-lint > /dev/null || go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+lint: ## Run golangci-lint (pinned version)
+	@golangci-lint version 2>/dev/null | grep -q "$(patsubst v%,%,$(GOLANGCI_VERSION))" || \
+		go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_VERSION)
 	golangci-lint run ./...
+
+.PHONY: lint-fix
+lint-fix: ## Run golangci-lint with autofix
+	golangci-lint run --fix ./...
 
 .PHONY: fmt
 fmt: ## Format Go and TypeScript code
