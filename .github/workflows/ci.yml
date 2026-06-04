@@ -24,6 +24,46 @@ jobs:
       - name: Run golangci-lint
         run: golangci-lint run ./...
 
+  coverage:
+    name: unit test coverage (per-package ≥80%)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.3'
+          cache: true
+      - name: Enforce per-package ≥80% floor
+        run: |
+          # Packages excluded from the 80% floor:
+          #   internal/db        — migration runner, no business logic
+          #   internal/logger    — thin zap wrapper
+          #   internal/config    — viper config struct, no logic
+          #   internal/storage   — has dedicated integration-tagged tests (MinIO)
+          #   internal/testutil  — test helpers, not production code
+          #   internal/formats   — top-level package has no test files
+          #   cmd/               — entrypoint wiring
+          EXCLUDED="internal/db internal/logger internal/config internal/storage internal/testutil internal/formats$ cmd/"
+          fail=0
+          while IFS= read -r line; do
+            # go test -v output line format: "ok  <pkg>  Xs  coverage: X% of statements"
+            pkg=$(echo "$line" | awk '{print $2}')
+            pct=$(echo "$line" | grep -oP 'coverage: \K[0-9.]+')
+            [ -z "$pct" ] && continue
+            skip=0
+            for ex in $EXCLUDED; do
+              [[ "$pkg" == *"$ex"* ]] && { skip=1; break; }
+            done
+            [ "$skip" = "1" ] && { echo "  skip  $pkg: ${pct}%"; continue; }
+            if awk -v p="$pct" 'BEGIN { exit (p+0 >= 80) ? 0 : 1 }'; then
+              echo "  ok    $pkg: ${pct}%"
+            else
+              echo "::error::$pkg coverage ${pct}% is below the 80% floor"
+              fail=1
+            fi
+          done < <(go test -count=1 -cover ./internal/... ./cmd/... 2>&1 | grep "^ok")
+          exit $fail
+
   integration:
     name: integration tests (postgres + storage)
     runs-on: ubuntu-latest

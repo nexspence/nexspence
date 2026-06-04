@@ -834,6 +834,16 @@ func (a *AuditRepo) Write(_ context.Context, e *domain.AuditEvent) error {
 	return nil
 }
 
+// Snapshot returns a copy of the current events slice under the mutex,
+// safe to read from test goroutines concurrently with Write calls.
+func (a *AuditRepo) Snapshot() []domain.AuditEvent {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	out := make([]domain.AuditEvent, len(a.Events))
+	copy(out, a.Events)
+	return out
+}
+
 func (a *AuditRepo) match(e domain.AuditEvent, q repository.AuditQuery) bool {
 	if q.Domain != "" && e.Domain != q.Domain {
 		return false
