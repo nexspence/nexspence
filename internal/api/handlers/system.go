@@ -197,8 +197,8 @@ func (h *SystemHandler) checkStorage(ctx context.Context) ServiceStatus {
 	detail := path
 	var fs syscall.Statfs_t
 	if err := syscall.Statfs(path, &fs); err == nil {
-		total := fs.Blocks * uint64(fs.Bsize)
-		free := fs.Bavail * uint64(fs.Bsize)
+		total := fs.Blocks * uint64(fs.Bsize) //nolint:gosec // Bsize is a filesystem block size — always positive
+		free := fs.Bavail * uint64(fs.Bsize)  //nolint:gosec // Bsize is a filesystem block size — always positive
 		detail = fmt.Sprintf("%s · free %s / %s", path, fmtBytes(free), fmtBytes(total))
 	}
 	return ServiceStatus{Name: "Local Storage", Status: "ok", Detail: detail, CheckedAt: now}
