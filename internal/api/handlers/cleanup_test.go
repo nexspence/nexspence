@@ -96,9 +96,9 @@ func TestCleanupHandler_Create_OK_DefaultsFormatAndCriteria(t *testing.T) {
 	var got domain.CleanupPolicy
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
 	assert.Equal(t, "keep-recent", got.Name)
-	assert.Equal(t, "*", got.Format)            // defaulted
-	assert.NotNil(t, got.Criteria)              // defaulted to {}
-	assert.Equal(t, 3, got.RetainNVersions)     // persisted
+	assert.Equal(t, "*", got.Format)        // defaulted
+	assert.NotNil(t, got.Criteria)          // defaulted to {}
+	assert.Equal(t, 3, got.RetainNVersions) // persisted
 	assert.NotEmpty(t, got.ID)
 }
 

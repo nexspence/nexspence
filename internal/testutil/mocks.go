@@ -248,10 +248,10 @@ func (b *BlobStoreRepo) UpdateUsedBytes(_ context.Context, name string, delta in
 // ── ComponentRepo ─────────────────────────────────────────────
 
 type ComponentRepo struct {
-	mu              sync.Mutex
-	components      map[string]*domain.Component
-	nextID          int
-	Err             error // when non-nil, ListByRepoNames/Get/Search/Delete/SetTags return it (500-branch seam)
+	mu         sync.Mutex
+	components map[string]*domain.Component
+	nextID     int
+	Err        error // when non-nil, ListByRepoNames/Get/Search/Delete/SetTags return it (500-branch seam)
 	// DockerRowsByRepo maps repoName→browse rows; ListDockerBrowseRows returns the
 	// union of rows for the requested repo names (mirrors the SQL WHERE rep.name IN (...)).
 	DockerRowsByRepo map[string][]domain.DockerBrowseRow
@@ -1006,11 +1006,11 @@ func (r *UserRepo) GetOIDCIDToken(_ context.Context, userID string) (string, err
 // ── RoleRepo ──────────────────────────────────────────────────
 
 type RoleRepo struct {
-	mu              sync.Mutex
-	roles           map[string]*domain.Role
-	userRoles       map[string][]string // userID → roleIDs
-	nextID          int
-	Err             error // when non-nil, mutating/listing methods return this error
+	mu               sync.Mutex
+	roles            map[string]*domain.Role
+	userRoles        map[string][]string // userID → roleIDs
+	nextID           int
+	Err              error // when non-nil, mutating/listing methods return this error
 	SetPrivilegesErr error // when non-nil, SetPrivileges returns this error (independent of Err)
 }
 
