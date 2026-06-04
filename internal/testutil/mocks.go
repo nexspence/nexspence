@@ -44,6 +44,7 @@ var (
 type RepoRepo struct {
 	mu    sync.Mutex
 	repos map[string]*domain.Repository
+	Err   error // when set, List/Get/Create/Update/Delete return it (500-branch seam)
 }
 
 func NewRepoRepo(repos ...*domain.Repository) *RepoRepo {
@@ -57,6 +58,9 @@ func NewRepoRepo(repos ...*domain.Repository) *RepoRepo {
 func (r *RepoRepo) List(_ context.Context, _, _ string) ([]domain.Repository, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.Err != nil {
+		return nil, r.Err
+	}
 	out := make([]domain.Repository, 0, len(r.repos))
 	for _, v := range r.repos {
 		out = append(out, *v)
@@ -66,6 +70,9 @@ func (r *RepoRepo) List(_ context.Context, _, _ string) ([]domain.Repository, er
 func (r *RepoRepo) Get(_ context.Context, name string) (*domain.Repository, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.Err != nil {
+		return nil, r.Err
+	}
 	return r.repos[name], nil
 }
 func (r *RepoRepo) GetByID(_ context.Context, id string) (*domain.Repository, error) {
@@ -81,18 +88,27 @@ func (r *RepoRepo) GetByID(_ context.Context, id string) (*domain.Repository, er
 func (r *RepoRepo) Create(_ context.Context, repo *domain.Repository) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.Err != nil {
+		return r.Err
+	}
 	r.repos[repo.Name] = repo
 	return nil
 }
 func (r *RepoRepo) Update(_ context.Context, repo *domain.Repository) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.Err != nil {
+		return r.Err
+	}
 	r.repos[repo.Name] = repo
 	return nil
 }
 func (r *RepoRepo) Delete(_ context.Context, name string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.Err != nil {
+		return r.Err
+	}
 	delete(r.repos, name)
 	return nil
 }
