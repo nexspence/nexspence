@@ -759,6 +759,7 @@ type UserRepo struct {
 	byID       map[string]*domain.User
 	nextID     int
 	oidcTokens map[string]string // userID → id_token
+	Err        error             // when non-nil, mutating methods return this error
 }
 
 func NewUserRepo(users ...*domain.User) *UserRepo {
@@ -777,6 +778,9 @@ func NewUserRepo(users ...*domain.User) *UserRepo {
 func (r *UserRepo) List(_ context.Context, _ string) ([]domain.User, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.Err != nil {
+		return nil, r.Err
+	}
 	out := make([]domain.User, 0, len(r.users))
 	for _, u := range r.users {
 		out = append(out, *u)
@@ -786,16 +790,25 @@ func (r *UserRepo) List(_ context.Context, _ string) ([]domain.User, error) {
 func (r *UserRepo) Get(_ context.Context, username string) (*domain.User, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.Err != nil {
+		return nil, r.Err
+	}
 	return r.users[username], nil
 }
 func (r *UserRepo) GetByID(_ context.Context, id string) (*domain.User, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.Err != nil {
+		return nil, r.Err
+	}
 	return r.byID[id], nil
 }
 func (r *UserRepo) Create(_ context.Context, u *domain.User) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.Err != nil {
+		return r.Err
+	}
 	r.nextID++
 	if u.ID == "" {
 		u.ID = fmt.Sprintf("user-%d", r.nextID)
@@ -807,6 +820,9 @@ func (r *UserRepo) Create(_ context.Context, u *domain.User) error {
 func (r *UserRepo) Update(_ context.Context, u *domain.User) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.Err != nil {
+		return r.Err
+	}
 	r.users[u.Username] = u
 	r.byID[u.ID] = u
 	return nil
@@ -822,6 +838,9 @@ func (r *UserRepo) UpdatePassword(_ context.Context, username, hash string) erro
 func (r *UserRepo) Delete(_ context.Context, username string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.Err != nil {
+		return r.Err
+	}
 	if u, ok := r.users[username]; ok {
 		delete(r.byID, u.ID)
 		delete(r.users, username)
@@ -850,10 +869,12 @@ func (r *UserRepo) GetOIDCIDToken(_ context.Context, userID string) (string, err
 // ── RoleRepo ──────────────────────────────────────────────────
 
 type RoleRepo struct {
-	mu        sync.Mutex
-	roles     map[string]*domain.Role
-	userRoles map[string][]string // userID → roleIDs
-	nextID    int
+	mu              sync.Mutex
+	roles           map[string]*domain.Role
+	userRoles       map[string][]string // userID → roleIDs
+	nextID          int
+	Err             error // when non-nil, mutating/listing methods return this error
+	SetPrivilegesErr error // when non-nil, SetPrivileges returns this error (independent of Err)
 }
 
 func NewRoleRepo(roles ...*domain.Role) *RoleRepo {
@@ -870,6 +891,9 @@ func NewRoleRepo(roles ...*domain.Role) *RoleRepo {
 func (r *RoleRepo) List(_ context.Context) ([]domain.Role, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.Err != nil {
+		return nil, r.Err
+	}
 	out := make([]domain.Role, 0, len(r.roles))
 	for _, v := range r.roles {
 		out = append(out, *v)
@@ -884,6 +908,9 @@ func (r *RoleRepo) Get(_ context.Context, id string) (*domain.Role, error) {
 func (r *RoleRepo) Create(_ context.Context, role *domain.Role) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.Err != nil {
+		return r.Err
+	}
 	r.nextID++
 	if role.ID == "" {
 		role.ID = fmt.Sprintf("role-%d", r.nextID)
@@ -894,12 +921,18 @@ func (r *RoleRepo) Create(_ context.Context, role *domain.Role) error {
 func (r *RoleRepo) Update(_ context.Context, role *domain.Role) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.Err != nil {
+		return r.Err
+	}
 	r.roles[role.ID] = role
 	return nil
 }
 func (r *RoleRepo) Delete(_ context.Context, id string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.Err != nil {
+		return r.Err
+	}
 	delete(r.roles, id)
 	return nil
 }
@@ -917,11 +950,20 @@ func (r *RoleRepo) GetUserRoles(_ context.Context, userID string) ([]domain.Role
 func (r *RoleRepo) SetUserRoles(_ context.Context, userID string, roleIDs []string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.Err != nil {
+		return r.Err
+	}
 	r.userRoles[userID] = append([]string(nil), roleIDs...)
 	return nil
 }
 
 func (r *RoleRepo) SetPrivileges(_ context.Context, roleID string, privilegeIDs []string) error {
+	if r.SetPrivilegesErr != nil {
+		return r.SetPrivilegesErr
+	}
+	if r.Err != nil {
+		return r.Err
+	}
 	return nil
 }
 
