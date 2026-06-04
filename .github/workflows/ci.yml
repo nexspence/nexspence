@@ -25,7 +25,7 @@ jobs:
         run: golangci-lint run ./...
 
   integration:
-    name: integration tests (postgres)
+    name: integration tests (postgres + storage)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -33,7 +33,7 @@ jobs:
         with:
           go-version: '1.26.3'
           cache: true
-      - name: Run integration tests with coverage
+      - name: Run postgres integration tests with coverage
         run: |
           go test -tags=integration -count=1 \
             -coverpkg=./internal/repository/postgres/... \
@@ -45,3 +45,15 @@ jobs:
           echo "postgres coverage: ${pct}%"
           awk -v p="$pct" 'BEGIN { exit (p+0 >= 80) ? 0 : 1 }' || {
             echo "::error::postgres repository coverage ${pct}% is below the 80% floor"; exit 1; }
+      - name: Run storage integration tests (MinIO via dockertest)
+        run: |
+          go test -tags=integration -count=1 \
+            -coverpkg=./internal/storage/... \
+            -coverprofile=storage_cov.out \
+            ./internal/storage/...
+      - name: Enforce storage package ≥80%
+        run: |
+          pct=$(go tool cover -func=storage_cov.out | awk '/^total:/ {gsub(/%/,"",$3); print $3}')
+          echo "storage coverage: ${pct}%"
+          awk -v p="$pct" 'BEGIN { exit (p+0 >= 80) ? 0 : 1 }' || {
+            echo "::error::storage coverage ${pct}% is below the 80% floor"; exit 1; }
