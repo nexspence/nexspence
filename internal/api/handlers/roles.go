@@ -97,7 +97,7 @@ func (h *RoleHandler) SetUserRoles(c *gin.Context) {
 		return
 	}
 	user, err := h.users.Get(c.Request.Context(), username)
-	if err != nil {
+	if err != nil || user == nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "user not found: " + username})
 		return
 	}
