@@ -1,5 +1,6 @@
 ### ✨ Features
 
+- **Demo video in the README** — added an inline product demo (`docs/assets/demo.mp4`) at the top of the README so the project's UI and workflow are visible at a glance on the repo landing page.
 
 ### 🐛 Bug Fixes
 
