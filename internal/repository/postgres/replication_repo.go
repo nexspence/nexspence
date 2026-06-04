@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"time"
 
@@ -24,14 +25,16 @@ const ruleColumns = `id, name, source_repo, target_url, target_repo, target_user
 
 func scanRule(row pgx.Row) (*domain.ReplicationRule, error) {
 	var r domain.ReplicationRule
+	var lastRunStatus sql.NullString
 	err := row.Scan(
 		&r.ID, &r.Name, &r.SourceRepo, &r.TargetURL, &r.TargetRepo,
 		&r.TargetUsername, &r.TargetPasswordEnc, &r.CronExpr,
-		&r.Enabled, &r.LastRunAt, &r.LastRunStatus, &r.CreatedAt,
+		&r.Enabled, &r.LastRunAt, &lastRunStatus, &r.CreatedAt,
 	)
 	if err != nil {
 		return nil, err
 	}
+	r.LastRunStatus = lastRunStatus.String
 	return &r, nil
 }
 

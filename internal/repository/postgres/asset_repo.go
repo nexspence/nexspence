@@ -362,19 +362,23 @@ func (r *assetRepo) IncrementDownload(ctx context.Context, id string) error {
 
 func scanAsset(row scanner) (*domain.Asset, error) {
 	var a domain.Asset
+	var sha1, sha256, md5 sql.NullString
 	var uploaderID sql.NullString
 	var uploaderName sql.NullString
 	err := row.Scan(
 		&a.ID, &a.ComponentID, &a.RepositoryID, &a.Repository,
 		&a.Path, &a.BlobStoreID, &a.BlobKey,
 		&a.SizeBytes, &a.ContentType,
-		&a.SHA1, &a.SHA256, &a.MD5,
+		&sha1, &sha256, &md5,
 		&a.LastModified, &a.LastDownloaded, &a.DownloadCount, &a.CreatedAt,
 		&uploaderID, &uploaderName,
 	)
 	if err != nil {
 		return nil, err
 	}
+	a.SHA1 = sha1.String
+	a.SHA256 = sha256.String
+	a.MD5 = md5.String
 	if uploaderID.Valid {
 		a.UploaderID = uploaderID.String
 	}
