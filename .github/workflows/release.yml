@@ -7,7 +7,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: skensell201/nexspence
+  IMAGE_NAME: nexspence/nexspence
 
 jobs:
   release:
@@ -47,7 +47,7 @@ jobs:
             type=semver,pattern=v{{major}}.{{minor}}
             type=raw,value=latest
           labels: |
-            org.opencontainers.image.source=https://github.com/skensell201/nexspence
+            org.opencontainers.image.source=https://github.com/nexspence/nexspence
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
@@ -135,10 +135,10 @@ jobs:
             printf '\n### 🐳 Docker\n\n'
             printf '| | |\n'
             printf '|---|---|\n'
-            printf '| **Image** | `ghcr.io/skensell201/nexspence:%s` |\n' "$TAG"
+            printf '| **Image** | `ghcr.io/nexspence/nexspence:%s` |\n' "$TAG"
             printf '| **Platforms** | linux/amd64, linux/arm64 |\n\n'
             printf '```bash\n'
-            printf 'docker pull ghcr.io/skensell201/nexspence:%s\n' "$TAG"
+            printf 'docker pull ghcr.io/nexspence/nexspence:%s\n' "$TAG"
             printf '```\n\n'
             printf '#### Quick start\n\n'
             printf 'Download the zip, extract it, rename `config.yaml.example` → `config.yaml` and edit the admin password and JWT secret.\n\n'
@@ -172,18 +172,18 @@ jobs:
           GH_TOKEN: ${{ secrets.RELEASE_PAT }}
         run: |
           gh release delete "${{ github.ref_name }}" \
-            --repo skensell201/nexspence \
+            --repo nexspence/nexspence \
             --yes 2>/dev/null || true
 
           gh release create "${{ github.ref_name }}" \
-            --repo skensell201/nexspence \
+            --repo nexspence/nexspence \
             --title "Nexspence ${{ github.ref_name }}" \
             --notes-file release-notes.md \
             "release-assets/nexspence-${{ github.ref_name }}.zip"
 
       - name: Sync docs and README to nexspence repo
         run: |
-          git clone https://x-access-token:${{ secrets.RELEASE_PAT }}@github.com/skensell201/nexspence.git /tmp/nexspence-pub
+          git clone https://x-access-token:${{ secrets.RELEASE_PAT }}@github.com/nexspence/nexspence.git /tmp/nexspence-pub
 
           # Sync docs/
           rsync -a --delete docs/ /tmp/nexspence-pub/docs/

@@ -4,7 +4,7 @@
 
 All releases — Docker images, `docker-compose.yml`, `config.yaml.example` — are at:
 
-**[github.com/skensell201/nexspence/releases](https://github.com/skensell201/nexspence/releases)**
+**[github.com/nexspence/nexspence/releases](https://github.com/nexspence/nexspence/releases)**
 
 Download `docker-compose.yml` and `config.yaml.example` from the latest release, then follow the relevant section below.
 
@@ -14,7 +14,7 @@ Download `docker-compose.yml` and `config.yaml.example` from the latest release,
 
 ```bash
 # 1. Download files from the latest release:
-#    https://github.com/skensell201/nexspence/releases/latest
+#    https://github.com/nexspence/nexspence/releases/latest
 #    → docker-compose.yml
 #    → config.yaml.example  (rename to config.yaml and edit)
 

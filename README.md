@@ -19,7 +19,7 @@
 
 ## 🎬 Demo
 
-https://github.com/skensell201/nexspence/raw/main/docs/assets/demo.mp4
+https://github.com/nexspence/nexspence/raw/main/docs/assets/demo.mp4
 
 > ▶️ If the video doesn't play inline, [open / download it here](docs/assets/demo.mp4).
 
@@ -107,7 +107,7 @@ View the full site with interactive architecture diagram, install guide, and com
 **Requirements:** [Docker](https://docs.docker.com/get-docker/) 24+ with Compose v2
 
 ```bash
-git clone https://github.com/skensell201/nexspence
+git clone https://github.com/nexspence/nexspence
 cd nexspence
 docker compose up -d
 ```
@@ -161,7 +161,7 @@ Manage Nexspence from the terminal or CI/CD pipelines:
 
 ```bash
 # Install
-curl -sSfL https://raw.githubusercontent.com/skensell201/nxs/main/install.sh | sh
+curl -sSfL https://raw.githubusercontent.com/nexspence/nxs/main/install.sh | sh
 
 # Login and use
 nxs login --url http://localhost:8081 --user admin
@@ -170,7 +170,7 @@ nxs push my-repo path/to/artifact.jar artifact.jar
 nxs search --repo maven-releases --q mylib --json | jq '.[].version'
 ```
 
-Full command reference and CI/CD examples: **[github.com/skensell201/nxs](https://github.com/skensell201/nxs)**
+Full command reference and CI/CD examples: **[github.com/nexspence/nxs](https://github.com/nexspence/nxs)**
 
 ---
 
@@ -273,7 +273,7 @@ Five networking options (nginx, Traefik, Cilium ingress, Istio Gateway, Cilium G
 | 60–63 | LDAP role mapping, Conda, Terraform, Helm chart | ✓ complete |
 | 64–67 | Landing page, in-app docs, security hardening | ✓ complete |
 | 68 | Extended monitoring — Prometheus endpoint, Grafana dashboard, UI Charts tab | ✓ complete |
-| CLI | [`nxs` CLI](https://github.com/skensell201/nxs) — terminal & CI/CD client, v0.1.0 | ✓ complete |
+| CLI | [`nxs` CLI](https://github.com/nexspence/nxs) — terminal & CI/CD client, v0.1.0 | ✓ complete |
 | next | SBOM generation, cosign image signing | planned |
 | next | OpenTelemetry traces | planned |
 | next | blob GC | planned |

@@ -16,7 +16,7 @@ all shared state lives in the database, Redis, and object storage.
 ## Quick Start (Docker Compose)
 
 Download `docker-compose.ha.yml` from the latest release:
-**[github.com/skensell201/nexspence/releases](https://github.com/skensell201/nexspence/releases)**
+**[github.com/nexspence/nexspence/releases](https://github.com/nexspence/nexspence/releases)**
 
 ```bash
 # Start 2-node HA cluster

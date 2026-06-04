@@ -10,7 +10,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: skensell201/nexspence-website
+  IMAGE_NAME: nexspence/nexspence-website
 
 jobs:
   deploy:
@@ -57,7 +57,7 @@ jobs:
           envs: GHCR_USER,GHCR_TOKEN
           script: |
             set -e
-            IMAGE="ghcr.io/skensell201/nexspence-website:latest"
+            IMAGE="ghcr.io/nexspence/nexspence-website:latest"
 
             # Authenticate to GHCR using the ephemeral run token (private image).
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
