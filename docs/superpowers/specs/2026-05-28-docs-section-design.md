@@ -16,7 +16,7 @@ Add a `/docs` section to the nexspence.com static site (`website/`) that shows:
 
 ## Data Source
 
-**GitHub Releases API** — `https://api.github.com/repos/skensell201/nexspence/releases`
+**GitHub Releases API** — `https://api.github.com/repos/nexspence/nexspence/releases`
 
 - Public API, no auth, 60 req/hour unauthenticated (sufficient for a docs site)
 - Each release has `tag_name`, `name`, `published_at`, `body` (Markdown from NEXT_RELEASE.md)

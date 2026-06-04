@@ -25,8 +25,8 @@
 Текущая версия — **v1.8.2**, с момента первого релиза вышло 19 версий.
 
 - Сайт: [nexspence.com](https://nexspence.com)
-- Релизы: [github.com/skensell201/nexspence/releases](https://github.com/skensell201/nexspence/releases)
-- nxs (cli инструмент для Nexspence): [github.com/skensell201/nxs](https://github.com/skensell201/nxs)
+- Релизы: [github.com/nexspence/nexspence/releases](https://github.com/nexspence/nexspence/releases)
+- nxs (cli инструмент для Nexspence): [github.com/nexspence/nxs](https://github.com/nexspence/nxs)
 
 ---
 
@@ -116,11 +116,11 @@ Keycloak, Google Workspace, Microsoft Entra подключаются через 
 
 **1. Скачиваем и распаковываем**
 
-Берём последний релиз со страницы [github.com/skensell201/nexspence/releases](https://github.com/skensell201/nexspence/releases):
+Берём последний релиз со страницы [github.com/nexspence/nexspence/releases](https://github.com/nexspence/nexspence/releases):
 
 ```bash
 # Скачиваем архив
-curl -LO https://github.com/skensell201/nexspence/releases/download/v1.8.2/nexspence-v1.8.2.zip
+curl -LO https://github.com/nexspence/nexspence/releases/download/v1.8.2/nexspence-v1.8.2.zip
 
 # Распаковываем
 unzip nexspence-v1.8.2.zip -d nexspence && cd nexspence
@@ -176,7 +176,7 @@ docker push localhost:8081/repository/docker-hosted/myapp:latest
 
 В архиве также лежат скрипты `scripts/seed-all.sh` — они создадут 42 тестовых репозитория, тестовые пакеты и RBAC-окружения для dev/stage/prod, чтобы сразу пощупать всё вживую.
 
-Для работы из терминала и CI/CD есть отдельная утилита [`nxs`](https://github.com/skensell201/nxs) — умеет публиковать, скачивать и листить компоненты прямо из командной строки или GitHub Actions.
+Для работы из терминала и CI/CD есть отдельная утилита [`nxs`](https://github.com/nexspence/nxs) — умеет публиковать, скачивать и листить компоненты прямо из командной строки или GitHub Actions.
 
 ---
 
@@ -191,8 +191,8 @@ docker push localhost:8081/repository/docker-hosted/myapp:latest
 ## Ссылки
 
 - 🌐 Сайт: [nexspence.com](https://nexspence.com)
-- 💻 GitHub: [github.com/skensell201/nexspence](https://github.com/skensell201/nexspence)
-- 📦 Релизы: [github.com/skensell201/nexspence/releases](https://github.com/skensell201/nexspence/releases)
-- 🔧 CLI `nxs`: [github.com/skensell201/nxs](https://github.com/skensell201/nxs)
+- 💻 GitHub: [github.com/nexspence/nexspence](https://github.com/nexspence/nexspence)
+- 📦 Релизы: [github.com/nexspence/nexspence/releases](https://github.com/nexspence/nexspence/releases)
+- 🔧 CLI `nxs`: [github.com/nexspence/nxs](https://github.com/nexspence/nxs)
 
 Если попробуете — пишите в комментариях как впечатления. Особенно интересно слышать от тех, кто мигрирует с Nexus или ищет альтернативу Artifactory.

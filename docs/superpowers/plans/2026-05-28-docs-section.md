@@ -4,7 +4,7 @@
 
 **Goal:** Add a versioned `/docs` section to the nexspence.com static site that shows changelog from GitHub Releases API and static guide pages, fully responsive.
 
-**Architecture:** Single `website/docs/index.html` file — vanilla JS, no build step, same CSS variables as `website/index.html`. Releases fetched from `https://api.github.com/repos/skensell201/nexspence/releases` at page load, cached in `sessionStorage`. Static sections (Quick Start, Install, Formats) embedded as `<template>` tags. `website/index.html` gets a Docs nav pill and a "Read the Docs" CTA button.
+**Architecture:** Single `website/docs/index.html` file — vanilla JS, no build step, same CSS variables as `website/index.html`. Releases fetched from `https://api.github.com/repos/nexspence/nexspence/releases` at page load, cached in `sessionStorage`. Static sections (Quick Start, Install, Formats) embedded as `<template>` tags. `website/index.html` gets a Docs nav pill and a "Read the Docs" CTA button.
 
 **Tech Stack:** Vanilla HTML/CSS/JS, nginx:alpine (existing Dockerfile unchanged). GitHub Releases API (public, no auth).
 
@@ -65,7 +65,7 @@ Exact insertion — add after the closing `</a>` of the `Star on GitHub` button,
 
 Exact insertion — before:
 ```html
-    <a href="https://github.com/skensell201/nexspence" target="_blank" rel="noopener">GitHub</a>
+    <a href="https://github.com/nexspence/nexspence" target="_blank" rel="noopener">GitHub</a>
 ```
 
 ### 1d — Verify in browser
@@ -338,7 +338,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
     <span>Docs</span>
   </a>
   <div class="nav-actions">
-    <a href="https://github.com/skensell201/nexspence" target="_blank" rel="noopener" class="nav-gh" aria-label="GitHub repository">
+    <a href="https://github.com/nexspence/nexspence" target="_blank" rel="noopener" class="nav-gh" aria-label="GitHub repository">
       <svg fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
       <span>GitHub</span>
     </a>
@@ -422,8 +422,8 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
     <div class="docs-footer-left">© 2026 Nexspence Contributors · AGPLv3</div>
     <div class="docs-footer-right">
       <a href="/">nexspence.com</a>
-      <a href="https://github.com/skensell201/nexspence" target="_blank" rel="noopener">GitHub</a>
-      <a href="https://github.com/skensell201/nexspence/releases" target="_blank" rel="noopener">All Releases</a>
+      <a href="https://github.com/nexspence/nexspence" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://github.com/nexspence/nexspence/releases" target="_blank" rel="noopener">All Releases</a>
     </div>
   </footer>
 
@@ -444,7 +444,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
       <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
       Docs
     </a>
-    <a href="https://github.com/skensell201/nexspence" target="_blank" rel="noopener" class="mob-bnav-item">
+    <a href="https://github.com/nexspence/nexspence" target="_blank" rel="noopener" class="mob-bnav-item">
       <svg fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
       GitHub
     </a>
@@ -460,7 +460,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
   <div class="step-list">
     <div class="step-item">
       <div class="step-num">01</div>
-      <div><div class="step-title">Clone the demo repository</div><div class="step-desc"><code>git clone https://github.com/skensell201/nexspence.git &amp;&amp; cd nexspence</code></div></div>
+      <div><div class="step-title">Clone the demo repository</div><div class="step-desc"><code>git clone https://github.com/nexspence/nexspence.git &amp;&amp; cd nexspence</code></div></div>
     </div>
     <div class="step-item">
       <div class="step-num">02</div>
@@ -474,7 +474,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
   <div class="cb">
     <div class="cb-bar"><span>shell</span><button class="cb-copy" onclick="copyCode(this)">Copy</button></div>
     <div class="cb-body"><span class="cc"># Clone</span>
-git clone https://github.com/skensell201/nexspence.git
+git clone https://github.com/nexspence/nexspence.git
 cd nexspence
 
 <span class="cc"># Config</span>
@@ -496,18 +496,18 @@ open http://localhost:8081  <span class="cc"># default login: admin / admin123</
   <div class="step-list">
     <div class="step-item">
       <div class="step-num">🐳</div>
-      <div><div class="step-title">Docker Compose (recommended)</div><div class="step-desc">The simplest path. Includes PostgreSQL, MinIO S3-compatible storage, and optional Prometheus+Grafana monitoring. See <a href="https://github.com/skensell201/nexspence/blob/main/docs/deployment.md" target="_blank" rel="noopener" style="color:var(--blue)">docs/deployment.md</a> for all profile variants.</div></div>
+      <div><div class="step-title">Docker Compose (recommended)</div><div class="step-desc">The simplest path. Includes PostgreSQL, MinIO S3-compatible storage, and optional Prometheus+Grafana monitoring. See <a href="https://github.com/nexspence/nexspence/blob/main/docs/deployment.md" target="_blank" rel="noopener" style="color:var(--blue)">docs/deployment.md</a> for all profile variants.</div></div>
     </div>
     <div class="step-item">
       <div class="step-num">☸️</div>
-      <div><div class="step-title">Kubernetes / Helm</div><div class="step-desc">Official Helm chart at <code>deploy/helm/nexspence/</code>. Supports nginx, Traefik, Cilium, Istio. See <a href="https://github.com/skensell201/nexspence/blob/main/deploy/helm/nexspence/README.md" target="_blank" rel="noopener" style="color:var(--blue)">Helm README</a>.</div></div>
+      <div><div class="step-title">Kubernetes / Helm</div><div class="step-desc">Official Helm chart at <code>deploy/helm/nexspence/</code>. Supports nginx, Traefik, Cilium, Istio. See <a href="https://github.com/nexspence/nexspence/blob/main/deploy/helm/nexspence/README.md" target="_blank" rel="noopener" style="color:var(--blue)">Helm README</a>.</div></div>
     </div>
     <div class="step-item">
       <div class="step-num">⚙️</div>
       <div><div class="step-title">From Source</div><div class="step-desc">Requires Go 1.22+, Node 18+, PostgreSQL 16+. <code>go run ./cmd/server serve</code> auto-migrates and starts. Frontend: <code>cd frontend &amp;&amp; npm run dev</code>.</div></div>
     </div>
   </div>
-  <div class="alert-info"><strong>Docker image:</strong> <code>ghcr.io/skensell201/nexspence:latest</code> — linux/amd64 and linux/arm64.</div>
+  <div class="alert-info"><strong>Docker image:</strong> <code>ghcr.io/nexspence/nexspence:latest</code> — linux/amd64 and linux/arm64.</div>
 </template>
 
 <template id="tpl-formats">
@@ -547,7 +547,7 @@ open http://localhost:8081  <span class="cc"># default login: admin / admin123</
       <tr><td><code>/v2/</code></td><td>Docker OCI Distribution Spec v2</td></tr>
     </tbody>
   </table>
-  <div class="alert-info"><strong>Full OpenAPI 3.1 spec:</strong> available at <a href="https://github.com/skensell201/nexspence/blob/main/docs/api-spec.yaml" target="_blank" rel="noopener" style="color:var(--blue)">docs/api-spec.yaml</a> in the repository.</div>
+  <div class="alert-info"><strong>Full OpenAPI 3.1 spec:</strong> available at <a href="https://github.com/nexspence/nexspence/blob/main/docs/api-spec.yaml" target="_blank" rel="noopener" style="color:var(--blue)">docs/api-spec.yaml</a> in the repository.</div>
   <div class="step-list">
     <div class="step-item">
       <div class="step-num">🔑</div>
@@ -560,7 +560,7 @@ open http://localhost:8081  <span class="cc"># default login: admin / admin123</
 <script>
 'use strict';
 
-const API_URL = 'https://api.github.com/repos/skensell201/nexspence/releases?per_page=30';
+const API_URL = 'https://api.github.com/repos/nexspence/nexspence/releases?per_page=30';
 const CACHE_KEY = 'nx_releases_v1';
 
 // ── State ─────────────────────────────────────────────────────
@@ -770,7 +770,7 @@ function renderChangelog(activeTag) {
     container.innerHTML = `<div class="empty-state">
       <svg fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
       <p>No releases found for this version.<br>
-      <a href="https://github.com/skensell201/nexspence/releases" target="_blank" rel="noopener">View all releases on GitHub →</a></p>
+      <a href="https://github.com/nexspence/nexspence/releases" target="_blank" rel="noopener">View all releases on GitHub →</a></p>
     </div>`;
     return;
   }
@@ -817,7 +817,7 @@ function renderChangelog(activeTag) {
   }).join('');
 
   container.innerHTML = html + `<div style="text-align:center;padding:18px 0;border-top:1px solid var(--border);margin-top:4px">
-    <a href="https://github.com/skensell201/nexspence/releases" target="_blank" rel="noopener"
+    <a href="https://github.com/nexspence/nexspence/releases" target="_blank" rel="noopener"
        style="font-size:.78rem;color:#a78bfa;text-decoration:none;font-weight:600">
       View all releases on GitHub →
     </a>
@@ -898,7 +898,7 @@ document.getElementById('mob-nav-toggle').addEventListener('click', function() {
     document.getElementById('doc-content').innerHTML = `<div class="empty-state">
       <svg fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
       <p>Could not load release data.<br>
-      <a href="https://github.com/skensell201/nexspence/releases" target="_blank" rel="noopener">View releases on GitHub →</a></p>
+      <a href="https://github.com/nexspence/nexspence/releases" target="_blank" rel="noopener">View releases on GitHub →</a></p>
     </div>`;
     // Still render static tabs/sidebar without releases
     state.releases = [];

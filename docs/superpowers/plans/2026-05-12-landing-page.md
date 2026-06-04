@@ -496,7 +496,7 @@ footer { border-top:1px solid rgba(124,92,255,.12); padding:64px 48px 40px }
     <a href="#features">Features</a>
     <a href="#install">Installation</a>
   </div>
-  <a class="nav-gh" href="https://github.com/skensell201/nexspence" target="_blank">
+  <a class="nav-gh" href="https://github.com/nexspence/nexspence" target="_blank">
     <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.477 2 12c0 4.418 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.342-3.369-1.342-.454-1.155-1.11-1.463-1.11-1.463-.908-.62.069-.608.069-.608 1.003.07 1.531 1.031 1.531 1.031.892 1.529 2.341 1.087 2.91.831.092-.646.35-1.086.636-1.336-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.268 2.75 1.026A9.578 9.578 0 0 1 12 6.836c.85.004 1.705.115 2.504.337 1.909-1.294 2.747-1.026 2.747-1.026.546 1.377.202 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.742 0 .267.18.578.688.48C19.138 20.163 22 16.418 22 12c0-5.523-4.477-10-10-10z"/></svg>
     Star on GitHub — it's really important ❤️
   </a>
@@ -519,7 +519,7 @@ footer { border-top:1px solid rgba(124,92,255,.12); padding:64px 48px 40px }
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
       Download &amp; Run
     </a>
-    <a class="btn-s" href="https://github.com/skensell201/nexspence" target="_blank">
+    <a class="btn-s" href="https://github.com/nexspence/nexspence" target="_blank">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.477 2 12c0 4.418 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.342-3.369-1.342-.454-1.155-1.11-1.463-1.11-1.463-.908-.62.069-.608.069-.608 1.003.07 1.531 1.031 1.531 1.031.892 1.529 2.341 1.087 2.91.831.092-.646.35-1.086.636-1.336-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.268 2.75 1.026A9.578 9.578 0 0 1 12 6.836c.85.004 1.705.115 2.504.337 1.909-1.294 2.747-1.026 2.747-1.026.546 1.377.202 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.742 0 .267.18.578.688.48C19.138 20.163 22 16.418 22 12c0-5.523-4.477-10-10-10z"/></svg>
       View on GitHub
     </a>
@@ -624,7 +624,7 @@ footer { border-top:1px solid rgba(124,92,255,.12); padding:64px 48px 40px }
           <div style="margin-top:8px;font-size:13px;color:var(--holo-text-dim);max-width:360px;text-align:center;line-height:1.65">
             A full walkthrough video will be available here.<br>
             In the meantime, explore the
-            <a href="https://github.com/skensell201/nexspence" target="_blank" style="color:var(--holo-b);text-decoration:none;border-bottom:1px solid rgba(34,211,238,.3);padding-bottom:1px">GitHub repository</a>
+            <a href="https://github.com/nexspence/nexspence" target="_blank" style="color:var(--holo-b);text-decoration:none;border-bottom:1px solid rgba(34,211,238,.3);padding-bottom:1px">GitHub repository</a>
             or <a href="#install" style="color:var(--holo-b);text-decoration:none;border-bottom:1px solid rgba(34,211,238,.3);padding-bottom:1px">get started now</a>.
           </div>
         </div>
@@ -714,7 +714,7 @@ footer { border-top:1px solid rgba(124,92,255,.12); padding:64px 48px 40px }
             <div class="dl-sub">Pre-packaged with <code style="font-family:'Geist Mono';font-size:11px;color:var(--holo-b)">docker-compose.yml</code> and <code style="font-family:'Geist Mono';font-size:11px;color:var(--holo-b)">config.yaml</code> — unpack and run</div>
           </div>
         </div>
-        <a class="dl-btn" href="https://github.com/skensell201/nexspence/releases/latest" target="_blank">
+        <a class="dl-btn" href="https://github.com/nexspence/nexspence/releases/latest" target="_blank">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           GitHub Releases →
         </a>
@@ -760,7 +760,7 @@ footer { border-top:1px solid rgba(124,92,255,.12); padding:64px 48px 40px }
             With Keycloak SSO
           </a>
         </div>
-        <a class="rel-link" href="https://github.com/skensell201/nexspence/releases" target="_blank">
+        <a class="rel-link" href="https://github.com/nexspence/nexspence/releases" target="_blank">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
           All releases &amp; changelogs →
         </a>
@@ -797,7 +797,7 @@ footer { border-top:1px solid rgba(124,92,255,.12); padding:64px 48px 40px }
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
           Full Helm reference →
         </a>
-        <a class="rel-link" href="https://github.com/skensell201/nexspence/releases" target="_blank">
+        <a class="rel-link" href="https://github.com/nexspence/nexspence/releases" target="_blank">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
           All releases &amp; changelogs →
         </a>
@@ -828,15 +828,15 @@ footer { border-top:1px solid rgba(124,92,255,.12); padding:64px 48px 40px }
     </div>
     <div class="fcol">
       <h4>Resources</h4>
-      <a href="https://github.com/skensell201/nexspence">GitHub</a>
+      <a href="https://github.com/nexspence/nexspence">GitHub</a>
       <a href="#">Docker Hub</a>
       <a href="#">Documentation</a>
-      <a href="https://github.com/skensell201/nexspence/releases">Releases</a>
+      <a href="https://github.com/nexspence/nexspence/releases">Releases</a>
     </div>
     <div class="fcol">
       <h4>Project</h4>
       <a href="#">About</a>
-      <a href="https://github.com/skensell201/nexspence/releases">Changelog</a>
+      <a href="https://github.com/nexspence/nexspence/releases">Changelog</a>
       <a href="#">AGPLv3 License</a>
     </div>
   </div>
