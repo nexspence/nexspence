@@ -248,6 +248,7 @@ type ComponentRepo struct {
 	mu         sync.Mutex
 	components map[string]*domain.Component
 	nextID     int
+	Err        error // when non-nil, ListByRepoNames/Get/Search/Delete/SetTags return it (500-branch seam)
 }
 
 func NewComponentRepo() *ComponentRepo {
@@ -258,28 +259,59 @@ func (c *ComponentRepo) List(ctx context.Context, repoName string, limit, offset
 	return c.ListByRepoNames(ctx, []string{repoName}, limit, offset)
 }
 
-func (c *ComponentRepo) ListByRepoNames(_ context.Context, _ []string, _, _ int) (*domain.Page[domain.Component], error) {
+func (c *ComponentRepo) ListByRepoNames(_ context.Context, names []string, _, _ int) (*domain.Page[domain.Component], error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.Err != nil {
+		return nil, c.Err
+	}
+	allow := make(map[string]struct{}, len(names))
+	for _, n := range names {
+		if n != "" {
+			allow[n] = struct{}{}
+		}
+	}
 	items := make([]domain.Component, 0, len(c.components))
 	for _, v := range c.components {
-		items = append(items, *v)
+		if len(allow) == 0 { // empty/"" names → match all (List with no repo filter)
+			items = append(items, *v)
+			continue
+		}
+		if _, ok := allow[v.Repository]; ok {
+			items = append(items, *v)
+		}
 	}
 	return &domain.Page[domain.Component]{Items: items}, nil
 }
 func (c *ComponentRepo) Get(_ context.Context, id string) (*domain.Component, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.Err != nil {
+		return nil, c.Err
+	}
 	return c.components[id], nil
 }
 func (c *ComponentRepo) Search(_ context.Context, params domain.SearchParams) (*domain.Page[domain.Component], error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.Err != nil {
+		return nil, c.Err
+	}
+	allow := make(map[string]struct{}, len(params.RepositoryNames))
+	for _, n := range params.RepositoryNames {
+		allow[n] = struct{}{}
+	}
 	items := make([]domain.Component, 0, len(c.components))
 	for _, v := range c.components {
-		if params.Repository == "" || v.Repository == params.Repository {
-			items = append(items, *v)
+		if params.Repository != "" && v.Repository != params.Repository {
+			continue
 		}
+		if len(allow) > 0 {
+			if _, ok := allow[v.Repository]; !ok {
+				continue
+			}
+		}
+		items = append(items, *v)
 	}
 	return &domain.Page[domain.Component]{Items: items}, nil
 }
@@ -299,6 +331,9 @@ func (c *ComponentRepo) Create(_ context.Context, comp *domain.Component) error 
 func (c *ComponentRepo) Delete(_ context.Context, id string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.Err != nil {
+		return c.Err
+	}
 	delete(c.components, id)
 	return nil
 }
@@ -326,6 +361,9 @@ func (c *ComponentRepo) UpdateExtra(_ context.Context, id string, extra map[stri
 func (c *ComponentRepo) SetTags(_ context.Context, id string, tags []string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.Err != nil {
+		return c.Err
+	}
 	comp, ok := c.components[id]
 	if !ok {
 		return fmt.Errorf("component not found: %s", id)
@@ -350,6 +388,7 @@ type AssetRepo struct {
 	Stale         []domain.Asset // populated by tests to control ListStale output
 	LastRetainN   int
 	MigrationRows []domain.MigrationAssetRow
+	Err           error // when non-nil, ListByComponentID/SearchAssets/SumSizeByRepo return it (500-branch seam)
 }
 
 func NewAssetRepo() *AssetRepo {
@@ -378,8 +417,29 @@ func (a *AssetRepo) GetByPath(_ context.Context, repoName, path string) (*domain
 	defer a.mu.Unlock()
 	return a.assets[repoName+":"+path], nil
 }
-func (a *AssetRepo) SearchAssets(_ context.Context, _ domain.SearchParams) (*domain.Page[domain.Asset], error) {
-	return &domain.Page[domain.Asset]{Items: []domain.Asset{}}, nil
+func (a *AssetRepo) SearchAssets(_ context.Context, params domain.SearchParams) (*domain.Page[domain.Asset], error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.Err != nil {
+		return nil, a.Err
+	}
+	allow := make(map[string]struct{}, len(params.RepositoryNames))
+	for _, n := range params.RepositoryNames {
+		allow[n] = struct{}{}
+	}
+	items := make([]domain.Asset, 0, len(a.byID))
+	for _, v := range a.byID {
+		if params.Repository != "" && v.Repository != params.Repository {
+			continue
+		}
+		if len(allow) > 0 {
+			if _, ok := allow[v.Repository]; !ok {
+				continue
+			}
+		}
+		items = append(items, *v)
+	}
+	return &domain.Page[domain.Asset]{Items: items}, nil
 }
 func (a *AssetRepo) ListStale(_ context.Context, _ string, _ []string, _, _ int, _, _ string, retainNVersions int, limit int) ([]domain.Asset, error) {
 	a.mu.Lock()
@@ -428,6 +488,9 @@ func (a *AssetRepo) IncrementDownload(_ context.Context, _ string) error { retur
 func (a *AssetRepo) ListByComponentID(_ context.Context, componentID string) ([]domain.Asset, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if a.Err != nil {
+		return nil, a.Err
+	}
 	var out []domain.Asset
 	for _, v := range a.byID {
 		if v.ComponentID == componentID {
@@ -457,6 +520,9 @@ func (a *AssetRepo) ListAllBlobKeys(_ context.Context) ([]string, error) {
 func (a *AssetRepo) SumSizeByRepo(_ context.Context, repoName string) (int64, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if a.Err != nil {
+		return 0, a.Err
+	}
 	var total int64
 	for _, v := range a.byID {
 		if v.Repository == repoName {
