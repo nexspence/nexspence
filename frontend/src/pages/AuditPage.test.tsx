@@ -127,6 +127,45 @@ describe('AuditPage', () => {
     vi.unstubAllGlobals()
   })
 
+  it('filters by domain and action via the Select dropdowns', async () => {
+    const user = userEvent.setup()
+    let lastUrl = ''
+    server.use(
+      http.get('/service/rest/v1/audit', ({ request }) => {
+        lastUrl = request.url
+        return HttpResponse.json({ items: [], total: 0 })
+      }),
+    )
+    renderWithProviders(<AuditPage />)
+    await screen.findByText('No audit events')
+    // Domain Select: open the "All domains" trigger and pick REPOSITORY.
+    await user.click(screen.getByText('All domains'))
+    await user.click(await screen.findByText('REPOSITORY'))
+    await waitFor(() => expect(lastUrl).toContain('domain=REPOSITORY'))
+    // Action Select: open the "All actions" trigger and pick CREATE.
+    await user.click(screen.getByText('All actions'))
+    await user.click(await screen.findByText('CREATE'))
+    await waitFor(() => expect(lastUrl).toContain('action=CREATE'))
+  })
+
+  it('filters by from and to date inputs', async () => {
+    let lastUrl = ''
+    server.use(
+      http.get('/service/rest/v1/audit', ({ request }) => {
+        lastUrl = request.url
+        return HttpResponse.json({ items: [], total: 0 })
+      }),
+    )
+    renderWithProviders(<AuditPage />)
+    await screen.findByText('No audit events')
+    const from = screen.getByTitle('From') as HTMLInputElement
+    const to = screen.getByTitle('To') as HTMLInputElement
+    fireEvent.change(from, { target: { value: '2026-01-01' } })
+    await waitFor(() => expect(lastUrl).toContain('from=2026-01-01'))
+    fireEvent.change(to, { target: { value: '2026-12-31' } })
+    await waitFor(() => expect(lastUrl).toContain('to=2026-12-31'))
+  })
+
   it('alerts when export fails', async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 500, statusText: 'err' })
     vi.stubGlobal('fetch', fetchMock)

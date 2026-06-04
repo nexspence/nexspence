@@ -418,4 +418,182 @@ describe('RepositoriesPage', () => {
     await screen.findByText('Repository settings')
     expect(screen.getByText('Routing Rule')).toBeInTheDocument()
   })
+
+  it('fills every wizard field for a hosted repo before creating', async () => {
+    const user = userEvent.setup()
+    let posted: Record<string, unknown> | null = null
+    server.use(
+      http.post('/service/rest/v1/repositories/:format/:type', async ({ request }) => {
+        posted = (await request.json()) as Record<string, unknown>
+        return HttpResponse.json(fixtures.repository(), { status: 201 })
+      }),
+    )
+    renderWithProviders(<RepositoriesPage />)
+    await screen.findByText('maven-hosted')
+    await user.click(screen.getByRole('button', { name: /Create Repository/ }))
+
+    // Step 1 — default maven2/hosted → Next
+    await screen.findByText('Step 1 of 3')
+    await user.click(screen.getByRole('button', { name: /Next/ }))
+
+    // Step 2 — name + description onChange handlers
+    await screen.findByText('Step 2 of 3')
+    await user.type(screen.getByPlaceholderText('my-repo'), 'full-maven')
+    await user.type(screen.getByPlaceholderText('Optional description'), 'a full repo')
+    await user.click(screen.getByRole('button', { name: /Next/ }))
+
+    // Step 3 — cleanup checkbox, blob store select, quota, anonymous toggle
+    await screen.findByText('Step 3 of 3')
+    const checks = screen.getAllByRole('checkbox')
+    // first checkboxes are cleanup policies; last is anonymous access
+    fireEvent.click(checks[0]) // toggle a cleanup policy
+    fireEvent.click(checks[checks.length - 1]) // toggle anonymous access
+    // change blob store via Select dropdown (default → big)
+    await user.click(screen.getByText('default (file)'))
+    await user.click(await screen.findByText('big (s3)'))
+    // set a quota within the s3 store limit
+    await user.type(screen.getByPlaceholderText('No limit'), '5')
+    await user.click(screen.getByRole('button', { name: /^Create$/ }))
+
+    await waitFor(() => expect(posted).toBeTruthy())
+    const body = posted as { name: string; description: string; allowAnonymous: boolean; quotaBytes: number; cleanupPolicyIds?: string[]; blobStoreId?: string }
+    expect(body.name).toBe('full-maven')
+    expect(body.description).toBe('a full repo')
+    expect(body.allowAnonymous).toBe(true)
+    expect(body.quotaBytes).toBeGreaterThan(0)
+    expect(body.blobStoreId).toBe('bs-2')
+    expect(body.cleanupPolicyIds?.length).toBeGreaterThan(0)
+  })
+
+  it('creates a group repo selecting members and a routing rule', async () => {
+    const user = userEvent.setup()
+    let posted: Record<string, unknown> | null = null
+    // Provide two maven2 hosted repos as member candidates for a maven2 group.
+    server.use(
+      http.get('/service/rest/v1/repositories', () =>
+        HttpResponse.json([
+          ...repoList,
+          fixtures.repository({ id: 'm1', name: 'maven-a', format: 'maven2', type: 'hosted' }),
+          fixtures.repository({ id: 'm2', name: 'maven-b', format: 'maven2', type: 'hosted' }),
+        ]),
+      ),
+      http.post('/service/rest/v1/repositories/:format/:type', async ({ request }) => {
+        posted = (await request.json()) as Record<string, unknown>
+        return HttpResponse.json(fixtures.repository(), { status: 201 })
+      }),
+    )
+    renderWithProviders(<RepositoriesPage />)
+    await screen.findByText('maven-hosted')
+    await user.click(screen.getByRole('button', { name: /Create Repository/ }))
+    await screen.findByText('Step 1 of 3')
+    // switch to group type
+    await user.click(screen.getByRole('button', { name: /Hosted — store/ }))
+    await user.click(await screen.findByText(/Group — combine/))
+    await user.click(screen.getByRole('button', { name: /Next/ }))
+
+    // Step 2 — name, pick a member checkbox, pick routing rule
+    await screen.findByText('Step 2 of 3')
+    await user.type(screen.getByPlaceholderText('my-repo'), 'maven-group')
+    // Member candidates live inside the wizard modal; scope to it to avoid
+    // clashing with the same repo name shown in the underlying list.
+    const modal = document.querySelector('.holo-wizard') as HTMLElement
+    const memberLabel = within(modal).getByText('maven-a').closest('label')!
+    fireEvent.click(memberLabel.querySelector('input')!)
+    // routing rule Select
+    await user.click(screen.getByText('None'))
+    await user.click(await screen.findByText(/block-rule/))
+    await user.click(screen.getByRole('button', { name: /Next/ }))
+
+    await screen.findByText('Step 3 of 3')
+    await user.click(screen.getByRole('button', { name: /^Create$/ }))
+
+    await waitFor(() => expect(posted).toBeTruthy())
+    const body = posted as { formatConfig?: { member_names: string[] }; routingRuleId?: string }
+    expect(body.formatConfig?.member_names).toContain('maven-a')
+    expect(body.routingRuleId).toBe('rr-1')
+  })
+
+  it('changes the proxy remote URL in the wizard', async () => {
+    const user = userEvent.setup()
+    let posted: Record<string, unknown> | null = null
+    server.use(
+      http.post('/service/rest/v1/repositories/:format/:type', async ({ request }) => {
+        posted = (await request.json()) as Record<string, unknown>
+        return HttpResponse.json(fixtures.repository(), { status: 201 })
+      }),
+    )
+    renderWithProviders(<RepositoriesPage />)
+    await screen.findByText('maven-hosted')
+    await user.click(screen.getByRole('button', { name: /Create Repository/ }))
+    await screen.findByText('Step 1 of 3')
+    await user.click(screen.getByRole('button', { name: /Hosted — store/ }))
+    await user.click(await screen.findByText(/Proxy — cache/))
+    await user.click(screen.getByRole('button', { name: /Next/ }))
+    await screen.findByText('Step 2 of 3')
+    await user.type(screen.getByPlaceholderText('my-repo'), 'maven-proxy')
+    const urlInput = screen.getByPlaceholderText('https://registry.example.com/')
+    await user.clear(urlInput)
+    await user.type(urlInput, 'https://my.mirror/maven')
+    await user.click(screen.getByRole('button', { name: /Next/ }))
+    await screen.findByText('Step 3 of 3')
+    await user.click(screen.getByRole('button', { name: /^Create$/ }))
+    await waitFor(() => expect(posted).toBeTruthy())
+    expect((posted as { proxyConfig?: { remote_url: string } }).proxyConfig?.remote_url).toBe('https://my.mirror/maven')
+  })
+
+  it('edits every field in the settings modal and toggles a cleanup policy', async () => {
+    const user = userEvent.setup()
+    let put: Record<string, unknown> | null = null
+    server.use(
+      http.put('/service/rest/v1/repositories/:format/:type/:name', async ({ request }) => {
+        put = (await request.json()) as Record<string, unknown>
+        return HttpResponse.json(fixtures.repository())
+      }),
+    )
+    renderWithProviders(<RepositoriesPage />)
+    await screen.findByText('maven-hosted')
+    fireEvent.click(screen.getAllByTitle('Settings')[0])
+    await screen.findByText('Repository settings')
+    // online + anonymous checkboxes
+    const checks = screen.getAllByRole('checkbox')
+    fireEvent.click(checks[0]) // online
+    fireEvent.click(checks[1]) // anonymous
+    // description
+    await user.type(screen.getByPlaceholderText('Optional'), ' updated')
+    // quota
+    const quota = screen.getByPlaceholderText('No limit')
+    await user.clear(quota)
+    await user.type(quota, '2')
+    // toggle a cleanup policy checkbox (togglePolicy)
+    const policyCheck = checks[checks.length - 1]
+    fireEvent.click(policyCheck)
+    await user.click(screen.getByRole('button', { name: /Save/ }))
+    await waitFor(() => expect(put).toBeTruthy())
+    expect((put as { quotaBytes?: number }).quotaBytes).toBeGreaterThan(0)
+  })
+
+  it('migrates content to a new blob store from the settings modal', async () => {
+    const user = userEvent.setup()
+    let started = false
+    server.use(
+      http.get('/api/v1/repositories/:name/blob-store-migration', () =>
+        new HttpResponse(null, { status: 404 }),
+      ),
+      http.post('/api/v1/repositories/:name/migrate-blob-store', () => {
+        started = true
+        return HttpResponse.json({ status: 'running', totalAssets: 10, doneAssets: 0, totalBytes: 100, doneBytes: 0 })
+      }),
+    )
+    renderWithProviders(<RepositoriesPage />)
+    await screen.findByText('maven-hosted')
+    fireEvent.click(screen.getAllByTitle('Settings')[0])
+    await screen.findByText('Repository settings')
+    // change blob store from default (bs-1) to big (bs-2) → storeChanged
+    await user.click(screen.getByText('default (file)'))
+    await user.click(await screen.findByText('big (s3)'))
+    const migrateBtn = await screen.findByRole('button', { name: 'Migrate Content' })
+    fireEvent.click(migrateBtn)
+    await waitFor(() => expect(started).toBe(true))
+    expect(await screen.findByText(/Migrating content…/)).toBeInTheDocument()
+  })
 })

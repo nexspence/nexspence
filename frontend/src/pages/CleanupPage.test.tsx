@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
-import { screen, waitFor, fireEvent } from '@testing-library/react'
+import { screen, waitFor, fireEvent, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import CleanupPage from './CleanupPage'
@@ -378,5 +378,87 @@ describe('CleanupPage', () => {
     await user.click(screen.getByText('/releases/v2/'))
     await user.click(screen.getByRole('button', { name: /Select/ }))
     await waitFor(() => expect(screen.queryByText(/Browse — maven-hosted/)).not.toBeInTheDocument())
+  })
+
+  it('toggles the enabled and dry-run checkboxes in the wizard step 3', async () => {
+    const user = userEvent.setup()
+    let posted: Record<string, unknown> | null = null
+    server.use(
+      http.post('/service/rest/v1/cleanup-policies', async ({ request }) => {
+        posted = (await request.json()) as Record<string, unknown>
+        return HttpResponse.json({ id: 'cp-new' }, { status: 201 })
+      }),
+    )
+    renderWithProviders(<CleanupPage />)
+    await screen.findByText('delete-old-snapshots')
+    await user.click(screen.getByRole('button', { name: /New Policy/ }))
+    await screen.findByText('Step 1 of 3')
+    await user.type(screen.getByPlaceholderText('e.g. delete-old-snapshots'), 'toggle-policy')
+    await user.click(screen.getByRole('button', { name: /Next/ }))
+    await screen.findByText('Step 2 of 3')
+    await user.click(screen.getByRole('button', { name: /Next/ }))
+    await screen.findByText('Step 3 of 3')
+    // toggle both checkboxes (Enabled, Dry run)
+    const checks = screen.getAllByRole('checkbox')
+    fireEvent.click(checks[0])
+    fireEvent.click(checks[1])
+    await user.click(screen.getByRole('button', { name: /Create Policy/ }))
+    await waitFor(() => expect(posted).toBeTruthy())
+  })
+
+  it('changes format, scope repository and toggles checkboxes in the edit modal', async () => {
+    const user = userEvent.setup()
+    let put: Record<string, unknown> | null = null
+    server.use(
+      http.get('/service/rest/v1/repositories', () =>
+        HttpResponse.json([
+          { id: 'r1', name: 'maven-hosted', format: 'maven2', type: 'hosted', online: true },
+          { id: 'r2', name: 'maven-two', format: 'maven2', type: 'hosted', online: true },
+        ]),
+      ),
+      http.put('/service/rest/v1/cleanup-policies/:id', async ({ request }) => {
+        put = (await request.json()) as Record<string, unknown>
+        return HttpResponse.json({ id: 'cp-1' })
+      }),
+    )
+    renderWithProviders(<CleanupPage />)
+    await screen.findByText('delete-old-snapshots')
+    fireEvent.click(screen.getAllByTitle('Edit')[0])
+    await screen.findByText('Edit Policy')
+    // toggle the two option checkboxes (Enabled, Dry run)
+    const checks = screen.getAllByRole('checkbox')
+    fireEvent.click(checks[0])
+    fireEvent.click(checks[1])
+    // change the scope repository Select (maven-hosted → maven-two), scoped to the modal
+    const modal = document.querySelector('.holo-modal') as HTMLElement
+    const repoTrigger = within(modal).getAllByText('maven-hosted')[0]
+    await user.click(repoTrigger)
+    await user.click(await screen.findByText('maven-two'))
+    await user.click(screen.getByRole('button', { name: /Save changes/ }))
+    await waitFor(() => expect(put).toBeTruthy())
+  })
+
+  it('filters and hovers paths in the path browser', async () => {
+    const user = userEvent.setup()
+    server.use(
+      http.get('/api/v1/browse/repositories/:name/path-tree', () =>
+        HttpResponse.json({ paths: ['/releases/v1/', '/releases/v2/', '/snapshots/'] }),
+      ),
+    )
+    renderWithProviders(<CleanupPage />)
+    await screen.findByText('delete-old-snapshots')
+    fireEvent.click(screen.getAllByTitle('Edit')[0])
+    await screen.findByText('Edit Policy')
+    await user.click(screen.getByRole('button', { name: 'Browse…' }))
+    await screen.findByText(/Browse — maven-hosted/)
+    // hover a path row (onMouseEnter/onMouseLeave)
+    const row = await screen.findByText('/releases/v1/')
+    fireEvent.mouseEnter(row)
+    fireEvent.mouseLeave(row)
+    // filter paths (onChange)
+    const filter = screen.getByPlaceholderText('Filter paths…')
+    fireEvent.change(filter, { target: { value: 'snapshots' } })
+    await waitFor(() => expect(screen.queryByText('/releases/v2/')).not.toBeInTheDocument())
+    expect(screen.getByText('/snapshots/')).toBeInTheDocument()
   })
 })

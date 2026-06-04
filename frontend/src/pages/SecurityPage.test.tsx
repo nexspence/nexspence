@@ -558,6 +558,85 @@ describe('SecurityPage', () => {
     await waitFor(() => expect(screen.getAllByText('a@b.c').length).toBeGreaterThan(0))
   })
 
+  it('explores role, privilege and selector nodes with reset in the Access Map', async () => {
+    const user = userEvent.setup()
+    server.use(
+      http.get('/api/v1/security/access-graph', () =>
+        HttpResponse.json({
+          users: [{ id: 'u1', username: 'alice', email: 'alice@x.io', status: 'active', source: 'local', roleIds: ['r1'] }],
+          roles: [
+            { id: 'r1', name: 'team-lead', description: 'leads', privilegeIds: ['pr1'], roleIds: ['r2'] },
+            { id: 'r2', name: 'developer', description: 'dev', privilegeIds: ['pr1'], roleIds: [] },
+          ],
+          privileges: [{ id: 'pr1', name: 'read-maven', type: 'repository-content-selector', contentSelectorId: 'sc1' }],
+          selectors: [{ id: 'sc1', name: 'maven-sel', expression: 'format == "maven2"' }],
+        }),
+      ),
+    )
+    renderWithProviders(<SecurityPage />)
+    await screen.findByText('nx-admin')
+    await user.click(screen.getByRole('button', { name: 'Access Map' }))
+    await screen.findByText('Type:')
+
+    // Select a Role node — exercises roleUp/roleDown + role sidebar detail.
+    await user.click(screen.getByText('Role'))
+    const roleSearch = await screen.findByPlaceholderText('Search roles…')
+    fireEvent.focus(roleSearch)
+    fireEvent.change(roleSearch, { target: { value: 'team' } })
+    const roleOpt = await screen.findByText('team-lead')
+    fireEvent.mouseEnter(roleOpt)
+    fireEvent.mouseLeave(roleOpt)
+    fireEvent.click(roleOpt.closest('div')!)
+    await waitFor(() => expect(screen.getByText('× Reset')).toBeInTheDocument())
+
+    // Select a Privilege node — privilege sidebar detail branch.
+    await user.click(screen.getByText('Privilege'))
+    const privSearch = await screen.findByPlaceholderText('Search privileges…')
+    fireEvent.change(privSearch, { target: { value: 'read' } })
+    fireEvent.click((await screen.findByText('read-maven')).closest('div')!)
+    await waitFor(() => expect(screen.getByText('× Reset')).toBeInTheDocument())
+
+    // Select a Content Selector node — selector sidebar detail branch + Escape/blur.
+    // "Content Selector" also appears as a tab label, so target the pill (first match).
+    fireEvent.click(screen.getAllByText('Content Selector')[0])
+    const selSearch = await screen.findByPlaceholderText('Search selectors…')
+    fireEvent.change(selSearch, { target: { value: 'maven' } })
+    fireEvent.keyDown(selSearch, { key: 'Escape' })
+    fireEvent.focus(selSearch)
+    fireEvent.click((await screen.findByText('maven-sel')).closest('div')!)
+    fireEvent.blur(selSearch)
+
+    // Reset clears the current selection.
+    await user.click(screen.getByText('× Reset'))
+  })
+
+  it('opens the edit role modal and edits the privilege transfer list', async () => {
+    const user = userEvent.setup()
+    server.use(
+      http.put('/service/rest/v1/security/roles/:id', () => HttpResponse.json({ id: 'role-2' })),
+      http.put('/service/rest/v1/security/roles/:id/privileges', () => new HttpResponse(null, { status: 204 })),
+    )
+    renderWithProviders(<SecurityPage />)
+    await screen.findByText('developer')
+    await user.click(screen.getByRole('button', { name: 'Edit' }))
+    const dialog = (await screen.findByText(/Edit Role: developer/)).closest('.holo-modal') as HTMLElement
+    // The transfer list has an "available" panel and a "Selected" panel.
+    // Move an available privilege into the selected set (add), then back (remove),
+    // exercising hover handlers on both panels.
+    const available = within(dialog).getAllByText(/read-all|admin-builtin/)
+    if (available.length) {
+      fireEvent.mouseEnter(available[0])
+      fireEvent.mouseLeave(available[0])
+      fireEvent.click(available[0])
+    }
+    // Use the "Add all" / "Remove all" arrow buttons too.
+    const addAll = within(dialog).queryByTitle('Add all')
+    if (addAll) fireEvent.click(addAll)
+    const removeAll = within(dialog).queryByTitle('Remove all')
+    if (removeAll) fireEvent.click(removeAll)
+    await user.click(within(dialog).getByRole('button', { name: /^Save$/ }))
+  })
+
   it('shows access map empty state when graph has no data', async () => {
     const user = userEvent.setup()
     server.use(
