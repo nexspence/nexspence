@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { screen, waitFor, fireEvent, within } from '@testing-library/react'
+import { screen, waitFor, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import AdminPage from './AdminPage'
@@ -99,7 +99,7 @@ describe('AdminPage — Blob Stores tab', () => {
     fireEvent.change(input, { target: { value: '20' } })
     fireEvent.click(screen.getByText('Save'))
     await waitFor(() => expect(put).toBeTruthy())
-    expect((put as { quotaBytes: number }).quotaBytes).toBe(20 * 1024 * 1024 * 1024)
+    expect((put! as { quotaBytes: number }).quotaBytes).toBe(20 * 1024 * 1024 * 1024)
   })
 
   it('cancels quota edit via Escape and X', async () => {

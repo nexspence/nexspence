@@ -47,7 +47,7 @@ describe('MultiSelect', () => {
 
   it('removes a chip via its X icon', async () => {
     const onChange = vi.fn()
-    const { container } = render(<MultiSelect options={opts} value={['a']} onChange={onChange} />)
+    render(<MultiSelect options={opts} value={['a']} onChange={onChange} />)
     // The X icon (lucide svg) inside the chip.
     const chip = screen.getByText('Alpha').closest('span')!
     const x = chip.querySelector('svg')!

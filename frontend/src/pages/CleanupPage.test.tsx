@@ -235,8 +235,8 @@ describe('CleanupPage', () => {
     await user.click(screen.getByRole('button', { name: /Create Policy/ }))
 
     await waitFor(() => expect(posted).toBeTruthy())
-    expect((posted as { name: string }).name).toBe('my-policy')
-    expect((posted as { retainNVersions: number }).retainNVersions).toBe(2)
+    expect((posted! as { name: string }).name).toBe('my-policy')
+    expect((posted! as { retainNVersions: number }).retainNVersions).toBe(2)
   })
 
   it('validates the required name in the wizard', async () => {
@@ -319,7 +319,7 @@ describe('CleanupPage', () => {
     await user.type(nameInput, 'renamed-policy')
     await user.click(screen.getByRole('button', { name: /Save changes/ }))
     await waitFor(() => expect(put).toBeTruthy())
-    expect((put as { name: string }).name).toBe('renamed-policy')
+    expect((put! as { name: string }).name).toBe('renamed-policy')
   })
 
   it('validates required name in the edit modal', async () => {

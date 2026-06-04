@@ -265,7 +265,7 @@ describe('RepositoriesPage', () => {
     await user.click(screen.getByRole('button', { name: /^Create$/ }))
 
     await waitFor(() => expect(posted).toBeTruthy())
-    expect((posted as { name: string }).name).toBe('new-maven')
+    expect((posted! as { name: string }).name).toBe('new-maven')
     expect(postedUrl).toContain('/maven2/hosted')
   })
 
@@ -310,7 +310,7 @@ describe('RepositoriesPage', () => {
     await user.click(screen.getByRole('button', { name: /^Create$/ }))
 
     await waitFor(() => expect(posted).toBeTruthy())
-    expect((posted as { proxyConfig?: { remote_url: string } }).proxyConfig?.remote_url).toContain('maven.org')
+    expect((posted! as { proxyConfig?: { remote_url: string } }).proxyConfig?.remote_url).toContain('maven.org')
   })
 
   it('errors when a group has no members selected', async () => {
@@ -380,7 +380,7 @@ describe('RepositoriesPage', () => {
     const form = document.querySelector('form') as HTMLFormElement
     fireEvent.click(within(form).getByRole('button', { name: /^Save$/ }))
     await waitFor(() => expect(put).toBeTruthy())
-    expect((put as { description: string }).description).toBe('updated desc')
+    expect((put! as { description: string }).description).toBe('updated desc')
   })
 
   it('shows an error when edit save fails', async () => {
@@ -456,7 +456,7 @@ describe('RepositoriesPage', () => {
     await user.click(screen.getByRole('button', { name: /^Create$/ }))
 
     await waitFor(() => expect(posted).toBeTruthy())
-    const body = posted as { name: string; description: string; allowAnonymous: boolean; quotaBytes: number; cleanupPolicyIds?: string[]; blobStoreId?: string }
+    const body = posted! as { name: string; description: string; allowAnonymous: boolean; quotaBytes: number; cleanupPolicyIds?: string[]; blobStoreId?: string }
     expect(body.name).toBe('full-maven')
     expect(body.description).toBe('a full repo')
     expect(body.allowAnonymous).toBe(true)
@@ -508,7 +508,7 @@ describe('RepositoriesPage', () => {
     await user.click(screen.getByRole('button', { name: /^Create$/ }))
 
     await waitFor(() => expect(posted).toBeTruthy())
-    const body = posted as { formatConfig?: { member_names: string[] }; routingRuleId?: string }
+    const body = posted! as { formatConfig?: { member_names: string[] }; routingRuleId?: string }
     expect(body.formatConfig?.member_names).toContain('maven-a')
     expect(body.routingRuleId).toBe('rr-1')
   })
@@ -538,7 +538,7 @@ describe('RepositoriesPage', () => {
     await screen.findByText('Step 3 of 3')
     await user.click(screen.getByRole('button', { name: /^Create$/ }))
     await waitFor(() => expect(posted).toBeTruthy())
-    expect((posted as { proxyConfig?: { remote_url: string } }).proxyConfig?.remote_url).toBe('https://my.mirror/maven')
+    expect((posted! as { proxyConfig?: { remote_url: string } }).proxyConfig?.remote_url).toBe('https://my.mirror/maven')
   })
 
   it('edits every field in the settings modal and toggles a cleanup policy', async () => {
@@ -569,7 +569,7 @@ describe('RepositoriesPage', () => {
     fireEvent.click(policyCheck)
     await user.click(screen.getByRole('button', { name: /Save/ }))
     await waitFor(() => expect(put).toBeTruthy())
-    expect((put as { quotaBytes?: number }).quotaBytes).toBeGreaterThan(0)
+    expect((put! as { quotaBytes?: number }).quotaBytes).toBeGreaterThan(0)
   })
 
   it('migrates content to a new blob store from the settings modal', async () => {

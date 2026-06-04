@@ -106,7 +106,7 @@ describe('UsersPage', () => {
     const submit = form.querySelector('button[type="submit"]') as HTMLButtonElement
     await user.click(submit)
     await waitFor(() => expect(posted).toBeTruthy())
-    expect((posted as { userId: string }).userId).toBe('charlie')
+    expect((posted! as { userId: string }).userId).toBe('charlie')
   })
 
   it('selects a status via the custom Select in the create modal', async () => {
@@ -135,7 +135,7 @@ describe('UsersPage', () => {
     await user.type(pwd, 'pw')
     await user.click(form.querySelector('button[type="submit"]') as HTMLButtonElement)
     await waitFor(() => expect(posted).toBeTruthy())
-    expect((posted as { status: string }).status).toBe('disabled')
+    expect((posted! as { status: string }).status).toBe('disabled')
   })
 
   it('shows an error when create user fails', async () => {
@@ -235,7 +235,7 @@ describe('UsersPage', () => {
     // Save
     await user.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(putBody).toBeTruthy())
-    expect((putBody as { roleIds: string[] }).roleIds).toContain('role-dev')
+    expect((putBody! as { roleIds: string[] }).roleIds).toContain('role-dev')
   })
 
   it('add-all and remove-all arrows in the assign-roles modal', async () => {
@@ -258,7 +258,7 @@ describe('UsersPage', () => {
 
     await user.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(putBody).toBeTruthy())
-    expect((putBody as { roleIds: string[] }).roleIds).toEqual([])
+    expect((putBody! as { roleIds: string[] }).roleIds).toEqual([])
   })
 
   it('shows an error when saving roles fails', async () => {
@@ -332,7 +332,7 @@ describe('UsersPage', () => {
     await user.type(screen.getByPlaceholderText('Description (optional)'), 'QA team')
     await user.click(screen.getByRole('button', { name: 'Create' }))
     await waitFor(() => expect(posted).toBeTruthy())
-    expect((posted as { name: string }).name).toBe('qa')
+    expect((posted! as { name: string }).name).toBe('qa')
   })
 
   it('validates required role name', async () => {

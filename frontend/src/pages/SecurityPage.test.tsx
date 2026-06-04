@@ -235,8 +235,8 @@ describe('SecurityPage', () => {
     await user.click(await screen.findByText('all-maven'))
     await user.click(within(dialog).getByRole('button', { name: /^Save$/ }))
     await waitFor(() => expect(posted).toBeTruthy())
-    expect((posted as { name: string }).name).toBe('my-priv')
-    expect((posted as { contentSelectorId: string }).contentSelectorId).toBe('cs-1')
+    expect((posted! as { name: string }).name).toBe('my-priv')
+    expect((posted! as { contentSelectorId: string }).contentSelectorId).toBe('cs-1')
   })
 
   it('filters privileges via search', async () => {
@@ -307,7 +307,7 @@ describe('SecurityPage', () => {
     expect(await within(dialog).findByText(/repository == "maven-hosted"/)).toBeInTheDocument()
     await user.click(within(dialog).getByRole('button', { name: /^Save$/ }))
     await waitFor(() => expect(posted).toBeTruthy())
-    expect((posted as { name: string }).name).toBe('my-cs')
+    expect((posted! as { name: string }).name).toBe('my-cs')
   })
 
   it('deletes a content selector after confirm', async () => {
@@ -460,7 +460,7 @@ describe('SecurityPage', () => {
     await user.type(screen.getByPlaceholderText('URL (https://...)'), 'https://example.com/hook')
     await user.click(screen.getByRole('button', { name: /^Create$/ }))
     await waitFor(() => expect(posted).toBeTruthy())
-    expect((posted as { name: string }).name).toBe('my-hook')
+    expect((posted! as { name: string }).name).toBe('my-hook')
   })
 
   it('tests a webhook', async () => {
