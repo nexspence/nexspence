@@ -152,6 +152,12 @@ func TestUserHandler_Create_OK_PersistsAndStripsPassword(t *testing.T) {
 
 func TestUserHandler_Create_AssignsRoles(t *testing.T) {
 	r, users, roles := mountUsers(t)
+	// Pre-seed the two roles so GetUserRoles can resolve them after assignment —
+	// this makes the round-trip assertion verify that Create actually called
+	// SetUserRoles, not just that the request struct carried the role list.
+	require.NoError(t, roles.Create(testContext(), &domain.Role{ID: "role-x", Name: "x"}))
+	require.NoError(t, roles.Create(testContext(), &domain.Role{ID: "role-y", Name: "y"}))
+
 	rec := do(t, r, http.MethodPost, "/service/rest/v1/security/users", map[string]any{
 		"userId":       "dave",
 		"emailAddress": "dave@test.com",
@@ -163,11 +169,16 @@ func TestUserHandler_Create_AssignsRoles(t *testing.T) {
 	stored, err := users.Get(testContext(), "dave")
 	require.NoError(t, err)
 	require.NotNil(t, stored)
-	// Roles were forwarded to the role repo for assignment (round-trip).
+
+	// Verify the assignment was persisted to the role repo by user ID (proves
+	// the service forwarded the roles to SetUserRoles).
 	assigned, err := roles.GetUserRoles(testContext(), stored.ID)
 	require.NoError(t, err)
-	_ = assigned // GetUserRoles returns roles that exist; assignment recorded by ID.
-	assert.Equal(t, []string{"role-x", "role-y"}, stored.Roles)
+	gotIDs := make([]string, len(assigned))
+	for i, a := range assigned {
+		gotIDs[i] = a.ID
+	}
+	assert.ElementsMatch(t, []string{"role-x", "role-y"}, gotIDs)
 }
 
 func TestUserHandler_Create_BadJSON_400(t *testing.T) {
