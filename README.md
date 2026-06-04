@@ -11,6 +11,7 @@
   ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16+-4169E1?style=flat-square&logo=postgresql&logoColor=white)
   ![Docker](https://img.shields.io/badge/Docker-ready-2496ED?style=flat-square&logo=docker&logoColor=white)
   ![License](https://img.shields.io/badge/License-AGPLv3-22c55e?style=flat-square)
+  ![Lint](https://img.shields.io/badge/lint-golangci--lint%20v2-22c55e?style=flat-square&logo=go&logoColor=white)
 
 </div>
 
@@ -18,7 +19,7 @@
 
 ## 🎬 Demo
 
-https://github.com/skensell201/nexspence-demo/raw/main/docs/assets/demo.mp4
+https://github.com/skensell201/nexspence/raw/main/docs/assets/demo.mp4
 
 > ▶️ If the video doesn't play inline, [open / download it here](docs/assets/demo.mp4).
 
@@ -34,24 +35,24 @@ Nexspence is a self-hosted artifact repository manager that supports **14 packag
 
 ```
                          ┌─────────────────────┐
-                         │   Load Balancer      │  (nginx / k8s Ingress / ALB)
+                         │   Load Balancer     │  (nginx / k8s Ingress / ALB)
                          └──────────┬──────────┘
                     ┌───────────────┴───────────────┐
                     ▼                               ▼
 ┌────────────┐  JWT/Basic  ┌──────────────────┐   ┌──────────────────┐
-│  Client    │ ──────────▶ │  Nexspence node 1 │   │  Nexspence node 2│  (HA)
-│ (curl/mvn/ │             │  Gin + Auth +     │   │  identical       │
-│  pip/npm…) │ ◀────────── │  Audit + RBAC     │   └────────┬─────────┘
-└────────────┘             └────────┬──────────┘            │
-                                    │                        │
-                    ┌───────────────▼────────────────────────▼──────┐
-                    │           Shared State                          │
-                    │  ┌──────────────┐  ┌─────────┐  ┌──────────┐ │
-                    │  │  PostgreSQL  │  │  Redis  │  │  S3/MinIO│ │
-                    │  │  (all data)  │  │  (locks │  │  (blobs) │ │
-                    │  └──────────────┘  │  cache) │  └──────────┘ │
-                    │                    └─────────┘                │
-                    └────────────────────────────────────────────────┘
+│  Client    │ ──────────▶ │  Nexspence node 1 │  │  Nexspence node 2│  (HA)
+│ (curl/mvn/ │             │  Gin + Auth +     │  │  identical       │
+│  pip/npm…) │ ◀────────── │  Audit + RBAC     │  └────────┬─────────┘
+└────────────┘             └────────┬──────────┘           │
+                                    │                      │
+                    ┌───────────────▼──────────────────────▼──────┐
+                    │           Shared State                      │
+                    │  ┌──────────────┐  ┌─────────┐  ┌──────────┐│
+                    │  │  PostgreSQL  │  │  Redis  │  │  S3/MinIO││
+                    │  │  (all data)  │  │  (locks │  │  (blobs) ││
+                    │  └──────────────┘  │  cache) │  └──────────┘│
+                    │                    └─────────┘              │
+                    └─────────────────────────────────────────────┘
 ```
 
 View the full site with interactive architecture diagram, install guide, and comparison: **[nexspence.com](https://nexspence.com)** →
