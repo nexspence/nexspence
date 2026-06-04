@@ -245,10 +245,14 @@ func (b *BlobStoreRepo) UpdateUsedBytes(_ context.Context, name string, delta in
 // ── ComponentRepo ─────────────────────────────────────────────
 
 type ComponentRepo struct {
-	mu         sync.Mutex
-	components map[string]*domain.Component
-	nextID     int
-	Err        error // when non-nil, ListByRepoNames/Get/Search/Delete/SetTags return it (500-branch seam)
+	mu              sync.Mutex
+	components      map[string]*domain.Component
+	nextID          int
+	Err             error // when non-nil, ListByRepoNames/Get/Search/Delete/SetTags return it (500-branch seam)
+	// DockerRowsByRepo maps repoName→browse rows; ListDockerBrowseRows returns the
+	// union of rows for the requested repo names (mirrors the SQL WHERE rep.name IN (...)).
+	DockerRowsByRepo map[string][]domain.DockerBrowseRow
+	DockerBrowseErr  error // when non-nil, ListDockerBrowseRows returns it (500-branch seam)
 }
 
 func NewComponentRepo() *ComponentRepo {
@@ -316,8 +320,17 @@ func (c *ComponentRepo) Search(_ context.Context, params domain.SearchParams) (*
 	return &domain.Page[domain.Component]{Items: items}, nil
 }
 
-func (c *ComponentRepo) ListDockerBrowseRows(_ context.Context, _ []string, _ int) ([]domain.DockerBrowseRow, error) {
-	return nil, nil
+func (c *ComponentRepo) ListDockerBrowseRows(_ context.Context, names []string, _ int) ([]domain.DockerBrowseRow, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.DockerBrowseErr != nil {
+		return nil, c.DockerBrowseErr
+	}
+	var out []domain.DockerBrowseRow
+	for _, n := range names {
+		out = append(out, c.DockerRowsByRepo[n]...)
+	}
+	return out, nil
 }
 
 func (c *ComponentRepo) Create(_ context.Context, comp *domain.Component) error {
@@ -389,6 +402,11 @@ type AssetRepo struct {
 	LastRetainN   int
 	MigrationRows []domain.MigrationAssetRow
 	Err           error // when non-nil, ListByComponentID/SearchAssets/SumSizeByRepo return it (500-branch seam)
+	// RawRowsByRepo maps repoName→raw browse assets; ListRawBrowseAssets returns the
+	// union for the requested repo names (mirrors the SQL WHERE rep.name IN (...)).
+	RawRowsByRepo map[string][]domain.RawBrowseAsset
+	RawBrowseErr  error // when non-nil, ListRawBrowseAssets returns it (500-branch seam)
+	BrowseErr     error // when non-nil, ListByRepoAndPath/ListPathsByRepo/ListRawAssetPaths return it (500-branch seam)
 }
 
 func NewAssetRepo() *AssetRepo {
@@ -535,6 +553,9 @@ func (a *AssetRepo) SumSizeByRepo(_ context.Context, repoName string) (int64, er
 func (a *AssetRepo) ListPathsByRepo(_ context.Context, repoName, q string) ([]string, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if a.BrowseErr != nil {
+		return nil, a.BrowseErr
+	}
 	seen := make(map[string]struct{})
 	for _, asset := range a.byID {
 		if asset.Repository != repoName {
@@ -565,6 +586,9 @@ func (a *AssetRepo) ListPathsByRepo(_ context.Context, repoName, q string) ([]st
 func (a *AssetRepo) ListByRepoAndPath(_ context.Context, repoName, pathPrefix string) ([]domain.Asset, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if a.BrowseErr != nil {
+		return nil, a.BrowseErr
+	}
 	var out []domain.Asset
 	for _, asset := range a.byID {
 		if asset.Repository == repoName && strings.HasPrefix(asset.Path, pathPrefix) {
@@ -574,8 +598,17 @@ func (a *AssetRepo) ListByRepoAndPath(_ context.Context, repoName, pathPrefix st
 	return out, nil
 }
 
-func (a *AssetRepo) ListRawBrowseAssets(_ context.Context, _ []string) ([]domain.RawBrowseAsset, error) {
-	return nil, nil
+func (a *AssetRepo) ListRawBrowseAssets(_ context.Context, names []string) ([]domain.RawBrowseAsset, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.RawBrowseErr != nil {
+		return nil, a.RawBrowseErr
+	}
+	var out []domain.RawBrowseAsset
+	for _, n := range names {
+		out = append(out, a.RawRowsByRepo[n]...)
+	}
+	return out, nil
 }
 
 func (a *AssetRepo) CountByBlobKey(_ context.Context, _, _ string) (int, error) {
@@ -585,6 +618,9 @@ func (a *AssetRepo) CountByBlobKey(_ context.Context, _, _ string) (int, error) 
 func (a *AssetRepo) ListRawAssetPaths(_ context.Context, repoName string) ([]string, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if a.BrowseErr != nil {
+		return nil, a.BrowseErr
+	}
 	seen := make(map[string]struct{})
 	for _, asset := range a.byID {
 		if asset.Repository == repoName {
