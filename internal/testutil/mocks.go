@@ -939,6 +939,9 @@ func (r *RoleRepo) Delete(_ context.Context, id string) error {
 func (r *RoleRepo) GetUserRoles(_ context.Context, userID string) ([]domain.Role, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.Err != nil {
+		return nil, r.Err
+	}
 	var out []domain.Role
 	for _, rid := range r.userRoles[userID] {
 		if role, ok := r.roles[rid]; ok {
@@ -1193,6 +1196,7 @@ type RoutingRuleRepo struct {
 	mu     sync.Mutex
 	rules  map[string]*domain.RoutingRule
 	nextID int
+	Err    error // when non-nil, all methods return this error
 }
 
 func NewRoutingRuleRepo() *RoutingRuleRepo {
@@ -1202,6 +1206,9 @@ func NewRoutingRuleRepo() *RoutingRuleRepo {
 func (r *RoutingRuleRepo) List(_ context.Context) ([]domain.RoutingRule, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.Err != nil {
+		return nil, r.Err
+	}
 	out := make([]domain.RoutingRule, 0, len(r.rules))
 	for _, v := range r.rules {
 		out = append(out, *v)
@@ -1211,11 +1218,17 @@ func (r *RoutingRuleRepo) List(_ context.Context) ([]domain.RoutingRule, error) 
 func (r *RoutingRuleRepo) Get(_ context.Context, id string) (*domain.RoutingRule, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.Err != nil {
+		return nil, r.Err
+	}
 	return r.rules[id], nil
 }
 func (r *RoutingRuleRepo) GetByName(_ context.Context, name string) (*domain.RoutingRule, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.Err != nil {
+		return nil, r.Err
+	}
 	for _, v := range r.rules {
 		if v.Name == name {
 			cp := *v
@@ -1227,6 +1240,9 @@ func (r *RoutingRuleRepo) GetByName(_ context.Context, name string) (*domain.Rou
 func (r *RoutingRuleRepo) Create(_ context.Context, rr *domain.RoutingRule) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.Err != nil {
+		return r.Err
+	}
 	r.nextID++
 	if rr.ID == "" {
 		rr.ID = fmt.Sprintf("rr-%d", r.nextID)
@@ -1238,6 +1254,9 @@ func (r *RoutingRuleRepo) Create(_ context.Context, rr *domain.RoutingRule) erro
 func (r *RoutingRuleRepo) Update(_ context.Context, rr *domain.RoutingRule) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.Err != nil {
+		return r.Err
+	}
 	cp := *rr
 	r.rules[rr.ID] = &cp
 	return nil
@@ -1245,6 +1264,9 @@ func (r *RoutingRuleRepo) Update(_ context.Context, rr *domain.RoutingRule) erro
 func (r *RoutingRuleRepo) Delete(_ context.Context, id string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.Err != nil {
+		return r.Err
+	}
 	delete(r.rules, id)
 	return nil
 }
@@ -1254,6 +1276,7 @@ func (r *RoutingRuleRepo) Delete(_ context.Context, id string) error {
 type PrivilegeRepo struct {
 	mu   sync.Mutex
 	data map[string]*domain.Privilege
+	Err  error // when non-nil, all methods return this error
 }
 
 func NewPrivilegeRepo(items ...*domain.Privilege) *PrivilegeRepo {
@@ -1267,6 +1290,9 @@ func NewPrivilegeRepo(items ...*domain.Privilege) *PrivilegeRepo {
 func (r *PrivilegeRepo) List(_ context.Context) ([]domain.Privilege, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.Err != nil {
+		return nil, r.Err
+	}
 	out := make([]domain.Privilege, 0, len(r.data))
 	for _, p := range r.data {
 		out = append(out, *p)
@@ -1277,6 +1303,9 @@ func (r *PrivilegeRepo) List(_ context.Context) ([]domain.Privilege, error) {
 func (r *PrivilegeRepo) Get(_ context.Context, id string) (*domain.Privilege, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.Err != nil {
+		return nil, r.Err
+	}
 	p, ok := r.data[id]
 	if !ok {
 		return nil, nil
@@ -1288,6 +1317,9 @@ func (r *PrivilegeRepo) Get(_ context.Context, id string) (*domain.Privilege, er
 func (r *PrivilegeRepo) GetByName(_ context.Context, name string) (*domain.Privilege, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.Err != nil {
+		return nil, r.Err
+	}
 	for _, p := range r.data {
 		if p.Name == name {
 			cp := *p
@@ -1300,6 +1332,9 @@ func (r *PrivilegeRepo) GetByName(_ context.Context, name string) (*domain.Privi
 func (r *PrivilegeRepo) Create(_ context.Context, p *domain.Privilege) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.Err != nil {
+		return r.Err
+	}
 	if p.ID == "" {
 		p.ID = fmt.Sprintf("priv-%d", len(r.data)+1)
 	}
@@ -1311,6 +1346,9 @@ func (r *PrivilegeRepo) Create(_ context.Context, p *domain.Privilege) error {
 func (r *PrivilegeRepo) Update(_ context.Context, p *domain.Privilege) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.Err != nil {
+		return r.Err
+	}
 	if _, ok := r.data[p.ID]; !ok {
 		return fmt.Errorf("privilege not found: %s", p.ID)
 	}
@@ -1322,15 +1360,28 @@ func (r *PrivilegeRepo) Update(_ context.Context, p *domain.Privilege) error {
 func (r *PrivilegeRepo) Delete(_ context.Context, id string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.Err != nil {
+		return r.Err
+	}
 	delete(r.data, id)
 	return nil
 }
 
 func (r *PrivilegeRepo) ListByRole(_ context.Context, _ string) ([]domain.Privilege, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.Err != nil {
+		return nil, r.Err
+	}
 	return []domain.Privilege{}, nil
 }
 
 func (r *PrivilegeRepo) PrivilegeRoleMap(_ context.Context) (map[string][]string, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.Err != nil {
+		return nil, r.Err
+	}
 	return map[string][]string{}, nil
 }
 
