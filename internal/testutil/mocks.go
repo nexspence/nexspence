@@ -154,6 +154,9 @@ func (r *RepoRepo) HasAnyAnonymousDocker(_ context.Context) (bool, error) {
 func (r *RepoRepo) DetachCleanupPolicyID(_ context.Context, policyID string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.Err != nil {
+		return r.Err
+	}
 	for _, v := range r.repos {
 		var next []string
 		for _, id := range v.CleanupPolicyIDs {
@@ -650,6 +653,7 @@ type CleanupPolicyRepo struct {
 	policies map[string]*domain.CleanupPolicy
 	nextID   int
 	Updates  []*domain.CleanupPolicy // records Update calls
+	Err      error                   // when set, List/Get/Create/Update/Delete return it (500-branch seam)
 }
 
 func NewCleanupPolicyRepo(policies ...*domain.CleanupPolicy) *CleanupPolicyRepo {
@@ -663,6 +667,9 @@ func NewCleanupPolicyRepo(policies ...*domain.CleanupPolicy) *CleanupPolicyRepo 
 func (r *CleanupPolicyRepo) List(_ context.Context) ([]domain.CleanupPolicy, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.Err != nil {
+		return nil, r.Err
+	}
 	out := make([]domain.CleanupPolicy, 0, len(r.policies))
 	for _, v := range r.policies {
 		out = append(out, *v)
@@ -672,11 +679,17 @@ func (r *CleanupPolicyRepo) List(_ context.Context) ([]domain.CleanupPolicy, err
 func (r *CleanupPolicyRepo) Get(_ context.Context, id string) (*domain.CleanupPolicy, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.Err != nil {
+		return nil, r.Err
+	}
 	return r.policies[id], nil
 }
 func (r *CleanupPolicyRepo) Create(_ context.Context, p *domain.CleanupPolicy) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.Err != nil {
+		return r.Err
+	}
 	r.nextID++
 	p.ID = fmt.Sprintf("policy-%d", r.nextID)
 	r.policies[p.ID] = p
@@ -685,6 +698,9 @@ func (r *CleanupPolicyRepo) Create(_ context.Context, p *domain.CleanupPolicy) e
 func (r *CleanupPolicyRepo) Update(_ context.Context, p *domain.CleanupPolicy) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.Err != nil {
+		return r.Err
+	}
 	r.policies[p.ID] = p
 	r.Updates = append(r.Updates, p)
 	return nil
@@ -692,6 +708,9 @@ func (r *CleanupPolicyRepo) Update(_ context.Context, p *domain.CleanupPolicy) e
 func (r *CleanupPolicyRepo) Delete(_ context.Context, id string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.Err != nil {
+		return r.Err
+	}
 	delete(r.policies, id)
 	return nil
 }
@@ -1627,6 +1646,10 @@ func (r *BlobStoreMigrationRepo) ListActive(_ context.Context) ([]domain.BlobSto
 type ScanResultRepo struct {
 	mu   sync.Mutex
 	rows []*domain.ScanResultRow
+	Err  error // when set, Aggregate/List return it (500-branch seam)
+	// VulnRows is returned by List (with len as total) when non-nil; lets tests assert
+	// the Vulnerabilities handler's success body without a live DB.
+	VulnRows []*domain.VulnRow
 }
 
 func NewScanResultRepo() *ScanResultRepo { return &ScanResultRepo{} }
@@ -1657,6 +1680,9 @@ func (r *ScanResultRepo) GetLatestByComponent(_ context.Context, componentID str
 func (r *ScanResultRepo) Aggregate(_ context.Context) (*domain.SecuritySummary, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.Err != nil {
+		return nil, r.Err
+	}
 	// latest scan per component
 	latest := map[string]*domain.ScanResultRow{}
 	for _, row := range r.rows {
@@ -1677,8 +1703,15 @@ func (r *ScanResultRepo) Aggregate(_ context.Context) (*domain.SecuritySummary, 
 	return s, nil
 }
 
-func (r *ScanResultRepo) List(_ context.Context, f domain.VulnFilter) ([]*domain.VulnRow, int, error) {
-	// minimal stub — returns empty; override per test if needed
+func (r *ScanResultRepo) List(_ context.Context, _ domain.VulnFilter) ([]*domain.VulnRow, int, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.Err != nil {
+		return nil, 0, r.Err
+	}
+	if r.VulnRows != nil {
+		return r.VulnRows, len(r.VulnRows), nil
+	}
 	return nil, 0, nil
 }
 
