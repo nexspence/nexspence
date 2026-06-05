@@ -20,6 +20,7 @@ type EventsHandler struct {
 	keepAlive time.Duration
 }
 
+// NewEventsHandler constructs an EventsHandler that streams from the given broker with a 15s heartbeat.
 func NewEventsHandler(broker *events.Broker) *EventsHandler {
 	return &EventsHandler{broker: broker, keepAlive: 15 * time.Second}
 }

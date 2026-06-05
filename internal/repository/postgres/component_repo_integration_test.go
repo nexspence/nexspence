@@ -4,10 +4,12 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
+	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/testutil/pgtest"
 )
 
@@ -204,8 +206,8 @@ func TestComponentRepo_Get_NotFoundReturnsNil(t *testing.T) {
 
 	const missing = "00000000-0000-0000-0000-000000000000"
 	got, err := repo.Get(ctx, missing)
-	if err != nil {
-		t.Fatalf("Get(missing): unexpected error: %v", err)
+	if !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("Get(missing): want ErrNotFound, got %v", err)
 	}
 	if got != nil {
 		t.Fatalf("Get(missing): expected nil, got %+v", got)
@@ -238,8 +240,8 @@ func TestComponentRepo_Delete_RemovesComponent(t *testing.T) {
 	}
 
 	got, err := repo.Get(ctx, c.ID)
-	if err != nil {
-		t.Fatalf("Get after Delete: %v", err)
+	if !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("Get after Delete: want ErrNotFound, got %v", err)
 	}
 	if got != nil {
 		t.Fatal("Get after Delete should return nil")
@@ -1322,8 +1324,8 @@ func TestComponentRepo_DeleteOrphans_RemovesComponentsWithNoAssets(t *testing.T)
 
 	// Orphan should be gone
 	gotOrphan, err := repo.Get(ctx, orphan.ID)
-	if err != nil {
-		t.Fatalf("Get orphan: %v", err)
+	if !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("Get orphan: want ErrNotFound, got %v", err)
 	}
 	if gotOrphan != nil {
 		t.Error("orphan component should have been deleted")

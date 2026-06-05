@@ -26,10 +26,14 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/formats/repoproxy"
 )
 
+// Handler serves the Debian APT repository protocol.
 type Handler struct{ deps formats.Deps }
 
+// New creates an APT format Handler with the given dependencies.
 func New(deps formats.Deps) *Handler { return &Handler{deps: deps} }
-func (h *Handler) Name() string      { return "apt" }
+
+// Name returns the format identifier.
+func (h *Handler) Name() string { return "apt" }
 
 func (h *Handler) ServeHTTP(c *gin.Context) {
 	p := normPath(c.Param("path"))
@@ -158,7 +162,7 @@ func (h *Handler) servePackagesIndex(c *gin.Context, repoName, p string) {
 	c.Data(http.StatusOK, "text/plain; charset=utf-8", data)
 }
 
-func (h *Handler) serveRelease(c *gin.Context, repoName, p string) {
+func (h *Handler) serveRelease(c *gin.Context, _, p string) {
 	// Parse distribution from path: /dists/:dist/Release
 	parts := strings.Split(strings.TrimPrefix(p, "/dists/"), "/")
 	dist := "stable"

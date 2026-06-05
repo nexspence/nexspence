@@ -1,11 +1,13 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
+	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/service"
 )
 
@@ -14,6 +16,7 @@ type WebhookHandler struct {
 	svc *service.WebhookService
 }
 
+// NewWebhookHandler constructs a WebhookHandler backed by the given webhook service.
 func NewWebhookHandler(svc *service.WebhookService) *WebhookHandler {
 	return &WebhookHandler{svc: svc}
 }
@@ -31,12 +34,12 @@ func (h *WebhookHandler) List(c *gin.Context) {
 // Get handles GET /api/v1/webhooks/:id
 func (h *WebhookHandler) Get(c *gin.Context) {
 	wh, err := h.svc.Get(c.Request.Context(), c.Param("id"))
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if errors.Is(err, repository.ErrNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "webhook not found"})
 		return
 	}
-	if wh == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "webhook not found"})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, wh)
@@ -85,7 +88,7 @@ func (h *WebhookHandler) Delete(c *gin.Context) {
 func (h *WebhookHandler) Test(c *gin.Context) {
 	res, err := h.svc.Test(c.Request.Context(), c.Param("id"))
 	if err != nil {
-		if err.Error() == "webhook \""+c.Param("id")+"\" not found" {
+		if errors.Is(err, repository.ErrNotFound) || err.Error() == "webhook \""+c.Param("id")+"\" not found" {
 			c.JSON(http.StatusNotFound, gin.H{"error": "webhook not found"})
 			return
 		}

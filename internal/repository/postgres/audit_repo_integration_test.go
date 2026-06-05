@@ -750,10 +750,10 @@ func TestAuditRepo_Write_FieldsRoundTrip(t *testing.T) {
 	if got.Username != "rt_user" {
 		t.Errorf("Username: got %q, want rt_user", got.Username)
 	}
-	// PostgreSQL returns INET as CIDR text (e.g. "192.168.1.100/32") — this is
-	// the actual behavior of remote_ip::text in the SELECT.
-	if got.RemoteIP != "192.168.1.100" && got.RemoteIP != "192.168.1.100/32" {
-		t.Errorf("RemoteIP: got %q, want 192.168.1.100 or 192.168.1.100/32", got.RemoteIP)
+	// remote_ip is read back via host() so the bare IP is returned, not the
+	// INET CIDR form ("192.168.1.100/32") that remote_ip::text would yield.
+	if got.RemoteIP != "192.168.1.100" {
+		t.Errorf("RemoteIP: got %q, want 192.168.1.100", got.RemoteIP)
 	}
 	if got.UserAgent != "test-agent/2.0" {
 		t.Errorf("UserAgent: got %q, want test-agent/2.0", got.UserAgent)

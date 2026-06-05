@@ -24,6 +24,7 @@ type AuthHandler struct {
 	log   logger.Logger
 }
 
+// NewAuthHandler constructs an AuthHandler backed by the given user service and logger.
 func NewAuthHandler(users *service.UserService, log logger.Logger) *AuthHandler {
 	return &AuthHandler{users: users, log: log}
 }

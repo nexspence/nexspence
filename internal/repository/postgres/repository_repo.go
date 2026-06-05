@@ -11,12 +11,14 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
+	"github.com/nexspence-oss/nexspence/internal/repository"
 )
 
 type repositoryRepo struct {
 	db *pgxpool.Pool
 }
 
+// NewRepositoryRepo returns a postgres-backed RepositoryRepo.
 func NewRepositoryRepo(db *pgxpool.Pool) *repositoryRepo {
 	return &repositoryRepo{db: db}
 }
@@ -65,7 +67,7 @@ func (r *repositoryRepo) Get(ctx context.Context, name string) (*domain.Reposito
 		FROM repositories WHERE name = $1`, name)
 	repo, err := scanRepository(row)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
+		return nil, repository.ErrNotFound
 	}
 	return repo, err
 }
@@ -78,7 +80,7 @@ func (r *repositoryRepo) GetByID(ctx context.Context, id string) (*domain.Reposi
 		FROM repositories WHERE id = $1`, id)
 	repo, err := scanRepository(row)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
+		return nil, repository.ErrNotFound
 	}
 	return repo, err
 }

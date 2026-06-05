@@ -15,6 +15,7 @@ type RoleHandler struct {
 	users repository.UserRepo
 }
 
+// NewRoleHandler constructs a RoleHandler from the role and user repositories.
 func NewRoleHandler(roles repository.RoleRepo, users repository.UserRepo) *RoleHandler {
 	return &RoleHandler{roles: roles, users: users}
 }

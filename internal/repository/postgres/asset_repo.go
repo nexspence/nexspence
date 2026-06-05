@@ -13,12 +13,14 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
+	"github.com/nexspence-oss/nexspence/internal/repository"
 )
 
 type assetRepo struct {
 	db *pgxpool.Pool
 }
 
+// NewAssetRepo returns a postgres-backed AssetRepo.
 func NewAssetRepo(db *pgxpool.Pool) *assetRepo {
 	return &assetRepo{db: db}
 }
@@ -71,7 +73,7 @@ func (r *assetRepo) Get(ctx context.Context, id string) (*domain.Asset, error) {
 	row := r.db.QueryRow(ctx, q, id)
 	a, err := scanAsset(row)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
+		return nil, repository.ErrNotFound
 	}
 	return a, err
 }
@@ -81,7 +83,7 @@ func (r *assetRepo) GetByPath(ctx context.Context, repoName, path string) (*doma
 	row := r.db.QueryRow(ctx, q, repoName, path)
 	a, err := scanAsset(row)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
+		return nil, repository.ErrNotFound
 	}
 	return a, err
 }

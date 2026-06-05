@@ -21,6 +21,7 @@ type WebhookService struct {
 	client *http.Client
 }
 
+// NewWebhookService constructs a service for managing and delivering webhooks.
 func NewWebhookService(repo repository.WebhookRepo) *WebhookService {
 	return &WebhookService{
 		repo:   repo,
@@ -28,6 +29,7 @@ func NewWebhookService(repo repository.WebhookRepo) *WebhookService {
 	}
 }
 
+// List returns all configured webhooks (never nil).
 func (s *WebhookService) List(ctx context.Context) ([]domain.Webhook, error) {
 	wh, err := s.repo.List(ctx)
 	if wh == nil {
@@ -36,10 +38,12 @@ func (s *WebhookService) List(ctx context.Context) ([]domain.Webhook, error) {
 	return wh, err
 }
 
+// Get returns the webhook with the given id.
 func (s *WebhookService) Get(ctx context.Context, id string) (*domain.Webhook, error) {
 	return s.repo.Get(ctx, id)
 }
 
+// Create validates the webhook (name, URL, at least one event) and persists it as active.
 func (s *WebhookService) Create(ctx context.Context, w *domain.Webhook) error {
 	if w.Name == "" {
 		return fmt.Errorf("%w: name is required", ErrInvalidInput)
@@ -54,6 +58,7 @@ func (s *WebhookService) Create(ctx context.Context, w *domain.Webhook) error {
 	return s.repo.Create(ctx, w)
 }
 
+// Update validates and persists changes to an existing webhook.
 func (s *WebhookService) Update(ctx context.Context, w *domain.Webhook) error {
 	if w.Name == "" {
 		return fmt.Errorf("%w: name is required", ErrInvalidInput)
@@ -67,6 +72,7 @@ func (s *WebhookService) Update(ctx context.Context, w *domain.Webhook) error {
 	return s.repo.Update(ctx, w)
 }
 
+// Delete removes the webhook with the given id.
 func (s *WebhookService) Delete(ctx context.Context, id string) error {
 	return s.repo.Delete(ctx, id)
 }

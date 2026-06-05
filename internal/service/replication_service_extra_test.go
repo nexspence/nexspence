@@ -2,6 +2,7 @@ package service_test
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -124,8 +125,8 @@ func TestReplicationExtra_GetRule_Found(t *testing.T) {
 func TestReplicationExtra_GetRule_NotFound(t *testing.T) {
 	svc, _ := newReplSvcExtra(t)
 	got, err := svc.GetRule(context.Background(), "no-such-id")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if !errors.Is(err, service.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
 	}
 	if got != nil {
 		t.Fatal("expected nil for unknown ID")

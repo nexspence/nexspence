@@ -4,11 +4,13 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
+	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/testutil/pgtest"
 )
 
@@ -294,8 +296,8 @@ func TestAssetRepo_Get_NotFoundReturnsNil(t *testing.T) {
 
 	const missing = "00000000-0000-0000-0000-000000000000"
 	got, err := repo.Get(ctx, missing)
-	if err != nil {
-		t.Fatalf("Get(missing): unexpected error: %v", err)
+	if !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("Get(missing): want ErrNotFound, got %v", err)
 	}
 	if got != nil {
 		t.Fatalf("Get(missing): expected nil, got %+v", got)
@@ -341,8 +343,8 @@ func TestAssetRepo_GetByPath_NotFoundReturnsNil(t *testing.T) {
 	repo := NewAssetRepo(pool)
 
 	got, err := repo.GetByPath(ctx, p.RepoName, "/nonexistent/path.bin")
-	if err != nil {
-		t.Fatalf("GetByPath(missing): unexpected error: %v", err)
+	if !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("GetByPath(missing): want ErrNotFound, got %v", err)
 	}
 	if got != nil {
 		t.Fatalf("GetByPath(missing): expected nil, got %+v", got)
@@ -364,8 +366,8 @@ func TestAssetRepo_GetByPath_WrongRepoReturnsNil(t *testing.T) {
 
 	// Query with a different (non-existent) repo name
 	got, err := repo.GetByPath(ctx, "wrong_repo_name", "/file.bin")
-	if err != nil {
-		t.Fatalf("GetByPath(wrong repo): unexpected error: %v", err)
+	if !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("GetByPath(wrong repo): want ErrNotFound, got %v", err)
 	}
 	if got != nil {
 		t.Fatalf("GetByPath(wrong repo): expected nil, got %+v", got)
@@ -523,8 +525,8 @@ func TestAssetRepo_Delete_RemovesAsset(t *testing.T) {
 	}
 
 	got, err := repo.Get(ctx, a.ID)
-	if err != nil {
-		t.Fatalf("Get after Delete: %v", err)
+	if !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("Get after Delete: want ErrNotFound, got %v", err)
 	}
 	if got != nil {
 		t.Fatal("Get after Delete should return nil")

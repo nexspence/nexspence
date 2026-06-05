@@ -18,12 +18,14 @@ type cleanupRunner interface {
 	PreviewPolicy(ctx context.Context, id string) (*domain.CleanupPreviewResult, error)
 }
 
+// CleanupHandler serves the cleanup-policy REST endpoints and triggers policy runs.
 type CleanupHandler struct {
 	policies repository.CleanupPolicyRepo
 	repos    repository.RepositoryRepo
 	runner   cleanupRunner
 }
 
+// NewCleanupHandler constructs a CleanupHandler from the policy/repository repos and the cleanup runner.
 func NewCleanupHandler(
 	policies repository.CleanupPolicyRepo,
 	repos repository.RepositoryRepo,

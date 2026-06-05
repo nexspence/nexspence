@@ -4,9 +4,11 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
+	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/testutil/pgtest"
 )
 
@@ -240,8 +242,8 @@ func TestRepositoryRepo_Get_NotFound_ReturnsNil(t *testing.T) {
 	repo := NewRepositoryRepo(pool)
 
 	got, err := repo.Get(ctx, "does_not_exist_rr_xyz")
-	if err != nil {
-		t.Fatalf("Get(missing): unexpected error: %v", err)
+	if !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("Get(missing): want ErrNotFound, got %v", err)
 	}
 	if got != nil {
 		t.Fatalf("Get(missing): expected nil, got %+v", got)
@@ -285,8 +287,8 @@ func TestRepositoryRepo_GetByID_NotFound_ReturnsNil(t *testing.T) {
 
 	const missing = "00000000-0000-0000-0000-000000000000"
 	got, err := repo.GetByID(ctx, missing)
-	if err != nil {
-		t.Fatalf("GetByID(missing): unexpected error: %v", err)
+	if !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("GetByID(missing): want ErrNotFound, got %v", err)
 	}
 	if got != nil {
 		t.Fatalf("GetByID(missing): expected nil, got %+v", got)
@@ -529,8 +531,8 @@ func TestRepositoryRepo_Delete_RemovesRepo(t *testing.T) {
 	}
 
 	got, err := repo.Get(ctx, r.Name)
-	if err != nil {
-		t.Fatalf("Get after Delete: %v", err)
+	if !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("Get after Delete: want ErrNotFound, got %v", err)
 	}
 	if got != nil {
 		t.Fatal("Get after Delete: expected nil, repo still exists")

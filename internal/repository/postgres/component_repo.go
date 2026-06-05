@@ -12,12 +12,14 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
+	"github.com/nexspence-oss/nexspence/internal/repository"
 )
 
 type componentRepo struct {
 	db *pgxpool.Pool
 }
 
+// NewComponentRepo returns a postgres-backed ComponentRepo.
 func NewComponentRepo(db *pgxpool.Pool) *componentRepo {
 	return &componentRepo{db: db}
 }
@@ -86,7 +88,7 @@ func (r *componentRepo) Get(ctx context.Context, id string) (*domain.Component, 
 		WHERE c.id = $1`, id)
 	c, err := scanComponent(row)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
+		return nil, repository.ErrNotFound
 	}
 	return c, err
 }

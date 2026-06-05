@@ -4,10 +4,12 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
+	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/testutil/pgtest"
 )
 
@@ -203,8 +205,8 @@ func TestPromotionRepo_GetRule_NotFound_ReturnsNilNil(t *testing.T) {
 	repo := NewPromotionRepo(pool)
 
 	got, err := repo.GetRule(ctx, promoZeroUUID)
-	if err != nil {
-		t.Fatalf("GetRule(missing): got err %v, want nil", err)
+	if !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("GetRule(missing): want ErrNotFound, got %v", err)
 	}
 	if got != nil {
 		t.Errorf("GetRule(missing): got %+v, want nil", got)
@@ -412,8 +414,8 @@ func TestPromotionRepo_UpdateRule_NonexistentIsNoOp(t *testing.T) {
 	}
 	// Nothing should have been inserted.
 	got, err := repo.GetRule(ctx, promoZeroUUID)
-	if err != nil {
-		t.Fatalf("GetRule: %v", err)
+	if !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("GetRule: want ErrNotFound, got %v", err)
 	}
 	if got != nil {
 		t.Errorf("GetRule(missing after no-op update): got %+v, want nil", got)
@@ -438,8 +440,8 @@ func TestPromotionRepo_DeleteRule_RemovesRow(t *testing.T) {
 		t.Fatalf("DeleteRule: %v", err)
 	}
 	got, err := repo.GetRule(ctx, rule.ID)
-	if err != nil {
-		t.Fatalf("GetRule after delete: %v", err)
+	if !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("GetRule after delete: want ErrNotFound, got %v", err)
 	}
 	if got != nil {
 		t.Errorf("GetRule after delete: got %+v, want nil", got)
@@ -555,8 +557,8 @@ func TestPromotionRepo_GetRequest_NotFound_ReturnsNilNil(t *testing.T) {
 	repo := NewPromotionRepo(pool)
 
 	got, err := repo.GetRequest(ctx, promoZeroUUID)
-	if err != nil {
-		t.Fatalf("GetRequest(missing): got err %v, want nil", err)
+	if !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("GetRequest(missing): want ErrNotFound, got %v", err)
 	}
 	if got != nil {
 		t.Errorf("GetRequest(missing): got %+v, want nil", got)
@@ -892,8 +894,8 @@ func TestPromotionRepo_UpdateRequestStatus_NonexistentIsNoOp(t *testing.T) {
 		t.Fatalf("UpdateRequestStatus(missing): got err %v, want nil", err)
 	}
 	got, err := repo.GetRequest(ctx, promoZeroUUID)
-	if err != nil {
-		t.Fatalf("GetRequest: %v", err)
+	if !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("GetRequest: want ErrNotFound, got %v", err)
 	}
 	if got != nil {
 		t.Errorf("GetRequest(missing): got %+v, want nil", got)

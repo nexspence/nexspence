@@ -33,6 +33,7 @@ type CleanupService struct {
 	defaultSchedule string
 }
 
+// NewCleanupService constructs a service that runs cleanup policies and schedules them via cron.
 func NewCleanupService(
 	policies repository.CleanupPolicyRepo,
 	repos repository.RepositoryRepo,

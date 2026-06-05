@@ -4,9 +4,11 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
+	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/testutil/pgtest"
 )
 
@@ -169,8 +171,8 @@ func TestBlobStoreMigrationRepo_Get_NotFound_ReturnsNilNil(t *testing.T) {
 	repo := NewBlobStoreMigrationRepo(pool)
 
 	got, err := repo.Get(ctx, "00000000-0000-0000-0000-000000000000")
-	if err != nil {
-		t.Fatalf("Get(missing): got err %v, want nil", err)
+	if !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("Get(missing): want ErrNotFound, got %v", err)
 	}
 	if got != nil {
 		t.Errorf("Get(missing): got %+v, want nil", got)
@@ -494,8 +496,8 @@ func TestBlobStoreMigrationRepo_GetActiveByRepo_NoneActiveReturnsNil(t *testing.
 	}
 
 	got, err := repo.GetActiveByRepo(ctx, repoName)
-	if err != nil {
-		t.Fatalf("GetActiveByRepo: %v", err)
+	if !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("GetActiveByRepo: want ErrNotFound, got %v", err)
 	}
 	if got != nil {
 		t.Errorf("GetActiveByRepo: got %+v, want nil (all finished)", got)
@@ -509,8 +511,8 @@ func TestBlobStoreMigrationRepo_GetActiveByRepo_UnknownRepoReturnsNil(t *testing
 	repo := NewBlobStoreMigrationRepo(pool)
 
 	got, err := repo.GetActiveByRepo(ctx, "does-not-exist")
-	if err != nil {
-		t.Fatalf("GetActiveByRepo: %v", err)
+	if !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("GetActiveByRepo: want ErrNotFound, got %v", err)
 	}
 	if got != nil {
 		t.Errorf("GetActiveByRepo(unknown): got %+v, want nil", got)
@@ -574,8 +576,8 @@ func TestBlobStoreMigrationRepo_GetLatestByRepo_UnknownRepoReturnsNil(t *testing
 	repo := NewBlobStoreMigrationRepo(pool)
 
 	got, err := repo.GetLatestByRepo(ctx, "no-such-repo")
-	if err != nil {
-		t.Fatalf("GetLatestByRepo: %v", err)
+	if !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("GetLatestByRepo: want ErrNotFound, got %v", err)
 	}
 	if got != nil {
 		t.Errorf("GetLatestByRepo(unknown): got %+v, want nil", got)

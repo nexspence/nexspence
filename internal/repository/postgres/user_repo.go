@@ -8,12 +8,14 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
+	"github.com/nexspence-oss/nexspence/internal/repository"
 )
 
 type userRepo struct {
 	db *pgxpool.Pool
 }
 
+// NewUserRepo returns a postgres-backed UserRepo.
 func NewUserRepo(db *pgxpool.Pool) *userRepo {
 	return &userRepo{db: db}
 }
@@ -55,7 +57,7 @@ func (r *userRepo) Get(ctx context.Context, username string) (*domain.User, erro
 	row := r.db.QueryRow(ctx, userSelect+" WHERE username=$1", username)
 	u, err := scanUser(row)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
+		return nil, repository.ErrNotFound
 	}
 	if err != nil {
 		return nil, err
@@ -69,7 +71,7 @@ func (r *userRepo) GetByID(ctx context.Context, id string) (*domain.User, error)
 	row := r.db.QueryRow(ctx, userSelect+" WHERE id=$1", id)
 	u, err := scanUser(row)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
+		return nil, repository.ErrNotFound
 	}
 	if err != nil {
 		return nil, err

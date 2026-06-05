@@ -10,6 +10,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+// Sentinel errors returned by token validation and password checks.
 var (
 	ErrInvalidToken = errors.New("invalid or expired token")
 	ErrBadPassword  = errors.New("incorrect password")
@@ -31,6 +32,7 @@ type Service struct {
 	bcryptCost int
 }
 
+// NewService creates an auth Service with the given JWT signing secret, token expiry in hours, and bcrypt cost.
 func NewService(secret string, expiryHrs, bcryptCost int) *Service {
 	return &Service{
 		secret:     []byte(secret),

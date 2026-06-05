@@ -6,12 +6,14 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
+	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/testutil/pgtest"
 )
 
@@ -92,8 +94,8 @@ func TestUserTokenRepo_Create_StoresHashNotRaw(t *testing.T) {
 
 	// Looking up by the raw value yields nothing — proves the raw is not stored.
 	rawLookup, err := repo.GetByHash(ctx, raw)
-	if err != nil {
-		t.Fatalf("GetByHash(raw): %v", err)
+	if !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("GetByHash(raw): want ErrNotFound, got %v", err)
 	}
 	if rawLookup != nil {
 		t.Errorf("GetByHash(raw): got %+v, want nil (raw token must not be persisted)", rawLookup)
@@ -237,8 +239,8 @@ func TestUserTokenRepo_Get_NotFound(t *testing.T) {
 	repo := NewUserTokenRepo(pool)
 
 	got, err := repo.Get(ctx, "00000000-0000-0000-0000-000000000000")
-	if err != nil {
-		t.Fatalf("Get(missing): %v", err)
+	if !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("Get(missing): want ErrNotFound, got %v", err)
 	}
 	if got != nil {
 		t.Errorf("Get(missing): got %+v, want nil", got)
@@ -252,8 +254,8 @@ func TestUserTokenRepo_GetByHash_NotFound(t *testing.T) {
 	repo := NewUserTokenRepo(pool)
 
 	got, err := repo.GetByHash(ctx, hashToken("nxs_does_not_exist"))
-	if err != nil {
-		t.Fatalf("GetByHash(missing): %v", err)
+	if !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("GetByHash(missing): want ErrNotFound, got %v", err)
 	}
 	if got != nil {
 		t.Errorf("GetByHash(missing): got %+v, want nil", got)
@@ -409,8 +411,8 @@ func TestUserTokenRepo_Delete_RemovesToken(t *testing.T) {
 	}
 
 	got, err := repo.Get(ctx, tok.ID)
-	if err != nil {
-		t.Fatalf("Get after Delete: %v", err)
+	if !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("Get after Delete: want ErrNotFound, got %v", err)
 	}
 	if got != nil {
 		t.Errorf("Get after Delete: got %+v, want nil", got)
@@ -506,8 +508,8 @@ func TestWebhookRepo_Get_NotFound(t *testing.T) {
 	repo := NewWebhookRepo(pool)
 
 	got, err := repo.Get(ctx, "00000000-0000-0000-0000-000000000000")
-	if err != nil {
-		t.Fatalf("Get(missing): %v", err)
+	if !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("Get(missing): want ErrNotFound, got %v", err)
 	}
 	if got != nil {
 		t.Errorf("Get(missing): got %+v, want nil", got)
@@ -722,8 +724,8 @@ func TestWebhookRepo_Delete_RemovesWebhook(t *testing.T) {
 	}
 
 	got, err := repo.Get(ctx, wh.ID)
-	if err != nil {
-		t.Fatalf("Get after Delete: %v", err)
+	if !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("Get after Delete: want ErrNotFound, got %v", err)
 	}
 	if got != nil {
 		t.Errorf("Get after Delete: got %+v, want nil", got)

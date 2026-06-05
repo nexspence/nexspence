@@ -15,6 +15,7 @@ type ContentSelectorHandler struct {
 	svc *service.ContentSelectorService
 }
 
+// NewContentSelectorHandler constructs a ContentSelectorHandler backed by the given content selector service.
 func NewContentSelectorHandler(svc *service.ContentSelectorService) *ContentSelectorHandler {
 	return &ContentSelectorHandler{svc: svc}
 }

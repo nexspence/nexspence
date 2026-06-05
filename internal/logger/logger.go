@@ -5,8 +5,10 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
+// Logger is the structured logger used across Nexspence, aliasing zap's sugared logger.
 type Logger = *zap.SugaredLogger
 
+// New builds a Logger at the given level ("debug", "info", ...) and format ("text" or "json").
 func New(level, format string) Logger {
 	lvl := zapcore.InfoLevel
 	_ = lvl.UnmarshalText([]byte(level))

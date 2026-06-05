@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"errors"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/repository"
@@ -15,10 +16,13 @@ func expandGroupMemberRepoNames(ctx context.Context, repos repository.Repository
 		return nil, nil
 	}
 	rep, err := repos.Get(ctx, name)
+	if errors.Is(err, repository.ErrNotFound) {
+		return []string{name}, nil
+	}
 	if err != nil {
 		return nil, err
 	}
-	if rep == nil || rep.Type != domain.TypeGroup {
+	if rep.Type != domain.TypeGroup {
 		return []string{name}, nil
 	}
 	return domain.GroupMemberNames(rep), nil

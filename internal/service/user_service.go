@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path"
 	"strings"
@@ -27,6 +28,7 @@ type UserService struct {
 	log     logger.Logger
 }
 
+// NewUserService constructs a service for managing users, their passwords, and roles.
 func NewUserService(
 	users repository.UserRepo,
 	roles repository.RoleRepo,
@@ -64,7 +66,7 @@ func (s *UserService) WithSAML(a auth.SAMLAuthenticator, cfg config.SAMLConfig) 
 // against the LDAP server; on success their local record is created/updated.
 func (s *UserService) Login(ctx context.Context, username, password string) (string, *domain.User, error) {
 	u, err := s.users.Get(ctx, username)
-	if err != nil {
+	if err != nil && !errors.Is(err, repository.ErrNotFound) {
 		return "", nil, err
 	}
 
@@ -75,7 +77,7 @@ func (s *UserService) Login(ctx context.Context, username, password string) (str
 		normalized := strings.ToLower(username)
 		if u == nil && normalized != username {
 			u, err = s.users.Get(ctx, normalized)
-			if err != nil {
+			if err != nil && !errors.Is(err, repository.ErrNotFound) {
 				return "", nil, err
 			}
 		}
@@ -208,10 +210,12 @@ func (s *UserService) ValidateToken(tokenStr string) (*auth.Claims, error) {
 	return s.auth.ValidateToken(tokenStr)
 }
 
+// List returns users, optionally filtered by source (local, ldap, oidc).
 func (s *UserService) List(ctx context.Context, source string) ([]domain.User, error) {
 	return s.users.List(ctx, source)
 }
 
+// Get returns the user with the given username, or ErrNotFound if none exists.
 func (s *UserService) Get(ctx context.Context, username string) (*domain.User, error) {
 	u, err := s.users.Get(ctx, username)
 	if err != nil {
@@ -223,6 +227,7 @@ func (s *UserService) Get(ctx context.Context, username string) (*domain.User, e
 	return u, nil
 }
 
+// GetByID returns the user with the given id, or ErrNotFound if none exists.
 func (s *UserService) GetByID(ctx context.Context, id string) (*domain.User, error) {
 	u, err := s.users.GetByID(ctx, id)
 	if err != nil {
@@ -234,13 +239,14 @@ func (s *UserService) GetByID(ctx context.Context, id string) (*domain.User, err
 	return u, nil
 }
 
+// Create persists a new user, hashing plainPassword (if given) and assigning roles.
 func (s *UserService) Create(ctx context.Context, u *domain.User, plainPassword string) error {
 	if u.Username == "" {
 		return fmt.Errorf("%w: username is required", ErrInvalidInput)
 	}
 
 	existing, err := s.users.Get(ctx, u.Username)
-	if err != nil {
+	if err != nil && !errors.Is(err, repository.ErrNotFound) {
 		return err
 	}
 	if existing != nil {
@@ -273,6 +279,7 @@ func (s *UserService) Create(ctx context.Context, u *domain.User, plainPassword 
 	return nil
 }
 
+// Update applies the non-empty fields of updates to the named user and persists it.
 func (s *UserService) Update(ctx context.Context, username string, updates *domain.User) (*domain.User, error) {
 	u, err := s.Get(ctx, username)
 	if err != nil {
@@ -298,6 +305,7 @@ func (s *UserService) Update(ctx context.Context, username string, updates *doma
 	return u, nil
 }
 
+// ChangePassword verifies the current password before setting a new one.
 func (s *UserService) ChangePassword(ctx context.Context, username, oldPassword, newPassword string) error {
 	u, err := s.Get(ctx, username)
 	if err != nil {
@@ -313,6 +321,7 @@ func (s *UserService) ChangePassword(ctx context.Context, username, oldPassword,
 	return s.users.UpdatePassword(ctx, username, hash)
 }
 
+// SetPassword overwrites a user's password without requiring the current one (admin reset).
 func (s *UserService) SetPassword(ctx context.Context, username, newPassword string) error {
 	_, err := s.Get(ctx, username)
 	if err != nil {
@@ -325,6 +334,7 @@ func (s *UserService) SetPassword(ctx context.Context, username, newPassword str
 	return s.users.UpdatePassword(ctx, username, hash)
 }
 
+// Delete removes the named user.
 func (s *UserService) Delete(ctx context.Context, username string) error {
 	_, err := s.Get(ctx, username)
 	if err != nil {
@@ -333,10 +343,12 @@ func (s *UserService) Delete(ctx context.Context, username string) error {
 	return s.users.Delete(ctx, username)
 }
 
+// GetUserRoles returns the roles assigned to the given user.
 func (s *UserService) GetUserRoles(ctx context.Context, userID string) ([]domain.Role, error) {
 	return s.roles.GetUserRoles(ctx, userID)
 }
 
+// SetUserRoles replaces the user's role assignments with the given role ids.
 func (s *UserService) SetUserRoles(ctx context.Context, userID string, roleIDs []string) error {
 	return s.roles.SetUserRoles(ctx, userID, roleIDs)
 }
@@ -354,7 +366,7 @@ func (s *UserService) LoginOIDC(ctx context.Context, claims *auth.OIDCClaims, ra
 	}
 
 	existing, err := s.users.Get(ctx, username)
-	if err != nil {
+	if err != nil && !errors.Is(err, repository.ErrNotFound) {
 		return "", nil, err
 	}
 	if existing != nil && existing.Source != domain.UserSourceOIDC {
@@ -527,7 +539,7 @@ func (s *UserService) LoginSAML(ctx context.Context, claims *auth.SAMLClaims) (s
 	}
 
 	existing, err := s.users.Get(ctx, username)
-	if err != nil {
+	if err != nil && !errors.Is(err, repository.ErrNotFound) {
 		return "", nil, err
 	}
 	if existing != nil && existing.Source != domain.UserSourceSAML {

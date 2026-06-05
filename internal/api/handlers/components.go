@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -22,6 +23,7 @@ type ComponentHandler struct {
 	baseURL    string
 }
 
+// NewComponentHandler constructs a ComponentHandler from the component/asset/repository repos and base URL.
 func NewComponentHandler(components repository.ComponentRepo, assets repository.AssetRepo, repos repository.RepositoryRepo, baseURL string) *ComponentHandler {
 	return &ComponentHandler{components: components, assets: assets, repos: repos, baseURL: baseURL}
 }
@@ -113,12 +115,12 @@ func (h *ComponentHandler) List(c *gin.Context) {
 func (h *ComponentHandler) Get(c *gin.Context) {
 	id := c.Param("id")
 	comp, err := h.components.Get(c.Request.Context(), id)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if errors.Is(err, repository.ErrNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "component not found"})
 		return
 	}
-	if comp == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "component not found"})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	assets, err := h.assets.ListByComponentID(c.Request.Context(), id)
@@ -332,12 +334,12 @@ func (h *ComponentHandler) enrichComponent(_ *gin.Context, comp *domain.Componen
 func (h *ComponentHandler) GetQuota(c *gin.Context) {
 	name := c.Param("name")
 	repo, err := h.repos.Get(c.Request.Context(), name)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if errors.Is(err, repository.ErrNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "repository not found"})
 		return
 	}
-	if repo == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "repository not found"})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 

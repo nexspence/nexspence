@@ -1,11 +1,13 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
+	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/service"
 )
 
@@ -14,6 +16,7 @@ type RoutingRuleHandler struct {
 	svc *service.RoutingRuleService
 }
 
+// NewRoutingRuleHandler constructs a RoutingRuleHandler backed by the given routing rule service.
 func NewRoutingRuleHandler(svc *service.RoutingRuleService) *RoutingRuleHandler {
 	return &RoutingRuleHandler{svc: svc}
 }
@@ -34,12 +37,12 @@ func (h *RoutingRuleHandler) List(c *gin.Context) {
 // Get handles GET /service/rest/v1/routing-rules/:id
 func (h *RoutingRuleHandler) Get(c *gin.Context) {
 	r, err := h.svc.Get(c.Request.Context(), c.Param("id"))
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if errors.Is(err, repository.ErrNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "routing rule not found"})
 		return
 	}
-	if r == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "routing rule not found"})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, r)

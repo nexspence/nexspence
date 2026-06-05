@@ -67,10 +67,10 @@ func TestRepositoryService_Delete_Success(t *testing.T) {
 	if err := svc.Delete(context.Background(), "to-delete"); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
-	// Verify the repo is gone
+	// Verify the repo is gone (repo layer now reports not-found via ErrNotFound)
 	got, err := repoRepo.Get(context.Background(), "to-delete")
-	if err != nil {
-		t.Fatalf("Get after delete: %v", err)
+	if !errors.Is(err, service.ErrNotFound) {
+		t.Fatalf("Get after delete: expected ErrNotFound, got %v", err)
 	}
 	if got != nil {
 		t.Error("expected repo to be deleted, still exists")

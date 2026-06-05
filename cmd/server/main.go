@@ -45,7 +45,7 @@ func cmdServe() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "serve",
 		Short: "Start the Nexspence HTTP server",
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, err := config.Load(cfgPath)
 			if err != nil {
 				return err
@@ -192,7 +192,7 @@ func cmdMigrate() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "migrate",
 		Short: "Run database migrations",
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, _ []string) error {
 			cfg, err := config.Load(cfgPath)
 			if err != nil {
 				return err
@@ -314,7 +314,7 @@ func findRoleByName(ctx context.Context, repo interface {
 			return &r, nil
 		}
 	}
-	return nil, nil
+	return nil, nil //nolint:nilnil // bootstrap-only lookup; nil result signals "no such role" to the caller (no error condition)
 }
 
 // Version is injected at build time via -ldflags

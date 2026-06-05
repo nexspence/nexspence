@@ -21,9 +21,11 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/formats"
 	"github.com/nexspence-oss/nexspence/internal/formats/base"
+	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/storage"
 )
 
+// UpstreamClient is the shared HTTP client used to fetch artifacts from upstream remotes on cache miss.
 var UpstreamClient = &http.Client{
 	Transport: &http.Transport{
 		MaxIdleConns:        128,
@@ -144,7 +146,7 @@ func ServeGET(c *gin.Context, d formats.Deps, repo *domain.Repository, repoRelat
 	}
 
 	asset, err := d.Assets.GetByPath(ctx, repo.Name, repoRelativePath)
-	if err != nil {
+	if err != nil && !errors.Is(err, repository.ErrNotFound) {
 		return fmt.Errorf("repoproxy: asset lookup: %w", err)
 	}
 	if asset != nil {

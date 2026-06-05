@@ -40,15 +40,18 @@ type SystemHandler struct {
 	blobStores repository.BlobStoreRepo
 }
 
+// NewSystemHandler constructs a SystemHandler from the config, DB pool, and optional LDAP/OIDC authenticators.
 func NewSystemHandler(cfg *config.Config, pool *pgxpool.Pool, ldap auth.LDAPAuthenticator, oidc auth.OIDCAuthenticator) *SystemHandler {
 	return &SystemHandler{cfg: cfg, pool: pool, ldap: ldap, oidc: oidc}
 }
 
+// WithBlobStores wires the blob store repo so service status can probe configured stores; returns the handler for chaining.
 func (h *SystemHandler) WithBlobStores(r repository.BlobStoreRepo) *SystemHandler {
 	h.blobStores = r
 	return h
 }
 
+// WithSAML wires the SAML authenticator so it appears in service status; returns the handler for chaining.
 func (h *SystemHandler) WithSAML(s auth.SAMLAuthenticator) *SystemHandler {
 	h.saml = s
 	return h
@@ -180,7 +183,7 @@ func (h *SystemHandler) checkPostgres(ctx context.Context) ServiceStatus {
 	return ServiceStatus{Name: "PostgreSQL", Status: "ok", LatencyMs: lat, Detail: detail, CheckedAt: now}
 }
 
-func (h *SystemHandler) checkStorage(ctx context.Context) ServiceStatus {
+func (h *SystemHandler) checkStorage(_ context.Context) ServiceStatus {
 	now := time.Now().UTC().Format(time.RFC3339)
 	if h.cfg.Storage.DefaultType == "s3" {
 		s3 := h.cfg.Storage.S3

@@ -10,10 +10,12 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/repository"
 )
 
+// MigrationHandler serves the Nexus-migration job REST endpoints.
 type MigrationHandler struct {
 	repo repository.MigrationRepo
 }
 
+// NewMigrationHandler constructs a MigrationHandler backed by the given migration repository.
 func NewMigrationHandler(repo repository.MigrationRepo) *MigrationHandler {
 	return &MigrationHandler{repo: repo}
 }
@@ -69,6 +71,7 @@ func toJobResp(j domain.MigrationJob) migrationJobResp {
 	return r
 }
 
+// ListJobs handles GET /api/v1/migration/jobs — returns all migration jobs.
 func (h *MigrationHandler) ListJobs(c *gin.Context) {
 	jobs, err := h.repo.List(c.Request.Context())
 	if err != nil {
@@ -82,6 +85,7 @@ func (h *MigrationHandler) ListJobs(c *gin.Context) {
 	c.JSON(http.StatusOK, out)
 }
 
+// GetJob handles GET /api/v1/migration/jobs/:id — returns a single migration job.
 func (h *MigrationHandler) GetJob(c *gin.Context) {
 	job, err := h.repo.Get(c.Request.Context(), c.Param("id"))
 	if err != nil {
@@ -119,6 +123,7 @@ func boolDefault(b *bool, def bool) bool {
 	return *b
 }
 
+// CreateJob handles POST /api/v1/migration/jobs — creates a pending migration job.
 func (h *MigrationHandler) CreateJob(c *gin.Context) {
 	var req createJobReq
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -143,14 +148,17 @@ func (h *MigrationHandler) CreateJob(c *gin.Context) {
 	c.JSON(http.StatusCreated, toJobResp(*job))
 }
 
+// PauseJob handles the pause action, setting the job status to paused.
 func (h *MigrationHandler) PauseJob(c *gin.Context) {
 	h.setStatus(c, domain.MigrationPaused)
 }
 
+// ResumeJob handles the resume action, setting the job status back to running.
 func (h *MigrationHandler) ResumeJob(c *gin.Context) {
 	h.setStatus(c, domain.MigrationRunning)
 }
 
+// DeleteJob handles DELETE /api/v1/migration/jobs/:id — removes a migration job.
 func (h *MigrationHandler) DeleteJob(c *gin.Context) {
 	if err := h.repo.Delete(c.Request.Context(), c.Param("id")); err != nil {
 		if strings.Contains(err.Error(), "not found") {

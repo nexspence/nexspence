@@ -14,10 +14,12 @@ import (
 	pgaudit "github.com/nexspence-oss/nexspence/internal/repository/postgres"
 )
 
+// AuditHandler serves the audit-event REST endpoints (list and NDJSON export).
 type AuditHandler struct {
 	repo repository.AuditRepo
 }
 
+// NewAuditHandler constructs an AuditHandler backed by the given audit repository.
 func NewAuditHandler(repo repository.AuditRepo) *AuditHandler {
 	return &AuditHandler{repo: repo}
 }

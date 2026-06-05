@@ -17,10 +17,14 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/formats/repoproxy"
 )
 
+// Handler serves the raw file store protocol (arbitrary paths).
 type Handler struct{ deps formats.Deps }
 
+// New creates a raw format Handler with the given dependencies.
 func New(deps formats.Deps) *Handler { return &Handler{deps: deps} }
-func (h *Handler) Name() string      { return "raw" }
+
+// Name returns the format identifier.
+func (h *Handler) Name() string { return "raw" }
 
 func (h *Handler) ServeHTTP(c *gin.Context) {
 	repoName := c.Param("repoName")

@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/viper"
 )
 
+// Config is the root application configuration loaded from file and env overrides.
 type Config struct {
 	HTTP      HTTPConfig      `mapstructure:"http"`
 	Database  DatabaseConfig  `mapstructure:"database"`
@@ -28,6 +29,7 @@ type Config struct {
 	Redis     RedisConfig     `mapstructure:"redis"`
 }
 
+// BootstrapConfig holds the admin account that is created/synced on every startup.
 type BootstrapConfig struct {
 	AdminUsername  string `mapstructure:"admin_username"`
 	AdminPassword  string `mapstructure:"admin_password"`
@@ -35,6 +37,7 @@ type BootstrapConfig struct {
 	AdminFirstName string `mapstructure:"admin_first_name"`
 }
 
+// HTTPConfig configures the HTTP server (listen address, timeouts, body limit, TLS).
 type HTTPConfig struct {
 	Addr            string    `mapstructure:"addr"`
 	ReadTimeoutSec  int       `mapstructure:"read_timeout_sec"`
@@ -44,12 +47,14 @@ type HTTPConfig struct {
 	BaseURL         string    `mapstructure:"base_url"`
 }
 
+// TLSConfig holds the optional server certificate and key for HTTPS.
 type TLSConfig struct {
 	Enabled  bool   `mapstructure:"enabled"`
 	CertFile string `mapstructure:"cert_file"`
 	KeyFile  string `mapstructure:"key_file"`
 }
 
+// DatabaseConfig holds the PostgreSQL DSN and connection pool settings.
 type DatabaseConfig struct {
 	DSN        string `mapstructure:"dsn"`
 	MaxConns   int    `mapstructure:"max_conns"`
@@ -57,6 +62,7 @@ type DatabaseConfig struct {
 	MaxIdleSec int    `mapstructure:"max_idle_sec"`
 }
 
+// StorageConfig selects the default blob store backend and its local/S3 settings.
 type StorageConfig struct {
 	// Default blob store type: "local" or "s3"
 	DefaultType string      `mapstructure:"default_type"`
@@ -64,10 +70,12 @@ type StorageConfig struct {
 	S3          S3Config    `mapstructure:"s3"`
 }
 
+// LocalConfig holds the base path for the local filesystem blob store.
 type LocalConfig struct {
 	BasePath string `mapstructure:"base_path"`
 }
 
+// S3Config holds credentials and endpoint settings for the S3-compatible blob store.
 type S3Config struct {
 	Bucket          string `mapstructure:"bucket"`
 	Region          string `mapstructure:"region"`
@@ -77,6 +85,7 @@ type S3Config struct {
 	ForcePathStyle  bool   `mapstructure:"force_path_style"`
 }
 
+// AuthConfig holds JWT, bcrypt, anonymous-access, and token-expiry settings.
 type AuthConfig struct {
 	JWTSecret         string `mapstructure:"jwt_secret"`
 	JWTExpiryHours    int    `mapstructure:"jwt_expiry_hours"`
@@ -86,6 +95,7 @@ type AuthConfig struct {
 	TokenMaxDays      int    `mapstructure:"token_max_days"`
 }
 
+// LogConfig configures the structured logger level and output format.
 type LogConfig struct {
 	Level  string `mapstructure:"level"`  // debug, info, warn, error
 	Format string `mapstructure:"format"` // json, text
@@ -116,6 +126,7 @@ type LDAPConfig struct {
 	RoleMappings map[string]string `mapstructure:"role_mappings"`
 }
 
+// LDAPUserAttrMap maps LDAP attribute names to user profile fields.
 type LDAPUserAttrMap struct {
 	Email     string `mapstructure:"email"`
 	FirstName string `mapstructure:"first_name"`
@@ -244,16 +255,19 @@ func ValidateSAML(c SAMLConfig) error {
 	return nil
 }
 
+// SearchConfig configures the built-in PostgreSQL full-text search.
 type SearchConfig struct {
 	// Full-text search is built into PostgreSQL — no external deps
 	// MinQueryLen is the minimum characters before trigram search kicks in
 	MinQueryLen int `mapstructure:"min_query_len"`
 }
 
+// CleanupConfig holds the default cron schedule for cleanup policies.
 type CleanupConfig struct {
 	DefaultSchedule string `mapstructure:"default_schedule"`
 }
 
+// AuditConfig controls audit-log retention, soft cap, and partition rotation.
 type AuditConfig struct {
 	RetentionDays    int           `mapstructure:"retention_days"`
 	SoftCap          int64         `mapstructure:"soft_cap"`
@@ -261,15 +275,18 @@ type AuditConfig struct {
 	LookaheadMonths  int           `mapstructure:"lookahead_months"`
 }
 
+// DockerConfig holds Docker-specific settings such as the subdomain connector.
 type DockerConfig struct {
 	SubdomainConnector SubdomainConnectorConfig `mapstructure:"subdomain_connector"`
 }
 
+// SubdomainConnectorConfig configures per-repository Docker subdomain routing.
 type SubdomainConnectorConfig struct {
 	Enabled    bool   `mapstructure:"enabled"`
 	BaseDomain string `mapstructure:"base_domain"`
 }
 
+// RedisConfig holds optional Redis connection settings.
 type RedisConfig struct {
 	Enabled  bool   `mapstructure:"enabled"`
 	Addr     string `mapstructure:"addr"`
@@ -277,6 +294,8 @@ type RedisConfig struct {
 	DB       int    `mapstructure:"db"`
 }
 
+// Load reads configuration from the given file path, applies defaults and
+// NEXSPENCE_* env overrides, validates required fields, and returns the Config.
 func Load(path string) (*Config, error) {
 	v := viper.New()
 

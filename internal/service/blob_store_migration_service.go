@@ -27,6 +27,7 @@ type BlobStoreMigrationService struct {
 	cancels map[string]context.CancelFunc
 }
 
+// NewBlobStoreMigrationService constructs a service that migrates assets between blob stores.
 func NewBlobStoreMigrationService(
 	migrations repository.BlobStoreMigrationRepo,
 	assets repository.AssetRepo,
@@ -53,20 +54,20 @@ func (s *BlobStoreMigrationService) WithLocker(l distlock.Locker) *BlobStoreMigr
 // Start validates inputs, creates a migration record, and launches the background goroutine.
 func (s *BlobStoreMigrationService) Start(ctx context.Context, repoName, targetStoreID string) (*domain.BlobStoreMigration, error) {
 	repo, err := s.repos.Get(ctx, repoName)
+	if errors.Is(err, repository.ErrNotFound) {
+		return nil, fmt.Errorf("repository %q not found", repoName)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("get repo: %w", err)
 	}
-	if repo == nil {
-		return nil, fmt.Errorf("repository %q not found", repoName)
-	}
 
 	// Validate target store exists.
-	targetStore, err := s.blobs.GetByID(ctx, targetStoreID)
+	_, err = s.blobs.GetByID(ctx, targetStoreID)
+	if errors.Is(err, repository.ErrNotFound) {
+		return nil, fmt.Errorf("target blob store not found")
+	}
 	if err != nil {
 		return nil, fmt.Errorf("get target store: %w", err)
-	}
-	if targetStore == nil {
-		return nil, fmt.Errorf("target blob store not found")
 	}
 
 	// Validate: not the same as current.
@@ -76,7 +77,7 @@ func (s *BlobStoreMigrationService) Start(ctx context.Context, repoName, targetS
 
 	// Enforce single active migration per repo.
 	active, err := s.migrations.GetActiveByRepo(ctx, repoName)
-	if err != nil {
+	if err != nil && !errors.Is(err, repository.ErrNotFound) {
 		return nil, err
 	}
 	if active != nil {
@@ -121,7 +122,7 @@ func (s *BlobStoreMigrationService) Start(ctx context.Context, repoName, targetS
 }
 
 // Cancel signals the running migration goroutine to stop.
-func (s *BlobStoreMigrationService) Cancel(ctx context.Context, migrationID string) error {
+func (s *BlobStoreMigrationService) Cancel(_ context.Context, migrationID string) error {
 	s.mu.Lock()
 	cancel, ok := s.cancels[migrationID]
 	s.mu.Unlock()

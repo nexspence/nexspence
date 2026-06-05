@@ -73,7 +73,11 @@ func (r *RepoRepo) Get(_ context.Context, name string) (*domain.Repository, erro
 	if r.Err != nil {
 		return nil, r.Err
 	}
-	return r.repos[name], nil
+	v, ok := r.repos[name]
+	if !ok {
+		return nil, repository.ErrNotFound
+	}
+	return v, nil
 }
 func (r *RepoRepo) GetByID(_ context.Context, id string) (*domain.Repository, error) {
 	r.mu.Lock()
@@ -83,7 +87,7 @@ func (r *RepoRepo) GetByID(_ context.Context, id string) (*domain.Repository, er
 			return v, nil
 		}
 	}
-	return nil, nil
+	return nil, repository.ErrNotFound
 }
 func (r *RepoRepo) Create(_ context.Context, repo *domain.Repository) error {
 	r.mu.Lock()
@@ -203,7 +207,11 @@ func (b *BlobStoreRepo) List(_ context.Context) ([]domain.BlobStore, error) {
 func (b *BlobStoreRepo) Get(_ context.Context, name string) (*domain.BlobStore, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return b.stores[name], nil
+	v, ok := b.stores[name]
+	if !ok {
+		return nil, repository.ErrNotFound
+	}
+	return v, nil
 }
 
 func (b *BlobStoreRepo) GetByID(_ context.Context, id string) (*domain.BlobStore, error) {
@@ -215,7 +223,7 @@ func (b *BlobStoreRepo) GetByID(_ context.Context, id string) (*domain.BlobStore
 			return &cp, nil
 		}
 	}
-	return nil, nil
+	return nil, repository.ErrNotFound
 }
 
 func (b *BlobStoreRepo) Create(_ context.Context, s *domain.BlobStore) error {
@@ -296,7 +304,11 @@ func (c *ComponentRepo) Get(_ context.Context, id string) (*domain.Component, er
 	if c.Err != nil {
 		return nil, c.Err
 	}
-	return c.components[id], nil
+	v, ok := c.components[id]
+	if !ok {
+		return nil, repository.ErrNotFound
+	}
+	return v, nil
 }
 func (c *ComponentRepo) Search(_ context.Context, params domain.SearchParams) (*domain.Page[domain.Component], error) {
 	c.mu.Lock()
@@ -431,12 +443,20 @@ func (a *AssetRepo) List(_ context.Context, _ string, _, _ int) (*domain.Page[do
 func (a *AssetRepo) Get(_ context.Context, id string) (*domain.Asset, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	return a.byID[id], nil
+	v, ok := a.byID[id]
+	if !ok {
+		return nil, repository.ErrNotFound
+	}
+	return v, nil
 }
 func (a *AssetRepo) GetByPath(_ context.Context, repoName, path string) (*domain.Asset, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	return a.assets[repoName+":"+path], nil
+	v, ok := a.assets[repoName+":"+path]
+	if !ok {
+		return nil, repository.ErrNotFound
+	}
+	return v, nil
 }
 func (a *AssetRepo) SearchAssets(_ context.Context, params domain.SearchParams) (*domain.Page[domain.Asset], error) {
 	a.mu.Lock()
@@ -638,7 +658,7 @@ func (a *AssetRepo) ListRawAssetPaths(_ context.Context, repoName string) ([]str
 	return out, nil
 }
 
-func (a *AssetRepo) ListForBlobStoreMigration(_ context.Context, repoName, targetStoreID string) ([]domain.MigrationAssetRow, error) {
+func (a *AssetRepo) ListForBlobStoreMigration(_ context.Context, _, _ string) ([]domain.MigrationAssetRow, error) {
 	return a.MigrationRows, nil
 }
 
@@ -940,7 +960,11 @@ func (r *UserRepo) Get(_ context.Context, username string) (*domain.User, error)
 	if r.Err != nil {
 		return nil, r.Err
 	}
-	return r.users[username], nil
+	v, ok := r.users[username]
+	if !ok {
+		return nil, repository.ErrNotFound
+	}
+	return v, nil
 }
 func (r *UserRepo) GetByID(_ context.Context, id string) (*domain.User, error) {
 	r.mu.Lock()
@@ -948,7 +972,11 @@ func (r *UserRepo) GetByID(_ context.Context, id string) (*domain.User, error) {
 	if r.Err != nil {
 		return nil, r.Err
 	}
-	return r.byID[id], nil
+	v, ok := r.byID[id]
+	if !ok {
+		return nil, repository.ErrNotFound
+	}
+	return v, nil
 }
 func (r *UserRepo) Create(_ context.Context, u *domain.User) error {
 	r.mu.Lock()
@@ -1050,7 +1078,11 @@ func (r *RoleRepo) List(_ context.Context) ([]domain.Role, error) {
 func (r *RoleRepo) Get(_ context.Context, id string) (*domain.Role, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.roles[id], nil
+	v, ok := r.roles[id]
+	if !ok {
+		return nil, repository.ErrNotFound
+	}
+	return v, nil
 }
 func (r *RoleRepo) Create(_ context.Context, role *domain.Role) error {
 	r.mu.Lock()
@@ -1107,7 +1139,7 @@ func (r *RoleRepo) SetUserRoles(_ context.Context, userID string, roleIDs []stri
 	return nil
 }
 
-func (r *RoleRepo) SetPrivileges(_ context.Context, roleID string, privilegeIDs []string) error {
+func (r *RoleRepo) SetPrivileges(_ context.Context, _ string, _ []string) error {
 	if r.SetPrivilegesErr != nil {
 		return r.SetPrivilegesErr
 	}
@@ -1117,7 +1149,7 @@ func (r *RoleRepo) SetPrivileges(_ context.Context, roleID string, privilegeIDs 
 	return nil
 }
 
-func (r *RoleRepo) ListPrivilegeIDsByRole(_ context.Context, roleID string) ([]string, error) {
+func (r *RoleRepo) ListPrivilegeIDsByRole(_ context.Context, _ string) ([]string, error) {
 	return []string{}, nil
 }
 
@@ -1151,7 +1183,11 @@ func (r *ContentSelectorRepo) List(_ context.Context) ([]domain.ContentSelector,
 func (r *ContentSelectorRepo) Get(_ context.Context, id string) (*domain.ContentSelector, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.selectors[id], nil
+	v, ok := r.selectors[id]
+	if !ok {
+		return nil, repository.ErrNotFound
+	}
+	return v, nil
 }
 func (r *ContentSelectorRepo) GetByName(_ context.Context, name string) (*domain.ContentSelector, error) {
 	r.mu.Lock()
@@ -1162,7 +1198,7 @@ func (r *ContentSelectorRepo) GetByName(_ context.Context, name string) (*domain
 			return &cp, nil
 		}
 	}
-	return nil, nil
+	return nil, repository.ErrNotFound
 }
 func (r *ContentSelectorRepo) Create(_ context.Context, s *domain.ContentSelector) error {
 	r.mu.Lock()
@@ -1240,12 +1276,20 @@ func (r *UserTokenRepo) ListByUser(_ context.Context, userID string) ([]domain.U
 func (r *UserTokenRepo) Get(_ context.Context, id string) (*domain.UserToken, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.tokens[id], nil
+	v, ok := r.tokens[id]
+	if !ok {
+		return nil, repository.ErrNotFound
+	}
+	return v, nil
 }
 func (r *UserTokenRepo) GetByHash(_ context.Context, hash string) (*domain.UserToken, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.byHash[hash], nil
+	v, ok := r.byHash[hash]
+	if !ok {
+		return nil, repository.ErrNotFound
+	}
+	return v, nil
 }
 func (r *UserTokenRepo) Create(_ context.Context, t *domain.UserToken) error {
 	r.mu.Lock()
@@ -1296,7 +1340,11 @@ func (r *WebhookRepo) List(_ context.Context) ([]domain.Webhook, error) {
 func (r *WebhookRepo) Get(_ context.Context, id string) (*domain.Webhook, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.webhooks[id], nil
+	v, ok := r.webhooks[id]
+	if !ok {
+		return nil, repository.ErrNotFound
+	}
+	return v, nil
 }
 func (r *WebhookRepo) ListByEvent(_ context.Context, event domain.WebhookEvent) ([]domain.Webhook, error) {
 	r.mu.Lock()
@@ -1368,7 +1416,11 @@ func (r *RoutingRuleRepo) Get(_ context.Context, id string) (*domain.RoutingRule
 	if r.Err != nil {
 		return nil, r.Err
 	}
-	return r.rules[id], nil
+	v, ok := r.rules[id]
+	if !ok {
+		return nil, repository.ErrNotFound
+	}
+	return v, nil
 }
 func (r *RoutingRuleRepo) GetByName(_ context.Context, name string) (*domain.RoutingRule, error) {
 	r.mu.Lock()
@@ -1382,7 +1434,7 @@ func (r *RoutingRuleRepo) GetByName(_ context.Context, name string) (*domain.Rou
 			return &cp, nil
 		}
 	}
-	return nil, nil
+	return nil, repository.ErrNotFound
 }
 func (r *RoutingRuleRepo) Create(_ context.Context, rr *domain.RoutingRule) error {
 	r.mu.Lock()
@@ -1455,7 +1507,7 @@ func (r *PrivilegeRepo) Get(_ context.Context, id string) (*domain.Privilege, er
 	}
 	p, ok := r.data[id]
 	if !ok {
-		return nil, nil
+		return nil, repository.ErrNotFound
 	}
 	cp := *p
 	return &cp, nil
@@ -1473,7 +1525,7 @@ func (r *PrivilegeRepo) GetByName(_ context.Context, name string) (*domain.Privi
 			return &cp, nil
 		}
 	}
-	return nil, nil
+	return nil, repository.ErrNotFound
 }
 
 func (r *PrivilegeRepo) Create(_ context.Context, p *domain.Privilege) error {
@@ -1563,7 +1615,7 @@ func (r *BlobStoreMigrationRepo) Get(_ context.Context, id string) (*domain.Blob
 	defer r.mu.Unlock()
 	m := r.migrations[id]
 	if m == nil {
-		return nil, nil
+		return nil, repository.ErrNotFound
 	}
 	cp := *m
 	return &cp, nil
@@ -1578,7 +1630,7 @@ func (r *BlobStoreMigrationRepo) GetActiveByRepo(_ context.Context, repoName str
 			return &cp, nil
 		}
 	}
-	return nil, nil
+	return nil, repository.ErrNotFound
 }
 
 func (r *BlobStoreMigrationRepo) GetLatestByRepo(_ context.Context, repoName string) (*domain.BlobStoreMigration, error) {
@@ -1593,7 +1645,7 @@ func (r *BlobStoreMigrationRepo) GetLatestByRepo(_ context.Context, repoName str
 		}
 	}
 	if latest == nil {
-		return nil, nil
+		return nil, repository.ErrNotFound
 	}
 	cp := *latest
 	return &cp, nil
@@ -1684,6 +1736,9 @@ func (r *ScanResultRepo) GetLatestByComponent(_ context.Context, componentID str
 			}
 		}
 	}
+	if latest == nil {
+		return nil, repository.ErrNotFound
+	}
 	return latest, nil
 }
 
@@ -1761,7 +1816,7 @@ func (r *ReplicationRepo) GetRule(_ context.Context, id string) (*domain.Replica
 	defer r.mu.Unlock()
 	v, ok := r.rules[id]
 	if !ok {
-		return nil, nil
+		return nil, repository.ErrNotFound
 	}
 	cp := *v
 	return &cp, nil
@@ -1863,7 +1918,7 @@ func (r *PromotionRepo) GetRule(_ context.Context, id string) (*domain.Promotion
 		cp := *v
 		return &cp, nil
 	}
-	return nil, nil
+	return nil, repository.ErrNotFound
 }
 
 func (r *PromotionRepo) ListRulesByFromRepo(_ context.Context, fromRepo string) ([]domain.PromotionRule, error) {
@@ -1926,7 +1981,7 @@ func (r *PromotionRepo) GetRequest(_ context.Context, id string) (*domain.Promot
 		cp := *v
 		return &cp, nil
 	}
-	return nil, nil
+	return nil, repository.ErrNotFound
 }
 
 func (r *PromotionRepo) ListRequests(_ context.Context, status string) ([]domain.PromotionRequest, error) {

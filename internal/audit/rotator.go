@@ -17,6 +17,7 @@ type Rotator struct {
 	now   func() time.Time // injectable for tests; defaults to time.Now in NewRotator
 }
 
+// NewRotator creates a Rotator that manages audit_events partitions per cfg.
 func NewRotator(store PartitionStore, cfg config.AuditConfig, log logger.Logger) *Rotator {
 	return &Rotator{store: store, cfg: cfg, log: log, now: time.Now}
 }

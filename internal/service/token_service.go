@@ -25,6 +25,7 @@ type TokenService struct {
 	users  repository.UserRepo
 }
 
+// NewTokenService constructs a service that issues and validates nxs_ API tokens.
 func NewTokenService(tokens repository.UserTokenRepo, users repository.UserRepo) *TokenService {
 	return &TokenService{tokens: tokens, users: users}
 }

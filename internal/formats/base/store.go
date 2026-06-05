@@ -211,11 +211,11 @@ func RegisterStoredBlob(ctx context.Context, d formats.Deps, repo *domain.Reposi
 func FetchArtifact(ctx context.Context, d formats.Deps, repoName, filePath string,
 ) (io.ReadCloser, *domain.Asset, error) {
 	asset, err := d.Assets.GetByPath(ctx, repoName, filePath)
+	if errors.Is(err, repository.ErrNotFound) {
+		return nil, nil, fmt.Errorf("not found: %s/%s", repoName, filePath)
+	}
 	if err != nil {
 		return nil, nil, err
-	}
-	if asset == nil {
-		return nil, nil, fmt.Errorf("not found: %s/%s", repoName, filePath)
 	}
 
 	var fetchStore storage.BlobStore
@@ -241,11 +241,11 @@ func FetchArtifact(ctx context.Context, d formats.Deps, repoName, filePath strin
 // DeleteArtifact removes a blob from storage and DB.
 func DeleteArtifact(ctx context.Context, d formats.Deps, repoName, filePath string) error {
 	asset, err := d.Assets.GetByPath(ctx, repoName, filePath)
+	if errors.Is(err, repository.ErrNotFound) {
+		return nil // idempotent
+	}
 	if err != nil {
 		return err
-	}
-	if asset == nil {
-		return nil // idempotent
 	}
 	var delStore storage.BlobStore
 	if asset.BlobStoreID != "" {
@@ -360,11 +360,11 @@ func resolveBlobStoreObj(ctx context.Context, d formats.Deps, repo *domain.Repos
 		}
 	}
 	bs, err := d.Blobs.Get(ctx, "default")
+	if errors.Is(err, repository.ErrNotFound) {
+		return nil, fmt.Errorf("default blob store not found")
+	}
 	if err != nil {
 		return nil, fmt.Errorf("blob store: %w", err)
-	}
-	if bs == nil {
-		return nil, fmt.Errorf("default blob store not found")
 	}
 	return bs, nil
 }

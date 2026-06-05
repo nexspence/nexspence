@@ -13,8 +13,10 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/repository"
 )
 
+// AuditRepo is a postgres-backed implementation of repository.AuditRepo.
 type AuditRepo struct{ pool *pgxpool.Pool }
 
+// NewAuditRepo returns a postgres-backed AuditRepo.
 func NewAuditRepo(pool *pgxpool.Pool) *AuditRepo {
 	return &AuditRepo{pool: pool}
 }
@@ -80,6 +82,8 @@ func buildWhere(q repository.AuditQuery) (string, []any) {
 	return "WHERE " + strings.Join(parts, " AND "), args
 }
 
+// List returns a page of audit events matching q (newest first) plus the total
+// match count. The page size is clamped to [1, 1000].
 func (r *AuditRepo) List(ctx context.Context, q repository.AuditQuery) ([]domain.AuditEvent, int, error) {
 	if q.Limit <= 0 {
 		q.Limit = 100
@@ -99,7 +103,7 @@ func (r *AuditRepo) List(ctx context.Context, q repository.AuditQuery) ([]domain
 	sql := fmt.Sprintf(`
 		SELECT id, event_time,
 		       user_id::text, username,
-		       COALESCE(remote_ip::text,''), COALESCE(user_agent,''),
+		       COALESCE(host(remote_ip),''), COALESCE(user_agent,''),
 		       domain, action,
 		       COALESCE(entity_type,''), COALESCE(entity_id,''), COALESCE(entity_name,''),
 		       context, result
@@ -125,12 +129,14 @@ func (r *AuditRepo) List(ctx context.Context, q repository.AuditQuery) ([]domain
 	return out, total, rows.Err()
 }
 
+// Stream invokes fn for each audit event matching q, returning
+// ErrStreamCapExceeded if the result would exceed streamRowCap rows.
 func (r *AuditRepo) Stream(ctx context.Context, q repository.AuditQuery, fn func(domain.AuditEvent) error) error {
 	where, args := buildWhere(q)
 	sql := `
 		SELECT id, event_time,
 		       user_id::text, username,
-		       COALESCE(remote_ip::text,''), COALESCE(user_agent,''),
+		       COALESCE(host(remote_ip),''), COALESCE(user_agent,''),
 		       domain, action,
 		       COALESCE(entity_type,''), COALESCE(entity_id,''), COALESCE(entity_name,''),
 		       context, result

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -25,20 +26,24 @@ type BlobStoreHandler struct {
 	registry  *storage.Registry
 }
 
+// NewBlobStoreHandler constructs a BlobStoreHandler backed by the given blob store repository.
 func NewBlobStoreHandler(repo repository.BlobStoreRepo) *BlobStoreHandler {
 	return &BlobStoreHandler{repo: repo}
 }
 
+// WithGC wires the blob GC service used to release unreferenced blobs; returns the handler for chaining.
 func (h *BlobStoreHandler) WithGC(svc *service.BlobGCService) *BlobStoreHandler {
 	h.gcSvc = svc
 	return h
 }
 
+// WithBlobStore wires the physical blob store used for connection tests; returns the handler for chaining.
 func (h *BlobStoreHandler) WithBlobStore(bs storage.BlobStore) *BlobStoreHandler {
 	h.blobStore = bs
 	return h
 }
 
+// WithRegistry wires the blob store registry used to resolve per-store backends; returns the handler for chaining.
 func (h *BlobStoreHandler) WithRegistry(r *storage.Registry) *BlobStoreHandler {
 	h.registry = r
 	return h
@@ -68,12 +73,12 @@ func (h *BlobStoreHandler) List(c *gin.Context) {
 func (h *BlobStoreHandler) Get(c *gin.Context) {
 	name := c.Param("name")
 	bs, err := h.repo.Get(c.Request.Context(), name)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if errors.Is(err, repository.ErrNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "blob store not found"})
 		return
 	}
-	if bs == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "blob store not found"})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, bs)
@@ -190,12 +195,12 @@ func (h *BlobStoreHandler) Update(c *gin.Context) {
 	name := c.Param("name")
 
 	existing, err := h.repo.Get(c.Request.Context(), name)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if errors.Is(err, repository.ErrNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "blob store not found"})
 		return
 	}
-	if existing == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "blob store not found"})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -349,12 +354,12 @@ func (h *BlobStoreHandler) Usage(c *gin.Context) {
 	ctx := c.Request.Context()
 
 	bs, err := h.repo.Get(ctx, name)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if errors.Is(err, repository.ErrNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "blob store not found"})
 		return
 	}
-	if bs == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "blob store not found"})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 

@@ -16,6 +16,7 @@ type AccessGraphHandler struct {
 	selectors repository.ContentSelectorRepo
 }
 
+// NewAccessGraphHandler constructs an AccessGraphHandler from the RBAC repositories.
 func NewAccessGraphHandler(
 	users repository.UserRepo,
 	roles repository.RoleRepo,
@@ -27,6 +28,7 @@ func NewAccessGraphHandler(
 
 // Response types — exported so tests can decode directly.
 
+// GraphUser is a user node in the access-graph response, listing its role IDs.
 type GraphUser struct {
 	ID       string   `json:"id"`
 	Username string   `json:"username"`
@@ -36,6 +38,7 @@ type GraphUser struct {
 	RoleIDs  []string `json:"roleIds"`
 }
 
+// GraphRole is a role node in the access-graph response, listing its privilege and nested role IDs.
 type GraphRole struct {
 	ID           string   `json:"id"`
 	Name         string   `json:"name"`
@@ -44,6 +47,7 @@ type GraphRole struct {
 	RoleIDs      []string `json:"roleIds"`
 }
 
+// GraphPrivilege is a privilege node in the access-graph response, optionally linked to a content selector.
 type GraphPrivilege struct {
 	ID                string         `json:"id"`
 	Name              string         `json:"name"`
@@ -52,12 +56,14 @@ type GraphPrivilege struct {
 	ContentSelectorID *string        `json:"contentSelectorId,omitempty"`
 }
 
+// GraphSelector is a content-selector node in the access-graph response.
 type GraphSelector struct {
 	ID         string `json:"id"`
 	Name       string `json:"name"`
 	Expression string `json:"expression"`
 }
 
+// AccessGraphResponse is the full RBAC graph returned by the access-graph endpoint.
 type AccessGraphResponse struct {
 	Users      []GraphUser      `json:"users"`
 	Roles      []GraphRole      `json:"roles"`

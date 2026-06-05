@@ -1,11 +1,13 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/service"
 )
 
@@ -14,6 +16,7 @@ type BlobStoreMigrationHandler struct {
 	svc *service.BlobStoreMigrationService
 }
 
+// NewBlobStoreMigrationHandler constructs a BlobStoreMigrationHandler backed by the given migration service.
 func NewBlobStoreMigrationHandler(svc *service.BlobStoreMigrationService) *BlobStoreMigrationHandler {
 	return &BlobStoreMigrationHandler{svc: svc}
 }
@@ -49,12 +52,12 @@ func (h *BlobStoreMigrationHandler) Start(c *gin.Context) {
 func (h *BlobStoreMigrationHandler) GetLatest(c *gin.Context) {
 	repoName := c.Param("name")
 	m, err := h.svc.GetLatestByRepo(c.Request.Context(), repoName)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if errors.Is(err, repository.ErrNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "no migration found for this repository"})
 		return
 	}
-	if m == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "no migration found for this repository"})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, m)
@@ -65,12 +68,12 @@ func (h *BlobStoreMigrationHandler) Cancel(c *gin.Context) {
 	repoName := c.Param("name")
 
 	active, err := h.svc.GetLatestByRepo(c.Request.Context(), repoName)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if errors.Is(err, repository.ErrNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "no migration found for this repository"})
 		return
 	}
-	if active == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "no migration found for this repository"})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	if active.Status != "running" && active.Status != "pending" {

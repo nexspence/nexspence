@@ -8,12 +8,14 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
+	"github.com/nexspence-oss/nexspence/internal/repository"
 )
 
 type webhookRepo struct {
 	db *pgxpool.Pool
 }
 
+// NewWebhookRepo returns a postgres-backed WebhookRepo.
 func NewWebhookRepo(db *pgxpool.Pool) *webhookRepo {
 	return &webhookRepo{db: db}
 }
@@ -56,7 +58,7 @@ func (r *webhookRepo) Get(ctx context.Context, id string) (*domain.Webhook, erro
 		`SELECT id, name, url, secret, events, active, created_at, updated_at FROM webhooks WHERE id = $1`, id)
 	w, err := scanWebhook(row)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
+		return nil, repository.ErrNotFound
 	}
 	return w, err
 }

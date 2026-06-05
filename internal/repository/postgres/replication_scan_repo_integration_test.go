@@ -4,10 +4,12 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
+	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/testutil/pgtest"
 )
 
@@ -130,8 +132,8 @@ func TestReplicationRepo_GetRule_NotFound_ReturnsNilNil(t *testing.T) {
 
 	// Random non-existent UUID.
 	got, err := repo.GetRule(ctx, "00000000-0000-0000-0000-000000000000")
-	if err != nil {
-		t.Fatalf("GetRule(missing): unexpected error %v", err)
+	if !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("GetRule(missing): want ErrNotFound, got %v", err)
 	}
 	if got != nil {
 		t.Errorf("GetRule(missing): got %+v, want nil", got)
@@ -281,8 +283,8 @@ func TestReplicationRepo_DeleteRule_RemovesRow(t *testing.T) {
 	}
 
 	got, err := repo.GetRule(ctx, r.ID)
-	if err != nil {
-		t.Fatalf("GetRule after delete: %v", err)
+	if !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("GetRule after delete: want ErrNotFound, got %v", err)
 	}
 	if got != nil {
 		t.Errorf("GetRule after delete: got %+v, want nil", got)
@@ -619,8 +621,8 @@ func TestScanResultRepo_GetLatest_NotFound_ReturnsNilNil(t *testing.T) {
 	repo := NewScanResultRepo(pool)
 
 	got, err := repo.GetLatestByComponent(ctx, "00000000-0000-0000-0000-000000000000")
-	if err != nil {
-		t.Fatalf("GetLatestByComponent(missing): unexpected error %v", err)
+	if !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("GetLatestByComponent(missing): want ErrNotFound, got %v", err)
 	}
 	if got != nil {
 		t.Errorf("GetLatestByComponent(missing): got %+v, want nil", got)

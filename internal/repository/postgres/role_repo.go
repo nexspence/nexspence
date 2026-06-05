@@ -8,12 +8,14 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
+	"github.com/nexspence-oss/nexspence/internal/repository"
 )
 
 type roleRepo struct {
 	db *pgxpool.Pool
 }
 
+// NewRoleRepo returns a postgres-backed RoleRepo.
 func NewRoleRepo(db *pgxpool.Pool) *roleRepo {
 	return &roleRepo{db: db}
 }
@@ -53,7 +55,7 @@ func (r *roleRepo) Get(ctx context.Context, id string) (*domain.Role, error) {
 		FROM roles WHERE id = $1`, id)
 	ro, err := scanRole(row)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
+		return nil, repository.ErrNotFound
 	}
 	return ro, err
 }

@@ -11,10 +11,12 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/service"
 )
 
+// ScanHandler serves the vulnerability-scan REST endpoints.
 type ScanHandler struct {
 	svc *service.ScanService
 }
 
+// NewScanHandler constructs a ScanHandler backed by the given scan service.
 func NewScanHandler(svc *service.ScanService) *ScanHandler {
 	return &ScanHandler{svc: svc}
 }

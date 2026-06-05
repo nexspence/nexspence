@@ -9,6 +9,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/collectors"
 )
 
+// Session-scoped atomic counters reset on each process restart.
 var (
 	RequestsTotal    atomic.Int64
 	RequestErrors    atomic.Int64
@@ -23,6 +24,7 @@ var (
 // duplicate-registration panics when tests import this package multiple times.
 var Registry = prometheus.NewRegistry()
 
+// Prometheus collectors exposed at /metrics, all registered on the custom Registry.
 var (
 	PromRequestsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "nexspence_requests_total",

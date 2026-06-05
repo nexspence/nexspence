@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -36,6 +37,7 @@ type ReplicationService struct {
 	entryIDs      map[string]cron.EntryID
 }
 
+// NewReplicationService constructs a service that pushes artifacts to remote targets on a schedule.
 func NewReplicationService(
 	repo repository.ReplicationRepo,
 	assets repository.AssetRepo,
@@ -416,7 +418,7 @@ func (s *ReplicationService) UpdateRule(ctx context.Context, rule *domain.Replic
 		rule.TargetPasswordEnc = enc
 	} else {
 		existing, err := s.repo.GetRule(ctx, rule.ID)
-		if err != nil {
+		if err != nil && !errors.Is(err, repository.ErrNotFound) {
 			return err
 		}
 		if existing != nil {

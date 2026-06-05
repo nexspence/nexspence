@@ -14,18 +14,22 @@ type RoutingRuleService struct {
 	repo repository.RoutingRuleRepo
 }
 
+// NewRoutingRuleService constructs a service for managing routing rules.
 func NewRoutingRuleService(repo repository.RoutingRuleRepo) *RoutingRuleService {
 	return &RoutingRuleService{repo: repo}
 }
 
+// List returns all routing rules.
 func (s *RoutingRuleService) List(ctx context.Context) ([]domain.RoutingRule, error) {
 	return s.repo.List(ctx)
 }
 
+// Get returns the routing rule with the given id.
 func (s *RoutingRuleService) Get(ctx context.Context, id string) (*domain.RoutingRule, error) {
 	return s.repo.Get(ctx, id)
 }
 
+// Create validates the rule mode and matcher regexes, then persists a new routing rule.
 func (s *RoutingRuleService) Create(ctx context.Context, r *domain.RoutingRule) error {
 	if r.Name == "" {
 		return fmt.Errorf("name is required")
@@ -39,6 +43,7 @@ func (s *RoutingRuleService) Create(ctx context.Context, r *domain.RoutingRule) 
 	return s.repo.Create(ctx, r)
 }
 
+// Update validates the rule mode and matcher regexes, then persists changes to a routing rule.
 func (s *RoutingRuleService) Update(ctx context.Context, r *domain.RoutingRule) error {
 	if r.Mode != "ALLOW" && r.Mode != "BLOCK" {
 		return fmt.Errorf("mode must be ALLOW or BLOCK")
@@ -49,6 +54,7 @@ func (s *RoutingRuleService) Update(ctx context.Context, r *domain.RoutingRule) 
 	return s.repo.Update(ctx, r)
 }
 
+// Delete removes the routing rule with the given id.
 func (s *RoutingRuleService) Delete(ctx context.Context, id string) error {
 	return s.repo.Delete(ctx, id)
 }

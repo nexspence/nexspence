@@ -74,14 +74,17 @@ func (s *ContentSelectorService) compile(expression string) (cel.Program, error)
 	return prg, nil
 }
 
+// List returns all content selectors.
 func (s *ContentSelectorService) List(ctx context.Context) ([]domain.ContentSelector, error) {
 	return s.repo.List(ctx)
 }
 
+// Get returns the content selector with the given id.
 func (s *ContentSelectorService) Get(ctx context.Context, id string) (*domain.ContentSelector, error) {
 	return s.repo.Get(ctx, id)
 }
 
+// Create validates the CEL expression and persists a new content selector.
 func (s *ContentSelectorService) Create(ctx context.Context, sel *domain.ContentSelector) error {
 	if sel.Name == "" {
 		return fmt.Errorf("name is required")
@@ -95,6 +98,7 @@ func (s *ContentSelectorService) Create(ctx context.Context, sel *domain.Content
 	return s.repo.Create(ctx, sel)
 }
 
+// Update validates and persists changes to a content selector, invalidating its cached program.
 func (s *ContentSelectorService) Update(ctx context.Context, sel *domain.ContentSelector) error {
 	if sel.Name == "" {
 		return fmt.Errorf("name is required")
@@ -111,6 +115,7 @@ func (s *ContentSelectorService) Update(ctx context.Context, sel *domain.Content
 	return nil
 }
 
+// Delete removes a content selector and evicts its cached compiled program.
 func (s *ContentSelectorService) Delete(ctx context.Context, id string) error {
 	if err := s.repo.Delete(ctx, id); err != nil {
 		return err
@@ -121,6 +126,7 @@ func (s *ContentSelectorService) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
+// AttachToPrivilege associates an existing content selector with the named privilege.
 func (s *ContentSelectorService) AttachToPrivilege(ctx context.Context, privilegeName, selectorID string) error {
 	existing, err := s.repo.Get(ctx, selectorID)
 	if err != nil {
@@ -132,6 +138,7 @@ func (s *ContentSelectorService) AttachToPrivilege(ctx context.Context, privileg
 	return s.repo.AttachToPrivilege(ctx, privilegeName, selectorID)
 }
 
+// DetachFromPrivilege removes the content selector association from the named privilege.
 func (s *ContentSelectorService) DetachFromPrivilege(ctx context.Context, privilegeName string) error {
 	return s.repo.DetachFromPrivilege(ctx, privilegeName)
 }

@@ -45,7 +45,7 @@ func NewLDAPService(cfg config.LDAPConfig) *LDAPService {
 	return &LDAPService{cfg: cfg}
 }
 
-func (s *LDAPService) dial(ctx context.Context) (*ldap.Conn, error) {
+func (s *LDAPService) dial(_ context.Context) (*ldap.Conn, error) {
 	addr := fmt.Sprintf("%s:%d", s.cfg.Host, s.cfg.Port)
 	timeout := time.Duration(s.cfg.TimeoutSec) * time.Second
 

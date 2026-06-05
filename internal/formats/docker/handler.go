@@ -48,8 +48,11 @@ type Handler struct {
 	uploads sync.Map // uuid → *uploadSession
 }
 
+// New creates a Docker format Handler with the given dependencies.
 func New(deps formats.Deps) *Handler { return &Handler{deps: deps} }
-func (h *Handler) Name() string      { return "docker" }
+
+// Name returns the format identifier.
+func (h *Handler) Name() string { return "docker" }
 
 func (h *Handler) ServeHTTP(c *gin.Context) {
 	p := normPath(c.Param("path"))

@@ -14,6 +14,7 @@ type UserHandler struct {
 	svc *service.UserService
 }
 
+// NewUserHandler constructs a UserHandler backed by the given user service.
 func NewUserHandler(svc *service.UserService) *UserHandler {
 	return &UserHandler{svc: svc}
 }

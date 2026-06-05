@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -9,11 +10,13 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/repository"
 )
 
+// PrivilegeHandler serves the privilege REST endpoints.
 type PrivilegeHandler struct {
 	repo     repository.PrivilegeRepo
 	roleRepo repository.RoleRepo
 }
 
+// NewPrivilegeHandler constructs a PrivilegeHandler from the privilege and role repositories.
 func NewPrivilegeHandler(repo repository.PrivilegeRepo, roleRepo repository.RoleRepo) *PrivilegeHandler {
 	return &PrivilegeHandler{repo: repo, roleRepo: roleRepo}
 }
@@ -34,12 +37,12 @@ func (h *PrivilegeHandler) List(c *gin.Context) {
 // Get handles GET /service/rest/v1/security/privileges/:id
 func (h *PrivilegeHandler) Get(c *gin.Context) {
 	p, err := h.repo.Get(c.Request.Context(), c.Param("id"))
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if errors.Is(err, repository.ErrNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "privilege not found"})
 		return
 	}
-	if p == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "privilege not found"})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, p)

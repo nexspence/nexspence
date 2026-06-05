@@ -11,6 +11,7 @@ import (
 
 type rbacRepo struct{ db *pgxpool.Pool }
 
+// NewRBACRepo returns a postgres-backed RBACRepo.
 func NewRBACRepo(db *pgxpool.Pool) repository.RBACRepo {
 	return &rbacRepo{db: db}
 }

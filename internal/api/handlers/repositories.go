@@ -15,6 +15,7 @@ type RepositoryHandler struct {
 	rbacSvc *service.RBACService
 }
 
+// NewRepositoryHandler constructs a RepositoryHandler from the repository and RBAC services.
 func NewRepositoryHandler(svc *service.RepositoryService, rbacSvc *service.RBACService) *RepositoryHandler {
 	return &RepositoryHandler{svc: svc, rbacSvc: rbacSvc}
 }

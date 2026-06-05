@@ -9,14 +9,18 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
+	"github.com/nexspence-oss/nexspence/internal/repository"
 )
 
+// RoutingRuleRepo is a postgres-backed implementation of repository.RoutingRuleRepo.
 type RoutingRuleRepo struct{ pool *pgxpool.Pool }
 
+// NewRoutingRuleRepo returns a postgres-backed RoutingRuleRepo.
 func NewRoutingRuleRepo(pool *pgxpool.Pool) *RoutingRuleRepo {
 	return &RoutingRuleRepo{pool: pool}
 }
 
+// List returns all routing rules ordered by name.
 func (r *RoutingRuleRepo) List(ctx context.Context) ([]domain.RoutingRule, error) {
 	rows, err := r.pool.Query(ctx,
 		`SELECT id, name, description, mode, matchers, created_at, updated_at
@@ -37,6 +41,7 @@ func (r *RoutingRuleRepo) List(ctx context.Context) ([]domain.RoutingRule, error
 	return rules, rows.Err()
 }
 
+// Get returns the routing rule with the given id, or repository.ErrNotFound.
 func (r *RoutingRuleRepo) Get(ctx context.Context, id string) (*domain.RoutingRule, error) {
 	var rr domain.RoutingRule
 	err := r.pool.QueryRow(ctx,
@@ -46,13 +51,14 @@ func (r *RoutingRuleRepo) Get(ctx context.Context, id string) (*domain.RoutingRu
 			&rr.Matchers, &rr.CreatedAt, &rr.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, nil
+			return nil, repository.ErrNotFound
 		}
 		return nil, fmt.Errorf("routing_rules get: %w", err)
 	}
 	return &rr, nil
 }
 
+// GetByName returns the routing rule with the given name, or repository.ErrNotFound.
 func (r *RoutingRuleRepo) GetByName(ctx context.Context, name string) (*domain.RoutingRule, error) {
 	var rr domain.RoutingRule
 	err := r.pool.QueryRow(ctx,
@@ -62,13 +68,14 @@ func (r *RoutingRuleRepo) GetByName(ctx context.Context, name string) (*domain.R
 			&rr.Matchers, &rr.CreatedAt, &rr.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, nil
+			return nil, repository.ErrNotFound
 		}
 		return nil, fmt.Errorf("routing_rules get by name: %w", err)
 	}
 	return &rr, nil
 }
 
+// Create inserts a new routing rule and populates its generated fields.
 func (r *RoutingRuleRepo) Create(ctx context.Context, rr *domain.RoutingRule) error {
 	return r.pool.QueryRow(ctx,
 		`INSERT INTO routing_rules (name, description, mode, matchers)
@@ -78,6 +85,7 @@ func (r *RoutingRuleRepo) Create(ctx context.Context, rr *domain.RoutingRule) er
 		Scan(&rr.ID, &rr.CreatedAt, &rr.UpdatedAt)
 }
 
+// Update overwrites the routing rule identified by rr.ID.
 func (r *RoutingRuleRepo) Update(ctx context.Context, rr *domain.RoutingRule) error {
 	tag, err := r.pool.Exec(ctx,
 		`UPDATE routing_rules
@@ -93,6 +101,7 @@ func (r *RoutingRuleRepo) Update(ctx context.Context, rr *domain.RoutingRule) er
 	return nil
 }
 
+// Delete removes the routing rule with the given id.
 func (r *RoutingRuleRepo) Delete(ctx context.Context, id string) error {
 	_, err := r.pool.Exec(ctx, `DELETE FROM routing_rules WHERE id = $1`, id)
 	return err

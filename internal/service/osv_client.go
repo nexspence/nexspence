@@ -25,6 +25,7 @@ type OSVClient struct {
 	HTTPClient *http.Client
 }
 
+// NewOSVClient returns an OSVClient pointing at the default OSV.dev API endpoint.
 func NewOSVClient() *OSVClient {
 	return &OSVClient{
 		BaseURL:    osvDefaultBaseURL,

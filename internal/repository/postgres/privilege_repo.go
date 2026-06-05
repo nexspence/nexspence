@@ -9,10 +9,12 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
+	"github.com/nexspence-oss/nexspence/internal/repository"
 )
 
 type privilegeRepo struct{ db *pgxpool.Pool }
 
+// NewPrivilegeRepo returns a postgres-backed PrivilegeRepo.
 func NewPrivilegeRepo(db *pgxpool.Pool) *privilegeRepo {
 	return &privilegeRepo{db: db}
 }
@@ -42,7 +44,7 @@ func (r *privilegeRepo) Get(ctx context.Context, id string) (*domain.Privilege, 
 		FROM privileges WHERE id = $1`, id)
 	p, err := scanPrivilege(row)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
+		return nil, repository.ErrNotFound
 	}
 	return p, err
 }
@@ -53,7 +55,7 @@ func (r *privilegeRepo) GetByName(ctx context.Context, name string) (*domain.Pri
 		FROM privileges WHERE name = $1`, name)
 	p, err := scanPrivilege(row)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
+		return nil, repository.ErrNotFound
 	}
 	return p, err
 }

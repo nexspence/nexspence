@@ -8,9 +8,13 @@ import (
 
 // ── Repository ───────────────────────────────────────────────
 
+// RepoFormat identifies the artifact protocol of a repository (maven2, npm, docker, ...).
 type RepoFormat string
+
+// RepoType is a repository's role: hosted, proxy, or group.
 type RepoType string
 
+// Supported repository formats and the three repository types.
 const (
 	FormatMaven2 RepoFormat = "maven2"
 	FormatNPM    RepoFormat = "npm"
@@ -28,6 +32,7 @@ const (
 	TypeGroup  RepoType = "group"
 )
 
+// Repository is a hosted, proxy, or group artifact repository of a given format.
 type Repository struct {
 	ID               string         `json:"id"`
 	Name             string         `json:"name"`
@@ -85,8 +90,10 @@ func GroupWritableMember(r *Repository) string {
 
 // ── Webhook ──────────────────────────────────────────────────
 
+// WebhookEvent names a repository event that webhooks and the realtime feed may subscribe to.
 type WebhookEvent string
 
+// Webhook event names dispatched by the artifact and repository services.
 const (
 	EventArtifactPublished WebhookEvent = "artifact.published"
 	EventArtifactDeleted   WebhookEvent = "artifact.deleted"
@@ -161,6 +168,7 @@ type ContentSelector struct {
 
 // ── Blob Store ───────────────────────────────────────────────
 
+// BlobStore is a named storage backend (local filesystem or S3) with an optional quota.
 type BlobStore struct {
 	ID         string         `json:"id"`
 	Name       string         `json:"name"`
@@ -174,8 +182,10 @@ type BlobStore struct {
 
 // ── Vulnerability scan ───────────────────────────────────────
 
+// ScanStatus is the outcome of a vulnerability scan run.
 type ScanStatus string
 
+// Vulnerability scan outcomes.
 const (
 	ScanStatusOK     ScanStatus = "ok"
 	ScanStatusFailed ScanStatus = "failed"
@@ -264,6 +274,7 @@ type VulnFilter struct {
 
 // ── Component ────────────────────────────────────────────────
 
+// Component is a logical artifact (group/name/version) owning one or more Assets.
 type Component struct {
 	ID             string         `json:"id"`
 	RepositoryID   string         `json:"repositoryId"`
@@ -282,6 +293,7 @@ type Component struct {
 
 // ── Asset ────────────────────────────────────────────────────
 
+// Asset is a single stored file belonging to a Component, backed by a blob in a BlobStore.
 type Asset struct {
 	ID           string `json:"id"`
 	ComponentID  string `json:"componentId"`
@@ -308,9 +320,13 @@ type Asset struct {
 
 // ── User ─────────────────────────────────────────────────────
 
+// UserStatus indicates whether a user account is active or disabled.
 type UserStatus string
+
+// UserSource identifies where a user account originated (local, ldap, oidc, saml).
 type UserSource string
 
+// User account statuses and identity sources.
 const (
 	UserStatusActive   UserStatus = "active"
 	UserStatusDisabled UserStatus = "disabled"
@@ -321,6 +337,7 @@ const (
 	UserSourceSAML  UserSource = "saml"
 )
 
+// User is an account that can authenticate and is granted access via roles.
 type User struct {
 	ID           string     `json:"id"`
 	Username     string     `json:"userId"` // Nexus API uses "userId" as the identifier field
@@ -359,6 +376,7 @@ type UserToken struct {
 
 // ── Role ─────────────────────────────────────────────────────
 
+// Role is a named bundle of privileges (and optionally nested roles) assignable to users.
 type Role struct {
 	ID          string    `json:"id"`
 	Name        string    `json:"name"`
@@ -376,6 +394,7 @@ type Role struct {
 // PrivilegeType maps to the CHECK constraint in the privileges table.
 type PrivilegeType string
 
+// Privilege types matching the privileges-table CHECK constraint.
 const (
 	PrivilegeTypeWildcard                  PrivilegeType = "wildcard"
 	PrivilegeTypeRepositoryView            PrivilegeType = "repository-view"
@@ -412,6 +431,7 @@ type CleanupScope struct {
 	PathPrefix     string `json:"pathPrefix,omitempty"`
 }
 
+// CleanupPolicy defines criteria for automatically deleting stale assets from attached repositories.
 type CleanupPolicy struct {
 	ID              string         `json:"id"`
 	Name            string         `json:"name"`
@@ -449,6 +469,7 @@ type CleanupPreviewResult struct {
 
 // ── Audit Event ──────────────────────────────────────────────
 
+// AuditEvent is a single recorded action (who, what, when, result) in the audit log.
 type AuditEvent struct {
 	ID         int64          `json:"id"`
 	EventTime  time.Time      `json:"eventTime"`
@@ -486,6 +507,7 @@ type RawBrowseAsset struct {
 
 // ── Pagination ───────────────────────────────────────────────
 
+// Page is a generic paginated result with an optional continuation token.
 type Page[T any] struct {
 	Items             []T     `json:"items"`
 	ContinuationToken *string `json:"continuationToken"`
@@ -521,6 +543,7 @@ type BlobStoreMigration struct {
 
 // ── Search params ────────────────────────────────────────────
 
+// SearchParams holds the filters used to query components and assets.
 type SearchParams struct {
 	Repository string
 	// RepositoryNames filters components/assets to any of these repository names (used when UI/API passes a group repo — expanded to members). When non-empty, Repository is ignored for SQL filtering.
@@ -590,8 +613,10 @@ type PromotionRule struct {
 	UpdatedAt             time.Time `json:"updated_at"`
 }
 
+// PromotionStatus is the lifecycle state of a build-promotion request.
 type PromotionStatus string
 
+// Promotion request lifecycle states.
 const (
 	PromotionPending   PromotionStatus = "pending"
 	PromotionApproved  PromotionStatus = "approved"

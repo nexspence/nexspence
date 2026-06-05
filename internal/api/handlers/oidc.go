@@ -36,6 +36,7 @@ type OIDCHandler struct {
 	log    logger.Logger
 }
 
+// NewOIDCHandler constructs an OIDCHandler from the authenticator, user service, repos, cookie sealer, and config.
 func NewOIDCHandler(
 	oidc auth.OIDCAuthenticator,
 	users *service.UserService,

@@ -10,12 +10,14 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
+	"github.com/nexspence-oss/nexspence/internal/repository"
 )
 
 type replicationRepo struct {
 	db *pgxpool.Pool
 }
 
+// NewReplicationRepo returns a postgres-backed ReplicationRepo.
 func NewReplicationRepo(db *pgxpool.Pool) *replicationRepo {
 	return &replicationRepo{db: db}
 }
@@ -62,7 +64,7 @@ func (r *replicationRepo) GetRule(ctx context.Context, id string) (*domain.Repli
 		`SELECT `+ruleColumns+` FROM replication_rules WHERE id = $1`, id)
 	rule, err := scanRule(row)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
+		return nil, repository.ErrNotFound
 	}
 	return rule, err
 }

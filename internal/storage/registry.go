@@ -31,6 +31,7 @@ type Registry struct {
 	rrCounters   sync.Map // groupID → *atomic.Uint64
 }
 
+// NewRegistry creates a Registry that returns defaultStore for empty descriptors.
 func NewRegistry(defaultStore BlobStore) *Registry {
 	return &Registry{
 		instances:    make(map[string]BlobStore),

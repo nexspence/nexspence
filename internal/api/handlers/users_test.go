@@ -14,6 +14,7 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/api/handlers"
 	"github.com/nexspence-oss/nexspence/internal/auth"
 	"github.com/nexspence-oss/nexspence/internal/domain"
+	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/service"
 	"github.com/nexspence-oss/nexspence/internal/testutil"
 )
@@ -282,7 +283,7 @@ func TestUserHandler_Delete_OK(t *testing.T) {
 	require.Equal(t, http.StatusNoContent, rec.Code)
 
 	gone, err := users.Get(testContext(), "ivan")
-	require.NoError(t, err)
+	require.ErrorIs(t, err, repository.ErrNotFound)
 	assert.Nil(t, gone)
 }
 

@@ -202,11 +202,11 @@ func (s *BackupService) Export(ctx context.Context, w io.Writer) (retErr error) 
 // Returns ErrRepoNotFound if repoName does not exist.
 func (s *BackupService) ExportRepo(ctx context.Context, repoName string, w io.Writer) (retErr error) {
 	repo, err := s.Repos.Get(ctx, repoName)
+	if errors.Is(err, repository.ErrNotFound) {
+		return fmt.Errorf("%w: %s", ErrRepoNotFound, repoName)
+	}
 	if err != nil {
 		return err
-	}
-	if repo == nil {
-		return fmt.Errorf("%w: %s", ErrRepoNotFound, repoName)
 	}
 
 	gw, err := gzip.NewWriterLevel(w, gzip.BestSpeed)

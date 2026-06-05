@@ -33,6 +33,7 @@ func New(deps formats.Deps, formatRegistry map[string]formats.FormatHandler) *Ha
 	return &Handler{deps: deps, formatRegistry: formatRegistry}
 }
 
+// Name returns the format identifier.
 func (h *Handler) Name() string { return "group" }
 
 func (h *Handler) ServeHTTP(c *gin.Context) {

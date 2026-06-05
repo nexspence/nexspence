@@ -106,6 +106,7 @@ func (s *S3BlobStore) Put(ctx context.Context, key string, r io.Reader, _ int64)
 	return nil
 }
 
+// Get fetches the object for key and returns its body and size.
 func (s *S3BlobStore) Get(ctx context.Context, key string) (io.ReadCloser, int64, error) {
 	out, err := s.client.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(s.bucket),
@@ -124,6 +125,7 @@ func (s *S3BlobStore) Get(ctx context.Context, key string) (io.ReadCloser, int64
 	return out.Body, size, nil
 }
 
+// Delete removes the object for key; a missing object is not an error.
 func (s *S3BlobStore) Delete(ctx context.Context, key string) error {
 	_, err := s.client.DeleteObject(ctx, &s3.DeleteObjectInput{
 		Bucket: aws.String(s.bucket),
@@ -135,6 +137,7 @@ func (s *S3BlobStore) Delete(ctx context.Context, key string) error {
 	return nil
 }
 
+// Exists reports whether an object is stored for key.
 func (s *S3BlobStore) Exists(ctx context.Context, key string) (bool, error) {
 	_, err := s.client.HeadObject(ctx, &s3.HeadObjectInput{
 		Bucket: aws.String(s.bucket),
@@ -149,6 +152,7 @@ func (s *S3BlobStore) Exists(ctx context.Context, key string) (bool, error) {
 	return false, fmt.Errorf("s3 head %s: %w", key, err)
 }
 
+// Size returns the byte size of the object for key.
 func (s *S3BlobStore) Size(ctx context.Context, key string) (int64, error) {
 	out, err := s.client.HeadObject(ctx, &s3.HeadObjectInput{
 		Bucket: aws.String(s.bucket),

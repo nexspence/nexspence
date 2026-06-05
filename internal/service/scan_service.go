@@ -118,6 +118,7 @@ type ScanService struct {
 	trivyMu sync.Mutex
 }
 
+// NewScanService constructs a vulnerability scanning service backed by Trivy and OSV.dev.
 func NewScanService(components repository.ComponentRepo, httpBaseURL string) *ScanService {
 	return &ScanService{
 		Components:   components,
@@ -128,11 +129,13 @@ func NewScanService(components repository.ComponentRepo, httpBaseURL string) *Sc
 	}
 }
 
+// WithScanResults attaches a repository for persisting scan results and returns s.
 func (s *ScanService) WithScanResults(repo repository.ScanResultRepo) *ScanService {
 	s.ScanResults = repo
 	return s
 }
 
+// WithCredentials sets the credentials used to pull images for scanning and returns s.
 func (s *ScanService) WithCredentials(username, password string) *ScanService {
 	s.scanUsername = username
 	s.scanPassword = password
@@ -252,7 +255,7 @@ func (s *ScanService) GetResult(ctx context.Context, componentID string) (*domai
 	}
 	raw, ok := comp.Extra["scan_result"]
 	if !ok || raw == nil {
-		return nil, nil
+		return nil, nil //nolint:nilnil // component has no cached scan result yet; nil result is the documented "not scanned" signal
 	}
 	b, err := json.Marshal(raw)
 	if err != nil {
@@ -342,6 +345,8 @@ func (s *ScanService) persistScanRow(ctx context.Context, comp *domain.Component
 	_ = s.ScanResults.Insert(ctx, row)
 }
 
+// BulkScan scans every component in a repository (skipping SHA digest aliases),
+// returning the count of scanned and failed components.
 func (s *ScanService) BulkScan(ctx context.Context, repoName string) (scanned int, failed int, err error) {
 	page, err := s.Components.Search(ctx, domain.SearchParams{Repository: repoName, Limit: 10000})
 	if err != nil {
@@ -362,6 +367,7 @@ func (s *ScanService) BulkScan(ctx context.Context, repoName string) (scanned in
 	return scanned, failed, nil
 }
 
+// GetSummary returns aggregated vulnerability counts across all scan results.
 func (s *ScanService) GetSummary(ctx context.Context) (*domain.SecuritySummary, error) {
 	if s.ScanResults == nil {
 		return &domain.SecuritySummary{}, nil
@@ -369,6 +375,7 @@ func (s *ScanService) GetSummary(ctx context.Context) (*domain.SecuritySummary, 
 	return s.ScanResults.Aggregate(ctx)
 }
 
+// ListVulnerabilities returns matching vulnerability rows and the total count for the filter.
 func (s *ScanService) ListVulnerabilities(ctx context.Context, f domain.VulnFilter) ([]*domain.VulnRow, int, error) {
 	if s.ScanResults == nil {
 		return nil, 0, nil

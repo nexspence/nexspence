@@ -10,12 +10,15 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/domain"
 )
 
+// CleanupPolicyRepo is a postgres-backed implementation of repository.CleanupPolicyRepo.
 type CleanupPolicyRepo struct{ pool *pgxpool.Pool }
 
+// NewCleanupPolicyRepo returns a postgres-backed CleanupPolicyRepo.
 func NewCleanupPolicyRepo(pool *pgxpool.Pool) *CleanupPolicyRepo {
 	return &CleanupPolicyRepo{pool: pool}
 }
 
+// List returns all cleanup policies ordered by name.
 func (r *CleanupPolicyRepo) List(ctx context.Context) ([]domain.CleanupPolicy, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT id, name, description, format, criteria, COALESCE(schedule_cron,''),
@@ -47,6 +50,7 @@ func (r *CleanupPolicyRepo) List(ctx context.Context) ([]domain.CleanupPolicy, e
 	return out, rows.Err()
 }
 
+// Get returns the cleanup policy with the given id.
 func (r *CleanupPolicyRepo) Get(ctx context.Context, id string) (*domain.CleanupPolicy, error) {
 	var p domain.CleanupPolicy
 	var criteriaJSON []byte
@@ -69,6 +73,7 @@ func (r *CleanupPolicyRepo) Get(ctx context.Context, id string) (*domain.Cleanup
 	return &p, nil
 }
 
+// Create inserts a new cleanup policy and populates its generated fields.
 func (r *CleanupPolicyRepo) Create(ctx context.Context, p *domain.CleanupPolicy) error {
 	criteriaJSON, _ := json.Marshal(p.Criteria)
 	scopeJSON, _ := json.Marshal(p.Scope)
@@ -81,6 +86,7 @@ func (r *CleanupPolicyRepo) Create(ctx context.Context, p *domain.CleanupPolicy)
 	).Scan(&p.ID, &p.CreatedAt, &p.UpdatedAt)
 }
 
+// Update overwrites the cleanup policy identified by p.ID.
 func (r *CleanupPolicyRepo) Update(ctx context.Context, p *domain.CleanupPolicy) error {
 	criteriaJSON, _ := json.Marshal(p.Criteria)
 	scopeJSON, _ := json.Marshal(p.Scope)
@@ -100,6 +106,7 @@ func (r *CleanupPolicyRepo) Update(ctx context.Context, p *domain.CleanupPolicy)
 	return nil
 }
 
+// Delete removes the cleanup policy with the given id.
 func (r *CleanupPolicyRepo) Delete(ctx context.Context, id string) error {
 	_, err := r.pool.Exec(ctx, `DELETE FROM cleanup_policies WHERE id=$1`, id)
 	return err

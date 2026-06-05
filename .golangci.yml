@@ -13,6 +13,7 @@ linters:
   enable:
     # error-handling (Phase 2)
     - errorlint
+    - nilnil
     - bodyclose
     - sqlclosecheck
     - rowserrcheck
@@ -51,6 +52,10 @@ linters:
         - name: superfluous-else
         - name: unreachable-code
         - name: redefines-builtin-id
+        - name: unused-parameter
+        - name: exported
+          arguments:
+            - disableStutteringCheck
   exclusions:
     generated: lax
     paths:
@@ -65,6 +70,12 @@ linters:
           - gosec
           - gocyclo
           - revive
+          - nilnil
+      # Mocks are test scaffolding — exempt from the exported doc-comment rule.
+      - path: internal/testutil/mocks\.go
+        linters:
+          - revive
+        text: "exported:"
 
 formatters:
   enable:

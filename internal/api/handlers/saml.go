@@ -23,6 +23,7 @@ type SAMLHandler struct {
 	log   logger.Logger
 }
 
+// NewSAMLHandler constructs a SAMLHandler from the SAML authenticator, user service, config, and logger.
 func NewSAMLHandler(
 	saml auth.SAMLAuthenticator,
 	users *service.UserService,

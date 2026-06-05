@@ -2,10 +2,12 @@ package service_test
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
+	"github.com/nexspence-oss/nexspence/internal/service"
 	"github.com/nexspence-oss/nexspence/internal/testutil"
 )
 
@@ -83,8 +85,8 @@ func TestPromotionService_GetRule_Found(t *testing.T) {
 func TestPromotionService_GetRule_NotFound_ReturnsNil(t *testing.T) {
 	svc, _, _, _, _, _, _, _ := newTestPromotionSvc(t)
 	got, err := svc.GetRule(context.Background(), "nonexistent-id")
-	if err != nil {
-		t.Fatalf("GetRule: unexpected error %v", err)
+	if !errors.Is(err, service.ErrNotFound) {
+		t.Fatalf("GetRule: expected ErrNotFound, got %v", err)
 	}
 	if got != nil {
 		t.Errorf("expected nil for unknown rule, got %+v", got)
@@ -381,8 +383,8 @@ func TestPromotionService_DeleteRule(t *testing.T) {
 	}
 
 	got, err := svc.GetRule(ctx, rule.ID)
-	if err != nil {
-		t.Fatalf("GetRule after delete: %v", err)
+	if !errors.Is(err, service.ErrNotFound) {
+		t.Fatalf("GetRule after delete: expected ErrNotFound, got %v", err)
 	}
 	if got != nil {
 		t.Error("expected nil after delete, got a rule")

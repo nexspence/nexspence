@@ -16,6 +16,7 @@ type BackupHandler struct {
 	svc *service.BackupService
 }
 
+// NewBackupHandler constructs a BackupHandler backed by the given backup service.
 func NewBackupHandler(svc *service.BackupService) *BackupHandler {
 	return &BackupHandler{svc: svc}
 }

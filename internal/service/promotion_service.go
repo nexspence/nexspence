@@ -28,6 +28,8 @@ type PromotionService struct {
 	celEnv *cel.Env
 }
 
+// NewPromotionService constructs a service for build promotion between repositories,
+// initializing the CEL environment used to evaluate rule path filters.
 func NewPromotionService(
 	promotionRepo repository.PromotionRepo,
 	componentRepo repository.ComponentRepo,
@@ -59,6 +61,7 @@ func NewPromotionService(
 	}, nil
 }
 
+// WithWebhooks attaches a dispatcher for promotion lifecycle events and returns s.
 func (s *PromotionService) WithWebhooks(w domain.WebhookDispatcher) *PromotionService {
 	s.webhooks = w
 	return s
@@ -92,14 +95,17 @@ func (s *PromotionService) matchesPathFilter(rule domain.PromotionRule, comp *do
 	return matched
 }
 
+// ListRules returns all promotion rules.
 func (s *PromotionService) ListRules(ctx context.Context) ([]domain.PromotionRule, error) {
 	return s.promotionRepo.ListRules(ctx)
 }
 
+// GetRule returns the promotion rule with the given id.
 func (s *PromotionService) GetRule(ctx context.Context, id string) (*domain.PromotionRule, error) {
 	return s.promotionRepo.GetRule(ctx, id)
 }
 
+// CreateRule validates and persists a new promotion rule.
 func (s *PromotionService) CreateRule(ctx context.Context, rule *domain.PromotionRule) error {
 	if rule.Name == "" {
 		return fmt.Errorf("name is required")
@@ -118,6 +124,7 @@ func (s *PromotionService) CreateRule(ctx context.Context, rule *domain.Promotio
 	return s.promotionRepo.CreateRule(ctx, rule)
 }
 
+// UpdateRule validates and persists changes to an existing promotion rule.
 func (s *PromotionService) UpdateRule(ctx context.Context, rule *domain.PromotionRule) error {
 	if rule.Name == "" {
 		return fmt.Errorf("name is required")
@@ -133,6 +140,7 @@ func (s *PromotionService) UpdateRule(ctx context.Context, rule *domain.Promotio
 	return s.promotionRepo.UpdateRule(ctx, rule)
 }
 
+// DeleteRule removes the promotion rule with the given id.
 func (s *PromotionService) DeleteRule(ctx context.Context, id string) error {
 	return s.promotionRepo.DeleteRule(ctx, id)
 }
@@ -156,6 +164,7 @@ func (s *PromotionService) ListRulesForComponent(ctx context.Context, componentI
 	return matching, nil
 }
 
+// ListRequests returns promotion requests, optionally filtered by status.
 func (s *PromotionService) ListRequests(ctx context.Context, status string) ([]domain.PromotionRequest, error) {
 	return s.promotionRepo.ListRequests(ctx, status)
 }

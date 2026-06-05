@@ -26,6 +26,7 @@ type BrowseHandler struct {
 	rbac       *service.RBACService
 }
 
+// NewBrowseHandler constructs a BrowseHandler from the repositories, blob store, and RBAC service it needs.
 func NewBrowseHandler(repos repository.RepositoryRepo, components repository.ComponentRepo, assets repository.AssetRepo, blobs repository.BlobStoreRepo, blobStore storage.BlobStore, rbac *service.RBACService) *BrowseHandler {
 	return &BrowseHandler{repos: repos, components: components, assets: assets, blobs: blobs, blobStore: blobStore, rbac: rbac}
 }
@@ -390,7 +391,7 @@ func (h *BrowseHandler) DeleteDockerTag(c *gin.Context) {
 }
 
 // parseManifestDigests reads an open blob stream (or error) and returns the config+layer digests.
-func parseManifestDigests(rc io.ReadCloser, size int64, err error) []string {
+func parseManifestDigests(rc io.ReadCloser, _ int64, err error) []string {
 	if err != nil || rc == nil {
 		return nil
 	}

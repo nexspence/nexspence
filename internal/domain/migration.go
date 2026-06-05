@@ -2,8 +2,10 @@ package domain
 
 import "time"
 
+// MigrationJobStatus is the lifecycle state of a Nexus-to-Nexspence migration job.
 type MigrationJobStatus string
 
+// Migration job lifecycle states.
 const (
 	MigrationPending MigrationJobStatus = "pending"
 	MigrationRunning MigrationJobStatus = "running"
@@ -12,6 +14,8 @@ const (
 	MigrationError   MigrationJobStatus = "error"
 )
 
+// MigrationJob tracks an import from a live Nexus instance, including selected
+// scopes (repos/users/blobs/policies) and per-asset transfer progress.
 type MigrationJob struct {
 	ID              string
 	SourceURL       string

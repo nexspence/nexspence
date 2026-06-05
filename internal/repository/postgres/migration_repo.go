@@ -11,8 +11,10 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/domain"
 )
 
+// MigrationRepo is a postgres-backed implementation of repository.MigrationRepo.
 type MigrationRepo struct{ pool *pgxpool.Pool }
 
+// NewMigrationRepo returns a postgres-backed MigrationRepo.
 func NewMigrationRepo(pool *pgxpool.Pool) *MigrationRepo {
 	return &MigrationRepo{pool: pool}
 }
@@ -38,6 +40,7 @@ func scanJob(row pgx.Row) (*domain.MigrationJob, error) {
 	return &j, nil
 }
 
+// List returns all migration jobs ordered newest first.
 func (r *MigrationRepo) List(ctx context.Context) ([]domain.MigrationJob, error) {
 	rows, err := r.pool.Query(ctx,
 		`SELECT `+migrationCols+` FROM migration_jobs ORDER BY created_at DESC`)
@@ -56,6 +59,7 @@ func (r *MigrationRepo) List(ctx context.Context) ([]domain.MigrationJob, error)
 	return out, rows.Err()
 }
 
+// Get returns the migration job with the given id.
 func (r *MigrationRepo) Get(ctx context.Context, id string) (*domain.MigrationJob, error) {
 	row := r.pool.QueryRow(ctx,
 		`SELECT `+migrationCols+` FROM migration_jobs WHERE id = $1`, id)
@@ -66,6 +70,7 @@ func (r *MigrationRepo) Get(ctx context.Context, id string) (*domain.MigrationJo
 	return j, err
 }
 
+// Create inserts a new migration job and populates its generated fields.
 func (r *MigrationRepo) Create(ctx context.Context, job *domain.MigrationJob) error {
 	return r.pool.QueryRow(ctx, `
 		INSERT INTO migration_jobs
@@ -77,6 +82,7 @@ func (r *MigrationRepo) Create(ctx context.Context, job *domain.MigrationJob) er
 	).Scan(&job.ID, &job.CreatedAt, &job.UpdatedAt)
 }
 
+// UpdateStatus sets the status of the migration job with the given id.
 func (r *MigrationRepo) UpdateStatus(ctx context.Context, id string, status domain.MigrationJobStatus) error {
 	tag, err := r.pool.Exec(ctx,
 		`UPDATE migration_jobs SET status = $1, updated_at = NOW() WHERE id = $2`,
@@ -90,6 +96,7 @@ func (r *MigrationRepo) UpdateStatus(ctx context.Context, id string, status doma
 	return nil
 }
 
+// Delete removes the migration job with the given id.
 func (r *MigrationRepo) Delete(ctx context.Context, id string) error {
 	tag, err := r.pool.Exec(ctx, `DELETE FROM migration_jobs WHERE id = $1`, id)
 	if err != nil {

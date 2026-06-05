@@ -30,10 +30,14 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/formats/repoproxy"
 )
 
+// Handler serves the Rust Cargo registry protocol.
 type Handler struct{ deps formats.Deps }
 
+// New creates a Cargo format Handler with the given dependencies.
 func New(deps formats.Deps) *Handler { return &Handler{deps: deps} }
-func (h *Handler) Name() string      { return "cargo" }
+
+// Name returns the format identifier.
+func (h *Handler) Name() string { return "cargo" }
 
 func (h *Handler) ServeHTTP(c *gin.Context) {
 	p := normPath(c.Param("path"))

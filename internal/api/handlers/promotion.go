@@ -9,10 +9,12 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/service"
 )
 
+// PromotionHandler serves the staging and build-promotion REST endpoints.
 type PromotionHandler struct {
 	svc *service.PromotionService
 }
 
+// NewPromotionHandler constructs a PromotionHandler backed by the given promotion service.
 func NewPromotionHandler(svc *service.PromotionService) *PromotionHandler {
 	return &PromotionHandler{svc: svc}
 }

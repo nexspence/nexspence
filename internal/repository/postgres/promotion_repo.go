@@ -9,12 +9,14 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
+	"github.com/nexspence-oss/nexspence/internal/repository"
 )
 
 type promotionRepo struct {
 	db *pgxpool.Pool
 }
 
+// NewPromotionRepo returns a postgres-backed PromotionRepo.
 func NewPromotionRepo(db *pgxpool.Pool) *promotionRepo {
 	return &promotionRepo{db: db}
 }
@@ -61,7 +63,7 @@ func (r *promotionRepo) GetRule(ctx context.Context, id string) (*domain.Promoti
 		`SELECT `+promotionRuleFields+` FROM promotion_rules WHERE id = $1`, id)
 	rule, err := scanPromotionRule(row)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
+		return nil, repository.ErrNotFound
 	}
 	return rule, err
 }
@@ -155,7 +157,7 @@ func (r *promotionRepo) GetRequest(ctx context.Context, id string) (*domain.Prom
 		`SELECT `+promotionReqFields+` FROM promotion_requests WHERE id=$1`, id)
 	req, err := scanPromotionRequest(row)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
+		return nil, repository.ErrNotFound
 	}
 	return req, err
 }

@@ -19,10 +19,14 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/formats/repoproxy"
 )
 
+// Handler serves the Maven 2/3 repository protocol.
 type Handler struct{ deps formats.Deps }
 
+// New creates a Maven format Handler with the given dependencies.
 func New(deps formats.Deps) *Handler { return &Handler{deps: deps} }
-func (h *Handler) Name() string      { return "maven2" }
+
+// Name returns the format identifier.
+func (h *Handler) Name() string { return "maven2" }
 
 func (h *Handler) ServeHTTP(c *gin.Context) {
 	repoName := c.Param("repoName")

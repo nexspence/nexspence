@@ -16,6 +16,7 @@ type RBACService struct {
 	log   logger.Logger
 }
 
+// NewRBACService constructs a service that evaluates repository access decisions.
 func NewRBACService(rbac repository.RBACRepo, repos repository.RepositoryRepo, log logger.Logger) *RBACService {
 	return &RBACService{rbac: rbac, repos: repos, log: log}
 }

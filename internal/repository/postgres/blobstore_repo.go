@@ -9,12 +9,14 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
+	"github.com/nexspence-oss/nexspence/internal/repository"
 )
 
 type blobStoreRepo struct {
 	db *pgxpool.Pool
 }
 
+// NewBlobStoreRepo returns a postgres-backed BlobStoreRepo.
 func NewBlobStoreRepo(db *pgxpool.Pool) *blobStoreRepo {
 	return &blobStoreRepo{db: db}
 }
@@ -45,7 +47,7 @@ func (r *blobStoreRepo) Get(ctx context.Context, name string) (*domain.BlobStore
 		FROM blob_stores WHERE name = $1`, name)
 	bs, err := scanBlobStore(row)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
+		return nil, repository.ErrNotFound
 	}
 	return bs, err
 }
@@ -56,7 +58,7 @@ func (r *blobStoreRepo) GetByID(ctx context.Context, id string) (*domain.BlobSto
 		FROM blob_stores WHERE id = $1`, id)
 	bs, err := scanBlobStore(row)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
+		return nil, repository.ErrNotFound
 	}
 	return bs, err
 }

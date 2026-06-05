@@ -696,7 +696,7 @@ func stubHandler(name string) gin.HandlerFunc {
 	}
 }
 
-func serveUI(cfg *config.Config) gin.HandlerFunc {
+func serveUI(_ *config.Config) gin.HandlerFunc {
 	candidates := []string{
 		"./frontend/dist",
 		"/app/frontend/dist",

@@ -16,6 +16,7 @@ type LocalBlobStore struct {
 	basePath string
 }
 
+// NewLocalBlobStore creates a LocalBlobStore rooted at basePath, creating the directory if needed.
 func NewLocalBlobStore(basePath string) (*LocalBlobStore, error) {
 	if err := os.MkdirAll(basePath, 0o750); err != nil {
 		return nil, fmt.Errorf("create blob store dir %s: %w", basePath, err)
@@ -31,6 +32,7 @@ func (s *LocalBlobStore) keyPath(key string) string {
 	return filepath.Join(s.basePath, key)
 }
 
+// Put writes the blob for key, staging to a temp file and renaming for atomicity.
 func (s *LocalBlobStore) Put(_ context.Context, key string, r io.Reader, _ int64) error {
 	dst := s.keyPath(key)
 	if err := os.MkdirAll(filepath.Dir(dst), 0o750); err != nil {
@@ -54,6 +56,7 @@ func (s *LocalBlobStore) Put(_ context.Context, key string, r io.Reader, _ int64
 	return os.Rename(tmp, dst)
 }
 
+// Get opens the blob for key and returns its reader and size.
 func (s *LocalBlobStore) Get(_ context.Context, key string) (io.ReadCloser, int64, error) {
 	f, err := os.Open(s.keyPath(key))
 	if err != nil {
@@ -67,6 +70,7 @@ func (s *LocalBlobStore) Get(_ context.Context, key string) (io.ReadCloser, int6
 	return f, info.Size(), nil
 }
 
+// Delete removes the blob for key; a missing blob is not an error.
 func (s *LocalBlobStore) Delete(_ context.Context, key string) error {
 	err := os.Remove(s.keyPath(key))
 	if os.IsNotExist(err) {
@@ -75,6 +79,7 @@ func (s *LocalBlobStore) Delete(_ context.Context, key string) error {
 	return err
 }
 
+// Exists reports whether a blob is stored for key.
 func (s *LocalBlobStore) Exists(_ context.Context, key string) (bool, error) {
 	_, err := os.Stat(s.keyPath(key))
 	if err == nil {
@@ -86,6 +91,7 @@ func (s *LocalBlobStore) Exists(_ context.Context, key string) (bool, error) {
 	return false, err
 }
 
+// Size returns the byte size of the blob for key.
 func (s *LocalBlobStore) Size(_ context.Context, key string) (int64, error) {
 	info, err := os.Stat(s.keyPath(key))
 	if err != nil {
@@ -94,6 +100,7 @@ func (s *LocalBlobStore) Size(_ context.Context, key string) (int64, error) {
 	return info.Size(), nil
 }
 
+// ListKeys walks the store and returns every blob key, stripping the shard prefix.
 func (s *LocalBlobStore) ListKeys(_ context.Context) ([]string, error) {
 	var keys []string
 	err := filepath.WalkDir(s.basePath, func(path string, d fs.DirEntry, err error) error {
@@ -114,6 +121,7 @@ func (s *LocalBlobStore) ListKeys(_ context.Context) ([]string, error) {
 	return keys, err
 }
 
+// UsedBytes returns the total size of all blobs under the base directory.
 func (s *LocalBlobStore) UsedBytes(_ context.Context) (int64, error) {
 	var total int64
 	err := filepath.WalkDir(s.basePath, func(_ string, d fs.DirEntry, err error) error {

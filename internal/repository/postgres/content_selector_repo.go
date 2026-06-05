@@ -9,14 +9,18 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
+	"github.com/nexspence-oss/nexspence/internal/repository"
 )
 
+// ContentSelectorRepo is a postgres-backed implementation of repository.ContentSelectorRepo.
 type ContentSelectorRepo struct{ pool *pgxpool.Pool }
 
+// NewContentSelectorRepo returns a postgres-backed ContentSelectorRepo.
 func NewContentSelectorRepo(pool *pgxpool.Pool) *ContentSelectorRepo {
 	return &ContentSelectorRepo{pool: pool}
 }
 
+// List returns all content selectors ordered by name.
 func (r *ContentSelectorRepo) List(ctx context.Context) ([]domain.ContentSelector, error) {
 	rows, err := r.pool.Query(ctx,
 		`SELECT id, name, description, expression, created_at, updated_at
@@ -37,6 +41,7 @@ func (r *ContentSelectorRepo) List(ctx context.Context) ([]domain.ContentSelecto
 	return out, rows.Err()
 }
 
+// Get returns the content selector with the given id, or repository.ErrNotFound.
 func (r *ContentSelectorRepo) Get(ctx context.Context, id string) (*domain.ContentSelector, error) {
 	var s domain.ContentSelector
 	err := r.pool.QueryRow(ctx,
@@ -44,7 +49,7 @@ func (r *ContentSelectorRepo) Get(ctx context.Context, id string) (*domain.Conte
 		 FROM content_selectors WHERE id = $1`, id).
 		Scan(&s.ID, &s.Name, &s.Description, &s.Expression, &s.CreatedAt, &s.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
+		return nil, repository.ErrNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("content_selectors get: %w", err)
@@ -52,6 +57,7 @@ func (r *ContentSelectorRepo) Get(ctx context.Context, id string) (*domain.Conte
 	return &s, nil
 }
 
+// GetByName returns the content selector with the given name, or repository.ErrNotFound.
 func (r *ContentSelectorRepo) GetByName(ctx context.Context, name string) (*domain.ContentSelector, error) {
 	var s domain.ContentSelector
 	err := r.pool.QueryRow(ctx,
@@ -59,7 +65,7 @@ func (r *ContentSelectorRepo) GetByName(ctx context.Context, name string) (*doma
 		 FROM content_selectors WHERE name = $1`, name).
 		Scan(&s.ID, &s.Name, &s.Description, &s.Expression, &s.CreatedAt, &s.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
+		return nil, repository.ErrNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("content_selectors get by name: %w", err)
@@ -67,6 +73,7 @@ func (r *ContentSelectorRepo) GetByName(ctx context.Context, name string) (*doma
 	return &s, nil
 }
 
+// Create inserts a new content selector and populates its generated fields.
 func (r *ContentSelectorRepo) Create(ctx context.Context, s *domain.ContentSelector) error {
 	return r.pool.QueryRow(ctx,
 		`INSERT INTO content_selectors (name, description, expression)
@@ -76,6 +83,7 @@ func (r *ContentSelectorRepo) Create(ctx context.Context, s *domain.ContentSelec
 		Scan(&s.ID, &s.CreatedAt, &s.UpdatedAt)
 }
 
+// Update overwrites the content selector identified by s.ID.
 func (r *ContentSelectorRepo) Update(ctx context.Context, s *domain.ContentSelector) error {
 	tag, err := r.pool.Exec(ctx,
 		`UPDATE content_selectors
@@ -91,6 +99,7 @@ func (r *ContentSelectorRepo) Update(ctx context.Context, s *domain.ContentSelec
 	return nil
 }
 
+// Delete removes the content selector with the given id.
 func (r *ContentSelectorRepo) Delete(ctx context.Context, id string) error {
 	_, err := r.pool.Exec(ctx, `DELETE FROM content_selectors WHERE id = $1`, id)
 	return err
@@ -127,6 +136,7 @@ func (r *ContentSelectorRepo) ListForUser(ctx context.Context, userID string) ([
 	return out, rows.Err()
 }
 
+// AttachToPrivilege sets the named privilege's content_selector_id to selectorID.
 func (r *ContentSelectorRepo) AttachToPrivilege(ctx context.Context, privilegeName, selectorID string) error {
 	tag, err := r.pool.Exec(ctx,
 		`UPDATE privileges SET content_selector_id = $1 WHERE name = $2`,
@@ -140,6 +150,7 @@ func (r *ContentSelectorRepo) AttachToPrivilege(ctx context.Context, privilegeNa
 	return nil
 }
 
+// DetachFromPrivilege clears the named privilege's content_selector_id.
 func (r *ContentSelectorRepo) DetachFromPrivilege(ctx context.Context, privilegeName string) error {
 	tag, err := r.pool.Exec(ctx,
 		`UPDATE privileges SET content_selector_id = NULL WHERE name = $1`,

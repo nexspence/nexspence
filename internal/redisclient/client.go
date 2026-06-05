@@ -31,10 +31,12 @@ func New(cfg nexspencecfg.RedisConfig) (*Client, error) {
 	return &Client{rdb: rdb}, nil
 }
 
+// Get returns the value stored at key.
 func (c *Client) Get(ctx context.Context, key string) (string, error) {
 	return c.rdb.Get(ctx, key).Result()
 }
 
+// Set stores value at key with the given TTL.
 func (c *Client) Set(ctx context.Context, key, value string, ttl time.Duration) error {
 	return c.rdb.Set(ctx, key, value, ttl).Err()
 }
@@ -45,14 +47,17 @@ func (c *Client) SetNX(ctx context.Context, key, value string, ttl time.Duration
 	return c.rdb.SetNX(ctx, key, value, ttl).Result()
 }
 
+// Del deletes key.
 func (c *Client) Del(ctx context.Context, key string) error {
 	return c.rdb.Del(ctx, key).Err()
 }
 
+// Ping checks connectivity to Redis.
 func (c *Client) Ping(ctx context.Context) error {
 	return c.rdb.Ping(ctx).Err()
 }
 
+// Close releases the underlying Redis connection pool.
 func (c *Client) Close() error {
 	return c.rdb.Close()
 }

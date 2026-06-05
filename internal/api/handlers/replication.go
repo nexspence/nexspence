@@ -1,19 +1,23 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
+	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/service"
 )
 
+// ReplicationHandler serves the content-replication REST endpoints.
 type ReplicationHandler struct {
 	svc *service.ReplicationService
 }
 
+// NewReplicationHandler constructs a ReplicationHandler backed by the given replication service.
 func NewReplicationHandler(svc *service.ReplicationService) *ReplicationHandler {
 	return &ReplicationHandler{svc: svc}
 }
@@ -107,13 +111,13 @@ func (h *ReplicationHandler) Delete(c *gin.Context) {
 // ManualRun handles POST /api/v1/replication/rules/:id/run
 func (h *ReplicationHandler) ManualRun(c *gin.Context) {
 	id := c.Param("id")
-	rule, err := h.svc.GetRule(c.Request.Context(), id)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	_, err := h.svc.GetRule(c.Request.Context(), id)
+	if errors.Is(err, repository.ErrNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "rule not found"})
 		return
 	}
-	if rule == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "rule not found"})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	go func() {
@@ -126,7 +130,7 @@ func (h *ReplicationHandler) ManualRun(c *gin.Context) {
 func (h *ReplicationHandler) TestConnection(c *gin.Context) {
 	err := h.svc.TestConnection(c.Request.Context(), c.Param("id"))
 	if err != nil {
-		if err.Error() == "rule not found" {
+		if errors.Is(err, repository.ErrNotFound) || err.Error() == "rule not found" {
 			c.JSON(http.StatusNotFound, gin.H{"error": "rule not found"})
 			return
 		}

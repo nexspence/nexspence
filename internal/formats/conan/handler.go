@@ -28,10 +28,14 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/formats/repoproxy"
 )
 
+// Handler serves the Conan C/C++ package registry protocol.
 type Handler struct{ deps formats.Deps }
 
+// New creates a Conan format Handler with the given dependencies.
 func New(deps formats.Deps) *Handler { return &Handler{deps: deps} }
-func (h *Handler) Name() string      { return "conan" }
+
+// Name returns the format identifier.
+func (h *Handler) Name() string { return "conan" }
 
 func (h *Handler) ServeHTTP(c *gin.Context) {
 	p := normPath(c.Param("path"))
@@ -187,7 +191,7 @@ func (h *Handler) handleDownloadURLs(c *gin.Context, repoName, p string) {
 	c.JSON(http.StatusOK, urls)
 }
 
-func (h *Handler) handleManifest(c *gin.Context, repoName, p string) {
+func (h *Handler) handleManifest(c *gin.Context, _, p string) {
 	name, version, user, channel, ok := parseRef(p)
 	if !ok {
 		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})

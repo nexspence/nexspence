@@ -20,6 +20,7 @@ type TokenHandler struct {
 	maxDays int
 }
 
+// NewTokenHandler constructs a TokenHandler from the token and user services; maxDays caps token lifetime (default 90).
 func NewTokenHandler(tokens *service.TokenService, users *service.UserService, maxDays int) *TokenHandler {
 	if maxDays <= 0 {
 		maxDays = 90

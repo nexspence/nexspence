@@ -8,12 +8,14 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
+	"github.com/nexspence-oss/nexspence/internal/repository"
 )
 
 type userTokenRepo struct {
 	db *pgxpool.Pool
 }
 
+// NewUserTokenRepo returns a postgres-backed UserTokenRepo.
 func NewUserTokenRepo(db *pgxpool.Pool) *userTokenRepo {
 	return &userTokenRepo{db: db}
 }
@@ -58,7 +60,7 @@ func (r *userTokenRepo) Get(ctx context.Context, id string) (*domain.UserToken, 
 		  WHERE t.id = $1`, id)
 	t, err := scanUserToken(row)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
+		return nil, repository.ErrNotFound
 	}
 	return t, err
 }
@@ -70,7 +72,7 @@ func (r *userTokenRepo) GetByHash(ctx context.Context, tokenHash string) (*domai
 		  WHERE t.token_hash = $1`, tokenHash)
 	t, err := scanUserToken(row)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
+		return nil, repository.ErrNotFound
 	}
 	return t, err
 }

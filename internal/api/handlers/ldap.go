@@ -15,6 +15,7 @@ type LDAPHandler struct {
 	ldap auth.LDAPAuthenticator // nil when LDAP disabled
 }
 
+// NewLDAPHandler constructs an LDAPHandler from the LDAP config and authenticator (nil when LDAP is disabled).
 func NewLDAPHandler(cfg config.LDAPConfig, ldap auth.LDAPAuthenticator) *LDAPHandler {
 	return &LDAPHandler{cfg: cfg, ldap: ldap}
 }
