@@ -817,6 +817,65 @@ def verify(secret: str, body: bytes, header: str) -&gt; bool:
   <div class="alert-info" data-i18n="repl.diff.note"><strong>Differential sync:</strong> Each run compares asset paths between source and target and only pushes artifacts that are missing or changed on the remote. Credentials are stored AES-256-GCM encrypted.</div>
 </template>
 
+<template id="tpl-terraform">
+  <div class="doc-section-title" data-i18n="tf.title">Terraform Provider</div>
+  <div class="doc-section-sub" data-i18n="tf.sub">Manage Nexspence as code with the official Terraform provider — repositories, blob stores, users, roles, content selectors, and privileges, all version-controlled and reproducible. Published on the <a href="https://registry.terraform.io/providers/nexspence/nexspence" target="_blank" rel="noopener" style="color:var(--blue)">Terraform Registry</a> as <code>nexspence/nexspence</code> (v0.1.0).</div>
+
+  <div class="inst-sep" data-i18n="tf.qs.sep">Quick Start</div>
+  <p style="font-size:.8rem;color:var(--dim);margin-bottom:10px;line-height:1.6" data-i18n="tf.qs.desc">Declare the provider, point it at your Nexspence server, and define resources. Run <code>terraform init</code>, then <code>terraform apply</code>.</p>
+  <div class="cb"><div class="cb-bar"><span>main.tf</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body">terraform {
+  required_providers {
+    nexspence = {
+      source  = <span class="cs">"nexspence/nexspence"</span>
+      version = <span class="cs">"~> 0.1"</span>
+    }
+  }
+}
+
+provider <span class="cs">"nexspence"</span> {
+  url   = <span class="cs">"https://nexspence.example.com"</span>
+  token = var.nexspence_token
+}
+
+resource <span class="cs">"nexspence_repository"</span> <span class="cs">"maven_central"</span> {
+  name       = <span class="cs">"maven-central"</span>
+  format     = <span class="cs">"maven2"</span>
+  type       = <span class="cs">"proxy"</span>
+  blob_store = <span class="cs">"default"</span>
+  proxy {
+    remote_url = <span class="cs">"https://repo1.maven.org/maven2/"</span>
+  }
+}</div></div>
+
+  <div class="inst-sep" data-i18n="tf.res.sep">Resources &amp; Data Sources</div>
+  <table class="doc-table">
+    <thead><tr><th data-i18n="tf.res.th.name">Name</th><th data-i18n="tf.res.th.kind">Kind</th><th data-i18n="tf.res.th.desc">Manages</th></tr></thead>
+    <tbody>
+      <tr><td><code>nexspence_repository</code></td><td data-i18n="tf.kind.resource">Resource</td><td data-i18n="tf.res.repository">Hosted, proxy, and group repositories for any format</td></tr>
+      <tr><td><code>nexspence_blobstore</code></td><td data-i18n="tf.kind.resource">Resource</td><td data-i18n="tf.res.blobstore">Local or S3-compatible blob stores</td></tr>
+      <tr><td><code>nexspence_user</code></td><td data-i18n="tf.kind.resource">Resource</td><td data-i18n="tf.res.user">User accounts and their role assignments</td></tr>
+      <tr><td><code>nexspence_role</code></td><td data-i18n="tf.kind.resource">Resource</td><td data-i18n="tf.res.role">Roles grouping privileges together</td></tr>
+      <tr><td><code>nexspence_content_selector</code></td><td data-i18n="tf.kind.resource">Resource</td><td data-i18n="tf.res.cs">CEL content selectors</td></tr>
+      <tr><td><code>nexspence_privilege</code></td><td data-i18n="tf.kind.resource">Resource</td><td data-i18n="tf.res.priv">Content-selector privileges</td></tr>
+      <tr><td><code>nexspence_repository</code></td><td data-i18n="tf.kind.data">Data source</td><td data-i18n="tf.res.d-repository">Look up a single existing repository</td></tr>
+      <tr><td><code>nexspence_repositories</code></td><td data-i18n="tf.kind.data">Data source</td><td data-i18n="tf.res.d-repositories">List all repositories, optionally filtered by format or type</td></tr>
+    </tbody>
+  </table>
+
+  <div class="inst-sep" data-i18n="tf.auth.sep">Authentication</div>
+  <p style="font-size:.8rem;color:var(--dim);margin-bottom:10px;line-height:1.6" data-i18n="tf.auth.desc">Authenticate with an <code>nxs_*</code> API token (preferred) or username + password. Set credentials in the provider block or via environment variables.</p>
+  <div class="cb"><div class="cb-bar"><span>shell — environment variables</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body"><span class="cc"># API token (preferred)</span>
+export NEXSPENCE_URL=<span class="cs">"https://nexspence.example.com"</span>
+export NEXSPENCE_TOKEN=<span class="cs">"nxs_xxxxxxxxxxxxxxxx"</span>
+
+<span class="cc"># or HTTP Basic auth</span>
+export NEXSPENCE_USERNAME=<span class="cs">"admin"</span>
+export NEXSPENCE_PASSWORD=<span class="cs">"admin123"</span></div></div>
+  <div class="alert-info" data-i18n="tf.auth.note"><strong>Token:</strong> Generate an <code>nxs_*</code> token in <strong>Security → API Tokens</strong> and pass it via the <code>token</code> argument or <code>NEXSPENCE_TOKEN</code>. Never commit secrets to version control — use a Terraform variable or a secrets manager.</div>
+</template>
+
 <template id="tpl-install">
   <div class="doc-section-title" data-i18n="inst.title">Installation</div>
   <div class="doc-section-sub" data-i18n="inst.sub">Docker image: <code>ghcr.io/nexspence/nexspence:latest</code> — linux/amd64 and linux/arm64. Download the release zip from <a href="https://github.com/nexspence/nexspence/releases/latest" target="_blank" rel="noopener" style="color:var(--blue)">GitHub Releases</a>.</div>
@@ -1095,7 +1154,7 @@ const TRANSLATIONS={
     'sb.repositories':'Repositories','sb.formats-guide':'Format Setup Guides','sb.browse-search':'Browse & Search',
     'sb.users':'Users & API Tokens','sb.rbac':'Roles & Privileges','sb.cleanup':'Cleanup Policies',
     'sb.webhooks':'Webhooks','sb.migration':'Migration from Nexus','sb.monitoring':'Monitoring',
-    'sb.promotion':'Build Promotion','sb.replication':'Content Replication',
+    'sb.promotion':'Build Promotion','sb.replication':'Content Replication','sb.terraform':'Terraform Provider',
     'tab.quickstart':'Quick Start','tab.install':'Installation','tab.formats':'Formats',
     'tab.changelog':'Changelog','tab.api':'API Reference',
     'crumb.quickstart':'quick start','crumb.install':'installation',
@@ -1103,7 +1162,7 @@ const TRANSLATIONS={
     'crumb.repositories':'repositories','crumb.formats-guide':'format setup','crumb.browse-search':'browse & search',
     'crumb.users':'users & tokens','crumb.rbac':'roles & privileges','crumb.cleanup':'cleanup policies',
     'crumb.webhooks':'webhooks','crumb.migration':'migration','crumb.monitoring':'monitoring',
-    'crumb.promotion':'build promotion','crumb.replication':'content replication',
+    'crumb.promotion':'build promotion','crumb.replication':'content replication','crumb.terraform':'terraform provider',
     'ch.features':'Features','ch.fixes':'Bug Fixes',
     'ch.docker-toggle':'🐳 Docker install info',
     'ch.view-all':'View all releases on GitHub →',
@@ -1233,6 +1292,24 @@ const TRANSLATIONS={
     'repl.s2.title':'Test the connection','repl.s2.desc':'Click <strong>Test Connection</strong> on the rule card.',
     'repl.s3.title':'Monitor replication history','repl.s3.desc':'The history table shows past runs. Click <strong>Run Now</strong> to trigger an immediate sync.',
     'repl.diff.note':'<strong>Differential sync:</strong> Only missing or changed artifacts are pushed. Credentials are stored AES-256-GCM encrypted.',
+    'tf.title':'Terraform Provider',
+    'tf.sub':'Manage Nexspence as code with the official Terraform provider — repositories, blob stores, users, roles, content selectors, and privileges, all version-controlled and reproducible. Published on the <a href="https://registry.terraform.io/providers/nexspence/nexspence" target="_blank" rel="noopener" style="color:var(--blue)">Terraform Registry</a> as <code>nexspence/nexspence</code> (v0.1.0).',
+    'tf.qs.sep':'Quick Start',
+    'tf.qs.desc':'Declare the provider, point it at your Nexspence server, and define resources. Run <code>terraform init</code>, then <code>terraform apply</code>.',
+    'tf.res.sep':'Resources & Data Sources',
+    'tf.res.th.name':'Name','tf.res.th.kind':'Kind','tf.res.th.desc':'Manages',
+    'tf.kind.resource':'Resource','tf.kind.data':'Data source',
+    'tf.res.repository':'Hosted, proxy, and group repositories for any format',
+    'tf.res.blobstore':'Local or S3-compatible blob stores',
+    'tf.res.user':'User accounts and their role assignments',
+    'tf.res.role':'Roles grouping privileges together',
+    'tf.res.cs':'CEL content selectors',
+    'tf.res.priv':'Content-selector privileges',
+    'tf.res.d-repository':'Look up a single existing repository',
+    'tf.res.d-repositories':'List all repositories, optionally filtered by format or type',
+    'tf.auth.sep':'Authentication',
+    'tf.auth.desc':'Authenticate with an <code>nxs_*</code> API token (preferred) or username + password. Set credentials in the provider block or via environment variables.',
+    'tf.auth.note':'<strong>Token:</strong> Generate an <code>nxs_*</code> token in <strong>Security → API Tokens</strong> and pass it via the <code>token</code> argument or <code>NEXSPENCE_TOKEN</code>. Never commit secrets to version control — use a Terraform variable or a secrets manager.',
     'inst.title':'Installation',
     'inst.sub':'Docker image: <code>ghcr.io/nexspence/nexspence:latest</code> — linux/amd64 and linux/arm64. Download the release zip from <a href="https://github.com/nexspence/nexspence/releases/latest" target="_blank" rel="noopener" style="color:var(--blue)">GitHub Releases</a>.',
     'inst.v.std':'Standard','inst.v.ha':'HA Cluster','inst.v.mon':'+ Monitoring',
@@ -1283,11 +1360,11 @@ const TRANSLATIONS={
     'sb.repositories':'Репозитории','sb.formats-guide':'Настройка форматов','sb.browse-search':'Обзор и поиск',
     'sb.users':'Пользователи и токены','sb.rbac':'Роли и привилегии','sb.cleanup':'Политики очистки',
     'sb.webhooks':'Вебхуки','sb.migration':'Миграция из Nexus','sb.monitoring':'Мониторинг',
-    'sb.promotion':'Продвижение сборок','sb.replication':'Репликация контента',
+    'sb.promotion':'Продвижение сборок','sb.replication':'Репликация контента','sb.terraform':'Провайдер Terraform',
     'crumb.repositories':'репозитории','crumb.formats-guide':'настройка форматов','crumb.browse-search':'обзор и поиск',
     'crumb.users':'пользователи и токены','crumb.rbac':'роли и привилегии','crumb.cleanup':'политики очистки',
     'crumb.webhooks':'вебхуки','crumb.migration':'миграция','crumb.monitoring':'мониторинг',
-    'crumb.promotion':'продвижение сборок','crumb.replication':'репликация контента',
+    'crumb.promotion':'продвижение сборок','crumb.replication':'репликация контента','crumb.terraform':'провайдер terraform',
     'tab.quickstart':'Быстрый старт',
     'tab.install':'Установка',
     'tab.formats':'Форматы',
@@ -1429,6 +1506,24 @@ const TRANSLATIONS={
     'repl.s2.title':'Проверьте соединение','repl.s2.desc':'Нажмите <strong>Test Connection</strong> на карточке правила.',
     'repl.s3.title':'Следите за историей','repl.s3.desc':'Таблица истории показывает прошлые запуски. Нажмите <strong>Run Now</strong> для немедленной синхронизации.',
     'repl.diff.note':'<strong>Дифференциальная синхронизация:</strong> Передаются только отсутствующие или изменённые артефакты. Учётные данные хранятся в шифровании AES-256-GCM.',
+    'tf.title':'Провайдер Terraform',
+    'tf.sub':'Управляйте Nexspence как кодом с помощью официального провайдера Terraform — репозитории, blob stores, пользователи, роли, content selectors и привилегии, всё под контролем версий и воспроизводимо. Опубликован в <a href="https://registry.terraform.io/providers/nexspence/nexspence" target="_blank" rel="noopener" style="color:var(--blue)">Terraform Registry</a> как <code>nexspence/nexspence</code> (v0.1.0).',
+    'tf.qs.sep':'Быстрый старт',
+    'tf.qs.desc':'Объявите провайдер, укажите адрес сервера Nexspence и опишите ресурсы. Выполните <code>terraform init</code>, затем <code>terraform apply</code>.',
+    'tf.res.sep':'Ресурсы и источники данных',
+    'tf.res.th.name':'Имя','tf.res.th.kind':'Тип','tf.res.th.desc':'Управляет',
+    'tf.kind.resource':'Ресурс','tf.kind.data':'Источник данных',
+    'tf.res.repository':'Hosted, proxy и group репозитории любого формата',
+    'tf.res.blobstore':'Локальные или S3-совместимые blob stores',
+    'tf.res.user':'Учётные записи пользователей и их роли',
+    'tf.res.role':'Роли, объединяющие привилегии',
+    'tf.res.cs':'CEL content selectors',
+    'tf.res.priv':'Привилегии на основе content selector',
+    'tf.res.d-repository':'Получение одного существующего репозитория',
+    'tf.res.d-repositories':'Список всех репозиториев с фильтром по формату или типу',
+    'tf.auth.sep':'Аутентификация',
+    'tf.auth.desc':'Аутентификация по API-токену <code>nxs_*</code> (предпочтительно) или логину с паролем. Задайте учётные данные в блоке provider или через переменные окружения.',
+    'tf.auth.note':'<strong>Токен:</strong> Создайте токен <code>nxs_*</code> в <strong>Security → API Tokens</strong> и передайте его через аргумент <code>token</code> или <code>NEXSPENCE_TOKEN</code>. Не коммитьте секреты в систему контроля версий — используйте переменную Terraform или менеджер секретов.',
     'inst.title':'Установка',
     'inst.sub':'Docker-образ: <code>ghcr.io/nexspence/nexspence:latest</code> — linux/amd64 и linux/arm64. Скачайте архив релиза с <a href="https://github.com/nexspence/nexspence/releases/latest" target="_blank" rel="noopener" style="color:var(--blue)">GitHub Releases</a>.',
     'inst.v.std':'Стандарт',
@@ -1499,6 +1594,7 @@ const SECTIONS=[
   {key:'monitoring',  templateId:'tpl-monitoring'},
   {key:'promotion',   templateId:'tpl-promotion'},
   {key:'replication', templateId:'tpl-replication'},
+  {key:'terraform',   templateId:'tpl-terraform'},
   {key:'formats',     templateId:'tpl-formats'},
   {key:'api',         templateId:'tpl-api'},
   {key:'changelog',   templateId:null},
@@ -1524,6 +1620,7 @@ const SIDEBAR_GROUPS=[
     {key:'monitoring',  icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>'},
     {key:'promotion',   icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="17 11 21 7 17 3"/><line x1="21" y1="7" x2="9" y2="7"/><polyline points="7 21 3 17 7 13"/><line x1="15" y1="17" x2="3" y2="17"/></svg>'},
     {key:'replication', icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>'},
+    {key:'terraform',   icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="16" y1="3" x2="16" y2="13"/><polygon points="3 5 9 8 9 18 3 15 3 5"/><polygon points="9 8 15 5 15 15 9 18 9 8"/><polyline points="16 13 21 11 21 6 16 8"/></svg>'},
   ]},
   {id:'reference',items:[
     {key:'formats',     icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>'},
