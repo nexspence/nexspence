@@ -8,7 +8,6 @@ import (
 	"os"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -198,10 +197,7 @@ func (h *SystemHandler) checkStorage(_ context.Context) ServiceStatus {
 		return ServiceStatus{Name: "Local Storage", Status: "error", Detail: path, CheckedAt: now}
 	}
 	detail := path
-	var fs syscall.Statfs_t
-	if err := syscall.Statfs(path, &fs); err == nil {
-		total := fs.Blocks * uint64(fs.Bsize) //nolint:gosec // Bsize is a filesystem block size — always positive
-		free := fs.Bavail * uint64(fs.Bsize)  //nolint:gosec // Bsize is a filesystem block size — always positive
+	if free, total, ok := diskUsage(path); ok {
 		detail = fmt.Sprintf("%s · free %s / %s", path, fmtBytes(free), fmtBytes(total))
 	}
 	return ServiceStatus{Name: "Local Storage", Status: "ok", Detail: detail, CheckedAt: now}

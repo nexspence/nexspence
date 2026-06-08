@@ -101,6 +101,15 @@ See [docs/oidc-setup.md](oidc-setup.md) for manual OIDC config and all supported
 
 ---
 
+## Native Install (no Docker)
+
+Run Nexspence directly on Linux (`.deb`/`.rpm`), macOS, or Windows with systemd /
+launchd / Windows-service integration. The single binary embeds the web UI and requires
+only an external PostgreSQL. See the full guide — including reverse-proxy and multi-node
+load-balancer configs — in [install-local.md](install-local.md).
+
+---
+
 ## Kubernetes (Helm)
 
 ```bash

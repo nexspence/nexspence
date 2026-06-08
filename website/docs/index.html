@@ -1112,6 +1112,119 @@ helm install nexspence deploy/helm/nexspence \
   </table>
 </template>
 
+<template id="tpl-native-install">
+  <div class="doc-section-title" data-i18n="ni.title">Native Install (no Docker)</div>
+  <div class="doc-section-sub" data-i18n="ni.sub">Run Nexspence directly on Linux, macOS, or Windows. The single binary embeds the web UI and requires only an external PostgreSQL — no Docker needed.</div>
+
+  <div class="inst-sep" data-i18n="ni.prereq.sep">Prerequisites</div>
+  <div class="alert-info" data-i18n="ni.prereq.info"><strong>PostgreSQL ≥ 13</strong> is required. The binary auto-runs migrations on first start. Ensure the DB user has <code>CREATE</code> and <code>CONNECT</code> privileges on the target database.</div>
+
+  <div class="inst-sep" data-i18n="ni.linux.sep">Linux — .deb / .rpm</div>
+  <div class="step-list">
+    <div class="step-item"><div class="step-num">01</div><div><div class="step-title" data-i18n="ni.linux.s1.title">Download the package</div><div class="step-desc" data-i18n="ni.linux.s1.desc">Go to <a href="https://github.com/nexspence/nexspence/releases/latest" target="_blank" rel="noopener" style="color:var(--blue)">GitHub Releases</a> and download the <code>.deb</code> (Debian/Ubuntu) or <code>.rpm</code> (RHEL/Fedora/SUSE) package for your architecture (<code>amd64</code> or <code>arm64</code>).</div></div></div>
+    <div class="step-item"><div class="step-num">02</div><div><div class="step-title" data-i18n="ni.linux.s2.title">Install</div><div class="step-desc" data-i18n="ni.linux.s2.desc">Install with your package manager. The package creates a <code>nexspence</code> system user and installs a systemd unit.</div></div></div>
+    <div class="step-item"><div class="step-num">03</div><div><div class="step-title" data-i18n="ni.linux.s3.title">Configure and start</div><div class="step-desc" data-i18n="ni.linux.s3.desc">Edit <code>/etc/nexspence/config.yaml</code>, then enable and start the service.</div></div></div>
+  </div>
+  <div class="cb"><div class="cb-bar"><span>shell — Debian/Ubuntu</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body">sudo dpkg -i nexspence_*_linux_amd64.deb
+sudo nano /etc/nexspence/config.yaml   <span class="cc"># set jwt_secret, admin_password, db DSN</span>
+sudo systemctl enable --now nexspence</div></div>
+  <div class="cb"><div class="cb-bar"><span>shell — RHEL/Fedora/SUSE</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body">sudo rpm -i nexspence_*_linux_amd64.rpm
+sudo nano /etc/nexspence/config.yaml
+sudo systemctl enable --now nexspence</div></div>
+
+  <div class="inst-sep" data-i18n="ni.macos.sep">macOS</div>
+  <div class="step-list">
+    <div class="step-item"><div class="step-num">01</div><div><div class="step-title" data-i18n="ni.macos.s1.title">Download and unpack</div><div class="step-desc" data-i18n="ni.macos.s1.desc">Download <code>nexspence_*_darwin_amd64.tar.gz</code> (Intel) or <code>nexspence_*_darwin_arm64.tar.gz</code> (Apple Silicon) from the release page. Extract and move the binary to <code>/usr/local/bin/</code>.</div></div></div>
+    <div class="step-item"><div class="step-num">02</div><div><div class="step-title" data-i18n="ni.macos.s2.title">Install the launchd service</div><div class="step-desc" data-i18n="ni.macos.s2.desc">The archive includes a <code>com.nexspence.server.plist</code> launchd agent. Load it with <code>launchctl</code>.</div></div></div>
+  </div>
+  <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body">tar -xzf nexspence_*_darwin_arm64.tar.gz
+sudo cp nexspence /usr/local/bin/
+sudo cp packaging/launchd/com.nexspence.server.plist /Library/LaunchDaemons/
+sudo launchctl load -w /Library/LaunchDaemons/com.nexspence.server.plist</div></div>
+
+  <div class="inst-sep" data-i18n="ni.windows.sep">Windows</div>
+  <div class="step-list">
+    <div class="step-item"><div class="step-num">01</div><div><div class="step-title" data-i18n="ni.windows.s1.title">Download and extract</div><div class="step-desc" data-i18n="ni.windows.s1.desc">Download <code>nexspence_*_windows_amd64.zip</code> from the release page. Extract to <code>C:\Program Files\Nexspence\</code>.</div></div></div>
+    <div class="step-item"><div class="step-num">02</div><div><div class="step-title" data-i18n="ni.windows.s2.title">Register the Windows service</div><div class="step-desc" data-i18n="ni.windows.s2.desc">Run <code>packaging\windows\install-service.ps1</code> from an elevated PowerShell to register and start Nexspence as a Windows service.</div></div></div>
+  </div>
+  <div class="cb"><div class="cb-bar"><span>PowerShell (Administrator)</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body">cd "C:\Program Files\Nexspence"
+.\packaging\windows\install-service.ps1
+Start-Service nexspence</div></div>
+
+  <div class="inst-sep" data-i18n="ni.proxy.sep">Reverse Proxy (nginx / Caddy)</div>
+  <div class="alert-info" data-i18n="ni.proxy.info"><strong>Recommended for production.</strong> Place nginx or Caddy in front of Nexspence to terminate TLS, set the <code>X-Forwarded-*</code> headers, and serve a clean public URL. Set <code>http.base_url</code> in <code>config.yaml</code> to the public HTTPS URL so download links are correct.</div>
+  <div class="cb"><div class="cb-bar"><span>nginx — /etc/nginx/conf.d/nexspence.conf</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body">server {
+    listen 443 ssl;
+    server_name nexspence.example.com;
+    ssl_certificate     /etc/ssl/nexspence.crt;
+    ssl_certificate_key /etc/ssl/nexspence.key;
+
+    location / {
+        proxy_pass         http://127.0.0.1:8081;
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+        client_max_body_size 0;   <span class="cc"># allow large artifact uploads</span>
+    }
+}</div></div>
+  <div class="cb"><div class="cb-bar"><span>Caddyfile</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body">nexspence.example.com {
+    reverse_proxy 127.0.0.1:8081
+    request_body  {
+        max_size 0
+    }
+}</div></div>
+
+  <div class="inst-sep" data-i18n="ni.lb.sep">Multi-Node Load Balancer</div>
+  <div class="alert-info" data-i18n="ni.lb.info"><strong>Stateless nodes.</strong> All state lives in PostgreSQL and the blob store (local path on a shared NFS/NAS, or S3-compatible storage). Run multiple Nexspence processes pointing at the same DB and blob store, then load-balance with nginx <code>upstream</code> or a cloud LB. Enable <code>redis.enabled: true</code> for distributed session caching.</div>
+  <div class="cb"><div class="cb-bar"><span>nginx upstream block</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body">upstream nexspence {
+    least_conn;
+    server 10.0.0.1:8081;
+    server 10.0.0.2:8081;
+}
+server {
+    listen 443 ssl;
+    server_name nexspence.example.com;
+    <span class="cc"># ... ssl certs ...</span>
+    location / { proxy_pass http://nexspence; }
+}</div></div>
+
+  <div class="inst-sep" data-i18n="ni.docker.sep">Docker Registry Subdomain Connector</div>
+  <div class="alert-info" data-i18n="ni.docker.info">To pull and push Docker images via per-repository subdomains (<code>&lt;repo&gt;.registry.example.com</code>) you need wildcard DNS pointed at your server, a wildcard TLS certificate, and a reverse proxy that forwards the original <code>Host</code> header so the subdomain connector can route the request to the correct repository. Enable the connector in <code>config.yaml</code>:</div>
+  <div class="cb"><div class="cb-bar"><span>config.yaml</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body">docker:
+  subdomain_connector:
+    enabled: true
+    base_host: "registry.example.com"</div></div>
+  <div class="alert-info" data-i18n="ni.docker.nginx">Then configure nginx with a wildcard <code>server_name</code> to match all repository subdomains and proxy them to Nexspence, preserving the <code>Host</code> header:</div>
+  <div class="cb"><div class="cb-bar"><span>nginx — wildcard registry vhost</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body">server {
+    listen 443 ssl;
+    server_name ~^(?&lt;repo&gt;.+)\.registry\.example\.com$;
+
+    ssl_certificate     /etc/ssl/certs/wildcard.registry.example.com.crt;
+    ssl_certificate_key /etc/ssl/private/wildcard.registry.example.com.key;
+
+    client_max_body_size 1024m;
+
+    location / {
+        proxy_pass http://127.0.0.1:8081;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_request_buffering off;
+        proxy_read_timeout  1800s;
+    }
+}</div></div>
+  <div class="alert-info" data-i18n="ni.docker.login">After enabling the connector and restarting Nexspence, <code>docker login repo-name.registry.example.com</code> targets that hosted repository directly — no port or path prefix needed.</div>
+</template>
+
 <template id="tpl-formats">
   <div class="doc-section-title" data-i18n="fmt.title">Supported Formats</div>
   <div class="doc-section-sub" data-i18n="fmt.sub">14 artifact formats — each supports Hosted, Proxy, and Group repository types.</div>
@@ -1369,6 +1482,30 @@ const TRANSLATIONS={
     'inst.cfg.sep':'⚙️ Configuration Reference',
     'inst.cfg.desc':'Every key can be overridden via env var: <code>NEXSPENCE_&lt;SECTION&gt;_&lt;KEY&gt;</code> (uppercase, underscore-separated).',
     'inst.cfg.th.key':'Key','inst.cfg.th.default':'Default','inst.cfg.th.desc':'Description',
+    'ni.title':'Native Install (no Docker)',
+    'ni.sub':'Run Nexspence directly on Linux, macOS, or Windows. The single binary embeds the web UI and requires only an external PostgreSQL — no Docker needed.',
+    'ni.prereq.sep':'Prerequisites',
+    'ni.prereq.info':'<strong>PostgreSQL ≥ 13</strong> is required. The binary auto-runs migrations on first start. Ensure the DB user has <code>CREATE</code> and <code>CONNECT</code> privileges on the target database.',
+    'ni.linux.sep':'Linux — .deb / .rpm',
+    'ni.linux.s1.title':'Download the package','ni.linux.s1.desc':'Go to <a href="https://github.com/nexspence/nexspence/releases/latest" target="_blank" rel="noopener" style="color:var(--blue)">GitHub Releases</a> and download the <code>.deb</code> (Debian/Ubuntu) or <code>.rpm</code> (RHEL/Fedora/SUSE) package for your architecture (<code>amd64</code> or <code>arm64</code>).',
+    'ni.linux.s2.title':'Install','ni.linux.s2.desc':'Install with your package manager. The package creates a <code>nexspence</code> system user and installs a systemd unit.',
+    'ni.linux.s3.title':'Configure and start','ni.linux.s3.desc':'Edit <code>/etc/nexspence/config.yaml</code>, then enable and start the service.',
+    'ni.macos.sep':'macOS',
+    'ni.macos.s1.title':'Download and unpack','ni.macos.s1.desc':'Download <code>nexspence_*_darwin_amd64.tar.gz</code> (Intel) or <code>nexspence_*_darwin_arm64.tar.gz</code> (Apple Silicon) from the release page. Extract and move the binary to <code>/usr/local/bin/</code>.',
+    'ni.macos.s2.title':'Install the launchd service','ni.macos.s2.desc':'The archive includes a <code>com.nexspence.server.plist</code> launchd agent. Load it with <code>launchctl</code>.',
+    'ni.windows.sep':'Windows',
+    'ni.windows.s1.title':'Download and extract','ni.windows.s1.desc':'Download <code>nexspence_*_windows_amd64.zip</code> from the release page. Extract to <code>C:\\Program Files\\Nexspence\\</code>.',
+    'ni.windows.s2.title':'Register the Windows service','ni.windows.s2.desc':'Run <code>packaging\windows\install-service.ps1</code> from an elevated PowerShell to register and start Nexspence as a Windows service.',
+    'ni.proxy.sep':'Reverse Proxy (nginx / Caddy)',
+    'ni.proxy.info':'<strong>Recommended for production.</strong> Place nginx or Caddy in front of Nexspence to terminate TLS and serve a clean public URL. Set <code>http.base_url</code> in <code>config.yaml</code> to the public HTTPS URL so download links are correct.',
+    'ni.lb.sep':'Multi-Node Load Balancer',
+    'ni.lb.info':'<strong>Stateless nodes.</strong> All state lives in PostgreSQL and the blob store. Run multiple Nexspence processes pointing at the same DB and blob store, then load-balance with nginx <code>upstream</code> or a cloud LB. Enable <code>redis.enabled: true</code> for distributed session caching.',
+    'ni.docker.sep':'Docker Registry Subdomain Connector',
+    'ni.docker.info':'To pull and push Docker images via per-repository subdomains (<code>&lt;repo&gt;.registry.example.com</code>) you need wildcard DNS pointed at your server, a wildcard TLS certificate, and a reverse proxy that forwards the original <code>Host</code> header so the subdomain connector can route the request to the correct repository. Enable the connector in <code>config.yaml</code>:',
+    'ni.docker.nginx':'Then configure nginx with a wildcard <code>server_name</code> to match all repository subdomains and proxy them to Nexspence, preserving the <code>Host</code> header:',
+    'ni.docker.login':'After enabling the connector and restarting Nexspence, <code>docker login repo-name.registry.example.com</code> targets that hosted repository directly — no port or path prefix needed.',
+    'sb.native-install':'Native Install',
+    'crumb.native-install':'native install',
     'fmt.title':'Supported Formats',
     'fmt.sub':'14 artifact formats — each supports Hosted, Proxy, and Group repository types.',
     'api.title':'API Reference','api.sub':'Nexspence exposes two API surfaces.',
@@ -1596,6 +1733,30 @@ const TRANSLATIONS={
     'inst.cfg.th.key':'Ключ',
     'inst.cfg.th.default':'По умолчанию',
     'inst.cfg.th.desc':'Описание',
+    'ni.title':'Нативная установка (без Docker)',
+    'ni.sub':'Запустите Nexspence напрямую на Linux, macOS или Windows. Один бинарный файл включает веб-интерфейс и требует только внешний PostgreSQL — Docker не нужен.',
+    'ni.prereq.sep':'Требования',
+    'ni.prereq.info':'<strong>PostgreSQL ≥ 13</strong> обязателен. Бинарный файл автоматически применяет миграции при первом запуске. Убедитесь, что пользователь БД имеет привилегии <code>CREATE</code> и <code>CONNECT</code>.',
+    'ni.linux.sep':'Linux — .deb / .rpm',
+    'ni.linux.s1.title':'Скачайте пакет','ni.linux.s1.desc':'Перейдите на <a href="https://github.com/nexspence/nexspence/releases/latest" target="_blank" rel="noopener" style="color:var(--blue)">GitHub Releases</a> и скачайте пакет <code>.deb</code> (Debian/Ubuntu) или <code>.rpm</code> (RHEL/Fedora/SUSE) для вашей архитектуры (<code>amd64</code> или <code>arm64</code>).',
+    'ni.linux.s2.title':'Установите','ni.linux.s2.desc':'Установите с помощью вашего пакетного менеджера. Пакет создаёт системного пользователя <code>nexspence</code> и устанавливает systemd-юнит.',
+    'ni.linux.s3.title':'Настройте и запустите','ni.linux.s3.desc':'Отредактируйте <code>/etc/nexspence/config.yaml</code>, затем включите и запустите сервис.',
+    'ni.macos.sep':'macOS',
+    'ni.macos.s1.title':'Скачайте и распакуйте','ni.macos.s1.desc':'Скачайте <code>nexspence_*_darwin_amd64.tar.gz</code> (Intel) или <code>nexspence_*_darwin_arm64.tar.gz</code> (Apple Silicon) со страницы релизов. Распакуйте и переместите бинарный файл в <code>/usr/local/bin/</code>.',
+    'ni.macos.s2.title':'Установите launchd-сервис','ni.macos.s2.desc':'В архиве есть <code>com.nexspence.server.plist</code> — launchd-агент. Загрузите его с помощью <code>launchctl</code>.',
+    'ni.windows.sep':'Windows',
+    'ni.windows.s1.title':'Скачайте и распакуйте','ni.windows.s1.desc':'Скачайте <code>nexspence_*_windows_amd64.zip</code> со страницы релизов. Распакуйте в <code>C:\\Program Files\\Nexspence\\</code>.',
+    'ni.windows.s2.title':'Зарегистрируйте Windows-сервис','ni.windows.s2.desc':'Запустите <code>packaging\windows\install-service.ps1</code> в PowerShell от имени администратора для регистрации и запуска Nexspence как службы Windows.',
+    'ni.proxy.sep':'Обратный прокси (nginx / Caddy)',
+    'ni.proxy.info':'<strong>Рекомендуется для production.</strong> Поместите nginx или Caddy перед Nexspence для терминации TLS и чистого публичного URL. Установите <code>http.base_url</code> в <code>config.yaml</code> на публичный HTTPS URL.',
+    'ni.lb.sep':'Балансировщик нагрузки (несколько узлов)',
+    'ni.lb.info':'<strong>Stateless-узлы.</strong> Всё состояние хранится в PostgreSQL и blob store. Запустите несколько процессов Nexspence, указав на один DB и blob store, затем балансируйте через nginx <code>upstream</code> или облачный LB. Включите <code>redis.enabled: true</code> для распределённого кэширования сессий.',
+    'ni.docker.sep':'Коннектор поддоменов Docker-реестра',
+    'ni.docker.info':'Чтобы выполнять <code>docker pull</code>/<code>push</code> через поддомены отдельных репозиториев (<code>&lt;repo&gt;.registry.example.com</code>), необходимы: wildcard DNS на ваш сервер, wildcard TLS-сертификат и обратный прокси, передающий исходный заголовок <code>Host</code>, чтобы коннектор мог маршрутизировать запрос в нужный репозиторий. Включите коннектор в <code>config.yaml</code>:',
+    'ni.docker.nginx':'Затем настройте nginx с wildcard <code>server_name</code>, чтобы перехватывать запросы ко всем поддоменам реестра и проксировать их в Nexspence, сохраняя заголовок <code>Host</code>:',
+    'ni.docker.login':'После включения коннектора и перезапуска Nexspence команда <code>docker login repo-name.registry.example.com</code> адресует конкретный hosted-репозиторий напрямую — без указания порта или префикса пути.',
+    'sb.native-install':'Нативная установка',
+    'crumb.native-install':'нативная установка',
     'fmt.title':'Поддерживаемые форматы',
     'fmt.sub':'14 форматов артефактов — каждый поддерживает типы Hosted, Proxy и Group.',
     'api.title':'Справочник API',
@@ -1620,8 +1781,9 @@ function switchLang(lang,btn){
 
 const SECTIONS=[
   {key:'quickstart',  templateId:'tpl-quickstart'},
-  {key:'install',     templateId:'tpl-install'},
-  {key:'repositories',templateId:'tpl-repositories'},
+  {key:'install',         templateId:'tpl-install'},
+  {key:'native-install',  templateId:'tpl-native-install'},
+  {key:'repositories',    templateId:'tpl-repositories'},
   {key:'formats-guide',templateId:'tpl-formats-guide'},
   {key:'browse-search',templateId:'tpl-browse-search'},
   {key:'users',       templateId:'tpl-users'},
@@ -1640,7 +1802,8 @@ const SECTIONS=[
 const SIDEBAR_GROUPS=[
   {id:'getting-started',items:[
     {key:'quickstart',  icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>'},
-    {key:'install',     icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>'},
+    {key:'install',         icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>'},
+    {key:'native-install',  icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>'},
   ]},
   {id:'using',items:[
     {key:'repositories',icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>'},

@@ -1,0 +1,88 @@
+version: 2
+
+project_name: nexspence
+
+before:
+  hooks:
+    - go mod download
+    - bash -c "cd frontend && npm ci && npm run build"
+
+builds:
+  - id: nexspence
+    main: ./cmd/server
+    binary: nexspence
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+      - -tags=embed_ui
+    ldflags:
+      - -s -w -X main.Version={{ .Version }}
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - id: default
+    ids:
+      - nexspence
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - config.yaml.example
+      - packaging/INSTALL.md
+      - packaging/systemd/nexspence.service
+      - packaging/launchd/com.nexspence.server.plist
+      - packaging/windows/install-service.ps1
+      - packaging/windows/uninstall-service.ps1
+
+nfpms:
+  - id: packages
+    package_name: nexspence
+    ids:
+      - nexspence
+    vendor: Nexspence
+    homepage: https://nexspence.com
+    maintainer: Nexspence <noreply@nexspence.com>
+    description: Free, open-source universal artifact repository manager.
+    license: AGPL-3.0
+    formats:
+      - deb
+      - rpm
+    bindir: /usr/bin
+    contents:
+      - src: config.yaml.example
+        dst: /etc/nexspence/config.yaml
+        type: "config|noreplace"
+      - src: packaging/systemd/nexspence.service
+        dst: /lib/systemd/system/nexspence.service
+    scripts:
+      postinstall: packaging/nfpm/postinstall.sh
+      preremove: packaging/nfpm/preremove.sh
+      postremove: packaging/nfpm/postremove.sh
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+changelog:
+  disable: true
+
+release:
+  github:
+    owner: nexspence
+    name: nexspence
+  mode: replace
+  # Cross-repo release: the tag exists on nexspence-core (where we build), not on
+  # nexspence/nexspence. Pin the tag/release to the public repo's main branch so
+  # GitHub creates the tag there — mirroring the prior `gh release create` flow.
+  target_commitish: main
+  extra_files:
+    - glob: ./release-assets/nexspence-*.zip

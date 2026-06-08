@@ -1,0 +1,25 @@
+[Unit]
+Description=Nexspence artifact repository manager
+Documentation=https://nexspence.com
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=nexspence
+Group=nexspence
+ExecStart=/usr/bin/nexspence serve --config /etc/nexspence/config.yaml
+WorkingDirectory=/var/lib/nexspence
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65536
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/nexspence
+
+[Install]
+WantedBy=multi-user.target

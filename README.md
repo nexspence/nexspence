@@ -155,6 +155,17 @@ For all deployment variants (MinIO, HA cluster, Keycloak SSO, from source) see *
 
 ---
 
+### Native Install (no Docker)
+
+Prefer running on bare metal? Download the `.deb`/`.rpm` (Linux) or the macOS/Windows
+archive from the [latest release](https://github.com/nexspence/nexspence/releases/latest).
+Each ships with systemd / launchd / Windows-service integration, and the binary embeds
+the web UI (self-contained). Full walkthrough — including reverse-proxy (nginx/Caddy)
+and multi-node load-balancer setups — in [docs/install-local.md](docs/install-local.md).
+Requires an external PostgreSQL.
+
+---
+
 ## CLI Tool — `nxs`
 
 Manage Nexspence from the terminal or CI/CD pipelines:

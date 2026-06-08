@@ -29,7 +29,7 @@ dev: ## Start everything for local dev (needs tmux or run in separate terminals)
 
 .PHONY: build
 build: build-frontend ## Build production binary (includes embedded frontend)
-	CGO_ENABLED=0 go build -ldflags="$(LDFLAGS)" -o $(BUILD_DIR)/$(APP) ./cmd/server
+	CGO_ENABLED=0 go build -tags=embed_ui -ldflags="$(LDFLAGS)" -o $(BUILD_DIR)/$(APP) ./cmd/server
 
 .PHONY: build-backend
 build-backend: ## Build backend binary only
@@ -42,6 +42,10 @@ build-frontend: ## Build React frontend
 .PHONY: docker-build
 docker-build: ## Build Docker image
 	docker build --build-arg VERSION=$(VERSION) -t nexspence-oss/nexspence:$(VERSION) -t nexspence-oss/nexspence:latest .
+
+.PHONY: release-snapshot
+release-snapshot: ## Local dry-run of the release artifacts (no publish)
+	goreleaser release --snapshot --clean
 
 # ── Database ──────────────────────────────────────────────────
 

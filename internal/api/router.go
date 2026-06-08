@@ -3,15 +3,20 @@ package api
 import (
 	"context"
 	"encoding/base64"
+	"io"
+	"io/fs"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	uiembed "github.com/nexspence-oss/nexspence"
 	"github.com/nexspence-oss/nexspence/internal/api/handlers"
 	"github.com/nexspence-oss/nexspence/internal/auth"
 	"github.com/nexspence-oss/nexspence/internal/config"
@@ -697,22 +702,79 @@ func stubHandler(name string) gin.HandlerFunc {
 }
 
 func serveUI(_ *config.Config) gin.HandlerFunc {
-	candidates := []string{
-		"./frontend/dist",
-		"/app/frontend/dist",
+	uiFS, ok := resolveUIFS()
+	if !ok {
+		return uiPlaceholder()
 	}
+	return uiHandler(uiFS)
+}
 
-	var distDir string
-	for _, dir := range candidates {
-		if _, err := os.Stat(filepath.Join(dir, "index.html")); err == nil {
-			distDir = dir
-			break
+// resolveUIFS picks the frontend filesystem: the embedded assets when the binary
+// was built with -tags embed_ui, otherwise the first on-disk dist directory.
+func resolveUIFS() (fs.FS, bool) {
+	if embedded, ok := uiembed.FrontendFS(); ok {
+		if _, err := fs.Stat(embedded, "index.html"); err == nil {
+			return embedded, true
 		}
 	}
+	for _, dir := range []string{"./frontend/dist", "/app/frontend/dist"} {
+		if _, err := os.Stat(filepath.Join(dir, "index.html")); err == nil {
+			return os.DirFS(dir), true
+		}
+	}
+	return nil, false
+}
 
-	if distDir == "" {
-		return func(c *gin.Context) {
-			c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(`<!DOCTYPE html>
+// uiHandler serves a single-page app from uiFS: real files are served directly,
+// and any unknown path (or any directory without its own index.html) falls back
+// to index.html. A directory listing is never exposed.
+func uiHandler(uiFS fs.FS) gin.HandlerFunc {
+	fileServer := http.FileServer(http.FS(uiFS))
+	return func(c *gin.Context) {
+		reqPath := strings.TrimPrefix(path.Clean("/"+c.Request.URL.Path), "/")
+		if reqPath == "" {
+			serveIndex(c, uiFS)
+			return
+		}
+		info, err := fs.Stat(uiFS, reqPath)
+		if err != nil {
+			serveIndex(c, uiFS)
+			return
+		}
+		if info.IsDir() {
+			if _, err := fs.Stat(uiFS, path.Join(reqPath, "index.html")); err != nil {
+				serveIndex(c, uiFS)
+				return
+			}
+		}
+		fileServer.ServeHTTP(c.Writer, c.Request)
+	}
+}
+
+func serveIndex(c *gin.Context, uiFS fs.FS) {
+	f, err := uiFS.Open("index.html")
+	if err != nil {
+		c.Status(http.StatusNotFound)
+		return
+	}
+	defer func() { _ = f.Close() }()
+	if rs, ok := f.(io.ReadSeeker); ok {
+		// ServeContent sets Content-Type, a weak ETag from size, and handles
+		// conditional GETs (304) for the SPA entrypoint. Zero modtime = "unknown".
+		http.ServeContent(c.Writer, c.Request, "index.html", time.Time{}, rs)
+		return
+	}
+	data, err := io.ReadAll(f)
+	if err != nil {
+		c.Status(http.StatusInternalServerError)
+		return
+	}
+	c.Data(http.StatusOK, "text/html; charset=utf-8", data)
+}
+
+func uiPlaceholder() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(`<!DOCTYPE html>
 <html style="background:#070b14;color:#e5e7eb;font-family:system-ui;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0">
 <body style="text-align:center">
   <div>
@@ -727,30 +789,6 @@ func serveUI(_ *config.Config) gin.HandlerFunc {
     </p>
   </div>
 </body></html>`))
-		}
-	}
-
-	fs := http.Dir(distDir)
-	fileServer := http.FileServer(fs)
-
-	return func(c *gin.Context) {
-		path := c.Request.URL.Path
-		fullPath := filepath.Join(distDir, path)
-		info, err := os.Stat(fullPath)
-		if err != nil {
-			c.File(filepath.Join(distDir, "index.html"))
-			return
-		}
-		// Block directory listing: only serve a directory if it contains index.html.
-		// Without this, http.FileServer exposes directory contents to any visitor.
-		if info.IsDir() {
-			if _, err := os.Stat(filepath.Join(fullPath, "index.html")); err != nil {
-				c.File(filepath.Join(distDir, "index.html"))
-				return
-			}
-		}
-		c.Request.URL.Path = path
-		fileServer.ServeHTTP(c.Writer, c.Request)
 	}
 }
 

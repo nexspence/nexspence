@@ -167,19 +167,25 @@ jobs:
             printf 'See `docs/seed-testing-guide.md` for a full testing walkthrough.\n\n'
           } >> release-notes.md
 
-      - name: Create GitHub Release
-        env:
-          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
-        run: |
-          gh release delete "${{ github.ref_name }}" \
-            --repo nexspence/nexspence \
-            --yes 2>/dev/null || true
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
 
-          gh release create "${{ github.ref_name }}" \
-            --repo nexspence/nexspence \
-            --title "Nexspence ${{ github.ref_name }}" \
-            --notes-file release-notes.md \
-            "release-assets/nexspence-${{ github.ref_name }}.zip"
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: '~> v2'
+          args: release --clean --release-notes=release-notes.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PAT }}
 
       - name: Sync docs and README to nexspence repo
         run: |
