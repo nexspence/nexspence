@@ -7,3 +7,7 @@
 ### 🐛 Bug Fixes
 
 _No bug fixes in this release._
+
+### 🔧 Maintenance
+
+- Dependency bumps: `runc` 1.2.3 → 1.2.8, `github.com/docker/cli`, and dev-deps `vitest` / `@vitest/coverage-v8`.
