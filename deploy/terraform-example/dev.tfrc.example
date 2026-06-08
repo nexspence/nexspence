@@ -1,0 +1,23 @@
+# Dev override so Terraform uses your locally-built provider binary instead of
+# downloading it from a registry (the provider is not published yet).
+#
+# 1) Build & install the binary somewhere on your PATH-like dir, e.g.:
+#       cd ~/WORKING/AI/terraform-provider-nexspence
+#       go build -o ~/go/bin/terraform-provider-nexspence .
+#
+# 2) Point the override below at the DIRECTORY containing that binary.
+#
+# 3) Tell Terraform to use this file:
+#       export TF_CLI_CONFIG_FILE=$PWD/dev.tfrc
+#    (copy this file to dev.tfrc first, and set the absolute path below).
+#
+# With dev_overrides you do NOT run `terraform init`; just run plan/apply.
+
+provider_installation {
+  dev_overrides {
+    "nexspence/nexspence" = "/Users/skensel/go/bin"
+  }
+
+  # For everything else, use the normal registry behaviour.
+  direct {}
+}

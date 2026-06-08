@@ -1,0 +1,23 @@
+# Copy to terraform.tfvars and adjust. All values have sane defaults for a
+# local stack on port 8080, so you can also just `terraform apply` as-is.
+
+nexspence_url      = "http://localhost:8080"
+nexspence_username = "admin"
+nexspence_password = "admin123"
+
+# Or authenticate with an API token instead (uncomment in providers.tf too):
+# nexspence_token = "nxs_xxxxxxxxxxxxxxxxxxxxxxxx"
+
+# Demo user passwords (write-only).
+alice_password = "alice-Chang3Me!"
+bob_password   = "bob-Chang3Me!"
+
+# Optional S3/MinIO blob store. To enable it you need a running MinIO
+# (the docker-compose stack already ships one — see README "Bring up the stack").
+enable_s3_blobstore = false
+# s3_bucket     = "nexspence-s3-1"     # pre-created by the compose minio-init
+# s3_endpoint   = "http://minio:9000"  # the SERVER dials this — in-Docker hostname,
+#                                      # NOT localhost (unless the server runs on the host)
+# s3_region     = "us-east-1"
+# s3_access_key = "minioadmin"
+# s3_secret_key = "minioadmin"

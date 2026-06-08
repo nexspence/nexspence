@@ -819,7 +819,7 @@ def verify(secret: str, body: bytes, header: str) -&gt; bool:
 
 <template id="tpl-terraform">
   <div class="doc-section-title" data-i18n="tf.title">Terraform Provider</div>
-  <div class="doc-section-sub" data-i18n="tf.sub">Manage Nexspence as code with the official Terraform provider — repositories, blob stores, users, roles, content selectors, and privileges, all version-controlled and reproducible. Published on the <a href="https://registry.terraform.io/providers/nexspence/nexspence" target="_blank" rel="noopener" style="color:var(--blue)">Terraform Registry</a> as <code>nexspence/nexspence</code> (v0.1.0).</div>
+  <div class="doc-section-sub" data-i18n="tf.sub">Manage Nexspence as code with the official Terraform provider — repositories, blob stores, users, roles, content selectors, and privileges, all version-controlled and reproducible. Published on the <a href="https://registry.terraform.io/providers/nexspence/nexspence" target="_blank" rel="noopener" style="color:var(--blue)">Terraform Registry</a> as <code>nexspence/nexspence</code>.</div>
 
   <div class="inst-sep" data-i18n="tf.qs.sep">Quick Start</div>
   <p style="font-size:.8rem;color:var(--dim);margin-bottom:10px;line-height:1.6" data-i18n="tf.qs.desc">Declare the provider, point it at your Nexspence server, and define resources. Run <code>terraform init</code>, then <code>terraform apply</code>.</p>
@@ -845,6 +845,28 @@ resource <span class="cs">"nexspence_repository"</span> <span class="cs">"maven_
   blob_store = <span class="cs">"default"</span>
   proxy {
     remote_url = <span class="cs">"https://repo1.maven.org/maven2/"</span>
+  }
+}</div></div>
+
+  <div class="inst-sep" data-i18n="tf.bs.sep">Blob Stores (local &amp; S3)</div>
+  <p style="font-size:.8rem;color:var(--dim);margin-bottom:10px;line-height:1.6" data-i18n="tf.bs.desc">Define local or S3-compatible blob stores. The S3 <code>endpoint</code> is dialed by the Nexspence server, so use an address the server can reach (e.g. an in-network hostname) — not your workstation's localhost.</p>
+  <div class="cb"><div class="cb-bar"><span>blobstores.tf</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body">resource <span class="cs">"nexspence_blobstore"</span> <span class="cs">"main"</span> {
+  name = <span class="cs">"main"</span>
+  type = <span class="cs">"local"</span>
+  path = <span class="cs">"./data/blobs/main"</span>
+}
+
+resource <span class="cs">"nexspence_blobstore"</span> <span class="cs">"s3"</span> {
+  name = <span class="cs">"s3-store"</span>
+  type = <span class="cs">"s3"</span>
+  s3 = {
+    bucket           = <span class="cs">"nexspence-blobs"</span>
+    region           = <span class="cs">"us-east-1"</span>
+    endpoint         = <span class="cs">"http://minio:9000"</span>
+    access_key       = <span class="cs">"minioadmin"</span>
+    secret_key       = var.s3_secret_key
+    force_path_style = <span class="cs">true</span>
   }
 }</div></div>
 
@@ -1293,9 +1315,11 @@ const TRANSLATIONS={
     'repl.s3.title':'Monitor replication history','repl.s3.desc':'The history table shows past runs. Click <strong>Run Now</strong> to trigger an immediate sync.',
     'repl.diff.note':'<strong>Differential sync:</strong> Only missing or changed artifacts are pushed. Credentials are stored AES-256-GCM encrypted.',
     'tf.title':'Terraform Provider',
-    'tf.sub':'Manage Nexspence as code with the official Terraform provider — repositories, blob stores, users, roles, content selectors, and privileges, all version-controlled and reproducible. Published on the <a href="https://registry.terraform.io/providers/nexspence/nexspence" target="_blank" rel="noopener" style="color:var(--blue)">Terraform Registry</a> as <code>nexspence/nexspence</code> (v0.1.0).',
+    'tf.sub':'Manage Nexspence as code with the official Terraform provider — repositories, blob stores, users, roles, content selectors, and privileges, all version-controlled and reproducible. Published on the <a href="https://registry.terraform.io/providers/nexspence/nexspence" target="_blank" rel="noopener" style="color:var(--blue)">Terraform Registry</a> as <code>nexspence/nexspence</code>.',
     'tf.qs.sep':'Quick Start',
     'tf.qs.desc':'Declare the provider, point it at your Nexspence server, and define resources. Run <code>terraform init</code>, then <code>terraform apply</code>.',
+    'tf.bs.sep':'Blob Stores (local & S3)',
+    'tf.bs.desc':'Define local or S3-compatible blob stores. The S3 <code>endpoint</code> is dialed by the Nexspence server, so use an address the server can reach (e.g. an in-network hostname) — not your workstation\'s localhost.',
     'tf.res.sep':'Resources & Data Sources',
     'tf.res.th.name':'Name','tf.res.th.kind':'Kind','tf.res.th.desc':'Manages',
     'tf.kind.resource':'Resource','tf.kind.data':'Data source',
@@ -1507,9 +1531,11 @@ const TRANSLATIONS={
     'repl.s3.title':'Следите за историей','repl.s3.desc':'Таблица истории показывает прошлые запуски. Нажмите <strong>Run Now</strong> для немедленной синхронизации.',
     'repl.diff.note':'<strong>Дифференциальная синхронизация:</strong> Передаются только отсутствующие или изменённые артефакты. Учётные данные хранятся в шифровании AES-256-GCM.',
     'tf.title':'Провайдер Terraform',
-    'tf.sub':'Управляйте Nexspence как кодом с помощью официального провайдера Terraform — репозитории, blob stores, пользователи, роли, content selectors и привилегии, всё под контролем версий и воспроизводимо. Опубликован в <a href="https://registry.terraform.io/providers/nexspence/nexspence" target="_blank" rel="noopener" style="color:var(--blue)">Terraform Registry</a> как <code>nexspence/nexspence</code> (v0.1.0).',
+    'tf.sub':'Управляйте Nexspence как кодом с помощью официального провайдера Terraform — репозитории, blob stores, пользователи, роли, content selectors и привилегии, всё под контролем версий и воспроизводимо. Опубликован в <a href="https://registry.terraform.io/providers/nexspence/nexspence" target="_blank" rel="noopener" style="color:var(--blue)">Terraform Registry</a> как <code>nexspence/nexspence</code>.',
     'tf.qs.sep':'Быстрый старт',
     'tf.qs.desc':'Объявите провайдер, укажите адрес сервера Nexspence и опишите ресурсы. Выполните <code>terraform init</code>, затем <code>terraform apply</code>.',
+    'tf.bs.sep':'Blob stores (локальный и S3)',
+    'tf.bs.desc':'Опишите локальные или S3-совместимые blob stores. <code>endpoint</code> для S3 вызывает сам сервер Nexspence, поэтому укажите адрес, доступный серверу (например, внутрисетевое имя), а не localhost вашей машины.',
     'tf.res.sep':'Ресурсы и источники данных',
     'tf.res.th.name':'Имя','tf.res.th.kind':'Тип','tf.res.th.desc':'Управляет',
     'tf.kind.resource':'Ресурс','tf.kind.data':'Источник данных',
