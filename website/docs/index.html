@@ -880,6 +880,10 @@ resource <span class="cs">"nexspence_blobstore"</span> <span class="cs">"s3"</sp
       <tr><td><code>nexspence_role</code></td><td data-i18n="tf.kind.resource">Resource</td><td data-i18n="tf.res.role">Roles grouping privileges together</td></tr>
       <tr><td><code>nexspence_content_selector</code></td><td data-i18n="tf.kind.resource">Resource</td><td data-i18n="tf.res.cs">CEL content selectors</td></tr>
       <tr><td><code>nexspence_privilege</code></td><td data-i18n="tf.kind.resource">Resource</td><td data-i18n="tf.res.priv">Content-selector privileges</td></tr>
+      <tr><td><code>nexspence_cleanup_policy</code></td><td data-i18n="tf.kind.resource">Resource</td><td data-i18n="tf.res.cleanup">Scheduled cleanup policies (age / downloads / retain N)</td></tr>
+      <tr><td><code>nexspence_routing_rule</code></td><td data-i18n="tf.kind.resource">Resource</td><td data-i18n="tf.res.routing">ALLOW/BLOCK path routing rules</td></tr>
+      <tr><td><code>nexspence_webhook</code></td><td data-i18n="tf.kind.resource">Resource</td><td data-i18n="tf.res.webhook">Outbound event webhooks (HMAC-signed)</td></tr>
+      <tr><td><code>nexspence_promotion_rule</code></td><td data-i18n="tf.kind.resource">Resource</td><td data-i18n="tf.res.promotion">Build-promotion rules (scan gate / manual approval)</td></tr>
       <tr><td><code>nexspence_repository</code></td><td data-i18n="tf.kind.data">Data source</td><td data-i18n="tf.res.d-repository">Look up a single existing repository</td></tr>
       <tr><td><code>nexspence_repositories</code></td><td data-i18n="tf.kind.data">Data source</td><td data-i18n="tf.res.d-repositories">List all repositories, optionally filtered by format or type</td></tr>
     </tbody>
@@ -1329,6 +1333,10 @@ const TRANSLATIONS={
     'tf.res.role':'Roles grouping privileges together',
     'tf.res.cs':'CEL content selectors',
     'tf.res.priv':'Content-selector privileges',
+    'tf.res.cleanup':'Scheduled cleanup policies (age / downloads / retain N)',
+    'tf.res.routing':'ALLOW/BLOCK path routing rules',
+    'tf.res.webhook':'Outbound event webhooks (HMAC-signed)',
+    'tf.res.promotion':'Build-promotion rules (scan gate / manual approval)',
     'tf.res.d-repository':'Look up a single existing repository',
     'tf.res.d-repositories':'List all repositories, optionally filtered by format or type',
     'tf.auth.sep':'Authentication',
@@ -1545,6 +1553,10 @@ const TRANSLATIONS={
     'tf.res.role':'Роли, объединяющие привилегии',
     'tf.res.cs':'CEL content selectors',
     'tf.res.priv':'Привилегии на основе content selector',
+    'tf.res.cleanup':'Политики очистки по расписанию (возраст / загрузки / хранить N)',
+    'tf.res.routing':'Правила маршрутизации путей ALLOW/BLOCK',
+    'tf.res.webhook':'Исходящие вебхуки событий (с HMAC-подписью)',
+    'tf.res.promotion':'Правила продвижения сборок (гейт сканирования / ручное подтверждение)',
     'tf.res.d-repository':'Получение одного существующего репозитория',
     'tf.res.d-repositories':'Список всех репозиториев с фильтром по формату или типу',
     'tf.auth.sep':'Аутентификация',

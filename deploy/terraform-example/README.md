@@ -4,9 +4,13 @@ Ready-to-apply manifests that exercise **every resource and data source** of the
 [`nexspence/nexspence`](https://registry.terraform.io/providers/nexspence/nexspence)
 Terraform provider, against a locally deployed stack on **`http://localhost:8080`**.
 
-Applying this creates **55 objects**: 2 blob stores, 43 repositories (14 formats ×
-hosted/proxy/group + 1 quota demo), 3 content selectors, 3 privileges, 2 roles,
-2 users — plus 2 read-only data sources.
+Applying this creates **66 objects**: 2 blob stores, 45 repositories (14 formats ×
+hosted/proxy/group + quota demos + 2 promotion targets), 3 content selectors,
+3 privileges, 2 roles, 2 users, 2 cleanup policies, 2 routing rules, 2 webhooks,
+2 promotion rules — plus 2 read-only data sources.
+
+Requires provider **v0.2.0+** (the cleanup/routing/webhook/promotion resources;
+`versions.tf` pins `>= 0.2.0`).
 
 ---
 
@@ -91,7 +95,7 @@ The bucket must already exist (compose creates `nexspence-s3-1` for you).
 
 ```bash
 terraform init      # downloads nexspence/nexspence from the registry
-terraform plan      # review: "Plan: 55 to add" (54 without S3)
+terraform plan      # review: "Plan: 66 to add" (65 without S3)
 terraform apply
 ```
 
@@ -115,12 +119,16 @@ terraform destroy
 
 | Resource | Count | Notes |
 |----------|-------|-------|
-| `nexspence_blobstore` | 1 (+1 with S3) | `tf-main` local; `tf-s3` when `enable_s3_blobstore = true` |
-| `nexspence_repository` | 43 | 14 formats × {hosted, proxy, group} + 1 quota demo |
+| `nexspence_blobstore` | 1 (+1 with S3) | `tf-main` local (10 GiB quota); `tf-s3` when `enable_s3_blobstore = true` (50 GiB) |
+| `nexspence_repository` | 45 | 14 formats × {hosted, proxy, group} + 2 quota demos + 2 promotion targets |
 | `nexspence_content_selector` | 3 | CEL expressions |
 | `nexspence_privilege` | 3 | each scoped to a content selector |
 | `nexspence_role` | 2 | group privileges |
 | `nexspence_user` | 2 | `alice` (active), `bob` (disabled) |
+| `nexspence_cleanup_policy` | 2 | one attached to a repo via `cleanup_policy_ids` |
+| `nexspence_routing_rule` | 2 | ALLOW / BLOCK path rules |
+| `nexspence_webhook` | 2 | HMAC-signed; one active, one disabled |
+| `nexspence_promotion_rule` | 2 | scan-gate + manual-approval examples |
 | `nexspence_repository` (data source) | 1 | single-repo lookup |
 | `nexspence_repositories` (data source) | 1 | list all repos |
 
@@ -133,8 +141,12 @@ cargo, conan, conda, terraform.
 - `providers.tf` — provider auth (basic auth or `nxs_*` token)
 - `variables.tf` / `terraform.tfvars.example` — inputs (URL, creds, S3 toggle)
 - `blobstores.tf` — local + optional S3/MinIO blob stores
-- `repositories.tf` — all 14 formats as hosted + proxy + group via `for_each`
+- `repositories.tf` — all 14 formats as hosted + proxy + group via `for_each` + quota demos
 - `rbac.tf` — content selectors → privileges → roles → users
+- `cleanup.tf` — cleanup policies (one attached to a repo)
+- `routing.tf` — routing rules (ALLOW / BLOCK)
+- `webhooks.tf` — event webhooks
+- `promotion.tf` — build-promotion rules + their target repos
 - `data.tf` — both data sources
 - `outputs.tf` — repo URLs, counts, lookups
 - `dev.tfrc.example` — local provider override (only for unpublished local builds)

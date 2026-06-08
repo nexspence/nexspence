@@ -5,8 +5,8 @@ resource "nexspence_blobstore" "main" {
   type = "local"
   path = "./data/blobs/tf-main"
 
-  # Optional soft cap on the store (bytes). Uncomment to enforce (10 GiB shown).
-  # quota_bytes = 10 * 1024 * 1024 * 1024
+  # Soft cap on the whole store, in bytes (10 GiB).
+  quota_bytes = 10 * 1024 * 1024 * 1024
 }
 
 # ---- Optional S3 / MinIO blob store ------------------------------------------
@@ -16,6 +16,9 @@ resource "nexspence_blobstore" "s3" {
 
   name = "tf-s3"
   type = "s3"
+
+  # Soft cap on the store, in bytes (50 GiB).
+  quota_bytes = 50 * 1024 * 1024 * 1024
 
   s3 = {
     bucket           = var.s3_bucket

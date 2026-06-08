@@ -40,6 +40,13 @@ variable "bob_password" {
   sensitive   = true
 }
 
+variable "webhook_secret" {
+  type        = string
+  description = "HMAC-SHA256 signing secret for the demo webhooks (write-only)."
+  default     = "demo-hmac-Chang3Me!"
+  sensitive   = true
+}
+
 # ---- Optional S3 blob store (MinIO / Ceph / AWS) -----------------------------
 
 variable "enable_s3_blobstore" {

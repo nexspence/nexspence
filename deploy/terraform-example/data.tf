@@ -15,5 +15,8 @@ data "nexspence_repositories" "all" {
     nexspence_repository.proxy,
     nexspence_repository.group,
     nexspence_repository.raw_quota_demo,
+    nexspence_repository.docker_quota_demo,
+    nexspence_repository.maven_releases,
+    nexspence_repository.npm_releases,
   ]
 }

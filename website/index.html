@@ -541,6 +541,85 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 <div class="gline"></div>
 
 <!-- ══════════════════════════════ -->
+<!-- ②b  TERRAFORM PROVIDER       -->
+<!-- ══════════════════════════════ -->
+<section id="terraform" class="sect" aria-label="Terraform provider">
+  <div class="sect-wrap">
+    <div class="rev" style="text-align:center;margin-bottom:36px">
+      <div class="stag" style="justify-content:center">Infrastructure as Code</div>
+      <h2 class="stitle">Manage Nexspence with Terraform</h2>
+      <p class="ssub" style="margin:0 auto">Official provider on the Terraform Registry — repositories, blob stores, users, roles, content selectors, privileges, cleanup policies, routing rules, webhooks and promotion rules, all version-controlled.</p>
+      <a href="https://registry.terraform.io/providers/nexspence/nexspence" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:9px;margin-top:18px;padding:7px 16px 7px 12px;border-radius:100px;border:1px solid rgba(123,66,188,.4);background:rgba(123,66,188,.1);color:#a78bfa;font-size:.82rem;font-weight:600;text-decoration:none">
+        <img src="https://cdn.simpleicons.org/terraform/7b42bc" width="16" height="16" alt="" style="object-fit:contain">
+        nexspence/nexspence
+        <span style="display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:100px;background:rgba(34,197,94,.14);color:#22c55e;font-size:.74rem;font-weight:700;font-variant-numeric:tabular-nums">
+          <span style="width:6px;height:6px;border-radius:50%;background:#22c55e;box-shadow:0 0 6px #22c55e" aria-hidden="true"></span>
+          <span data-tf-version aria-label="latest provider version">v0.2.0</span>
+        </span>
+      </a>
+    </div>
+    <div class="card rev" style="max-width:760px;margin:0 auto;padding:0;overflow:hidden">
+      <div style="display:flex;align-items:center;gap:8px;padding:11px 16px;border-bottom:1px solid var(--border);background:rgba(255,255,255,.02)">
+        <span style="width:11px;height:11px;border-radius:50%;background:#ef4444" aria-hidden="true"></span>
+        <span style="width:11px;height:11px;border-radius:50%;background:#f59e0b" aria-hidden="true"></span>
+        <span style="width:11px;height:11px;border-radius:50%;background:#22c55e" aria-hidden="true"></span>
+        <span style="margin-left:8px;font-size:.78rem;color:var(--dim);font-family:'JetBrains Mono',monospace">main.tf</span>
+      </div>
+      <pre style="margin:0;padding:18px 20px;overflow-x:auto;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:.82rem;line-height:1.7;color:#cbd5e1"><span style="color:#64748b"># Pin the provider — terraform init pulls it from the registry</span>
+terraform {
+  required_providers {
+    nexspence = {
+      source  = <span style="color:#7dd3fc">"nexspence/nexspence"</span>
+      version = <span style="color:#7dd3fc">"~> 0.2"</span>
+    }
+  }
+}
+
+resource <span style="color:#7dd3fc">"nexspence_repository"</span> <span style="color:#7dd3fc">"maven_central"</span> {
+  name       = <span style="color:#7dd3fc">"maven-central"</span>
+  format     = <span style="color:#7dd3fc">"maven2"</span>
+  type       = <span style="color:#7dd3fc">"proxy"</span>
+  proxy { remote_url = <span style="color:#7dd3fc">"https://repo1.maven.org/maven2/"</span> }
+}</pre>
+    </div>
+    <div class="rev" style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:26px">
+      <a href="https://registry.terraform.io/providers/nexspence/nexspence/latest" target="_blank" rel="noopener" class="btn btn-primary">
+        <img src="https://cdn.simpleicons.org/terraform/ffffff" width="16" height="16" alt="" style="object-fit:contain">
+        Terraform Registry
+      </a>
+      <a href="/docs/#terraform" class="btn btn-ghost" style="border-color:rgba(139,92,246,.35);color:#a78bfa">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        Provider Docs
+      </a>
+      <a href="https://github.com/nexspence/terraform-provider-nexspence" target="_blank" rel="noopener" class="btn btn-ghost">
+        <svg fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
+        Source
+      </a>
+    </div>
+  </div>
+</section>
+<script>
+/* Show the always-current provider version from the Terraform Registry (GitHub fallback). */
+(function () {
+  function setVer(v) {
+    var t = 'v' + String(v).replace(/^v/, '');
+    document.querySelectorAll('[data-tf-version]').forEach(function (el) { el.textContent = t; });
+  }
+  fetch('https://registry.terraform.io/v1/providers/nexspence/nexspence')
+    .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
+    .then(function (d) { if (d && d.version) setVer(d.version); })
+    .catch(function () {
+      fetch('https://api.github.com/repos/nexspence/terraform-provider-nexspence/releases/latest')
+        .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
+        .then(function (d) { if (d && d.tag_name) setVer(d.tag_name); })
+        .catch(function () {});
+    });
+})();
+</script>
+
+<div class="gline"></div>
+
+<!-- ══════════════════════════════ -->
 <!-- ③  ARCHITECTURE              -->
 <!-- ══════════════════════════════ -->
 <section id="architecture" class="sect" aria-label="Architecture">

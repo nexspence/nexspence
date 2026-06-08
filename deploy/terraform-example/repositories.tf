@@ -82,7 +82,7 @@ resource "nexspence_repository" "group" {
   }
 }
 
-# ---- Example: per-repo quota + cleanup policy attachment ---------------------
+# ---- Example: per-repo quotas + cleanup policy attachment -------------------
 # quota_bytes and cleanup_policy_ids are also supported. Cleanup policies are not
 # managed by this provider, so attach existing policy UUIDs if you have them.
 resource "nexspence_repository" "raw_quota_demo" {
@@ -90,8 +90,18 @@ resource "nexspence_repository" "raw_quota_demo" {
   format      = "raw"
   type        = "hosted"
   blob_store  = nexspence_blobstore.main.name
-  description = "Raw hosted repo with a 1 GiB quota"
+  description = "Raw hosted repo with a 1 GiB quota + an attached cleanup policy"
   quota_bytes = 1 * 1024 * 1024 * 1024
 
-  # cleanup_policy_ids = ["00000000-0000-0000-0000-000000000000"]
+  cleanup_policy_ids = [nexspence_cleanup_policy.keep_recent.id]
+}
+
+resource "nexspence_repository" "docker_quota_demo" {
+  name       = "docker-quota-demo"
+  format     = "docker"
+  type       = "hosted"
+  blob_store = nexspence_blobstore.main.name
+  # Per-repo quota must not exceed the owning blob store's quota (tf-main = 10 GiB).
+  description = "Docker hosted repo with a 5 GiB quota"
+  quota_bytes = 5 * 1024 * 1024 * 1024
 }
