@@ -720,7 +720,7 @@ resource <span style="color:#7dd3fc">"nexspence_repository"</span> <span style="
     <div class="rev" style="text-align:center;margin-bottom:32px">
       <div class="stag" style="justify-content:center">Install</div>
       <h2 class="stitle">Up and running in 2 minutes</h2>
-      <p class="ssub" style="margin:0 auto">Choose your deployment method. Docker Compose for a quick local start; Helm for production Kubernetes.</p>
+      <p class="ssub" style="margin:0 auto">Choose your deployment method. Docker Compose for a quick start, native packages for bare-metal installs, or Helm for production Kubernetes.</p>
     </div>
 
     <!-- Download card -->
@@ -747,6 +747,10 @@ resource <span style="color:#7dd3fc">"nexspence_repository"</span> <span style="
       <button class="qt" onclick="deployTab('helm',this)" aria-label="Helm / Kubernetes">
         <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
         Helm / Kubernetes
+      </button>
+      <button class="qt" onclick="deployTab('native',this)" aria-label="Native / Local">
+        <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+        Native / Local
       </button>
     </div>
 
@@ -923,6 +927,90 @@ resource <span style="color:#7dd3fc">"nexspence_repository"</span> <span style="
           <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
           Full Helm reference →
         </a>
+        <a class="rel-link" href="https://github.com/nexspence/nexspence/releases" target="_blank" rel="noopener">
+          <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+          All releases &amp; changelogs →
+        </a>
+      </div>
+    </div>
+
+    <!-- ── Native / Local tab ── -->
+    <div id="dtab-native" class="dtab dtab-hide">
+      <div class="src-note">
+        <strong>Single self-contained binary</strong> — the web UI is embedded, so the only runtime dependency is an external <strong>PostgreSQL</strong> (13+). Download the package or archive for your OS from <a href="https://github.com/nexspence/nexspence/releases/latest" target="_blank" rel="noopener">GitHub Releases</a>.
+      </div>
+      <div class="qs-steps">
+        <div class="qs-step"><div class="sn">01</div><div><div class="st">Install the package</div><div class="sd">Linux <code>.deb</code>/<code>.rpm</code> install the binary, a <code>nexspence</code> user and a systemd unit. macOS &amp; Windows ship as archives with launchd / service scripts.</div></div></div>
+        <div class="qs-step"><div class="sn">02</div><div><div class="st">Point at PostgreSQL &amp; edit config</div><div class="sd">Set <code>database.dsn</code>, <code>jwt_secret</code> (min 32 chars) and <code>admin_password</code> in <code>/etc/nexspence/config.yaml</code>. Schema auto-migrates on first start.</div></div></div>
+        <div class="qs-step"><div class="sn">03</div><div><div class="st">Enable the service</div><div class="sd">Run <code>systemctl enable --now nexspence</code>, then open <code>localhost:8081</code>.</div></div></div>
+      </div>
+      <div class="cb-wrap">
+        <div class="cb-bar"><span>shell — Debian / Ubuntu</span><button onclick="copyBlock(this)">Copy</button></div>
+        <div class="cb-body"><span class="cp">$ </span>sudo dpkg -i nexspence_*_linux_amd64.deb
+<span class="cp">$ </span>sudo nano /etc/nexspence/config.yaml
+<span class="cc">  # set database.dsn, jwt_secret and admin_password</span>
+<span class="cp">$ </span>sudo systemctl enable --now nexspence
+<span class="cp">$ </span>open <span class="cu">http://localhost:8081</span></div>
+      </div>
+      <div class="chips">
+        <button class="chip" onclick="togglePanel('native-rpm',this)">
+          <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M9 12h6M12 9v6"/></svg>
+          RHEL / Fedora / SUSE
+        </button>
+        <button class="chip" onclick="togglePanel('native-macos',this)">
+          <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+          macOS
+        </button>
+        <button class="chip" onclick="togglePanel('native-windows',this)">
+          <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+          Windows
+        </button>
+      </div>
+      <div class="dc-panel" id="native-rpm">
+        <div class="dc-panel-inner">
+          <div class="dc-panel-title"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M9 12h6M12 9v6"/></svg> RHEL / Fedora / SUSE — .rpm</div>
+          <p class="dc-panel-desc">Same layout as the <code>.deb</code> — installs the binary, the <code>nexspence</code> user and the systemd unit.</p>
+          <div class="cb-wrap">
+            <div class="cb-bar"><span>shell</span><button onclick="copyBlock(this)">Copy</button></div>
+            <div class="cb-body"><span class="cp">$ </span>sudo rpm -i nexspence_*_linux_amd64.rpm
+<span class="cp">$ </span>sudo nano /etc/nexspence/config.yaml
+<span class="cp">$ </span>sudo systemctl enable --now nexspence</div>
+          </div>
+        </div>
+      </div>
+      <div class="dc-panel" id="native-macos">
+        <div class="dc-panel-inner">
+          <div class="dc-panel-title"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg> macOS — archive + launchd</div>
+          <p class="dc-panel-desc">Extract the <code>darwin</code> archive, install the binary and the launchd daemon. The binary is unsigned, so clear the quarantine attribute.</p>
+          <div class="cb-wrap">
+            <div class="cb-bar"><span>shell</span><button onclick="copyBlock(this)">Copy</button></div>
+            <div class="cb-body"><span class="cp">$ </span>tar -xzf nexspence_*_darwin_arm64.tar.gz
+<span class="cp">$ </span>sudo cp nexspence /usr/local/bin/
+<span class="cp">$ </span>sudo xattr -dr com.apple.quarantine /usr/local/bin/nexspence
+<span class="cp">$ </span>sudo cp packaging/launchd/com.nexspence.server.plist /Library/LaunchDaemons/
+<span class="cp">$ </span>sudo launchctl load -w /Library/LaunchDaemons/com.nexspence.server.plist</div>
+          </div>
+        </div>
+      </div>
+      <div class="dc-panel" id="native-windows">
+        <div class="dc-panel-inner">
+          <div class="dc-panel-title"><svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg> Windows — service</div>
+          <p class="dc-panel-desc">Extract the <code>windows</code> zip, then from an elevated PowerShell register the service and start it.</p>
+          <div class="cb-wrap">
+            <div class="cb-bar"><span>PowerShell (Administrator)</span><button onclick="copyBlock(this)">Copy</button></div>
+            <div class="cb-body"><span class="cp">PS&gt; </span>.\packaging\windows\install-service.ps1
+<span class="cp">PS&gt; </span>notepad C:\ProgramData\Nexspence\config.yaml
+<span class="cp">PS&gt; </span>Start-Service nexspence</div>
+          </div>
+        </div>
+      </div>
+      <div class="qs-bot">
+        <div class="chips" style="margin-bottom:0">
+          <a class="chip" href="https://github.com/nexspence/nexspence/blob/main/docs/install-local.md" target="_blank" rel="noopener">
+            <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+            Full native install guide →
+          </a>
+        </div>
         <a class="rel-link" href="https://github.com/nexspence/nexspence/releases" target="_blank" rel="noopener">
           <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
           All releases &amp; changelogs →
