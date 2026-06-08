@@ -177,8 +177,8 @@ describe('BrowsePage — Raw tree', () => {
       if (tag === 'a') (el as HTMLAnchorElement).click = click
       return el
     }) as typeof document.createElement)
-    global.URL.createObjectURL = vi.fn(() => 'blob:x')
-    global.URL.revokeObjectURL = vi.fn()
+    globalThis.URL.createObjectURL = vi.fn(() => 'blob:x')
+    globalThis.URL.revokeObjectURL = vi.fn()
     server.use(http.get('/repository/:name/*', () => HttpResponse.text('data')))
     renderBrowse('?repo=raw-hosted')
     await user.click(await screen.findByText('releases'))
@@ -197,8 +197,8 @@ describe('BrowsePage — Raw tree', () => {
     seedRaw()
     const writeText = vi.fn()
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
-    global.URL.createObjectURL = vi.fn(() => 'blob:x')
-    global.URL.revokeObjectURL = vi.fn()
+    globalThis.URL.createObjectURL = vi.fn(() => 'blob:x')
+    globalThis.URL.revokeObjectURL = vi.fn()
     server.use(http.get('/repository/:name/*', () => HttpResponse.text('data')))
     renderBrowse('?repo=raw-hosted')
     await user.click(await screen.findByText('releases'))

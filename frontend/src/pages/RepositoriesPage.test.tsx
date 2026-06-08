@@ -179,8 +179,8 @@ describe('RepositoriesPage', () => {
       if (tag === 'a') (el as HTMLAnchorElement).click = click
       return el
     }) as typeof document.createElement)
-    global.URL.createObjectURL = vi.fn(() => 'blob:x')
-    global.URL.revokeObjectURL = vi.fn()
+    globalThis.URL.createObjectURL = vi.fn(() => 'blob:x')
+    globalThis.URL.revokeObjectURL = vi.fn()
     server.use(
       http.get('/api/v1/repositories/:name/export', () =>
         HttpResponse.text('tarball', { headers: { 'Content-Type': 'application/gzip' } }),
