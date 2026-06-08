@@ -193,6 +193,40 @@ Five networking options (nginx, Traefik, Cilium ingress, Istio Gateway, Cilium G
 
 ---
 
+## Terraform Provider
+
+Manage Nexspence as code with the official Terraform provider — repositories, blob stores, users, roles, content selectors, and privileges.
+
+```hcl
+terraform {
+  required_providers {
+    nexspence = {
+      source  = "nexspence/nexspence"
+      version = "~> 0.1"
+    }
+  }
+}
+
+provider "nexspence" {
+  url   = "https://nexspence.example.com"
+  token = var.nexspence_token # nxs_* API token
+}
+
+resource "nexspence_repository" "maven_central" {
+  name       = "maven-central"
+  format     = "maven2"
+  type       = "proxy"
+  blob_store = "default"
+  proxy {
+    remote_url = "https://repo1.maven.org/maven2/"
+  }
+}
+```
+
+Published on the [Terraform Registry](https://registry.terraform.io/providers/nexspence/nexspence) — source at **[nexspence/terraform-provider-nexspence](https://github.com/nexspence/terraform-provider-nexspence)**.
+
+---
+
 ## Supported Package Formats
 
 | Format | Hosted | Proxy | Group |
