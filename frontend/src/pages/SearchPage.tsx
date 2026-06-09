@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef, FormEvent } from 'react'
+import { useState, useMemo, useEffect, useRef, useCallback, FormEvent } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Search, Package, ChevronDown, ChevronUp, ChevronsUpDown, ChevronRight, ExternalLink, HelpCircle } from 'lucide-react'
@@ -144,6 +144,8 @@ function filtersToURL(f: Filters): Record<string, string> {
 // sessionStorage key used to restore scroll/highlight when Back-navigating from Browse.
 const RETURN_KEY = 'search:lastClickedComponentId'
 
+const PAGE_SIZE = 50
+
 export default function SearchPage() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -153,6 +155,7 @@ export default function SearchPage() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [hoveredCId, setHoveredCId] = useState<string | null>(null)
   const [returnHighlight, setReturnHighlight] = useState<string | null>(null)
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
   const returnRowRef = useRef<HTMLDivElement | null>(null)
 
   // Submitted state is derived from the URL so browser Back (from Browse) restores it.
@@ -228,15 +231,27 @@ export default function SearchPage() {
     })
   }, [items, sortKey, sortDir])
 
+  // Reset visible count whenever the sorted result set changes (new query or sort change).
+  useEffect(() => { setVisibleCount(PAGE_SIZE) }, [sorted])
+
+  const visibleItems = useMemo(() => sorted.slice(0, visibleCount), [sorted, visibleCount])
+
   const grouped = useMemo(() => {
     const map = new Map<string, SearchComponent[]>()
-    for (const c of sorted) {
+    for (const c of visibleItems) {
       const arr = map.get(c.repository) ?? []
       arr.push(c)
       map.set(c.repository, arr)
     }
     return map
-  }, [sorted])
+  }, [visibleItems])
+
+  const repoCount = useMemo(
+    () => new Set(items.map((c) => c.repository)).size,
+    [items],
+  )
+
+  const showMore = useCallback(() => setVisibleCount(v => v + PAGE_SIZE), [])
 
   function handleSort(key: SortKey) {
     if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
@@ -325,7 +340,7 @@ export default function SearchPage() {
           <HoloButton type="submit" variant="primary" icon={<Search size={14} />}>Search</HoloButton>
           <HoloButton type="button" onClick={handleClear}>Clear</HoloButton>
           {submitted && !isLoading && (
-            <span style={S.resultsLabel}>{items.length} result{items.length !== 1 ? 's' : ''} in {grouped.size} repo{grouped.size !== 1 ? 's' : ''}</span>
+            <span style={S.resultsLabel}>{items.length} result{items.length !== 1 ? 's' : ''} in {repoCount} repo{repoCount !== 1 ? 's' : ''}</span>
           )}
         </div>
       </form>
@@ -360,7 +375,7 @@ export default function SearchPage() {
             <div>Tags</div>
           </div>
 
-          {[...grouped.entries()].map(([repo, comps]) => {
+          {[...grouped.entries()].map(([repo, comps]: [string, SearchComponent[]]) => {
             const fmt = comps[0].format
             const color = FORMAT_COLORS[fmt] ?? '#6b7280'
             return (
@@ -389,7 +404,7 @@ export default function SearchPage() {
                     navigate(`/browse?${qp.toString()}`)
                   }
                   return (
-                    <div key={c.id} ref={isReturnRow ? returnRowRef : undefined}>
+                    <div key={c.id} ref={isReturnRow ? returnRowRef : undefined} data-testid="search-result-row">
                       <HoloCard
                         style={{
                           padding: 14,
@@ -474,6 +489,13 @@ export default function SearchPage() {
               </div>
             )
           })}
+          {visibleCount < sorted.length && (
+            <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 8 }}>
+              <HoloButton onClick={showMore}>
+                Show more ({sorted.length - visibleCount} remaining)
+              </HoloButton>
+            </div>
+          )}
         </div>
       )}
     </div>

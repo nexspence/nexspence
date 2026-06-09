@@ -138,11 +138,19 @@ export function CountUp({ to, suffix = '', dur = 1200, decimals }: { to: number;
 }
 
 /* ---------- Modal ---------- */
-export function HoloModal({ open, onClose, children, style }: { open: boolean; onClose: () => void; children: React.ReactNode; style?: React.CSSProperties }) {
+export function HoloModal({ open, onClose, children, style, titleId, ariaLabel }: { open: boolean; onClose: () => void; children: React.ReactNode; style?: React.CSSProperties; titleId?: string; ariaLabel?: string }) {
   if (!open) return null;
   return createPortal(
     <div className="holo-overlay" onClick={onClose}>
-      <div className="holo-modal" style={style} onClick={e => e.stopPropagation()}>{children}</div>
+      <div
+        className="holo-modal"
+        style={style}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-label={titleId ? undefined : (ariaLabel ?? 'Dialog')}
+        onClick={e => e.stopPropagation()}
+      >{children}</div>
     </div>,
     document.body
   );

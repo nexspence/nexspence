@@ -825,8 +825,8 @@ function EditRepoModal({
   }
 
   return (
-    <HoloModal open={true} onClose={onClose} style={{ minWidth: 640 }}>
-      <h2 style={{ fontSize: 17, fontWeight: 700, color: 'var(--holo-text)', margin: 0 }}>Repository settings</h2>
+    <HoloModal open={true} onClose={onClose} style={{ minWidth: 640 }} titleId="repo-modal-title">
+      <h2 id="repo-modal-title" style={{ fontSize: 17, fontWeight: 700, color: 'var(--holo-text)', margin: 0 }}>Repository settings</h2>
       <form onSubmit={handleSubmit} className={styles.form}>
         <div className={styles.formRow}>
           <label style={LABEL_STYLE}>Name</label>

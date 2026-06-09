@@ -54,7 +54,7 @@ export function Wizard({
 
   return (
     <div className="holo-overlay" onClick={onClose}>
-      <div className="holo-wizard" onClick={e => e.stopPropagation()}>
+      <div className="holo-wizard" role="dialog" aria-modal="true" aria-label="Wizard" onClick={e => e.stopPropagation()}>
         <div className="holo-wizard__progress">
           {steps.map((s, i) => (
             <React.Fragment key={i}>

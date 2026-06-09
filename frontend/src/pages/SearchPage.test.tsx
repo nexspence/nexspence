@@ -155,6 +155,89 @@ describe('SearchPage', () => {
     expect(await screen.findByText('spring-core')).toBeInTheDocument()
   })
 
+  it('caps rendered rows at PAGE_SIZE=50 and shows a show-more button for larger result sets', async () => {
+    const user = userEvent.setup()
+    // Build 120 unique components across two repos (60 each) — all non-docker so no digest filtering.
+    const manyItems = Array.from({ length: 120 }, (_, i) => ({
+      id: `bulk-${i}`,
+      repository: i < 60 ? 'repo-a' : 'repo-b',
+      format: 'maven2',
+      group: 'org.bulk',
+      name: `artifact-${i}`,
+      version: '1.0.0',
+      tags: [],
+      assets: [
+        { id: `bulk-a-${i}`, path: `org/bulk/artifact-${i}/1.0.0/artifact-${i}-1.0.0.jar`, fileSize: 1024, contentType: 'application/java-archive', lastModified: '2026-05-01T00:00:00Z' },
+      ],
+    }))
+    server.use(
+      http.get('/service/rest/v1/search', () => HttpResponse.json({ items: manyItems })),
+    )
+    renderWithProviders(<SearchPage />)
+    await user.type(screen.getByPlaceholderText('e.g. spring-core'), '*')
+    await user.click(screen.getByRole('button', { name: /Search/ }))
+
+    // Wait for results to appear
+    await screen.findByText('120 results in 2 repos')
+
+    // Only 50 rows should be rendered initially
+    const rows = screen.getAllByTestId('search-result-row')
+    expect(rows).toHaveLength(50)
+
+    // A "show more" control must be present
+    expect(screen.getByRole('button', { name: /Show more/i })).toBeInTheDocument()
+
+    // Clicking show-more adds another PAGE_SIZE batch
+    await user.click(screen.getByRole('button', { name: /Show more/i }))
+    const rowsAfter = screen.getAllByTestId('search-result-row')
+    expect(rowsAfter).toHaveLength(100)
+  })
+
+  it('repo-count label counts ALL repos even when the cap hides them (non-interleaved)', async () => {
+    const user = userEvent.setup()
+    // 60 items from repo-a named "aaa-…" and 60 from repo-b named "zzz-…".
+    // Default sort is by name ascending, so all 60 repo-a rows sort BEFORE any repo-b row.
+    // The PAGE_SIZE cap of 50 therefore renders only repo-a rows — but the label must still say 2 repos.
+    const nonInterleavedItems = [
+      ...Array.from({ length: 60 }, (_, i) => ({
+        id: `ni-a-${i}`,
+        repository: 'repo-a',
+        format: 'maven2',
+        group: 'org.test',
+        name: `aaa-artifact-${i}`,
+        version: '1.0.0',
+        tags: [],
+        assets: [{ id: `ni-aa-${i}`, path: `aaa-artifact-${i}.jar`, fileSize: 512, contentType: 'application/java-archive', lastModified: '2026-05-01T00:00:00Z' }],
+      })),
+      ...Array.from({ length: 60 }, (_, i) => ({
+        id: `ni-b-${i}`,
+        repository: 'repo-b',
+        format: 'maven2',
+        group: 'org.test',
+        name: `zzz-artifact-${i}`,
+        version: '1.0.0',
+        tags: [],
+        assets: [{ id: `ni-ba-${i}`, path: `zzz-artifact-${i}.jar`, fileSize: 512, contentType: 'application/java-archive', lastModified: '2026-05-01T00:00:00Z' }],
+      })),
+    ]
+    server.use(
+      http.get('/service/rest/v1/search', () => HttpResponse.json({ items: nonInterleavedItems })),
+    )
+    renderWithProviders(<SearchPage />)
+    await user.type(screen.getByPlaceholderText('e.g. spring-core'), '*')
+    await user.click(screen.getByRole('button', { name: /Search/ }))
+
+    // Label shows correct total and full repo count from the uncapped set
+    await screen.findByText('120 results in 2 repos')
+
+    // Only 50 rows rendered (all from repo-a due to sort order)
+    const rows = screen.getAllByTestId('search-result-row')
+    expect(rows).toHaveLength(50)
+
+    // Repo-b is invisible in the rendered rows, yet the label correctly counts it
+    expect(screen.queryByText('repo-b')).not.toBeInTheDocument()
+  })
+
   it('highlights a returning row from sessionStorage', async () => {
     sessionStorage.setItem('search:lastClickedComponentId', 'c1')
     server.use(

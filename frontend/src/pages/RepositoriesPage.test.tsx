@@ -374,6 +374,9 @@ describe('RepositoriesPage', () => {
     await screen.findByText('maven-hosted')
     fireEvent.click(screen.getAllByTitle('Settings')[0])
     expect(await screen.findByText('Repository settings')).toBeInTheDocument()
+    // The shared HoloModal must be announced as a dialog to screen readers,
+    // with its accessible name derived from the real title via aria-labelledby.
+    expect(screen.getByRole('dialog', { name: /Repository settings/i })).toBeInTheDocument()
     const desc = screen.getByPlaceholderText('Optional')
     await user.clear(desc)
     await user.type(desc, 'updated desc')
