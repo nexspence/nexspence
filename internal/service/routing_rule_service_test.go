@@ -71,6 +71,26 @@ func TestRoutingRuleService_CreateValidate(t *testing.T) {
 	}
 }
 
+func TestAllow_CachedMatcher_RepeatedCalls(t *testing.T) {
+	rule := &domain.RoutingRule{Mode: "ALLOW", Matchers: []string{`^/v2/library/.*`}}
+	// repeated calls hit the compile cache; behavior must be stable
+	for i := 0; i < 3; i++ {
+		if !service.Allow(rule, "/v2/library/alpine/manifests/latest") {
+			t.Fatal("expected allow")
+		}
+		if service.Allow(rule, "/maven2/foo.jar") {
+			t.Fatal("expected block")
+		}
+	}
+}
+
+func TestAllow_InvalidMatcher_Skipped(t *testing.T) {
+	rule := &domain.RoutingRule{Mode: "ALLOW", Matchers: []string{`(`}} // invalid regex
+	if service.Allow(rule, "anything") {
+		t.Fatal("invalid matcher must be skipped, ALLOW with no valid match → blocked")
+	}
+}
+
 func TestRoutingRuleService_CRUD(t *testing.T) {
 	svc := service.NewRoutingRuleService(testutil.NewRoutingRuleRepo())
 	ctx := context.Background()
