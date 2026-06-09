@@ -105,8 +105,6 @@ release:
   # nexspence/nexspence. Pin the tag/release to the public repo's main branch so
   # GitHub creates the tag there — mirroring the prior `gh release create` flow.
   target_commitish: main
-  extra_files:
-    - glob: ./release-assets/nexspence-*.zip
   footer: |
     ### 🐳 Docker
 
@@ -121,14 +119,12 @@ release:
 
     #### Quick start
 
-    Download `nexspence-{{ .Tag }}.zip`, extract it, rename
+    Download the **Source code (zip)** below, extract it, rename
     `config.yaml.example` → `config.yaml`, and set the admin password and JWT secret.
 
     | Mode | Command |
     |------|---------|
     | Single-node | `docker compose up -d` |
-    | Single-node + Monitoring | `docker compose --profile monitoring up -d` |
-    | Single-node + Keycloak SSO | `OIDC_ENABLED=true docker compose --profile keycloak up -d` |
     | HA (2 nodes + nginx) | `docker compose -f docker-compose.ha.yml up -d` |
 
     **Web UI:** single-node → `http://localhost:8081` · HA → `http://localhost:8080`

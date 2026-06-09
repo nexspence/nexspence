@@ -61,13 +61,16 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Prepare release assets
+      - name: Prepare image-pinned compose
         env:
           IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
         run: |
           mkdir release-assets
 
-          # Replace build block with pre-built image reference
+          # Pin the docker-compose files to the released image (the public mirror
+          # has no source to build from). The sync step copies these to the mirror.
+          # No bundle zip is produced — GitHub's auto "Source code" archive of the
+          # (run-essentials-only) mirror serves that purpose.
           python3 - <<'PYEOF'
           import re, os, sys
 
@@ -90,20 +93,6 @@ jobs:
                   f.write(patched)
               print(f'Generated {dst} with image={image}')
           PYEOF
-
-          cp config.yaml.example release-assets/config.yaml.example
-
-          # Helm chart only — run-essentials. Documentation lives on the website,
-          # so it is intentionally NOT bundled in the release.
-          mkdir -p release-assets/deploy/helm
-          cp -r deploy/helm/nexspence release-assets/deploy/helm/nexspence
-
-          cd release-assets
-          zip -r "nexspence-${{ github.ref_name }}.zip" \
-            docker-compose.yml docker-compose.ha.yml \
-            config.yaml.example \
-            deploy/
-          cd ..
 
       - name: Set up Go
         uses: actions/setup-go@v5
