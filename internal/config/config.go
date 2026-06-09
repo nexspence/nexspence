@@ -87,12 +87,15 @@ type S3Config struct {
 
 // AuthConfig holds JWT, bcrypt, anonymous-access, and token-expiry settings.
 type AuthConfig struct {
-	JWTSecret         string `mapstructure:"jwt_secret"`
-	JWTExpiryHours    int    `mapstructure:"jwt_expiry_hours"`
-	AnonymousEnabled  bool   `mapstructure:"anonymous_enabled"`
-	PasswordMinLength int    `mapstructure:"password_min_length"`
-	BcryptCost        int    `mapstructure:"bcrypt_cost"`
-	TokenMaxDays      int    `mapstructure:"token_max_days"`
+	JWTSecret         string  `mapstructure:"jwt_secret"`
+	JWTExpiryHours    int     `mapstructure:"jwt_expiry_hours"`
+	AnonymousEnabled  bool    `mapstructure:"anonymous_enabled"`
+	PasswordMinLength int     `mapstructure:"password_min_length"`
+	BcryptCost        int     `mapstructure:"bcrypt_cost"`
+	TokenMaxDays      int     `mapstructure:"token_max_days"`
+	RateLimitEnabled  bool    `mapstructure:"rate_limit_enabled"`
+	RateLimitRPS      float64 `mapstructure:"rate_limit_rps"`
+	RateLimitBurst    float64 `mapstructure:"rate_limit_burst"`
 }
 
 // LogConfig configures the structured logger level and output format.
@@ -352,6 +355,9 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("auth.password_min_length", 8)
 	v.SetDefault("auth.bcrypt_cost", 12)
 	v.SetDefault("auth.token_max_days", 90)
+	v.SetDefault("auth.rate_limit_enabled", false)
+	v.SetDefault("auth.rate_limit_rps", 50.0)
+	v.SetDefault("auth.rate_limit_burst", 100.0)
 	v.SetDefault("log.level", "info")
 	v.SetDefault("log.format", "json")
 	v.SetDefault("search.min_query_len", 2)

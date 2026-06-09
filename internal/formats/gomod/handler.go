@@ -138,7 +138,7 @@ func (h *Handler) serveInfo(c *gin.Context, repoName, modulePath, version string
 	})
 }
 
-func (h *Handler) serveFile(c *gin.Context, repoName, filePath, modulePath, version, kind string) {
+func (h *Handler) serveFile(c *gin.Context, repoName, filePath, _, _, kind string) {
 	rc, asset, err := base.FetchArtifact(c.Request.Context(), h.deps, repoName, filePath)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
@@ -149,8 +149,6 @@ func (h *Handler) serveFile(c *gin.Context, repoName, filePath, modulePath, vers
 	if kind == "go.mod" {
 		ct = "text/plain; charset=utf-8"
 	}
-	_ = modulePath
-	_ = version
 	c.DataFromReader(http.StatusOK, asset.SizeBytes, ct, rc, nil)
 }
 

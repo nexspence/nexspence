@@ -259,6 +259,9 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 	r.Use(corsMiddleware())
 	r.Use(handlers.MetricsMiddleware())
 	r.Use(AuditMiddleware(auditRepo))
+	if cfg.Auth.RateLimitEnabled {
+		r.Use(RateLimitMiddleware(cfg.Auth.RateLimitRPS, cfg.Auth.RateLimitBurst))
+	}
 
 	authMW := handlers.AuthMiddleware(userSvc, tokenSvc)
 	adminMW := handlers.AdminRequired()

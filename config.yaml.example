@@ -34,6 +34,9 @@ auth:
   password_min_length: 8
   bcrypt_cost: 12
   token_max_days: 180
+  rate_limit_enabled: false   # per-user/IP token-bucket throttling
+  rate_limit_rps: 50          # sustained requests/sec
+  rate_limit_burst: 100       # burst capacity
 
 # Bootstrap: create / update the admin user on every server start.
 # Safe to run repeatedly — only acts if user is missing or password changed.

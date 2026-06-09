@@ -140,8 +140,8 @@ func (s *LDAPService) Authenticate(ctx context.Context, username, password strin
 	// Fetch group memberships (best-effort; failures are non-fatal).
 	if s.cfg.GroupBase != "" && s.cfg.GroupFilter != "" {
 		if err := s.serviceBind(conn); err != nil {
-			// Non-fatal: log and try to search under user credentials.
-			_ = fmt.Errorf("ldap group search: service rebind failed (searching as user): %w", err)
+			// Non-fatal: record and fall through to search under user credentials.
+			lu.GroupSearchErr = fmt.Sprintf("service rebind failed (searching as user): %v", err)
 		}
 		groupFilter := strings.ReplaceAll(s.cfg.GroupFilter, "{dn}", ldap.EscapeFilter(userDN))
 		groupReq := ldap.NewSearchRequest(
@@ -153,6 +153,7 @@ func (s *LDAPService) Authenticate(ctx context.Context, username, password strin
 		if gErr != nil {
 			lu.GroupSearchErr = gErr.Error()
 		} else {
+			lu.GroupSearchErr = ""
 			for _, g := range gRes.Entries {
 				if name := g.GetAttributeValue(s.cfg.GroupAttribute); name != "" {
 					lu.Groups = append(lu.Groups, name)

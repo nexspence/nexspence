@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -82,11 +83,12 @@ func RateLimitMiddleware(rate, burst float64) gin.HandlerFunc {
 		mu.Unlock()
 
 		if !e.bucket.allow(rate, burst) {
+			// Coarse retry hint: a 1s floor, not an exact per-token backoff.
 			retryAfter := int(1.0 / rate)
 			if retryAfter < 1 {
 				retryAfter = 1
 			}
-			c.Header("Retry-After", http.StatusText(retryAfter))
+			c.Header("Retry-After", strconv.Itoa(retryAfter))
 			c.JSON(http.StatusTooManyRequests, gin.H{"error": "rate limit exceeded"})
 			c.Abort()
 			return

@@ -222,16 +222,6 @@ func (h *Handler) handlePublish(c *gin.Context, repoName, pkgPath string) {
 		return
 	}
 
-	// Determine scope from scoped package name (@scope/name)
-	scope := ""
-	if strings.HasPrefix(pkgName, "@") {
-		parts := strings.SplitN(pkgName, "/", 2)
-		if len(parts) == 2 {
-			scope = parts[0]
-		}
-	}
-	_ = scope
-
 	for filename, att := range attachments {
 		data, err := base64.StdEncoding.DecodeString(att.Data)
 		if err != nil {
