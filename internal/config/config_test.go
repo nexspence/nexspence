@@ -104,3 +104,37 @@ func TestValidateOIDC_FullValidConfig_Passes(t *testing.T) {
 	c.AllowedSkewSeconds = 60
 	require.NoError(t, ValidateOIDC(c))
 }
+
+func validAuth() AuthConfig {
+	return AuthConfig{JWTSecret: "a-sufficiently-long-unique-secret-value-123"}
+}
+
+func TestValidateAuth_Empty_Fails(t *testing.T) {
+	err := ValidateAuth(AuthConfig{JWTSecret: ""})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "jwt_secret")
+}
+
+func TestValidateAuth_Placeholder_Fails(t *testing.T) {
+	err := ValidateAuth(AuthConfig{JWTSecret: "CHANGE_ME_AT_LEAST_32_CHARACTERS_LONG"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "placeholder")
+}
+
+func TestValidateAuth_TooShort_Fails(t *testing.T) {
+	err := ValidateAuth(AuthConfig{JWTSecret: "short"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "32")
+}
+
+func TestValidateAuth_Valid_Passes(t *testing.T) {
+	require.NoError(t, ValidateAuth(validAuth()))
+}
+
+func TestDevDefaultJWTSecret_PassesValidation_ButRecognized(t *testing.T) {
+	require.NoError(t, ValidateAuth(AuthConfig{JWTSecret: DevDefaultJWTSecret}),
+		"dev default must pass ValidateAuth so quick-start boots")
+	require.True(t, IsDevDefaultJWTSecret(DevDefaultJWTSecret))
+	require.False(t, IsDevDefaultJWTSecret("some-other-unique-production-secret-value"))
+	require.NotEqual(t, exampleJWTSecret, DevDefaultJWTSecret)
+}

@@ -172,6 +172,32 @@ type OIDCConfig struct {
 	PublicIssuerURL string `mapstructure:"public_issuer_url"`
 }
 
+const exampleJWTSecret = "CHANGE_ME_AT_LEAST_32_CHARACTERS_LONG" //nolint:gosec // G101 false positive: this is the known-bad placeholder string we reject at startup, not an actual credential
+const jwtSecretMinLen = 32
+
+// DevDefaultJWTSecret is the bootable-but-insecure secret shipped in the
+// docker-compose and Helm defaults. Unlike exampleJWTSecret it passes
+// ValidateAuth (long enough, not the fatal placeholder) so quick-start works,
+// but cmd/server warns at startup when it is in use.
+const DevDefaultJWTSecret = "nexspence-dev-default-secret-change-me-in-production" //nolint:gosec // G101 false positive: this is the recognizable dev-default we warn about at startup, not a production credential
+
+// IsDevDefaultJWTSecret reports whether s is the shipped development default.
+func IsDevDefaultJWTSecret(s string) bool { return s == DevDefaultJWTSecret }
+
+// ValidateAuth rejects an empty, placeholder, or too-short JWT signing secret.
+func ValidateAuth(a AuthConfig) error {
+	if a.JWTSecret == "" {
+		return fmt.Errorf("auth.jwt_secret is required (or set NEXSPENCE_AUTH_JWT_SECRET)")
+	}
+	if a.JWTSecret == exampleJWTSecret {
+		return fmt.Errorf("auth.jwt_secret is set to the example placeholder; set a unique secret of at least %d characters", jwtSecretMinLen)
+	}
+	if len(a.JWTSecret) < jwtSecretMinLen {
+		return fmt.Errorf("auth.jwt_secret must be at least %d characters", jwtSecretMinLen)
+	}
+	return nil
+}
+
 // ValidateOIDC returns nil when the OIDC config is usable.
 // Called from Load() after unmarshal; exported for unit tests.
 func ValidateOIDC(c OIDCConfig) error {
@@ -400,8 +426,8 @@ func Load(path string) (*Config, error) {
 	if cfg.Database.DSN == "" {
 		return nil, fmt.Errorf("database.dsn is required (or set NEXSPENCE_DATABASE_DSN)")
 	}
-	if cfg.Auth.JWTSecret == "" {
-		return nil, fmt.Errorf("auth.jwt_secret is required (or set NEXSPENCE_AUTH_JWT_SECRET)")
+	if err := ValidateAuth(cfg.Auth); err != nil {
+		return nil, err
 	}
 	if err := ValidateOIDC(cfg.OIDC); err != nil {
 		return nil, err

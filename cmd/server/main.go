@@ -53,6 +53,12 @@ func cmdServe() *cobra.Command {
 
 			log := logger.New(cfg.Log.Level, cfg.Log.Format)
 			log.Info("starting nexspence", "version", Version, "addr", cfg.HTTP.Addr)
+			if cfg.Auth.AnonymousEnabled {
+				log.Warn("auth.anonymous_enabled is true — unauthenticated artifact access is allowed; set false to require authentication")
+			}
+			if config.IsDevDefaultJWTSecret(cfg.Auth.JWTSecret) {
+				log.Warn("auth.jwt_secret is the shipped development default — set a unique secret (NEXSPENCE_AUTH_JWT_SECRET) before production use")
+			}
 
 			// Auto-migrate on every startup so the schema is always up-to-date.
 			log.Info("running database migrations...")
@@ -78,6 +84,9 @@ func cmdServe() *cobra.Command {
 			// LDAP
 			if cfg.LDAP.Enabled {
 				log.Info("ldap enabled", "host", cfg.LDAP.Host, "port", cfg.LDAP.Port, "use_tls", cfg.LDAP.UseTLS || cfg.LDAP.Port == 636, "insecure_skip_verify", cfg.LDAP.InsecureSkipVerify, "admin_group", cfg.LDAP.AdminGroup)
+				if cfg.LDAP.InsecureSkipVerify {
+					log.Warn("LDAP insecure_skip_verify is enabled — TLS certificate validation is OFF; use only with self-signed certs in development")
+				}
 				if ldapSvc := auth.NewLDAPService(cfg.LDAP); ldapSvc != nil {
 					if err := ldapSvc.TestConnection(cmd.Context()); err != nil {
 						log.Warn("ldap connection test FAILED", "err", err)

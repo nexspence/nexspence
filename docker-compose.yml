@@ -85,7 +85,7 @@ services:
         required: false
     environment:
       NEXSPENCE_DATABASE_DSN: "postgres://nexspence:nexspence@postgres:5432/nexspence?sslmode=disable"
-      NEXSPENCE_AUTH_JWT_SECRET: "change-me-in-production-min-32-chars"
+      NEXSPENCE_AUTH_JWT_SECRET: "nexspence-dev-default-secret-change-me-in-production"  # development default — server boots but WARNS; override for production
       NEXSPENCE_HTTP_ADDR: ":8081"
       NEXSPENCE_HTTP_BASE_URL: "http://localhost:8081"
       NEXSPENCE_STORAGE_DEFAULT_TYPE: "local"

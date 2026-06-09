@@ -50,7 +50,7 @@ func (s *LDAPService) dial(_ context.Context) (*ldap.Conn, error) {
 	timeout := time.Duration(s.cfg.TimeoutSec) * time.Second
 
 	tlsCfg := &tls.Config{
-		InsecureSkipVerify: s.cfg.InsecureSkipVerify, //nolint:gosec
+		InsecureSkipVerify: s.cfg.InsecureSkipVerify, //nolint:gosec // operator opt-in for self-signed dev LDAPS; defaults false, a startup warning is emitted when true
 		ServerName:         s.cfg.Host,
 	}
 

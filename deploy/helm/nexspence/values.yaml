@@ -40,8 +40,8 @@ config:
   logLevel: "info"
   logFormat: "json"
   httpListen: ":8081"
-  # -- JWT secret — CHANGE IN PRODUCTION (min 32 chars)
-  jwtSecret: "change-me-to-a-random-64-char-string"
+  # -- JWT secret — development default: server boots but WARNS; override with a unique secret (min 32 chars) for production
+  jwtSecret: "nexspence-dev-default-secret-change-me-in-production"
   jwtExpiryHours: 8
   # -- Bootstrap admin credentials
   adminUsername: "admin"
