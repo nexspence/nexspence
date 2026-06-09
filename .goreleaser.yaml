@@ -73,7 +73,28 @@ checksum:
   algorithm: sha256
 
 changelog:
-  disable: true
+  use: git              # parse local nexspence-core git log; cross-repo safe
+  sort: asc
+  filters:
+    exclude:
+      - '^chore:'
+      - '^ci:'
+      - '^test:'
+      - '^build:'
+      - '^style:'
+      - '^Merge '
+  groups:
+    - title: "✨ Features"
+      regexp: '^.*?feat(\(.+\))??!?:.+$'
+      order: 0
+    - title: "🐛 Bug Fixes"
+      regexp: '^.*?fix(\(.+\))??!?:.+$'
+      order: 1
+    - title: "📚 Documentation"
+      regexp: '^.*?docs(\(.+\))??!?:.+$'
+      order: 2
+    - title: "🔧 Others"
+      order: 999
 
 release:
   github:
@@ -86,3 +107,31 @@ release:
   target_commitish: main
   extra_files:
     - glob: ./release-assets/nexspence-*.zip
+  footer: |
+    ### 🐳 Docker
+
+    | | |
+    |---|---|
+    | **Image** | `ghcr.io/nexspence/nexspence:{{ .Tag }}` |
+    | **Platforms** | linux/amd64, linux/arm64 |
+
+    ```bash
+    docker pull ghcr.io/nexspence/nexspence:{{ .Tag }}
+    ```
+
+    #### Quick start
+
+    Download `nexspence-{{ .Tag }}.zip`, extract it, rename
+    `config.yaml.example` → `config.yaml`, and set the admin password and JWT secret.
+
+    | Mode | Command |
+    |------|---------|
+    | Single-node | `docker compose up -d` |
+    | Single-node + Monitoring | `docker compose --profile monitoring up -d` |
+    | Single-node + Keycloak SSO | `OIDC_ENABLED=true docker compose --profile keycloak up -d` |
+    | HA (2 nodes + nginx) | `docker compose -f docker-compose.ha.yml up -d` |
+
+    **Web UI:** single-node → `http://localhost:8081` · HA → `http://localhost:8080`
+
+    Native install (deb/rpm/macOS/Windows): see
+    [docs/install-local.md](https://github.com/nexspence/nexspence/blob/main/docs/install-local.md).

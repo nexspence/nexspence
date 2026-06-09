@@ -122,51 +122,6 @@ jobs:
             docs/
           cd ..
 
-      - name: Build release notes
-        run: |
-          if [ -s NEXT_RELEASE.md ]; then
-            cat NEXT_RELEASE.md > release-notes.md
-          else
-            printf '### ✨ Features\n\n_No changes recorded._\n\n### 🐛 Bug Fixes\n\n_No bug fixes in this release._\n' > release-notes.md
-          fi
-
-          TAG="${{ github.ref_name }}"
-          {
-            printf '\n### 🐳 Docker\n\n'
-            printf '| | |\n'
-            printf '|---|---|\n'
-            printf '| **Image** | `ghcr.io/nexspence/nexspence:%s` |\n' "$TAG"
-            printf '| **Platforms** | linux/amd64, linux/arm64 |\n\n'
-            printf '```bash\n'
-            printf 'docker pull ghcr.io/nexspence/nexspence:%s\n' "$TAG"
-            printf '```\n\n'
-            printf '#### Quick start\n\n'
-            printf 'Download the zip, extract it, rename `config.yaml.example` → `config.yaml` and edit the admin password and JWT secret.\n\n'
-            printf '| Mode | Command |\n'
-            printf '|------|---------|\n'
-            printf '| Single-node | `docker compose up -d` |\n'
-            printf '| Single-node + Monitoring | `docker compose --profile monitoring up -d` |\n'
-            printf '| Single-node + Keycloak SSO | `OIDC_ENABLED=true docker compose --profile keycloak up -d` |\n'
-            printf '| Single-node + Keycloak + Monitoring | `OIDC_ENABLED=true docker compose --profile keycloak --profile monitoring up -d` |\n'
-            printf '| HA (2 nodes + nginx) | `docker compose -f docker-compose.ha.yml up -d` |\n'
-            printf '| HA + Keycloak SSO | `OIDC_ENABLED=true docker compose -f docker-compose.ha.yml --profile keycloak up -d` |\n'
-            printf '| HA + Keycloak + Monitoring | `OIDC_ENABLED=true docker compose -f docker-compose.ha.yml --profile keycloak --profile monitoring up -d` |\n\n'
-            printf '**Web UI:** single-node → `http://localhost:8081` · HA → `http://localhost:8080`  \n'
-            printf '**Keycloak admin:** `http://localhost:8180` (admin / admin)  \n'
-            printf '**Test SSO user:** testuser / testpass (member of `nexspence-admins` → nx-admin role)  \n\n'
-            printf '> **Monitoring setup:** before starting with `--profile monitoring`, run `cp deploy/monitoring/prometheus-token.example deploy/monitoring/prometheus-token` and paste a valid `nxs_*` API token.  \n'
-            printf '> Prometheus: `http://localhost:9090` · Grafana: `http://localhost:3000` (admin / admin)\n\n'
-            printf '#### Demo seed (optional)\n\n'
-            printf 'The zip includes `scripts/` and `docs/` directories.\n\n'
-            printf '| Script | Purpose |\n'
-            printf '|--------|---------|\n'
-            printf '| `scripts/seed-all.sh` | Full demo: 42 repos + test packages + RBAC for dev/stage/test/prod |\n'
-            printf '| `scripts/seed-repos.sh` | Repositories only (all 14 formats) |\n'
-            printf '| `scripts/seed-rbac.sh` | RBAC for dev/stage/test/prod environments |\n'
-            printf '| `scripts/seed-cleanup.sh --all` | Remove everything created by seed scripts |\n\n'
-            printf 'See `docs/seed-testing-guide.md` for a full testing walkthrough.\n\n'
-          } >> release-notes.md
-
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
@@ -183,7 +138,7 @@ jobs:
         uses: goreleaser/goreleaser-action@v6
         with:
           version: '~> v2'
-          args: release --clean --release-notes=release-notes.md
+          args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_PAT }}
 
@@ -209,18 +164,3 @@ jobs:
             git commit -m "docs: sync from nexspence-core ${{ github.ref_name }}"
           git push origin main
 
-      - name: Reset changelog for next release
-        run: |
-          git config --global user.name  "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          # Switch from detached tag HEAD to the actual main branch and sync
-          # (main may have advanced since the tag was pushed, e.g. a force-push)
-          git switch main
-          git pull --rebase origin main
-          printf '### ✨ Features\n\n\n### 🐛 Bug Fixes\n\n_No bug fixes in this release._\n' > NEXT_RELEASE.md
-          git add NEXT_RELEASE.md
-          # Commit only if there is something to commit
-          git diff --staged --quiet || \
-            git commit -m "chore: reset NEXT_RELEASE.md after ${{ github.ref_name }}"
-          # PAT is already baked into the remote URL by the checkout step
-          git push origin main

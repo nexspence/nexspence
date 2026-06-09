@@ -1,0 +1,49 @@
+name: Tag Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Show the next version without creating a tag"
+        type: boolean
+        default: false
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # svu needs full history + tags
+          token: ${{ secrets.RELEASE_PAT }}   # PAT so the tag push triggers release.yml
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install svu
+        run: go install github.com/caarlos0/svu/v2@v2.2.0   # pinned: svu drives release versioning
+
+      - name: Compute next version
+        id: ver
+        run: |
+          NEXT="$(svu next)"
+          echo "next=$NEXT" >> "$GITHUB_OUTPUT"
+          echo "Next version: $NEXT"
+          echo "### Next version: \`$NEXT\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Create and push tag
+        if: ${{ !inputs.dry_run }}
+        run: |
+          NEXT="${{ steps.ver.outputs.next }}"
+          # svu returns the current tag when there are no feat/fix commits since the
+          # last release — there is nothing new to release, so fail with a clear message
+          # instead of a raw "tag already exists" git error.
+          if git rev-parse -q --verify "refs/tags/$NEXT" >/dev/null; then
+            echo "::error::svu computed $NEXT, which already exists — no feat/fix commits since the last release. Merge a feat/fix PR before tagging."
+            exit 1
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "$NEXT" -m "Release $NEXT"
+          git push origin "$NEXT"
