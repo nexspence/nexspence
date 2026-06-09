@@ -6,20 +6,20 @@
 <title>Nexspence — Universal Artifact Repository Manager</title>
 <link rel="icon" type="image/png" href="/assets/favicon.png">
 <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
-<meta name="description" content="Free, open-source alternative to Sonatype Nexus. Manage Maven, Docker, npm, PyPI, Helm and 9 more formats in one self-hosted registry.">
+<meta name="description" content="Free, open-source alternative to commercial artifact repository managers. Manage Maven, Docker, npm, PyPI, Helm and 9 more formats in one self-hosted registry.">
 <link rel="canonical" href="https://nexspence.com/">
 <meta name="theme-color" content="#070b14">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Nexspence">
 <meta property="og:url" content="https://nexspence.com/">
 <meta property="og:title" content="Nexspence — Universal Artifact Repository Manager">
-<meta property="og:description" content="Free, open-source alternative to Sonatype Nexus. Manage Maven, Docker, npm, PyPI, Helm and 9 more formats in one self-hosted registry.">
+<meta property="og:description" content="Free, open-source alternative to commercial artifact repository managers. Manage Maven, Docker, npm, PyPI, Helm and 9 more formats in one self-hosted registry.">
 <meta property="og:image" content="https://nexspence.com/assets/og-image.jpg">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Nexspence — Universal Artifact Repository Manager">
-<meta name="twitter:description" content="Free, open-source alternative to Sonatype Nexus. Manage Maven, Docker, npm, PyPI, Helm and 9 more formats in one self-hosted registry.">
+<meta name="twitter:description" content="Free, open-source alternative to commercial artifact repository managers. Manage Maven, Docker, npm, PyPI, Helm and 9 more formats in one self-hosted registry.">
 <meta name="twitter:image" content="https://nexspence.com/assets/og-image.jpg">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -352,9 +352,13 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
     <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
     <span>Install</span>
   </button>
-  <button class="npill" data-target="compare" aria-label="Go to Compare">
+  <button class="npill" data-target="terraform" aria-label="Go to Infrastructure as Code">
+    <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+    <span>IaC</span>
+  </button>
+  <button class="npill" data-target="compare" aria-label="Go to Comparison">
     <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-    <span>vs Nexus</span>
+    <span>Compare</span>
   </button>
   <a href="/docs/" class="npill" aria-label="Go to Docs" style="color:#a78bfa">
     <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
@@ -386,7 +390,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
           Universal Artifact<br>
           <span class="grad">Repository Manager</span>
         </h1>
-        <p class="hero-sub rev d2">Drop-in replacement for Sonatype Nexus. Manage Maven, Docker, npm, PyPI, Helm and 9 more formats — in one self-hosted registry, forever free.</p>
+        <p class="hero-sub rev d2">Drop-in replacement for other artifact repository managers. Manage Maven, Docker, npm, PyPI, Helm and 9 more formats — in one self-hosted registry, forever free.</p>
         <div class="hero-actions rev d3">
           <a href="#deploy" class="btn btn-primary">
             <svg fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" aria-hidden="true"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
@@ -1026,41 +1030,41 @@ resource <span style="color:#7dd3fc">"nexspence_repository"</span> <span style="
 <!-- ══════════════════════════════ -->
 <!-- ⑥  COMPARE                   -->
 <!-- ══════════════════════════════ -->
-<section id="compare" class="sect" aria-label="Comparison with Nexus">
+<section id="compare" class="sect" aria-label="Comparison with other systems">
   <div class="sect-wrap">
     <div class="rev" style="text-align:center;margin-bottom:36px">
       <div class="stag" style="justify-content:center">Comparison</div>
-      <h2 class="stitle">Nexspence vs Nexus OSS</h2>
-      <p class="ssub" style="margin:0 auto">Everything Nexus Pro charges for — included in Nexspence, free forever.</p>
+      <h2 class="stitle">Nexspence vs other systems</h2>
+      <p class="ssub" style="margin:0 auto">Everything commercial managers charge for — included in Nexspence, free forever.</p>
     </div>
     <div class="card rev" style="overflow:auto;border-radius:14px;margin-bottom:20px">
       <table class="ctable" aria-label="Feature comparison">
-        <thead><tr><th style="min-width:200px">Feature</th><th class="thnx" style="min-width:160px">Nexspence</th><th style="min-width:160px">Nexus OSS</th></tr></thead>
+        <thead><tr><th style="min-width:200px">Feature</th><th class="thnx" style="min-width:160px">Nexspence</th><th style="min-width:160px">Other systems</th></tr></thead>
         <tbody>
-          <tr><td>Price</td><td class="y">$0 forever</td><td class="p">Free / $120/mo Pro</td></tr>
+          <tr><td>Price</td><td class="y">$0 forever</td><td class="p">Free / paid tiers</td></tr>
           <tr><td>Nexus REST API v1</td><td class="y">100% compatible</td><td class="y">Native</td></tr>
-          <tr><td>OIDC / SSO</td><td class="y">Keycloak, Google, Entra, Okta</td><td class="n">Pro only</td></tr>
+          <tr><td>OIDC / SSO</td><td class="y">Keycloak, Google, Entra, Okta</td><td class="n">Paid tier only</td></tr>
           <tr><td>LDAP Authentication</td><td class="y">Built-in</td><td class="y">Built-in</td></tr>
           <tr><td>Docker OCI v2</td><td class="y">Full spec</td><td class="y">Full spec</td></tr>
-          <tr><td>S3 Blob Store</td><td class="y">Any S3-compatible</td><td class="n">Pro only</td></tr>
-          <tr><td>Vulnerability Scanning</td><td class="y">Trivy (built-in)</td><td class="n">Pro add-on</td></tr>
-          <tr><td>Webhooks</td><td class="y">Built-in async</td><td class="n">Pro only</td></tr>
+          <tr><td>S3 Blob Store</td><td class="y">Any S3-compatible</td><td class="n">Paid tier only</td></tr>
+          <tr><td>Vulnerability Scanning</td><td class="y">Trivy (built-in)</td><td class="n">Paid add-on</td></tr>
+          <tr><td>Webhooks</td><td class="y">Built-in async</td><td class="n">Paid tier only</td></tr>
           <tr><td>Per-repo Export / Import</td><td class="y">Streaming tar.gz</td><td>Admin UI</td></tr>
           <tr><td>Go Modules (GOPROXY)</td><td class="y">Native</td><td class="n">Community plugin</td></tr>
           <tr><td>Cargo / Conan</td><td class="y">Native</td><td class="n">Not supported</td></tr>
-          <tr><td>Audit Log NDJSON Export</td><td class="y">Built-in streaming</td><td class="n">Pro feature</td></tr>
-          <tr><td>Component Tagging</td><td class="y">Yes (GIN index)</td><td class="n">Pro only</td></tr>
+          <tr><td>Audit Log NDJSON Export</td><td class="y">Built-in streaming</td><td class="n">Paid feature</td></tr>
+          <tr><td>Component Tagging</td><td class="y">Yes (GIN index)</td><td class="n">Paid tier only</td></tr>
           <tr><td>CEL Content Selectors</td><td class="y">Yes</td><td>XPath / Regex</td></tr>
-          <tr><td>SAML 2.0 SSO</td><td class="y">Built-in</td><td class="n">Pro only</td></tr>
-          <tr><td>High Availability (Redis + S3)</td><td class="y">Built-in</td><td class="n">Pro only</td></tr>
-          <tr><td>Content Replication</td><td class="y">Built-in (cron, AES-GCM creds)</td><td class="n">Pro only</td></tr>
-          <tr><td>Staging &amp; Build Promotion</td><td class="y">Built-in (CEL filter, approval)</td><td class="n">Pro only</td></tr>
+          <tr><td>SAML 2.0 SSO</td><td class="y">Built-in</td><td class="n">Paid tier only</td></tr>
+          <tr><td>High Availability (Redis + S3)</td><td class="y">Built-in</td><td class="n">Paid tier only</td></tr>
+          <tr><td>Content Replication</td><td class="y">Built-in (cron, AES-GCM creds)</td><td class="n">Paid tier only</td></tr>
+          <tr><td>Staging &amp; Build Promotion</td><td class="y">Built-in (CEL filter, approval)</td><td class="n">Paid tier only</td></tr>
           <tr><td>Conda / Terraform Registry</td><td class="y">Native</td><td class="n">Not supported</td></tr>
         </tbody>
       </table>
     </div>
     <div class="cta-box rev">
-      <div style="flex:1"><div class="ct">Ready to replace Nexus?</div><div class="cs">One command streams all repos, users, and artifacts. 100% API compatible — zero client changes.</div></div>
+      <div style="flex:1"><div class="ct">Ready to switch?</div><div class="cs">One command streams all repos, users, and artifacts. 100% API compatible — zero client changes.</div></div>
       <a href="https://github.com/nexspence/nexspence" target="_blank" rel="noopener" class="btn btn-primary">
         <svg fill="currentColor" viewBox="0 0 24 24" aria-hidden="true" width="16" height="16"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
         Star on GitHub
@@ -1083,7 +1087,7 @@ resource <span style="color:#7dd3fc">"nexspence_repository"</span> <span style="
     <a href="#architecture">Architecture</a>
     <a href="#security">Security</a>
     <a href="#deploy">Install</a>
-    <a href="#compare">vs Nexus</a>
+    <a href="#compare">Compare</a>
     <a href="/docs/">Docs</a>
     <a href="https://github.com/nexspence/nexspence" target="_blank" rel="noopener">GitHub</a>
     <a href="https://github.com/nexspence/nexspence/releases" target="_blank" rel="noopener">Releases</a>

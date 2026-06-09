@@ -59,12 +59,6 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .docs-title{font-size:clamp(1.6rem,4vw,2.4rem);font-weight:900;letter-spacing:-.03em;margin-bottom:6px}
 .docs-sub{font-size:.9rem;color:var(--dim);line-height:1.65}
 
-.ver-bar{display:flex;align-items:center;gap:8px;margin-bottom:24px;flex-wrap:wrap}
-.ver-label{font-size:.67rem;color:var(--faint);font-weight:700;text-transform:uppercase;letter-spacing:.08em;flex-shrink:0}
-.ver-btn{display:inline-flex;align-items:center;gap:5px;padding:5px 13px;border-radius:100px;font-size:.74rem;font-weight:600;border:1px solid var(--border);background:var(--glass);color:var(--dim);cursor:pointer;font-family:'Inter',system-ui,sans-serif;transition:all 150ms;white-space:nowrap}
-.ver-btn:hover{background:var(--glasm);color:var(--text);border-color:var(--borhi)}
-.ver-btn.active{background:rgba(139,92,246,.14);border-color:rgba(139,92,246,.4);color:#a78bfa}
-.ver-badge{font-size:.58rem;padding:1px 5px;border-radius:3px;background:rgba(34,197,94,.15);color:var(--green);font-weight:700;margin-left:2px}
 
 .docs-layout{display:grid;grid-template-columns:220px 1fr;gap:28px;align-items:start}
 .docs-sidebar{position:sticky;top:74px;background:var(--glass);border:1px solid var(--border);border-radius:14px;backdrop-filter:blur(10px);overflow:hidden}
@@ -205,12 +199,61 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
   .floatnav .npill span{display:none}
   .nav-deploy span{display:none}
   .nav-gh span{display:none}
-  .ver-bar{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;padding-bottom:2px;-webkit-overflow-scrolling:touch}
-  .ver-bar::-webkit-scrollbar{display:none}
-  .ver-label{display:none}
 }
 @media(max-width:580px){.nav-gh span{display:none}}
 @media(prefers-reduced-motion:reduce){.skeleton{animation:none}.ch-chevron{transition:none}}
+
+/* === redesign: version dropdown === */
+.ver-dd{position:relative}
+.ver-dd-btn{display:inline-flex;align-items:center;gap:9px;padding:9px 14px;border-radius:11px;border:1px solid var(--borhi);background:linear-gradient(180deg,rgba(139,92,246,.10),var(--glass));color:var(--text);font-size:.82rem;font-weight:700;cursor:pointer;font-family:'Inter',system-ui,sans-serif;transition:all 150ms;min-width:188px}
+.ver-dd-btn:hover{border-color:rgba(139,92,246,.55);background:linear-gradient(180deg,rgba(139,92,246,.16),var(--glasm))}
+.ver-dd-btn .vlabel{font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--faint)}
+.ver-dd-btn .vbadge{font-size:.56rem;padding:1px 6px;border-radius:4px;background:rgba(34,197,94,.16);color:var(--green);font-weight:800}
+.ver-dd-btn .vchev{width:14px;height:14px;color:var(--dim);margin-left:auto;transition:transform 200ms}
+.ver-dd.open .vchev{transform:rotate(180deg)}
+.ver-menu{position:absolute;top:calc(100% + 6px);left:0;min-width:280px;background:rgba(12,19,34,.97);border:1px solid var(--borhi);border-radius:12px;backdrop-filter:blur(20px);box-shadow:0 18px 50px rgba(0,0,0,.6);padding:6px;z-index:50;display:none;max-height:340px;overflow:auto}
+.ver-dd.open .ver-menu{display:block}
+.ver-item{display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:9px;cursor:pointer;border:none;background:transparent;width:100%;text-align:left;font-family:'Inter',system-ui,sans-serif}
+.ver-item:hover{background:var(--glasm)}
+.ver-item.sel{background:rgba(139,92,246,.14)}
+.ver-item .vi-num{font-size:.82rem;font-weight:800;color:var(--text)}
+.ver-item .vi-date{font-size:.64rem;color:var(--faint);font-family:'JetBrains Mono',monospace;margin-left:auto}
+.ver-item .vi-tag{font-size:.55rem;font-weight:800;padding:1px 6px;border-radius:4px}
+.vi-tag.latest{background:rgba(34,197,94,.14);color:var(--green)}
+.vi-tag.minor{background:rgba(59,130,246,.12);color:var(--blue)}
+.vi-tag.patch{background:rgba(71,85,105,.18);color:var(--faint)}
+.ver-menu-foot{border-top:1px solid var(--border);margin-top:4px;padding:9px 11px}
+.ver-menu-foot a{font-size:.72rem;color:var(--blue);text-decoration:none}
+
+/* === redesign: top category tabs === */
+.doc-tabs{display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:22px;overflow-x:auto}
+.doc-tabs::-webkit-scrollbar{height:0}
+.doc-tab{position:relative;display:inline-flex;align-items:center;gap:7px;padding:11px 14px;background:transparent;border:none;color:var(--dim);font-size:.83rem;font-weight:600;cursor:pointer;font-family:'Inter',system-ui,sans-serif;white-space:nowrap;transition:color 150ms}
+.doc-tab svg{width:15px;height:15px;opacity:.7}
+.doc-tab:hover{color:var(--text)}
+.doc-tab::after{content:'';position:absolute;left:8px;right:8px;bottom:-1px;height:2px;border-radius:2px;background:transparent;transition:background 150ms}
+.doc-tab.active{color:#a78bfa}
+.doc-tab.active svg{opacity:1}
+.doc-tab.active::after{background:linear-gradient(90deg,var(--purple),var(--blue))}
+
+/* === redesign: feature badges === */
+.dsb-badge{margin-left:auto;font-size:.5rem;font-weight:800;padding:1px 5px;border-radius:4px;background:rgba(59,130,246,.14);color:var(--blue)}
+.vbadge-inline{font-size:.58rem;font-weight:800;padding:2px 7px;border-radius:5px;background:rgba(59,130,246,.12);color:var(--blue);border:1px solid rgba(59,130,246,.28);vertical-align:middle;margin-left:8px}
+.vbadge-inline.tf{background:rgba(139,92,246,.14);color:#a78bfa;border-color:rgba(139,92,246,.32)}
+.vbadge-inline.reg{background:rgba(34,197,94,.12);color:var(--green);border-color:rgba(34,197,94,.28)}
+
+/* === redesign: OS sub-tabs (Installation) === */
+.os-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:18px;padding:8px;background:var(--glass);border:1px solid var(--border);border-radius:12px}
+.os-chip{display:inline-flex;align-items:center;gap:8px;padding:8px 16px;border-radius:8px;font-size:.8rem;font-weight:600;cursor:pointer;border:1px solid transparent;background:transparent;color:var(--dim);font-family:'Inter',system-ui,sans-serif;transition:all 150ms}
+.os-chip:hover{background:var(--glasm);color:var(--text)}
+.os-chip.active{background:rgba(139,92,246,.14);border-color:rgba(139,92,246,.4);color:#a78bfa}
+.os-chip svg{width:16px;height:16px}
+.os-pnl{display:none}.os-pnl.active{display:block}
+.svc-sep{display:flex;align-items:center;gap:10px;margin:22px 0 12px;font-size:.67rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--faint)}
+.svc-sep::after{content:'';flex:1;height:1px;background:var(--border)}
+.svc-sep .svc{color:var(--purple)}
+
+@media(max-width:768px){.doc-tabs{display:none}}
 </style>
 </head>
 <body>
@@ -256,11 +299,14 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
   </div>
 
   <div style="display:flex;align-items:center;gap:12px;margin-bottom:24px;flex-wrap:wrap">
-    <div class="ver-bar" id="ver-bar" role="tablist" aria-label="Documentation version" style="margin-bottom:0;flex:1">
-      <span class="ver-label">Version:</span>
-      <div class="skeleton" style="width:110px;height:30px;border-radius:100px"></div>
-      <div class="skeleton" style="width:70px;height:30px;border-radius:100px"></div>
-      <div class="skeleton" style="width:70px;height:30px;border-radius:100px"></div>
+    <div class="ver-dd" id="ver-dd" style="margin-bottom:0">
+      <button type="button" class="ver-dd-btn" id="ver-dd-btn" aria-haspopup="listbox" aria-expanded="false">
+        <span class="vlabel" data-i18n="ver.label">Version</span>
+        <span class="vnum" id="ver-num">—</span>
+        <span class="vbadge" id="ver-badge" style="display:none"></span>
+        <svg class="vchev" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      <div class="ver-menu" id="ver-menu" role="listbox"></div>
     </div>
     <div class="lang-bar" id="lang-bar">
       <button type="button" class="lang-btn active" data-lang="en" onclick="switchLang('en',this)">EN</button>
@@ -280,6 +326,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
   </button>
   <div class="mob-nav-drawer" id="mob-nav-drawer" aria-hidden="true"></div>
 
+  <div class="doc-tabs" id="doc-tabs" role="tablist" aria-label="Documentation sections"></div>
   <div class="docs-layout">
     <aside class="docs-sidebar" aria-label="Documentation navigation">
       <div class="dsb-inner" id="sidebar-inner"></div>
@@ -294,7 +341,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
       </nav>
       <div id="doc-content">
         <div class="doc-section-title">Nexspence Documentation</div>
-        <div class="doc-section-sub">Guides, configuration reference, and versioned changelog for Nexspence — the free, open-source universal artifact repository manager and drop-in alternative to Sonatype Nexus.</div>
+        <div class="doc-section-sub">Guides, configuration reference, and versioned changelog for Nexspence — the free, open-source universal artifact repository manager and drop-in alternative to commercial artifact repository managers.</div>
         <p style="color:var(--dim);line-height:1.7;margin:14px 0">Nexspence manages Maven, npm, PyPI, Docker, Go modules, NuGet, Cargo, Helm, Apt, Yum/RPM, Conan, Raw, Conda and Terraform artifacts from a single self-hosted registry. Repositories can be Hosted (your published artifacts), Proxy (cached remote registries) or Group (multiple repositories under one URL).</p>
         <p style="color:var(--dim);line-height:1.7;margin:14px 0">This documentation covers Quick Start, Installation, Repositories, per-format guides, Browse &amp; Search, Users, Roles &amp; Privileges (RBAC), Cleanup policies, Webhooks, Migration from Nexus, Monitoring, Build Promotion, Replication, and the full REST API reference.</p>
         <p style="color:var(--dim);line-height:1.7;margin:14px 0">Get started in under two minutes with Docker Compose: download the latest release, set a strong <code>admin_password</code> and <code>jwt_secret</code> in <code>config.yaml</code>, then run <code>docker compose up -d</code> and open the UI at <code>http://localhost:8081</code>.</p>
@@ -817,8 +864,8 @@ def verify(secret: str, body: bytes, header: str) -&gt; bool:
   <div class="alert-info" data-i18n="repl.diff.note"><strong>Differential sync:</strong> Each run compares asset paths between source and target and only pushes artifacts that are missing or changed on the remote. Credentials are stored AES-256-GCM encrypted.</div>
 </template>
 
-<template id="tpl-terraform">
-  <div class="doc-section-title" data-i18n="tf.title">Terraform Provider</div>
+<template id="tpl-tf-overview">
+  <div class="doc-section-title"><span data-i18n="tf.title">Terraform Provider</span> <span class="vbadge-inline tf">Provider v0.2.0</span> <span class="vbadge-inline reg" data-i18n="tf.ov.reg">on Terraform Registry</span></div>
   <div class="doc-section-sub" data-i18n="tf.sub">Manage Nexspence as code with the official Terraform provider — repositories, blob stores, users, roles, content selectors, and privileges, all version-controlled and reproducible. Published on the <a href="https://registry.terraform.io/providers/nexspence/nexspence" target="_blank" rel="noopener" style="color:var(--blue)">Terraform Registry</a> as <code>nexspence/nexspence</code>.</div>
 
   <div class="inst-sep" data-i18n="tf.qs.sep">Quick Start</div>
@@ -847,6 +894,65 @@ resource <span class="cs">"nexspence_repository"</span> <span class="cs">"maven_
     remote_url = <span class="cs">"https://repo1.maven.org/maven2/"</span>
   }
 }</div></div>
+</template>
+
+<template id="tpl-tf-auth">
+  <div class="doc-section-title" data-i18n="tf.auth.sep">Authentication</div>
+  <p style="font-size:.8rem;color:var(--dim);margin:6px 0 14px;line-height:1.6" data-i18n="tf.auth.desc">Authenticate with an <code>nxs_*</code> API token (preferred) or username + password. Set credentials in the provider block or via environment variables.</p>
+  <div class="cb"><div class="cb-bar"><span>shell — environment variables</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body"><span class="cc"># API token (preferred)</span>
+export NEXSPENCE_URL=<span class="cs">"https://nexspence.example.com"</span>
+export NEXSPENCE_TOKEN=<span class="cs">"nxs_xxxxxxxxxxxxxxxx"</span>
+
+<span class="cc"># or HTTP Basic auth</span>
+export NEXSPENCE_USERNAME=<span class="cs">"admin"</span>
+export NEXSPENCE_PASSWORD=<span class="cs">"admin123"</span></div></div>
+  <div class="alert-info" data-i18n="tf.auth.note"><strong>Token:</strong> Generate an <code>nxs_*</code> token in <strong>Security → API Tokens</strong> and pass it via the <code>token</code> argument or <code>NEXSPENCE_TOKEN</code>. Never commit secrets to version control — use a Terraform variable or a secrets manager.</div>
+</template>
+
+<template id="tpl-tf-resources">
+  <div class="doc-section-title"><span data-i18n="tf.res.title">Resources</span> <span class="vbadge-inline tf">10</span></div>
+  <div class="doc-section-sub" data-i18n="tf.res.desc">Each resource maps to a Nexspence object and supports create, read, update, delete, and <code>terraform import</code>.</div>
+  <table class="doc-table">
+    <thead><tr><th data-i18n="tf.res.th.name">Name</th><th data-i18n="tf.res.th.desc">Manages</th></tr></thead>
+    <tbody>
+      <tr><td><code>nexspence_repository</code></td><td data-i18n="tf.res.repository">Hosted, proxy, and group repositories for any format</td></tr>
+      <tr><td><code>nexspence_blobstore</code></td><td data-i18n="tf.res.blobstore">Local or S3-compatible blob stores</td></tr>
+      <tr><td><code>nexspence_content_selector</code></td><td data-i18n="tf.res.cs">CEL content selectors</td></tr>
+      <tr><td><code>nexspence_privilege</code></td><td data-i18n="tf.res.priv">Content-selector privileges</td></tr>
+      <tr><td><code>nexspence_role</code></td><td data-i18n="tf.res.role">Roles grouping privileges together</td></tr>
+      <tr><td><code>nexspence_user</code></td><td data-i18n="tf.res.user">User accounts and their role assignments</td></tr>
+      <tr><td><code>nexspence_cleanup_policy</code></td><td data-i18n="tf.res.cleanup">Scheduled cleanup policies (age / downloads / retain N)</td></tr>
+      <tr><td><code>nexspence_routing_rule</code></td><td data-i18n="tf.res.routing">ALLOW/BLOCK path routing rules</td></tr>
+      <tr><td><code>nexspence_webhook</code></td><td data-i18n="tf.res.webhook">Outbound event webhooks (HMAC-signed)</td></tr>
+      <tr><td><code>nexspence_promotion_rule</code></td><td data-i18n="tf.res.promotion">Build-promotion rules (scan gate / manual approval)</td></tr>
+    </tbody>
+  </table>
+</template>
+
+<template id="tpl-tf-data">
+  <div class="doc-section-title"><span data-i18n="tf.data.title">Data Sources</span> <span class="vbadge-inline tf">2</span></div>
+  <div class="doc-section-sub" data-i18n="tf.data.desc">Read existing Nexspence state into Terraform without managing it.</div>
+  <table class="doc-table">
+    <thead><tr><th data-i18n="tf.res.th.name">Name</th><th data-i18n="tf.data.th.ret">Returns</th></tr></thead>
+    <tbody>
+      <tr><td><code>nexspence_repository</code></td><td data-i18n="tf.res.d-repository">Look up a single existing repository</td></tr>
+      <tr><td><code>nexspence_repositories</code></td><td data-i18n="tf.res.d-repositories">List all repositories, optionally filtered by format or type</td></tr>
+    </tbody>
+  </table>
+  <div class="cb"><div class="cb-bar"><span>data.tf</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body">data <span class="cs">"nexspence_repositories"</span> <span class="cs">"all_docker"</span> {
+  format = <span class="cs">"docker"</span>
+}
+
+output <span class="cs">"docker_repo_names"</span> {
+  value = [for r in data.nexspence_repositories.all_docker.repositories : r.name]
+}</div></div>
+</template>
+
+<template id="tpl-tf-examples">
+  <div class="doc-section-title" data-i18n="tf.ex.title">Examples &amp; local development</div>
+  <div class="doc-section-sub" data-i18n="tf.ex.desc">A full manifest exercising every resource and data source ships at <code>deploy/terraform-example/</code>. You can define local or S3 blob stores as code, too.</div>
 
   <div class="inst-sep" data-i18n="tf.bs.sep">Blob Stores (local &amp; S3)</div>
   <p style="font-size:.8rem;color:var(--dim);margin-bottom:10px;line-height:1.6" data-i18n="tf.bs.desc">Define local or S3-compatible blob stores. The S3 <code>endpoint</code> is dialed by the Nexspence server, so use an address the server can reach (e.g. an in-network hostname) — not your workstation's localhost.</p>
@@ -870,36 +976,15 @@ resource <span class="cs">"nexspence_blobstore"</span> <span class="cs">"s3"</sp
   }
 }</div></div>
 
-  <div class="inst-sep" data-i18n="tf.res.sep">Resources &amp; Data Sources</div>
-  <table class="doc-table">
-    <thead><tr><th data-i18n="tf.res.th.name">Name</th><th data-i18n="tf.res.th.kind">Kind</th><th data-i18n="tf.res.th.desc">Manages</th></tr></thead>
-    <tbody>
-      <tr><td><code>nexspence_repository</code></td><td data-i18n="tf.kind.resource">Resource</td><td data-i18n="tf.res.repository">Hosted, proxy, and group repositories for any format</td></tr>
-      <tr><td><code>nexspence_blobstore</code></td><td data-i18n="tf.kind.resource">Resource</td><td data-i18n="tf.res.blobstore">Local or S3-compatible blob stores</td></tr>
-      <tr><td><code>nexspence_user</code></td><td data-i18n="tf.kind.resource">Resource</td><td data-i18n="tf.res.user">User accounts and their role assignments</td></tr>
-      <tr><td><code>nexspence_role</code></td><td data-i18n="tf.kind.resource">Resource</td><td data-i18n="tf.res.role">Roles grouping privileges together</td></tr>
-      <tr><td><code>nexspence_content_selector</code></td><td data-i18n="tf.kind.resource">Resource</td><td data-i18n="tf.res.cs">CEL content selectors</td></tr>
-      <tr><td><code>nexspence_privilege</code></td><td data-i18n="tf.kind.resource">Resource</td><td data-i18n="tf.res.priv">Content-selector privileges</td></tr>
-      <tr><td><code>nexspence_cleanup_policy</code></td><td data-i18n="tf.kind.resource">Resource</td><td data-i18n="tf.res.cleanup">Scheduled cleanup policies (age / downloads / retain N)</td></tr>
-      <tr><td><code>nexspence_routing_rule</code></td><td data-i18n="tf.kind.resource">Resource</td><td data-i18n="tf.res.routing">ALLOW/BLOCK path routing rules</td></tr>
-      <tr><td><code>nexspence_webhook</code></td><td data-i18n="tf.kind.resource">Resource</td><td data-i18n="tf.res.webhook">Outbound event webhooks (HMAC-signed)</td></tr>
-      <tr><td><code>nexspence_promotion_rule</code></td><td data-i18n="tf.kind.resource">Resource</td><td data-i18n="tf.res.promotion">Build-promotion rules (scan gate / manual approval)</td></tr>
-      <tr><td><code>nexspence_repository</code></td><td data-i18n="tf.kind.data">Data source</td><td data-i18n="tf.res.d-repository">Look up a single existing repository</td></tr>
-      <tr><td><code>nexspence_repositories</code></td><td data-i18n="tf.kind.data">Data source</td><td data-i18n="tf.res.d-repositories">List all repositories, optionally filtered by format or type</td></tr>
-    </tbody>
-  </table>
-
-  <div class="inst-sep" data-i18n="tf.auth.sep">Authentication</div>
-  <p style="font-size:.8rem;color:var(--dim);margin-bottom:10px;line-height:1.6" data-i18n="tf.auth.desc">Authenticate with an <code>nxs_*</code> API token (preferred) or username + password. Set credentials in the provider block or via environment variables.</p>
-  <div class="cb"><div class="cb-bar"><span>shell — environment variables</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
-  <div class="cb-body"><span class="cc"># API token (preferred)</span>
-export NEXSPENCE_URL=<span class="cs">"https://nexspence.example.com"</span>
-export NEXSPENCE_TOKEN=<span class="cs">"nxs_xxxxxxxxxxxxxxxx"</span>
-
-<span class="cc"># or HTTP Basic auth</span>
-export NEXSPENCE_USERNAME=<span class="cs">"admin"</span>
-export NEXSPENCE_PASSWORD=<span class="cs">"admin123"</span></div></div>
-  <div class="alert-info" data-i18n="tf.auth.note"><strong>Token:</strong> Generate an <code>nxs_*</code> token in <strong>Security → API Tokens</strong> and pass it via the <code>token</code> argument or <code>NEXSPENCE_TOKEN</code>. Never commit secrets to version control — use a Terraform variable or a secrets manager.</div>
+  <div class="inst-sep" data-i18n="tf.dev.sep">Local development override</div>
+  <p style="font-size:.8rem;color:var(--dim);margin-bottom:10px;line-height:1.6" data-i18n="tf.dev.desc">To hack on the provider itself, point Terraform at your locally built binary with a dev override in <code>~/.terraformrc</code>.</p>
+  <div class="cb"><div class="cb-bar"><span>~/.terraformrc</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body">provider_installation {
+  dev_overrides {
+    <span class="cs">"nexspence/nexspence"</span> = <span class="cs">"/Users/you/go/bin"</span>
+  }
+  direct {}
+}</div></div>
 </template>
 
 <template id="tpl-install">
@@ -1119,41 +1204,114 @@ helm install nexspence deploy/helm/nexspence \
   <div class="inst-sep" data-i18n="ni.prereq.sep">Prerequisites</div>
   <div class="alert-info" data-i18n="ni.prereq.info"><strong>PostgreSQL ≥ 13</strong> is required. The binary auto-runs migrations on first start. Ensure the DB user has <code>CREATE</code> and <code>CONNECT</code> privileges on the target database.</div>
 
-  <div class="inst-sep" data-i18n="ni.linux.sep">Linux — .deb / .rpm</div>
-  <div class="step-list">
-    <div class="step-item"><div class="step-num">01</div><div><div class="step-title" data-i18n="ni.linux.s1.title">Download the package</div><div class="step-desc" data-i18n="ni.linux.s1.desc">Go to <a href="https://github.com/nexspence/nexspence/releases/latest" target="_blank" rel="noopener" style="color:var(--blue)">GitHub Releases</a> and download the <code>.deb</code> (Debian/Ubuntu) or <code>.rpm</code> (RHEL/Fedora/SUSE) package for your architecture (<code>amd64</code> or <code>arm64</code>).</div></div></div>
-    <div class="step-item"><div class="step-num">02</div><div><div class="step-title" data-i18n="ni.linux.s2.title">Install</div><div class="step-desc" data-i18n="ni.linux.s2.desc">Install with your package manager. The package creates a <code>nexspence</code> system user and installs a systemd unit.</div></div></div>
-    <div class="step-item"><div class="step-num">03</div><div><div class="step-title" data-i18n="ni.linux.s3.title">Configure and start</div><div class="step-desc" data-i18n="ni.linux.s3.desc">Edit <code>/etc/nexspence/config.yaml</code>, then enable and start the service.</div></div></div>
+  <div class="os-row" role="tablist">
+    <button type="button" class="os-chip active" onclick="installOS('linux',this)"><svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M16 18a4 4 0 0 0-8 0M12 4a3 3 0 0 1 3 3v4a3 3 0 0 1-6 0V7a3 3 0 0 1 3-3z"/></svg> Linux</button>
+    <button type="button" class="os-chip" onclick="installOS('macos',this)"><svg fill="currentColor" viewBox="0 0 24 24"><path d="M16.365 1.43c0 1.14-.493 2.27-1.177 3.08-.744.9-1.99 1.57-2.987 1.57-.12 0-.23-.02-.3-.03-.01-.06-.04-.22-.04-.39 0-1.15.572-2.27 1.206-2.98.804-.94 2.142-1.64 3.248-1.68.03.13.05.28.05.43zm4.565 15.71c-.03.07-.463 1.58-1.518 3.12-.945 1.34-1.94 2.71-3.43 2.71-1.517 0-1.9-.88-3.63-.88-1.698 0-2.302.91-3.67.91-1.377 0-2.332-1.26-3.428-2.8-1.287-1.82-2.323-4.63-2.323-7.28 0-4.28 2.797-6.55 5.552-6.55 1.448 0 2.675.95 3.6.95.865 0 2.222-1.01 3.902-1.01.613 0 2.886.06 4.374 2.19-.13.09-2.383 1.37-2.383 4.19 0 3.26 2.854 4.42 2.984 4.46z"/></svg> macOS</button>
+    <button type="button" class="os-chip" onclick="installOS('windows',this)"><svg fill="currentColor" viewBox="0 0 24 24"><path d="M3 5.1L10.5 4v8H3V5.1zM10.5 13v7L3 18.9V13h7.5zM11.5 3.9L21 3v9h-9.5V3.9zM21 13v8l-9.5-1.3V13H21z"/></svg> Windows</button>
   </div>
-  <div class="cb"><div class="cb-bar"><span>shell — Debian/Ubuntu</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
-  <div class="cb-body">sudo dpkg -i nexspence_*_linux_amd64.deb
+
+  <div class="os-pnl active" data-os="linux">
+    <div class="inst-sep" data-i18n="ni.linux.sep">Linux — .deb / .rpm</div>
+    <div class="step-list">
+      <div class="step-item"><div class="step-num">01</div><div><div class="step-title" data-i18n="ni.linux.s1.title">Download the package</div><div class="step-desc" data-i18n="ni.linux.s1.desc">Go to <a href="https://github.com/nexspence/nexspence/releases/latest" target="_blank" rel="noopener" style="color:var(--blue)">GitHub Releases</a> and download the <code>.deb</code> (Debian/Ubuntu) or <code>.rpm</code> (RHEL/Fedora/SUSE) package for your architecture (<code>amd64</code> or <code>arm64</code>).</div></div></div>
+      <div class="step-item"><div class="step-num">02</div><div><div class="step-title" data-i18n="ni.linux.s2.title">Install</div><div class="step-desc" data-i18n="ni.linux.s2.desc">Install with your package manager. The package creates a <code>nexspence</code> system user and installs a systemd unit.</div></div></div>
+      <div class="step-item"><div class="step-num">03</div><div><div class="step-title" data-i18n="ni.linux.s3.title">Configure and start</div><div class="step-desc" data-i18n="ni.linux.s3.desc">Edit <code>/etc/nexspence/config.yaml</code>, then enable and start the service.</div></div></div>
+    </div>
+    <div class="cb"><div class="cb-bar"><span>shell — Debian/Ubuntu</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+    <div class="cb-body">sudo dpkg -i nexspence_*_linux_amd64.deb
 sudo nano /etc/nexspence/config.yaml   <span class="cc"># set jwt_secret, admin_password, db DSN</span>
 sudo systemctl enable --now nexspence</div></div>
-  <div class="cb"><div class="cb-bar"><span>shell — RHEL/Fedora/SUSE</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
-  <div class="cb-body">sudo rpm -i nexspence_*_linux_amd64.rpm
+    <div class="cb"><div class="cb-bar"><span>shell — RHEL/Fedora/SUSE</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+    <div class="cb-body">sudo rpm -i nexspence_*_linux_amd64.rpm
 sudo nano /etc/nexspence/config.yaml
 sudo systemctl enable --now nexspence</div></div>
+    <div class="svc-sep"><span class="svc" data-i18n="ni.svc">⚙ Run as a service</span> — systemd</div>
+    <p style="font-size:.78rem;color:var(--dim);margin-bottom:10px;line-height:1.6" data-i18n="ni.linux.manual">Installed from a <code>.tar.gz</code> instead of a package? Create the unit manually:</p>
+    <div class="cb"><div class="cb-bar"><span>/etc/systemd/system/nexspence.service</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div><div class="cb-body">[Unit]
+Description=Nexspence Artifact Repository
+After=network-online.target postgresql.service
+Wants=network-online.target
 
-  <div class="inst-sep" data-i18n="ni.macos.sep">macOS</div>
-  <div class="step-list">
-    <div class="step-item"><div class="step-num">01</div><div><div class="step-title" data-i18n="ni.macos.s1.title">Download and unpack</div><div class="step-desc" data-i18n="ni.macos.s1.desc">Download <code>nexspence_*_darwin_amd64.tar.gz</code> (Intel) or <code>nexspence_*_darwin_arm64.tar.gz</code> (Apple Silicon) from the release page. Extract and move the binary to <code>/usr/local/bin/</code>.</div></div></div>
-    <div class="step-item"><div class="step-num">02</div><div><div class="step-title" data-i18n="ni.macos.s2.title">Install the launchd service</div><div class="step-desc" data-i18n="ni.macos.s2.desc">The archive includes a <code>com.nexspence.server.plist</code> launchd agent. Load it with <code>launchctl</code>.</div></div></div>
+[Service]
+Type=simple
+User=nexspence
+Group=nexspence
+WorkingDirectory=/var/lib/nexspence
+ExecStart=<span class="ck">/usr/bin/nexspence serve --config /etc/nexspence/config.yaml</span>
+Restart=on-failure
+RestartSec=5s
+Environment=<span class="cm">NEXSPENCE_BOOTSTRAP_ADMIN_PASSWORD</span>=change-me
+
+[Install]
+WantedBy=multi-user.target</div></div>
+    <div class="cb"><div class="cb-bar"><span>bash</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div><div class="cb-body">sudo systemctl daemon-reload
+sudo systemctl enable --now nexspence
+sudo systemctl status nexspence
+journalctl -u nexspence -f</div></div>
+    <div class="alert-info" data-i18n="ni.linux.note"><strong>Tip:</strong> The .deb / .rpm packages can ship this unit pre-installed — then you only run <code>systemctl enable --now nexspence</code>.</div>
   </div>
-  <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
-  <div class="cb-body">tar -xzf nexspence_*_darwin_arm64.tar.gz
+
+  <div class="os-pnl" data-os="macos">
+    <div class="inst-sep" data-i18n="ni.macos.sep">macOS</div>
+    <div class="step-list">
+      <div class="step-item"><div class="step-num">01</div><div><div class="step-title" data-i18n="ni.macos.s1.title">Download and unpack</div><div class="step-desc" data-i18n="ni.macos.s1.desc">Download <code>nexspence_*_darwin_amd64.tar.gz</code> (Intel) or <code>nexspence_*_darwin_arm64.tar.gz</code> (Apple Silicon) from the release page. Extract and move the binary to <code>/usr/local/bin/</code>.</div></div></div>
+      <div class="step-item"><div class="step-num">02</div><div><div class="step-title" data-i18n="ni.macos.s2.title">Install the launchd service</div><div class="step-desc" data-i18n="ni.macos.s2.desc">The archive includes a <code>com.nexspence.server.plist</code> launchd agent. Load it with <code>launchctl</code>.</div></div></div>
+    </div>
+    <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+    <div class="cb-body">tar -xzf nexspence_*_darwin_arm64.tar.gz
 sudo cp nexspence /usr/local/bin/
 sudo cp packaging/launchd/com.nexspence.server.plist /Library/LaunchDaemons/
 sudo launchctl load -w /Library/LaunchDaemons/com.nexspence.server.plist</div></div>
-
-  <div class="inst-sep" data-i18n="ni.windows.sep">Windows</div>
-  <div class="step-list">
-    <div class="step-item"><div class="step-num">01</div><div><div class="step-title" data-i18n="ni.windows.s1.title">Download and extract</div><div class="step-desc" data-i18n="ni.windows.s1.desc">Download <code>nexspence_*_windows_amd64.zip</code> from the release page. Extract to <code>C:\Program Files\Nexspence\</code>.</div></div></div>
-    <div class="step-item"><div class="step-num">02</div><div><div class="step-title" data-i18n="ni.windows.s2.title">Register the Windows service</div><div class="step-desc" data-i18n="ni.windows.s2.desc">Run <code>packaging\windows\install-service.ps1</code> from an elevated PowerShell to register and start Nexspence as a Windows service.</div></div></div>
+    <div class="svc-sep"><span class="svc" data-i18n="ni.svc2">⚙ Run as a service</span> — launchd</div>
+    <p style="font-size:.78rem;color:var(--dim);margin-bottom:10px;line-height:1.6" data-i18n="ni.macos.manual">The bundled plist looks like this — adjust paths if you installed elsewhere:</p>
+    <div class="cb"><div class="cb-bar"><span>/Library/LaunchDaemons/com.nexspence.server.plist</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div><div class="cb-body">&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;plist version="1.0"&gt;
+&lt;dict&gt;
+  &lt;key&gt;Label&lt;/key&gt;          &lt;string&gt;com.nexspence.server&lt;/string&gt;
+  &lt;key&gt;ProgramArguments&lt;/key&gt;
+  &lt;array&gt;
+    &lt;string&gt;<span class="ck">/usr/local/bin/nexspence</span>&lt;/string&gt;
+    &lt;string&gt;serve&lt;/string&gt;
+    &lt;string&gt;--config&lt;/string&gt;
+    &lt;string&gt;/usr/local/etc/nexspence/config.yaml&lt;/string&gt;
+  &lt;/array&gt;
+  &lt;key&gt;RunAtLoad&lt;/key&gt;      &lt;true/&gt;
+  &lt;key&gt;KeepAlive&lt;/key&gt;      &lt;true/&gt;
+  &lt;key&gt;StandardOutPath&lt;/key&gt;&lt;string&gt;/usr/local/var/log/nexspence.log&lt;/string&gt;
+  &lt;key&gt;StandardErrorPath&lt;/key&gt;&lt;string&gt;/usr/local/var/log/nexspence.err&lt;/string&gt;
+&lt;/dict&gt;
+&lt;/plist&gt;</div></div>
+    <div class="cb"><div class="cb-bar"><span>zsh</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div><div class="cb-body">sudo launchctl list | grep nexspence
+<span class="cc"># stop / unload:</span>
+sudo launchctl unload -w /Library/LaunchDaemons/com.nexspence.server.plist</div></div>
   </div>
-  <div class="cb"><div class="cb-bar"><span>PowerShell (Administrator)</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
-  <div class="cb-body">cd "C:\Program Files\Nexspence"
+
+  <div class="os-pnl" data-os="windows">
+    <div class="inst-sep" data-i18n="ni.windows.sep">Windows</div>
+    <div class="step-list">
+      <div class="step-item"><div class="step-num">01</div><div><div class="step-title" data-i18n="ni.windows.s1.title">Download and extract</div><div class="step-desc" data-i18n="ni.windows.s1.desc">Download <code>nexspence_*_windows_amd64.zip</code> from the release page. Extract to <code>C:\Program Files\Nexspence\</code>.</div></div></div>
+      <div class="step-item"><div class="step-num">02</div><div><div class="step-title" data-i18n="ni.windows.s2.title">Register the Windows service</div><div class="step-desc" data-i18n="ni.windows.s2.desc">Run <code>packaging\windows\install-service.ps1</code> from an elevated PowerShell to register and start Nexspence as a Windows service.</div></div></div>
+    </div>
+    <div class="cb"><div class="cb-bar"><span>PowerShell (Administrator)</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+    <div class="cb-body">cd "C:\Program Files\Nexspence"
 .\packaging\windows\install-service.ps1
 Start-Service nexspence</div></div>
+    <div class="svc-sep"><span class="svc" data-i18n="ni.svc3">⚙ Run as a service</span> — Windows Service (NSSM)</div>
+    <p style="font-size:.78rem;color:var(--dim);margin-bottom:10px;line-height:1.6" data-i18n="ni.windows.nssm">Prefer NSSM for restart handling, log files and a clean stop signal:</p>
+    <div class="cb"><div class="cb-bar"><span>powershell · NSSM</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div><div class="cb-body">nssm install Nexspence <span class="cs">"C:\Program Files\Nexspence\nexspence.exe"</span> <span class="cs">"serve --config C:\Program Files\Nexspence\config.yaml"</span>
+nssm set Nexspence AppDirectory <span class="cs">"C:\Program Files\Nexspence"</span>
+nssm set Nexspence AppStdout C:\Program Files\Nexspence\logs\out.log
+nssm set Nexspence AppStderr C:\Program Files\Nexspence\logs\err.log
+nssm set Nexspence Start SERVICE_AUTO_START
+nssm start Nexspence</div></div>
+    <div class="svc-sep" data-i18n="ni.scalt">Alternative — built-in sc.exe</div>
+    <div class="cb"><div class="cb-bar"><span>cmd · sc.exe (Administrator)</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div><div class="cb-body">sc create Nexspence binPath= <span class="cs">"C:\Program Files\Nexspence\nexspence.exe serve --config C:\Program Files\Nexspence\config.yaml"</span> start= auto
+sc start Nexspence
+sc query Nexspence</div></div>
+    <div class="alert-info" data-i18n="ni.win.note"><strong>Heads up:</strong> a bare console binary isn't a real Windows service — use the bundled script, NSSM, or <code>sc.exe</code> so it survives logoff, auto-starts on boot, and restarts on crash.</div>
+  </div>
+
+  <div class="inst-sep" data-i18n="ni.netprod.sep">Networking &amp; Production (any OS)</div>
 
   <div class="inst-sep" data-i18n="ni.proxy.sep">Reverse Proxy (nginx / Caddy)</div>
   <div class="alert-info" data-i18n="ni.proxy.info"><strong>Recommended for production.</strong> Place nginx or Caddy in front of Nexspence to terminate TLS, set the <code>X-Forwarded-*</code> headers, and serve a clean public URL. Set <code>http.base_url</code> in <code>config.yaml</code> to the public HTTPS URL so download links are correct.</div>
@@ -1278,7 +1436,7 @@ const API_URL='https://api.github.com/repos/nexspence/nexspence/releases?per_pag
 const CACHE_KEY='nx_releases_v2';
 const CACHE_TTL_MS=5*60*1000;
 const state={
-  releases:[],activeVersion:null,activeSection:'quickstart',
+  releases:[],activeVersion:null,activeSection:'quickstart',activeTab:'releases',
   lang:(()=>{try{return localStorage.getItem('nx_docs_lang')||'en'}catch(_){return'en'}})()
 };
 
@@ -1295,13 +1453,18 @@ const TRANSLATIONS={
     'sb.webhooks':'Webhooks','sb.migration':'Migration from Nexus','sb.monitoring':'Monitoring',
     'sb.promotion':'Build Promotion','sb.replication':'Content Replication','sb.terraform':'Terraform Provider',
     'tab.quickstart':'Quick Start','tab.install':'Installation','tab.formats':'Formats',
+    'ver.label':'Version',
     'tab.changelog':'Changelog','tab.api':'API Reference',
+    'tabg.releases':'Changelog','tabg.getting-started':'Getting Started','tabg.using':'Using',
+    'tabg.admin':'Administration','tabg.advanced':'Advanced','tabg.terraform':'Terraform','tabg.reference':'Reference',
     'crumb.quickstart':'quick start','crumb.install':'installation',
     'crumb.formats':'formats','crumb.changelog':'changelog','crumb.api':'api reference',
     'crumb.repositories':'repositories','crumb.formats-guide':'format setup','crumb.browse-search':'browse & search',
     'crumb.users':'users & tokens','crumb.rbac':'roles & privileges','crumb.cleanup':'cleanup policies',
     'crumb.webhooks':'webhooks','crumb.migration':'migration','crumb.monitoring':'monitoring',
     'crumb.promotion':'build promotion','crumb.replication':'content replication','crumb.terraform':'terraform provider',
+    'sb.tf-overview':'Overview','sb.tf-auth':'Authentication','sb.tf-resources':'Resources','sb.tf-data':'Data Sources','sb.tf-examples':'Examples',
+    'crumb.tf-overview':'terraform overview','crumb.tf-auth':'terraform auth','crumb.tf-resources':'terraform resources','crumb.tf-data':'terraform data sources','crumb.tf-examples':'terraform examples',
     'ch.features':'Features','ch.fixes':'Bug Fixes',
     'ch.docker-toggle':'🐳 Docker install info',
     'ch.view-all':'View all releases on GitHub →',
@@ -1455,6 +1618,16 @@ const TRANSLATIONS={
     'tf.auth.sep':'Authentication',
     'tf.auth.desc':'Authenticate with an <code>nxs_*</code> API token (preferred) or username + password. Set credentials in the provider block or via environment variables.',
     'tf.auth.note':'<strong>Token:</strong> Generate an <code>nxs_*</code> token in <strong>Security → API Tokens</strong> and pass it via the <code>token</code> argument or <code>NEXSPENCE_TOKEN</code>. Never commit secrets to version control — use a Terraform variable or a secrets manager.',
+    'tf.ov.reg':'on Terraform Registry',
+    'tf.res.title':'Resources',
+    'tf.res.desc':'Each resource maps to a Nexspence object and supports create, read, update, delete, and <code>terraform import</code>.',
+    'tf.data.title':'Data Sources',
+    'tf.data.th.ret':'Returns',
+    'tf.data.desc':'Read existing Nexspence state into Terraform without managing it.',
+    'tf.ex.title':'Examples &amp; local development',
+    'tf.ex.desc':'A full manifest exercising every resource and data source ships at <code>deploy/terraform-example/</code>. You can define local or S3 blob stores as code, too.',
+    'tf.dev.sep':'Local development override',
+    'tf.dev.desc':'To hack on the provider itself, point Terraform at your locally built binary with a dev override in <code>~/.terraformrc</code>.',
     'inst.title':'Installation',
     'inst.sub':'Docker image: <code>ghcr.io/nexspence/nexspence:latest</code> — linux/amd64 and linux/arm64. Download the release zip from <a href="https://github.com/nexspence/nexspence/releases/latest" target="_blank" rel="noopener" style="color:var(--blue)">GitHub Releases</a>.',
     'inst.v.std':'Standard','inst.v.ha':'HA Cluster','inst.v.mon':'+ Monitoring',
@@ -1495,7 +1668,11 @@ const TRANSLATIONS={
     'ni.macos.s2.title':'Install the launchd service','ni.macos.s2.desc':'The archive includes a <code>com.nexspence.server.plist</code> launchd agent. Load it with <code>launchctl</code>.',
     'ni.windows.sep':'Windows',
     'ni.windows.s1.title':'Download and extract','ni.windows.s1.desc':'Download <code>nexspence_*_windows_amd64.zip</code> from the release page. Extract to <code>C:\\Program Files\\Nexspence\\</code>.',
-    'ni.windows.s2.title':'Register the Windows service','ni.windows.s2.desc':'Run <code>packaging\windows\install-service.ps1</code> from an elevated PowerShell to register and start Nexspence as a Windows service.',
+    'ni.windows.s2.title':'Register the Windows service','ni.windows.s2.desc':'Run <code>packaging\\windows\\install-service.ps1</code> from an elevated PowerShell to register and start Nexspence as a Windows service.',
+    'ni.linux.manual':'Installed from a <code>.tar.gz</code> instead of a package? Create the unit manually:',
+    'ni.macos.manual':'The bundled plist looks like this — adjust paths if you installed elsewhere:',
+    'ni.windows.nssm':'Prefer NSSM for restart handling, log files and a clean stop signal:',
+    'ni.netprod.sep':'Networking &amp; Production (any OS)',
     'ni.proxy.sep':'Reverse Proxy (nginx / Caddy)',
     'ni.proxy.info':'<strong>Recommended for production.</strong> Place nginx or Caddy in front of Nexspence to terminate TLS and serve a clean public URL. Set <code>http.base_url</code> in <code>config.yaml</code> to the public HTTPS URL so download links are correct.',
     'ni.lb.sep':'Multi-Node Load Balancer',
@@ -1504,6 +1681,10 @@ const TRANSLATIONS={
     'ni.docker.info':'To pull and push Docker images via per-repository subdomains (<code>&lt;repo&gt;.registry.example.com</code>) you need wildcard DNS pointed at your server, a wildcard TLS certificate, and a reverse proxy that forwards the original <code>Host</code> header so the subdomain connector can route the request to the correct repository. Enable the connector in <code>config.yaml</code>:',
     'ni.docker.nginx':'Then configure nginx with a wildcard <code>server_name</code> to match all repository subdomains and proxy them to Nexspence, preserving the <code>Host</code> header:',
     'ni.docker.login':'After enabling the connector and restarting Nexspence, <code>docker login repo-name.registry.example.com</code> targets that hosted repository directly — no port or path prefix needed.',
+    'ni.svc':'⚙ Run as a service','ni.svc2':'⚙ Run as a service','ni.svc3':'⚙ Run as a service',
+    'ni.scalt':'Alternative — built-in sc.exe',
+    'ni.linux.note':'<strong>Tip:</strong> The .deb / .rpm packages can ship this unit pre-installed — then you only run <code>systemctl enable --now nexspence</code>.',
+    'ni.win.note':'<strong>Heads up:</strong> a bare console binary isn\'t a real Windows service — use NSSM (or <code>sc.exe</code>) so it survives logoff, auto-starts on boot, and restarts on crash.',
     'sb.native-install':'Native Install',
     'crumb.native-install':'native install',
     'fmt.title':'Supported Formats',
@@ -1534,9 +1715,14 @@ const TRANSLATIONS={
     'crumb.users':'пользователи и токены','crumb.rbac':'роли и привилегии','crumb.cleanup':'политики очистки',
     'crumb.webhooks':'вебхуки','crumb.migration':'миграция','crumb.monitoring':'мониторинг',
     'crumb.promotion':'продвижение сборок','crumb.replication':'репликация контента','crumb.terraform':'провайдер terraform',
+    'tabg.releases':'Changelog','tabg.getting-started':'С чего начать','tabg.using':'Использование',
+    'tabg.admin':'Администрирование','tabg.advanced':'Расширенные','tabg.terraform':'Terraform','tabg.reference':'Справочник',
+    'sb.tf-overview':'Обзор','sb.tf-auth':'Аутентификация','sb.tf-resources':'Ресурсы','sb.tf-data':'Источники данных','sb.tf-examples':'Примеры',
+    'crumb.tf-overview':'terraform обзор','crumb.tf-auth':'terraform auth','crumb.tf-resources':'terraform ресурсы','crumb.tf-data':'terraform источники','crumb.tf-examples':'terraform примеры',
     'tab.quickstart':'Быстрый старт',
     'tab.install':'Установка',
     'tab.formats':'Форматы',
+    'ver.label':'Версия',
     'tab.changelog':'История релизов',
     'tab.api':'API',
     'crumb.quickstart':'быстрый старт',
@@ -1699,6 +1885,16 @@ const TRANSLATIONS={
     'tf.auth.sep':'Аутентификация',
     'tf.auth.desc':'Аутентификация по API-токену <code>nxs_*</code> (предпочтительно) или логину с паролем. Задайте учётные данные в блоке provider или через переменные окружения.',
     'tf.auth.note':'<strong>Токен:</strong> Создайте токен <code>nxs_*</code> в <strong>Security → API Tokens</strong> и передайте его через аргумент <code>token</code> или <code>NEXSPENCE_TOKEN</code>. Не коммитьте секреты в систему контроля версий — используйте переменную Terraform или менеджер секретов.',
+    'tf.ov.reg':'в Terraform Registry',
+    'tf.res.title':'Ресурсы',
+    'tf.res.desc':'Каждый ресурс соответствует объекту Nexspence и поддерживает создание, чтение, обновление, удаление и <code>terraform import</code>.',
+    'tf.data.title':'Источники данных',
+    'tf.data.th.ret':'Возвращает',
+    'tf.data.desc':'Читает существующее состояние Nexspence в Terraform без управления им.',
+    'tf.ex.title':'Примеры и локальная разработка',
+    'tf.ex.desc':'Полный манифест, задействующий все ресурсы и источники данных, лежит в <code>deploy/terraform-example/</code>. Локальные и S3 blob stores тоже можно описывать как код.',
+    'tf.dev.sep':'Оверрайд для локальной разработки',
+    'tf.dev.desc':'Чтобы дорабатывать сам провайдер, направьте Terraform на локально собранный бинарник через dev override в <code>~/.terraformrc</code>.',
     'inst.title':'Установка',
     'inst.sub':'Docker-образ: <code>ghcr.io/nexspence/nexspence:latest</code> — linux/amd64 и linux/arm64. Скачайте архив релиза с <a href="https://github.com/nexspence/nexspence/releases/latest" target="_blank" rel="noopener" style="color:var(--blue)">GitHub Releases</a>.',
     'inst.v.std':'Стандарт',
@@ -1746,7 +1942,11 @@ const TRANSLATIONS={
     'ni.macos.s2.title':'Установите launchd-сервис','ni.macos.s2.desc':'В архиве есть <code>com.nexspence.server.plist</code> — launchd-агент. Загрузите его с помощью <code>launchctl</code>.',
     'ni.windows.sep':'Windows',
     'ni.windows.s1.title':'Скачайте и распакуйте','ni.windows.s1.desc':'Скачайте <code>nexspence_*_windows_amd64.zip</code> со страницы релизов. Распакуйте в <code>C:\\Program Files\\Nexspence\\</code>.',
-    'ni.windows.s2.title':'Зарегистрируйте Windows-сервис','ni.windows.s2.desc':'Запустите <code>packaging\windows\install-service.ps1</code> в PowerShell от имени администратора для регистрации и запуска Nexspence как службы Windows.',
+    'ni.windows.s2.title':'Зарегистрируйте Windows-сервис','ni.windows.s2.desc':'Запустите <code>packaging\\windows\\install-service.ps1</code> в PowerShell от имени администратора для регистрации и запуска Nexspence как службы Windows.',
+    'ni.linux.manual':'Установили из <code>.tar.gz</code>, а не из пакета? Создайте unit вручную:',
+    'ni.macos.manual':'Встроенный plist выглядит так — поправьте пути, если устанавливали в другое место:',
+    'ni.windows.nssm':'Предпочтительнее NSSM — он берёт на себя перезапуск, лог-файлы и корректный сигнал остановки:',
+    'ni.netprod.sep':'Сеть и продакшн (любая ОС)',
     'ni.proxy.sep':'Обратный прокси (nginx / Caddy)',
     'ni.proxy.info':'<strong>Рекомендуется для production.</strong> Поместите nginx или Caddy перед Nexspence для терминации TLS и чистого публичного URL. Установите <code>http.base_url</code> в <code>config.yaml</code> на публичный HTTPS URL.',
     'ni.lb.sep':'Балансировщик нагрузки (несколько узлов)',
@@ -1755,6 +1955,10 @@ const TRANSLATIONS={
     'ni.docker.info':'Чтобы выполнять <code>docker pull</code>/<code>push</code> через поддомены отдельных репозиториев (<code>&lt;repo&gt;.registry.example.com</code>), необходимы: wildcard DNS на ваш сервер, wildcard TLS-сертификат и обратный прокси, передающий исходный заголовок <code>Host</code>, чтобы коннектор мог маршрутизировать запрос в нужный репозиторий. Включите коннектор в <code>config.yaml</code>:',
     'ni.docker.nginx':'Затем настройте nginx с wildcard <code>server_name</code>, чтобы перехватывать запросы ко всем поддоменам реестра и проксировать их в Nexspence, сохраняя заголовок <code>Host</code>:',
     'ni.docker.login':'После включения коннектора и перезапуска Nexspence команда <code>docker login repo-name.registry.example.com</code> адресует конкретный hosted-репозиторий напрямую — без указания порта или префикса пути.',
+    'ni.svc':'⚙ Запуск как службы','ni.svc2':'⚙ Запуск как службы','ni.svc3':'⚙ Запуск как службы',
+    'ni.scalt':'Альтернатива — встроенный sc.exe',
+    'ni.linux.note':'<strong>Подсказка:</strong> пакеты .deb / .rpm могут поставлять этот unit уже установленным — тогда достаточно <code>systemctl enable --now nexspence</code>.',
+    'ni.win.note':'<strong>Внимание:</strong> голый консольный бинарник — не служба Windows. Используйте NSSM (или <code>sc.exe</code>), чтобы он переживал выход из системы, стартовал при загрузке и перезапускался при сбое.',
     'sb.native-install':'Нативная установка',
     'crumb.native-install':'нативная установка',
     'fmt.title':'Поддерживаемые форматы',
@@ -1775,8 +1979,7 @@ function switchLang(lang,btn){
   document.querySelectorAll('.lang-btn').forEach(b=>b.classList.toggle('active',b.dataset.lang===lang));
   applyTranslations(document.querySelector('.docs-header'));
   setSection(state.activeSection);
-  renderVersionBar(state.releases,state.activeVersion);
-  renderSidebar(state.releases,state.activeSection,state.activeVersion);
+  renderVersionDropdown(state.releases,state.activeVersion);
 }
 
 const SECTIONS=[
@@ -1794,11 +1997,23 @@ const SECTIONS=[
   {key:'monitoring',  templateId:'tpl-monitoring'},
   {key:'promotion',   templateId:'tpl-promotion'},
   {key:'replication', templateId:'tpl-replication'},
-  {key:'terraform',   templateId:'tpl-terraform'},
+  {key:'tf-overview',  templateId:'tpl-tf-overview'},
+  {key:'tf-auth',      templateId:'tpl-tf-auth'},
+  {key:'tf-resources', templateId:'tpl-tf-resources'},
+  {key:'tf-data',      templateId:'tpl-tf-data'},
+  {key:'tf-examples',  templateId:'tpl-tf-examples'},
   {key:'formats',     templateId:'tpl-formats'},
   {key:'api',         templateId:'tpl-api'},
   {key:'changelog',   templateId:null},
 ];
+// "in vX.Y" badges — POST-1.0 features ONLY. v1.0.0 sections intentionally have none.
+let FEATURE_BADGE={
+  'native-install':'v1.13.0',
+  'formats-guide':'v1.7.0',
+  'replication':'v1.3.0',
+  'promotion':'v1.8.1',
+  'monitoring':'v1.9.0',
+};
 const SIDEBAR_GROUPS=[
   {id:'getting-started',items:[
     {key:'quickstart',  icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>'},
@@ -1821,7 +2036,13 @@ const SIDEBAR_GROUPS=[
     {key:'monitoring',  icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>'},
     {key:'promotion',   icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="17 11 21 7 17 3"/><line x1="21" y1="7" x2="9" y2="7"/><polyline points="7 21 3 17 7 13"/><line x1="15" y1="17" x2="3" y2="17"/></svg>'},
     {key:'replication', icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>'},
-    {key:'terraform',   icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="16" y1="3" x2="16" y2="13"/><polygon points="3 5 9 8 9 18 3 15 3 5"/><polygon points="9 8 15 5 15 15 9 18 9 8"/><polyline points="16 13 21 11 21 6 16 8"/></svg>'},
+  ]},
+  {id:'terraform',items:[
+    {key:'tf-overview',  icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>'},
+    {key:'tf-auth',      icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>'},
+    {key:'tf-resources', icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>'},
+    {key:'tf-data',      icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/></svg>'},
+    {key:'tf-examples',  icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>'},
   ]},
   {id:'reference',items:[
     {key:'formats',     icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>'},
@@ -1874,61 +2095,141 @@ async function fetchReleases(){
   return releases;
 }
 
-function renderVersionBar(releases,activeTag){
-  const bar=document.getElementById('ver-bar');
-  const seen=new Set();const minors=[];
+function tagKind(r){
+  const patchNum=parseInt(r.tag.split('.')[2]||'0',10);
+  return r.isLatest?'latest':(patchNum===0?'minor':'patch');
+}
+function renderVersionDropdown(releases,activeTag){
+  const btnNum=document.getElementById('ver-num');
+  const btnBadge=document.getElementById('ver-badge');
+  const menu=document.getElementById('ver-menu');
+  const active=releases.find(r=>r.tag===activeTag)||releases[0];
+  if(!active){return;}
+  btnNum.textContent=active.tag;
+  const k=tagKind(active);
+  btnBadge.style.display='';btnBadge.textContent=k;
+  btnBadge.className='vbadge';
+  menu.innerHTML='';
   for(const r of releases){
-    const minor=r.tag.replace(/^v/,'').split('.').slice(0,2).join('.');
-    if(!seen.has(minor)){seen.add(minor);minors.push({minor,latest:r.tag,isLatest:r.isLatest});}
+    const k=tagKind(r);
+    const item=document.createElement('button');
+    item.type='button';item.className='ver-item'+(r.tag===activeTag?' sel':'');
+    item.setAttribute('role','option');
+    item.innerHTML=`<span class="vi-num">${esc(r.tag)}</span><span class="vi-tag ${k}">${k}</span><span class="vi-date">${esc(r.date)}</span>`;
+    item.addEventListener('click',()=>{
+      state.activeVersion=r.tag;
+      renderVersionDropdown(releases,r.tag);
+      document.getElementById('ver-dd').classList.remove('open');
+      if(state.activeSection==='changelog'){renderChangelog(r.tag);}
+      else{state.activeTab='releases';setSection('changelog');}
+    });
+    menu.appendChild(item);
   }
-  bar.innerHTML='<span class="ver-label">Version:</span>';
-  for(const{minor,latest,isLatest}of minors){
+  const foot=document.createElement('div');foot.className='ver-menu-foot';
+  foot.innerHTML=`<a href="https://github.com/nexspence/nexspence/releases" target="_blank" rel="noopener">${t('sb.all-versions')}</a>`;
+  menu.appendChild(foot);
+}
+
+// Tabs are the sidebar groups, in display order. 'releases' = Changelog (full-width, no sub-nav).
+const TAB_ORDER=['releases','getting-started','using','admin','advanced','terraform','reference'];
+const TAB_ICON={
+  'releases':'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>',
+  'getting-started':'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>',
+  'using':'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>',
+  'admin':'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
+  'advanced':'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
+  'terraform':'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="16" y1="3" x2="16" y2="13"/><polygon points="3 5 9 8 9 18 3 15 3 5"/><polygon points="9 8 15 5 15 15 9 18 9 8"/><polyline points="16 13 21 11 21 6 16 8"/></svg>',
+  'reference':'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>',
+};
+function firstSectionOfTab(tabId){
+  if(tabId==='releases')return 'changelog';
+  const g=SIDEBAR_GROUPS.find(x=>x.id===tabId);
+  return g&&g.items.length?g.items[0].key:'changelog';
+}
+function tabOfSection(key){
+  if(key==='changelog')return 'releases';
+  const g=SIDEBAR_GROUPS.find(x=>x.items.some(i=>i.key===key));
+  return g?g.id:'releases';
+}
+function renderTabs(activeTab){
+  const bar=document.getElementById('doc-tabs');
+  bar.innerHTML='';
+  for(const id of TAB_ORDER){
     const btn=document.createElement('button');
-    btn.type='button';
-    btn.className='ver-btn'+(latest===activeTag?' active':'');
+    btn.type='button';btn.className='doc-tab'+(id===activeTab?' active':'');
     btn.setAttribute('role','tab');
-    btn.setAttribute('aria-selected',latest===activeTag?'true':'false');
-    btn.dataset.tag=latest;
-    btn.innerHTML=`v${esc(minor)}${isLatest?' <span class="ver-badge">current</span>':''}`;
-    btn.addEventListener('click',()=>{state.activeVersion=latest;renderVersionBar(releases,latest);if(state.activeSection==='changelog')renderChangelog(latest);});
+    btn.innerHTML=(TAB_ICON[id]||'')+t('tabg.'+id);
+    btn.addEventListener('click',()=>setTab(id));
     bar.appendChild(btn);
   }
 }
-
-function renderSidebar(releases,activeSection,activeTag){
-  const relGroup=SIDEBAR_GROUPS.find(g=>g.id==='releases');
-  relGroup.items=releases.slice(0,6).map(r=>({key:'changelog',label:r.tag+(r.isLatest?' ← '+t('tab.changelog'):''),tag:r.tag,style:r.isLatest?'color:var(--green);font-weight:600':''}));
-  if(releases.length>6)relGroup.items.push({key:'changelog',label:t('sb.all-versions'),tag:releases[releases.length-1].tag,style:'color:var(--faint)'});
-  function buildLinks(container){
-    container.innerHTML='';
-    for(const group of SIDEBAR_GROUPS){
-      const labelEl=document.createElement('span');labelEl.className='dsb-label';labelEl.textContent=t('sb.'+group.id);container.appendChild(labelEl);
+function setTab(tabId){
+  state.activeTab=tabId;
+  setSection(firstSectionOfTab(tabId));
+}
+function renderSubnav(activeTab,activeSection){
+  const aside=document.querySelector('.docs-sidebar');
+  const layout=document.querySelector('.docs-layout');
+  const inner=document.getElementById('sidebar-inner');
+  if(activeTab==='releases'){aside.style.display='none';if(layout)layout.style.gridTemplateColumns='1fr';return;}
+  aside.style.display='';
+  if(layout)layout.style.gridTemplateColumns='';
+  const group=SIDEBAR_GROUPS.find(g=>g.id===activeTab);
+  inner.innerHTML='';
+  if(!group)return;
+  const cat=document.createElement('div');cat.className='dsb-label';cat.textContent=t('tabg.'+group.id);inner.appendChild(cat);
+  for(const item of group.items){
+    const btn=document.createElement('button');
+    btn.type='button';
+    btn.className='dsb-link'+(item.key===activeSection?' active':'');
+    const bad=FEATURE_BADGE[item.key];
+    btn.innerHTML=(item.icon||'')+t('sb.'+item.key)+(bad?`<span class="dsb-badge">${bad}</span>`:'');
+    btn.addEventListener('click',()=>setSection(item.key));
+    inner.appendChild(btn);
+  }
+}
+function renderMobileDrawer(){
+  const container=document.getElementById('mob-nav-drawer');
+  container.innerHTML='';
+  for(const group of SIDEBAR_GROUPS){
+    const labelEl=document.createElement('span');labelEl.className='dsb-label';labelEl.textContent=t('tabg.'+group.id);container.appendChild(labelEl);
+    if(group.id==='releases'){
+      const btn=document.createElement('button');btn.type='button';
+      btn.className='dsb-link'+(state.activeSection==='changelog'?' active':'');
+      btn.innerHTML=(TAB_ICON.releases)+t('tab.changelog');
+      btn.addEventListener('click',()=>{state.activeTab='releases';setSection('changelog');closeMobileDrawer();});
+      container.appendChild(btn);
+    }else{
       for(const item of group.items){
-        const btn=document.createElement('button');
-        btn.type='button';
-        const isActive=activeSection===item.key&&(!item.tag||item.tag===activeTag);
-        btn.className='dsb-link'+(isActive?' active':'');
-        if(item.style)btn.setAttribute('style',item.style);
-        const label=item.tag?esc(item.label):t('sb.'+item.key);
-        btn.innerHTML=(item.icon||'')+label;
-        btn.addEventListener('click',()=>{if(item.tag)state.activeVersion=item.tag;setSection(item.key);});
+        const btn=document.createElement('button');btn.type='button';
+        btn.className='dsb-link'+(state.activeSection===item.key?' active':'');
+        const bad=FEATURE_BADGE[item.key];
+        btn.innerHTML=(item.icon||'')+t('sb.'+item.key)+(bad?`<span class="dsb-badge">${bad}</span>`:'');
+        btn.addEventListener('click',()=>{state.activeTab=group.id;setSection(item.key);closeMobileDrawer();});
         container.appendChild(btn);
       }
-      const div=document.createElement('div');div.className='dsb-divider';container.appendChild(div);
     }
+    const div=document.createElement('div');div.className='dsb-divider';container.appendChild(div);
   }
-  buildLinks(document.getElementById('sidebar-inner'));
-  buildLinks(document.getElementById('mob-nav-drawer'));
+}
+function closeMobileDrawer(){
+  const d=document.getElementById('mob-nav-drawer');d.classList.remove('open');
+  const tgl=document.getElementById('mob-nav-toggle');tgl.classList.remove('open');tgl.setAttribute('aria-expanded','false');d.setAttribute('aria-hidden','true');
 }
 
 function renderChangelog(activeTag){
   const container=document.getElementById('doc-content');
+  if(!activeTag){
+    container.innerHTML=`<div class="empty-state"><svg fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><p>${t('ch.empty')}<br><a href="https://github.com/nexspence/nexspence/releases" target="_blank" rel="noopener">${t('ch.empty-link')}</a></p></div>`;
+    return;
+  }
   const activeMinor=activeTag.replace(/^v/,'').split('.').slice(0,2).join('.');
   const tagReleases=state.releases.filter(r=>r.tag.replace(/^v/,'').split('.').slice(0,2).join('.')===activeMinor);
   if(!tagReleases.length){
     container.innerHTML=`<div class="empty-state"><svg fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><p>${t('ch.empty')}<br><a href="https://github.com/nexspence/nexspence/releases" target="_blank" rel="noopener">${t('ch.empty-link')}</a></p></div>`;
     return;
   }
+  const openTag=tagReleases.some(r=>r.tag===activeTag)?activeTag:tagReleases[0].tag;
   const html=tagReleases.map((r,i)=>{
     const patchNum=parseInt(r.tag.split('.')[2]||'0',10);
     const tagClass=r.isLatest?'latest':patchNum===0?'minor':'patch';
@@ -1937,7 +2238,7 @@ function renderChangelog(activeTag){
     const fixesHtml=r.fixes.length?`<div class="ch-group"><div class="ch-group-title fix">${t('ch.fixes')}</div><ul class="ch-items">${r.fixes.map(f=>`<li>${inlineMd(f)}</li>`).join('')}</ul></div>`:'';
     const dockerHtml=r.dockerRaw?`<div class="ch-docker"><button class="ch-docker-toggle" onclick="this.nextElementSibling.classList.toggle('open')">${t('ch.docker-toggle')}</button><div class="ch-docker-body">${r.dockerRaw.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div></div>`:'';
     const emptyHtml=!r.features.length&&!r.fixes.length?`<p style="font-size:.78rem;color:var(--faint)">${t('ch.no-entries')}</p>`:'';
-    return `<div class="ch-card${i===0?' open':''}"><button class="ch-header" type="button" onclick="this.closest('.ch-card').classList.toggle('open')"><div><div class="ch-ver">${esc(r.tag)}</div><div class="ch-date">${esc(r.date)}</div></div><span class="ch-tag ${tagClass}">${tagLabel}</span><svg class="ch-chevron" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg></button><div class="ch-body">${featuresHtml}${fixesHtml}${dockerHtml}${emptyHtml}</div></div>`;
+    return `<div class="ch-card${r.tag===openTag?' open':''}"><button class="ch-header" type="button" onclick="this.closest('.ch-card').classList.toggle('open')"><div><div class="ch-ver">${esc(r.tag)}</div><div class="ch-date">${esc(r.date)}</div></div><span class="ch-tag ${tagClass}">${tagLabel}</span><svg class="ch-chevron" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg></button><div class="ch-body">${featuresHtml}${fixesHtml}${dockerHtml}${emptyHtml}</div></div>`;
   }).join('');
   container.innerHTML=html+`<div style="text-align:center;padding:18px 0;border-top:1px solid var(--border);margin-top:4px"><a href="https://github.com/nexspence/nexspence/releases" target="_blank" rel="noopener" style="font-size:.78rem;color:#a78bfa;text-decoration:none;font-weight:600">${t('ch.view-all')}</a></div>`;
 }
@@ -1951,14 +2252,22 @@ function renderStaticSection(key){
   container.innerHTML='';
   const node=tpl.content.cloneNode(true);
   applyTranslations(node);
+  const bad=FEATURE_BADGE[key];
+  if(bad){
+    const title=node.querySelector('.doc-section-title');
+    if(title){const span=document.createElement('span');span.className='vbadge-inline';span.textContent='in '+bad;title.appendChild(span);}
+  }
   container.appendChild(node);
 }
 
 function setSection(key){
   state.activeSection=key;
+  state.activeTab=tabOfSection(key);
   document.getElementById('breadcrumb-current').textContent=t('crumb.'+key);
-  document.getElementById('mob-active-page').textContent=t('sb.'+key);
-  renderSidebar(state.releases,key,state.activeVersion);
+  document.getElementById('mob-active-page').textContent=(key==='changelog')?t('tab.changelog'):t('sb.'+key);
+  renderTabs(state.activeTab);
+  renderSubnav(state.activeTab,key);
+  renderMobileDrawer();
   if(key==='changelog')renderChangelog(state.activeVersion);
   else renderStaticSection(key);
   if(window.innerWidth<=768)window.scrollTo({top:0,behavior:'smooth'});
@@ -1981,6 +2290,12 @@ function installVariant(platform,variant,btn){
   wrap.querySelectorAll('.inst-vpnl').forEach(p=>p.classList.toggle('active',p.dataset.vpnl===platform+'-'+variant));
   applyTranslations(document.getElementById('doc-content'));
 }
+function installOS(os,btn){
+  const root=btn.closest('.inst-pnl')||document.getElementById('doc-content');
+  root.querySelectorAll('.os-chip').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  root.querySelectorAll('.os-pnl').forEach(p=>p.classList.toggle('active',p.dataset.os===os));
+}
 function copyCode(btn){
   const body=btn.closest('.cb').querySelector('.cb-body');
   navigator.clipboard.writeText(body.innerText).then(()=>{
@@ -1997,16 +2312,37 @@ document.getElementById('mob-nav-toggle').addEventListener('click',function(){
   drawer.setAttribute('aria-hidden',String(!isOpen));
 });
 
+document.getElementById('ver-dd-btn').addEventListener('click',function(e){
+  e.stopPropagation();
+  const dd=document.getElementById('ver-dd');
+  const open=dd.classList.toggle('open');
+  this.setAttribute('aria-expanded',String(open));
+});
+document.addEventListener('click',function(e){
+  const dd=document.getElementById('ver-dd');
+  if(dd&&!dd.contains(e.target))dd.classList.remove('open');
+});
+
 (async()=>{
   // Primary content renders immediately — no dependency on the GitHub API,
   // so crawlers and offline visitors always see real, indexable content.
   document.querySelectorAll('.lang-btn').forEach(b=>b.classList.toggle('active',b.dataset.lang===state.lang));
   applyTranslations(document.querySelector('.docs-header'));
-  state.activeSection='quickstart';
-  document.getElementById('breadcrumb-current').textContent=t('crumb.quickstart');
-  document.getElementById('mob-active-page').textContent=t('sb.quickstart');
-  renderSidebar([],state.activeSection,'');
-  renderStaticSection('quickstart');
+  state.activeTab='releases';
+  state.activeSection='changelog';
+  renderTabs('releases');
+  renderSubnav('releases','changelog');
+  renderMobileDrawer();
+  document.getElementById('breadcrumb-current').textContent=t('crumb.changelog');
+  document.getElementById('mob-active-page').textContent=t('tab.changelog');
+  // #doc-content keeps its static intro paragraphs until releases load (SEO/offline fallback).
+
+  // Deep-link: /docs/#<section-key> opens that section; legacy #terraform → Terraform Provider tab.
+  const _hash=(location.hash||'').replace(/^#/,'');
+  if(_hash){
+    const _target=_hash==='terraform'?'tf-overview':_hash;
+    if(SECTIONS.some(s=>s.key===_target))setSection(_target);
+  }
 
   // Releases load in the background for the version bar + changelog section.
   // Failure (e.g. GitHub API rate limit) is non-fatal: the static docs stay.
@@ -2014,13 +2350,13 @@ document.getElementById('mob-nav-toggle').addEventListener('click',function(){
     state.releases=await fetchReleases();
     if(state.releases.length){
       state.activeVersion=state.releases[0].tag;
-      renderVersionBar(state.releases,state.activeVersion);
-      renderSidebar(state.releases,state.activeSection,state.activeVersion);
+      renderVersionDropdown(state.releases,state.activeVersion);
+      if(state.activeSection==='changelog')renderChangelog(state.activeVersion);
     }else{
-      document.getElementById('ver-bar').innerHTML='';
+      document.getElementById('ver-dd').style.display='none';
     }
   }catch(err){
-    document.getElementById('ver-bar').innerHTML='';
+    document.getElementById('ver-dd').style.display='none';
   }
 })();
 </script>
