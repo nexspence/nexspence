@@ -1,0 +1,22 @@
+# Traefik ingress-controller example
+# Helm usage: helm install nexspence deploy/helm/nexspence -f values-examples/traefik.yaml
+
+ingress:
+  enabled: true
+  className: "traefik"
+  annotations:
+    # Route via websecure entrypoint (HTTPS)
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+  hosts:
+    - host: nexspence.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: nexspence-tls
+      hosts:
+        - nexspence.example.com
+
+config:
+  baseURL: "https://nexspence.example.com"

@@ -1,0 +1,26 @@
+# nginx ingress-controller example
+# Helm usage: helm install nexspence deploy/helm/nexspence -f values-examples/nginx.yaml
+
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "10g"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+    # Uncomment for TLS termination via cert-manager:
+    # cert-manager.io/cluster-issuer: "letsencrypt-prod"
+  hosts:
+    - host: nexspence.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+  # tls:
+  #   - secretName: nexspence-tls
+  #     hosts:
+  #       - nexspence.example.com
+
+# Optional: override config values for HTTPS setup
+config:
+  baseURL: "https://nexspence.example.com"
