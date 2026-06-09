@@ -236,16 +236,25 @@ func (h *ComponentHandler) Search(c *gin.Context) {
 		items = h.rbacSvc.FilterComponents(c.Request.Context(),
 			stringVal(userID), stringSliceVal(roles), items, anonMap)
 	}
-	// Preload assets so the UI gets path/lastModified for each component.
-	// Search response caps at 50 items, so N+1 is acceptable here.
+	// Preload assets in a single batched query instead of one query per component.
+	var needsAssets []string
 	for i := range items {
 		if len(items[i].Assets) == 0 {
-			assets, err := h.assets.ListByComponentID(c.Request.Context(), items[i].ID)
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
-			}
-			items[i].Assets = assets
+			needsAssets = append(needsAssets, items[i].ID)
+		}
+	}
+	var byID map[string][]domain.Asset
+	if len(needsAssets) > 0 {
+		var err error
+		byID, err = h.assets.ListByComponentIDs(c.Request.Context(), needsAssets)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
+	for i := range items {
+		if len(items[i].Assets) == 0 {
+			items[i].Assets = byID[items[i].ID]
 		}
 		h.enrichComponent(c, &items[i])
 	}

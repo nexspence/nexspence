@@ -107,6 +107,28 @@ func (r *assetRepo) ListByComponentID(ctx context.Context, componentID string) (
 	return out, rows.Err()
 }
 
+func (r *assetRepo) ListByComponentIDs(ctx context.Context, componentIDs []string) (map[string][]domain.Asset, error) {
+	if len(componentIDs) == 0 {
+		return map[string][]domain.Asset{}, nil
+	}
+	q := fmt.Sprintf(`SELECT %s %s WHERE a.component_id = ANY($1) ORDER BY a.component_id, a.path`, assetSelectCols, assetFromJoin)
+	rows, err := r.db.Query(ctx, q, componentIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make(map[string][]domain.Asset)
+	for rows.Next() {
+		a, err := scanAsset(rows)
+		if err != nil {
+			return nil, err
+		}
+		out[a.ComponentID] = append(out[a.ComponentID], *a)
+	}
+	return out, rows.Err()
+}
+
 func (r *assetRepo) SearchAssets(ctx context.Context, p domain.SearchParams) (*domain.Page[domain.Asset], error) {
 	args := []any{}
 	i := 1

@@ -1187,3 +1187,114 @@ func TestAssetRepoQueries_ListStale_EmptyRepoNames_ReturnsEmpty(t *testing.T) {
 		t.Errorf("empty repoNames: expected 0 assets, got %d", len(assets))
 	}
 }
+
+// ── ListByComponentIDs ────────────────────────────────────────────────────────
+
+func TestAssetRepoQueries_ListByComponentIDs_GroupsByComponentID(t *testing.T) {
+	pool := pgtest.Pool(t)
+	pgtest.Truncate(t, pool, "blob_stores", "repositories", "components")
+	ctx := context.Background()
+
+	// Two separate parent chains (each has its own component).
+	p1 := makeAssetParent(t, ctx, "lbcids_a")
+	p2 := makeAssetParent(t, ctx, "lbcids_b")
+	repo := NewAssetRepo(pool)
+
+	// Seed 2 assets under component 1 in REVERSE lexical order (file2 before file1).
+	// This ensures the test catches a missing ORDER BY: without it, the DB may
+	// return rows in insertion order, which would be descending — not ascending.
+	for _, path := range []string{"/a/file2.bin", "/a/file1.bin"} {
+		a := makeAsset(p1, path)
+		a.BlobKey = "bk" + path
+		if err := repo.Create(ctx, a); err != nil {
+			t.Fatalf("Create p1 %q: %v", path, err)
+		}
+	}
+	// Component 2: seed in normal order (exercises the regular case).
+	for _, path := range []string{"/b/file1.bin", "/b/file2.bin"} {
+		a := makeAsset(p2, path)
+		a.BlobKey = "bk" + path
+		if err := repo.Create(ctx, a); err != nil {
+			t.Fatalf("Create p2 %q: %v", path, err)
+		}
+	}
+
+	byID, err := repo.ListByComponentIDs(ctx, []string{p1.ComponentID, p2.ComponentID})
+	if err != nil {
+		t.Fatalf("ListByComponentIDs: %v", err)
+	}
+
+	if len(byID) != 2 {
+		t.Fatalf("expected 2 keys in map, got %d", len(byID))
+	}
+
+	for _, cid := range []string{p1.ComponentID, p2.ComponentID} {
+		slice, ok := byID[cid]
+		if !ok {
+			t.Errorf("component %q missing from result map", cid)
+			continue
+		}
+		if len(slice) != 2 {
+			t.Errorf("component %q: expected 2 assets, got %d", cid, len(slice))
+		}
+	}
+
+	// Verify path ordering within each component's slice is ascending.
+	// p1 was inserted in reverse order (file2, file1) — ORDER BY must reorder it.
+	s1 := byID[p1.ComponentID]
+	if len(s1) == 2 {
+		wantPaths := []string{"/a/file1.bin", "/a/file2.bin"}
+		if s1[0].Path != wantPaths[0] || s1[1].Path != wantPaths[1] {
+			t.Errorf("p1 assets not sorted ascending by path: got [%q, %q], want %v",
+				s1[0].Path, s1[1].Path, wantPaths)
+		}
+	}
+	s2 := byID[p2.ComponentID]
+	if len(s2) == 2 && s2[0].Path >= s2[1].Path {
+		t.Errorf("p2 assets not sorted by path: %q >= %q", s2[0].Path, s2[1].Path)
+	}
+}
+
+func TestAssetRepoQueries_ListByComponentIDs_UnknownIDAbsent(t *testing.T) {
+	pool := pgtest.Pool(t)
+	pgtest.Truncate(t, pool, "blob_stores", "repositories", "components")
+	ctx := context.Background()
+
+	p := makeAssetParent(t, ctx, "lbcids_unk")
+	repo := NewAssetRepo(pool)
+
+	a := makeAsset(p, "/file.bin")
+	a.BlobKey = "bk_lbcids_unk"
+	if err := repo.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Request p's real ID plus a made-up UUID.
+	const unknownID = "00000000-0000-0000-0000-000000000000"
+	byID, err := repo.ListByComponentIDs(ctx, []string{p.ComponentID, unknownID})
+	if err != nil {
+		t.Fatalf("ListByComponentIDs: %v", err)
+	}
+
+	if _, ok := byID[unknownID]; ok {
+		t.Error("unknown component ID should not appear in the result map")
+	}
+	if len(byID[p.ComponentID]) != 1 {
+		t.Errorf("expected 1 asset for known component, got %d", len(byID[p.ComponentID]))
+	}
+}
+
+func TestAssetRepoQueries_ListByComponentIDs_EmptyInput_ReturnsEmptyMap(t *testing.T) {
+	pool := pgtest.Pool(t)
+	pgtest.Truncate(t, pool, "blob_stores", "repositories", "components")
+	ctx := context.Background()
+	repo := NewAssetRepo(pool)
+
+	byID, err := repo.ListByComponentIDs(ctx, []string{})
+	if err != nil {
+		t.Fatalf("ListByComponentIDs(empty): %v", err)
+	}
+	if len(byID) != 0 {
+		t.Errorf("expected empty map for empty input, got %d keys", len(byID))
+	}
+}

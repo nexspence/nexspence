@@ -66,6 +66,9 @@ type AssetRepo interface {
 	IncrementDownload(ctx context.Context, id string) error
 	// ListByComponentID returns all assets for a component (ordered by path).
 	ListByComponentID(ctx context.Context, componentID string) ([]domain.Asset, error)
+	// ListByComponentIDs returns assets for many components in one query,
+	// grouped by component ID (each slice ordered by path, like ListByComponentID).
+	ListByComponentIDs(ctx context.Context, componentIDs []string) (map[string][]domain.Asset, error)
 	// ListAllBlobKeys returns distinct blob_key values referenced by assets (for GC).
 	ListAllBlobKeys(ctx context.Context) ([]string, error)
 	// SumSizeByRepo returns total size_bytes of all assets in the repository.

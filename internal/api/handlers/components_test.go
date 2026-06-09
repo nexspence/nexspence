@@ -3,6 +3,7 @@ package handlers_test
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"testing"
 
@@ -309,6 +310,51 @@ func TestComponentHandler_Search_AssetRepoError_500(t *testing.T) {
 	assets.Err = errors.New("asset query failed")
 	rec := do(t, r, http.MethodGet, "/service/rest/v1/search?name=a", nil)
 	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+}
+
+// TestComponentHandler_Search_BatchAssetPreload verifies that the Search handler
+// loads assets for multiple components using a single ListByComponentIDs call
+// (the batch path), and that every returned component has its assets populated.
+func TestComponentHandler_Search_BatchAssetPreload(t *testing.T) {
+	r, comps, assets, _ := mountComponents(t)
+
+	// Seed 3 components, each with 2 assets.
+	// Capture the ID the mock assigns to each component (via comp.ID mutation)
+	// rather than reconstructing it, so the test is not coupled to ID internals.
+	for i := 1; i <= 3; i++ {
+		comp := &domain.Component{
+			Name: fmt.Sprintf("comp-%d", i), Repository: "raw-host",
+		}
+		require.NoError(t, comps.Create(testContext(), comp))
+		compID := comp.ID // use the ID the mock assigned
+		require.NoError(t, assets.Create(testContext(), &domain.Asset{
+			ComponentID: compID, Repository: "raw-host",
+			Path: fmt.Sprintf("/a%d/file-a.txt", i),
+		}))
+		require.NoError(t, assets.Create(testContext(), &domain.Asset{
+			ComponentID: compID, Repository: "raw-host",
+			Path: fmt.Sprintf("/a%d/file-b.txt", i),
+		}))
+	}
+
+	rec := do(t, r, http.MethodGet, "/service/rest/v1/search?name=comp", nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var got componentsResp
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Len(t, got.Items, 3)
+
+	// Every component must have its 2 assets populated.
+	for _, comp := range got.Items {
+		assert.Len(t, comp.Assets, 2, "component %q should have 2 assets", comp.Name)
+	}
+
+	// The batch method must have been called exactly once (not once per component).
+	assert.Equal(t, 1, assets.ListByComponentIDsCalls,
+		"ListByComponentIDs should be called once for the whole search page, not once per component")
+	// The singular per-component method must never be called (would indicate N+1).
+	assert.Equal(t, 0, assets.ListByComponentIDCalls,
+		"ListByComponentID (singular) must not be called when the batch path is taken")
 }
 
 // ── SearchAssets ──────────────────────────────────────────────

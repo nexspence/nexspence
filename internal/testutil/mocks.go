@@ -416,7 +416,11 @@ type AssetRepo struct {
 	Stale         []domain.Asset // populated by tests to control ListStale output
 	LastRetainN   int
 	MigrationRows []domain.MigrationAssetRow
-	Err           error // when non-nil, ListByComponentID/SearchAssets/SumSizeByRepo return it (500-branch seam)
+	Err           error // when non-nil, ListByComponentID/ListByComponentIDs/SearchAssets/SumSizeByRepo return it (500-branch seam)
+	// ListByComponentIDsCalls counts how many times ListByComponentIDs has been called.
+	ListByComponentIDsCalls int
+	// ListByComponentIDCalls counts how many times the singular ListByComponentID has been called.
+	ListByComponentIDCalls int
 	// RawRowsByRepo maps repoName→raw browse assets; ListRawBrowseAssets returns the
 	// union for the requested repo names (mirrors the SQL WHERE rep.name IN (...)).
 	RawRowsByRepo map[string][]domain.RawBrowseAsset
@@ -529,6 +533,7 @@ func (a *AssetRepo) IncrementDownload(_ context.Context, _ string) error { retur
 func (a *AssetRepo) ListByComponentID(_ context.Context, componentID string) ([]domain.Asset, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	a.ListByComponentIDCalls++
 	if a.Err != nil {
 		return nil, a.Err
 	}
@@ -538,6 +543,33 @@ func (a *AssetRepo) ListByComponentID(_ context.Context, componentID string) ([]
 			cp := *v
 			out = append(out, cp)
 		}
+	}
+	return out, nil
+}
+
+func (a *AssetRepo) ListByComponentIDs(_ context.Context, componentIDs []string) (map[string][]domain.Asset, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.ListByComponentIDsCalls++
+	if a.Err != nil {
+		return nil, a.Err
+	}
+	want := make(map[string]struct{}, len(componentIDs))
+	for _, id := range componentIDs {
+		want[id] = struct{}{}
+	}
+	out := make(map[string][]domain.Asset)
+	for _, v := range a.byID {
+		if _, ok := want[v.ComponentID]; ok {
+			cp := *v
+			out[v.ComponentID] = append(out[v.ComponentID], cp)
+		}
+	}
+	// Sort each slice by path to match the postgres ORDER BY path behavior.
+	for k := range out {
+		slice := out[k]
+		sort.Slice(slice, func(i, j int) bool { return slice[i].Path < slice[j].Path })
+		out[k] = slice
 	}
 	return out, nil
 }
