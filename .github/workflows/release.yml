@@ -92,34 +92,17 @@ jobs:
           PYEOF
 
           cp config.yaml.example release-assets/config.yaml.example
-          cp -r deploy release-assets/
-          cp -r keycloak release-assets/
 
-          # Seed & repo-creation scripts
-          mkdir release-assets/scripts
-          cp scripts/seed-all.sh \
-             scripts/seed-repos.sh \
-             scripts/seed-packages.sh \
-             scripts/seed-rbac.sh \
-             scripts/seed-cleanup.sh \
-             scripts/create-*.sh \
-             release-assets/scripts/
-
-          # Docs: seed testing guide + deployment guides
-          mkdir release-assets/docs
-          cp docs/seed-testing-guide.md \
-             docs/deployment.md \
-             docs/ha-setup.md \
-             release-assets/docs/
+          # Helm chart only — run-essentials. Documentation lives on the website,
+          # so it is intentionally NOT bundled in the release.
+          mkdir -p release-assets/deploy/helm
+          cp -r deploy/helm/nexspence release-assets/deploy/helm/nexspence
 
           cd release-assets
           zip -r "nexspence-${{ github.ref_name }}.zip" \
             docker-compose.yml docker-compose.ha.yml \
             config.yaml.example \
-            deploy/ \
-            keycloak/ \
-            scripts/ \
-            docs/
+            deploy/
           cd ..
 
       - name: Set up Go
@@ -142,25 +125,29 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_PAT }}
 
-      - name: Sync docs and README to nexspence repo
+      - name: Sync run-essentials to nexspence repo
         run: |
           git clone https://x-access-token:${{ secrets.RELEASE_PAT }}@github.com/nexspence/nexspence.git /tmp/nexspence-pub
-
-          # Sync docs/
-          rsync -a --delete docs/ /tmp/nexspence-pub/docs/
-
-          # Sync Helm chart README
-          mkdir -p /tmp/nexspence-pub/deploy/helm/nexspence
-          cp deploy/helm/nexspence/README.md /tmp/nexspence-pub/deploy/helm/nexspence/README.md
-
-          # Sync root README
-          cp README.md /tmp/nexspence-pub/README.md
-
           cd /tmp/nexspence-pub
+
+          # The public mirror carries ONLY what is needed to run Nexspence:
+          # the config sample, the docker-compose files (image-pinned to this
+          # release), and the Helm chart. Documentation lives on the website and
+          # is intentionally NOT mirrored here.
+          git rm -rq --ignore-unmatch docs deploy config.yaml.example \
+            docker-compose.yml docker-compose.ha.yml
+
+          cp "$GITHUB_WORKSPACE/config.yaml.example" config.yaml.example
+          cp "$GITHUB_WORKSPACE/release-assets/docker-compose.yml" docker-compose.yml
+          cp "$GITHUB_WORKSPACE/release-assets/docker-compose.ha.yml" docker-compose.ha.yml
+          mkdir -p deploy/helm
+          cp -r "$GITHUB_WORKSPACE/deploy/helm/nexspence" deploy/helm/nexspence
+          cp "$GITHUB_WORKSPACE/README.md" README.md
+
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add docs/ deploy/helm/nexspence/README.md README.md
+          git add -A
           git diff --staged --quiet || \
-            git commit -m "docs: sync from nexspence-core ${{ github.ref_name }}"
+            git commit -m "dist: sync run-essentials from nexspence-core ${{ github.ref_name }}"
           git push origin main
 
