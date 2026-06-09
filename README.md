@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="docs/assets/logo.png" alt="Nexspence" width="380">
+  <img src="https://nexspence.com/assets/logo.png" alt="Nexspence" width="380">
   <br><br>
   <p><strong>Free, open-source universal artifact repository manager</strong></p>
   <p>A full-featured self-hosted alternative to Sonatype Nexus Repository</p>
@@ -19,9 +19,7 @@
 
 ## 🎬 Demo
 
-https://github.com/nexspence/nexspence/raw/main/docs/assets/demo.mp4
-
-> ▶️ If the video doesn't play inline, [open / download it here](docs/assets/demo.mp4).
+▶️ **[Watch the demo on nexspence.com](https://nexspence.com)**
 
 ---
 
@@ -65,8 +63,8 @@ View the full site with interactive architecture diagram, install guide, and com
 
 <table>
   <tr>
-    <td><img src="docs/assets/screenshots/repositories.PNG" alt="Repositories page" width="480"></td>
-    <td><img src="docs/assets/screenshots/browse.PNG" alt="Browse" width="480"></td>
+    <td><img src="https://nexspence.com/assets/screenshots/repositories.PNG" alt="Repositories page" width="480"></td>
+    <td><img src="https://nexspence.com/assets/screenshots/browse.PNG" alt="Browse" width="480"></td>
   </tr>
   <tr>
     <td align="center"><em>Repositories list</em></td>
@@ -78,8 +76,8 @@ View the full site with interactive architecture diagram, install guide, and com
 
 <table>
   <tr>
-    <td><img src="docs/assets/screenshots/admin_blobstores.PNG" alt="Blob Stores" width="480"></td>
-    <td><img src="docs/assets/screenshots/security_roles.PNG" alt="Roles & RBAC" width="480"></td>
+    <td><img src="https://nexspence.com/assets/screenshots/admin_blobstores.PNG" alt="Blob Stores" width="480"></td>
+    <td><img src="https://nexspence.com/assets/screenshots/security_roles.PNG" alt="Roles & RBAC" width="480"></td>
   </tr>
   <tr>
     <td align="center"><em>Blob stores — S3 + local with connection test</em></td>
@@ -91,8 +89,8 @@ View the full site with interactive architecture diagram, install guide, and com
 
 <table>
   <tr>
-    <td><img src="docs/assets/screenshots/cleanup.PNG" alt="Cleanup policies" width="480"></td>
-    <td><img src="docs/assets/screenshots/search.PNG" alt="Search" width="480"></td>
+    <td><img src="https://nexspence.com/assets/screenshots/cleanup.PNG" alt="Cleanup policies" width="480"></td>
+    <td><img src="https://nexspence.com/assets/screenshots/search.PNG" alt="Search" width="480"></td>
   </tr>
   <tr>
     <td align="center"><em>Cleanup policies with dry-run preview</em></td>
@@ -151,7 +149,7 @@ cd deploy/monitoring
 NEXSPENCE_URL=http://my-server:8081 docker compose up -d
 ```
 
-For all deployment variants (MinIO, HA cluster, Keycloak SSO, from source) see **[docs/deployment.md](docs/deployment.md)**.
+For all deployment variants (MinIO, HA cluster, Keycloak SSO, from source) see the **[documentation](https://nexspence.com/docs/)**.
 
 ---
 
@@ -161,7 +159,7 @@ Prefer running on bare metal? Download the `.deb`/`.rpm` (Linux) or the macOS/Wi
 archive from the [latest release](https://github.com/nexspence/nexspence/releases/latest).
 Each ships with systemd / launchd / Windows-service integration, and the binary embeds
 the web UI (self-contained). Full walkthrough — including reverse-proxy (nginx/Caddy)
-and multi-node load-balancer setups — in [docs/install-local.md](docs/install-local.md).
+and multi-node load-balancer setups — in the **[documentation](https://nexspence.com/docs/)**.
 Requires an external PostgreSQL.
 
 ---
@@ -293,16 +291,11 @@ Published on the [Terraform Registry](https://registry.terraform.io/providers/ne
 
 ## Documentation
 
-| Document | Description |
-|----------|-------------|
-| [docs/deployment.md](docs/deployment.md) | All deployment variants — Docker Compose, HA, Keycloak, from source |
-| [docs/ha-setup.md](docs/ha-setup.md) | High Availability — Redis, health probes, scaling |
-| [docs/oidc-setup.md](docs/oidc-setup.md) | OIDC SSO — Keycloak, Google, Entra ID, Okta |
-| [docs/webhooks.md](docs/webhooks.md) | Webhook events, payload format, HMAC verification |
-| [docs/security-rbac.md](docs/security-rbac.md) | RBAC guide — Roles, Privileges, Content Selectors, CEL examples |
-| [docs/api-spec.yaml](docs/api-spec.yaml) | OpenAPI 3.1 spec (Nexus-compat + Nexspence-native) |
-| [docs/architecture.md](docs/architecture.md) | System diagram, layer responsibilities, request flow |
-| [deploy/helm/nexspence/README.md](deploy/helm/nexspence/README.md) | Full Helm chart reference |
+Full documentation — deployment variants, HA setup, OIDC SSO, webhooks, the RBAC guide, the OpenAPI spec, and the architecture overview — lives on the website:
+
+📖 **[nexspence.com/docs](https://nexspence.com/docs/)**
+
+The Helm chart reference ships with the chart itself: [`deploy/helm/nexspence/README.md`](deploy/helm/nexspence/README.md).
 
 ---
 
@@ -346,7 +339,7 @@ AGPLv3 — see [LICENSE](LICENSE)
 ---
 
 <div align="center">
-  <img src="docs/assets/mini_logo.png" alt="Nexspence" width="60">
+  <img src="https://nexspence.com/assets/mini_logo.png" alt="Nexspence" width="60">
   <br>
   <sub>AGPLv3 License · Built with Go + React</sub>
 </div>
