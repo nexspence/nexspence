@@ -125,9 +125,11 @@ release:
     | Mode | Command |
     |------|---------|
     | Single-node | `docker compose up -d` |
+    | Single-node + Keycloak SSO | `OIDC_ENABLED=true docker compose --profile keycloak up -d` |
     | HA (2 nodes + nginx) | `docker compose -f docker-compose.ha.yml up -d` |
+    | HA + Keycloak SSO | `OIDC_ENABLED=true docker compose -f docker-compose.ha.yml --profile keycloak up -d` |
 
     **Web UI:** single-node → `http://localhost:8081` · HA → `http://localhost:8080`
 
-    Native install (deb/rpm/macOS/Windows): see
-    [docs/install-local.md](https://github.com/nexspence/nexspence/blob/main/docs/install-local.md).
+    Native install (deb/rpm/macOS/Windows): see the
+    [documentation](https://nexspence.com/docs/).

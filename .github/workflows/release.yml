@@ -119,11 +119,13 @@ jobs:
           git clone https://x-access-token:${{ secrets.RELEASE_PAT }}@github.com/nexspence/nexspence.git /tmp/nexspence-pub
           cd /tmp/nexspence-pub
 
-          # The public mirror carries ONLY what is needed to run Nexspence:
-          # the config sample, the docker-compose files (image-pinned to this
-          # release), and the Helm chart. Documentation lives on the website and
-          # is intentionally NOT mirrored here.
-          git rm -rq --ignore-unmatch docs deploy config.yaml.example \
+          # The public mirror carries what is needed to RUN Nexspence:
+          #   - config sample + docker-compose files (image-pinned to this release)
+          #   - the Helm chart (deploy/helm/nexspence)
+          #   - the HA load-balancer config (deploy/nginx-ha.conf) for docker-compose.ha.yml
+          #   - the Keycloak realm import (keycloak/) for the OIDC SSO profile
+          # Documentation lives on the website and is intentionally NOT mirrored here.
+          git rm -rq --ignore-unmatch docs deploy keycloak config.yaml.example \
             docker-compose.yml docker-compose.ha.yml
 
           cp "$GITHUB_WORKSPACE/config.yaml.example" config.yaml.example
@@ -131,6 +133,8 @@ jobs:
           cp "$GITHUB_WORKSPACE/release-assets/docker-compose.ha.yml" docker-compose.ha.yml
           mkdir -p deploy/helm
           cp -r "$GITHUB_WORKSPACE/deploy/helm/nexspence" deploy/helm/nexspence
+          cp "$GITHUB_WORKSPACE/deploy/nginx-ha.conf" deploy/nginx-ha.conf
+          cp -r "$GITHUB_WORKSPACE/keycloak" keycloak
           cp "$GITHUB_WORKSPACE/README.md" README.md
 
           git config user.name  "github-actions[bot]"
