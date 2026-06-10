@@ -123,9 +123,11 @@ jobs:
           #   - config sample + docker-compose files (image-pinned to this release)
           #   - the Helm chart (deploy/helm/nexspence)
           #   - the HA load-balancer config (deploy/nginx-ha.conf) for docker-compose.ha.yml
+          #   - the monitoring profile files (deploy/monitoring) for --profile monitoring
           #   - the Keycloak realm import (keycloak/) for the OIDC SSO profile
+          #   - the seed scripts (scripts/) — seed-all.sh + its deps + seed-cleanup.sh
           # Documentation lives on the website and is intentionally NOT mirrored here.
-          git rm -rq --ignore-unmatch docs deploy keycloak config.yaml.example \
+          git rm -rq --ignore-unmatch docs deploy keycloak scripts config.yaml.example \
             docker-compose.yml docker-compose.ha.yml
 
           cp "$GITHUB_WORKSPACE/config.yaml.example" config.yaml.example
@@ -134,7 +136,17 @@ jobs:
           mkdir -p deploy/helm
           cp -r "$GITHUB_WORKSPACE/deploy/helm/nexspence" deploy/helm/nexspence
           cp "$GITHUB_WORKSPACE/deploy/nginx-ha.conf" deploy/nginx-ha.conf
+          cp -r "$GITHUB_WORKSPACE/deploy/monitoring" deploy/monitoring
+          rm -rf deploy/monitoring/prometheus-token   # strip any local bind-mount artifact
           cp -r "$GITHUB_WORKSPACE/keycloak" keycloak
+          mkdir -p scripts
+          cp "$GITHUB_WORKSPACE/scripts/seed-all.sh" \
+             "$GITHUB_WORKSPACE/scripts/seed-repos.sh" \
+             "$GITHUB_WORKSPACE/scripts/seed-packages.sh" \
+             "$GITHUB_WORKSPACE/scripts/seed-rbac.sh" \
+             "$GITHUB_WORKSPACE/scripts/seed-cleanup.sh" \
+             scripts/
+          cp "$GITHUB_WORKSPACE"/scripts/create-*.sh scripts/
           cp "$GITHUB_WORKSPACE/README.md" README.md
 
           git config user.name  "github-actions[bot]"

@@ -125,6 +125,7 @@ release:
     | Mode | Command |
     |------|---------|
     | Single-node | `docker compose up -d` |
+    | Single-node + Monitoring | `docker compose --profile monitoring up -d` |
     | Single-node + Keycloak SSO | `OIDC_ENABLED=true docker compose --profile keycloak up -d` |
     | HA (2 nodes + nginx) | `docker compose -f docker-compose.ha.yml up -d` |
     | HA + Keycloak SSO | `OIDC_ENABLED=true docker compose -f docker-compose.ha.yml --profile keycloak up -d` |
