@@ -1,0 +1,12 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: nexspence
+    metrics_path: /metrics
+    bearer_token_file: /etc/prometheus/token
+    static_configs:
+      - targets:
+          - nexspence_1:8081
+          - nexspence_2:8081
