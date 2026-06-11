@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"testing"
-	"time"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/repository"
@@ -546,129 +545,92 @@ func TestAssetRepo_Delete_NonExistentIsNoOp(t *testing.T) {
 	}
 }
 
-// ── IncrementDownload ─────────────────────────────────────────────────────────
+// ── IncrementDownloads ────────────────────────────────────────────────────────
 
-func TestAssetRepo_IncrementDownload_IncrementsCounter(t *testing.T) {
+func TestAssetRepo_IncrementDownloads_BatchAggregates(t *testing.T) {
 	pool := pgtest.Pool(t)
 	pgtest.Truncate(t, pool, "blob_stores", "repositories", "components")
 	ctx := context.Background()
 
-	p := makeAssetParent(t, ctx, "inc_dl")
+	p := makeAssetParent(t, ctx, "inc_batch")
 	repo := NewAssetRepo(pool)
 
-	a := makeAsset(p, "/download/file.bin")
-	if err := repo.Create(ctx, a); err != nil {
-		t.Fatalf("Create: %v", err)
+	a1 := makeAsset(p, "/batch/a1.bin")
+	a2 := makeAsset(p, "/batch/a2.bin")
+	if err := repo.Create(ctx, a1); err != nil {
+		t.Fatalf("Create a1: %v", err)
+	}
+	if err := repo.Create(ctx, a2); err != nil {
+		t.Fatalf("Create a2: %v", err)
 	}
 
-	if err := repo.IncrementDownload(ctx, a.ID); err != nil {
-		t.Fatalf("IncrementDownload: %v", err)
+	if err := repo.IncrementDownloads(ctx, map[string]int64{a1.ID: 3, a2.ID: 1}); err != nil {
+		t.Fatalf("IncrementDownloads: %v", err)
 	}
 
-	got, err := repo.Get(ctx, a.ID)
+	got1, err := repo.Get(ctx, a1.ID)
 	if err != nil {
-		t.Fatalf("Get after IncrementDownload: %v", err)
+		t.Fatalf("Get a1: %v", err)
 	}
-	if got.DownloadCount != 1 {
-		t.Errorf("DownloadCount: got %d want 1", got.DownloadCount)
+	if got1.DownloadCount != 3 {
+		t.Errorf("a1 DownloadCount: got %d want 3", got1.DownloadCount)
 	}
-	if got.LastDownloaded == nil {
-		t.Fatal("LastDownloaded should be set after IncrementDownload")
+	if got1.LastDownloaded == nil {
+		t.Error("a1 LastDownloaded not set")
 	}
-}
-
-func TestAssetRepo_IncrementDownload_MultipleIncrements(t *testing.T) {
-	pool := pgtest.Pool(t)
-	pgtest.Truncate(t, pool, "blob_stores", "repositories", "components")
-	ctx := context.Background()
-
-	p := makeAssetParent(t, ctx, "inc_multi")
-	repo := NewAssetRepo(pool)
-
-	a := makeAsset(p, "/download/multi.bin")
-	if err := repo.Create(ctx, a); err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-
-	const n = 5
-	for i := 0; i < n; i++ {
-		if err := repo.IncrementDownload(ctx, a.ID); err != nil {
-			t.Fatalf("IncrementDownload [%d]: %v", i, err)
-		}
-	}
-
-	got, err := repo.Get(ctx, a.ID)
+	got2, err := repo.Get(ctx, a2.ID)
 	if err != nil {
-		t.Fatalf("Get: %v", err)
+		t.Fatalf("Get a2: %v", err)
 	}
-	if got.DownloadCount != n {
-		t.Errorf("DownloadCount after %d increments: got %d", n, got.DownloadCount)
-	}
-}
-
-func TestAssetRepo_IncrementDownload_SetsLastDownloaded(t *testing.T) {
-	pool := pgtest.Pool(t)
-	pgtest.Truncate(t, pool, "blob_stores", "repositories", "components")
-	ctx := context.Background()
-
-	p := makeAssetParent(t, ctx, "inc_ts")
-	repo := NewAssetRepo(pool)
-
-	a := makeAsset(p, "/download/ts.bin")
-	if err := repo.Create(ctx, a); err != nil {
-		t.Fatalf("Create: %v", err)
+	if got2.DownloadCount != 1 {
+		t.Errorf("a2 DownloadCount: got %d want 1", got2.DownloadCount)
 	}
 
-	before := time.Now().Add(-time.Second)
-	if err := repo.IncrementDownload(ctx, a.ID); err != nil {
-		t.Fatalf("IncrementDownload: %v", err)
-	}
-	after := time.Now().Add(time.Second)
-
-	got, err := repo.Get(ctx, a.ID)
-	if err != nil {
-		t.Fatalf("Get: %v", err)
-	}
-	if got.LastDownloaded == nil {
-		t.Fatal("LastDownloaded is nil")
-	}
-	if got.LastDownloaded.Before(before) || got.LastDownloaded.After(after) {
-		t.Errorf("LastDownloaded %v not within expected range [%v, %v]",
-			got.LastDownloaded, before, after)
-	}
-}
-
-func TestAssetRepo_IncrementDownload_AlsoUpdatesComponent(t *testing.T) {
-	pool := pgtest.Pool(t)
-	pgtest.Truncate(t, pool, "blob_stores", "repositories", "components")
-	ctx := context.Background()
-
-	p := makeAssetParent(t, ctx, "inc_comp")
-	repo := NewAssetRepo(pool)
-
-	a := makeAsset(p, "/download/comp.bin")
-	if err := repo.Create(ctx, a); err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-
-	if err := repo.IncrementDownload(ctx, a.ID); err != nil {
-		t.Fatalf("IncrementDownload: %v", err)
-	}
-
-	// Verify the component's download_count was also incremented
-	cRepo := NewComponentRepo(pool)
-	comp, err := cRepo.Get(ctx, p.ComponentID)
-	if err != nil {
+	// Component aggregates the sum of both asset increments.
+	comp, err := NewComponentRepo(pool).Get(ctx, p.ComponentID)
+	if err != nil || comp == nil {
 		t.Fatalf("component Get: %v", err)
 	}
-	if comp == nil {
-		t.Fatal("component Get returned nil")
+	if comp.DownloadCount != 4 {
+		t.Errorf("component DownloadCount: got %d want 4", comp.DownloadCount)
 	}
-	if comp.DownloadCount != 1 {
-		t.Errorf("component DownloadCount: got %d want 1", comp.DownloadCount)
+}
+
+func TestAssetRepo_IncrementDownloads_EmptyMapIsNoop(t *testing.T) {
+	pool := pgtest.Pool(t)
+	repo := NewAssetRepo(pool)
+	if err := repo.IncrementDownloads(context.Background(), nil); err != nil {
+		t.Fatalf("IncrementDownloads(nil): %v", err)
 	}
-	if comp.LastDownloaded == nil {
-		t.Fatal("component LastDownloaded should be set")
+	if err := repo.IncrementDownloads(context.Background(), map[string]int64{}); err != nil {
+		t.Fatalf("IncrementDownloads(empty): %v", err)
+	}
+}
+
+func TestAssetRepo_IncrementDownloads_UnknownIDIgnored(t *testing.T) {
+	pool := pgtest.Pool(t)
+	pgtest.Truncate(t, pool, "blob_stores", "repositories", "components")
+	ctx := context.Background()
+
+	p := makeAssetParent(t, ctx, "inc_unknown")
+	repo := NewAssetRepo(pool)
+	a := makeAsset(p, "/batch/known.bin")
+	if err := repo.Create(ctx, a); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	// One known + one nonexistent UUID: no error, known row still updated.
+	if err := repo.IncrementDownloads(ctx, map[string]int64{
+		a.ID:                                   2,
+		"00000000-0000-0000-0000-000000000001": 5,
+	}); err != nil {
+		t.Fatalf("IncrementDownloads: %v", err)
+	}
+	got, err := repo.Get(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.DownloadCount != 2 {
+		t.Errorf("DownloadCount: got %d want 2", got.DownloadCount)
 	}
 }
 

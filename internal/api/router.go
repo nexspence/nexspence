@@ -172,6 +172,10 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 	}
 	promotionSvc.WithWebhooks(webhookSvc)
 
+	// Debounced download counter: in-memory aggregation, periodic batched flush.
+	dlCounter := service.NewDownloadCounter(assetRepo, log)
+	go dlCounter.Start(context.Background(), 10*time.Second)
+
 	// ── Format handlers ───────────────────────────────────────
 	formatDeps := formats.Deps{
 		Repos:        repoRepo,
@@ -182,6 +186,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 		Registry:     blobRegistry,
 		BaseURL:      cfg.HTTP.BaseURL,
 		Webhooks:     webhookSvc,
+		Downloads:    dlCounter,
 		RoutingRules: rrRepo,
 	}
 	formatRegistry := map[string]formats.FormatHandler{

@@ -426,6 +426,8 @@ type AssetRepo struct {
 	RawRowsByRepo map[string][]domain.RawBrowseAsset
 	RawBrowseErr  error // when non-nil, ListRawBrowseAssets returns it (500-branch seam)
 	BrowseErr     error // when non-nil, ListByRepoAndPath/ListPathsByRepo/ListRawAssetPaths return it (500-branch seam)
+	// DownloadIncrements records aggregated counts passed to IncrementDownloads.
+	DownloadIncrements map[string]int64
 }
 
 func NewAssetRepo() *AssetRepo {
@@ -528,7 +530,17 @@ func (a *AssetRepo) Delete(_ context.Context, id string) error {
 	delete(a.assets, asset.RepositoryID+":"+asset.Path)
 	return nil
 }
-func (a *AssetRepo) IncrementDownload(_ context.Context, _ string) error { return nil }
+func (a *AssetRepo) IncrementDownloads(_ context.Context, counts map[string]int64) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.DownloadIncrements == nil {
+		a.DownloadIncrements = map[string]int64{}
+	}
+	for id, n := range counts {
+		a.DownloadIncrements[id] += n
+	}
+	return nil
+}
 
 func (a *AssetRepo) ListByComponentID(_ context.Context, componentID string) ([]domain.Asset, error) {
 	a.mu.Lock()

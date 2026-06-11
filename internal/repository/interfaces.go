@@ -63,7 +63,9 @@ type AssetRepo interface {
 	ListStale(ctx context.Context, format string, repoNames []string, lastDownloadedDays, artifactAgeDays int, pathPrefix, nameGlob string, retainNVersions int, limit int) ([]domain.Asset, error)
 	Create(ctx context.Context, a *domain.Asset) error
 	Delete(ctx context.Context, id string) error
-	IncrementDownload(ctx context.Context, id string) error
+	// IncrementDownloads applies batched download-count increments (asset ID → count)
+	// to assets and their parent components in one transaction.
+	IncrementDownloads(ctx context.Context, counts map[string]int64) error
 	// ListByComponentID returns all assets for a component (ordered by path).
 	ListByComponentID(ctx context.Context, componentID string) ([]domain.Asset, error)
 	// ListByComponentIDs returns assets for many components in one query,

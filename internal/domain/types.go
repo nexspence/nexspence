@@ -132,6 +132,11 @@ type WebhookDispatcher interface {
 	Dispatch(payload WebhookPayload)
 }
 
+// DownloadCounter records artifact downloads for debounced persistence.
+type DownloadCounter interface {
+	Add(assetID string)
+}
+
 // ── Routing Rule ─────────────────────────────────────────────
 
 // RoutingRule controls which artifact paths are allowed or blocked for a repository.

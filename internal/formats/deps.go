@@ -17,6 +17,8 @@ type Deps struct {
 	BaseURL    string
 	// Webhooks is optional — nil disables event delivery.
 	Webhooks domain.WebhookDispatcher
+	// Downloads is optional — nil disables download counting.
+	Downloads domain.DownloadCounter
 	// RoutingRules is optional — nil disables routing rule enforcement in group repos.
 	RoutingRules repository.RoutingRuleRepo
 }

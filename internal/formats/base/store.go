@@ -232,9 +232,9 @@ func FetchArtifact(ctx context.Context, d formats.Deps, repoName, filePath strin
 		return nil, nil, fmt.Errorf("blob missing: %w", err)
 	}
 
-	go func(assetID string) { //nolint:gosec // detached context is intentional: background download-counter write must outlive the request
-		_ = d.Assets.IncrementDownload(context.Background(), assetID)
-	}(asset.ID)
+	if d.Downloads != nil {
+		d.Downloads.Add(asset.ID)
+	}
 	return rc, asset, nil
 }
 

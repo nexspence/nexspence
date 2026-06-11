@@ -359,7 +359,19 @@ func (r *assetRepo) SumSizeByRepo(ctx context.Context, repoName string) (int64, 
 	return n, nil
 }
 
-func (r *assetRepo) IncrementDownload(ctx context.Context, id string) error {
+// IncrementDownloads applies batched download-count increments in one transaction:
+// one statement for assets, one aggregated per parent component. Unknown IDs are ignored.
+func (r *assetRepo) IncrementDownloads(ctx context.Context, counts map[string]int64) error {
+	if len(counts) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(counts))
+	ns := make([]int64, 0, len(counts))
+	for id, n := range counts {
+		ids = append(ids, id)
+		ns = append(ns, n)
+	}
+
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
 		return err
@@ -367,18 +379,24 @@ func (r *assetRepo) IncrementDownload(ctx context.Context, id string) error {
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	if _, err := tx.Exec(ctx, `
-		UPDATE assets SET
-		  download_count = download_count + 1,
+		UPDATE assets a SET
+		  download_count = a.download_count + c.n,
 		  last_downloaded = NOW()
-		WHERE id = $1`, id); err != nil {
+		FROM (SELECT unnest($1::uuid[]) AS id, unnest($2::bigint[]) AS n) c
+		WHERE a.id = c.id`, ids, ns); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(ctx, `
-		UPDATE components c
-		SET last_downloaded = NOW(),
-		    download_count = c.download_count + 1
-		FROM assets a
-		WHERE c.id = a.component_id AND a.id = $1`, id); err != nil {
+		UPDATE components co SET
+		  last_downloaded = NOW(),
+		  download_count = co.download_count + agg.n
+		FROM (
+		  SELECT a.component_id, SUM(c.n) AS n
+		  FROM (SELECT unnest($1::uuid[]) AS id, unnest($2::bigint[]) AS n) c
+		  JOIN assets a ON a.id = c.id
+		  GROUP BY a.component_id
+		) agg
+		WHERE co.id = agg.component_id`, ids, ns); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)

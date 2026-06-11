@@ -163,11 +163,8 @@ func ServeGET(c *gin.Context, d formats.Deps, repo *domain.Repository, repoRelat
 		if blobErr == nil {
 			defer func() { _ = rc.Close() }()
 			// Count only real GETs so HEAD probe + GET pulls don't double-count.
-			// Use context.Background so the UPDATE survives request cancellation after streaming.
-			if c.Request.Method == http.MethodGet {
-				go func(assetID string) {
-					_ = d.Assets.IncrementDownload(context.Background(), assetID)
-				}(asset.ID)
+			if c.Request.Method == http.MethodGet && d.Downloads != nil {
+				d.Downloads.Add(asset.ID)
 			}
 			applyChecksumHeaders(c, asset)
 			if c.Request.Method == http.MethodHead {
@@ -304,10 +301,8 @@ func ServeGET(c *gin.Context, d formats.Deps, repo *domain.Repository, repoRelat
 	}
 	// Count a download only for GET (see HEAD branch above). Otherwise a HEAD probe + GET
 	// hit would double-count the same pull.
-	if regAsset != nil && regAsset.ID != "" && c.Request.Method == http.MethodGet {
-		go func(assetID string) {
-			_ = d.Assets.IncrementDownload(context.Background(), assetID)
-		}(regAsset.ID)
+	if regAsset != nil && regAsset.ID != "" && c.Request.Method == http.MethodGet && d.Downloads != nil {
+		d.Downloads.Add(regAsset.ID)
 	}
 	return nil
 }
