@@ -141,6 +141,28 @@ func TestTerraform_Hosted_ProviderUploadAndVersions(t *testing.T) {
 	assert.Equal(t, "1.0.0", v["version"])
 }
 
+func TestTerraform_Hosted_ProviderUpload_UnknownContentLength(t *testing.T) {
+	r := setup(hostedRepo("tf-chunked"))
+
+	body := []byte("fake-provider-zip-content-chunked")
+	req := httptest.NewRequest(http.MethodPut,
+		"/repository/tf-chunked/v1/providers/ns/prov/1.0.0/upload/linux/amd64",
+		bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/zip")
+	req.ContentLength = -1 // chunked transfer: size unknown up front
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusCreated, w.Code)
+
+	// Stored bytes round-trip intact.
+	req2 := httptest.NewRequest(http.MethodGet,
+		"/repository/tf-chunked/v1/providers/ns/prov/1.0.0/linux_amd64.zip", nil)
+	w2 := httptest.NewRecorder()
+	r.ServeHTTP(w2, req2)
+	require.Equal(t, http.StatusOK, w2.Code)
+	assert.Equal(t, body, w2.Body.Bytes())
+}
+
 func TestTerraform_Hosted_ModuleUploadAndDownload(t *testing.T) {
 	r := setup(hostedRepo("tf-hosted"))
 

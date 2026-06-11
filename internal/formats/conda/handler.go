@@ -13,11 +13,11 @@
 package conda
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"path"
 	"strings"
 
@@ -90,14 +90,42 @@ func normPath(p string) string {
 }
 
 func (h *Handler) handleUpload(c *gin.Context, repoName, platform, filename string) {
-	data, err := io.ReadAll(c.Request.Body)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "read body: " + err.Error()})
-		return
+	var (
+		meta *PkgMeta
+		body io.Reader = c.Request.Body
+		size           = c.Request.ContentLength
+	)
+	if strings.HasSuffix(filename, ".tar.bz2") {
+		// Coords come from in-archive metadata, which must be parsed before
+		// StoreArtifact — spool to a temp file so memory stays O(1).
+		tmp, err := os.CreateTemp("", "conda-upload-*")
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "spool upload: " + err.Error()})
+			return
+		}
+		defer func() {
+			_ = tmp.Close()
+			_ = os.Remove(tmp.Name())
+		}()
+		n, err := io.Copy(tmp, c.Request.Body)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "read body: " + err.Error()})
+			return
+		}
+		if _, err := tmp.Seek(0, io.SeekStart); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if m, err := ParseMeta(filename, tmp); err == nil && m != nil {
+			meta = m
+		}
+		if _, err := tmp.Seek(0, io.SeekStart); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		body, size = tmp, n
 	}
-
-	meta, err := ParseMeta(filename, data)
-	if err != nil || meta == nil {
+	if meta == nil {
 		meta = metaFromFilename(filename)
 	}
 
@@ -114,7 +142,7 @@ func (h *Handler) handleUpload(c *gin.Context, repoName, platform, filename stri
 	}
 
 	res, err := base.StoreArtifact(c.Request.Context(), h.deps,
-		repoName, filePath, ct, coords, bytes.NewReader(data), int64(len(data)))
+		repoName, filePath, ct, coords, body, size)
 	if err != nil {
 		c.JSON(base.HTTPStatusForError(err), gin.H{"error": err.Error()})
 		return

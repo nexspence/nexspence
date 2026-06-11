@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/bzip2"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -223,7 +224,7 @@ func TestConda_IndexWithTarBz2File(t *testing.T) {
 func TestParseMeta_TarBz2_InvalidData(t *testing.T) {
 	// Test with invalid bzip2 data → parseTarBz2 returns error → ParseMeta falls back.
 	invalidBz2 := []byte("this-is-not-bzip2")
-	_, err := conda.ParseMeta("numpy-1.24.0-py311_0.tar.bz2", invalidBz2)
+	_, err := conda.ParseMeta("numpy-1.24.0-py311_0.tar.bz2", bytes.NewReader(invalidBz2))
 	// An error from a corrupt bzip2 stream is expected (bzip2: invalid data)
 	assert.Error(t, err, "corrupt bzip2 should return an error")
 }
@@ -232,7 +233,7 @@ func TestParseMeta_TarBz2_EmptyStream(t *testing.T) {
 	// Use the pre-computed empty bzip2 stream.
 	// bzip2.NewReader will return EOF on first Next() call → parseTarBz2
 	// returns (nil, nil) — "not found, fall back to filename".
-	meta, err := conda.ParseMeta("scipy-1.10.0-py3_0.tar.bz2", emptyBz2)
+	meta, err := conda.ParseMeta("scipy-1.10.0-py3_0.tar.bz2", bytes.NewReader(emptyBz2))
 	// Either nil meta (no index found) or an error — both paths are valid.
 	// The important thing is no panic.
 	if err == nil {
@@ -267,7 +268,7 @@ func TestParseMeta_TarBz2_WithIndexJSON(t *testing.T) {
 
 // TestParseMeta_CondaFile verifies .conda files fall back to filename metadata.
 func TestParseMeta_CondaFile(t *testing.T) {
-	meta, err := conda.ParseMeta("numpy-1.24.0-py311_0.conda", []byte("zip-data"))
+	meta, err := conda.ParseMeta("numpy-1.24.0-py311_0.conda", bytes.NewReader([]byte("zip-data")))
 	require.NoError(t, err)
 	require.NotNil(t, meta)
 	assert.Equal(t, "numpy", meta.Name)
@@ -276,7 +277,7 @@ func TestParseMeta_CondaFile(t *testing.T) {
 
 // TestParseMeta_NoExtension covers the metaFromFilename fallback for unusual names.
 func TestParseMeta_Filename_TwoPartName(t *testing.T) {
-	meta, err := conda.ParseMeta("pkg.conda", []byte("zip-data"))
+	meta, err := conda.ParseMeta("pkg.conda", bytes.NewReader([]byte("zip-data")))
 	require.NoError(t, err)
 	require.NotNil(t, meta)
 	assert.Equal(t, "pkg", meta.Name)
@@ -499,10 +500,10 @@ func TestConda_Upload_CondaFile(t *testing.T) {
 //	python3 -c "import bz2,tarfile,io,json; ..."
 //
 // bzip2(tar(info/index.json = {"name":"numpy","version":"1.24.0","build":"py311_0","build_number":0,"subdir":"linux-64","depends":["python >=3.11"]}))
+const realTarBz2Hex = "425a6839314159265359b52eadef00009a5b90cc805007fd93200af777df6a400008083000ba21a9a349a68c93469a32066a001e9a418c864341a0d1a00d000d0c124a119189a00c010001a7a738dccc083080408d3e35c46a8f342810c1ba64c987de91a022fda174c209f6f980910e442d438a4fb2757c63022fe6ab0c2041207126993933d27bd5863b6bc5c583dca78442b592aab8f74728b04412fd11e4d39256d68f39d3065f2154f12c50a3ec505272a24a9b5cc28330ef19bd94625b05a3325cd45c9cea924188bb9229c28485a9756f78"
+
 var realTarBz2, _ = io.ReadAll(
-	bzip2.NewReader(bytes.NewReader(mustDecodeHex(
-		"425a6839314159265359b52eadef00009a5b90cc805007fd93200af777df6a400008083000ba21a9a349a68c93469a32066a001e9a418c864341a0d1a00d000d0c124a119189a00c010001a7a738dccc083080408d3e35c46a8f342810c1ba64c987de91a022fda174c209f6f980910e442d438a4fb2757c63022fe6ab0c2041207126993933d27bd5863b6bc5c583dca78442b592aab8f74728b04412fd11e4d39256d68f39d3065f2154f12c50a3ec505272a24a9b5cc28330ef19bd94625b05a3325cd45c9cea924188bb9229c28485a9756f78",
-	))),
+	bzip2.NewReader(bytes.NewReader(mustDecodeHex(realTarBz2Hex))),
 )
 
 func mustDecodeHex(s string) []byte {
@@ -531,11 +532,9 @@ func hexNibble(c byte) byte {
 func TestParseMeta_RealTarBz2(t *testing.T) {
 	// realTarBz2 is the decompressed tar data (used only to verify the fixture).
 	// For ParseMeta we pass the *compressed* bytes.
-	compressedBz2 := mustDecodeHex(
-		"425a6839314159265359b52eadef00009a5b90cc805007fd93200af777df6a400008083000ba21a9a349a68c93469a32066a001e9a418c864341a0d1a00d000d0c124a119189a00c010001a7a738dccc083080408d3e35c46a8f342810c1ba64c987de91a022fda174c209f6f980910e442d438a4fb2757c63022fe6ab0c2041207126993933d27bd5863b6bc5c583dca78442b592aab8f74728b04412fd11e4d39256d68f39d3065f2154f12c50a3ec505272a24a9b5cc28330ef19bd94625b05a3325cd45c9cea924188bb9229c28485a9756f78",
-	)
+	compressedBz2 := mustDecodeHex(realTarBz2Hex)
 
-	meta, err := conda.ParseMeta("numpy-1.24.0-py311_0.tar.bz2", compressedBz2)
+	meta, err := conda.ParseMeta("numpy-1.24.0-py311_0.tar.bz2", bytes.NewReader(compressedBz2))
 	require.NoError(t, err)
 	require.NotNil(t, meta)
 	assert.Equal(t, "numpy", meta.Name)
@@ -547,6 +546,51 @@ func TestParseMeta_RealTarBz2(t *testing.T) {
 
 	// Also verify raw tar parse.
 	assert.NotEmpty(t, realTarBz2, "decompressed tar should not be empty")
+}
+
+// TestConda_Upload_RealTarBz2_ArchiveCoordsWin uploads the real fixture through
+// the HTTP handler under a filename whose name/version deliberately disagree
+// with the archive's info/index.json, and asserts the stored component carries
+// the ARCHIVE coords — proving ParseMeta's result won over the filename fallback.
+func TestConda_Upload_RealTarBz2_ArchiveCoordsWin(t *testing.T) {
+	compRepo := testutil.NewComponentRepo()
+	d := formats.Deps{
+		Repos:      testutil.NewRepoRepo(hostedRepo("conda-real")),
+		Blobs:      testutil.NewBlobStoreRepo(),
+		Components: compRepo,
+		Assets:     testutil.NewAssetRepo(),
+		BlobStore:  testutil.NewBlobStore(),
+		BaseURL:    "http://localhost:8080",
+	}
+	h := conda.New(d)
+	r := gin.New()
+	r.Any("/repository/:repoName/*path", func(c *gin.Context) { h.ServeHTTP(c) })
+
+	// Archive metadata says numpy 1.24.0; the filename says wrongname 9.9.9.
+	body := mustDecodeHex(realTarBz2Hex)
+	req := httptest.NewRequest(http.MethodPut,
+		"/repository/conda-real/linux-64/wrongname-9.9.9-xyz_0.tar.bz2",
+		bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/x-tar")
+	req.ContentLength = int64(len(body))
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusCreated, w.Code)
+
+	page, err := compRepo.List(context.Background(), "conda-real", 100, 0)
+	require.NoError(t, err)
+	require.Len(t, page.Items, 1)
+	comp := page.Items[0]
+	assert.Equal(t, "numpy", comp.Name, "archive name must win over filename")
+	assert.Equal(t, "1.24.0", comp.Version, "archive version must win over filename")
+	assert.Equal(t, "linux-64", comp.Group)
+
+	// UpdateExtra persisted the archive's build/depends.
+	require.NotNil(t, comp.Extra)
+	assert.Equal(t, "py311_0", comp.Extra["build"])
+	depends, ok := comp.Extra["depends"].([]string)
+	require.True(t, ok, "depends must be []string")
+	assert.Contains(t, depends, "python >=3.11")
 }
 
 // TestParseMeta_TarBz2_WithRawTar tests the error path when data is
@@ -567,7 +611,7 @@ func TestParseMeta_RealTarBz2_RawTarAsInput(t *testing.T) {
 	require.NoError(t, tw.Close())
 
 	// Passing raw tar (not bzip2) to ParseMeta → bzip2 reader fails.
-	_, parseErr := conda.ParseMeta("test-1.0.0-py3_0.tar.bz2", tarBuf.Bytes())
+	_, parseErr := conda.ParseMeta("test-1.0.0-py3_0.tar.bz2", bytes.NewReader(tarBuf.Bytes()))
 	assert.Error(t, parseErr)
 }
 
@@ -576,7 +620,7 @@ func TestParseMeta_EmptyBz2(t *testing.T) {
 	// Feed a known-valid empty bzip2 stream so the reader succeeds but
 	// the tar is empty (EOF on first Next()) → returns (nil, nil).
 	// emptyBz2 pre-computed above.
-	meta, err := conda.ParseMeta("pkg-1.0.0-py3_0.tar.bz2", emptyBz2)
+	meta, err := conda.ParseMeta("pkg-1.0.0-py3_0.tar.bz2", bytes.NewReader(emptyBz2))
 	// The empty bzip2 stream may or may not decompress correctly depending
 	// on the exact magic bytes.  Either (nil, nil) or (nil, err) is fine.
 	_ = meta

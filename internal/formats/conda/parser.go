@@ -2,7 +2,6 @@ package conda
 
 import (
 	"archive/tar"
-	"bytes"
 	"compress/bzip2"
 	"encoding/json"
 	"fmt"
@@ -20,18 +19,18 @@ type PkgMeta struct {
 	Depends     []string
 }
 
-// ParseMeta extracts PkgMeta from .tar.bz2 or .conda bytes.
+// ParseMeta extracts PkgMeta from a .tar.bz2 stream.
 // For .conda (zip+zstd), returns metadata derived from filename only (zstd not in stdlib).
-func ParseMeta(filename string, data []byte) (*PkgMeta, error) {
+func ParseMeta(filename string, r io.Reader) (*PkgMeta, error) {
 	if strings.HasSuffix(filename, ".tar.bz2") {
-		return parseTarBz2(data)
+		return parseTarBz2(r)
 	}
 	// .conda: fall back to filename parsing (zstd requires external dep)
 	return metaFromFilename(filename), nil
 }
 
-func parseTarBz2(data []byte) (*PkgMeta, error) {
-	br := bzip2.NewReader(bytes.NewReader(data))
+func parseTarBz2(r io.Reader) (*PkgMeta, error) {
+	br := bzip2.NewReader(r)
 	tr := tar.NewReader(br)
 	for {
 		hdr, err := tr.Next()

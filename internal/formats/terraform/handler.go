@@ -16,7 +16,6 @@
 package terraform
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -119,14 +118,9 @@ func (h *Handler) handleProviderUpload(c *gin.Context, repoName, p string) {
 	ns, typ, ver, _, osName, arch := parts[0], parts[1], parts[2], parts[3], parts[4], parts[5]
 	filePath := fmt.Sprintf("/v1/providers/%s/%s/%s/%s_%s.zip", ns, typ, ver, osName, arch)
 
-	data, err := io.ReadAll(c.Request.Body)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
 	coords := base.Coords{Group: ns, Name: typ, Version: ver}
 	if _, err := base.StoreArtifact(c.Request.Context(), h.deps, repoName, filePath,
-		"application/zip", coords, bytes.NewReader(data), int64(len(data))); err != nil {
+		"application/zip", coords, c.Request.Body, c.Request.ContentLength); err != nil {
 		c.JSON(base.HTTPStatusForError(err), gin.H{"error": err.Error()})
 		return
 	}
@@ -289,14 +283,9 @@ func (h *Handler) handleModuleUpload(c *gin.Context, repoName, p string) {
 	ns, name, provider, ver := parts[0], parts[1], parts[2], parts[3]
 	filePath := fmt.Sprintf("/v1/modules/%s/%s/%s/%s.tar.gz", ns, name, provider, ver)
 
-	data, err := io.ReadAll(c.Request.Body)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
 	coords := base.Coords{Group: ns + "/" + name, Name: provider, Version: ver}
 	if _, err := base.StoreArtifact(c.Request.Context(), h.deps, repoName, filePath,
-		"application/x-tar", coords, bytes.NewReader(data), int64(len(data))); err != nil {
+		"application/x-tar", coords, c.Request.Body, c.Request.ContentLength); err != nil {
 		c.JSON(base.HTTPStatusForError(err), gin.H{"error": err.Error()})
 		return
 	}
