@@ -1179,6 +1179,7 @@ helm install nexspence deploy/helm/nexspence \
     <thead><tr><th data-i18n="inst.cfg.th.key">Key</th><th data-i18n="inst.cfg.th.default">Default</th><th data-i18n="inst.cfg.th.desc">Description</th></tr></thead>
     <tbody>
       <tr><td><code>auth.jwt_secret</code></td><td>—</td><td><strong style="color:var(--red)">Required.</strong> JWT signing key — min 32 chars</td></tr>
+      <tr><td><code>auth.encryption_key</code></td><td>—</td><td>Optional base64 32-byte key for replication credentials — decouples them from <code>jwt_secret</code>; existing rows re-encrypt automatically at startup. Generate: <code>openssl rand -base64 32</code></td></tr>
       <tr><td><code>bootstrap.admin_password</code></td><td><code>admin123</code></td><td><strong style="color:var(--red)">Change before production.</strong> Auto-created admin password</td></tr>
       <tr><td><code>http.addr</code></td><td><code>:8081</code></td><td>Listen address</td></tr>
       <tr><td><code>http.base_url</code></td><td><code>http://localhost:8081</code></td><td>Public URL used in download links</td></tr>

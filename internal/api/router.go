@@ -161,7 +161,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 	// Start per-policy cron scheduler in background (default: cfg.Cleanup.DefaultSchedule).
 	go cleanupSvc.StartCronScheduler(context.Background(), cfg.Cleanup.DefaultSchedule)
 
-	replSvc := service.NewReplicationService(replRepo, assetRepo, localBlob, cfg.Auth.JWTSecret, log)
+	replSvc := service.NewReplicationService(replRepo, assetRepo, localBlob, cfg.Auth.JWTSecret, cfg.Auth.EncryptionKeyBytes(), log)
 	go replSvc.StartCronScheduler(context.Background())
 
 	promotionSvc, err := service.NewPromotionService(

@@ -21,7 +21,7 @@ import (
 func mountReplication(t *testing.T) *gin.Engine {
 	t.Helper()
 	repRepo := testutil.NewReplicationRepo()
-	svc := service.NewReplicationService(repRepo, testutil.NewAssetRepo(), testutil.NewBlobStore(), "test-secret", cleanupNopLog())
+	svc := service.NewReplicationService(repRepo, testutil.NewAssetRepo(), testutil.NewBlobStore(), "test-secret", nil, cleanupNopLog())
 	h := handlers.NewReplicationHandler(svc)
 
 	r := gin.New()

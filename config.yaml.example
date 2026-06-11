@@ -29,6 +29,10 @@ storage:
 
 auth:
   jwt_secret: "CHANGE_ME_AT_LEAST_32_CHARACTERS_LONG"
+  # Optional dedicated key for encrypting replication credentials (recommended).
+  # Without it the key is derived from jwt_secret, so rotating jwt_secret would
+  # invalidate stored replication passwords. Generate: openssl rand -base64 32
+  # encryption_key: ""
   jwt_expiry_hours: 24
   anonymous_enabled: true
   password_min_length: 8

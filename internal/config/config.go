@@ -96,6 +96,9 @@ type AuthConfig struct {
 	RateLimitEnabled  bool    `mapstructure:"rate_limit_enabled"`
 	RateLimitRPS      float64 `mapstructure:"rate_limit_rps"`
 	RateLimitBurst    float64 `mapstructure:"rate_limit_burst"`
+	// EncryptionKey is an optional dedicated key (base64, 32 bytes) for sealing
+	// replication credentials. Empty = derive from JWTSecret (legacy).
+	EncryptionKey string `mapstructure:"encryption_key"`
 }
 
 // LogConfig configures the structured logger level and output format.
@@ -187,6 +190,19 @@ const DevDefaultJWTSecret = "nexspence-dev-default-secret-change-me-in-productio
 // IsDevDefaultJWTSecret reports whether s is the shipped development default.
 func IsDevDefaultJWTSecret(s string) bool { return s == DevDefaultJWTSecret }
 
+// EncryptionKeyBytes returns the decoded dedicated encryption key, or nil when
+// unset. Load() has already validated the encoding and length.
+func (a AuthConfig) EncryptionKeyBytes() []byte {
+	if a.EncryptionKey == "" {
+		return nil
+	}
+	b, err := base64.StdEncoding.DecodeString(a.EncryptionKey)
+	if err != nil {
+		return nil
+	}
+	return b
+}
+
 // ValidateAuth rejects an empty, placeholder, or too-short JWT signing secret.
 func ValidateAuth(a AuthConfig) error {
 	if a.JWTSecret == "" {
@@ -197,6 +213,12 @@ func ValidateAuth(a AuthConfig) error {
 	}
 	if len(a.JWTSecret) < jwtSecretMinLen {
 		return fmt.Errorf("auth.jwt_secret must be at least %d characters", jwtSecretMinLen)
+	}
+	if a.EncryptionKey != "" {
+		keyBytes, err := base64.StdEncoding.DecodeString(a.EncryptionKey)
+		if err != nil || len(keyBytes) != 32 {
+			return fmt.Errorf("auth.encryption_key must be base64-encoded 32 bytes")
+		}
 	}
 	return nil
 }
@@ -339,6 +361,7 @@ func Load(path string) (*Config, error) {
 	// these keys are always resolved from env vars when no config file is present.
 	v.SetDefault("database.dsn", "")
 	v.SetDefault("auth.jwt_secret", "")
+	v.SetDefault("auth.encryption_key", "")
 	v.SetDefault("storage.s3.endpoint", "")
 	v.SetDefault("storage.s3.bucket", "")
 	v.SetDefault("storage.s3.region", "")

@@ -20,6 +20,7 @@ func newReplSvcExtra(t *testing.T) (*service.ReplicationService, *testutil.Repli
 		testutil.NewAssetRepo(),
 		testutil.NewBlobStore(),
 		"extra-test-secret-32-bytes-long!",
+		nil,
 		nopReplLog(),
 	)
 	return svc, replRepo
@@ -52,6 +53,7 @@ func TestReplicationExtra_DecryptPassword_WrongKey(t *testing.T) {
 		testutil.NewAssetRepo(),
 		testutil.NewBlobStore(),
 		"completely-different-secret-!!!",
+		nil,
 		nopReplLog(),
 	)
 
@@ -322,6 +324,7 @@ func TestReplicationExtra_RunRule_TargetHTTPError(t *testing.T) {
 		testutil.NewAssetRepo(),
 		testutil.NewBlobStore(),
 		"run-err-secret-32-bytes-long!!!",
+		nil,
 		nopReplLog(),
 	)
 	ctx := context.Background()

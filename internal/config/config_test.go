@@ -131,6 +131,28 @@ func TestValidateAuth_Valid_Passes(t *testing.T) {
 	require.NoError(t, ValidateAuth(validAuth()))
 }
 
+func TestValidateAuth_EncryptionKey_Valid_Passes(t *testing.T) {
+	c := validAuth()
+	c.EncryptionKey = base64.StdEncoding.EncodeToString(make([]byte, 32))
+	require.NoError(t, ValidateAuth(c))
+}
+
+func TestValidateAuth_EncryptionKey_WrongLength_Fails(t *testing.T) {
+	c := validAuth()
+	c.EncryptionKey = base64.StdEncoding.EncodeToString(make([]byte, 16))
+	err := ValidateAuth(c)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "auth.encryption_key must be base64-encoded 32 bytes")
+}
+
+func TestValidateAuth_EncryptionKey_NotBase64_Fails(t *testing.T) {
+	c := validAuth()
+	c.EncryptionKey = "%%%not-base64%%%"
+	err := ValidateAuth(c)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "auth.encryption_key must be base64-encoded 32 bytes")
+}
+
 func TestDevDefaultJWTSecret_PassesValidation_ButRecognized(t *testing.T) {
 	require.NoError(t, ValidateAuth(AuthConfig{JWTSecret: DevDefaultJWTSecret}),
 		"dev default must pass ValidateAuth so quick-start boots")

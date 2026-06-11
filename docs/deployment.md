@@ -142,6 +142,7 @@ Five networking options (nginx, Traefik, Cilium ingress, Istio Gateway, Cilium G
 | `storage.s3.endpoint` | — | S3 endpoint URL (e.g. `http://minio:9000`) |
 | `storage.s3.force_path_style` | `true` | Required for MinIO / non-AWS S3 |
 | `auth.jwt_secret` | — | JWT signing key — **change before production** |
+| `auth.encryption_key` | — | Optional base64 32-byte key for replication credentials (decouples them from `jwt_secret`; existing rows are re-encrypted automatically at startup). Generate: `openssl rand -base64 32` |
 | `auth.jwt_expiry_hours` | `24` | JWT token lifetime |
 | `auth.anonymous_enabled` | `true` | Allow unauthenticated read on public repos |
 | `auth.token_max_days` | `180` | Maximum lifetime for user API tokens (`nxs_*`) |

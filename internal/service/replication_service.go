@@ -26,11 +26,12 @@ import (
 
 // ReplicationService pushes artifacts from local repos to remote Nexspence instances.
 type ReplicationService struct {
-	repo      repository.ReplicationRepo
-	assets    repository.AssetRepo
-	blobStore storage.BlobStore
-	jwtSecret string
-	log       logger.Logger
+	repo       repository.ReplicationRepo
+	assets     repository.AssetRepo
+	blobStore  storage.BlobStore
+	primaryKey []byte // seals all new ciphertexts
+	legacyKey  []byte // sha256(jwt_secret) fallback; nil when no dedicated key is set
+	log        logger.Logger
 
 	mu            sync.Mutex
 	cronScheduler *cron.Cron
@@ -43,25 +44,61 @@ func NewReplicationService(
 	assets repository.AssetRepo,
 	blobStore storage.BlobStore,
 	jwtSecret string,
+	encryptionKey []byte, // decoded auth.encryption_key; nil = legacy jwt-derived key
 	log logger.Logger,
 ) *ReplicationService {
-	return &ReplicationService{
+	s := &ReplicationService{
 		repo:      repo,
 		assets:    assets,
 		blobStore: blobStore,
-		jwtSecret: jwtSecret,
 		log:       log,
 		entryIDs:  make(map[string]cron.EntryID),
 	}
+	legacy := deriveKey(jwtSecret)
+	if len(encryptionKey) == 32 {
+		s.primaryKey = encryptionKey
+		s.legacyKey = legacy
+	} else {
+		s.primaryKey = legacy
+	}
+	return s
 }
 
-// EncryptPassword encrypts plain with AES-256-GCM using a key derived from jwtSecret.
+// EncryptPassword encrypts plain with AES-256-GCM under the primary key.
 // Returns base64url(nonce + ciphertext). Returns "" for empty plain.
 func (s *ReplicationService) EncryptPassword(plain string) (string, error) {
 	if plain == "" {
 		return "", nil
 	}
-	key := deriveKey(s.jwtSecret)
+	return sealWithKey(s.primaryKey, plain)
+}
+
+// DecryptPassword decrypts enc, falling back to the legacy jwt-derived key
+// for rows sealed before auth.encryption_key was adopted.
+func (s *ReplicationService) DecryptPassword(enc string) (string, error) {
+	plain, _, err := s.decryptDetect(enc)
+	return plain, err
+}
+
+// decryptDetect reports whether the legacy key was needed (true = the stored
+// row should be re-encrypted under the primary key).
+func (s *ReplicationService) decryptDetect(enc string) (string, bool, error) {
+	if enc == "" {
+		return "", false, nil
+	}
+	plain, err := openWithKey(s.primaryKey, enc)
+	if err == nil {
+		return plain, false, nil
+	}
+	if s.legacyKey != nil {
+		if lp, lerr := openWithKey(s.legacyKey, enc); lerr == nil {
+			return lp, true, nil
+		}
+	}
+	return "", false, err
+}
+
+func sealWithKey(key []byte, plain string) (string, error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return "", err
@@ -78,16 +115,11 @@ func (s *ReplicationService) EncryptPassword(plain string) (string, error) {
 	return base64.URLEncoding.EncodeToString(sealed), nil
 }
 
-// DecryptPassword decrypts enc back to plaintext.
-func (s *ReplicationService) DecryptPassword(enc string) (string, error) {
-	if enc == "" {
-		return "", nil
-	}
+func openWithKey(key []byte, enc string) (string, error) {
 	data, err := base64.URLEncoding.DecodeString(enc)
 	if err != nil {
 		return "", fmt.Errorf("replication: base64 decode: %w", err)
 	}
-	key := deriveKey(s.jwtSecret)
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return "", err
@@ -112,6 +144,48 @@ func deriveKey(secret string) []byte {
 	return sum[:]
 }
 
+// ReEncryptCredentials migrates credentials sealed with the legacy jwt-derived
+// key to the dedicated encryption key. Idempotent: rows already sealed with the
+// primary key are skipped, so concurrent HA replicas and restarts are safe.
+// Returns the number of migrated rules.
+func (s *ReplicationService) ReEncryptCredentials(ctx context.Context) int {
+	rules, err := s.repo.ListRules(ctx)
+	if err != nil {
+		s.log.Error("replication: re-encryption sweep: list rules", "err", err)
+		return 0
+	}
+	migrated := 0
+	for i := range rules {
+		rule := rules[i]
+		if rule.TargetPasswordEnc == "" {
+			continue
+		}
+		plain, usedLegacy, err := s.decryptDetect(rule.TargetPasswordEnc)
+		if err != nil {
+			s.log.Warn("replication: credentials cannot be decrypted with any key — re-enter the password", "rule", rule.Name, "err", err)
+			continue
+		}
+		if !usedLegacy {
+			continue
+		}
+		enc, err := sealWithKey(s.primaryKey, plain)
+		if err != nil {
+			s.log.Error("replication: re-encrypt credentials", "rule", rule.Name, "err", err)
+			continue
+		}
+		rule.TargetPasswordEnc = enc
+		if err := s.repo.UpdateRule(ctx, &rule); err != nil {
+			s.log.Error("replication: persist re-encrypted credentials", "rule", rule.Name, "err", err)
+			continue
+		}
+		migrated++
+	}
+	if migrated > 0 {
+		s.log.Info("replication: re-encrypted credentials under dedicated encryption key", "migrated", migrated, "rules", len(rules))
+	}
+	return migrated
+}
+
 // StartCronScheduler loads all enabled rules and registers cron jobs. Run as a goroutine.
 func (s *ReplicationService) StartCronScheduler(ctx context.Context) {
 	s.mu.Lock()
@@ -122,6 +196,12 @@ func (s *ReplicationService) StartCronScheduler(ctx context.Context) {
 	if err != nil {
 		s.log.Error("replication: failed to load rules for scheduler", "err", err)
 	} else {
+		if s.legacyKey == nil && len(rules) > 0 {
+			s.log.Warn("replication: stored credentials are encrypted with a key derived from auth.jwt_secret; set auth.encryption_key to decouple them (rotating jwt_secret would otherwise invalidate them)")
+		}
+		if s.legacyKey != nil {
+			s.ReEncryptCredentials(ctx)
+		}
 		s.mu.Lock()
 		for _, r := range rules {
 			if r.Enabled {
