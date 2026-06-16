@@ -99,6 +99,8 @@ describe('MonitoringPage (MonitoringView)', () => {
     await waitFor(() =>
       expect(screen.queryByText(/No data yet — collecting samples/)).not.toBeInTheDocument(),
     )
+    expect(screen.getAllByRole('img').length).toBe(3)
+    expect(document.querySelectorAll('svg path').length).toBeGreaterThanOrEqual(3)
   })
 
   it('switches to the Repositories tab and renders rows, toggling sort', async () => {

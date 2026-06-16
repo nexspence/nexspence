@@ -1,10 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Activity, Cpu, Database, Download, HardDrive, RefreshCw, TrendingUp, Upload, Trash2 } from 'lucide-react'
-import {
-  LineChart, Line, AreaChart, Area,
-  XAxis, YAxis, Tooltip, ResponsiveContainer,
-} from 'recharts'
+import { MiniChart } from '@/components/holo'
 import { nexusApi, apiClient } from '@/api/client'
 
 interface MemStats {
@@ -241,9 +238,6 @@ function OverviewTab({ data, isLoading, refetch, dataUpdatedAt }: {
   )
 }
 
-const tickStyle = { fontSize: 10, fill: '#64748b' }
-const tooltipStyle = { contentStyle: { background: '#0d1526', border: '1px solid rgba(255,255,255,0.1)', fontSize: 12 } }
-
 function ChartsTab() {
   const { data: history = [] } = useQuery<DataPoint[]>({
     queryKey: ['metrics-history'],
@@ -276,14 +270,13 @@ function ChartsTab() {
       <div style={S.card}>
         <div style={S.cardTitle}>Requests / sec</div>
         {chartData.length === 0 ? noData : (
-          <ResponsiveContainer width="100%" height={200}>
-            <LineChart data={chartData}>
-              <XAxis dataKey="time" tick={tickStyle} />
-              <YAxis tick={tickStyle} />
-              <Tooltip {...tooltipStyle} />
-              <Line type="monotone" dataKey="reqPerSec" stroke="#3b82f6" dot={false} strokeWidth={2} />
-            </LineChart>
-          </ResponsiveContainer>
+          <MiniChart
+            type="line"
+            color="#3b82f6"
+            ariaLabel="Requests per second"
+            data={chartData.map(d => ({ label: d.time, value: d.reqPerSec }))}
+            valueFormatter={v => v.toFixed(2)}
+          />
         )}
       </div>
 
@@ -291,14 +284,13 @@ function ChartsTab() {
       <div style={S.card}>
         <div style={S.cardTitle}>Error Rate %</div>
         {chartData.length === 0 ? noData : (
-          <ResponsiveContainer width="100%" height={200}>
-            <LineChart data={chartData}>
-              <XAxis dataKey="time" tick={tickStyle} />
-              <YAxis tick={tickStyle} />
-              <Tooltip {...tooltipStyle} />
-              <Line type="monotone" dataKey="errPct" stroke="#f59e0b" dot={false} strokeWidth={2} />
-            </LineChart>
-          </ResponsiveContainer>
+          <MiniChart
+            type="line"
+            color="#f59e0b"
+            ariaLabel="Error rate percent"
+            data={chartData.map(d => ({ label: d.time, value: d.errPct }))}
+            valueFormatter={v => `${v.toFixed(1)}%`}
+          />
         )}
       </div>
 
@@ -306,14 +298,12 @@ function ChartsTab() {
       <div style={S.card}>
         <div style={S.cardTitle}>Storage (bytes)</div>
         {chartData.length === 0 ? noData : (
-          <ResponsiveContainer width="100%" height={200}>
-            <AreaChart data={chartData}>
-              <XAxis dataKey="time" tick={tickStyle} />
-              <YAxis tick={tickStyle} />
-              <Tooltip {...tooltipStyle} />
-              <Area type="monotone" dataKey="bytesStored" stroke="#22c55e" fill="rgba(34,197,94,0.1)" strokeWidth={2} />
-            </AreaChart>
-          </ResponsiveContainer>
+          <MiniChart
+            type="area"
+            color="#22c55e"
+            ariaLabel="Storage bytes"
+            data={chartData.map(d => ({ label: d.time, value: d.bytesStored }))}
+          />
         )}
       </div>
     </div>
