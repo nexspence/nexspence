@@ -64,7 +64,7 @@ services:
 
   # ── Nexspence backend ─────────────────────────────────────────────
   nexspence:
-    image: ghcr.io/nexspence/nexspence:latest
+    image: ghcr.io/nexspence/nexspence:v1.17.0
     restart: unless-stopped
     shm_size: "2gb"
     ulimits:
@@ -182,7 +182,7 @@ services:
   # URL: http://localhost:8079
   website:
     profiles: [website]
-    image: ghcr.io/nexspence/nexspence:latest
+    image: ghcr.io/nexspence/nexspence:v1.17.0
     restart: unless-stopped
     ports:
       - "8079:80"

@@ -95,7 +95,7 @@ services:
       "
 
   nexspence_1: &nexspence_base
-    image: ghcr.io/nexspence/nexspence:latest
+    image: ghcr.io/nexspence/nexspence:v1.17.0
     restart: unless-stopped
     depends_on:
       postgres:
