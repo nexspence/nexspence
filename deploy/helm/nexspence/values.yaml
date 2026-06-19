@@ -30,8 +30,12 @@ podSecurityContext:
 securityContext:
   runAsNonRoot: true
   runAsUser: 1000
-  readOnlyRootFilesystem: false
+  runAsGroup: 1000
+  readOnlyRootFilesystem: true
   allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
 
 # -- Nexspence application configuration
 config:

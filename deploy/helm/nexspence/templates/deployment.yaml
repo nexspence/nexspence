@@ -54,17 +54,29 @@ spec:
             {{- toYaml .Values.readinessProbe | nindent 12 }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
-          {{- if eq .Values.storage.type "local" }}
           volumeMounts:
+            # readOnlyRootFilesystem makes the container fs read-only, so every
+            # path the app / bundled trivy writes to needs a writable mount.
+            - name: tmp
+              mountPath: /tmp
+            - name: cache
+              mountPath: /app/.cache
+            {{- if eq .Values.storage.type "local" }}
             - name: blobs
               mountPath: {{ .Values.storage.local.mountPath }}
-          {{- end }}
-      {{- if eq .Values.storage.type "local" }}
+            {{- end }}
       volumes:
+        # Writable scratch dirs (rootfs is read-only). The trivy cache lives at
+        # /app/.cache (HOME=/app, TRIVY_CACHE_DIR=/app/.cache/trivy in the image).
+        - name: tmp
+          emptyDir: {}
+        - name: cache
+          emptyDir: {}
+        {{- if eq .Values.storage.type "local" }}
         - name: blobs
           persistentVolumeClaim:
             claimName: {{ include "nexspence.fullname" . }}-blobs
-      {{- end }}
+        {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

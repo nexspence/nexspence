@@ -56,6 +56,21 @@ COPY --from=builder /nexspence /app/nexspence
 COPY --from=builder /src/config.yaml.example /app/config.yaml
 COPY --from=frontend-builder /frontend/dist /app/frontend/dist
 
+# Run as a non-root user (uid/gid 1000). Pre-create the dirs the app and the
+# bundled trivy write to (default blob path /app/data/blobs, trivy cache) and
+# hand /app to the unprivileged user. Creating /app/data/blobs in the image is
+# what lets a FRESH named volume mounted there inherit uid-1000 ownership
+# (Docker only copies the image dir's ownership into an empty named volume when
+# the mountpoint dir exists in the image). HOME=/app keeps trivy's fallback cache
+# under a writable path; TRIVY_CACHE_DIR pins it explicitly (correct env var
+# for modern trivy ≥0.x).
+RUN addgroup -g 1000 nexspence && adduser -D -u 1000 -G nexspence nexspence \
+    && mkdir -p /app/data/blobs /app/.cache \
+    && chown -R nexspence:nexspence /app
+ENV HOME=/app
+ENV TRIVY_CACHE_DIR=/app/.cache/trivy
+USER 1000
+
 EXPOSE 8081 5000
 
 ENTRYPOINT ["/app/nexspence"]

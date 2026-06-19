@@ -101,6 +101,15 @@ services:
       args:
         VERSION: ${NEXSPENCE_VERSION:-dev}
     restart: unless-stopped
+    # Run as the unprivileged uid/gid baked into the image, drop all Linux
+    # capabilities, forbid privilege escalation. HA uses S3 (MinIO) for blobs,
+    # so there is no local writable volume to worry about. Inherited by
+    # nexspence_2 via the YAML anchor merge.
+    user: "1000:1000"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     depends_on:
       postgres:
         condition: service_healthy
