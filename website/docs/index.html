@@ -1194,6 +1194,10 @@ helm install nexspence deploy/helm/nexspence \
       <tr><td><code>redis.addr</code></td><td><code>localhost:6379</code></td><td>Redis address</td></tr>
       <tr><td><code>cleanup.default_schedule</code></td><td><code>0 2 * * *</code></td><td>Default cron for cleanup policies</td></tr>
       <tr><td><code>audit.retention_days</code></td><td><code>90</code></td><td>Audit log partition retention</td></tr>
+      <tr><td><code>http.cors_origins</code></td><td><code>[]</code></td><td>Allowed CORS origins; empty = same-origin / wildcard dev default</td></tr>
+      <tr><td><code>http.max_body_mb</code></td><td><code>1024</code></td><td>Max request body in MB; bodies above it get <code>413</code> (artifact/upload routes exempt)</td></tr>
+      <tr><td><code>auth.allow_insecure_defaults</code></td><td><code>false</code></td><td>Allow dev-default secrets; <strong style="color:var(--red)">must be false in production</strong> or the server refuses to start</td></tr>
+      <tr><td><code>auth.rate_limit_enabled</code></td><td><code>false</code></td><td>Enable per-IP / per-user rate limiting</td></tr>
     </tbody>
   </table>
 </template>
@@ -1430,6 +1434,78 @@ server {
   </div>
 </template>
 
+<template id="tpl-security">
+  <div class="doc-section-title" data-i18n="sec.title">Security &amp; Hardening</div>
+  <div class="doc-section-sub" data-i18n="sec.sub">Nexspence ships secure by default. The server refuses to start with shipped dev secrets, blocks server-side request forgery, revokes JWTs on account changes, and runs as a non-root, capability-dropped container.</div>
+
+  <div class="inst-sep" data-i18n="sec.failclosed.sep">Fail-Closed Defaults</div>
+  <div class="alert-info" style="background:rgba(239,68,68,.06);border-color:rgba(239,68,68,.2)" data-i18n="sec.failclosed.info"><strong style="color:var(--red)">The server will not start</strong> if <code>auth.jwt_secret</code> is the shipped dev default, or if <code>bootstrap.admin_password</code> is still <code>admin123</code>. Production must set a real 32+ character <code>jwt_secret</code> and a strong admin password. To boot anyway for local development only, set <code>auth.allow_insecure_defaults: true</code>.</div>
+  <p style="font-size:.8rem;color:var(--dim);margin-bottom:14px;line-height:1.6" data-i18n="sec.failclosed.dev">The dev Docker Compose stack sets <code>NEXSPENCE_AUTH_ALLOW_INSECURE_DEFAULTS=true</code> so the quick-start still boots out of the box — never use that override in production.</p>
+
+  <div class="inst-sep" data-i18n="sec.secrets.sep">Secrets via Environment</div>
+  <p style="font-size:.8rem;color:var(--dim);margin-bottom:10px;line-height:1.6" data-i18n="sec.secrets.desc">Never commit real secrets to <code>config.yaml</code>. Inject them through environment variables instead — they override the matching config keys at startup.</p>
+  <div class="cb"><div class="cb-bar"><span>shell — production secrets</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body">export NEXSPENCE_AUTH_JWT_SECRET="$(openssl rand -hex 32)"
+export NEXSPENCE_LDAP_BIND_PASSWORD="..."
+export NEXSPENCE_OIDC_CLIENT_SECRET="..."</div></div>
+
+  <div class="inst-sep" data-i18n="sec.jwt.sep">JWT Revocation</div>
+  <div class="alert-info" data-i18n="sec.jwt.info">Each user carries a <code>tokens_valid_after</code> cutoff. It is bumped whenever the user is disabled, changes or resets their password, or has their roles changed. Any JWT issued before the cutoff is rejected immediately — no waiting for the 24-hour expiry window.</div>
+
+  <div class="inst-sep" data-i18n="sec.ssrf.sep">SSRF Protection</div>
+  <div class="alert-info" data-i18n="sec.ssrf.info">Outbound requests to user-configured URLs — webhooks, proxy upstreams, and replication targets — are blocked from reaching internal addresses: loopback, RFC 1918 private ranges, and link-local / cloud metadata (<code>169.254.169.254</code>). This prevents a misconfigured or malicious URL from probing your internal network.</div>
+
+  <div class="inst-sep" data-i18n="sec.http.sep">HTTP Hardening</div>
+  <table class="doc-table">
+    <thead><tr><th data-i18n="sec.http.th.control">Control</th><th data-i18n="sec.http.th.detail">Detail</th></tr></thead>
+    <tbody>
+      <tr><td data-i18n="sec.http.headers.label">Security headers</td><td data-i18n="sec.http.headers.desc">Every response carries <code>X-Content-Type-Options: nosniff</code>, <code>X-Frame-Options: DENY</code>, and <code>Referrer-Policy: no-referrer</code>.</td></tr>
+      <tr><td data-i18n="sec.http.cors.label">CORS allow-list</td><td data-i18n="sec.http.cors.desc">Restrict cross-origin callers via <code>http.cors_origins</code>. An empty list is the wildcard dev default.</td></tr>
+      <tr><td data-i18n="sec.http.body.label">Body size limit</td><td data-i18n="sec.http.body.desc"><code>http.max_body_mb</code> rejects oversized bodies with <code>413</code>. Artifact and upload routes are exempt so large packages still flow.</td></tr>
+      <tr><td data-i18n="sec.http.tls.label">Timeouts &amp; TLS</td><td data-i18n="sec.http.tls.desc"><code>ReadHeaderTimeout</code> guards against slow-loris; when TLS is enabled the minimum version is TLS 1.2.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="inst-sep" data-i18n="sec.rate.sep">Rate Limiting</div>
+  <p style="font-size:.8rem;color:var(--dim);margin-bottom:14px;line-height:1.6" data-i18n="sec.rate.desc">Opt-in per-IP / per-user throttling. Disabled by default — enable it with <code>auth.rate_limit_enabled: true</code> and tune <code>rate_limit_rps</code> / <code>rate_limit_burst</code>.</p>
+
+  <div class="inst-sep" data-i18n="sec.container.sep">Container Hardening</div>
+  <div class="alert-info" data-i18n="sec.container.info">The official image runs as non-root <strong>uid 1000</strong> with dropped Linux capabilities. The Helm chart sets <code>readOnlyRootFilesystem</code>, drops all capabilities, and sets <code>allowPrivilegeEscalation: false</code>.</div>
+
+  <div class="inst-sep" data-i18n="sec.supply.sep">Supply Chain</div>
+  <table class="doc-table">
+    <thead><tr><th data-i18n="sec.supply.th.area">Area</th><th data-i18n="sec.supply.th.detail">Detail</th></tr></thead>
+    <tbody>
+      <tr><td data-i18n="sec.supply.vuln.label">Dependency scanning</td><td data-i18n="sec.supply.vuln.desc">CI runs <code>govulncheck</code> as a blocking gate; Dependabot keeps dependencies current.</td></tr>
+      <tr><td data-i18n="sec.supply.release.label">Release artifacts</td><td data-i18n="sec.supply.release.desc">Releases publish an SBOM and build provenance, and the image is scanned with Trivy.</td></tr>
+      <tr><td data-i18n="sec.supply.actions.label">Pinned Actions</td><td data-i18n="sec.supply.actions.desc">All GitHub Actions are pinned to commit SHAs to prevent tag-hijack supply-chain attacks.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="inst-sep" data-i18n="sec.selfservice.sep">Self-Service Password Change</div>
+  <p style="font-size:.8rem;color:var(--dim);margin-bottom:10px;line-height:1.6" data-i18n="sec.selfservice.desc">Any non-admin user can rotate their own password without an administrator. Changing the password bumps the JWT cutoff, so existing sessions are invalidated.</p>
+  <div class="cb"><div class="cb-bar"><span>curl — change own password</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body">curl -X PUT http://localhost:8081/api/v1/me/change-password \
+  -H "Authorization: Bearer $JWT" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "current_password": "old-pass",
+    "new_password": "a-much-stronger-pass"
+  }'</div></div>
+</template>
+
+<template id="tpl-upgrade">
+  <div class="doc-section-title" data-i18n="upg.title">Upgrading</div>
+  <div class="doc-section-sub" data-i18n="upg.sub">Notes for moving an existing deployment to a newer Nexspence release.</div>
+
+  <div class="inst-sep" data-i18n="upg.v1180.sep">Upgrading to v1.18.0 — Blob Ownership Fix</div>
+  <div class="alert-info" style="background:rgba(245,158,11,.06);border-color:rgba(245,158,11,.2)" data-i18n="upg.v1180.info"><strong style="color:var(--amber)">One-time step for existing single-node Docker Compose deployments.</strong> The v1.18.0 image now runs as non-root <code>uid 1000</code>, but blob volumes created by older root-running images are owned by <code>root</code>. Fix ownership once before starting the new image, otherwise Nexspence cannot write to its blob store.</div>
+  <div class="cb"><div class="cb-bar"><span>shell — run once before upgrading</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body">docker compose run --rm --user 0 nexspence \
+  chown -R 1000:1000 /app/data/blobs</div></div>
+  <p style="font-size:.8rem;color:var(--dim);margin-top:14px;line-height:1.6" data-i18n="upg.v1180.note">Fresh installs and S3 blob stores are unaffected. After the <code>chown</code>, start the stack normally with <code>docker compose up -d</code>.</p>
+</template>
+
 <script>
 'use strict';
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
@@ -1595,6 +1671,41 @@ const TRANSLATIONS={
     'repl.s2.title':'Test the connection','repl.s2.desc':'Click <strong>Test Connection</strong> on the rule card.',
     'repl.s3.title':'Monitor replication history','repl.s3.desc':'The history table shows past runs. Click <strong>Run Now</strong> to trigger an immediate sync.',
     'repl.diff.note':'<strong>Differential sync:</strong> Only missing or changed artifacts are pushed. Credentials are stored AES-256-GCM encrypted.',
+    'sb.security':'Security & Hardening','sb.upgrade':'Upgrading',
+    'crumb.security':'security & hardening','crumb.upgrade':'upgrading',
+    'sec.title':'Security &amp; Hardening',
+    'sec.sub':'Nexspence ships secure by default. The server refuses to start with shipped dev secrets, blocks server-side request forgery, revokes JWTs on account changes, and runs as a non-root, capability-dropped container.',
+    'sec.failclosed.sep':'Fail-Closed Defaults',
+    'sec.failclosed.info':'<strong style="color:var(--red)">The server will not start</strong> if <code>auth.jwt_secret</code> is the shipped dev default, or if <code>bootstrap.admin_password</code> is still <code>admin123</code>. Production must set a real 32+ character <code>jwt_secret</code> and a strong admin password. To boot anyway for local development only, set <code>auth.allow_insecure_defaults: true</code>.',
+    'sec.failclosed.dev':'The dev Docker Compose stack sets <code>NEXSPENCE_AUTH_ALLOW_INSECURE_DEFAULTS=true</code> so the quick-start still boots out of the box — never use that override in production.',
+    'sec.secrets.sep':'Secrets via Environment',
+    'sec.secrets.desc':'Never commit real secrets to <code>config.yaml</code>. Inject them through environment variables instead — they override the matching config keys at startup.',
+    'sec.jwt.sep':'JWT Revocation',
+    'sec.jwt.info':'Each user carries a <code>tokens_valid_after</code> cutoff. It is bumped whenever the user is disabled, changes or resets their password, or has their roles changed. Any JWT issued before the cutoff is rejected immediately — no waiting for the 24-hour expiry window.',
+    'sec.ssrf.sep':'SSRF Protection',
+    'sec.ssrf.info':'Outbound requests to user-configured URLs — webhooks, proxy upstreams, and replication targets — are blocked from reaching internal addresses: loopback, RFC 1918 private ranges, and link-local / cloud metadata (<code>169.254.169.254</code>). This prevents a misconfigured or malicious URL from probing your internal network.',
+    'sec.http.sep':'HTTP Hardening',
+    'sec.http.th.control':'Control','sec.http.th.detail':'Detail',
+    'sec.http.headers.label':'Security headers','sec.http.headers.desc':'Every response carries <code>X-Content-Type-Options: nosniff</code>, <code>X-Frame-Options: DENY</code>, and <code>Referrer-Policy: no-referrer</code>.',
+    'sec.http.cors.label':'CORS allow-list','sec.http.cors.desc':'Restrict cross-origin callers via <code>http.cors_origins</code>. An empty list is the wildcard dev default.',
+    'sec.http.body.label':'Body size limit','sec.http.body.desc':'<code>http.max_body_mb</code> rejects oversized bodies with <code>413</code>. Artifact and upload routes are exempt so large packages still flow.',
+    'sec.http.tls.label':'Timeouts & TLS','sec.http.tls.desc':'<code>ReadHeaderTimeout</code> guards against slow-loris; when TLS is enabled the minimum version is TLS 1.2.',
+    'sec.rate.sep':'Rate Limiting',
+    'sec.rate.desc':'Opt-in per-IP / per-user throttling. Disabled by default — enable it with <code>auth.rate_limit_enabled: true</code> and tune <code>rate_limit_rps</code> / <code>rate_limit_burst</code>.',
+    'sec.container.sep':'Container Hardening',
+    'sec.container.info':'The official image runs as non-root <strong>uid 1000</strong> with dropped Linux capabilities. The Helm chart sets <code>readOnlyRootFilesystem</code>, drops all capabilities, and sets <code>allowPrivilegeEscalation: false</code>.',
+    'sec.supply.sep':'Supply Chain',
+    'sec.supply.th.area':'Area','sec.supply.th.detail':'Detail',
+    'sec.supply.vuln.label':'Dependency scanning','sec.supply.vuln.desc':'CI runs <code>govulncheck</code> as a blocking gate; Dependabot keeps dependencies current.',
+    'sec.supply.release.label':'Release artifacts','sec.supply.release.desc':'Releases publish an SBOM and build provenance, and the image is scanned with Trivy.',
+    'sec.supply.actions.label':'Pinned Actions','sec.supply.actions.desc':'All GitHub Actions are pinned to commit SHAs to prevent tag-hijack supply-chain attacks.',
+    'sec.selfservice.sep':'Self-Service Password Change',
+    'sec.selfservice.desc':'Any non-admin user can rotate their own password without an administrator. Changing the password bumps the JWT cutoff, so existing sessions are invalidated.',
+    'upg.title':'Upgrading',
+    'upg.sub':'Notes for moving an existing deployment to a newer Nexspence release.',
+    'upg.v1180.sep':'Upgrading to v1.18.0 — Blob Ownership Fix',
+    'upg.v1180.info':'<strong style="color:var(--amber)">One-time step for existing single-node Docker Compose deployments.</strong> The v1.18.0 image now runs as non-root <code>uid 1000</code>, but blob volumes created by older root-running images are owned by <code>root</code>. Fix ownership once before starting the new image, otherwise Nexspence cannot write to its blob store.',
+    'upg.v1180.note':'Fresh installs and S3 blob stores are unaffected. After the <code>chown</code>, start the stack normally with <code>docker compose up -d</code>.',
     'tf.title':'Terraform Provider',
     'tf.sub':'Manage Nexspence as code with the official Terraform provider — repositories, blob stores, users, roles, content selectors, and privileges, all version-controlled and reproducible. Published on the <a href="https://registry.terraform.io/providers/nexspence/nexspence" target="_blank" rel="noopener" style="color:var(--blue)">Terraform Registry</a> as <code>nexspence/nexspence</code>.',
     'tf.qs.sep':'Quick Start',
@@ -1862,6 +1973,41 @@ const TRANSLATIONS={
     'repl.s2.title':'Проверьте соединение','repl.s2.desc':'Нажмите <strong>Test Connection</strong> на карточке правила.',
     'repl.s3.title':'Следите за историей','repl.s3.desc':'Таблица истории показывает прошлые запуски. Нажмите <strong>Run Now</strong> для немедленной синхронизации.',
     'repl.diff.note':'<strong>Дифференциальная синхронизация:</strong> Передаются только отсутствующие или изменённые артефакты. Учётные данные хранятся в шифровании AES-256-GCM.',
+    'sb.security':'Безопасность и харденинг','sb.upgrade':'Обновление',
+    'crumb.security':'безопасность','crumb.upgrade':'обновление',
+    'sec.title':'Безопасность и харденинг',
+    'sec.sub':'Nexspence безопасен по умолчанию. Сервер отказывается стартовать с поставляемыми тестовыми секретами, блокирует SSRF, отзывает JWT при изменениях учётной записи и работает в контейнере без root и со сброшенными привилегиями.',
+    'sec.failclosed.sep':'Безопасные значения по умолчанию (fail-closed)',
+    'sec.failclosed.info':'<strong style="color:var(--red)">Сервер не запустится</strong>, если <code>auth.jwt_secret</code> остался поставляемым тестовым значением или <code>bootstrap.admin_password</code> по-прежнему <code>admin123</code>. В продакшене необходимо задать настоящий <code>jwt_secret</code> длиной не менее 32 символов и надёжный пароль администратора. Чтобы всё же запуститься (только для локальной разработки), установите <code>auth.allow_insecure_defaults: true</code>.',
+    'sec.failclosed.dev':'Dev-стек Docker Compose задаёт <code>NEXSPENCE_AUTH_ALLOW_INSECURE_DEFAULTS=true</code>, чтобы быстрый старт работал «из коробки» — никогда не используйте этот обход в продакшене.',
+    'sec.secrets.sep':'Секреты через переменные окружения',
+    'sec.secrets.desc':'Никогда не храните настоящие секреты в <code>config.yaml</code>. Передавайте их через переменные окружения — они переопределяют соответствующие ключи конфигурации при старте.',
+    'sec.jwt.sep':'Отзыв JWT',
+    'sec.jwt.info':'У каждого пользователя есть отметка <code>tokens_valid_after</code>. Она обновляется при отключении пользователя, смене или сбросе пароля, а также при изменении ролей. Любой JWT, выданный до этой отметки, отклоняется немедленно — не нужно ждать истечения 24-часового срока.',
+    'sec.ssrf.sep':'Защита от SSRF',
+    'sec.ssrf.info':'Исходящие запросы к заданным пользователем URL — вебхуки, upstream-источники прокси и цели репликации — блокируются от обращения к внутренним адресам: loopback, частным диапазонам RFC 1918 и link-local / облачным метаданным (<code>169.254.169.254</code>). Это не даёт ошибочному или вредоносному URL сканировать вашу внутреннюю сеть.',
+    'sec.http.sep':'Харденинг HTTP',
+    'sec.http.th.control':'Механизм','sec.http.th.detail':'Описание',
+    'sec.http.headers.label':'Заголовки безопасности','sec.http.headers.desc':'Каждый ответ содержит <code>X-Content-Type-Options: nosniff</code>, <code>X-Frame-Options: DENY</code> и <code>Referrer-Policy: no-referrer</code>.',
+    'sec.http.cors.label':'Список разрешённых CORS','sec.http.cors.desc':'Ограничьте сторонние источники через <code>http.cors_origins</code>. Пустой список — это dev-значение по умолчанию (wildcard).',
+    'sec.http.body.label':'Ограничение размера тела','sec.http.body.desc':'<code>http.max_body_mb</code> отклоняет слишком большие тела с кодом <code>413</code>. Маршруты артефактов и загрузок исключены, чтобы большие пакеты проходили.',
+    'sec.http.tls.label':'Тайм-ауты и TLS','sec.http.tls.desc':'<code>ReadHeaderTimeout</code> защищает от slow-loris; при включённом TLS минимальная версия — TLS 1.2.',
+    'sec.rate.sep':'Ограничение частоты запросов',
+    'sec.rate.desc':'Опциональное ограничение по IP / пользователю. Отключено по умолчанию — включите через <code>auth.rate_limit_enabled: true</code> и настройте <code>rate_limit_rps</code> / <code>rate_limit_burst</code>.',
+    'sec.container.sep':'Харденинг контейнера',
+    'sec.container.info':'Официальный образ работает без root, под <strong>uid 1000</strong>, со сброшенными Linux-привилегиями. Helm-чарт задаёт <code>readOnlyRootFilesystem</code>, сбрасывает все capabilities и устанавливает <code>allowPrivilegeEscalation: false</code>.',
+    'sec.supply.sep':'Цепочка поставок',
+    'sec.supply.th.area':'Область','sec.supply.th.detail':'Описание',
+    'sec.supply.vuln.label':'Сканирование зависимостей','sec.supply.vuln.desc':'CI запускает <code>govulncheck</code> как блокирующий шаг; Dependabot поддерживает зависимости в актуальном состоянии.',
+    'sec.supply.release.label':'Артефакты релиза','sec.supply.release.desc':'Релизы публикуют SBOM и provenance сборки, а образ сканируется через Trivy.',
+    'sec.supply.actions.label':'Закреплённые Actions','sec.supply.actions.desc':'Все GitHub Actions закреплены по SHA коммитов для защиты от атак на цепочку поставок через перехват тегов.',
+    'sec.selfservice.sep':'Самостоятельная смена пароля',
+    'sec.selfservice.desc':'Любой пользователь без прав администратора может сменить свой пароль без участия администратора. Смена пароля обновляет отметку JWT, поэтому существующие сессии становятся недействительными.',
+    'upg.title':'Обновление',
+    'upg.sub':'Заметки по переходу существующего развёртывания на новую версию Nexspence.',
+    'upg.v1180.sep':'Обновление до v1.18.0 — исправление владельца blob-хранилища',
+    'upg.v1180.info':'<strong style="color:var(--amber)">Однократный шаг для существующих одноузловых развёртываний на Docker Compose.</strong> Образ v1.18.0 теперь работает без root, под <code>uid 1000</code>, но тома blob-хранилища, созданные старыми образами под root, принадлежат пользователю <code>root</code>. Однократно исправьте владельца перед запуском нового образа, иначе Nexspence не сможет писать в blob-хранилище.',
+    'upg.v1180.note':'Новые установки и S3-хранилища это не затрагивает. После <code>chown</code> запустите стек как обычно: <code>docker compose up -d</code>.',
     'tf.title':'Провайдер Terraform',
     'tf.sub':'Управляйте Nexspence как кодом с помощью официального провайдера Terraform — репозитории, blob stores, пользователи, роли, content selectors и привилегии, всё под контролем версий и воспроизводимо. Опубликован в <a href="https://registry.terraform.io/providers/nexspence/nexspence" target="_blank" rel="noopener" style="color:var(--blue)">Terraform Registry</a> как <code>nexspence/nexspence</code>.',
     'tf.qs.sep':'Быстрый старт',
@@ -1987,6 +2133,7 @@ const SECTIONS=[
   {key:'quickstart',  templateId:'tpl-quickstart'},
   {key:'install',         templateId:'tpl-install'},
   {key:'native-install',  templateId:'tpl-native-install'},
+  {key:'upgrade',         templateId:'tpl-upgrade'},
   {key:'repositories',    templateId:'tpl-repositories'},
   {key:'formats-guide',templateId:'tpl-formats-guide'},
   {key:'browse-search',templateId:'tpl-browse-search'},
@@ -2003,6 +2150,7 @@ const SECTIONS=[
   {key:'tf-resources', templateId:'tpl-tf-resources'},
   {key:'tf-data',      templateId:'tpl-tf-data'},
   {key:'tf-examples',  templateId:'tpl-tf-examples'},
+  {key:'security',    templateId:'tpl-security'},
   {key:'formats',     templateId:'tpl-formats'},
   {key:'api',         templateId:'tpl-api'},
   {key:'changelog',   templateId:null},
@@ -2014,12 +2162,15 @@ let FEATURE_BADGE={
   'replication':'v1.3.0',
   'promotion':'v1.8.1',
   'monitoring':'v1.9.0',
+  'security':'v1.18.0',
+  'upgrade':'v1.18.0',
 };
 const SIDEBAR_GROUPS=[
   {id:'getting-started',items:[
     {key:'quickstart',  icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>'},
     {key:'install',         icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>'},
     {key:'native-install',  icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>'},
+    {key:'upgrade',         icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 19V5"/><polyline points="5 12 12 5 19 12"/></svg>'},
   ]},
   {id:'using',items:[
     {key:'repositories',icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>'},
@@ -2046,6 +2197,7 @@ const SIDEBAR_GROUPS=[
     {key:'tf-examples',  icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>'},
   ]},
   {id:'reference',items:[
+    {key:'security',    icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>'},
     {key:'formats',     icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>'},
     {key:'api',         icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>'},
   ]},

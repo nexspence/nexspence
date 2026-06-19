@@ -710,6 +710,18 @@ resource <span style="color:#7dd3fc">"nexspence_repository"</span> <span style="
           <li>90-day retention via monthly partition rotation</li>
         </ul>
       </div>
+      <div class="card rev-l" style="padding:24px">
+        <div style="font-size:.9rem;font-weight:700;margin-bottom:8px">Hardened by default</div>
+        <div style="font-size:.8rem;color:var(--dim);margin-bottom:14px;line-height:1.6">Secure out of the box — no hardening checklist required before production.</div>
+        <ul class="cl">
+          <li>Non-root container (uid 1000) with dropped Linux capabilities</li>
+          <li>SSRF-protected outbound fetches — internal addresses blocked</li>
+          <li>JWT revocation on disable, password change, or role change</li>
+          <li>Fail-closed on insecure defaults — refuses to start with dev secrets</li>
+          <li>Enforced request-body size limits</li>
+          <li>SBOM + Trivy image vulnerability scanning on every release</li>
+        </ul>
+      </div>
     </div>
   </div>
 </section>
