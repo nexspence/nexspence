@@ -11,6 +11,7 @@ data:
   NEXSPENCE_LOG_LEVEL: {{ .Values.config.logLevel | quote }}
   NEXSPENCE_LOG_FORMAT: {{ .Values.config.logFormat | quote }}
   NEXSPENCE_AUTH_JWT_EXPIRY_HOURS: {{ .Values.config.jwtExpiryHours | quote }}
+  NEXSPENCE_AUTH_ALLOW_INSECURE_DEFAULTS: {{ .Values.config.allowInsecureDefaults | quote }}
   NEXSPENCE_BOOTSTRAP_ADMIN_USERNAME: {{ .Values.config.adminUsername | quote }}
   NEXSPENCE_BOOTSTRAP_ADMIN_EMAIL: {{ .Values.config.adminEmail | quote }}
   NEXSPENCE_BOOTSTRAP_ADMIN_FIRST_NAME: {{ .Values.config.adminFirstName | quote }}

@@ -30,8 +30,12 @@ podSecurityContext:
 securityContext:
   runAsNonRoot: true
   runAsUser: 1000
-  readOnlyRootFilesystem: false
+  runAsGroup: 1000
+  readOnlyRootFilesystem: true
   allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
 
 # -- Nexspence application configuration
 config:
@@ -42,6 +46,10 @@ config:
   httpListen: ":8081"
   # -- JWT secret — development default: server boots but WARNS; override with a unique secret (min 32 chars) for production
   jwtSecret: "nexspence-dev-default-secret-change-me-in-production"
+  # -- Permit the shipped default JWT secret / admin password ("admin123") at startup.
+  # Defaults to true so the chart's quick-start boots out of the box; set to false in
+  # production once you have set a unique jwtSecret and adminPassword.
+  allowInsecureDefaults: true
   jwtExpiryHours: 8
   # -- Bootstrap admin credentials
   adminUsername: "admin"

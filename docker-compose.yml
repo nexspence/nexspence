@@ -64,8 +64,17 @@ services:
 
   # ── Nexspence backend ─────────────────────────────────────────────
   nexspence:
-    image: ghcr.io/nexspence/nexspence:v1.17.0
+    image: ghcr.io/nexspence/nexspence:v1.18.0
     restart: unless-stopped
+    # Run as the unprivileged uid/gid baked into the image, drop all Linux
+    # capabilities, and forbid privilege escalation. The blob volume is mounted
+    # at /app/data/blobs (a dir the image creates owned by 1000) so a fresh
+    # named volume inherits that ownership and the non-root process can write.
+    user: "1000:1000"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     shm_size: "2gb"
     ulimits:
       nofile:
@@ -82,10 +91,15 @@ services:
     environment:
       NEXSPENCE_DATABASE_DSN: "postgres://nexspence:nexspence@postgres:5432/nexspence?sslmode=disable"
       NEXSPENCE_AUTH_JWT_SECRET: "nexspence-dev-default-secret-change-me-in-production"  # development default — server boots but WARNS; override for production
+      NEXSPENCE_AUTH_ALLOW_INSECURE_DEFAULTS: "true"  # dev quick-start: permit shipped default secrets; production must leave this false
       NEXSPENCE_HTTP_ADDR: ":8081"
       NEXSPENCE_HTTP_BASE_URL: "http://localhost:8081"
       NEXSPENCE_STORAGE_DEFAULT_TYPE: "local"
-      NEXSPENCE_STORAGE_LOCAL_BASE_PATH: "/data/blobs"
+      # Blobs are stored at the volume root: base_path=/app/data/blobs equals
+      # the volume mountpoint, so LocalBlobStore writes <shard>/<key> directly
+      # under the volume root — matching the pre-1.x on-disk layout, so an
+      # existing nexspence_blobs volume's data lines up after upgrade.
+      NEXSPENCE_STORAGE_LOCAL_BASE_PATH: "/app/data/blobs"
       NEXSPENCE_LOG_LEVEL: "info"
       NEXSPENCE_LOG_FORMAT: "json"
       # ── OIDC (Keycloak dev IdP, active when OIDC_ENABLED=true) ──────
@@ -112,7 +126,13 @@ services:
       - "8081:8081"
       - "5001:5000"   # Docker registry HTTP port
     volumes:
-      - nexspence_blobs:/data/blobs
+      # Mounted at /app/data/blobs (== base_path) so blobs land at the volume
+      # root, matching pre-1.x layout. NOTE: a volume created by an older
+      # root-running image is root-owned; after upgrading to the non-root image,
+      # run once:
+      #   docker compose run --rm --user 0 nexspence chown -R 1000:1000 /app/data/blobs
+      # (or recreate the volume) so the non-root process can write to it.
+      - nexspence_blobs:/app/data/blobs
       - ${CONFIG_FILE:-./config.yaml}:/app/config.yaml:ro
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8081/service/rest/v1/status/check"]
@@ -182,7 +202,7 @@ services:
   # URL: http://localhost:8079
   website:
     profiles: [website]
-    image: ghcr.io/nexspence/nexspence:v1.17.0
+    image: ghcr.io/nexspence/nexspence:v1.18.0
     restart: unless-stopped
     ports:
       - "8079:80"

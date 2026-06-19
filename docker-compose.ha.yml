@@ -95,8 +95,17 @@ services:
       "
 
   nexspence_1: &nexspence_base
-    image: ghcr.io/nexspence/nexspence:v1.17.0
+    image: ghcr.io/nexspence/nexspence:v1.18.0
     restart: unless-stopped
+    # Run as the unprivileged uid/gid baked into the image, drop all Linux
+    # capabilities, forbid privilege escalation. HA uses S3 (MinIO) for blobs,
+    # so there is no local writable volume to worry about. Inherited by
+    # nexspence_2 via the YAML anchor merge.
+    user: "1000:1000"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     depends_on:
       postgres:
         condition: service_healthy
@@ -120,6 +129,7 @@ services:
       NEXSPENCE_REDIS_ENABLED: "true"
       NEXSPENCE_REDIS_ADDR: "redis:6379"
       NEXSPENCE_AUTH_JWT_SECRET: "${NEXSPENCE_JWT_SECRET:-nexspence-dev-default-secret-change-me-in-production}"  # development default — server boots but WARNS; set NEXSPENCE_JWT_SECRET to a unique secret for production
+      NEXSPENCE_AUTH_ALLOW_INSECURE_DEFAULTS: "true"  # dev quick-start: permit shipped default secrets; production must leave this false
       # ── OIDC (Keycloak dev IdP, active when OIDC_ENABLED=true) ──────
       # In HA mode the load balancer (nginx :8080) fronts both nodes,
       # so redirect_url and frontend_base_url point to nginx, not to a node.
