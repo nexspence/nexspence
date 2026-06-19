@@ -24,7 +24,7 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
 
 # ── Frontend build stage ──────────────────────────────────────
 # Static assets are arch-independent — always build on native amd64, skip QEMU
-FROM --platform=$BUILDPLATFORM node:24-alpine AS frontend-builder
+FROM --platform=$BUILDPLATFORM node:26-alpine AS frontend-builder
 
 WORKDIR /frontend
 COPY frontend/package*.json ./
@@ -33,7 +33,7 @@ COPY frontend/ .
 RUN npm run build
 
 # ── Final image ───────────────────────────────────────────────
-FROM alpine:3.21
+FROM alpine:3.24
 
 RUN apk add --no-cache ca-certificates tzdata wget
 
