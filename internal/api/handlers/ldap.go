@@ -42,6 +42,36 @@ func (h *LDAPHandler) GetConfig(c *gin.Context) {
 	c.JSON(http.StatusOK, safe)
 }
 
+// NexusList handles GET /service/rest/v1/security/ldap — Nexus-compat list of
+// LDAP server configs (a JSON array). Nexspence has a single LDAP config; when
+// disabled an empty array is returned. The bind password is never included.
+func (h *LDAPHandler) NexusList(c *gin.Context) {
+	if !h.cfg.Enabled {
+		c.JSON(http.StatusOK, []any{})
+		return
+	}
+	protocol := "ldap"
+	if h.cfg.UseTLS {
+		protocol = "ldaps"
+	}
+	elem := map[string]any{
+		"id":                "ldap",
+		"name":              h.cfg.Host,
+		"protocol":          protocol,
+		"host":              h.cfg.Host,
+		"port":              h.cfg.Port,
+		"searchBase":        h.cfg.SearchBase,
+		"userBaseDn":        "",
+		"userSubtree":       true,
+		"userObjectClass":   "",
+		"userLdapFilter":    h.cfg.SearchFilter,
+		"groupBaseDn":       h.cfg.GroupBase,
+		"groupObjectClass":  "",
+		"ldapGroupsAsRoles": true,
+	}
+	c.JSON(http.StatusOK, []map[string]any{elem})
+}
+
 // TestConnection handles POST /api/v1/ldap/test — verifies LDAP connectivity.
 func (h *LDAPHandler) TestConnection(c *gin.Context) {
 	if h.ldap == nil {

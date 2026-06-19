@@ -234,6 +234,8 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 	rrH := handlers.NewRoutingRuleHandler(rrSvc)
 	systemH := handlers.NewSystemHandler(cfg, pool, ldapSvc, oidcSvc).WithBlobStores(blobRepo).WithSAML(samlSvc)
 	migrationH := handlers.NewMigrationHandler(migrationRepo)
+	ldapH := handlers.NewLDAPHandler(cfg.LDAP, ldapSvc)
+	tasksH := handlers.NewTasksHandler(cleanupTaskAdapter{repo: cleanupRepo, svc: cleanupSvc}, replSvc)
 	blobMigrationRepo := postgres.NewBlobStoreMigrationRepo(pool)
 	blobMigSvc := service.NewBlobStoreMigrationService(blobMigrationRepo, assetRepo, repoRepo, blobRepo, blobRegistry)
 	blobMigSvc.WithLocker(locker)
@@ -359,7 +361,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 		// ── Search ────────────────────────────────────────────
 		authed.GET("/service/rest/v1/search", componentH.Search)
 		authed.GET("/service/rest/v1/search/assets", componentH.SearchAssets)
-		authed.GET("/service/rest/v1/search/assets/download", stubHandler("search-download"))
+		authed.GET("/service/rest/v1/search/assets/download", componentH.SearchAssetsDownload)
 
 		// ── Metrics (authenticated) ───────────────────────────
 		authed.GET("/api/v1/metrics", handlers.MetricsHandler(pool))
@@ -512,9 +514,9 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 		admin.POST("/api/v1/security/scan/bulk", scanH.BulkScanHandler)
 
 		// ── System ────────────────────────────────────────────
-		admin.GET("/service/rest/v1/tasks", stubHandler("tasks"))
-		admin.POST("/service/rest/v1/tasks/:id/run", stubHandler("tasks"))
-		admin.GET("/service/rest/v1/security/ldap", stubHandler("ldap"))
+		admin.GET("/service/rest/v1/tasks", tasksH.List)
+		admin.POST("/service/rest/v1/tasks/:id/run", tasksH.Run)
+		admin.GET("/service/rest/v1/security/ldap", ldapH.NexusList)
 		admin.GET("/service/rest/v1/routing-rules", rrH.List)
 		admin.GET("/service/rest/v1/routing-rules/:id", rrH.Get)
 		admin.POST("/service/rest/v1/routing-rules", rrH.Create)
@@ -703,10 +705,19 @@ func serveDockerV2(
 	}
 }
 
-func stubHandler(name string) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.JSON(http.StatusNotImplemented, gin.H{"error": name + " not yet implemented"})
-	}
+// cleanupTaskAdapter adapts the cleanup repo (List) and service (RunPolicy) to the
+// TasksHandler's cleanup dependency, exposing cleanup policies as Nexus-compat tasks.
+type cleanupTaskAdapter struct {
+	repo repository.CleanupPolicyRepo
+	svc  *service.CleanupService
+}
+
+func (a cleanupTaskAdapter) List(ctx context.Context) ([]domain.CleanupPolicy, error) {
+	return a.repo.List(ctx)
+}
+
+func (a cleanupTaskAdapter) RunPolicy(ctx context.Context, id string) error {
+	return a.svc.RunPolicy(ctx, id)
 }
 
 func serveUI(_ *config.Config) gin.HandlerFunc {

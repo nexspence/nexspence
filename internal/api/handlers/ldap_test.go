@@ -27,6 +27,7 @@ func mountLDAP(t *testing.T, cfg config.LDAPConfig, ldap auth.LDAPAuthenticator)
 	r := gin.New()
 	r.GET("/api/v1/ldap/config", h.GetConfig)
 	r.POST("/api/v1/ldap/test", h.TestConnection)
+	r.GET("/service/rest/v1/security/ldap", h.NexusList)
 	return r
 }
 
@@ -92,4 +93,55 @@ func TestLDAP_TestConnection_ConnError_502(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
 	assert.Equal(t, false, got["success"])
 	assert.Contains(t, got["error"], "connection refused")
+}
+
+// ── NexusList (Nexus-compat GET /service/rest/v1/security/ldap) ────────────────
+
+func TestLDAP_NexusList_Disabled_EmptyArray(t *testing.T) {
+	cfg := config.LDAPConfig{Enabled: false}
+	r := mountLDAP(t, cfg, nil)
+	rec := do(t, r, http.MethodGet, "/service/rest/v1/security/ldap", nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	var got []map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	assert.Len(t, got, 0)
+	// Must be an empty array, not null.
+	assert.Equal(t, "[]", rec.Body.String())
+}
+
+func TestLDAP_NexusList_Enabled_LDAPS(t *testing.T) {
+	cfg := sampleLDAPConfig()
+	cfg.UseTLS = true
+	cfg.SearchFilter = "(uid={0})"
+	cfg.GroupBase = "ou=groups,dc=example,dc=com"
+	r := mountLDAP(t, cfg, fakeLDAP{})
+	rec := do(t, r, http.MethodGet, "/service/rest/v1/security/ldap", nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	var got []map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Len(t, got, 1)
+	m := got[0]
+	assert.Equal(t, "ldap", m["id"])
+	assert.Equal(t, "ldaps", m["protocol"])
+	assert.Equal(t, cfg.Host, m["host"])
+	assert.Equal(t, float64(cfg.Port), m["port"])
+	assert.Equal(t, cfg.SearchBase, m["searchBase"])
+	assert.Equal(t, cfg.SearchFilter, m["userLdapFilter"])
+	assert.Equal(t, cfg.GroupBase, m["groupBaseDn"])
+	// Password must never be exposed.
+	_, ok := m["bindPassword"]
+	assert.False(t, ok)
+	assert.NotContains(t, rec.Body.String(), "super-secret")
+}
+
+func TestLDAP_NexusList_Enabled_LDAP(t *testing.T) {
+	cfg := sampleLDAPConfig()
+	cfg.UseTLS = false
+	r := mountLDAP(t, cfg, fakeLDAP{})
+	rec := do(t, r, http.MethodGet, "/service/rest/v1/security/ldap", nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	var got []map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Len(t, got, 1)
+	assert.Equal(t, "ldap", got[0]["protocol"])
 }

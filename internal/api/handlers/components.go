@@ -332,6 +332,74 @@ func (h *ComponentHandler) SearchAssets(c *gin.Context) {
 	})
 }
 
+// SearchAssetsDownload handles GET /service/rest/v1/search/assets/download.
+// It resolves the query to exactly one asset and redirects (302) to its
+// download URL. Zero matches → 404, multiple matches → 400.
+func (h *ComponentHandler) SearchAssetsDownload(c *gin.Context) {
+	p := domain.SearchParams{
+		Repository: c.Query("repository"),
+		Format:     c.Query("format"),
+		Name:       c.Query("name"),
+		SHA256:     c.Query("sha256"),
+		Limit:      2,
+	}
+	if tok := c.Query("continuationToken"); tok != "" {
+		if v, _ := strconv.Atoi(tok); v > 0 {
+			p.Offset = v
+		}
+	}
+
+	if p.Repository != "" {
+		names, err := expandGroupMemberRepoNames(c.Request.Context(), h.repos, p.Repository)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if len(names) == 0 {
+			c.JSON(http.StatusNotFound, gin.H{"error": "no assets matched the search"})
+			return
+		}
+		p.RepositoryNames = names
+		p.Repository = ""
+	}
+
+	page, err := h.assets.SearchAssets(c.Request.Context(), p)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	items := page.Items
+	if items == nil {
+		items = []domain.Asset{}
+	}
+	if h.rbacSvc != nil && len(items) > 0 {
+		repoSet := make(map[string]struct{}, 4)
+		for _, a := range items {
+			repoSet[a.Repository] = struct{}{}
+		}
+		repoList := make([]string, 0, len(repoSet))
+		for n := range repoSet {
+			repoList = append(repoList, n)
+		}
+		anonMap := h.allowAnonMap(c.Request.Context(), repoList)
+		userID, _ := c.Get("userID")
+		roles, _ := c.Get("roles")
+		items = h.rbacSvc.FilterAssets(c.Request.Context(),
+			stringVal(userID), stringSliceVal(roles), items, anonMap)
+	}
+
+	switch len(items) {
+	case 0:
+		c.JSON(http.StatusNotFound, gin.H{"error": "no assets matched the search"})
+	case 1:
+		url := h.baseURL + "/repository/" + items[0].Repository + items[0].Path
+		c.Redirect(http.StatusFound, url)
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": "search returned multiple assets, refine your query"})
+	}
+}
+
 func (h *ComponentHandler) enrichComponent(_ *gin.Context, comp *domain.Component) {
 	for i := range comp.Assets {
 		comp.Assets[i].DownloadURL = h.baseURL + "/repository/" + comp.Repository + comp.Assets[i].Path

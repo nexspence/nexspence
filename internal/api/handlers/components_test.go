@@ -419,6 +419,85 @@ func TestComponentHandler_SearchAssets_AssetRepoError_500(t *testing.T) {
 	assert.Equal(t, http.StatusInternalServerError, rec.Code)
 }
 
+// ── SearchAssetsDownload ──────────────────────────────────────
+
+// mountComponentsDownload wires a ComponentHandler (no RBAC) plus the
+// search/assets/download route over fresh mocks.
+func mountComponentsDownload(t *testing.T) (*gin.Engine, *testutil.AssetRepo, *testutil.RepoRepo) {
+	t.Helper()
+	comps := testutil.NewComponentRepo()
+	assets := testutil.NewAssetRepo()
+	repos := testutil.NewRepoRepo()
+	h := handlers.NewComponentHandler(comps, assets, repos, "http://localhost")
+	r := gin.New()
+	r.GET("/service/rest/v1/search/assets/download", h.SearchAssetsDownload)
+	return r, assets, repos
+}
+
+func TestComponentHandler_SearchAssetsDownload_SingleMatch_302(t *testing.T) {
+	r, assets, _ := mountComponentsDownload(t)
+	require.NoError(t, assets.Create(testContext(), &domain.Asset{Repository: "raw-host", Path: "/x.bin"}))
+	rec := do(t, r, http.MethodGet, "/service/rest/v1/search/assets/download?repository=raw-host", nil)
+	require.Equal(t, http.StatusFound, rec.Code)
+	assert.Equal(t, "http://localhost/repository/raw-host/x.bin", rec.Header().Get("Location"))
+}
+
+func TestComponentHandler_SearchAssetsDownload_ZeroMatch_404(t *testing.T) {
+	r, _, _ := mountComponentsDownload(t)
+	rec := do(t, r, http.MethodGet, "/service/rest/v1/search/assets/download?repository=raw-host", nil)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestComponentHandler_SearchAssetsDownload_MultipleMatch_400(t *testing.T) {
+	r, assets, _ := mountComponentsDownload(t)
+	require.NoError(t, assets.Create(testContext(), &domain.Asset{Repository: "raw-host", Path: "/a.bin"}))
+	require.NoError(t, assets.Create(testContext(), &domain.Asset{Repository: "raw-host", Path: "/b.bin"}))
+	rec := do(t, r, http.MethodGet, "/service/rest/v1/search/assets/download?repository=raw-host", nil)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestComponentHandler_SearchAssetsDownload_GroupNoMembers_404(t *testing.T) {
+	r, _, repos := mountComponentsDownload(t)
+	seedRepo(t, repos, &domain.Repository{ID: "g1", Name: "empty-group", Format: domain.FormatRaw, Type: domain.TypeGroup})
+	rec := do(t, r, http.MethodGet, "/service/rest/v1/search/assets/download?repository=empty-group", nil)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestComponentHandler_SearchAssetsDownload_ExpandRepoError_500(t *testing.T) {
+	r, _, repos := mountComponentsDownload(t)
+	repos.Err = errors.New("db down")
+	rec := do(t, r, http.MethodGet, "/service/rest/v1/search/assets/download?repository=any", nil)
+	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+}
+
+func TestComponentHandler_SearchAssetsDownload_AssetRepoError_500(t *testing.T) {
+	r, assets, _ := mountComponentsDownload(t)
+	assets.Err = errors.New("asset query failed")
+	rec := do(t, r, http.MethodGet, "/service/rest/v1/search/assets/download?name=x", nil)
+	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+}
+
+// RBAC admin passthrough: with the RBAC service attached and admin roles
+// injected, a single visible asset still redirects (302).
+func TestComponentHandler_SearchAssetsDownload_RBAC_AdminPassthrough_302(t *testing.T) {
+	comps := testutil.NewComponentRepo()
+	assets := testutil.NewAssetRepo()
+	repos := testutil.NewRepoRepo()
+	rbacSvc := service.NewRBACService(emptyRBACRepo{}, repos, zap.NewNop().Sugar())
+	h := handlers.NewComponentHandler(comps, assets, repos, "http://localhost").WithRBAC(rbacSvc)
+	r := gin.New()
+	r.Use(func(c *gin.Context) {
+		c.Set("userID", "admin")
+		c.Set("roles", []string{"nx-admin"})
+		c.Next()
+	})
+	r.GET("/service/rest/v1/search/assets/download", h.SearchAssetsDownload)
+	require.NoError(t, assets.Create(testContext(), &domain.Asset{Repository: "raw-host", Path: "/x.bin"}))
+	rec := do(t, r, http.MethodGet, "/service/rest/v1/search/assets/download?repository=raw-host", nil)
+	require.Equal(t, http.StatusFound, rec.Code)
+	assert.Equal(t, "http://localhost/repository/raw-host/x.bin", rec.Header().Get("Location"))
+}
+
 // ── GetQuota ──────────────────────────────────────────────────
 
 func TestComponentHandler_GetQuota_Unlimited_OK(t *testing.T) {
