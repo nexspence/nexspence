@@ -86,6 +86,7 @@ services:
     environment:
       NEXSPENCE_DATABASE_DSN: "postgres://nexspence:nexspence@postgres:5432/nexspence?sslmode=disable"
       NEXSPENCE_AUTH_JWT_SECRET: "nexspence-dev-default-secret-change-me-in-production"  # development default — server boots but WARNS; override for production
+      NEXSPENCE_AUTH_ALLOW_INSECURE_DEFAULTS: "true"  # dev quick-start: permit shipped default secrets; production must leave this false
       NEXSPENCE_HTTP_ADDR: ":8081"
       NEXSPENCE_HTTP_BASE_URL: "http://localhost:8081"
       NEXSPENCE_STORAGE_DEFAULT_TYPE: "local"

@@ -118,8 +118,15 @@ func (h *UserHandler) Delete(c *gin.Context) {
 }
 
 // ChangePassword handles PUT /service/rest/v1/security/users/:userId/change-password
+// (admin) and PUT /api/v1/me/change-password (self). For the self route there is
+// no :userId path param, so it falls back to the acting user from the context.
 func (h *UserHandler) ChangePassword(c *gin.Context) {
 	username := c.Param("userId")
+	if username == "" {
+		if u, ok := c.Get("username"); ok {
+			username, _ = u.(string)
+		}
+	}
 
 	var req struct {
 		OldPassword string `json:"oldPassword"`

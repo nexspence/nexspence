@@ -22,7 +22,7 @@ func NewUserRepo(db *pgxpool.Pool) *userRepo {
 
 const userSelect = `
 	SELECT id, username, COALESCE(email,''), COALESCE(password_hash,''), first_name, last_name,
-	       status, source, COALESCE(external_id,''), last_login, created_at, updated_at
+	       status, source, COALESCE(external_id,''), last_login, tokens_valid_after, created_at, updated_at
 	FROM users`
 
 func (r *userRepo) List(ctx context.Context, source string) ([]domain.User, error) {
@@ -115,6 +115,11 @@ func (r *userRepo) UpdateLastLogin(ctx context.Context, username string) error {
 	return err
 }
 
+func (r *userRepo) BumpTokensValidAfter(ctx context.Context, userID string) error {
+	_, err := r.db.Exec(ctx, `UPDATE users SET tokens_valid_after=now() WHERE id=$1`, userID)
+	return err
+}
+
 func (r *userRepo) SetOIDCTokens(ctx context.Context, userID, idToken, refreshToken string) error {
 	_, err := r.db.Exec(ctx,
 		`UPDATE users SET oidc_id_token=$1, oidc_refresh_token=$2, updated_at=NOW() WHERE id=$3`,
@@ -147,7 +152,7 @@ func scanUser(row scanner) (*domain.User, error) {
 	err := row.Scan(
 		&u.ID, &u.Username, &u.Email, &u.PasswordHash,
 		&u.FirstName, &u.LastName, &u.Status, &u.Source,
-		&u.ExternalID, &u.LastLogin,
+		&u.ExternalID, &u.LastLogin, &u.TokensValidAfter,
 		&u.CreatedAt, &u.UpdatedAt,
 	)
 	if err != nil {

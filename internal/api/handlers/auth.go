@@ -147,25 +147,48 @@ func AdminRequired() gin.HandlerFunc {
 
 // authenticateBearer tries the JWT service first, then falls back to an API
 // token if tokens is non-nil. On success it populates gin context keys
-// (username, userID, roles) and returns true.
-func authenticateBearer(c *gin.Context, users *service.UserService, tokens *service.TokenService, raw string) bool {
+// (username, userID, roles) and returns ok=true. When the JWT validated but
+// was rejected by the per-user revocation cutoff, it returns ok=false,
+// revoked=true so callers can emit a precise "token invalidated" response;
+// revoked is false for every other failure (bad/expired JWT, bad API token).
+func authenticateBearer(c *gin.Context, users *service.UserService, tokens *service.TokenService, raw string) (ok, revoked bool) {
 	if claims, err := users.ValidateToken(raw); err == nil {
+		// Enforce per-user token revocation: a JWT issued before the user's
+		// tokens_valid_after cutoff (set on disable, password, or role change)
+		// is rejected. Look up the user; on lookup failure, fail closed.
+		if !jwtNotRevoked(c, users, claims) {
+			return false, true
+		}
 		c.Set("claims", claims)
 		c.Set("username", claims.Username)
 		c.Set("userID", claims.UserID)
 		c.Set("roles", claims.Roles)
-		return true
+		return true, false
 	}
 	if tokens == nil {
-		return false
+		return false, false
 	}
 	u, err := tokens.Authenticate(c.Request.Context(), raw)
 	if err != nil || u == nil {
-		return false
+		return false, false
 	}
 	c.Set("username", u.Username)
 	c.Set("userID", u.ID)
 	c.Set("roles", u.Roles)
+	return true, false
+}
+
+// jwtNotRevoked reports whether the JWT's claims pass the per-user
+// tokens_valid_after revocation cutoff. It loads the user; on lookup failure it
+// fails closed (returns false). A nil IssuedAt or zero-value cutoff passes.
+func jwtNotRevoked(c *gin.Context, users *service.UserService, claims *auth.Claims) bool {
+	user, err := users.GetByID(c.Request.Context(), claims.UserID)
+	if err != nil {
+		return false
+	}
+	if claims.IssuedAt != nil && claims.IssuedAt.Before(user.TokensValidAfter) {
+		return false
+	}
 	return true
 }
 
@@ -212,8 +235,12 @@ func AuthMiddleware(users *service.UserService, tokens *service.TokenService) gi
 			return
 		}
 
-		if !authenticateBearer(c, users, tokens, raw) {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid or expired token"})
+		if ok, revoked := authenticateBearer(c, users, tokens, raw); !ok {
+			msg := "invalid or expired token"
+			if revoked {
+				msg = "token invalidated"
+			}
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": msg})
 			return
 		}
 		c.Next()
@@ -368,7 +395,7 @@ func OptionalAuth(users *service.UserService, tokens *service.TokenService) gin.
 		// Bearer JWT or API token
 		if strings.HasPrefix(authHeader, "Bearer ") {
 			raw := strings.TrimPrefix(authHeader, "Bearer ")
-			_ = authenticateBearer(c, users, tokens, raw)
+			authenticateBearer(c, users, tokens, raw)
 			c.Next()
 			return
 		}

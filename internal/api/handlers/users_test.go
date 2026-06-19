@@ -59,6 +59,55 @@ func mountChangePassword(t *testing.T, callerUsername string, callerRoles []stri
 	return r, users
 }
 
+// mountSelfChangePassword mounts the self-service route (no :userId param,
+// PUT /api/v1/me/change-password) with the acting user set in context, as the
+// authed group + AuthMiddleware would.
+func mountSelfChangePassword(t *testing.T, callerUsername string, callerRoles []string) (*gin.Engine, *testutil.UserRepo) {
+	t.Helper()
+	users := testutil.NewUserRepo()
+	roles := testutil.NewRoleRepo()
+	authSvc := auth.NewService("test-secret-32-chars-long-here!!", 1, 4)
+	svc := service.NewUserService(users, roles, authSvc, zap.NewNop().Sugar())
+	h := handlers.NewUserHandler(svc)
+
+	r := gin.New()
+	r.PUT("/api/v1/me/change-password", func(c *gin.Context) {
+		c.Set("username", callerUsername)
+		c.Set("roles", callerRoles)
+		h.ChangePassword(c)
+	})
+	return r, users
+}
+
+func TestUserHandler_SelfChangePassword_OwnPassword_NoContent(t *testing.T) {
+	r, users := mountSelfChangePassword(t, "self", []string{})
+	authSvc := auth.NewService("test-secret-32-chars-long-here!!", 1, 4)
+	hash, err := authSvc.HashPassword("old-pw")
+	require.NoError(t, err)
+	require.NoError(t, users.Create(testContext(), &domain.User{
+		Username: "self", Email: "self@test.com", PasswordHash: hash,
+		Status: domain.UserStatusActive, Source: domain.UserSourceLocal,
+	}))
+	// No :userId param on the self route → handler falls back to acting user.
+	rec := do(t, r, http.MethodPut, "/api/v1/me/change-password", map[string]any{
+		"oldPassword": "old-pw",
+		"newPassword": "new-pw",
+	})
+	assert.Equal(t, http.StatusNoContent, rec.Code)
+}
+
+func TestUserHandler_SelfChangePassword_CannotTargetOther(t *testing.T) {
+	// The admin route requires the :userId param. A non-admin hitting the admin
+	// route for another user is forbidden (proves self cannot change others).
+	r, _ := mountChangePassword(t, "self", []string{})
+	rec := do(t, r, http.MethodPut,
+		"/service/rest/v1/security/users/someone-else/change-password", map[string]any{
+			"oldPassword": "old",
+			"newPassword": "new",
+		})
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
 // ── List ──────────────────────────────────────────────────────────────────────
 
 func TestUserHandler_List_Empty(t *testing.T) {

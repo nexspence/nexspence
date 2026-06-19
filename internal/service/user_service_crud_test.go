@@ -336,3 +336,68 @@ func TestUserCRUD_ValidateToken_WrongSecret_Error(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorIs(t, err, auth.ErrInvalidToken)
 }
+
+// ── TokensValidAfter revocation wiring ────────────────────────
+
+func TestUserCRUD_ChangePassword_BumpsTokensValidAfter(t *testing.T) {
+	u := activeUserFixture("id-rev1", "carol", "old-pw")
+	svc, userRepo, _ := newUserCRUDSvc([]*domain.User{u}, nil)
+
+	require.NoError(t, svc.ChangePassword(context.Background(), "carol", "old-pw", "new-pw"))
+
+	stored, _ := userRepo.GetByID(context.Background(), "id-rev1")
+	require.NotNil(t, stored)
+	assert.False(t, stored.TokensValidAfter.IsZero(),
+		"ChangePassword must bump tokens_valid_after to revoke existing JWTs")
+}
+
+func TestUserCRUD_SetPassword_BumpsTokensValidAfter(t *testing.T) {
+	u := activeUserFixture("id-rev2", "dave", "pw")
+	svc, userRepo, _ := newUserCRUDSvc([]*domain.User{u}, nil)
+
+	require.NoError(t, svc.SetPassword(context.Background(), "dave", "reset-pw"))
+
+	stored, _ := userRepo.GetByID(context.Background(), "id-rev2")
+	require.NotNil(t, stored)
+	assert.False(t, stored.TokensValidAfter.IsZero(),
+		"SetPassword (admin reset) must bump tokens_valid_after")
+}
+
+func TestUserCRUD_SetUserRoles_BumpsTokensValidAfter(t *testing.T) {
+	u := activeUserFixture("id-rev3", "erin", "pw")
+	role := &domain.Role{ID: "role-x", Name: "x"}
+	svc, userRepo, _ := newUserCRUDSvc([]*domain.User{u}, []*domain.Role{role})
+
+	require.NoError(t, svc.SetUserRoles(context.Background(), "id-rev3", []string{"role-x"}))
+
+	stored, _ := userRepo.GetByID(context.Background(), "id-rev3")
+	require.NotNil(t, stored)
+	assert.False(t, stored.TokensValidAfter.IsZero(),
+		"SetUserRoles must bump tokens_valid_after so a new role set takes effect")
+}
+
+func TestUserCRUD_Update_Disable_BumpsTokensValidAfter(t *testing.T) {
+	u := activeUserFixture("id-rev4", "frank", "pw")
+	svc, userRepo, _ := newUserCRUDSvc([]*domain.User{u}, nil)
+
+	_, err := svc.Update(context.Background(), "frank", &domain.User{Status: domain.UserStatusDisabled})
+	require.NoError(t, err)
+
+	stored, _ := userRepo.GetByID(context.Background(), "id-rev4")
+	require.NotNil(t, stored)
+	assert.False(t, stored.TokensValidAfter.IsZero(),
+		"disabling a user must bump tokens_valid_after to revoke existing JWTs")
+}
+
+func TestUserCRUD_Update_NonStatusChange_DoesNotBump(t *testing.T) {
+	u := activeUserFixture("id-rev5", "gina", "pw")
+	svc, userRepo, _ := newUserCRUDSvc([]*domain.User{u}, nil)
+
+	_, err := svc.Update(context.Background(), "gina", &domain.User{Email: "gina2@example.com"})
+	require.NoError(t, err)
+
+	stored, _ := userRepo.GetByID(context.Background(), "id-rev5")
+	require.NotNil(t, stored)
+	assert.True(t, stored.TokensValidAfter.IsZero(),
+		"a profile-only update must not revoke tokens")
+}

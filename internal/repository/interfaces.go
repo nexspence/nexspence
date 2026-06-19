@@ -167,6 +167,10 @@ type UserRepo interface {
 	UpdatePassword(ctx context.Context, username, hash string) error
 	Delete(ctx context.Context, username string) error
 	UpdateLastLogin(ctx context.Context, username string) error
+	// BumpTokensValidAfter sets tokens_valid_after to now for the user,
+	// invalidating any JWT issued before this call (used on disable, password
+	// change, and role change).
+	BumpTokensValidAfter(ctx context.Context, userID string) error
 	// SetOIDCTokens stores id_token and refresh_token for an OIDC user.
 	// Pass empty strings to clear both columns (e.g. on logout).
 	SetOIDCTokens(ctx context.Context, userID string, idToken, refreshToken string) error

@@ -355,8 +355,13 @@ type User struct {
 	ExternalID   string     `json:"-"`
 	Roles        []string   `json:"roles"` // role names
 	LastLogin    *time.Time `json:"lastLogin,omitempty"`
-	CreatedAt    time.Time  `json:"createdAt"`
-	UpdatedAt    time.Time  `json:"updatedAt"`
+	// TokensValidAfter is the cutoff for JWT validity: a token whose `iat` is
+	// before this instant is rejected. Bumped on disable, password change, and
+	// role change so previously-issued JWTs are revoked. Zero value (distant
+	// past) means all tokens are accepted.
+	TokensValidAfter time.Time `json:"-"`
+	CreatedAt        time.Time `json:"createdAt"`
+	UpdatedAt        time.Time `json:"updatedAt"`
 }
 
 // ── API Token ────────────────────────────────────────────────

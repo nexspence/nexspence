@@ -34,6 +34,10 @@ auth:
   # invalidate stored replication passwords. Generate: openssl rand -base64 32
   # encryption_key: ""
   jwt_expiry_hours: 24
+  # Permit the shipped default JWT secret / admin password ("admin123") at startup.
+  # Leave false in production — the server refuses to start with shipped defaults
+  # unless this is true (intended for local dev / quick-start only).
+  allow_insecure_defaults: false
   anonymous_enabled: true
   password_min_length: 8
   bcrypt_cost: 12

@@ -57,8 +57,21 @@ func cmdServe() *cobra.Command {
 			if cfg.Auth.AnonymousEnabled {
 				log.Warn("auth.anonymous_enabled is true — unauthenticated artifact access is allowed; set false to require authentication")
 			}
-			if config.IsDevDefaultJWTSecret(cfg.Auth.JWTSecret) {
-				log.Warn("auth.jwt_secret is the shipped development default — set a unique secret (NEXSPENCE_AUTH_JWT_SECRET) before production use")
+
+			// Fail closed on shipped insecure defaults unless explicitly allowed
+			// (local dev / quick-start sets auth.allow_insecure_defaults=true).
+			insecureJWT := config.IsDevDefaultJWTSecret(cfg.Auth.JWTSecret)
+			insecureAdmin := cfg.Bootstrap.AdminPassword == "admin123"
+			if insecureJWT || insecureAdmin {
+				if !cfg.Auth.AllowInsecureDefaults {
+					return fmt.Errorf("refusing to start with shipped default secrets (jwt_default=%v, admin123=%v); set unique secrets or auth.allow_insecure_defaults=true for local dev", insecureJWT, insecureAdmin)
+				}
+				if insecureJWT {
+					log.Warn("auth.jwt_secret is the shipped development default — set a unique secret (NEXSPENCE_AUTH_JWT_SECRET) before production use")
+				}
+				if insecureAdmin {
+					log.Warn("bootstrap.admin_password is the shipped development default (admin123) — set a unique password (NEXSPENCE_BOOTSTRAP_ADMIN_PASSWORD) before production use")
+				}
 			}
 
 			// Auto-migrate on every startup so the schema is always up-to-date.
@@ -263,8 +276,8 @@ func syncBlobStorePaths(ctx context.Context, pool *pgxpool.Pool, cfg *config.Con
 }
 
 // bootstrapAdmin ensures the admin user exists with the configured password.
-// If the user already exists the password is updated to match config — so you
-// can always reset the admin by changing config and restarting.
+// It only owns initial creation: if the admin user already exists its password
+// is left untouched (rotate it via the API, not config + restart).
 func bootstrapAdmin(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config, log logger.Logger) error {
 	b := cfg.Bootstrap
 	if b.AdminUsername == "" || b.AdminPassword == "" {
@@ -307,11 +320,9 @@ func bootstrapAdmin(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config,
 		}
 		log.Info("bootstrap: admin user created", "username", b.AdminUsername)
 	} else {
-		// Update password so config is always authoritative
-		if err := userRepo.UpdatePassword(ctx, b.AdminUsername, hash); err != nil {
-			return err
-		}
-		log.Info("bootstrap: admin password synced", "username", b.AdminUsername)
+		// Bootstrap only owns initial creation — do not touch an existing
+		// admin's password (operators rotate it via the API, not config).
+		log.Info("bootstrap: admin user already exists — password not modified", "username", b.AdminUsername)
 	}
 	return nil
 }

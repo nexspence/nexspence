@@ -2,6 +2,8 @@ package config
 
 import (
 	"encoding/base64"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -159,4 +161,32 @@ func TestDevDefaultJWTSecret_PassesValidation_ButRecognized(t *testing.T) {
 	require.True(t, IsDevDefaultJWTSecret(DevDefaultJWTSecret))
 	require.False(t, IsDevDefaultJWTSecret("some-other-unique-production-secret-value"))
 	require.NotEqual(t, exampleJWTSecret, DevDefaultJWTSecret)
+}
+
+func TestLoad_AllowInsecureDefaults_DefaultsFalse(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := "" +
+		"database:\n  dsn: \"postgres://u:p@localhost:5432/db?sslmode=disable\"\n" +
+		"auth:\n  jwt_secret: \"a-unique-production-secret-at-least-32b\"\n"
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.False(t, cfg.Auth.AllowInsecureDefaults,
+		"auth.allow_insecure_defaults must default to false (fail-closed)")
+}
+
+func TestLoad_AllowInsecureDefaults_EnvOverride(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := "" +
+		"database:\n  dsn: \"postgres://u:p@localhost:5432/db?sslmode=disable\"\n" +
+		"auth:\n  jwt_secret: \"a-unique-production-secret-at-least-32b\"\n"
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+
+	t.Setenv("NEXSPENCE_AUTH_ALLOW_INSECURE_DEFAULTS", "true")
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.True(t, cfg.Auth.AllowInsecureDefaults)
 }

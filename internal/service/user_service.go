@@ -295,12 +295,22 @@ func (s *UserService) Update(ctx context.Context, username string, updates *doma
 	if updates.LastName != "" {
 		u.LastName = updates.LastName
 	}
+	disabled := false
 	if updates.Status != "" {
+		if u.Status == domain.UserStatusActive && updates.Status != domain.UserStatusActive {
+			disabled = true
+		}
 		u.Status = updates.Status
 	}
 
 	if err := s.users.Update(ctx, u); err != nil {
 		return nil, err
+	}
+	// Revoke existing JWTs when the account transitions to non-active.
+	if disabled {
+		if err := s.users.BumpTokensValidAfter(ctx, u.ID); err != nil {
+			s.log.Warnw("BumpTokensValidAfter failed after disable", "user", u.ID, "err", err)
+		}
 	}
 	return u, nil
 }
@@ -318,12 +328,19 @@ func (s *UserService) ChangePassword(ctx context.Context, username, oldPassword,
 	if err != nil {
 		return err
 	}
-	return s.users.UpdatePassword(ctx, username, hash)
+	if err := s.users.UpdatePassword(ctx, username, hash); err != nil {
+		return err
+	}
+	// Revoke existing JWTs on password change.
+	if err := s.users.BumpTokensValidAfter(ctx, u.ID); err != nil {
+		s.log.Warnw("BumpTokensValidAfter failed after password change", "user", u.ID, "err", err)
+	}
+	return nil
 }
 
 // SetPassword overwrites a user's password without requiring the current one (admin reset).
 func (s *UserService) SetPassword(ctx context.Context, username, newPassword string) error {
-	_, err := s.Get(ctx, username)
+	u, err := s.Get(ctx, username)
 	if err != nil {
 		return err
 	}
@@ -331,7 +348,14 @@ func (s *UserService) SetPassword(ctx context.Context, username, newPassword str
 	if err != nil {
 		return err
 	}
-	return s.users.UpdatePassword(ctx, username, hash)
+	if err := s.users.UpdatePassword(ctx, username, hash); err != nil {
+		return err
+	}
+	// Revoke existing JWTs on admin password reset.
+	if err := s.users.BumpTokensValidAfter(ctx, u.ID); err != nil {
+		s.log.Warnw("BumpTokensValidAfter failed after password reset", "user", u.ID, "err", err)
+	}
+	return nil
 }
 
 // Delete removes the named user.
@@ -350,7 +374,15 @@ func (s *UserService) GetUserRoles(ctx context.Context, userID string) ([]domain
 
 // SetUserRoles replaces the user's role assignments with the given role ids.
 func (s *UserService) SetUserRoles(ctx context.Context, userID string, roleIDs []string) error {
-	return s.roles.SetUserRoles(ctx, userID, roleIDs)
+	if err := s.roles.SetUserRoles(ctx, userID, roleIDs); err != nil {
+		return err
+	}
+	// Revoke existing JWTs so the new role set takes effect immediately
+	// (a JWT embeds the roles it was issued with).
+	if err := s.users.BumpTokensValidAfter(ctx, userID); err != nil {
+		s.log.Warnw("BumpTokensValidAfter failed after role change", "user", userID, "err", err)
+	}
+	return nil
 }
 
 // LoginOIDC upserts the user and assigns roles based on OIDC claims.

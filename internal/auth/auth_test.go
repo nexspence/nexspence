@@ -32,6 +32,24 @@ func TestGenerateToken_ValidateClaims(t *testing.T) {
 	assert.ElementsMatch(t, []string{"admin", "deployer"}, claims.Roles)
 }
 
+func TestGenerateToken_SetsIssuedAt(t *testing.T) {
+	s := newSvc()
+	token, err := s.GenerateToken("uid-iat", "iatuser", nil)
+	require.NoError(t, err)
+	claims, err := s.ValidateToken(token)
+	require.NoError(t, err)
+	require.NotNil(t, claims.IssuedAt, "GenerateToken must set the iat claim")
+}
+
+func TestGenerateTokenWithMethod_SetsIssuedAt(t *testing.T) {
+	s := newSvc()
+	token, err := s.GenerateTokenWithMethod("uid-iat2", "iatuser2", nil, "oidc")
+	require.NoError(t, err)
+	claims, err := s.ValidateToken(token)
+	require.NoError(t, err)
+	require.NotNil(t, claims.IssuedAt, "GenerateTokenWithMethod must set the iat claim")
+}
+
 func TestGenerateToken_NoRoles(t *testing.T) {
 	s := newSvc()
 	token, err := s.GenerateToken("uid-2", "bob", nil)

@@ -97,6 +97,10 @@ type AuthConfig struct {
 	RateLimitEnabled  bool    `mapstructure:"rate_limit_enabled"`
 	RateLimitRPS      float64 `mapstructure:"rate_limit_rps"`
 	RateLimitBurst    float64 `mapstructure:"rate_limit_burst"`
+	// AllowInsecureDefaults permits the server to start even when the shipped
+	// default JWT secret or admin password ("admin123") is in use. Intended for
+	// local dev / quick-start only; production must leave this false.
+	AllowInsecureDefaults bool `mapstructure:"allow_insecure_defaults"`
 	// EncryptionKey is an optional dedicated key (base64, 32 bytes) for sealing
 	// replication credentials. Empty = derive from JWTSecret (legacy).
 	EncryptionKey string `mapstructure:"encryption_key"`
@@ -383,6 +387,7 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("auth.rate_limit_enabled", false)
 	v.SetDefault("auth.rate_limit_rps", 50.0)
 	v.SetDefault("auth.rate_limit_burst", 100.0)
+	v.SetDefault("auth.allow_insecure_defaults", false)
 	v.SetDefault("log.level", "info")
 	v.SetDefault("log.format", "json")
 	v.SetDefault("search.min_query_len", 2)

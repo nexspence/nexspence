@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -85,6 +86,10 @@ func TestAuthMiddleware_InvalidBearer_Returns401(t *testing.T) {
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
+	// A bad/expired token (never validated) must get the generic message, not
+	// the revocation-specific "token invalidated" body.
+	assert.Contains(t, w.Body.String(), "invalid or expired token")
+	assert.NotContains(t, w.Body.String(), "token invalidated")
 }
 
 func TestAuthMiddleware_NoAuth_Returns401(t *testing.T) {
@@ -121,6 +126,74 @@ func TestAuthMiddleware_WrongBasicPassword_Returns401(t *testing.T) {
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
+}
+
+func TestAuthMiddleware_TokensValidAfterFuture_Rejects401(t *testing.T) {
+	user := activeUser("revoked", "pass")
+	userRepo := testutil.NewUserRepo(user)
+	roleRepo := testutil.NewRoleRepo()
+	authSvc := auth.NewService(testSecret, 24, bcryptCostTest)
+	svc := service.NewUserService(userRepo, roleRepo, authSvc, zap.NewNop().Sugar())
+
+	// Issue a fresh token, then set the cutoff to the future so the token's iat
+	// is before the cutoff and must be rejected.
+	token := bearerToken(svc, "revoked")
+	user.TokensValidAfter = time.Now().Add(time.Hour)
+
+	r := buildAuthRouter(svc)
+	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+	assert.Contains(t, w.Body.String(), "token invalidated")
+}
+
+func TestAuthMiddleware_ZeroTokensValidAfter_Accepts(t *testing.T) {
+	// Pre-existing users with an unset (zero-value, distant past) cutoff must
+	// keep working — the cutoff check must not reject them.
+	user := activeUser("legacy", "pass")
+	require.True(t, user.TokensValidAfter.IsZero())
+	svc := newUserSvc(user)
+
+	token := bearerToken(svc, "legacy")
+	r := buildAuthRouter(svc)
+	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestAuthMiddleware_AfterRoleChange_RejectsOldToken(t *testing.T) {
+	user := activeUser("roleshift", "pass")
+	userRepo := testutil.NewUserRepo(user)
+	roleRepo := testutil.NewRoleRepo()
+	authSvc := auth.NewService(testSecret, 24, bcryptCostTest)
+	svc := service.NewUserService(userRepo, roleRepo, authSvc, zap.NewNop().Sugar())
+
+	token := bearerToken(svc, "roleshift")
+	r := buildAuthRouter(svc)
+
+	// Old token works before the role change.
+	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	// A role change bumps tokens_valid_after; the previously-issued token whose
+	// iat is now before the cutoff must be rejected.
+	require.NoError(t, svc.SetUserRoles(testContext(), user.ID, []string{"role-x"}))
+
+	req2 := httptest.NewRequest(http.MethodGet, "/protected", nil)
+	req2.Header.Set("Authorization", "Bearer "+token)
+	w2 := httptest.NewRecorder()
+	r.ServeHTTP(w2, req2)
+	assert.Equal(t, http.StatusUnauthorized, w2.Code)
+	assert.Contains(t, w2.Body.String(), "token invalidated")
 }
 
 // ── OptionalAuth ──────────────────────────────────────────────
