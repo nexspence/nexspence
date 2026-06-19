@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
+	"github.com/nexspence-oss/nexspence/internal/netguard"
 	"github.com/nexspence-oss/nexspence/internal/repository"
 )
 
@@ -22,11 +23,20 @@ type WebhookService struct {
 }
 
 // NewWebhookService constructs a service for managing and delivering webhooks.
+// The delivery client is SSRF-guarded: it refuses to dial internal addresses,
+// since webhook URLs are user-configured.
 func NewWebhookService(repo repository.WebhookRepo) *WebhookService {
 	return &WebhookService{
 		repo:   repo,
-		client: &http.Client{Timeout: 10 * time.Second},
+		client: netguard.Client(10 * time.Second),
 	}
+}
+
+// WithHTTPClient overrides the delivery HTTP client. Intended for tests that
+// need to reach loopback test servers the SSRF guard would otherwise block.
+func (s *WebhookService) WithHTTPClient(c *http.Client) *WebhookService {
+	s.client = c
+	return s
 }
 
 // List returns all configured webhooks (never nil).

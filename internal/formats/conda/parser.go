@@ -41,7 +41,7 @@ func parseTarBz2(r io.Reader) (*PkgMeta, error) {
 			return nil, fmt.Errorf("conda tar: %w", err)
 		}
 		if hdr.Name == "info/index.json" {
-			raw, err := io.ReadAll(tr)
+			raw, err := io.ReadAll(io.LimitReader(tr, 4<<20)) // cap metadata at 4 MiB
 			if err != nil {
 				return nil, err
 			}

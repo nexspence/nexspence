@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"path"
@@ -21,13 +22,20 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/formats"
 	"github.com/nexspence-oss/nexspence/internal/formats/base"
+	"github.com/nexspence-oss/nexspence/internal/netguard"
 	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/storage"
 )
 
-// UpstreamClient is the shared HTTP client used to fetch artifacts from upstream remotes on cache miss.
+// UpstreamClient is the shared HTTP client used to fetch artifacts from upstream
+// remotes on cache miss. Its dialer is SSRF-guarded (remote_url is
+// user-configured): connections that resolve to internal addresses are refused.
 var UpstreamClient = &http.Client{
 	Transport: &http.Transport{
+		DialContext: (&net.Dialer{
+			Timeout: 10 * time.Second,
+			Control: netguard.DialControl,
+		}).DialContext,
 		MaxIdleConns:        128,
 		IdleConnTimeout:     90 * time.Second,
 		TLSHandshakeTimeout: 15 * time.Second,

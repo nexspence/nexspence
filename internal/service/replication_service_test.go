@@ -21,6 +21,10 @@ import (
 
 func nopReplLog() *zap.SugaredLogger { return zap.NewNop().Sugar() }
 
+// plainClient builds an unguarded HTTP client so tests can reach loopback
+// httptest servers (the production SSRF guard blocks 127.0.0.1).
+func plainClient(timeout time.Duration) *http.Client { return &http.Client{Timeout: timeout} }
+
 func newTestReplicationService(t *testing.T) *service.ReplicationService {
 	t.Helper()
 	return service.NewReplicationService(
@@ -113,7 +117,7 @@ func TestReplicationService_RunRule_PushesNewAssets(t *testing.T) {
 	_ = blobStore.Put(ctx, "blobkey-1", strings.NewReader("hello"), 5)
 
 	replRepo := testutil.NewReplicationRepo()
-	svc := service.NewReplicationService(replRepo, assetRepo, blobStore, "test-secret-32-bytes-long!!!", nil, nopReplLog())
+	svc := service.NewReplicationService(replRepo, assetRepo, blobStore, "test-secret-32-bytes-long!!!", nil, nopReplLog()).WithHTTPClientFactory(plainClient)
 
 	enc, _ := svc.EncryptPassword("pass")
 	rule := &domain.ReplicationRule{
@@ -177,7 +181,7 @@ func TestReplicationService_RunRule_SkipsExistingAssets(t *testing.T) {
 	_ = assetRepo.Create(ctx, asset)
 
 	replRepo := testutil.NewReplicationRepo()
-	svc := service.NewReplicationService(replRepo, assetRepo, blobStore, "another-secret-32-bytes-long!!", nil, nopReplLog())
+	svc := service.NewReplicationService(replRepo, assetRepo, blobStore, "another-secret-32-bytes-long!!", nil, nopReplLog()).WithHTTPClientFactory(plainClient)
 
 	rule := &domain.ReplicationRule{
 		Name:       "skip-rule",
@@ -216,7 +220,7 @@ func TestReplicationService_TestConnection_OK(t *testing.T) {
 	defer target.Close()
 
 	replRepo := testutil.NewReplicationRepo()
-	svc := service.NewReplicationService(replRepo, testutil.NewAssetRepo(), testutil.NewBlobStore(), "secret-key-32-bytes-long-padded!", nil, nopReplLog())
+	svc := service.NewReplicationService(replRepo, testutil.NewAssetRepo(), testutil.NewBlobStore(), "secret-key-32-bytes-long-padded!", nil, nopReplLog()).WithHTTPClientFactory(plainClient)
 	ctx := context.Background()
 
 	rule := &domain.ReplicationRule{

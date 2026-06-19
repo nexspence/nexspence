@@ -20,6 +20,16 @@ import (
 
 func init() { gin.SetMode(gin.TestMode) }
 
+// useUnguardedUpstream swaps the package UpstreamClient for an unguarded client
+// for the duration of the test, so cache-miss fetches can reach loopback
+// httptest servers (the production client's SSRF guard blocks 127.0.0.1).
+func useUnguardedUpstream(t *testing.T) {
+	t.Helper()
+	orig := repoproxy.UpstreamClient
+	repoproxy.UpstreamClient = &http.Client{}
+	t.Cleanup(func() { repoproxy.UpstreamClient = orig })
+}
+
 func proxyRepo(name, remoteURL string) *domain.Repository {
 	return &domain.Repository{
 		ID:          "repo-" + name,
@@ -114,6 +124,7 @@ func TestServeGET_CacheHit(t *testing.T) {
 }
 
 func TestServeGET_CacheMiss_FetchesUpstream(t *testing.T) {
+	useUnguardedUpstream(t)
 	const body = "upstream artifact content"
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/octet-stream")

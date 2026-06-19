@@ -21,7 +21,17 @@ type backupArchive struct {
 	blobs   map[string][]byte
 }
 
+// defaultMaxImportBytes caps total decompressed bytes read from a backup
+// archive, guarding against gzip bombs that would otherwise OOM the process.
+const defaultMaxImportBytes = 8 << 30 // 8 GiB
+
 func readBackupArchive(r io.Reader) (*backupArchive, error) {
+	return readBackupArchiveLimited(r, defaultMaxImportBytes)
+}
+
+// readBackupArchiveLimited decodes a backup tar.gz, returning an error once the
+// cumulative decompressed size of all entries exceeds maxBytes.
+func readBackupArchiveLimited(r io.Reader, maxBytes int64) (*backupArchive, error) {
 	gr, err := gzip.NewReader(r)
 	if err != nil {
 		return nil, fmt.Errorf("not a gzip archive: %w", err)
@@ -29,6 +39,7 @@ func readBackupArchive(r io.Reader) (*backupArchive, error) {
 	defer func() { _ = gr.Close() }()
 	tr := tar.NewReader(gr)
 	a := &backupArchive{entries: map[string][]byte{}, blobs: map[string][]byte{}}
+	var total int64
 	for {
 		hdr, err := tr.Next()
 		if errors.Is(err, io.EOF) {
@@ -37,10 +48,19 @@ func readBackupArchive(r io.Reader) (*backupArchive, error) {
 		if err != nil {
 			return nil, fmt.Errorf("read archive: %w", err)
 		}
-		data, err := io.ReadAll(tr)
+		remaining := maxBytes - total
+		if remaining <= 0 {
+			return nil, fmt.Errorf("backup archive exceeds %d byte decompression limit", maxBytes)
+		}
+		// Read one extra byte: if the entry fills remaining+1, it overflowed the cap.
+		data, err := io.ReadAll(io.LimitReader(tr, remaining+1))
 		if err != nil {
 			return nil, fmt.Errorf("read entry %s: %w", hdr.Name, err)
 		}
+		if int64(len(data)) > remaining {
+			return nil, fmt.Errorf("backup archive exceeds %d byte decompression limit", maxBytes)
+		}
+		total += int64(len(data))
 		if strings.HasPrefix(hdr.Name, "blobs/") {
 			a.blobs[strings.TrimPrefix(hdr.Name, "blobs/")] = data
 		} else {

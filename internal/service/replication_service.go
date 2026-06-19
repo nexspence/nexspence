@@ -20,6 +20,7 @@ import (
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/logger"
+	"github.com/nexspence-oss/nexspence/internal/netguard"
 	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/storage"
 )
@@ -32,6 +33,11 @@ type ReplicationService struct {
 	primaryKey []byte // seals all new ciphertexts
 	legacyKey  []byte // sha256(jwt_secret) fallback; nil when no dedicated key is set
 	log        logger.Logger
+
+	// newClient builds an HTTP client for a given timeout. Defaults to the
+	// SSRF-guarded netguard.Client (target URLs are user-configured); tests
+	// override it to reach loopback servers.
+	newClient func(timeout time.Duration) *http.Client
 
 	mu            sync.Mutex
 	cronScheduler *cron.Cron
@@ -53,6 +59,7 @@ func NewReplicationService(
 		blobStore: blobStore,
 		log:       log,
 		entryIDs:  make(map[string]cron.EntryID),
+		newClient: netguard.Client,
 	}
 	legacy := deriveKey(jwtSecret)
 	if len(encryptionKey) == 32 {
@@ -61,6 +68,13 @@ func NewReplicationService(
 	} else {
 		s.primaryKey = legacy
 	}
+	return s
+}
+
+// WithHTTPClientFactory overrides how HTTP clients are built (by timeout).
+// Intended for tests that need to reach loopback servers the SSRF guard blocks.
+func (s *ReplicationService) WithHTTPClientFactory(f func(timeout time.Duration) *http.Client) *ReplicationService {
+	s.newClient = f
 	return s
 }
 
@@ -303,7 +317,7 @@ func (s *ReplicationService) runRule(ctx context.Context, rule *domain.Replicati
 		return fmt.Errorf("list local assets: %w", err)
 	}
 
-	client := &http.Client{Timeout: 5 * time.Minute}
+	client := s.newClient(5 * time.Minute)
 	for _, asset := range localAssets {
 		if _, exists := targetPaths[asset.Path]; exists {
 			hist.SkippedCount++
@@ -330,7 +344,7 @@ func (s *ReplicationService) runRule(ctx context.Context, rule *domain.Replicati
 // listTargetPaths queries the target instance for all asset paths in targetRepo.
 func (s *ReplicationService) listTargetPaths(ctx context.Context, rule *domain.ReplicationRule, password string) (map[string]struct{}, error) {
 	paths := make(map[string]struct{})
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := s.newClient(30 * time.Second)
 	token := ""
 
 	for {
@@ -442,7 +456,7 @@ func (s *ReplicationService) TestConnection(ctx context.Context, ruleID string) 
 		req.SetBasicAuth(rule.TargetUsername, password)
 	}
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := s.newClient(10 * time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("connection failed: %w", err)

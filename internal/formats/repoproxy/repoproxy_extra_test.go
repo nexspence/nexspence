@@ -195,6 +195,7 @@ func TestServeGET_MissingRemoteURL(t *testing.T) {
 }
 
 func TestServeGET_Upstream404(t *testing.T) {
+	useUnguardedUpstream(t)
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 		_, _ = fmt.Fprint(w, "not found")
@@ -267,6 +268,7 @@ func TestServeGET_UpstreamError_FiresWebhook(t *testing.T) {
 }
 
 func TestServeGET_UpstreamNotModified(t *testing.T) {
+	useUnguardedUpstream(t)
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("ETag", `"abc123"`)
 		w.WriteHeader(http.StatusNotModified)
@@ -323,6 +325,7 @@ func TestServeGET_HEAD_CacheHit(t *testing.T) {
 }
 
 func TestServeGET_HEAD_CacheMiss_FetchesUpstream(t *testing.T) {
+	useUnguardedUpstream(t)
 	const body = "upstream content for head"
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
@@ -343,6 +346,7 @@ func TestServeGET_HEAD_CacheMiss_FetchesUpstream(t *testing.T) {
 }
 
 func TestServeGET_DefaultContentType(t *testing.T) {
+	useUnguardedUpstream(t)
 	// Upstream returns no Content-Type; defaultContentType should be used.
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		// Explicitly clear Content-Type so Go doesn't auto-detect
@@ -365,6 +369,7 @@ func TestServeGET_DefaultContentType(t *testing.T) {
 }
 
 func TestServeGET_UpstreamPathOverride(t *testing.T) {
+	useUnguardedUpstream(t)
 	// When upstreamPath is set, that path should be fetched but cache key uses repoRelativePath.
 	const body = "scoped npm meta"
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -389,6 +394,7 @@ func TestServeGET_UpstreamPathOverride(t *testing.T) {
 }
 
 func TestServeGET_Accept_Header_Forwarded(t *testing.T) {
+	useUnguardedUpstream(t)
 	var capturedAccept string
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		capturedAccept = r.Header.Get("Accept")

@@ -17,7 +17,9 @@ import (
 
 func newWebhookSvc() (*service.WebhookService, *testutil.WebhookRepo) {
 	repo := testutil.NewWebhookRepo()
-	return service.NewWebhookService(repo), repo
+	// Inject a plain client so deliveries can reach loopback httptest servers
+	// (the production client is SSRF-guarded and blocks 127.0.0.1).
+	return service.NewWebhookService(repo).WithHTTPClient(&http.Client{Timeout: 10 * time.Second}), repo
 }
 
 func TestWebhookService_CRUD(t *testing.T) {
