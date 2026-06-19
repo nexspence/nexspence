@@ -43,6 +43,7 @@ type HTTPConfig struct {
 	ReadTimeoutSec  int       `mapstructure:"read_timeout_sec"`
 	WriteTimeoutSec int       `mapstructure:"write_timeout_sec"`
 	MaxBodyMB       int       `mapstructure:"max_body_mb"`
+	CORSOrigins     []string  `mapstructure:"cors_origins"`
 	TLS             TLSConfig `mapstructure:"tls"`
 	BaseURL         string    `mapstructure:"base_url"`
 }
@@ -355,6 +356,7 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("http.read_timeout_sec", 1800)
 	v.SetDefault("http.write_timeout_sec", 1800)
 	v.SetDefault("http.max_body_mb", 1024)
+	v.SetDefault("http.cors_origins", []string{})
 	v.SetDefault("http.base_url", "http://localhost:8081")
 	// Viper bug: AutomaticEnv + Unmarshal silently skips keys that have no
 	// default/config-file value (not in AllKeys). Empty-string defaults ensure

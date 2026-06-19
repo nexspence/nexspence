@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"net/http"
@@ -156,11 +157,15 @@ func cmdServe() *cobra.Command {
 			router := api.NewRouter(cfg, pool, log, Version)
 
 			srv := &http.Server{
-				Addr:         cfg.HTTP.Addr,
-				Handler:      router,
-				ReadTimeout:  time.Duration(cfg.HTTP.ReadTimeoutSec) * time.Second,
-				WriteTimeout: time.Duration(cfg.HTTP.WriteTimeoutSec) * time.Second,
-				IdleTimeout:  120 * time.Second,
+				Addr:              cfg.HTTP.Addr,
+				Handler:           router,
+				ReadTimeout:       time.Duration(cfg.HTTP.ReadTimeoutSec) * time.Second,
+				WriteTimeout:      time.Duration(cfg.HTTP.WriteTimeoutSec) * time.Second,
+				ReadHeaderTimeout: 10 * time.Second,
+				IdleTimeout:       120 * time.Second,
+			}
+			if cfg.HTTP.TLS.Enabled {
+				srv.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12}
 			}
 
 			// Start server in goroutine

@@ -263,7 +263,9 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 	r.GET("/readyz", handlers.ReadinessHandler(pool, rdb))
 	r.Use(gin.Recovery())
 	r.Use(requestLogger(log))
-	r.Use(corsMiddleware())
+	r.Use(corsMiddleware(cfg.HTTP.CORSOrigins))
+	r.Use(securityHeaders())
+	r.Use(bodyLimit(cfg.HTTP.MaxBodyMB, []string{"/repository/", "/v2/", "/api/v1/repositories/import", "/service/rest/v1/components"}))
 	r.Use(handlers.MetricsMiddleware())
 	r.Use(AuditMiddleware(auditRepo))
 	if cfg.Auth.RateLimitEnabled {
