@@ -67,4 +67,5 @@ dist/
 
 # Release-workflow scratch (written before GoReleaser runs; must not dirty the tree)
 release-assets/
+.cache/
 
