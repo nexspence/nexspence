@@ -386,7 +386,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
   <div class="step-list">
     <div class="step-item">
       <div class="step-num">01</div>
-      <div><div class="step-title" data-i18n="qs.s1.title">Download the latest release</div><div class="step-desc" data-i18n="qs.s1.desc">Go to <a href="https://github.com/nexspence/nexspence/releases/latest" target="_blank" rel="noopener" style="color:var(--blue)">GitHub Releases</a>, download <code>nexspence-vX.Y.Z.zip</code> and unpack it.</div></div>
+      <div><div class="step-title" data-i18n="qs.s1.title">Download the latest release</div><div class="step-desc" data-i18n="qs.s1.desc">Go to <a href="https://github.com/nexspence/nexspence/releases/latest" target="_blank" rel="noopener" style="color:var(--blue)">GitHub Releases</a>, download the <code>Source code (zip)</code> archive and unpack it.</div></div>
     </div>
     <div class="step-item">
       <div class="step-num">02</div>
@@ -400,7 +400,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
   <div class="cb">
     <div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
     <div class="cb-body"><span class="cc"># Unpack the release zip</span>
-unzip nexspence-vX.Y.Z.zip &amp;&amp; cd nexspence-vX.Y.Z
+unzip nexspence-*.zip &amp;&amp; cd nexspence-*
 
 <span class="cc"># Config</span>
 cp config.yaml.example config.yaml
@@ -412,7 +412,7 @@ docker compose up -d
 <span class="cc"># Open UI</span>
 open http://localhost:8081  <span class="cc"># default login: admin / admin123</span></div>
   </div>
-  <div class="alert-info" data-i18n="qs.note"><strong>Note:</strong> Change the default password immediately after first login. The bootstrap admin credentials are set in <code>config.yaml</code> under the <code>bootstrap</code> key.</div>
+  <div class="alert-info" data-i18n="qs.note"><strong>Note:</strong> Since v1.18.0 the server refuses to start with the shipped defaults (<code>admin123</code> / the example <code>jwt_secret</code>) unless <code>auth.allow_insecure_defaults: true</code> is set. The dev compose sets this so the quick-start boots; for production set a real <code>admin_password</code> and <code>jwt_secret</code> (e.g. via <code>NEXSPENCE_AUTH_JWT_SECRET</code>) instead.</div>
 </template>
 
 <template id="tpl-repositories">
@@ -1552,12 +1552,12 @@ const TRANSLATIONS={
     'ch.no-entries':'No changelog entries recorded.',
     'qs.title':'Quick Start','qs.sub':'Run Nexspence locally in under 2 minutes using Docker Compose.',
     'qs.s1.title':'Download the latest release',
-    'qs.s1.desc':'Go to <a href="https://github.com/nexspence/nexspence/releases/latest" target="_blank" rel="noopener" style="color:var(--blue)">GitHub Releases</a>, download <code>nexspence-vX.Y.Z.zip</code> and unpack it.',
+    'qs.s1.desc':'Go to <a href="https://github.com/nexspence/nexspence/releases/latest" target="_blank" rel="noopener" style="color:var(--blue)">GitHub Releases</a>, download the <code>Source code (zip)</code> archive and unpack it.',
     'qs.s2.title':'Configure',
     'qs.s2.desc':'Copy <code>config.yaml.example</code> → <code>config.yaml</code> and set a strong <code>admin_password</code> and <code>jwt_secret</code>.',
     'qs.s3.title':'Start the stack',
     'qs.s3.desc':'<code>docker compose up -d</code> — waits for PostgreSQL, runs migrations, serves the UI at <code>http://localhost:8081</code>.',
-    'qs.note':'<strong>Note:</strong> Change the default password immediately after first login. Bootstrap credentials are set in <code>config.yaml</code> under the <code>bootstrap</code> key.',
+    'qs.note':'<strong>Note:</strong> Since v1.18.0 the server refuses to start with the shipped defaults (<code>admin123</code> / the example <code>jwt_secret</code>) unless <code>auth.allow_insecure_defaults: true</code> is set. The dev compose sets this so the quick-start boots; for production set a real <code>admin_password</code> and <code>jwt_secret</code> (e.g. via <code>NEXSPENCE_AUTH_JWT_SECRET</code>) instead.',
     'repo.title':'Repositories',
     'repo.sub':'Nexspence organises artifacts into repositories. Each repository has a type (Hosted, Proxy, or Group) and a format (Maven, Docker, npm, etc.).',
     'repo.types.sep':'Repository Types',
@@ -1854,12 +1854,12 @@ const TRANSLATIONS={
     'qs.title':'Быстрый старт',
     'qs.sub':'Запустите Nexspence локально за 2 минуты с Docker Compose.',
     'qs.s1.title':'Скачайте последний релиз',
-    'qs.s1.desc':'Откройте <a href="https://github.com/nexspence/nexspence/releases/latest" target="_blank" rel="noopener" style="color:var(--blue)">GitHub Releases</a>, скачайте <code>nexspence-vX.Y.Z.zip</code> и распакуйте архив.',
+    'qs.s1.desc':'Откройте <a href="https://github.com/nexspence/nexspence/releases/latest" target="_blank" rel="noopener" style="color:var(--blue)">GitHub Releases</a>, скачайте архив <code>Source code (zip)</code> и распакуйте его.',
     'qs.s2.title':'Настройте конфигурацию',
     'qs.s2.desc':'Скопируйте <code>config.yaml.example</code> → <code>config.yaml</code> и задайте надёжные <code>admin_password</code> и <code>jwt_secret</code>.',
     'qs.s3.title':'Запустите стек',
     'qs.s3.desc':'<code>docker compose up -d</code> — дождётся PostgreSQL, применит миграции и запустит UI на <code>http://localhost:8081</code>.',
-    'qs.note':'<strong>Важно:</strong> смените пароль администратора сразу после первого входа. Учётные данные задаются в <code>config.yaml</code> в разделе <code>bootstrap</code>.',
+    'qs.note':'<strong>Важно:</strong> начиная с v1.18.0 сервер не запустится со встроенными значениями по умолчанию (<code>admin123</code> / пример <code>jwt_secret</code>), если не задано <code>auth.allow_insecure_defaults: true</code>. В dev-конфигурации compose это включено, чтобы quick-start работал; для продакшена задайте реальные <code>admin_password</code> и <code>jwt_secret</code> (например, через <code>NEXSPENCE_AUTH_JWT_SECRET</code>).',
     'repo.title':'Репозитории',
     'repo.sub':'Nexspence хранит артефакты в репозиториях. Каждый репозиторий имеет тип (Hosted, Proxy или Group) и формат (Maven, Docker, npm и др.).',
     'repo.types.sep':'Типы репозиториев',

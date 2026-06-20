@@ -113,7 +113,7 @@ docker compose up -d
 | Service | URL | Default credentials |
 |---------|-----|---------------------|
 | Web UI & REST API | http://localhost:8081 | `admin` / `admin123` |
-| Docker registry | localhost:5000 | same credentials |
+| Docker registry | localhost:5001 | same credentials |
 | PostgreSQL | localhost:5437 | `nexspence` / `nexspence` |
 
 > Change the admin password immediately after first login.
@@ -211,7 +211,7 @@ terraform {
   required_providers {
     nexspence = {
       source  = "nexspence/nexspence"
-      version = "~> 0.1"
+      version = "~> 0.2"
     }
   }
 }
