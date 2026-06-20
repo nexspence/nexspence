@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "nexspence.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "nexspence.labels" . | nindent 4 }}
+data:
+  NEXSPENCE_HTTP_LISTEN: {{ .Values.config.httpListen | quote }}
+  NEXSPENCE_HTTP_BASE_URL: {{ .Values.config.baseURL | quote }}
+  NEXSPENCE_LOG_LEVEL: {{ .Values.config.logLevel | quote }}
+  NEXSPENCE_LOG_FORMAT: {{ .Values.config.logFormat | quote }}
+  NEXSPENCE_AUTH_JWT_EXPIRY_HOURS: {{ .Values.config.jwtExpiryHours | quote }}
+  NEXSPENCE_AUTH_ALLOW_INSECURE_DEFAULTS: {{ .Values.config.allowInsecureDefaults | quote }}
+  NEXSPENCE_BOOTSTRAP_ADMIN_USERNAME: {{ .Values.config.adminUsername | quote }}
+  NEXSPENCE_BOOTSTRAP_ADMIN_EMAIL: {{ .Values.config.adminEmail | quote }}
+  NEXSPENCE_BOOTSTRAP_ADMIN_FIRST_NAME: {{ .Values.config.adminFirstName | quote }}
+  {{- if eq .Values.storage.type "local" }}
+  NEXSPENCE_STORAGE_LOCAL_BASE_PATH: {{ .Values.storage.local.mountPath | quote }}
+  {{- else if eq .Values.storage.type "s3" }}
+  NEXSPENCE_STORAGE_S3_ENDPOINT: {{ .Values.storage.s3.endpoint | quote }}
+  NEXSPENCE_STORAGE_S3_BUCKET: {{ .Values.storage.s3.bucket | quote }}
+  NEXSPENCE_STORAGE_S3_REGION: {{ .Values.storage.s3.region | quote }}
+  NEXSPENCE_STORAGE_S3_USE_SSL: {{ .Values.storage.s3.useSSL | quote }}
+  {{- end }}

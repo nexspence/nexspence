@@ -1,0 +1,259 @@
+# Nexspence single-node deployment
+#
+# Run modes:
+#   Without Keycloak (default):  docker compose up
+#   With Keycloak SSO:           OIDC_ENABLED=true docker compose --profile keycloak up
+#
+# Web UI: http://localhost:8081
+services:
+
+  # ── PostgreSQL ────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: nexspence
+      POSTGRES_PASSWORD: nexspence
+      POSTGRES_DB: nexspence
+    ports:
+      - "5437:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nexspence"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── Keycloak (optional OIDC IdP, profile: keycloak) ─────────────────
+  # Start with: OIDC_ENABLED=true docker compose --profile keycloak up
+  # Realm "nexspence" is auto-imported on first start from keycloak/nexspence-realm.json.
+  # Admin UI: http://localhost:8180  (admin / admin)
+  # Test user: testuser / testpass  (in group nexspence-admins → gets nx-admin role)
+  keycloak:
+    profiles: [keycloak]
+    image: quay.io/keycloak/keycloak:24.0
+    hostname: keycloak
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_HTTP_PORT: "8080"
+      # Split-horizon fix: browser must reach Keycloak's HTML pages (form POSTs,
+      # redirects) at localhost:8180. Setting KC_HOSTNAME=localhost:8180 makes
+      # Keycloak generate all URLs with localhost:8180 so the browser can follow
+      # them. The token's iss claim will also be http://localhost:8180/…
+      # OIDCService.NewOIDCService handles the resulting iss mismatch via
+      # ProviderConfig (bypasses go-oidc issuer check) + SkipIssuerCheck: true.
+      KC_HOSTNAME: "localhost"
+      KC_HOSTNAME_PORT: "8180"
+      KC_HOSTNAME_STRICT: "false"
+      KC_HOSTNAME_STRICT_HTTPS: "false"
+      KC_HTTP_ENABLED: "true"
+      KC_DB: dev-mem
+    ports:
+      - "8180:8080"
+    volumes:
+      - ./keycloak:/opt/keycloak/data/import:ro
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/8080 && printf 'GET /realms/nexspence/.well-known/openid-configuration HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && cat <&3 | grep -q issuer"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  # ── Nexspence backend ─────────────────────────────────────────────
+  nexspence:
+    image: ghcr.io/nexspence/nexspence:v1.18.0
+    restart: unless-stopped
+    # Run as the unprivileged uid/gid baked into the image, drop all Linux
+    # capabilities, and forbid privilege escalation. The blob volume is mounted
+    # at /app/data/blobs (a dir the image creates owned by 1000) so a fresh
+    # named volume inherits that ownership and the non-root process can write.
+    user: "1000:1000"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    shm_size: "2gb"
+    ulimits:
+      nofile:
+        soft: 1048576
+        hard: 1048576
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+      keycloak:
+        condition: service_healthy
+        required: false
+    environment:
+      NEXSPENCE_DATABASE_DSN: "postgres://nexspence:nexspence@postgres:5432/nexspence?sslmode=disable"
+      NEXSPENCE_AUTH_JWT_SECRET: "nexspence-dev-default-secret-change-me-in-production"  # development default — server boots but WARNS; override for production
+      NEXSPENCE_AUTH_ALLOW_INSECURE_DEFAULTS: "true"  # dev quick-start: permit shipped default secrets; production must leave this false
+      NEXSPENCE_HTTP_ADDR: ":8081"
+      NEXSPENCE_HTTP_BASE_URL: "http://localhost:8081"
+      NEXSPENCE_STORAGE_DEFAULT_TYPE: "local"
+      # Blobs are stored at the volume root: base_path=/app/data/blobs equals
+      # the volume mountpoint, so LocalBlobStore writes <shard>/<key> directly
+      # under the volume root — matching the pre-1.x on-disk layout, so an
+      # existing nexspence_blobs volume's data lines up after upgrade.
+      NEXSPENCE_STORAGE_LOCAL_BASE_PATH: "/app/data/blobs"
+      NEXSPENCE_LOG_LEVEL: "info"
+      NEXSPENCE_LOG_FORMAT: "json"
+      # ── OIDC (Keycloak dev IdP, active when OIDC_ENABLED=true) ──────
+      NEXSPENCE_OIDC_ENABLED: "${OIDC_ENABLED:-false}"
+      NEXSPENCE_OIDC_DISPLAY_NAME: "Keycloak"
+      # Internal URL — used for discovery + token exchange inside Docker network
+      NEXSPENCE_OIDC_ISSUER: "http://keycloak:8080/realms/nexspence"
+      # Public URL — rewritten into auth redirect + SLO URLs sent to the browser
+      NEXSPENCE_OIDC_PUBLIC_ISSUER_URL: "http://localhost:8180/realms/nexspence"
+      NEXSPENCE_OIDC_CLIENT_ID: "nexspence"
+      NEXSPENCE_OIDC_CLIENT_SECRET: "dev-oidc-secret-nexspence"
+      NEXSPENCE_OIDC_REDIRECT_URL: "http://localhost:8081/api/v1/auth/oidc/callback"
+      NEXSPENCE_OIDC_FRONTEND_BASE_URL: "http://localhost:8081"
+      NEXSPENCE_OIDC_COOKIE_SECURE: "false"
+      # base64(32 random bytes) — dev-only key, change in production
+      NEXSPENCE_OIDC_COOKIE_KEY: "YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY="
+      NEXSPENCE_OIDC_ADMIN_GROUP: "nexspence-admins"
+      NEXSPENCE_OIDC_GROUPS_CLAIM: "groups"
+      NEXSPENCE_OIDC_PROVISIONING: "jit"
+      # Request only standard scopes — groups claim is injected by a direct
+      # protocol mapper on the client, no custom scope needed.
+      NEXSPENCE_OIDC_SCOPES: "openid,profile,email"
+    ports:
+      - "8081:8081"
+      - "5001:5000"   # Docker registry HTTP port
+    volumes:
+      # Mounted at /app/data/blobs (== base_path) so blobs land at the volume
+      # root, matching pre-1.x layout. NOTE: a volume created by an older
+      # root-running image is root-owned; after upgrading to the non-root image,
+      # run once:
+      #   docker compose run --rm --user 0 nexspence chown -R 1000:1000 /app/data/blobs
+      # (or recreate the volume) so the non-root process can write to it.
+      - nexspence_blobs:/app/data/blobs
+      - ${CONFIG_FILE:-./config.yaml}:/app/config.yaml:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8081/service/rest/v1/status/check"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  # ── MinIO (S3-compatible object storage) ─────────────────────
+  # Console: http://localhost:9001  (minioadmin / minioadmin)
+  # S3 API:  http://localhost:9000
+  # Inside Docker network: endpoint = http://minio:9000
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Creates bucket "nexspence-blobs" on first start, then exits.
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      sh -c "
+        mc alias set local http://minio:9000 minioadmin minioadmin &&
+        mc mb --ignore-existing local/nexspence-blobs &&
+        mc mb --ignore-existing local/nexspence-s3-1 &&
+        mc mb --ignore-existing local/nexspence-s3-2 &&
+        echo 'all buckets ready'
+      "
+    restart: "no"
+
+  # ── Frontend dev server (Vite) ────────────────────────────────
+  # Only used during development — production build is embedded in nexspence binary
+  frontend-dev:
+    image: node:20-alpine
+    working_dir: /app
+    command: sh -c "npm install && npm run dev -- --host"
+    profiles:
+      - dev
+    depends_on:
+      - nexspence
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
+    environment:
+      VITE_API_BASE: "http://localhost:8081"
+
+  # ── nexspence.com website ───────────────────────────────────
+  # Start with: docker compose --profile website up -d website
+  # URL: http://localhost:8079
+  website:
+    profiles: [website]
+    image: ghcr.io/nexspence/nexspence:v1.18.0
+    restart: unless-stopped
+    ports:
+      - "8079:80"
+
+  # ── Prometheus (profile: monitoring) ─────────────────────────
+  # Setup: cp deploy/monitoring/prometheus-token.example deploy/monitoring/prometheus-token
+  #        then put a valid nxs_* API token in that file (see .example for instructions)
+  # Start with: docker compose --profile monitoring up
+  # UI: http://localhost:9090
+  prometheus:
+    profiles: [monitoring]
+    image: prom/prometheus:v2.51.0
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+    volumes:
+      - ./deploy/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/monitoring/prometheus-token:/etc/prometheus/token:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    depends_on:
+      nexspence:
+        condition: service_healthy
+
+  # ── Grafana (profile: monitoring) ─────────────────────────────
+  # Start with: docker compose --profile monitoring up
+  # UI: http://localhost:3000  (admin / admin)
+  grafana:
+    profiles: [monitoring]
+    image: grafana/grafana:10.4.0
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - ./deploy/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+
+volumes:
+  postgres_data:
+  nexspence_blobs:
+  minio_data:
+  frontend_node_modules:
+  prometheus_data:
+  grafana_data:

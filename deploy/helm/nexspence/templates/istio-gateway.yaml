@@ -1,0 +1,26 @@
+{{- if .Values.gateway.istio.enabled -}}
+apiVersion: networking.istio.io/v1beta1
+kind: Gateway
+metadata:
+  name: {{ include "nexspence.fullname" . }}-istio
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "nexspence.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- toYaml .Values.gateway.istio.gatewaySelector | nindent 4 }}
+  servers:
+    - port:
+        number: {{ .Values.gateway.istio.port }}
+        name: http
+        protocol: {{ if .Values.gateway.istio.tlsMode }}HTTPS{{ else }}HTTP{{ end }}
+      hosts:
+        {{- toYaml .Values.gateway.istio.hosts | nindent 8 }}
+      {{- if .Values.gateway.istio.tlsMode }}
+      tls:
+        mode: {{ .Values.gateway.istio.tlsMode }}
+        {{- if .Values.gateway.istio.tlsSecret }}
+        credentialName: {{ .Values.gateway.istio.tlsSecret }}
+        {{- end }}
+      {{- end }}
+{{- end }}

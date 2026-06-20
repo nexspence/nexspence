@@ -1,0 +1,28 @@
+{{- if .Values.gateway.istio.enabled -}}
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: {{ include "nexspence.fullname" . }}-istio
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "nexspence.labels" . | nindent 4 }}
+  {{- with .Values.gateway.istio.vsAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  hosts:
+    {{- toYaml .Values.gateway.istio.hosts | nindent 4 }}
+  gateways:
+    - {{ include "nexspence.fullname" . }}-istio
+  http:
+    - match:
+        - uri:
+            prefix: /
+      route:
+        - destination:
+            host: {{ include "nexspence.fullname" . }}
+            port:
+              number: {{ .Values.service.port }}
+      timeout: {{ .Values.gateway.istio.timeout }}
+{{- end }}

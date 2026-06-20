@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="docs/assets/logo.png" alt="Nexspence" width="380">
+  <img src="https://nexspence.com/assets/logo.png" alt="Nexspence" width="380">
   <br><br>
   <p><strong>Free, open-source universal artifact repository manager</strong></p>
   <p>A full-featured self-hosted alternative to Sonatype Nexus Repository</p>
@@ -11,6 +11,7 @@
   ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16+-4169E1?style=flat-square&logo=postgresql&logoColor=white)
   ![Docker](https://img.shields.io/badge/Docker-ready-2496ED?style=flat-square&logo=docker&logoColor=white)
   ![License](https://img.shields.io/badge/License-AGPLv3-22c55e?style=flat-square)
+  ![Lint](https://img.shields.io/badge/lint-golangci--lint%20v2-22c55e?style=flat-square&logo=go&logoColor=white)
   ![Tests](https://img.shields.io/badge/tests-1846%20passing-22c55e?style=flat-square)
 
 </div>
@@ -19,9 +20,7 @@
 
 ## 🎬 Demo
 
-https://github.com/skensell201/nexspence-demo/raw/main/docs/assets/demo.mp4
-
-> ▶️ If the video doesn't play inline, [open / download it here](docs/assets/demo.mp4).
+▶️ **[Watch the demo on nexspence.com](https://nexspence.com)**
 
 ---
 
@@ -35,24 +34,24 @@ Nexspence is a self-hosted artifact repository manager that supports **14 packag
 
 ```
                          ┌─────────────────────┐
-                         │   Load Balancer      │  (nginx / k8s Ingress / ALB)
+                         │   Load Balancer     │  (nginx / k8s Ingress / ALB)
                          └──────────┬──────────┘
                     ┌───────────────┴───────────────┐
                     ▼                               ▼
 ┌────────────┐  JWT/Basic  ┌──────────────────┐   ┌──────────────────┐
-│  Client    │ ──────────▶ │  Nexspence node 1 │   │  Nexspence node 2│  (HA)
-│ (curl/mvn/ │             │  Gin + Auth +     │   │  identical       │
-│  pip/npm…) │ ◀────────── │  Audit + RBAC     │   └────────┬─────────┘
-└────────────┘             └────────┬──────────┘            │
-                                    │                        │
-                    ┌───────────────▼────────────────────────▼──────┐
-                    │           Shared State                          │
-                    │  ┌──────────────┐  ┌─────────┐  ┌──────────┐ │
-                    │  │  PostgreSQL  │  │  Redis  │  │  S3/MinIO│ │
-                    │  │  (all data)  │  │  (locks │  │  (blobs) │ │
-                    │  └──────────────┘  │  cache) │  └──────────┘ │
-                    │                    └─────────┘                │
-                    └────────────────────────────────────────────────┘
+│  Client    │ ──────────▶ │  Nexspence node 1 │  │  Nexspence node 2│  (HA)
+│ (curl/mvn/ │             │  Gin + Auth +     │  │  identical       │
+│  pip/npm…) │ ◀────────── │  Audit + RBAC     │  └────────┬─────────┘
+└────────────┘             └────────┬──────────┘           │
+                                    │                      │
+                    ┌───────────────▼──────────────────────▼──────┐
+                    │           Shared State                      │
+                    │  ┌──────────────┐  ┌─────────┐  ┌──────────┐│
+                    │  │  PostgreSQL  │  │  Redis  │  │  S3/MinIO││
+                    │  │  (all data)  │  │  (locks │  │  (blobs) ││
+                    │  └──────────────┘  │  cache) │  └──────────┘│
+                    │                    └─────────┘              │
+                    └─────────────────────────────────────────────┘
 ```
 
 View the full site with interactive architecture diagram, install guide, and comparison: **[nexspence.com](https://nexspence.com)** →
@@ -65,8 +64,8 @@ View the full site with interactive architecture diagram, install guide, and com
 
 <table>
   <tr>
-    <td><img src="docs/assets/screenshots/repositories.PNG" alt="Repositories page" width="480"></td>
-    <td><img src="docs/assets/screenshots/browse.PNG" alt="Browse" width="480"></td>
+    <td><img src="https://nexspence.com/assets/screenshots/repositories.PNG" alt="Repositories page" width="480"></td>
+    <td><img src="https://nexspence.com/assets/screenshots/browse.PNG" alt="Browse" width="480"></td>
   </tr>
   <tr>
     <td align="center"><em>Repositories list</em></td>
@@ -78,8 +77,8 @@ View the full site with interactive architecture diagram, install guide, and com
 
 <table>
   <tr>
-    <td><img src="docs/assets/screenshots/admin_blobstores.PNG" alt="Blob Stores" width="480"></td>
-    <td><img src="docs/assets/screenshots/security_roles.PNG" alt="Roles & RBAC" width="480"></td>
+    <td><img src="https://nexspence.com/assets/screenshots/admin_blobstores.PNG" alt="Blob Stores" width="480"></td>
+    <td><img src="https://nexspence.com/assets/screenshots/security_roles.PNG" alt="Roles & RBAC" width="480"></td>
   </tr>
   <tr>
     <td align="center"><em>Blob stores — S3 + local with connection test</em></td>
@@ -91,8 +90,8 @@ View the full site with interactive architecture diagram, install guide, and com
 
 <table>
   <tr>
-    <td><img src="docs/assets/screenshots/cleanup.PNG" alt="Cleanup policies" width="480"></td>
-    <td><img src="docs/assets/screenshots/search.PNG" alt="Search" width="480"></td>
+    <td><img src="https://nexspence.com/assets/screenshots/cleanup.PNG" alt="Cleanup policies" width="480"></td>
+    <td><img src="https://nexspence.com/assets/screenshots/search.PNG" alt="Search" width="480"></td>
   </tr>
   <tr>
     <td align="center"><em>Cleanup policies with dry-run preview</em></td>
@@ -107,7 +106,7 @@ View the full site with interactive architecture diagram, install guide, and com
 **Requirements:** [Docker](https://docs.docker.com/get-docker/) 24+ with Compose v2
 
 ```bash
-git clone https://github.com/skensell201/nexspence
+git clone https://github.com/nexspence/nexspence
 cd nexspence
 docker compose up -d
 ```
@@ -151,7 +150,18 @@ cd deploy/monitoring
 NEXSPENCE_URL=http://my-server:8081 docker compose up -d
 ```
 
-For all deployment variants (MinIO, HA cluster, Keycloak SSO, from source) see **[docs/deployment.md](docs/deployment.md)**.
+For all deployment variants (MinIO, HA cluster, Keycloak SSO, from source) see the **[documentation](https://nexspence.com/docs/)**.
+
+---
+
+### Native Install (no Docker)
+
+Prefer running on bare metal? Download the `.deb`/`.rpm` (Linux) or the macOS/Windows
+archive from the [latest release](https://github.com/nexspence/nexspence/releases/latest).
+Each ships with systemd / launchd / Windows-service integration, and the binary embeds
+the web UI (self-contained). Full walkthrough — including reverse-proxy (nginx/Caddy)
+and multi-node load-balancer setups — in the **[documentation](https://nexspence.com/docs/)**.
+Requires an external PostgreSQL.
 
 ---
 
@@ -161,7 +171,7 @@ Manage Nexspence from the terminal or CI/CD pipelines:
 
 ```bash
 # Install
-curl -sSfL https://raw.githubusercontent.com/skensell201/nxs/main/install.sh | sh
+curl -sSfL https://raw.githubusercontent.com/nexspence/nxs/main/install.sh | sh
 
 # Login and use
 nxs login --url http://localhost:8081 --user admin
@@ -170,7 +180,7 @@ nxs push my-repo path/to/artifact.jar artifact.jar
 nxs search --repo maven-releases --q mylib --json | jq '.[].version'
 ```
 
-Full command reference and CI/CD examples: **[github.com/skensell201/nxs](https://github.com/skensell201/nxs)**
+Full command reference and CI/CD examples: **[github.com/nexspence/nxs](https://github.com/nexspence/nxs)**
 
 ---
 
@@ -190,6 +200,40 @@ helm install nexspence \
 ```
 
 Five networking options (nginx, Traefik, Cilium ingress, Istio Gateway, Cilium Gateway API), external PostgreSQL, S3 storage, and HPA — see **[deploy/helm/nexspence/README.md](deploy/helm/nexspence/README.md)**.
+
+---
+
+## Terraform Provider
+
+Manage Nexspence as code with the official Terraform provider — repositories, blob stores, users, roles, content selectors, and privileges.
+
+```hcl
+terraform {
+  required_providers {
+    nexspence = {
+      source  = "nexspence/nexspence"
+      version = "~> 0.1"
+    }
+  }
+}
+
+provider "nexspence" {
+  url   = "https://nexspence.example.com"
+  token = var.nexspence_token # nxs_* API token
+}
+
+resource "nexspence_repository" "maven_central" {
+  name       = "maven-central"
+  format     = "maven2"
+  type       = "proxy"
+  blob_store = "default"
+  proxy {
+    remote_url = "https://repo1.maven.org/maven2/"
+  }
+}
+```
+
+Published on the [Terraform Registry](https://registry.terraform.io/providers/nexspence/nexspence) — source at **[nexspence/terraform-provider-nexspence](https://github.com/nexspence/terraform-provider-nexspence)**.
 
 ---
 
@@ -248,16 +292,11 @@ Five networking options (nginx, Traefik, Cilium ingress, Istio Gateway, Cilium G
 
 ## Documentation
 
-| Document | Description |
-|----------|-------------|
-| [docs/deployment.md](docs/deployment.md) | All deployment variants — Docker Compose, HA, Keycloak, from source |
-| [docs/ha-setup.md](docs/ha-setup.md) | High Availability — Redis, health probes, scaling |
-| [docs/oidc-setup.md](docs/oidc-setup.md) | OIDC SSO — Keycloak, Google, Entra ID, Okta |
-| [docs/webhooks.md](docs/webhooks.md) | Webhook events, payload format, HMAC verification |
-| [docs/security-rbac.md](docs/security-rbac.md) | RBAC guide — Roles, Privileges, Content Selectors, CEL examples |
-| [docs/api-spec.yaml](docs/api-spec.yaml) | OpenAPI 3.1 spec (Nexus-compat + Nexspence-native) |
-| [docs/architecture.md](docs/architecture.md) | System diagram, layer responsibilities, request flow |
-| [deploy/helm/nexspence/README.md](deploy/helm/nexspence/README.md) | Full Helm chart reference |
+Full documentation — deployment variants, HA setup, OIDC SSO, webhooks, the RBAC guide, the OpenAPI spec, and the architecture overview — lives on the website:
+
+📖 **[nexspence.com/docs](https://nexspence.com/docs/)**
+
+The Helm chart reference ships with the chart itself: [`deploy/helm/nexspence/README.md`](deploy/helm/nexspence/README.md).
 
 ---
 
@@ -273,7 +312,7 @@ Five networking options (nginx, Traefik, Cilium ingress, Istio Gateway, Cilium G
 | 60–63 | LDAP role mapping, Conda, Terraform, Helm chart | ✓ complete |
 | 64–67 | Landing page, in-app docs, security hardening | ✓ complete |
 | 68 | Extended monitoring — Prometheus endpoint, Grafana dashboard, UI Charts tab | ✓ complete |
-| CLI | [`nxs` CLI](https://github.com/skensell201/nxs) — terminal & CI/CD client, v0.1.0 | ✓ complete |
+| CLI | [`nxs` CLI](https://github.com/nexspence/nxs) — terminal & CI/CD client, v0.1.0 | ✓ complete |
 | next | SBOM generation, cosign image signing | planned |
 | next | OpenTelemetry traces | planned |
 | next | blob GC | planned |
@@ -301,7 +340,7 @@ AGPLv3 — see [LICENSE](LICENSE)
 ---
 
 <div align="center">
-  <img src="docs/assets/mini_logo.png" alt="Nexspence" width="60">
+  <img src="https://nexspence.com/assets/mini_logo.png" alt="Nexspence" width="60">
   <br>
   <sub>AGPLv3 License · Built with Go + React</sub>
 </div>
