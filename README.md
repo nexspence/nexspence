@@ -11,6 +11,7 @@
   ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16+-4169E1?style=flat-square&logo=postgresql&logoColor=white)
   ![Docker](https://img.shields.io/badge/Docker-ready-2496ED?style=flat-square&logo=docker&logoColor=white)
   ![License](https://img.shields.io/badge/License-AGPLv3-22c55e?style=flat-square)
+  ![Tests](https://img.shields.io/badge/tests-1846%20passing-22c55e?style=flat-square)
 
 </div>
 
