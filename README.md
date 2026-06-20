@@ -12,6 +12,7 @@
   ![Docker](https://img.shields.io/badge/Docker-ready-2496ED?style=flat-square&logo=docker&logoColor=white)
   ![License](https://img.shields.io/badge/License-AGPLv3-22c55e?style=flat-square)
   ![Lint](https://img.shields.io/badge/lint-golangci--lint%20v2-22c55e?style=flat-square&logo=go&logoColor=white)
+  ![Tests](https://img.shields.io/badge/tests-1846%20passing-22c55e?style=flat-square)
 
 </div>
 
