@@ -54,6 +54,8 @@ task_plan.md
 
 # AI session artifacts
 docs/superpowers/brainstorm/
+docs/superpowers/plans/
+docs/superpowers/specs/
 
 # Monitoring — API token
 deploy/monitoring/prometheus-token
