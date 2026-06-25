@@ -92,3 +92,47 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_PAT }}
 
+      - name: Build & upload run-essentials bundle
+        # The auto "Source code" archive now ships the full dev tree (the repo is the
+        # full source). This curated bundle restores the prior run-essentials download
+        # — config + image-pinned compose + Helm chart + nginx-ha + monitoring +
+        # keycloak realm + seed scripts + README/LICENSE — for users who just want to
+        # RUN Nexspence. Uploaded as a release asset (NOT a separate mirror repo).
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          STAGE="release-bundle"
+          DIR="${STAGE}/nexspence-${VERSION}"
+          rm -rf "$STAGE"
+          mkdir -p "$DIR/deploy/helm" "$DIR/scripts"
+
+          cp config.yaml.example README.md LICENSE "$DIR/"
+          cp -r deploy/helm/nexspence "$DIR/deploy/helm/nexspence"
+          cp deploy/nginx-ha.conf "$DIR/deploy/"
+          cp -r deploy/monitoring "$DIR/deploy/monitoring"
+          rm -f "$DIR/deploy/monitoring/prometheus-token"   # strip local bind-mount artifact
+          cp -r keycloak "$DIR/keycloak"
+          cp scripts/seed-all.sh scripts/seed-repos.sh scripts/seed-packages.sh \
+             scripts/seed-rbac.sh scripts/seed-cleanup.sh "$DIR/scripts/"
+          cp scripts/create-*.sh "$DIR/scripts/"
+
+          # Pin the compose files to the released image (no source to build in the bundle).
+          DIR="$DIR" python3 - <<'PYEOF'
+          import re, os
+          image = os.environ['IMAGE']
+          dst = os.environ['DIR']
+          build_re = re.compile(r'(?m)(    )build:\n(?:[ ]{6,}[^\n]*\n)+')
+          for f in ('docker-compose.yml', 'docker-compose.ha.yml'):
+              with open(f) as fh:
+                  content = fh.read()
+              patched, _ = build_re.subn(lambda m: m.group(1) + f'image: {image}\n', content)
+              with open(os.path.join(dst, f), 'w') as fh:
+                  fh.write(patched)
+          PYEOF
+
+          ASSET="nexspence-run-essentials-${VERSION}.zip"
+          ( cd "$STAGE" && zip -rq "../$ASSET" "nexspence-${VERSION}" )
+          gh release upload "$GITHUB_REF_NAME" "$ASSET" --repo "$GITHUB_REPOSITORY" --clobber
+

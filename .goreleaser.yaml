@@ -101,9 +101,8 @@ release:
     owner: nexspence
     name: nexspence
   mode: replace
-  # Cross-repo release: the tag exists on nexspence-core (where we build), not on
-  # nexspence/nexspence. Pin the tag/release to the public repo's main branch so
-  # GitHub creates the tag there — mirroring the prior `gh release create` flow.
+  # The release runs from this repo (full source); pin to main so the tag/release
+  # resolve to the default branch.
   target_commitish: main
   footer: |
     ### 🐳 Docker
@@ -119,8 +118,10 @@ release:
 
     #### Quick start
 
-    Download the **Source code (zip)** below, extract it, rename
-    `config.yaml.example` → `config.yaml`, and set the admin password and JWT secret.
+    Download **`nexspence-run-essentials-{{ .Version }}.zip`** below (config +
+    image-pinned compose + Helm chart + monitoring + Keycloak realm + seed scripts),
+    extract it, rename `config.yaml.example` → `config.yaml`, and set the admin
+    password and JWT secret. (The full source is the **Source code** archive / `git clone`.)
 
     | Mode | Command |
     |------|---------|
