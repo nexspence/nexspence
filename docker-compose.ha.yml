@@ -132,8 +132,11 @@ services:
       NEXSPENCE_STORAGE_S3_REGION: "us-east-1"
       NEXSPENCE_REDIS_ENABLED: "true"
       NEXSPENCE_REDIS_ADDR: "redis:6379"
-      NEXSPENCE_AUTH_JWT_SECRET: "${NEXSPENCE_JWT_SECRET:-nexspence-dev-default-secret-change-me-in-production}"  # development default — server boots but WARNS; set NEXSPENCE_JWT_SECRET to a unique secret for production
-      NEXSPENCE_AUTH_ALLOW_INSECURE_DEFAULTS: "true"  # dev quick-start: permit shipped default secrets; production must leave this false
+      # Auto-generated (unique per deployment) by the image entrypoint and
+      # persisted to the shared nexspence_secrets volume so both replicas use the
+      # same key. Set NEXSPENCE_JWT_SECRET to pin your own (min 32 chars).
+      NEXSPENCE_AUTH_JWT_SECRET: "${NEXSPENCE_JWT_SECRET:-}"
+      NEXSPENCE_AUTH_ALLOW_INSECURE_DEFAULTS: "true"  # dev quick-start: permit shipped default admin password; production must leave this false
       # ── OIDC (Keycloak dev IdP, active when OIDC_ENABLED=true) ──────
       # In HA mode the load balancer (nginx :8080) fronts both nodes,
       # so redirect_url and frontend_base_url point to nginx, not to a node.
@@ -152,6 +155,7 @@ services:
       NEXSPENCE_OIDC_PROVISIONING: "jit"
       NEXSPENCE_OIDC_SCOPES: "openid,profile,email"
     volumes:
+      - nexspence_secrets:/app/secrets
       - ${CONFIG_FILE:-./config.yaml}:/app/config.yaml:ro
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8081/healthz"]
@@ -226,6 +230,7 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  nexspence_secrets:
   minio_data:
   prometheus_data:
   grafana_data:

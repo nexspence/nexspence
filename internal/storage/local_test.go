@@ -61,6 +61,35 @@ func TestLocalBlobStore_Get_NotFound(t *testing.T) {
 	require.Error(t, err)
 }
 
+// A blob key carrying "../" segments (e.g. from a crafted backup/import
+// archive) must be rejected and must not write outside the blob store root.
+func TestLocalBlobStore_Put_PathTraversal_Rejected(t *testing.T) {
+	base := t.TempDir() + "/blobs"
+	store, err := storage.NewLocalBlobStore(base)
+	require.NoError(t, err)
+	ctx := context.Background()
+
+	escaped := base + "/../pwned"
+	defer os.Remove(escaped)
+
+	traversalKey := "../../pwned"
+	err = store.Put(ctx, traversalKey, bytes.NewReader([]byte("malicious")), 9)
+	require.Error(t, err, "Put must reject a key that escapes the blob store root")
+	assert.Contains(t, err.Error(), "outside blob store")
+
+	_, statErr := os.Stat(escaped)
+	assert.True(t, os.IsNotExist(statErr), "no file should be written outside the blob store root")
+
+	// Get/Delete/Exists/Size must reject the traversal key too.
+	_, _, err = store.Get(ctx, traversalKey)
+	require.Error(t, err)
+	require.Error(t, store.Delete(ctx, traversalKey))
+	_, err = store.Exists(ctx, traversalKey)
+	require.Error(t, err)
+	_, err = store.Size(ctx, traversalKey)
+	require.Error(t, err)
+}
+
 func TestLocalBlobStore_Delete_Existing(t *testing.T) {
 	store := newLocal(t)
 	ctx := context.Background()
