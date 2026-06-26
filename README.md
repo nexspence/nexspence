@@ -199,6 +199,8 @@ helm install nexspence \
   --create-namespace
 ```
 
+> `config.jwtSecret` is optional — the chart auto-generates a unique secret (persisted across upgrades) when it is omitted. Set it only to pin a known value.
+
 Five networking options (nginx, Traefik, Cilium ingress, Istio Gateway, Cilium Gateway API), external PostgreSQL, S3 storage, and HPA — see **[deploy/helm/nexspence/README.md](deploy/helm/nexspence/README.md)**.
 
 ---
