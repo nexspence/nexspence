@@ -29,7 +29,7 @@ storage:
   #   force_path_style: true
 
 auth:
-  jwt_secret: "CHANGE_ME_AT_LEAST_32_CHARACTERS_LONG"   # set via NEXSPENCE_AUTH_JWT_SECRET env in production; server refuses to start with this placeholder unless allow_insecure_defaults=true
+  jwt_secret: "CHANGE_ME_AT_LEAST_32_CHARACTERS_LONG"   # from source / native install: set this (or NEXSPENCE_AUTH_JWT_SECRET) — server refuses to start with this placeholder unless allow_insecure_defaults=true. The Docker image and Helm chart auto-generate a unique secret when it is unset, so you don't set it there.
   # Optional dedicated key for encrypting replication credentials (recommended).
   # Without it the key is derived from jwt_secret, so rotating jwt_secret would
   # invalidate stored replication passwords. Generate: openssl rand -base64 32

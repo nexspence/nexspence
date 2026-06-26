@@ -25,6 +25,8 @@ helm dependency update
 
 Then install with exactly one of the networking options below.
 
+> **JWT secret:** `config.jwtSecret` is optional. When omitted, the chart auto-generates a unique random secret on first install and reuses it across upgrades (via a `lookup` of the existing Secret). The `--set config.jwtSecret=...` in the examples below is only needed to pin a known value or share the secret across clusters.
+
 ### nginx ingress-controller
 
 ```bash
