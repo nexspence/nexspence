@@ -24,23 +24,37 @@ func NewLocalBlobStore(basePath string) (*LocalBlobStore, error) {
 	return &LocalBlobStore{basePath: basePath}, nil
 }
 
-func (s *LocalBlobStore) keyPath(key string) string {
+func (s *LocalBlobStore) keyPath(key string) (string, error) {
+	var p string
 	// Shard by first 4 chars to avoid huge flat directories
 	if len(key) >= 4 {
-		return filepath.Join(s.basePath, key[:2], key[2:4], key)
+		p = filepath.Join(s.basePath, key[:2], key[2:4], key)
+	} else {
+		p = filepath.Join(s.basePath, key)
 	}
-	return filepath.Join(s.basePath, key)
+	// Containment guard: filepath.Join cleans the result, so a key carrying
+	// "../" segments (e.g. from an attacker-crafted backup/import archive)
+	// would resolve outside basePath. Reject any key whose final path escapes
+	// the blob store root.
+	base := filepath.Clean(s.basePath)
+	if p != base && !strings.HasPrefix(p, base+string(os.PathSeparator)) {
+		return "", fmt.Errorf("invalid blob key %q: resolves outside blob store", key)
+	}
+	return p, nil
 }
 
 // Put writes the blob for key, staging to a temp file and renaming for atomicity.
 func (s *LocalBlobStore) Put(_ context.Context, key string, r io.Reader, _ int64) error {
-	dst := s.keyPath(key)
+	dst, err := s.keyPath(key)
+	if err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Dir(dst), 0o750); err != nil {
 		return err
 	}
 	// Write to a temp file first, then rename (atomic on same filesystem)
 	tmp := dst + ".tmp"
-	f, err := os.Create(tmp) //nolint:gosec // path is an internal content-addressed blob key, not user-controlled
+	f, err := os.Create(tmp) //nolint:gosec // dst is validated by keyPath to stay within the blob store base dir
 	if err != nil {
 		return err
 	}
@@ -58,7 +72,11 @@ func (s *LocalBlobStore) Put(_ context.Context, key string, r io.Reader, _ int64
 
 // Get opens the blob for key and returns its reader and size.
 func (s *LocalBlobStore) Get(_ context.Context, key string) (io.ReadCloser, int64, error) {
-	f, err := os.Open(s.keyPath(key))
+	p, err := s.keyPath(key)
+	if err != nil {
+		return nil, 0, err
+	}
+	f, err := os.Open(p) //nolint:gosec // p is validated by keyPath to stay within the blob store base dir
 	if err != nil {
 		return nil, 0, err
 	}
@@ -72,7 +90,11 @@ func (s *LocalBlobStore) Get(_ context.Context, key string) (io.ReadCloser, int6
 
 // Delete removes the blob for key; a missing blob is not an error.
 func (s *LocalBlobStore) Delete(_ context.Context, key string) error {
-	err := os.Remove(s.keyPath(key))
+	p, err := s.keyPath(key)
+	if err != nil {
+		return err
+	}
+	err = os.Remove(p)
 	if os.IsNotExist(err) {
 		return nil
 	}
@@ -81,7 +103,11 @@ func (s *LocalBlobStore) Delete(_ context.Context, key string) error {
 
 // Exists reports whether a blob is stored for key.
 func (s *LocalBlobStore) Exists(_ context.Context, key string) (bool, error) {
-	_, err := os.Stat(s.keyPath(key))
+	p, err := s.keyPath(key)
+	if err != nil {
+		return false, err
+	}
+	_, err = os.Stat(p)
 	if err == nil {
 		return true, nil
 	}
@@ -93,7 +119,11 @@ func (s *LocalBlobStore) Exists(_ context.Context, key string) (bool, error) {
 
 // Size returns the byte size of the blob for key.
 func (s *LocalBlobStore) Size(_ context.Context, key string) (int64, error) {
-	info, err := os.Stat(s.keyPath(key))
+	p, err := s.keyPath(key)
+	if err != nil {
+		return 0, err
+	}
+	info, err := os.Stat(p)
 	if err != nil {
 		return 0, err
 	}

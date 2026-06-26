@@ -51,9 +51,14 @@ func NewOIDCHandler(
 // Login starts the OIDC authorization code + PKCE flow.
 // GET /api/v1/auth/oidc/login[?return_to=/path]
 func (h *OIDCHandler) Login(c *gin.Context) {
-	state := randBase64URL(32)
-	nonce := randBase64URL(32)
-	codeVerifier := randBase64URL(64)
+	state, err1 := randBase64URL(32)
+	nonce, err2 := randBase64URL(32)
+	codeVerifier, err3 := randBase64URL(64)
+	if err := errors.Join(err1, err2, err3); err != nil {
+		h.log.Errorw("oidc generate random state failed", "err", err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
 	sum := sha256.Sum256([]byte(codeVerifier))
 	codeChallenge := base64.RawURLEncoding.EncodeToString(sum[:])
 
@@ -220,8 +225,10 @@ func IsSafeReturnPath(p string) bool {
 	return true
 }
 
-func randBase64URL(n int) string {
+func randBase64URL(n int) (string, error) {
 	b := make([]byte, n)
-	_, _ = rand.Read(b)
-	return base64.RawURLEncoding.EncodeToString(b)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(b), nil
 }

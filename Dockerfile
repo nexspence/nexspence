@@ -54,6 +54,7 @@ WORKDIR /app
 
 COPY --from=builder /nexspence /app/nexspence
 COPY --from=builder /src/config.yaml.example /app/config.yaml
+COPY --from=builder /src/deploy/docker-entrypoint.sh /app/entrypoint.sh
 COPY --from=frontend-builder /frontend/dist /app/frontend/dist
 
 # Run as a non-root user (uid/gid 1000). Pre-create the dirs the app and the
@@ -65,7 +66,8 @@ COPY --from=frontend-builder /frontend/dist /app/frontend/dist
 # under a writable path; TRIVY_CACHE_DIR pins it explicitly (correct env var
 # for modern trivy ≥0.x).
 RUN addgroup -g 1000 nexspence && adduser -D -u 1000 -G nexspence nexspence \
-    && mkdir -p /app/data/blobs /app/.cache \
+    && mkdir -p /app/data/blobs /app/.cache /app/secrets \
+    && chmod +x /app/entrypoint.sh \
     && chown -R nexspence:nexspence /app
 ENV HOME=/app
 ENV TRIVY_CACHE_DIR=/app/.cache/trivy
@@ -73,5 +75,5 @@ USER 1000
 
 EXPOSE 8081 5000
 
-ENTRYPOINT ["/app/nexspence"]
+ENTRYPOINT ["/app/entrypoint.sh"]
 CMD ["serve", "--config", "/app/config.yaml"]
