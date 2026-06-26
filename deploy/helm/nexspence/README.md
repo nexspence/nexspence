@@ -10,9 +10,27 @@ Nexspence — open-source universal artifact repository manager (Nexus OSS alter
 
 ---
 
-## Installation
+## Install from GHCR (OCI) — recommended
 
-Download `nexspence-vX.Y.Z.zip` from the latest release and extract it:
+Each release publishes the chart as an OCI artifact to GitHub Packages, so you can
+install it directly without downloading anything:
+
+```bash
+helm install nexspence oci://ghcr.io/nexspence/charts/nexspence \
+  --version 1.19.2 \
+  -f https://raw.githubusercontent.com/nexspence/nexspence/main/deploy/helm/nexspence/values-examples/nginx.yaml \
+  --namespace nexspence --create-namespace
+```
+
+`config.jwtSecret` is auto-generated when omitted (see the JWT note below). Pin a
+specific chart version with `--version` (omit it to pull the latest). Browse versions:
+**[ghcr.io/nexspence/charts/nexspence](https://github.com/nexspence/nexspence/pkgs/container/charts%2Fnexspence)**.
+
+---
+
+## Install from a release bundle
+
+Download the `nexspence-run-essentials-vX.Y.Z.zip` from the latest release and extract it:
 **[github.com/nexspence/nexspence/releases](https://github.com/nexspence/nexspence/releases)**
 
 The Helm chart is at `deploy/helm/nexspence/` inside the extracted directory.
