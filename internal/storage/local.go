@@ -76,7 +76,7 @@ func (s *LocalBlobStore) Get(_ context.Context, key string) (io.ReadCloser, int6
 	if err != nil {
 		return nil, 0, err
 	}
-	f, err := os.Open(p)
+	f, err := os.Open(p) //nolint:gosec // p is validated by keyPath to stay within the blob store base dir
 	if err != nil {
 		return nil, 0, err
 	}
