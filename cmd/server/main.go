@@ -24,6 +24,7 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/logger"
 	"github.com/nexspence-oss/nexspence/internal/metrics"
+	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/repository/postgres"
 )
 
@@ -275,18 +276,38 @@ func syncBlobStorePaths(ctx context.Context, pool *pgxpool.Pool, cfg *config.Con
 	return nil
 }
 
-// bootstrapAdmin ensures the admin user exists with the configured password.
-// It only owns initial creation: if the admin user already exists its password
-// is left untouched (rotate it via the API, not config + restart).
-func bootstrapAdmin(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config, log logger.Logger) error {
-	b := cfg.Bootstrap
-	if b.AdminUsername == "" || b.AdminPassword == "" {
-		return nil
-	}
+// seedPlaceholderAdminHash is the bcrypt hash the initial migration (001) seeds
+// for the admin user. Despite the migration comment it is NOT a hash of the
+// documented admin123 password — it is a well-known placeholder. While it is
+// still in place the operator's configured bootstrap password has never taken
+// effect, so bootstrap treats it as "not yet set" and applies the configured
+// password. Once the admin password has been changed (API rotation or a prior
+// bootstrap correction) this no longer matches and the password is left alone.
+const seedPlaceholderAdminHash = "$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj/VcSAg/ROS"
 
+// bootstrapAdmin ensures the admin user exists with the configured password.
+func bootstrapAdmin(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config, log logger.Logger) error {
 	authSvc := auth.NewService(cfg.Auth.JWTSecret, cfg.Auth.JWTExpiryHours, cfg.Auth.BcryptCost)
 	userRepo := postgres.NewUserRepo(pool)
 	roleRepo := postgres.NewRoleRepo(pool)
+	return ensureBootstrapAdmin(ctx, userRepo, roleRepo, authSvc, cfg.Bootstrap, log)
+}
+
+// ensureBootstrapAdmin creates the admin user on first boot (with the configured
+// password and the nx-admin role) and, on subsequent boots, applies the
+// configured password only if the stored hash is still the seed placeholder.
+// An admin whose password has genuinely been changed is never touched.
+func ensureBootstrapAdmin(
+	ctx context.Context,
+	userRepo repository.UserRepo,
+	roleRepo repository.RoleRepo,
+	authSvc *auth.Service,
+	b config.BootstrapConfig,
+	log logger.Logger,
+) error {
+	if b.AdminUsername == "" || b.AdminPassword == "" {
+		return nil
+	}
 
 	hash, err := authSvc.HashPassword(b.AdminPassword)
 	if err != nil {
@@ -294,7 +315,7 @@ func bootstrapAdmin(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config,
 	}
 
 	existing, err := userRepo.Get(ctx, b.AdminUsername)
-	if err != nil {
+	if err != nil && !errors.Is(err, repository.ErrNotFound) {
 		return err
 	}
 
@@ -319,11 +340,21 @@ func bootstrapAdmin(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config,
 			_ = roleRepo.SetUserRoles(ctx, u.ID, []string{adminRole.ID})
 		}
 		log.Info("bootstrap: admin user created", "username", b.AdminUsername)
-	} else {
-		// Bootstrap only owns initial creation — do not touch an existing
-		// admin's password (operators rotate it via the API, not config).
-		log.Info("bootstrap: admin user already exists — password not modified", "username", b.AdminUsername)
+		return nil
 	}
+
+	// Admin already exists. The seed migration pre-creates it with a placeholder
+	// hash; while that placeholder is in place the configured password has never
+	// applied, so set it now (first-boot correction). Otherwise leave it alone —
+	// operators rotate the password via the API, not config + restart.
+	if existing.PasswordHash == seedPlaceholderAdminHash {
+		if err := userRepo.UpdatePassword(ctx, b.AdminUsername, hash); err != nil {
+			return err
+		}
+		log.Info("bootstrap: admin had the seed placeholder password — applied configured admin_password", "username", b.AdminUsername)
+		return nil
+	}
+	log.Info("bootstrap: admin user already exists — password not modified", "username", b.AdminUsername)
 	return nil
 }
 
