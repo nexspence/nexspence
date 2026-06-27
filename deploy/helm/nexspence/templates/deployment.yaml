@@ -43,6 +43,16 @@ spec:
             - name: http
               containerPort: 8081
               protocol: TCP
+          env:
+            # Pin the trivy (CVE scan) cache to the writable emptyDir below.
+            # The image sets these too, but pinning them here keeps scans
+            # working under readOnlyRootFilesystem regardless of image build —
+            # trivy's default cache ($HOME/.cache/trivy) would otherwise resolve
+            # onto the read-only rootfs and every image scan would fail.
+            - name: HOME
+              value: /app
+            - name: TRIVY_CACHE_DIR
+              value: /app/.cache/trivy
           envFrom:
             - configMapRef:
                 name: {{ include "nexspence.fullname" . }}
