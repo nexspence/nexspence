@@ -16,7 +16,10 @@ import (
 	"github.com/ory/dockertest/v3"
 	"github.com/ory/dockertest/v3/docker"
 
+	"github.com/nexspence-oss/nexspence/internal/audit"
+	"github.com/nexspence-oss/nexspence/internal/config"
 	appdb "github.com/nexspence-oss/nexspence/internal/db"
+	"github.com/nexspence-oss/nexspence/internal/logger"
 )
 
 var (
@@ -103,6 +106,15 @@ func start() {
 		startErr = fmt.Errorf("connect pool: %w", err)
 		return
 	}
+
+	// Migrations only ship the partitions that existed for audit_events at
+	// authoring time. Production guarantees the current partition via
+	// Rotator.RunOnce() at server startup (cmd/server/main.go) — mirror that
+	// here so tests don't rot once the calendar rolls past the last
+	// hand-written partition.
+	auditCfg := config.AuditConfig{LookaheadMonths: 2}
+	rotator := audit.NewRotator(audit.NewPgPartitionStore(p), auditCfg, logger.New("error", "json"))
+	rotator.RunOnce(context.Background())
 
 	pool = p
 	purge = func() {
