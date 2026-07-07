@@ -148,6 +148,9 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .doc-table .y{color:var(--green);font-weight:600}.doc-table .n{color:var(--red)}.doc-table .p{color:var(--amber)}
 .alert-info{background:rgba(59,130,246,.06);border:1px solid rgba(59,130,246,.2);border-radius:8px;padding:12px 16px;font-size:.78rem;color:var(--dim);line-height:1.6;margin-bottom:14px}
 .alert-info strong{color:var(--blue)}
+.doc-shot{margin:6px 0 22px}
+.doc-shot img{display:block;width:100%;max-width:960px;height:auto;border:1px solid var(--border);border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.35)}
+.doc-shot figcaption{margin-top:8px;font-size:.72rem;color:var(--faint);letter-spacing:.02em}
 
 .inst-platform-row{display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap}
 .inst-ptab{display:inline-flex;align-items:center;gap:7px;padding:9px 18px;border-radius:10px;border:1px solid var(--border);background:var(--glass);color:var(--dim);font-size:.81rem;font-weight:600;cursor:pointer;font-family:'Inter',system-ui,sans-serif;transition:all 150ms}
@@ -419,6 +422,8 @@ open http://localhost:8081  <span class="cc"># default login: admin / admin123</
   <div class="doc-section-title" data-i18n="repo.title">Repositories</div>
   <div class="doc-section-sub" data-i18n="repo.sub">Nexspence organises artifacts into repositories. Each repository has a type (Hosted, Proxy, or Group) and a format (Maven, Docker, npm, etc.).</div>
 
+  <figure class="doc-shot"><img src="../assets/screenshots/repositories.PNG" alt="Repositories list with format badges and type filters" loading="lazy"><figcaption data-i18n="shot.repos">Repositories view — format badges, type filters, and per-repo storage usage.</figcaption></figure>
+
   <div class="inst-sep" data-i18n="repo.types.sep">Repository Types</div>
   <div class="step-list">
     <div class="step-item">
@@ -622,12 +627,17 @@ curl -u admin:admin123 \
     <div class="step-item"><div class="step-num">03</div><div><div class="step-title" data-i18n="bs.browse.s3.title">Inspect a component</div><div class="step-desc" data-i18n="bs.browse.s3.desc">Click any file or component to open a detail panel with metadata (size, SHA-256, upload date), download link, and usage examples for common tools.</div></div></div>
   </div>
 
+  <figure class="doc-shot"><img src="../assets/screenshots/browse.PNG" alt="Browse page with the file tree expanded and a component detail panel open" loading="lazy"><figcaption data-i18n="shot.browse">Browse — file tree on the left, component metadata and download panel on the right.</figcaption></figure>
+
   <div class="inst-sep" data-i18n="bs.search.sep">Search</div>
   <div class="step-list">
     <div class="step-item"><div class="step-num">01</div><div><div class="step-title" data-i18n="bs.search.s1.title">Open Search</div><div class="step-desc" data-i18n="bs.search.s1.desc">Click <strong>Search</strong> in the sidebar. Enter a keyword in the search box — matches component names, group IDs, and artifact IDs.</div></div></div>
     <div class="step-item"><div class="step-num">02</div><div><div class="step-title" data-i18n="bs.search.s2.title">Filter by format or repository</div><div class="step-desc" data-i18n="bs.search.s2.desc">Use the <strong>Format</strong> and <strong>Repository</strong> dropdowns to narrow results. You can also filter by tag.</div></div></div>
     <div class="step-item"><div class="step-num">03</div><div><div class="step-title" data-i18n="bs.search.s3.title">Use the API</div><div class="step-desc" data-i18n="bs.search.s3.desc">Search is also available via the REST API for CI/CD integration.</div></div></div>
   </div>
+
+  <figure class="doc-shot"><img src="../assets/screenshots/search.PNG" alt="Search results with format badges and tag chips" loading="lazy"><figcaption data-i18n="shot.search">Search — keyword results with format badges, repository filter, and tag chips.</figcaption></figure>
+
   <div class="cb"><div class="cb-bar"><span>curl — search API</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
   <div class="cb-body"><span class="cc"># Search by keyword</span>
 curl -u admin:admin123 \
@@ -686,6 +696,8 @@ curl -u admin:nxs_abc123... \
   <div class="doc-section-title" data-i18n="rbac.title">Roles &amp; Privileges</div>
   <div class="doc-section-sub" data-i18n="rbac.sub">Nexspence uses a three-layer access control model: Content Selectors → Privileges → Roles → Users.</div>
 
+  <figure class="doc-shot"><img src="../assets/screenshots/security_roles.PNG" alt="Security Roles tab showing roles with privilege chips" loading="lazy"><figcaption data-i18n="shot.roles">Security → Roles — each role lists its granted privileges as chips.</figcaption></figure>
+
   <div class="inst-sep" data-i18n="rbac.model.sep">Access Control Model</div>
   <div class="step-list">
     <div class="step-item">
@@ -729,6 +741,8 @@ curl -u admin:nxs_abc123... \
   <div class="doc-section-title" data-i18n="cl.title">Cleanup Policies</div>
   <div class="doc-section-sub" data-i18n="cl.sub">Automatically remove old or unused artifacts to reclaim storage space.</div>
 
+  <figure class="doc-shot"><img src="../assets/screenshots/cleanup.PNG" alt="Cleanup Policies page with policy cards and the create wizard" loading="lazy"><figcaption data-i18n="shot.cleanup">Cleanup Policies — policy cards with the create wizard (criteria step) open.</figcaption></figure>
+
   <div class="inst-sep" data-i18n="cl.criteria.sep">Cleanup Criteria</div>
   <table class="doc-table">
     <thead><tr><th data-i18n="cl.th.criterion">Criterion</th><th data-i18n="cl.th.desc">Description</th></tr></thead>
@@ -744,6 +758,22 @@ curl -u admin:nxs_abc123... \
     <div class="step-item"><div class="step-num">03</div><div><div class="step-title" data-i18n="cl.s3.title">Run now or wait for schedule</div><div class="step-desc" data-i18n="cl.s3.desc">On the policy card click <strong>Run Now</strong> to trigger an immediate dry-run (preview) or full run. The default global cron is <code>0 2 * * *</code> (2 AM daily).</div></div></div>
   </div>
   <div class="alert-info" data-i18n="cl.dryrun.note"><strong>Dry run:</strong> The first run shows what <em>would</em> be deleted without actually removing anything. Review the preview before enabling full deletion.</div>
+
+  <div class="inst-sep" data-i18n="cl.gc.sep">Blob Garbage Collection</div>
+  <div class="doc-section-sub" data-i18n="cl.gc.sub">Cleanup policies delete <em>asset records</em>. Blob GC then reclaims the underlying <em>blobs</em> that are no longer referenced by any asset — orphans left behind by deletions, failed uploads, or migrations.</div>
+  <figure class="doc-shot"><img src="../assets/screenshots/admin_blobstores.PNG" alt="Admin Blob Stores page where garbage collection is run" loading="lazy"><figcaption data-i18n="shot.blobgc">Admin → Blob Stores. Open a store to reach the <strong>Garbage collection</strong> panel (Dry run / Compact).</figcaption></figure>
+  <div class="step-list">
+    <div class="step-item"><div class="step-num">01</div><div><div class="step-title" data-i18n="cl.gc.s1.title">Grace period</div><div class="step-desc" data-i18n="cl.gc.s1.desc">Only orphans older than <code>gc.min_age</code> (default <code>24h</code>) are collected, so an in-flight upload whose asset row is not yet committed is never removed.</div></div></div>
+    <div class="step-item"><div class="step-num">02</div><div><div class="step-title" data-i18n="cl.gc.s2.title">Run on demand</div><div class="step-desc" data-i18n="cl.gc.s2.desc">Open <strong>Admin → Blob Stores</strong>, click a store, then use <strong>Dry run</strong> to preview orphans or <strong>Compact</strong> to reclaim them. A scheduled run (<code>gc.schedule</code>, weekly by default) sweeps every store automatically.</div></div></div>
+  </div>
+  <div class="cb"><div class="cb-bar"><span data-i18n="cl.gc.cb">API &amp; CLI</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body"><span class="cc"># Preview orphans (dry run) via REST</span>
+curl -u admin:admin123 -X POST \
+  "http://localhost:8081/api/v1/blobstores/default/compact?dry_run=true"
+
+<span class="cc"># Reclaim now with the nxs CLI</span>
+nxs blobstore compact default --dry-run
+nxs blobstore compact default</div></div>
 </template>
 
 <template id="tpl-webhooks">
@@ -1627,6 +1657,17 @@ const TRANSLATIONS={
     'cl.s2.title':'Attach to repositories','cl.s2.desc':'Open a repository settings (gear icon) and select cleanup policies. Only attached repositories are affected.',
     'cl.s3.title':'Run now or wait for schedule','cl.s3.desc':'Click <strong>Run Now</strong> on the policy card. The default global cron is <code>0 2 * * *</code> (2 AM daily).',
     'cl.dryrun.note':'<strong>Dry run:</strong> The first run shows what <em>would</em> be deleted without actually removing anything.',
+    'shot.repos':'Repositories view — format badges, type filters, and per-repo storage usage.',
+    'shot.browse':'Browse — file tree on the left, component metadata and download panel on the right.',
+    'shot.search':'Search — keyword results with format badges, repository filter, and tag chips.',
+    'shot.roles':'Security → Roles — each role lists its granted privileges as chips.',
+    'shot.cleanup':'Cleanup Policies — policy cards with the create wizard (criteria step) open.',
+    'shot.blobgc':'Admin → Blob Stores. Open a store to reach the <strong>Garbage collection</strong> panel (Dry run / Compact).',
+    'cl.gc.sep':'Blob Garbage Collection',
+    'cl.gc.sub':'Cleanup policies delete <em>asset records</em>. Blob GC then reclaims the underlying <em>blobs</em> that are no longer referenced by any asset — orphans left behind by deletions, failed uploads, or migrations.',
+    'cl.gc.s1.title':'Grace period','cl.gc.s1.desc':'Only orphans older than <code>gc.min_age</code> (default <code>24h</code>) are collected, so an in-flight upload whose asset row is not yet committed is never removed.',
+    'cl.gc.s2.title':'Run on demand','cl.gc.s2.desc':'Open <strong>Admin → Blob Stores</strong>, click a store, then use <strong>Dry run</strong> to preview orphans or <strong>Compact</strong> to reclaim them. A scheduled run (<code>gc.schedule</code>, weekly by default) sweeps every store automatically.',
+    'cl.gc.cb':'API &amp; CLI',
     'wh.title':'Webhooks','wh.sub':'Receive HTTP POST callbacks when repository events occur.',
     'wh.events.sep':'Events','wh.setup.sep':'Setting Up a Webhook',
     'wh.th.event':'Event','wh.th.when':'When',
@@ -1929,6 +1970,17 @@ const TRANSLATIONS={
     'cl.s2.title':'Привяжите к репозиториям','cl.s2.desc':'Откройте настройки репозитория (иконка шестерёнки) и выберите политики очистки.',
     'cl.s3.title':'Запустите сейчас или дождитесь расписания','cl.s3.desc':'Нажмите <strong>Run Now</strong> на карточке политики. Стандартное расписание — <code>0 2 * * *</code> (2:00 ночи ежедневно).',
     'cl.dryrun.note':'<strong>Dry run:</strong> Первый запуск показывает, что <em>будет</em> удалено, без фактического удаления.',
+    'shot.repos':'Репозитории — бейджи форматов, фильтры по типу и использование хранилища по каждому репозиторию.',
+    'shot.browse':'Browse — дерево файлов слева, метаданные компонента и панель загрузки справа.',
+    'shot.search':'Поиск — результаты по ключевому слову с бейджами форматов, фильтром по репозиторию и тегами.',
+    'shot.roles':'Security → Roles — у каждой роли перечислены выданные привилегии в виде чипов.',
+    'shot.cleanup':'Политики очистки — карточки политик с открытым мастером создания (шаг критериев).',
+    'shot.blobgc':'Admin → Blob Stores. Откройте стор, чтобы попасть в панель <strong>Garbage collection</strong> (Dry run / Compact).',
+    'cl.gc.sep':'Сборка мусора блобов',
+    'cl.gc.sub':'Политики очистки удаляют <em>записи об ассетах</em>. Затем blob GC освобождает сами <em>блобы</em>, на которые больше не ссылается ни один ассет — «сироты» после удалений, неудачных загрузок или миграций.',
+    'cl.gc.s1.title':'Grace-period','cl.gc.s1.desc':'Удаляются только «сироты» старше <code>gc.min_age</code> (по умолчанию <code>24h</code>), поэтому только что загруженный блоб, чей ассет ещё не закоммичен, не будет удалён.',
+    'cl.gc.s2.title':'Запуск по требованию','cl.gc.s2.desc':'Откройте <strong>Admin → Blob Stores</strong>, выберите стор и используйте <strong>Dry run</strong> для предпросмотра «сирот» или <strong>Compact</strong> для их удаления. Плановый запуск (<code>gc.schedule</code>, по умолчанию еженедельно) обходит все сторы автоматически.',
+    'cl.gc.cb':'API и CLI',
     'wh.title':'Вебхуки','wh.sub':'Получайте HTTP POST-уведомления о событиях в репозиториях.',
     'wh.events.sep':'События','wh.setup.sep':'Настройка вебхука',
     'wh.th.event':'Событие','wh.th.when':'Когда',
