@@ -121,6 +121,30 @@ func TestGC_CompactAllIteratesStores(t *testing.T) {
 	assert.False(t, bs.Has("junk"))
 }
 
+func TestGC_CompactStoreUnknownName(t *testing.T) {
+	svc := buildGC(testutil.NewAssetRepo(), testutil.NewBlobStore())
+	_, err := svc.CompactStore(context.Background(), "does-not-exist", service.GCOptions{})
+	require.Error(t, err)
+}
+
+func TestGC_StartCronScheduler_EmptyScheduleReturns(t *testing.T) {
+	svc := buildGC(testutil.NewAssetRepo(), testutil.NewBlobStore())
+	// Empty schedule must return immediately (no goroutine left blocking).
+	svc.StartCronScheduler(context.Background(), "", 0)
+}
+
+func TestGC_StartCronScheduler_InvalidScheduleReturns(t *testing.T) {
+	svc := buildGC(testutil.NewAssetRepo(), testutil.NewBlobStore())
+	svc.StartCronScheduler(context.Background(), "not-a-valid-cron", 0)
+}
+
+func TestGC_StartCronScheduler_ValidScheduleStopsOnCancel(t *testing.T) {
+	svc := buildGC(testutil.NewAssetRepo(), testutil.NewBlobStore())
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // pre-cancel so StartCronScheduler starts then returns at <-ctx.Done()
+	svc.StartCronScheduler(ctx, "0 0 * * *", time.Hour)
+}
+
 func TestGC_CompactAllSkipsWhenLockHeld(t *testing.T) {
 	assets := testutil.NewAssetRepo()
 	bs := testutil.NewBlobStore()
