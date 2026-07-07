@@ -282,6 +282,13 @@ export const nexusApi = {
     apiClient.delete(`/service/rest/v1/blobstores/${name}`),
   getBlobStoreUsage: (name: string) =>
     apiClient.get(`/api/v1/blob-stores/${name}/usage`),
+  compactBlobStore: (name: string, opts?: { dryRun?: boolean; minAge?: string }) =>
+    apiClient.post(`/api/v1/blobstores/${name}/compact`, null, {
+      params: {
+        dry_run: opts?.dryRun ? 'true' : undefined,
+        min_age: opts?.minAge || undefined,
+      },
+    }),
   testBlobStore: (type: string, config: Record<string, unknown>) =>
     apiClient.post<{ ok: boolean; error?: string }>('/api/v1/blobstores/test', { type, config }),
 
