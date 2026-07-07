@@ -735,6 +735,45 @@ paths:
       responses:
         '200': { description: OK }
 
+  /api/v1/blobstores/{name}/compact:
+    post:
+      tags: [BlobStores]
+      summary: Garbage-collect unreferenced blobs
+      description: >
+        Scans the named blob store and removes blobs no longer referenced by any
+        asset (orphans) that are older than the grace period. Admin only.
+      operationId: compactBlobStore
+      parameters:
+        - { name: name, in: path, required: true, schema: { type: string } }
+        - name: dry_run
+          in: query
+          required: false
+          description: Report orphans without deleting them.
+          schema: { type: boolean }
+        - name: min_age
+          in: query
+          required: false
+          description: >
+            Only collect orphans older than this Go duration (e.g. "24h").
+            Absent or 0 uses the server's configured gc.min_age default.
+          schema: { type: string }
+      responses:
+        '200':
+          description: Compaction result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  store: { type: string }
+                  scannedBlobs: { type: integer }
+                  orphans: { type: integer }
+                  freedBytes: { type: integer, format: int64 }
+                  dryRun: { type: boolean }
+                  errors: { type: array, items: { type: string } }
+        '400': { description: Invalid min_age }
+        '503': { description: GC service not configured }
+
   /service/rest/v1/blobstores/file:
     post:
       tags: [BlobStores]

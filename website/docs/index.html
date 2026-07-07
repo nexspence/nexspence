@@ -1193,6 +1193,9 @@ helm install nexspence deploy/helm/nexspence \
       <tr><td><code>redis.enabled</code></td><td><code>false</code></td><td>Enable Redis (required for HA)</td></tr>
       <tr><td><code>redis.addr</code></td><td><code>localhost:6379</code></td><td>Redis address</td></tr>
       <tr><td><code>cleanup.default_schedule</code></td><td><code>0 2 * * *</code></td><td>Default cron for cleanup policies</td></tr>
+      <tr><td><code>gc.enabled</code></td><td><code>true</code></td><td>Run scheduled blob garbage collection</td></tr>
+      <tr><td><code>gc.schedule</code></td><td><code>0 3 * * 0</code></td><td>Cron for blob GC (weekly by default)</td></tr>
+      <tr><td><code>gc.min_age</code></td><td><code>24h</code></td><td>Grace period — only collect orphans older than this</td></tr>
       <tr><td><code>audit.retention_days</code></td><td><code>90</code></td><td>Audit log partition retention</td></tr>
       <tr><td><code>http.cors_origins</code></td><td><code>[]</code></td><td>Allowed CORS origins; empty = same-origin / wildcard dev default</td></tr>
       <tr><td><code>http.max_body_mb</code></td><td><code>1024</code></td><td>Max request body in MB; bodies above it get <code>413</code> (artifact/upload routes exempt)</td></tr>
