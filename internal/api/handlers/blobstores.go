@@ -495,14 +495,24 @@ func (h *BlobStoreHandler) TestConnection(c *gin.Context) {
 }
 
 // Compact handles POST /api/v1/blobstores/:name/compact
-// Query param ?dry_run=true reports orphans without deleting them.
+// Query params: ?dry_run=true reports orphans without deleting;
+// ?min_age=24h overrides the configured grace period (0/absent → server default).
 func (h *BlobStoreHandler) Compact(c *gin.Context) {
 	if h.gcSvc == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "GC service not configured"})
 		return
 	}
-	dryRun := c.Query("dry_run") == "true"
-	result, err := h.gcSvc.Compact(c.Request.Context(), dryRun)
+	name := c.Param("name")
+	opts := service.GCOptions{DryRun: c.Query("dry_run") == "true"}
+	if raw := c.Query("min_age"); raw != "" {
+		d, err := time.ParseDuration(raw)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid min_age: " + err.Error()})
+			return
+		}
+		opts.MinAge = d
+	}
+	result, err := h.gcSvc.CompactStore(c.Request.Context(), name, opts)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

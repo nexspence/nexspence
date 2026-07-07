@@ -2,6 +2,7 @@ package handlers_test
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strings"
 	"testing"
@@ -26,7 +27,12 @@ func mountBlobStores(t *testing.T, stores ...*domain.BlobStore) (*gin.Engine, *t
 	repoRepo := testutil.NewRepoRepo()
 	assetRepo := testutil.NewAssetRepo()
 	blobStore := testutil.NewBlobStore()
-	gc := &service.BlobGCService{Assets: assetRepo, BlobStore: blobStore}
+	gc := &service.BlobGCService{
+		Assets:   assetRepo,
+		Stores:   blobRepo,
+		Resolver: testutil.NewFakeResolver(blobStore),
+		Log:      slog.Default(),
+	}
 
 	h := handlers.NewBlobStoreHandler(blobRepo).
 		WithBlobStore(blobStore).
@@ -313,7 +319,7 @@ func TestBlobStore_Compact_DryRun_Success(t *testing.T) {
 	// Put an orphan blob (no asset references it) so Compact reports an orphan.
 	require.NoError(t, blobStore.Put(testContext(), "orphan-key", strings.NewReader("data"), 4))
 
-	rec := do(t, r, http.MethodPost, "/api/v1/blobstores/store-a/compact?dry_run=true", nil)
+	rec := do(t, r, http.MethodPost, "/api/v1/blobstores/default/compact?dry_run=true", nil)
 	require.Equal(t, http.StatusOK, rec.Code)
 	var res service.GCResult
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &res))
@@ -327,7 +333,7 @@ func TestBlobStore_Compact_Delete_Success(t *testing.T) {
 	r, _, _, _, blobStore := mountBlobStores(t)
 	require.NoError(t, blobStore.Put(testContext(), "orphan-key", strings.NewReader("data"), 4))
 
-	rec := do(t, r, http.MethodPost, "/api/v1/blobstores/store-a/compact", nil)
+	rec := do(t, r, http.MethodPost, "/api/v1/blobstores/default/compact", nil)
 	require.Equal(t, http.StatusOK, rec.Code)
 	var res service.GCResult
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &res))
