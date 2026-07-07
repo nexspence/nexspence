@@ -197,6 +197,40 @@ func (s *S3BlobStore) ListKeys(ctx context.Context) ([]string, error) {
 	return keys, nil
 }
 
+// ListEntries returns every object's blob key, size and last-modified time.
+func (s *S3BlobStore) ListEntries(ctx context.Context) ([]BlobEntry, error) {
+	var entries []BlobEntry
+	paginator := s3.NewListObjectsV2Paginator(s.client, &s3.ListObjectsV2Input{
+		Bucket: aws.String(s.bucket),
+	})
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
+		if err != nil {
+			return entries, fmt.Errorf("s3 list entries: %w", err)
+		}
+		for _, obj := range page.Contents {
+			if obj.Key == nil {
+				continue
+			}
+			parts := strings.SplitN(*obj.Key, "/", 3)
+			key := *obj.Key
+			if len(parts) == 3 {
+				key = parts[2]
+			}
+			var size int64
+			if obj.Size != nil {
+				size = *obj.Size
+			}
+			var mt time.Time
+			if obj.LastModified != nil {
+				mt = *obj.LastModified
+			}
+			entries = append(entries, BlobEntry{Key: key, Size: size, ModTime: mt})
+		}
+	}
+	return entries, nil
+}
+
 // UsedBytes sums the size of all objects in the bucket.
 // This iterates all objects and may be slow on large buckets.
 // For production, prefer S3 Storage Lens metrics or a cached counter.

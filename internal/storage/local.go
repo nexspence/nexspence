@@ -151,6 +151,29 @@ func (s *LocalBlobStore) ListKeys(_ context.Context) ([]string, error) {
 	return keys, err
 }
 
+// ListEntries walks the store and returns each blob's key, size and mtime.
+func (s *LocalBlobStore) ListEntries(_ context.Context) ([]BlobEntry, error) {
+	var entries []BlobEntry
+	err := filepath.WalkDir(s.basePath, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		info, ierr := d.Info()
+		if ierr != nil {
+			return ierr
+		}
+		rel, _ := filepath.Rel(s.basePath, path)
+		parts := strings.SplitN(filepath.ToSlash(rel), "/", 3)
+		key := rel
+		if len(parts) == 3 {
+			key = parts[2]
+		}
+		entries = append(entries, BlobEntry{Key: key, Size: info.Size(), ModTime: info.ModTime()})
+		return nil
+	})
+	return entries, err
+}
+
 // UsedBytes returns the total size of all blobs under the base directory.
 func (s *LocalBlobStore) UsedBytes(_ context.Context) (int64, error) {
 	var total int64

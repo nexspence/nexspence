@@ -30,6 +30,17 @@ type BlobStore interface {
 	// ListKeys returns all blob keys present in the store.
 	// Used by GC to find orphaned blobs not referenced by any asset.
 	ListKeys(ctx context.Context) ([]string, error)
+
+	// ListEntries returns every blob in the store with its size and last-modified
+	// time. Used by GC to age-gate orphan deletion.
+	ListEntries(ctx context.Context) ([]BlobEntry, error)
+}
+
+// BlobEntry describes one stored blob for GC listing.
+type BlobEntry struct {
+	Key     string
+	Size    int64
+	ModTime time.Time
 }
 
 // PresignableStore is an optional extension of BlobStore for S3-backed stores.

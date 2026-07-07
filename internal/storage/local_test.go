@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -158,6 +159,21 @@ func TestLocalBlobStore_ListKeys_Multiple(t *testing.T) {
 	for _, k := range put {
 		assert.Contains(t, keys, k)
 	}
+}
+
+func TestLocalBlobStore_ListEntries(t *testing.T) {
+	store := newLocal(t)
+	ctx := context.Background()
+	require.NoError(t, store.Put(ctx, "abcdef01", bytes.NewReader([]byte("hello")), 5))
+
+	entries, err := store.ListEntries(ctx)
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	e := entries[0]
+	assert.Equal(t, "abcdef01", e.Key)
+	assert.EqualValues(t, 5, e.Size)
+	assert.False(t, e.ModTime.IsZero(), "mod time must not be zero")
+	assert.LessOrEqual(t, time.Since(e.ModTime), time.Minute, "mod time must be recent")
 }
 
 func TestLocalBlobStore_UsedBytes_Empty(t *testing.T) {
