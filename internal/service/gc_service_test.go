@@ -3,7 +3,6 @@ package service_test
 import (
 	"bytes"
 	"context"
-	"log/slog"
 	"testing"
 	"time"
 
@@ -20,7 +19,6 @@ func buildGC(assets *testutil.AssetRepo, bs *testutil.BlobStore) *service.BlobGC
 		Assets:   assets,
 		Stores:   testutil.NewBlobStoreRepo(), // provides a "default" store
 		Resolver: testutil.NewFakeResolver(bs),
-		Log:      slog.Default(),
 	}
 }
 

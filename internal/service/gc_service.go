@@ -4,12 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"time"
 
 	"github.com/robfig/cron/v3"
+	"go.uber.org/zap"
 
 	"github.com/nexspence-oss/nexspence/internal/distlock"
+	"github.com/nexspence-oss/nexspence/internal/logger"
 	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/storage"
 )
@@ -44,18 +45,18 @@ type BlobGCService struct {
 	Stores        repository.BlobStoreRepo
 	Resolver      StoreResolver
 	Locker        distlock.Locker
-	Log           *slog.Logger
+	Log           logger.Logger
 	DefaultMinAge time.Duration
 }
 
 const gcLockKey = "nexspence:lock:gc:run"
 const gcLockTTL = 30 * time.Minute
 
-func (s *BlobGCService) log() *slog.Logger {
+func (s *BlobGCService) log() logger.Logger {
 	if s.Log != nil {
 		return s.Log
 	}
-	return slog.Default()
+	return zap.NewNop().Sugar()
 }
 
 // referencedSet returns the set of all blob keys referenced by any asset.

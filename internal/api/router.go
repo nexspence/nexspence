@@ -161,6 +161,18 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 	// Start per-policy cron scheduler in background (default: cfg.Cleanup.DefaultSchedule).
 	go cleanupSvc.StartCronScheduler(context.Background(), cfg.Cleanup.DefaultSchedule)
 
+	gcSvc := &service.BlobGCService{
+		Assets:        assetRepo,
+		Stores:        blobRepo,
+		Resolver:      blobRegistry,
+		Locker:        locker,
+		Log:           log,
+		DefaultMinAge: cfg.GC.MinAge,
+	}
+	if cfg.GC.Enabled {
+		go gcSvc.StartCronScheduler(context.Background(), cfg.GC.Schedule, cfg.GC.MinAge)
+	}
+
 	replSvc := service.NewReplicationService(replRepo, assetRepo, localBlob, cfg.Auth.JWTSecret, cfg.Auth.EncryptionKeyBytes(), log)
 	go replSvc.StartCronScheduler(context.Background())
 
@@ -213,7 +225,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 	rbacSvc := service.NewRBACService(rbacRepo, repoRepo, log)
 	repoH := handlers.NewRepositoryHandler(repoSvc, rbacSvc)
 	userH := handlers.NewUserHandler(userSvc)
-	blobH := handlers.NewBlobStoreHandler(blobRepo).WithUsageDeps(repoRepo, assetRepo).WithRegistry(blobRegistry)
+	blobH := handlers.NewBlobStoreHandler(blobRepo).WithUsageDeps(repoRepo, assetRepo).WithRegistry(blobRegistry).WithGC(gcSvc)
 	componentH := handlers.NewComponentHandler(componentRepo, assetRepo, repoRepo, cfg.HTTP.BaseURL).WithRBAC(rbacSvc)
 	browseH := handlers.NewBrowseHandler(repoRepo, componentRepo, assetRepo, blobRepo, localBlob, rbacSvc)
 	cleanupH := handlers.NewCleanupHandler(cleanupRepo, repoRepo, cleanupSvc)
@@ -434,6 +446,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 		admin.POST("/service/rest/v1/blobstores/:type", blobH.Create)
 		admin.PUT("/service/rest/v1/blobstores/:type/:name", blobH.Update)
 		admin.DELETE("/service/rest/v1/blobstores/:name", blobH.Delete)
+		admin.POST("/api/v1/blobstores/:name/compact", blobH.Compact)
 
 		// ── Users ─────────────────────────────────────────────
 		admin.GET("/service/rest/v1/security/users", userH.List)

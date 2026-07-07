@@ -2,7 +2,6 @@ package handlers_test
 
 import (
 	"encoding/json"
-	"log/slog"
 	"net/http"
 	"strings"
 	"testing"
@@ -31,7 +30,6 @@ func mountBlobStores(t *testing.T, stores ...*domain.BlobStore) (*gin.Engine, *t
 		Assets:   assetRepo,
 		Stores:   blobRepo,
 		Resolver: testutil.NewFakeResolver(blobStore),
-		Log:      slog.Default(),
 	}
 
 	h := handlers.NewBlobStoreHandler(blobRepo).
