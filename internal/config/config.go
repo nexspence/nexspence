@@ -24,6 +24,7 @@ type Config struct {
 	Log       LogConfig       `mapstructure:"log"`
 	Search    SearchConfig    `mapstructure:"search"`
 	Cleanup   CleanupConfig   `mapstructure:"cleanup"`
+	GC        GCConfig        `mapstructure:"gc"`
 	Audit     AuditConfig     `mapstructure:"audit"`
 	Docker    DockerConfig    `mapstructure:"docker"`
 	Redis     RedisConfig     `mapstructure:"redis"`
@@ -323,6 +324,13 @@ type CleanupConfig struct {
 	DefaultSchedule string `mapstructure:"default_schedule"`
 }
 
+// GCConfig configures scheduled blob garbage collection.
+type GCConfig struct {
+	Enabled  bool          `mapstructure:"enabled"`
+	Schedule string        `mapstructure:"schedule"`
+	MinAge   time.Duration `mapstructure:"min_age"`
+}
+
 // AuditConfig controls audit-log retention, soft cap, and partition rotation.
 type AuditConfig struct {
 	RetentionDays    int           `mapstructure:"retention_days"`
@@ -392,6 +400,9 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("log.format", "json")
 	v.SetDefault("search.min_query_len", 2)
 	v.SetDefault("cleanup.default_schedule", "0 */6 * * *")
+	v.SetDefault("gc.enabled", true)
+	v.SetDefault("gc.schedule", "0 3 * * 0")
+	v.SetDefault("gc.min_age", "24h")
 	v.SetDefault("audit.retention_days", 90)
 	v.SetDefault("audit.soft_cap", int64(1_000_000))
 	v.SetDefault("audit.rotation_interval", "24h")

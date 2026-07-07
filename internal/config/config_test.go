@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -175,6 +176,21 @@ func TestLoad_AllowInsecureDefaults_DefaultsFalse(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, cfg.Auth.AllowInsecureDefaults,
 		"auth.allow_insecure_defaults must default to false (fail-closed)")
+}
+
+func TestLoad_GCDefaults(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := "" +
+		"database:\n  dsn: \"postgres://u:p@localhost:5432/db?sslmode=disable\"\n" +
+		"auth:\n  jwt_secret: \"a-unique-production-secret-at-least-32b\"\n"
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.True(t, cfg.GC.Enabled, "gc.enabled default should be true")
+	assert.Equal(t, "0 3 * * 0", cfg.GC.Schedule)
+	assert.Equal(t, 24*time.Hour, cfg.GC.MinAge)
 }
 
 func TestLoad_AllowInsecureDefaults_EnvOverride(t *testing.T) {

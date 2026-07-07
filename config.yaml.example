@@ -66,6 +66,12 @@ search:
 cleanup:
   default_schedule: "0 */6 * * *"   # cron schedule used for policies without schedule_cron
 
+# Blob garbage collection: remove blobs no longer referenced by any asset.
+gc:
+  enabled: true              # run scheduled blob garbage collection
+  schedule: "0 3 * * 0"      # cron: weekly, Sunday 03:00
+  min_age: "24h"             # only collect orphans older than this (grace period)
+
 # Audit log retention.
 # Events live in monthly PostgreSQL partitions.
 # Rotator pre-creates partitions for the next `lookahead_months` ahead and
