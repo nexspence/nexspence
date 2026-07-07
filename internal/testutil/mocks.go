@@ -853,6 +853,7 @@ func (b *BlobStore) ListKeys(_ context.Context) ([]string, error) {
 	}
 	return keys, nil
 }
+
 // SetMTime overrides the recorded modification time for a key (test helper).
 func (b *BlobStore) SetMTime(key string, t time.Time) {
 	b.mu.Lock()

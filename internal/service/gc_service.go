@@ -138,7 +138,6 @@ func (s *BlobGCService) CompactAll(ctx context.Context, opts GCOptions) ([]*GCRe
 // compact runs the core scan/delete for a single resolved store.
 func (s *BlobGCService) compact(ctx context.Context, name string, store storage.BlobStore,
 	referenced map[string]struct{}, opts GCOptions) *GCResult {
-
 	minAge := opts.MinAge
 	if minAge <= 0 {
 		minAge = s.DefaultMinAge
