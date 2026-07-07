@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nexspence-oss/nexspence/internal/distlock"
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/storage"
@@ -784,11 +785,12 @@ func (r *CleanupPolicyRepo) Delete(_ context.Context, id string) error {
 type BlobStore struct {
 	mu      sync.Mutex
 	blobs   map[string][]byte
+	mtimes  map[string]time.Time
 	Deleted []string // records Delete calls
 }
 
 func NewBlobStore() *BlobStore {
-	return &BlobStore{blobs: make(map[string][]byte)}
+	return &BlobStore{blobs: make(map[string][]byte), mtimes: make(map[string]time.Time)}
 }
 
 func (b *BlobStore) Put(_ context.Context, key string, r io.Reader, _ int64) error {
@@ -799,6 +801,7 @@ func (b *BlobStore) Put(_ context.Context, key string, r io.Reader, _ int64) err
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.blobs[key] = data
+	b.mtimes[key] = time.Now()
 	return nil
 }
 func (b *BlobStore) Get(_ context.Context, key string) (io.ReadCloser, int64, error) {
@@ -850,6 +853,26 @@ func (b *BlobStore) ListKeys(_ context.Context) ([]string, error) {
 	}
 	return keys, nil
 }
+// SetMTime overrides the recorded modification time for a key (test helper).
+func (b *BlobStore) SetMTime(key string, t time.Time) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.mtimes[key] = t
+}
+
+func (b *BlobStore) ListEntries(_ context.Context) ([]storage.BlobEntry, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	entries := make([]storage.BlobEntry, 0, len(b.blobs))
+	for k, data := range b.blobs {
+		entries = append(entries, storage.BlobEntry{
+			Key:     k,
+			Size:    int64(len(data)),
+			ModTime: b.mtimes[k],
+		})
+	}
+	return entries, nil
+}
 func (b *BlobStore) Has(key string) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -864,6 +887,29 @@ func (b *BlobStore) Read(key string) (string, error) {
 		return "", fmt.Errorf("not found")
 	}
 	return string(data), nil
+}
+
+// ── FakeResolver ──────────────────────────────────────────────
+
+// FakeResolver returns a fixed BlobStore for any descriptor. Implements
+// service.StoreResolver for GC tests.
+type FakeResolver struct{ Store storage.BlobStore }
+
+func NewFakeResolver(s storage.BlobStore) FakeResolver { return FakeResolver{Store: s} }
+
+func (f FakeResolver) Get(_ context.Context, _ storage.BlobStoreDescriptor) (storage.BlobStore, error) {
+	return f.Store, nil
+}
+
+// ── HeldLocker ────────────────────────────────────────────────
+
+// HeldLocker always reports the lock as held by another caller.
+type HeldLocker struct{}
+
+func NewHeldLocker() HeldLocker { return HeldLocker{} }
+
+func (HeldLocker) Acquire(_ context.Context, _ string, _ time.Duration) (distlock.Lock, error) {
+	return nil, distlock.ErrLockHeld
 }
 
 // ── Helpers ───────────────────────────────────────────────────
