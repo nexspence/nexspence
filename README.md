@@ -314,10 +314,10 @@ The Helm chart reference ships with the chart itself: [`deploy/helm/nexspence/RE
 | 60–63 | LDAP role mapping, Conda, Terraform, Helm chart | ✓ complete |
 | 64–67 | Landing page, in-app docs, security hardening | ✓ complete |
 | 68 | Extended monitoring — Prometheus endpoint, Grafana dashboard, UI Charts tab | ✓ complete |
+| 69 | Blob GC — age-gated orphan collection, global cron scheduler, UI panel | ✓ complete |
 | CLI | [`nxs` CLI](https://github.com/nexspence/nxs) — terminal & CI/CD client, v0.1.0 | ✓ complete |
 | next | SBOM generation, cosign image signing | planned |
 | next | OpenTelemetry traces | planned |
-| next | blob GC | planned |
 
 ---
 
