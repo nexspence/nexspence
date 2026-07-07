@@ -1631,6 +1631,29 @@ function BlobStoreDetailModal({ name, blobStores: _blobStores, onClose }: { name
     },
   })
 
+  const [gcResult, setGcResult] = useState<null | {
+    scannedBlobs: number; orphans: number; freedBytes: number; dryRun: boolean
+  }>(null)
+  const [gcError, setGcError] = useState('')
+  const gcMut = useMutation({
+    mutationFn: (dryRun: boolean) =>
+      nexusApi.compactBlobStore(name, { dryRun }).then(r => r.data as {
+        scannedBlobs: number; orphans: number; freedBytes: number; dryRun: boolean
+      }),
+    onSuccess: (res) => {
+      setGcResult(res)
+      setGcError('')
+      if (!res.dryRun) {
+        qc.invalidateQueries({ queryKey: ['blobstore-usage', name] })
+        qc.invalidateQueries({ queryKey: ['blobstores'] })
+      }
+    },
+    onError: (e: unknown) => {
+      const msg = (e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'GC failed'
+      setGcError(msg)
+    },
+  })
+
   const startEdit = () => {
     const cfg = bs?.config ?? {}
     setEditBucket((cfg.bucket as string) ?? '')
@@ -1769,6 +1792,38 @@ function BlobStoreDetailModal({ name, blobStores: _blobStores, onClose }: { name
                 </HoloButton>
                 <HoloButton onClick={() => { setEditing(false); setEditErr('') }}>Cancel</HoloButton>
               </div>
+            </div>
+          )}
+
+          {bs.type !== 'group' && (
+            <div style={{ marginBottom: 16, padding: '12px 14px', background: 'rgba(255,255,255,0.03)', borderRadius: 10, border: '1px solid var(--holo-border)' }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--holo-text-faint)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
+                Garbage collection
+              </div>
+              <p style={{ fontSize: 12, color: 'var(--holo-text-dim)', margin: '0 0 10px' }}>
+                Remove blobs no longer referenced by any asset (older than the grace period).
+              </p>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <HoloButton disabled={gcMut.isPending} onClick={() => gcMut.mutate(true)}>
+                  {gcMut.isPending ? 'Scanning…' : 'Dry run'}
+                </HoloButton>
+                <HoloButton
+                  variant="danger"
+                  disabled={gcMut.isPending}
+                  onClick={() => { if (confirm(`Run garbage collection on "${name}"? Orphaned blobs will be deleted.`)) gcMut.mutate(false) }}
+                >
+                  Compact
+                </HoloButton>
+              </div>
+              {gcResult && (
+                <div role="status" style={{ marginTop: 10, fontSize: 12, color: 'var(--holo-text)' }}>
+                  {gcResult.dryRun ? 'Dry run: ' : 'Collected: '}
+                  {gcResult.orphans} orphans ({fmtBytes(gcResult.freedBytes)}) of {gcResult.scannedBlobs} scanned.
+                </div>
+              )}
+              {gcError && (
+                <div role="alert" style={{ marginTop: 8, color: 'var(--holo-red)', fontSize: 12 }}>{gcError}</div>
+              )}
             </div>
           )}
 

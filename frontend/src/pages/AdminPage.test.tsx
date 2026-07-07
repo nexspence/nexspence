@@ -131,6 +131,26 @@ describe('AdminPage — Blob Stores tab', () => {
     expect(screen.getByText('maven-hosted')).toBeInTheDocument()
   })
 
+  it('detail modal: runs a dry-run garbage collection', async () => {
+    let compactUrl = ''
+    server.use(
+      http.get('/service/rest/v1/blobstores', () => HttpResponse.json([blobStore])),
+      http.get('/api/v1/blob-stores/:name/usage', () =>
+        HttpResponse.json({ store: blobStore, linkedRepositories: [], totalAssetBytes: 0 }),
+      ),
+      http.post('/api/v1/blobstores/:name/compact', ({ request }) => {
+        compactUrl = request.url
+        return HttpResponse.json({ store: 'default', scannedBlobs: 5, orphans: 2, freedBytes: 2048, dryRun: true })
+      }),
+    )
+    renderAdmin('blobs')
+    fireEvent.click(await screen.findByText('default'))
+    await screen.findByText('Blob Store: default')
+    fireEvent.click(await screen.findByRole('button', { name: /Dry run/i }))
+    await waitFor(() => expect(compactUrl).toContain('dry_run=true'))
+    expect(await screen.findByText(/2 orphans/i)).toBeInTheDocument()
+  })
+
   it('detail modal: edit local path config and save', async () => {
     let put: { config?: { path?: string } } | null = null
     server.use(
