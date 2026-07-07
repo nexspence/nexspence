@@ -2,14 +2,34 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
+	"time"
 
+	"github.com/robfig/cron/v3"
+
+	"github.com/nexspence-oss/nexspence/internal/distlock"
 	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/storage"
 )
 
-// GCResult reports what was found and removed during a compaction run.
+// StoreResolver resolves a physical BlobStore from a descriptor.
+// *storage.Registry satisfies this interface.
+type StoreResolver interface {
+	Get(ctx context.Context, desc storage.BlobStoreDescriptor) (storage.BlobStore, error)
+}
+
+// GCOptions controls a compaction run.
+// MinAge <= 0 means "use the service's DefaultMinAge".
+type GCOptions struct {
+	DryRun bool
+	MinAge time.Duration
+}
+
+// GCResult reports what a single store's compaction found and removed.
 type GCResult struct {
+	Store        string   `json:"store"`
 	ScannedBlobs int      `json:"scannedBlobs"`
 	Orphans      int      `json:"orphans"`
 	FreedBytes   int64    `json:"freedBytes"`
@@ -17,51 +37,159 @@ type GCResult struct {
 	Errors       []string `json:"errors,omitempty"`
 }
 
-// BlobGCService finds and removes blobs in a blob store that are not
-// referenced by any asset record (orphaned blobs).
+// BlobGCService finds and removes blobs not referenced by any asset (orphans),
+// age-gated by a grace period, across one or all blob stores.
 type BlobGCService struct {
-	Assets    repository.AssetRepo
-	BlobStore storage.BlobStore
+	Assets        repository.AssetRepo
+	Stores        repository.BlobStoreRepo
+	Resolver      StoreResolver
+	Locker        distlock.Locker
+	Log           *slog.Logger
+	DefaultMinAge time.Duration
 }
 
-// Compact scans all keys in the blob store, checks each against the asset DB,
-// and deletes any key that has no corresponding asset.
-// If dryRun is true, orphans are reported but not deleted.
-func (s *BlobGCService) Compact(ctx context.Context, dryRun bool) (*GCResult, error) {
-	// Build set of all referenced blob keys from the DB.
-	dbKeys, err := s.Assets.ListAllBlobKeys(ctx)
+const gcLockKey = "nexspence:lock:gc:run"
+const gcLockTTL = 30 * time.Minute
+
+func (s *BlobGCService) log() *slog.Logger {
+	if s.Log != nil {
+		return s.Log
+	}
+	return slog.Default()
+}
+
+// referencedSet returns the set of all blob keys referenced by any asset.
+func (s *BlobGCService) referencedSet(ctx context.Context) (map[string]struct{}, error) {
+	keys, err := s.Assets.ListAllBlobKeys(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list db blob keys: %w", err)
 	}
-	referenced := make(map[string]struct{}, len(dbKeys))
-	for _, k := range dbKeys {
-		referenced[k] = struct{}{}
+	set := make(map[string]struct{}, len(keys))
+	for _, k := range keys {
+		set[k] = struct{}{}
 	}
+	return set, nil
+}
 
-	// List all keys present in the physical store.
-	storeKeys, err := s.BlobStore.ListKeys(ctx)
+// CompactStore compacts a single blob store by name.
+func (s *BlobGCService) CompactStore(ctx context.Context, name string, opts GCOptions) (*GCResult, error) {
+	referenced, err := s.referencedSet(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("list store keys: %w", err)
+		return nil, err
+	}
+	row, err := s.Stores.Get(ctx, name)
+	if err != nil {
+		return nil, fmt.Errorf("get blob store %q: %w", name, err)
+	}
+	store, err := s.Resolver.Get(ctx, storage.BlobStoreDescriptor{
+		ID: row.ID, Type: row.Type, Config: row.Config,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("resolve blob store %q: %w", name, err)
+	}
+	return s.compact(ctx, name, store, referenced, opts), nil
+}
+
+// CompactAll compacts every blob store. It holds a distributed lock so only one
+// node runs at a time; if another node holds it, CompactAll returns (nil, nil).
+func (s *BlobGCService) CompactAll(ctx context.Context, opts GCOptions) ([]*GCResult, error) {
+	if s.Locker != nil {
+		lock, err := s.Locker.Acquire(ctx, gcLockKey, gcLockTTL)
+		if errors.Is(err, distlock.ErrLockHeld) {
+			s.log().Info("blob gc skipped: another node is running gc")
+			return nil, nil
+		}
+		if err != nil {
+			return nil, fmt.Errorf("blob gc: acquire lock: %w", err)
+		}
+		defer func() { _ = lock.Release(ctx) }()
 	}
 
-	result := &GCResult{ScannedBlobs: len(storeKeys), DryRun: dryRun}
+	referenced, err := s.referencedSet(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.Stores.List(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("blob gc: list stores: %w", err)
+	}
 
-	for _, key := range storeKeys {
-		if _, ok := referenced[key]; ok {
-			continue // still used
+	results := make([]*GCResult, 0, len(rows))
+	for i := range rows {
+		row := rows[i]
+		store, rerr := s.Resolver.Get(ctx, storage.BlobStoreDescriptor{
+			ID: row.ID, Type: row.Type, Config: row.Config,
+		})
+		if rerr != nil {
+			s.log().Error("blob gc: resolve store failed", "store", row.Name, "err", rerr)
+			results = append(results, &GCResult{
+				Store:  row.Name,
+				DryRun: opts.DryRun,
+				Errors: []string{fmt.Sprintf("resolve store: %v", rerr)},
+			})
+			continue
 		}
-		// Orphan found.
-		size, _ := s.BlobStore.Size(ctx, key)
-		result.Orphans++
-		result.FreedBytes += size
+		results = append(results, s.compact(ctx, row.Name, store, referenced, opts))
+	}
+	return results, nil
+}
 
-		if !dryRun {
-			if err := s.BlobStore.Delete(ctx, key); err != nil {
-				result.Errors = append(result.Errors,
-					fmt.Sprintf("delete %s: %v", key, err))
+// compact runs the core scan/delete for a single resolved store.
+func (s *BlobGCService) compact(ctx context.Context, name string, store storage.BlobStore,
+	referenced map[string]struct{}, opts GCOptions) *GCResult {
+
+	minAge := opts.MinAge
+	if minAge <= 0 {
+		minAge = s.DefaultMinAge
+	}
+
+	result := &GCResult{Store: name, DryRun: opts.DryRun}
+
+	entries, err := store.ListEntries(ctx)
+	if err != nil {
+		result.Errors = append(result.Errors, fmt.Sprintf("list entries: %v", err))
+		return result
+	}
+	result.ScannedBlobs = len(entries)
+
+	for _, e := range entries {
+		if _, ok := referenced[e.Key]; ok {
+			continue // still referenced
+		}
+		// Age gate: skip blobs younger than the grace period (may be an
+		// in-flight upload whose asset row is not committed yet).
+		if minAge > 0 && !e.ModTime.IsZero() && time.Since(e.ModTime) < minAge {
+			continue
+		}
+		result.Orphans++
+		result.FreedBytes += e.Size
+		if !opts.DryRun {
+			if derr := store.Delete(ctx, e.Key); derr != nil {
+				result.Errors = append(result.Errors, fmt.Sprintf("delete %s: %v", e.Key, derr))
 			}
 		}
 	}
+	return result
+}
 
-	return result, nil
+// StartCronScheduler runs CompactAll on the given cron schedule until ctx is
+// done. Run as a goroutine. A blank or invalid schedule disables scheduling.
+func (s *BlobGCService) StartCronScheduler(ctx context.Context, schedule string, minAge time.Duration) {
+	if schedule == "" {
+		s.log().Info("blob gc scheduler disabled: empty schedule")
+		return
+	}
+	c := cron.New()
+	_, err := c.AddFunc(schedule, func() {
+		if _, err := s.CompactAll(context.Background(), GCOptions{MinAge: minAge}); err != nil {
+			s.log().Error("blob gc cron error", "err", err)
+		}
+	})
+	if err != nil {
+		s.log().Error("blob gc: invalid schedule, scheduler disabled", "schedule", schedule, "err", err)
+		return
+	}
+	c.Start()
+	<-ctx.Done()
+	c.Stop()
 }
