@@ -78,6 +78,69 @@ func pushBlob(t *testing.T, r *gin.Engine, repoName, imageName, content string) 
 	return dgst
 }
 
+// setupV2Scoped mimics production routing (short-path /v2/:repoName/*) where the
+// Docker client only sends its credentials to requests under /v2/. It reproduces
+// issue #47: if the blob-upload Location escapes the /v2/ prefix, the finalize
+// PUT arrives anonymous and gets 401.
+func setupV2Scoped(repo *domain.Repository) *gin.Engine {
+	d := formats.Deps{
+		Repos:      testutil.NewRepoRepo(repo),
+		Blobs:      testutil.NewBlobStoreRepo(),
+		Components: testutil.NewComponentRepo(),
+		Assets:     testutil.NewAssetRepo(),
+		BlobStore:  testutil.NewBlobStore(),
+		BaseURL:    "http://localhost:8080",
+	}
+	h := docker.New(d)
+	r := gin.New()
+	// Credentials are only attached to /v2/ requests (as a real Docker client does).
+	r.Use(func(c *gin.Context) {
+		if strings.HasPrefix(c.Request.URL.Path, "/v2/") {
+			ctx := requestctx.WithUser(c.Request.Context(), "test-user-id", "testuser")
+			c.Request = c.Request.WithContext(ctx)
+		}
+		c.Next()
+	})
+	dispatch := func(c *gin.Context) {
+		c.Params = gin.Params{
+			{Key: "repoName", Value: c.Param("repoName")},
+			{Key: "path", Value: "/v2" + c.Param("dockerpath")},
+		}
+		h.ServeHTTP(c)
+	}
+	r.Any("/v2/:repoName/*dockerpath", dispatch)
+	return r
+}
+
+func TestDocker_ShortPathPush_StaysAuthenticated(t *testing.T) {
+	repo := testutil.SimpleRepo("da", "docker")
+	r := setupV2Scoped(repo)
+	content := "layer-bytes"
+	dgst := digest(content)
+
+	// POST initiate — the client authenticated against /v2/.
+	req := httptest.NewRequest(http.MethodPost, "/v2/da/devops/alpine/blobs/uploads/", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusAccepted, w.Code)
+	loc := w.Header().Get("Location")
+	require.True(t, strings.HasPrefix(loc, "/v2/"),
+		"Location must stay under /v2/ so the client keeps sending credentials, got %q", loc)
+
+	// PATCH the blob body — must not 401.
+	req2 := httptest.NewRequest(http.MethodPatch, loc, strings.NewReader(content))
+	req2.ContentLength = int64(len(content))
+	w2 := httptest.NewRecorder()
+	r.ServeHTTP(w2, req2)
+	require.Equal(t, http.StatusAccepted, w2.Code, "PATCH must stay authenticated")
+
+	// PUT finalize — this is where #47 returned 401 at 100%.
+	req3 := httptest.NewRequest(http.MethodPut, loc+"?digest="+dgst, nil)
+	w3 := httptest.NewRecorder()
+	r.ServeHTTP(w3, req3)
+	require.Equal(t, http.StatusCreated, w3.Code, "finalize PUT must stay authenticated (issue #47)")
+}
+
 // ── Version check ─────────────────────────────────────────────
 
 func TestDocker_VersionCheck(t *testing.T) {

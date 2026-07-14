@@ -344,7 +344,7 @@ func (h *Handler) handleBlobUploads(c *gin.Context, repoName, imageName, uuid st
 	}
 }
 
-func (h *Handler) initiateUpload(c *gin.Context, repoName, imageName string) {
+func (h *Handler) initiateUpload(c *gin.Context, repoName, _ string) {
 	if !requireDockerAuth(c) {
 		return
 	}
@@ -355,14 +355,19 @@ func (h *Handler) initiateUpload(c *gin.Context, repoName, imageName string) {
 		repoName: repoName,
 		created:  time.Now(),
 	})
-	uploadURL := fmt.Sprintf("/repository/%s/v2/%s/blobs/uploads/%s", repoName, imageName, uuid)
+	// The Location must stay under the same /v2/ prefix (and short/long path
+	// form) the client authenticated against. Deriving it from the request's
+	// own URL keeps the blob PATCH/PUT on the authenticated /v2/ surface; a
+	// hardcoded /repository/... URL routed the finalize PUT to a different
+	// auth surface and returned 401 at 100% (issue #47).
+	uploadURL := strings.TrimRight(c.Request.URL.Path, "/") + "/" + uuid
 	c.Header("Location", uploadURL)
 	c.Header("Docker-Upload-UUID", uuid)
 	c.Header("Range", "0-0")
 	c.Status(http.StatusAccepted)
 }
 
-func (h *Handler) patchUpload(c *gin.Context, repoName, imageName, uuid string) {
+func (h *Handler) patchUpload(c *gin.Context, _, _, uuid string) {
 	raw, ok := h.uploads.Load(uuid)
 	if !ok {
 		dockerError(c, http.StatusNotFound, "BLOB_UPLOAD_UNKNOWN", "upload unknown")
@@ -377,8 +382,9 @@ func (h *Handler) patchUpload(c *gin.Context, repoName, imageName, uuid string) 
 		return
 	}
 	offset := int64(sess.buf.Len())
-	uploadURL := fmt.Sprintf("/repository/%s/v2/%s/blobs/uploads/%s", repoName, imageName, uuid)
-	c.Header("Location", uploadURL)
+	// The request URL already is the upload location — echo it verbatim so the
+	// finalizing PUT stays on the same authenticated /v2/ path (see #47).
+	c.Header("Location", c.Request.URL.Path)
 	c.Header("Range", fmt.Sprintf("0-%d", offset-1))
 	c.Header("Docker-Upload-UUID", uuid)
 	c.Status(http.StatusAccepted)
@@ -419,7 +425,12 @@ func (h *Handler) finalizeUpload(c *gin.Context, repoName, imageName, uuid strin
 	h.uploads.Delete(uuid)
 
 	c.Header("Docker-Content-Digest", digest)
-	c.Header("Location", "/v2/"+imageName+"/blobs/"+digest)
+	// Point at the stored blob under the same /v2/ prefix the client used.
+	blobLoc := "/v2/" + imageName + "/blobs/" + digest
+	if i := strings.Index(c.Request.URL.Path, "/blobs/"); i >= 0 {
+		blobLoc = c.Request.URL.Path[:i] + "/blobs/" + digest
+	}
+	c.Header("Location", blobLoc)
 	c.Header("Content-Range", fmt.Sprintf("0-%d", len(data)-1))
 	c.Status(http.StatusCreated)
 }
