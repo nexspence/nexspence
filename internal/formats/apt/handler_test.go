@@ -57,6 +57,31 @@ func TestApt_UploadAndDownload(t *testing.T) {
 	assert.Equal(t, "deb-bytes", w.Body.String())
 }
 
+func TestApt_RootUpload_NormalizesToPool(t *testing.T) {
+	// Regression for #46: `curl --upload-file foo.deb .../repository/<repo>/`
+	// PUTs a .deb to the repository root, which previously returned 405.
+	repo := testutil.SimpleRepo("debs-root", "apt")
+	r := setup(repo)
+
+	require.Equal(t, http.StatusCreated,
+		putDeb(r, "debs-root", "/docker-ce_5.0_amd64.deb", "docker-bytes"))
+
+	// Stored under the canonical pool layout, so it downloads and indexes.
+	req := httptest.NewRequest(http.MethodGet,
+		"/repository/debs-root/pool/main/d/docker-ce/docker-ce_5.0_amd64.deb", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "docker-bytes", w.Body.String())
+
+	req = httptest.NewRequest(http.MethodGet,
+		"/repository/debs-root/dists/focal/main/binary-amd64/Packages", nil)
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), "docker-ce")
+}
+
 func TestApt_Release(t *testing.T) {
 	repo := testutil.SimpleRepo("debs2", "apt")
 	r := setup(repo)
