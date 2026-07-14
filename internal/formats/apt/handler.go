@@ -76,8 +76,10 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 	case (c.Request.Method == http.MethodGet || c.Request.Method == http.MethodHead) && strings.HasPrefix(p, "/pool/"):
 		h.serveFile(c, repoName, p)
 
-	// Upload .deb: PUT /pool/:component/:file.deb
-	case c.Request.Method == http.MethodPut && strings.HasPrefix(p, "/pool/"):
+	// Upload .deb: PUT /pool/:component/:file.deb, or a root-level PUT of a .deb
+	// (apt clients and `curl --upload-file foo.deb .../repository/<repo>/` upload
+	// to the repository root rather than an explicit pool path).
+	case c.Request.Method == http.MethodPut && (strings.HasPrefix(p, "/pool/") || strings.HasSuffix(p, ".deb")):
 		h.handleUpload(c, repoName, p)
 
 	// Delete .deb
@@ -193,9 +195,16 @@ func (h *Handler) handleUpload(c *gin.Context, repoName, p string) {
 		version = parts[1]
 	}
 
+	// Normalize root-level uploads into the canonical pool layout so the
+	// Packages index (which lists /pool/ assets) still finds them.
+	storePath := p
+	if !strings.HasPrefix(storePath, "/pool/") {
+		storePath = poolPath(pkgName, filename)
+	}
+
 	coords := base.Coords{Name: pkgName, Version: version}
 	if _, err := base.StoreArtifact(c.Request.Context(), h.deps,
-		repoName, p, "application/vnd.debian.binary-package",
+		repoName, storePath, "application/vnd.debian.binary-package",
 		coords, c.Request.Body, c.Request.ContentLength); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -220,4 +229,19 @@ func (h *Handler) serveFile(c *gin.Context, repoName, p string) {
 
 func normPath(p string) string {
 	return path.Clean("/" + strings.TrimPrefix(p, "/"))
+}
+
+// poolPath builds the canonical Debian pool location for a root-level upload:
+// /pool/main/<prefix>/<pkg>/<file>.deb, where <prefix> follows Debian's
+// convention (the first letter, or "lib<x>" for lib* packages).
+func poolPath(pkgName, filename string) string {
+	prefix := "_"
+	if pkgName != "" {
+		if strings.HasPrefix(pkgName, "lib") && len(pkgName) > 3 {
+			prefix = pkgName[:4]
+		} else {
+			prefix = pkgName[:1]
+		}
+	}
+	return "/pool/main/" + prefix + "/" + pkgName + "/" + filename
 }
