@@ -52,8 +52,15 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 		} else if strings.Contains(p, "/Packages") {
 			ct = "text/plain"
 		}
+		// /pool/ holds immutable .deb artifacts; everything under /dists/
+		// (Release/InRelease/Packages and other indexes) is mutable metadata that
+		// upstreams re-sign with an expiry, so it must be revalidated on a TTL.
+		var maxAge time.Duration
+		if !strings.HasPrefix(p, "/pool/") {
+			maxAge = repoproxy.MetadataMaxAge(repo)
+		}
 		coords := base.Coords{}
-		if err := repoproxy.ServeGET(c, h.deps, repo, p, "", coords, ct); err != nil {
+		if err := repoproxy.ServeGET(c, h.deps, repo, p, "", coords, ct, maxAge); err != nil {
 			c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		}
 		return

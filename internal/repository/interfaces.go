@@ -63,6 +63,11 @@ type AssetRepo interface {
 	ListStale(ctx context.Context, format string, repoNames []string, lastDownloadedDays, artifactAgeDays int, pathPrefix, nameGlob string, retainNVersions int, limit int) ([]domain.Asset, error)
 	Create(ctx context.Context, a *domain.Asset) error
 	Delete(ctx context.Context, id string) error
+	// TouchLastModified sets last_modified = NOW() for the asset. The proxy cache
+	// uses last_modified as the "last validated" timestamp for metadata freshness:
+	// on a successful upstream 304 revalidation the cached copy is confirmed current,
+	// so its freshness window is extended without rewriting the blob.
+	TouchLastModified(ctx context.Context, id string) error
 	// IncrementDownloads applies batched download-count increments (asset ID → count)
 	// to assets and their parent components in one transaction.
 	IncrementDownloads(ctx context.Context, counts map[string]int64) error

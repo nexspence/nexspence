@@ -52,7 +52,8 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 	case c.Request.Method == http.MethodGet && (p == "/simple" || p == "/simple/"):
 		if repo != nil && repo.Type == domain.TypeProxy {
 			coords := base.Coords{Name: "_simple", Version: "index"}
-			if err := repoproxy.ServeGET(c, h.deps, repo, p, "", coords, "text/html; charset=utf-8"); err != nil {
+			// The simple index is mutable metadata — revalidate on a TTL.
+			if err := repoproxy.ServeGET(c, h.deps, repo, p, "", coords, "text/html; charset=utf-8", repoproxy.MetadataMaxAge(repo)); err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			}
 			return
@@ -65,7 +66,8 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 		if repo != nil && repo.Type == domain.TypeProxy {
 			normalized := normalizePackageName(pkgName)
 			coords := base.Coords{Name: normalized, Version: "simple-page"}
-			if err := repoproxy.ServeGET(c, h.deps, repo, p, "", coords, "text/html; charset=utf-8"); err != nil {
+			// A per-package simple page is mutable metadata (new releases appear).
+			if err := repoproxy.ServeGET(c, h.deps, repo, p, "", coords, "text/html; charset=utf-8", repoproxy.MetadataMaxAge(repo)); err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			}
 			return
@@ -201,7 +203,8 @@ func (h *Handler) serveFile(c *gin.Context, repoName, filePath string) {
 		pkgGuess := path.Base(path.Dir(filePath))
 		coords := base.Coords{Name: normalizePackageName(pkgGuess), Version: "wheel"}
 		ct := pypiContentType(path.Base(filePath))
-		if err := repoproxy.ServeGET(c, h.deps, repo, filePath, "", coords, ct); err != nil {
+		// Wheels/sdists are immutable release files — never revalidate.
+		if err := repoproxy.ServeGET(c, h.deps, repo, filePath, "", coords, ct, 0); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		}
 		return

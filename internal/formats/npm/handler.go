@@ -102,7 +102,8 @@ func (h *Handler) serveTarball(c *gin.Context, repoName, filePath string) {
 		if coords.Version == "" {
 			coords.Version = "1"
 		}
-		if err := repoproxy.ServeGET(c, h.deps, repo, filePath, "", coords, "application/octet-stream"); err != nil {
+		// npm tarballs are immutable (name+version) — never revalidate.
+		if err := repoproxy.ServeGET(c, h.deps, repo, filePath, "", coords, "application/octet-stream", 0); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		}
 		return
@@ -137,7 +138,8 @@ func (h *Handler) serveMetadata(c *gin.Context, repoName, pkgPath string) {
 		trim := strings.Trim(strings.TrimPrefix(pkgPath, "/"), "/")
 		up := "/" + repoproxy.NPMMetadataPath(trim)
 		coords := base.Coords{Name: pkgName, Version: "metadata"}
-		if err := repoproxy.ServeGET(c, h.deps, repo, pkgPath, up, coords, "application/json"); err != nil {
+		// The packument is mutable metadata (new versions appear over time).
+		if err := repoproxy.ServeGET(c, h.deps, repo, pkgPath, up, coords, "application/json", repoproxy.MetadataMaxAge(repo)); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		}
 		return

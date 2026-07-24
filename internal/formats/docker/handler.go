@@ -146,7 +146,13 @@ func (h *Handler) handleManifests(c *gin.Context, repoName, imageName, reference
 			upPath := "/v2/" + imageName + "/manifests/" + reference
 			coords := base.Coords{Name: imageName, Version: reference}
 			ct := "application/vnd.docker.distribution.manifest.v2+json"
-			if err := repoproxy.ServeGET(c, h.deps, repo, cachePath, upPath, coords, ct); err != nil {
+			// A manifest referenced by digest is immutable; a tag (e.g. :latest)
+			// is a moving pointer, so revalidate it on a TTL.
+			var maxAge time.Duration
+			if !strings.HasPrefix(reference, "sha256:") {
+				maxAge = repoproxy.MetadataMaxAge(repo)
+			}
+			if err := repoproxy.ServeGET(c, h.deps, repo, cachePath, upPath, coords, ct, maxAge); err != nil {
 				dockerError(c, http.StatusBadGateway, "UNKNOWN", err.Error())
 			}
 			return
@@ -253,7 +259,8 @@ func (h *Handler) handleBlobs(c *gin.Context, repoName, imageName, digest string
 			// Upstream OCI path: /v2/{image}/blobs/{digest}
 			upPath := "/v2/" + imageName + "/blobs/" + digest
 			coords := base.Coords{Name: imageName, Version: digest}
-			if err := repoproxy.ServeGET(c, h.deps, repo, cachePath, upPath, coords, "application/octet-stream"); err != nil {
+			// Blobs are content-addressed by digest — immutable, never revalidate.
+			if err := repoproxy.ServeGET(c, h.deps, repo, cachePath, upPath, coords, "application/octet-stream", 0); err != nil {
 				dockerError(c, http.StatusBadGateway, "UNKNOWN", err.Error())
 			}
 			return

@@ -328,6 +328,13 @@ func (r *assetRepo) Delete(ctx context.Context, id string) error {
 	return err
 }
 
+// TouchLastModified sets last_modified = NOW() for the asset, extending the
+// proxy metadata freshness window after a successful upstream revalidation (304).
+func (r *assetRepo) TouchLastModified(ctx context.Context, id string) error {
+	_, err := r.db.Exec(ctx, `UPDATE assets SET last_modified = NOW() WHERE id = $1`, id)
+	return err
+}
+
 func (r *assetRepo) ListAllBlobKeys(ctx context.Context) ([]string, error) {
 	rows, err := r.db.Query(ctx,
 		`SELECT DISTINCT blob_key FROM assets WHERE blob_key IS NOT NULL AND TRIM(blob_key) <> ''`)

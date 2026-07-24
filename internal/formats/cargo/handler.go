@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -55,8 +56,14 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 			h.serveIndexConfig(c, repoName)
 			return
 		}
+		// Sparse-index entries under /index/ are mutable metadata (they list a
+		// crate's versions); /api/v1/crates/.../download .crate files are immutable.
+		var maxAge time.Duration
+		if strings.HasPrefix(p, "/index/") {
+			maxAge = repoproxy.MetadataMaxAge(repo)
+		}
 		coords := base.Coords{}
-		if err := repoproxy.ServeGET(c, h.deps, repo, p, "", coords, "application/octet-stream"); err != nil {
+		if err := repoproxy.ServeGET(c, h.deps, repo, p, "", coords, "application/octet-stream", maxAge); err != nil {
 			c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		}
 		return

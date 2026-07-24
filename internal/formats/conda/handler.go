@@ -203,9 +203,10 @@ func (h *Handler) serveProxy(c *gin.Context, repo *domain.Repository, repoName, 
 		return
 	}
 
-	// Package binary: cache via repoproxy
+	// Package binary: cache via repoproxy. Conda packages are immutable
+	// (repodata.json — the mutable index — is handled by proxyRepodata above).
 	coords := base.Coords{Name: filename, Group: platform}
-	if err := repoproxy.ServeGET(c, h.deps, repo, p, "", coords, "application/x-tar"); err != nil {
+	if err := repoproxy.ServeGET(c, h.deps, repo, p, "", coords, "application/x-tar", 0); err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 	}
 }

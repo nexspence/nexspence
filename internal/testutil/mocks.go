@@ -512,12 +512,39 @@ func (a *AssetRepo) ListStale(_ context.Context, _ string, _ []string, _, _ int,
 func (a *AssetRepo) Create(_ context.Context, asset *domain.Asset) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.nextID++
-	asset.ID = fmt.Sprintf("asset-%d", a.nextID)
-	// Index by repo name (for GetByPath) — matches what postgres impl does via JOIN
+	// Mirror the postgres upsert: an existing (repo,path) keeps its ID and refreshes
+	// last_modified, rather than creating a duplicate row.
 	key := asset.Repository + ":" + asset.Path
+	if existing, ok := a.assets[key]; ok {
+		asset.ID = existing.ID
+		if asset.CreatedAt.IsZero() {
+			asset.CreatedAt = existing.CreatedAt
+		}
+	} else {
+		a.nextID++
+		asset.ID = fmt.Sprintf("asset-%d", a.nextID)
+	}
+	// The postgres impl stamps last_modified = NOW() on insert/upsert and created_at
+	// on insert; the proxy cache relies on last_modified for freshness.
+	now := time.Now()
+	asset.LastModified = now
+	if asset.CreatedAt.IsZero() {
+		asset.CreatedAt = now
+	}
+	// Index by repo name (for GetByPath) — matches what postgres impl does via JOIN
 	a.assets[key] = asset
 	a.byID[asset.ID] = asset
+	return nil
+}
+
+// TouchLastModified sets the asset's LastModified to now (mirrors the postgres
+// UPDATE used to extend proxy metadata freshness after a 304 revalidation).
+func (a *AssetRepo) TouchLastModified(_ context.Context, id string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if v, ok := a.byID[id]; ok {
+		v.LastModified = time.Now()
+	}
 	return nil
 }
 func (a *AssetRepo) Delete(_ context.Context, id string) error {
