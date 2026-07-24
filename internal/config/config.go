@@ -28,6 +28,20 @@ type Config struct {
 	Audit     AuditConfig     `mapstructure:"audit"`
 	Docker    DockerConfig    `mapstructure:"docker"`
 	Redis     RedisConfig     `mapstructure:"redis"`
+	Proxy     ProxyConfig     `mapstructure:"proxy"`
+}
+
+// ProxyConfig configures the server-wide outbound proxy used when fetching from
+// upstream registries for proxy repositories. All fields are optional; when
+// empty, the standard HTTP_PROXY/HTTPS_PROXY/NO_PROXY environment variables are
+// honored instead. Per-repository proxy_config overrides these defaults.
+type ProxyConfig struct {
+	HTTPProxy   string `mapstructure:"http_proxy"`
+	HTTPSProxy  string `mapstructure:"https_proxy"`
+	SOCKS5Proxy string `mapstructure:"socks5_proxy"`
+	NoProxy     string `mapstructure:"no_proxy"`
+	Username    string `mapstructure:"username"`
+	Password    string `mapstructure:"password"`
 }
 
 // BootstrapConfig holds the admin account that is created/synced on every startup.

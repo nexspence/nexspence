@@ -223,7 +223,7 @@ func (h *Handler) proxyRepodata(c *gin.Context, repo *domain.Repository, repoNam
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	resp, err := repoproxy.UpstreamClient.Do(req)
+	resp, err := repoproxy.ClientFor(repo).Do(req)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "upstream fetch: " + err.Error()})
 		return

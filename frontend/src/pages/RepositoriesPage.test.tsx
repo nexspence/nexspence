@@ -313,6 +313,39 @@ describe('RepositoriesPage', () => {
     expect((posted! as { proxyConfig?: { remote_url: string } }).proxyConfig?.remote_url).toContain('maven.org')
   })
 
+  it('includes per-repo outbound proxy settings in proxyConfig', async () => {
+    const user = userEvent.setup()
+    let posted: Record<string, unknown> | null = null
+    server.use(
+      http.post('/service/rest/v1/repositories/:format/:type', async ({ request }) => {
+        posted = (await request.json()) as Record<string, unknown>
+        return HttpResponse.json(fixtures.repository(), { status: 201 })
+      }),
+    )
+    renderWithProviders(<RepositoriesPage />)
+    await screen.findByText('maven-hosted')
+    await user.click(screen.getByRole('button', { name: /Create Repository/ }))
+    await screen.findByText('Step 1 of 3')
+
+    await user.click(screen.getByRole('button', { name: /Hosted — store/ }))
+    await user.click(await screen.findByText(/Proxy — cache/))
+    await user.click(screen.getByRole('button', { name: /Next/ }))
+
+    await screen.findByText('Step 2 of 3')
+    await user.type(screen.getByPlaceholderText('my-repo'), 'maven-proxy')
+    await user.type(screen.getByPlaceholderText('http://proxy.internal:3128'), 'http://proxy.internal:3128')
+    await user.type(screen.getByPlaceholderText('socks5://proxy.internal:1080'), 'socks5://socks.internal:1080')
+    await user.click(screen.getByRole('button', { name: /Next/ }))
+    await screen.findByText('Step 3 of 3')
+    await user.click(screen.getByRole('button', { name: /^Create$/ }))
+
+    await waitFor(() => expect(posted).toBeTruthy())
+    const pc = (posted! as { proxyConfig?: Record<string, string> }).proxyConfig
+    expect(pc?.http_proxy).toBe('http://proxy.internal:3128')
+    expect(pc?.socks5_proxy).toBe('socks5://socks.internal:1080')
+    expect(pc?.remote_url).toContain('maven.org')
+  })
+
   it('errors when a group has no members selected', async () => {
     const user = userEvent.setup()
     renderWithProviders(<RepositoriesPage />)

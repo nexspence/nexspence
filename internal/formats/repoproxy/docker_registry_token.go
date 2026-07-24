@@ -82,7 +82,7 @@ func scopeFromRegistryV2URL(u *url.URL) string {
 	return "repository:" + name + ":pull"
 }
 
-func fetchDockerRegistryToken(ctx context.Context, realm, service, scope string) (string, error) {
+func fetchDockerRegistryToken(ctx context.Context, client *http.Client, realm, service, scope string) (string, error) {
 	if realm == "" {
 		realm = "https://auth.docker.io/token"
 	}
@@ -109,7 +109,7 @@ func fetchDockerRegistryToken(ctx context.Context, realm, service, scope string)
 	}
 	req.Header.Set("User-Agent", "Nexspence/1.0 (docker-proxy)")
 
-	resp, err := UpstreamClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", err
 	}
@@ -139,7 +139,7 @@ func fetchDockerRegistryToken(ctx context.Context, realm, service, scope string)
 // fetchUpstreamWithDockerHubAuth performs the HTTP request; on 401 from Docker Hub it obtains
 // an anonymous Bearer token and retries once. This prevents the registry client from
 // following Hub's WWW-Authenticate challenge with Nexspence credentials (wrong host).
-func fetchUpstreamWithDockerHubAuth(ctx context.Context, method, upstreamURL, baseRemote string, hdr http.Header) (*http.Response, error) {
+func fetchUpstreamWithDockerHubAuth(ctx context.Context, client *http.Client, method, upstreamURL, baseRemote string, hdr http.Header) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, method, upstreamURL, nil)
 	if err != nil {
 		return nil, err
@@ -151,7 +151,7 @@ func fetchUpstreamWithDockerHubAuth(ctx context.Context, method, upstreamURL, ba
 		req.Header.Set("User-Agent", "Nexspence/1.0 (proxy)")
 	}
 
-	resp, err := UpstreamClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -180,12 +180,12 @@ func fetchUpstreamWithDockerHubAuth(ctx context.Context, method, upstreamURL, ba
 	_ = resp.Body.Close()
 
 	if scope == "" {
-		return redoUpstreamWithoutAuth(ctx, method, upstreamURL, hdr)
+		return redoUpstreamWithoutAuth(ctx, client, method, upstreamURL, hdr)
 	}
 
-	tok, errTok := fetchDockerRegistryToken(ctx, realm, service, scope)
+	tok, errTok := fetchDockerRegistryToken(ctx, client, realm, service, scope)
 	if errTok != nil || tok == "" {
-		return redoUpstreamWithoutAuth(ctx, method, upstreamURL, hdr)
+		return redoUpstreamWithoutAuth(ctx, client, method, upstreamURL, hdr)
 	}
 
 	req2, err := http.NewRequestWithContext(ctx, method, upstreamURL, nil)
@@ -199,10 +199,10 @@ func fetchUpstreamWithDockerHubAuth(ctx context.Context, method, upstreamURL, ba
 		req2.Header.Set("User-Agent", "Nexspence/1.0 (proxy)")
 	}
 	req2.Header.Set("Authorization", "Bearer "+tok)
-	return UpstreamClient.Do(req2)
+	return client.Do(req2)
 }
 
-func redoUpstreamWithoutAuth(ctx context.Context, method, upstreamURL string, hdr http.Header) (*http.Response, error) {
+func redoUpstreamWithoutAuth(ctx context.Context, client *http.Client, method, upstreamURL string, hdr http.Header) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, method, upstreamURL, nil)
 	if err != nil {
 		return nil, err
@@ -214,5 +214,5 @@ func redoUpstreamWithoutAuth(ctx context.Context, method, upstreamURL string, hd
 	if req.Header.Get("User-Agent") == "" {
 		req.Header.Set("User-Agent", "Nexspence/1.0 (proxy)")
 	}
-	return UpstreamClient.Do(req)
+	return client.Do(req)
 }

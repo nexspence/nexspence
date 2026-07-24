@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"golang.org/x/net/http/httpproxy"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/formats"
@@ -28,10 +29,16 @@ import (
 )
 
 // UpstreamClient is the shared HTTP client used to fetch artifacts from upstream
-// remotes on cache miss. Its dialer is SSRF-guarded (remote_url is
-// user-configured): connections that resolve to internal addresses are refused.
+// remotes on cache miss when no explicit per-repo/global proxy is configured.
+// Its dialer is SSRF-guarded (remote_url is user-configured): connections that
+// resolve to internal addresses are refused. It honors the standard
+// HTTP_PROXY/HTTPS_PROXY/NO_PROXY environment variables via Transport.Proxy;
+// for env-configured proxies the guard still applies, so internal proxies must
+// be set via per-repo proxy_config or SetGlobalProxy (see proxyclient.go),
+// which route through a client that permits the trusted proxy address.
 var UpstreamClient = &http.Client{
 	Transport: &http.Transport{
+		Proxy: envProxyFromRequest,
 		DialContext: (&net.Dialer{
 			Timeout: 10 * time.Second,
 			Control: netguard.DialControl,
@@ -47,6 +54,12 @@ var UpstreamClient = &http.Client{
 		}
 		return nil
 	},
+}
+
+// envProxyFromRequest resolves the proxy for a request from the process
+// environment (HTTP_PROXY/HTTPS_PROXY/NO_PROXY), read fresh each call.
+func envProxyFromRequest(req *http.Request) (*url.URL, error) {
+	return httpproxy.FromEnvironment().ProxyFunc()(req.URL)
 }
 
 var hopHeaders = map[string]bool{
@@ -218,7 +231,7 @@ func ServeGET(c *gin.Context, d formats.Deps, repo *domain.Repository, repoRelat
 		upstreamMethod = http.MethodGet
 	}
 
-	resp, err := fetchUpstreamWithDockerHubAuth(ctx, upstreamMethod, upstream, baseRemote, upHdr)
+	resp, err := fetchUpstreamWithDockerHubAuth(ctx, ClientFor(repo), upstreamMethod, upstream, baseRemote, upHdr)
 	if err != nil {
 		if d.Webhooks != nil {
 			d.Webhooks.Dispatch(domain.WebhookPayload{
