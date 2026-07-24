@@ -377,7 +377,7 @@ func revalidateAndServe(c *gin.Context, d formats.Deps, repo *domain.Repository,
 		upHdr.Set("If-Modified-Since", asset.LastModified.UTC().Format(http.TimeFormat))
 	}
 
-	resp, err := fetchUpstreamWithDockerHubAuth(ctx, http.MethodGet, upstream, baseRemote, upHdr)
+	resp, err := fetchUpstreamWithDockerHubAuth(ctx, ClientFor(repo), http.MethodGet, upstream, baseRemote, upHdr)
 	if err != nil {
 		// Upstream unreachable → serve stale cache so metadata consumers keep working.
 		dispatchProxyError(d, repo.Name, repoRelativePath, upstream, err)
