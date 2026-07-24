@@ -53,8 +53,14 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 		if strings.HasSuffix(p, ".xml") {
 			ct = "application/xml"
 		}
+		// repodata/ holds mutable indexes (repomd.xml + referenced metadata);
+		// everything else is an immutable .rpm addressed by name-version.
+		var maxAge time.Duration
+		if strings.Contains(p, "/repodata/") {
+			maxAge = repoproxy.MetadataMaxAge(repo)
+		}
 		coords := base.Coords{}
-		if err := repoproxy.ServeGET(c, h.deps, repo, p, "", coords, ct); err != nil {
+		if err := repoproxy.ServeGET(c, h.deps, repo, p, "", coords, ct, maxAge); err != nil {
 			c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		}
 		return

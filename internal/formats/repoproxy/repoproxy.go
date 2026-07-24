@@ -7,6 +7,7 @@ import (
 	"crypto/sha1" //nolint:gosec // md5/sha1 required for artifact-protocol checksums (Maven .md5/.sha1, npm shasum), not security
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -14,6 +15,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"strconv"
 	"strings"
 	"time"
 
@@ -128,14 +130,102 @@ func applyChecksumHeaders(c *gin.Context, a *domain.Asset) {
 	}
 }
 
+// DefaultMetadataMaxAge is the freshness window applied to proxied repository
+// metadata (indexes, Release/InRelease, packuments, repodata, simple-index
+// pages, …) when a repository does not override it via
+// proxy_config.metadata_max_age. Immutable artifacts (.deb, .tgz, .jar, blobs
+// addressed by digest) are never revalidated — callers pass maxAge == 0 for those.
+const DefaultMetadataMaxAge = 10 * time.Minute
+
+// MetadataMaxAge returns the freshness TTL to use for proxied metadata on this
+// repository. It reads proxy_config["metadata_max_age"], interpreted as a number
+// of seconds (JSON numbers arrive as float64; strings are parsed). Any unset,
+// non-positive, or invalid value falls back to DefaultMetadataMaxAge.
+//
+// Handlers call this for metadata/index paths and pass the result as the maxAge
+// argument to ServeGET; for immutable artifact paths they pass 0 instead.
+func MetadataMaxAge(repo *domain.Repository) time.Duration {
+	if repo == nil || repo.ProxyConfig == nil {
+		return DefaultMetadataMaxAge
+	}
+	raw, ok := repo.ProxyConfig["metadata_max_age"]
+	if !ok {
+		return DefaultMetadataMaxAge
+	}
+	var secs float64
+	switch v := raw.(type) {
+	case float64:
+		secs = v
+	case float32:
+		secs = float64(v)
+	case int:
+		secs = float64(v)
+	case int64:
+		secs = float64(v)
+	case json.Number:
+		f, err := v.Float64()
+		if err != nil {
+			return DefaultMetadataMaxAge
+		}
+		secs = f
+	case string:
+		f, err := strconv.ParseFloat(strings.TrimSpace(v), 64)
+		if err != nil {
+			return DefaultMetadataMaxAge
+		}
+		secs = f
+	default:
+		return DefaultMetadataMaxAge
+	}
+	if secs <= 0 {
+		return DefaultMetadataMaxAge
+	}
+	return time.Duration(secs * float64(time.Second))
+}
+
+// cacheFetchStore resolves the physical blob store that holds a cached asset.
+func cacheFetchStore(ctx context.Context, d formats.Deps, asset *domain.Asset) storage.BlobStore {
+	if asset.BlobStoreID != "" {
+		if bsMeta, getErr := d.Blobs.GetByID(ctx, asset.BlobStoreID); getErr == nil && bsMeta != nil {
+			return base.PhysicalStore(ctx, d, bsMeta)
+		}
+	}
+	return d.BlobStore
+}
+
+// serveCachedAsset streams (or, for HEAD, describes) a cached asset to the client.
+// It takes ownership of rc and closes it.
+func serveCachedAsset(c *gin.Context, d formats.Deps, asset *domain.Asset, rc io.ReadCloser) {
+	defer func() { _ = rc.Close() }()
+	// Count only real GETs so a HEAD probe + GET pull don't double-count.
+	if c.Request.Method == http.MethodGet && d.Downloads != nil {
+		d.Downloads.Add(asset.ID)
+	}
+	applyChecksumHeaders(c, asset)
+	if c.Request.Method == http.MethodHead {
+		c.Header("Content-Type", asset.ContentType)
+		if asset.SizeBytes > 0 {
+			c.Header("Content-Length", fmt.Sprintf("%d", asset.SizeBytes))
+		}
+		c.Status(http.StatusOK)
+		return
+	}
+	c.DataFromReader(http.StatusOK, asset.SizeBytes, asset.ContentType, rc, nil)
+}
+
 // ServeGET serves a cached asset or fetches upstream, streaming to the client
 // and persisting to the blob store on success. repo must be TypeProxy.
 // upstreamPath, when non-empty, is used only for the upstream URL (e.g. npm scoped metadata);
 // the cache key and DB asset path remain repoRelativePath.
 //
-//nolint:gocyclo // large protocol-dispatch function (proxy cache-miss/upstream handling); splitting would hurt readability
+// maxAge controls metadata freshness. maxAge == 0 means the content is immutable
+// (artifacts, blobs addressed by digest): a cache hit is served forever without
+// contacting upstream. maxAge > 0 marks the path as mutable metadata (apt
+// Release/InRelease/Packages, npm packuments, yum repodata, pypi simple pages, …):
+// when the cached copy is older than maxAge it is revalidated against upstream with
+// a conditional request before being served. See revalidateAndServe.
 func ServeGET(c *gin.Context, d formats.Deps, repo *domain.Repository, repoRelativePath, upstreamPath string,
-	coords base.Coords, defaultContentType string,
+	coords base.Coords, defaultContentType string, maxAge time.Duration,
 ) error {
 	ctx := c.Request.Context()
 	if repo.Type != domain.TypeProxy {
@@ -158,37 +248,31 @@ func ServeGET(c *gin.Context, d formats.Deps, repo *domain.Repository, repoRelat
 		return fmt.Errorf("repoproxy: asset lookup: %w", err)
 	}
 	if asset != nil {
-		var fetchStore storage.BlobStore
-		if asset.BlobStoreID != "" {
-			if bsMeta, getErr := d.Blobs.GetByID(ctx, asset.BlobStoreID); getErr == nil && bsMeta != nil {
-				fetchStore = base.PhysicalStore(ctx, d, bsMeta)
-			}
-		}
-		if fetchStore == nil {
-			fetchStore = d.BlobStore
-		}
-		rc, _, blobErr := fetchStore.Get(ctx, asset.BlobKey)
+		rc, _, blobErr := cacheFetchStore(ctx, d, asset).Get(ctx, asset.BlobKey)
 		if blobErr == nil {
-			defer func() { _ = rc.Close() }()
-			// Count only real GETs so HEAD probe + GET pulls don't double-count.
-			if c.Request.Method == http.MethodGet && d.Downloads != nil {
-				d.Downloads.Add(asset.ID)
+			// Metadata freshness: a stale cached copy of mutable metadata is
+			// revalidated against upstream before serving. Immutable content
+			// (maxAge == 0) and HEAD probes always serve straight from cache.
+			if maxAge > 0 && c.Request.Method == http.MethodGet && time.Since(asset.LastModified) > maxAge {
+				return revalidateAndServe(c, d, repo, asset, repoRelativePath, upJoin, coords, defaultContentType, rc)
 			}
-			applyChecksumHeaders(c, asset)
-			if c.Request.Method == http.MethodHead {
-				c.Header("Content-Type", asset.ContentType)
-				if asset.SizeBytes > 0 {
-					c.Header("Content-Length", fmt.Sprintf("%d", asset.SizeBytes))
-				}
-				c.Status(http.StatusOK)
-				return nil
-			}
-			c.DataFromReader(http.StatusOK, asset.SizeBytes, asset.ContentType, rc, nil)
+			serveCachedAsset(c, d, asset, rc)
 			return nil
 		}
 		// Blob file missing from cache storage (storage path changed or file deleted).
 		// Fall through to upstream fetch so the client gets content and the cache is repaired.
 	}
+
+	return fetchAndCache(c, d, repo, repoRelativePath, upJoin, coords, defaultContentType)
+}
+
+// fetchAndCache handles a cache miss (or a cache entry whose blob went missing):
+// it fetches from upstream, forwarding the client's own conditional headers, and
+// on success stores the blob and serves it.
+func fetchAndCache(c *gin.Context, d formats.Deps, repo *domain.Repository,
+	repoRelativePath, upJoin string, coords base.Coords, defaultContentType string,
+) error {
+	ctx := c.Request.Context()
 
 	baseRemote, err := RemoteURL(repo)
 	if err != nil {
@@ -220,18 +304,7 @@ func ServeGET(c *gin.Context, d formats.Deps, repo *domain.Repository, repoRelat
 
 	resp, err := fetchUpstreamWithDockerHubAuth(ctx, upstreamMethod, upstream, baseRemote, upHdr)
 	if err != nil {
-		if d.Webhooks != nil {
-			d.Webhooks.Dispatch(domain.WebhookPayload{
-				Event:      domain.EventProxyError,
-				Timestamp:  time.Now(),
-				Repository: repo.Name,
-				Asset: map[string]any{
-					"path":     repoRelativePath,
-					"upstream": upstream,
-					"error":    err.Error(),
-				},
-			})
-		}
+		dispatchProxyError(d, repo.Name, repoRelativePath, upstream, err)
 		c.JSON(http.StatusBadGateway, gin.H{"error": "upstream fetch failed: " + err.Error()})
 		return nil
 	}
@@ -249,6 +322,87 @@ func ServeGET(c *gin.Context, d formats.Deps, repo *domain.Repository, repoRelat
 		_, _ = io.Copy(c.Writer, resp.Body)
 		return nil
 	}
+
+	return storeAndServeResponse(c, d, repo, repoRelativePath, defaultContentType, coords, resp)
+}
+
+// revalidateAndServe is invoked when a cached metadata asset is older than its
+// TTL. It asks upstream for a fresh copy with a conditional request and:
+//   - 304 Not Modified → refresh the asset's freshness timestamp, serve the cache;
+//   - 2xx             → replace the cached blob and serve the new copy;
+//   - upstream error / other status → serve the stale cache so clients (e.g.
+//     `apt update`) keep working, and record a proxy_error for the failure.
+//
+// It takes ownership of rc (the open cache blob) and always closes it.
+func revalidateAndServe(c *gin.Context, d formats.Deps, repo *domain.Repository, asset *domain.Asset,
+	repoRelativePath, upJoin string, coords base.Coords, defaultContentType string, rc io.ReadCloser,
+) error {
+	ctx := c.Request.Context()
+
+	baseRemote, err := RemoteURL(repo)
+	if err != nil {
+		serveCachedAsset(c, d, asset, rc)
+		return nil
+	}
+	upstream, err := JoinURL(baseRemote, upJoin)
+	if err != nil {
+		serveCachedAsset(c, d, asset, rc)
+		return nil
+	}
+
+	upHdr := http.Header{}
+	if ac := c.GetHeader("Accept"); ac != "" {
+		upHdr.Set("Accept", ac)
+	}
+	// Conditional revalidation: request a fresh body only if the resource changed
+	// since we cached it. We seed If-Modified-Since from the asset's stored
+	// timestamp (the moment we last fetched/validated). We deliberately do NOT
+	// derive If-None-Match from our SHA256: upstreams don't recognize our content
+	// hash as their ETag, and per RFC 7232 If-None-Match would take precedence over
+	// If-Modified-Since, forcing a 200 on every request and defeating revalidation.
+	if !asset.LastModified.IsZero() {
+		upHdr.Set("If-Modified-Since", asset.LastModified.UTC().Format(http.TimeFormat))
+	}
+
+	resp, err := fetchUpstreamWithDockerHubAuth(ctx, http.MethodGet, upstream, baseRemote, upHdr)
+	if err != nil {
+		// Upstream unreachable → serve stale cache so metadata consumers keep working.
+		dispatchProxyError(d, repo.Name, repoRelativePath, upstream, err)
+		serveCachedAsset(c, d, asset, rc)
+		return nil
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	switch {
+	case resp.StatusCode == http.StatusNotModified:
+		// Upstream confirms our copy is current: refresh freshness and serve cache.
+		// Use context.Background so the touch survives request cancellation.
+		if d.Assets != nil {
+			_ = d.Assets.TouchLastModified(context.Background(), asset.ID)
+		}
+		serveCachedAsset(c, d, asset, rc)
+		return nil
+	case resp.StatusCode >= 200 && resp.StatusCode <= 299:
+		// Upstream returned a newer copy: replace the cached blob and serve it.
+		_ = rc.Close()
+		return storeAndServeResponse(c, d, repo, repoRelativePath, defaultContentType, coords, resp)
+	default:
+		// Any other status (404/410/5xx): don't discard a good cache on a transient
+		// upstream hiccup — serve stale and record the anomaly.
+		dispatchProxyError(d, repo.Name, repoRelativePath, upstream,
+			fmt.Errorf("revalidation returned status %d", resp.StatusCode))
+		serveCachedAsset(c, d, asset, rc)
+		return nil
+	}
+}
+
+// storeAndServeResponse streams a successful (2xx) upstream response to the
+// client while persisting it to the blob store and registering the DB asset,
+// replacing any prior cache entry for repoRelativePath.
+func storeAndServeResponse(c *gin.Context, d formats.Deps, repo *domain.Repository,
+	repoRelativePath, defaultContentType string, coords base.Coords, resp *http.Response,
+) error {
+	ctx := c.Request.Context()
 
 	ct := resp.Header.Get("Content-Type")
 	if ct == "" {
@@ -307,12 +461,30 @@ func ServeGET(c *gin.Context, d formats.Deps, repo *domain.Repository, repoRelat
 	if regErr != nil {
 		return regErr
 	}
-	// Count a download only for GET (see HEAD branch above). Otherwise a HEAD probe + GET
-	// hit would double-count the same pull.
+	// Count a download only for GET. Otherwise a HEAD probe + GET hit would
+	// double-count the same pull.
 	if regAsset != nil && regAsset.ID != "" && c.Request.Method == http.MethodGet && d.Downloads != nil {
 		d.Downloads.Add(regAsset.ID)
 	}
 	return nil
+}
+
+// dispatchProxyError records an upstream fetch/revalidation failure via the
+// webhook bus (the package's proxy-error reporting channel), if configured.
+func dispatchProxyError(d formats.Deps, repoName, repoRelativePath, upstream string, cause error) {
+	if d.Webhooks == nil {
+		return
+	}
+	d.Webhooks.Dispatch(domain.WebhookPayload{
+		Event:      domain.EventProxyError,
+		Timestamp:  time.Now(),
+		Repository: repoName,
+		Asset: map[string]any{
+			"path":     repoRelativePath,
+			"upstream": upstream,
+			"error":    cause.Error(),
+		},
+	})
 }
 
 // NPMMetadataPath returns the path segment npmjs.org uses for metadata (scoped packages use %2F).

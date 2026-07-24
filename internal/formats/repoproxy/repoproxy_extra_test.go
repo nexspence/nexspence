@@ -164,7 +164,7 @@ func TestServeGET_NotProxy(t *testing.T) {
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodGet, "/file", nil)
-	err := repoproxy.ServeGET(c, d, repo, "/file", "", base.Coords{}, "")
+	err := repoproxy.ServeGET(c, d, repo, "/file", "", base.Coords{}, "", 0)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not a proxy")
 }
@@ -175,7 +175,7 @@ func TestServeGET_UnsupportedMethod(t *testing.T) {
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodPost, "/file", nil)
-	err := repoproxy.ServeGET(c, d, repo, "/file", "", base.Coords{}, "")
+	err := repoproxy.ServeGET(c, d, repo, "/file", "", base.Coords{}, "", 0)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unsupported method")
 }
@@ -189,7 +189,7 @@ func TestServeGET_MissingRemoteURL(t *testing.T) {
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodGet, "/file", nil)
-	err := repoproxy.ServeGET(c, d, repo, "/file", "", base.Coords{}, "")
+	err := repoproxy.ServeGET(c, d, repo, "/file", "", base.Coords{}, "", 0)
 	require.NoError(t, err) // handled internally with 400
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
@@ -207,7 +207,7 @@ func TestServeGET_Upstream404(t *testing.T) {
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodGet, "/missing.jar", nil)
-	err := repoproxy.ServeGET(c, d, repo, "/missing.jar", "", base.Coords{}, "")
+	err := repoproxy.ServeGET(c, d, repo, "/missing.jar", "", base.Coords{}, "", 0)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusNotFound, w.Code)
 }
@@ -231,7 +231,7 @@ func TestServeGET_UpstreamError(t *testing.T) {
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodGet, "/file.bin", nil)
-	err := repoproxy.ServeGET(c, d, repo, "/file.bin", "", base.Coords{}, "")
+	err := repoproxy.ServeGET(c, d, repo, "/file.bin", "", base.Coords{}, "", 0)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusBadGateway, w.Code)
 }
@@ -256,7 +256,7 @@ func TestServeGET_UpstreamError_FiresWebhook(t *testing.T) {
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodGet, "/file.bin", nil)
-	_ = repoproxy.ServeGET(c, d, repo, "/file.bin", "", base.Coords{}, "")
+	_ = repoproxy.ServeGET(c, d, repo, "/file.bin", "", base.Coords{}, "", 0)
 
 	// Give the goroutine a moment — Dispatch is synchronous in stubDispatcher but
 	// ServeGET calls it directly (not in a goroutine), so no wait needed.
@@ -282,7 +282,7 @@ func TestServeGET_UpstreamNotModified(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/file", nil)
 	req.Header.Set("If-None-Match", `"abc123"`)
 	c.Request = req
-	err := repoproxy.ServeGET(c, d, repo, "/file", "", base.Coords{}, "")
+	err := repoproxy.ServeGET(c, d, repo, "/file", "", base.Coords{}, "", 0)
 	require.NoError(t, err)
 	// gin's c.Status() flushes the code only on first write; 304 has no body so we
 	// check via the writer's status (gin exposes it on the response writer).
@@ -317,7 +317,7 @@ func TestServeGET_HEAD_CacheHit(t *testing.T) {
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodHead, "/data.bin", nil)
-	err := repoproxy.ServeGET(c, d, repo, "/data.bin", "", base.Coords{}, "application/octet-stream")
+	err := repoproxy.ServeGET(c, d, repo, "/data.bin", "", base.Coords{}, "application/octet-stream", 0)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Equal(t, "", w.Body.String()) // HEAD has no body
@@ -340,7 +340,7 @@ func TestServeGET_HEAD_CacheMiss_FetchesUpstream(t *testing.T) {
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodHead, "/headfile.txt", nil)
-	err := repoproxy.ServeGET(c, d, repo, "/headfile.txt", "", base.Coords{Name: "headfile.txt"}, "text/plain")
+	err := repoproxy.ServeGET(c, d, repo, "/headfile.txt", "", base.Coords{Name: "headfile.txt"}, "text/plain", 0)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, w.Code)
 }
@@ -362,7 +362,7 @@ func TestServeGET_DefaultContentType(t *testing.T) {
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodGet, "/data", nil)
-	err := repoproxy.ServeGET(c, d, repo, "/data", "", base.Coords{Name: "data"}, "application/octet-stream")
+	err := repoproxy.ServeGET(c, d, repo, "/data", "", base.Coords{Name: "data"}, "application/octet-stream", 0)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Equal(t, "application/octet-stream", w.Header().Get("Content-Type"))
@@ -387,7 +387,7 @@ func TestServeGET_UpstreamPathOverride(t *testing.T) {
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodGet, "/@babel/core", nil)
-	err := repoproxy.ServeGET(c, d, repo, "/@babel/core", "/@babel%2Fcore", base.Coords{Name: "@babel/core"}, "application/json")
+	err := repoproxy.ServeGET(c, d, repo, "/@babel/core", "/@babel%2Fcore", base.Coords{Name: "@babel/core"}, "application/json", 0)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Equal(t, body, w.Body.String())
@@ -410,7 +410,7 @@ func TestServeGET_Accept_Header_Forwarded(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/file", nil)
 	req.Header.Set("Accept", "application/vnd.npm.install-v1+json")
 	c.Request = req
-	err := repoproxy.ServeGET(c, d, repo, "/file", "", base.Coords{Name: "file"}, "")
+	err := repoproxy.ServeGET(c, d, repo, "/file", "", base.Coords{Name: "file"}, "", 0)
 	require.NoError(t, err)
 	assert.Equal(t, "application/vnd.npm.install-v1+json", capturedAccept)
 }
@@ -479,7 +479,7 @@ func TestServeGET_DockerHubLike_401_Token_200(t *testing.T) {
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodGet, "/v2/library/alpine/manifests/latest", nil)
-	err := repoproxy.ServeGET(c, d, repo, "/v2/library/alpine/manifests/latest", "", base.Coords{Name: "alpine"}, "application/json")
+	err := repoproxy.ServeGET(c, d, repo, "/v2/library/alpine/manifests/latest", "", base.Coords{Name: "alpine"}, "application/json", 0)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.GreaterOrEqual(t, calls, 2, "should have made at least 2 upstream calls (401 + retry)")
@@ -545,7 +545,7 @@ func TestServeGET_DockerHub_NoScopeRedoWithoutAuth(t *testing.T) {
 	c, _ := gin.CreateTestContext(w)
 	// Use a non-/v2/ path so scopeFromRegistryV2URL returns "".
 	c.Request = httptest.NewRequest(http.MethodGet, "/ping", nil)
-	err := repoproxy.ServeGET(c, d, repo, "/ping", "", base.Coords{Name: "ping"}, "")
+	err := repoproxy.ServeGET(c, d, repo, "/ping", "", base.Coords{Name: "ping"}, "", 0)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Equal(t, 2, calls)
@@ -601,7 +601,7 @@ func TestServeGET_CacheHit_WithChecksums(t *testing.T) {
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodGet, "/checksummed.jar", nil)
-	err := repoproxy.ServeGET(c, d, repo, "/checksummed.jar", "", base.Coords{}, "application/java-archive")
+	err := repoproxy.ServeGET(c, d, repo, "/checksummed.jar", "", base.Coords{}, "application/java-archive", 0)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Equal(t, "abc123sha256", w.Header().Get("X-Checksum-SHA256"))
@@ -656,7 +656,7 @@ func TestServeGET_DockerHub_ScopeFromV2URL(t *testing.T) {
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodGet, "/v2/library/nginx/manifests/latest", nil)
-	err := repoproxy.ServeGET(c, d, repo, "/v2/library/nginx/manifests/latest", "", base.Coords{Name: "nginx"}, "application/json")
+	err := repoproxy.ServeGET(c, d, repo, "/v2/library/nginx/manifests/latest", "", base.Coords{Name: "nginx"}, "application/json", 0)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.True(t, tokenServerCalled, "token server should have been called with scope from URL")

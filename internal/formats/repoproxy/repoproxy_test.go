@@ -112,7 +112,7 @@ func serveGET(repo *domain.Repository, assetPath, blobContent string) *httptest.
 	c.Request = httptest.NewRequest(http.MethodGet, assetPath, nil)
 
 	coords := base.Coords{}
-	_ = repoproxy.ServeGET(c, d, repo, assetPath, "", coords, "application/octet-stream")
+	_ = repoproxy.ServeGET(c, d, repo, assetPath, "", coords, "application/octet-stream", 0)
 	return w
 }
 
@@ -150,7 +150,7 @@ func TestServeGET_CacheMiss_FetchesUpstream(t *testing.T) {
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodGet, "/artifact.bin", nil)
 
-	err := repoproxy.ServeGET(c, d, repo, "/artifact.bin", "", base.Coords{Name: "artifact.bin"}, "application/octet-stream")
+	err := repoproxy.ServeGET(c, d, repo, "/artifact.bin", "", base.Coords{Name: "artifact.bin"}, "application/octet-stream", 0)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Equal(t, body, w.Body.String())

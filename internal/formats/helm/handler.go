@@ -49,7 +49,9 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 			return
 		}
 		coords := base.Coords{Name: strings.TrimSuffix(strings.TrimPrefix(p, "/"), ".tgz")}
-		if err := repoproxy.ServeGET(c, h.deps, repo, p, "", coords, "application/x-tar"); err != nil {
+		// Chart tarballs are immutable (index.yaml — the mutable index — is
+		// fetched-and-rewritten above, not cached through here).
+		if err := repoproxy.ServeGET(c, h.deps, repo, p, "", coords, "application/x-tar", 0); err != nil {
 			c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		}
 		return

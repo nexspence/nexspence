@@ -52,7 +52,17 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 		} else if strings.Contains(p, "/Packages") {
 			ct = "text/plain"
 		}
-		if err := repoproxy.ServeGET(c, h.deps, repo, p, "", proxyCoords(p), ct); err != nil {
+		// /pool/ holds immutable .deb artifacts; everything under /dists/
+		// (Release/InRelease/Packages and other indexes) is mutable metadata that
+		// upstreams re-sign with an expiry, so it must be revalidated on a TTL.
+		var maxAge time.Duration
+		if !strings.HasPrefix(p, "/pool/") {
+			maxAge = repoproxy.MetadataMaxAge(repo)
+		}
+		// proxyCoords gives cached files real component coordinates (name/version
+		// from .deb filenames, path-based for indexes) so they browse and delete
+		// individually instead of collapsing into one nameless component.
+		if err := repoproxy.ServeGET(c, h.deps, repo, p, "", proxyCoords(p), ct, maxAge); err != nil {
 			c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		}
 		return
