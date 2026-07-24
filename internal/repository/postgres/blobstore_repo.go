@@ -76,9 +76,9 @@ func (r *blobStoreRepo) Create(ctx context.Context, b *domain.BlobStore) error {
 func (r *blobStoreRepo) Update(ctx context.Context, b *domain.BlobStore) error {
 	cfg, _ := json.Marshal(b.Config)
 	_, err := r.db.Exec(ctx, `
-		UPDATE blob_stores SET config=$1, quota_bytes=$2, updated_at=NOW()
-		WHERE name=$3`,
-		cfg, b.QuotaBytes, b.Name,
+		UPDATE blob_stores SET type=$1, config=$2, quota_bytes=$3, updated_at=NOW()
+		WHERE name=$4`,
+		b.Type, cfg, b.QuotaBytes, b.Name,
 	)
 	return err
 }
