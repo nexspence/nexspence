@@ -145,6 +145,102 @@ func TestComponentHandler_List_Pagination_Params(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 }
 
+// TestComponentHandler_List_IncludesAssets: the browse UI deletes a row by the
+// path of its first asset, so the list envelope must carry assets — not just
+// component metadata. Without them the UI falls back to the component *name*
+// and the delete silently matches nothing (issues #75/#76).
+func TestComponentHandler_List_IncludesAssets(t *testing.T) {
+	r, comps, assets, repos := mountComponents(t)
+	seedRepo(t, repos, &domain.Repository{ID: "r1", Name: "npm-proxy", Format: domain.FormatNPM, Type: domain.TypeProxy})
+	require.NoError(t, comps.Create(testContext(), &domain.Component{Name: "lodash", Version: "4.17.21", Repository: "npm-proxy"}))
+	require.NoError(t, assets.Create(testContext(), &domain.Asset{
+		ComponentID: "comp-1", Repository: "npm-proxy", Path: "/lodash/-/lodash-4.17.21.tgz", SizeBytes: 10,
+	}))
+
+	rec := do(t, r, http.MethodGet, "/service/rest/v1/components?repository=npm-proxy", nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	var got componentsResp
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Len(t, got.Items, 1)
+	require.Len(t, got.Items[0].Assets, 1, "list must include the component's assets")
+	assert.Equal(t, "/lodash/-/lodash-4.17.21.tgz", got.Items[0].Assets[0].Path)
+	assert.Equal(t, "http://localhost/repository/npm-proxy/lodash/-/lodash-4.17.21.tgz",
+		got.Items[0].Assets[0].DownloadURL)
+}
+
+// Assets are fetched for every listed component in a single batched query.
+func TestComponentHandler_List_BatchesAssetLookup(t *testing.T) {
+	r, comps, assets, repos := mountComponents(t)
+	seedRepo(t, repos, &domain.Repository{ID: "r1", Name: "raw-host", Format: domain.FormatRaw, Type: domain.TypeHosted})
+	for i := 0; i < 3; i++ {
+		require.NoError(t, comps.Create(testContext(), &domain.Component{
+			Name: fmt.Sprintf("pkg-%d", i), Repository: "raw-host",
+		}))
+	}
+	rec := do(t, r, http.MethodGet, "/service/rest/v1/components?repository=raw-host", nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, 1, assets.ListByComponentIDsCalls, "one batched query, not one per component")
+	assert.Zero(t, assets.ListByComponentIDCalls)
+}
+
+// An asset-repo failure while enriching the list must surface as a 500 rather
+// than silently returning components without assets.
+func TestComponentHandler_List_AssetRepoError_500(t *testing.T) {
+	r, comps, assets, repos := mountComponents(t)
+	seedRepo(t, repos, &domain.Repository{ID: "r1", Name: "raw-host", Format: domain.FormatRaw, Type: domain.TypeHosted})
+	require.NoError(t, comps.Create(testContext(), &domain.Component{Name: "a", Repository: "raw-host"}))
+	assets.Err = errors.New("asset query failed")
+	rec := do(t, r, http.MethodGet, "/service/rest/v1/components?repository=raw-host", nil)
+	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+}
+
+// TestComponentHandler_List_OffsetParam: the browse UI pages with ?offset=,
+// which the handler ignored — every "Next" page re-rendered page 1 (issue #80).
+func TestComponentHandler_List_OffsetParam(t *testing.T) {
+	r, comps, _, repos := mountComponents(t)
+	seedRepo(t, repos, &domain.Repository{ID: "r1", Name: "raw-host", Format: domain.FormatRaw, Type: domain.TypeHosted})
+	for _, n := range []string{"a", "b", "c", "d"} {
+		require.NoError(t, comps.Create(testContext(), &domain.Component{Name: n, Repository: "raw-host"}))
+	}
+
+	rec := do(t, r, http.MethodGet, "/service/rest/v1/components?repository=raw-host&limit=2&offset=2", nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, 2, comps.LastListOffset, "offset query param must reach the repo layer")
+	var got componentsResp
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Len(t, got.Items, 2)
+	assert.Equal(t, "c", got.Items[0].Name)
+	assert.Equal(t, "d", got.Items[1].Name)
+}
+
+// continuationToken keeps working and wins over offset when both are supplied.
+func TestComponentHandler_List_ContinuationTokenWinsOverOffset(t *testing.T) {
+	r, comps, _, repos := mountComponents(t)
+	seedRepo(t, repos, &domain.Repository{ID: "r1", Name: "raw-host", Format: domain.FormatRaw, Type: domain.TypeHosted})
+	for _, n := range []string{"a", "b", "c", "d"} {
+		require.NoError(t, comps.Create(testContext(), &domain.Component{Name: n, Repository: "raw-host"}))
+	}
+	rec := do(t, r, http.MethodGet,
+		"/service/rest/v1/components?repository=raw-host&limit=1&offset=2&continuationToken=3", nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, 3, comps.LastListOffset)
+}
+
+// A first page that has more rows behind it advertises the next token.
+func TestComponentHandler_List_ContinuationTokenEmitted(t *testing.T) {
+	r, comps, _, repos := mountComponents(t)
+	seedRepo(t, repos, &domain.Repository{ID: "r1", Name: "raw-host", Format: domain.FormatRaw, Type: domain.TypeHosted})
+	for _, n := range []string{"a", "b", "c"} {
+		require.NoError(t, comps.Create(testContext(), &domain.Component{Name: n, Repository: "raw-host"}))
+	}
+	rec := do(t, r, http.MethodGet, "/service/rest/v1/components?repository=raw-host&limit=2", nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	var got componentsResp
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.NotNil(t, got.ContinuationToken)
+	assert.Equal(t, "2", *got.ContinuationToken)
+}
+
 func TestComponentHandler_List_ExpandRepoError_500(t *testing.T) {
 	r, _, _, repos := mountComponents(t)
 	repos.Err = errors.New("db down")

@@ -52,8 +52,7 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 		} else if strings.Contains(p, "/Packages") {
 			ct = "text/plain"
 		}
-		coords := base.Coords{}
-		if err := repoproxy.ServeGET(c, h.deps, repo, p, "", coords, ct); err != nil {
+		if err := repoproxy.ServeGET(c, h.deps, repo, p, "", proxyCoords(p), ct); err != nil {
 			c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		}
 		return
@@ -185,15 +184,31 @@ Description: Nexspence APT Repository
 	c.Data(http.StatusOK, "text/plain; charset=utf-8", []byte(release))
 }
 
+// debCoords parses the Debian "name_version_arch.deb" filename convention.
+// Non-conforming names keep the whole filename as the package name.
+func debCoords(filename string) (pkgName, version string) {
+	pkgName, version = filename, "0.0.0"
+	if parts := strings.Split(strings.TrimSuffix(filename, ".deb"), "_"); len(parts) >= 2 {
+		pkgName, version = parts[0], parts[1]
+	}
+	return pkgName, version
+}
+
+// proxyCoords derives component coordinates for a file cached from upstream.
+// Packages get real package/version coordinates so they browse like hosted ones;
+// index files (Release, InRelease, Packages) are keyed by their path, since each
+// is a distinct document rather than a version of a package.
+func proxyCoords(p string) base.Coords {
+	if strings.HasSuffix(p, ".deb") {
+		name, version := debCoords(path.Base(p))
+		return base.Coords{Name: name, Version: version}
+	}
+	return base.Coords{Name: strings.TrimPrefix(p, "/"), Version: "metadata"}
+}
+
 func (h *Handler) handleUpload(c *gin.Context, repoName, p string) {
 	filename := path.Base(p)
-	// Parse: name_version_arch.deb
-	parts := strings.Split(strings.TrimSuffix(filename, ".deb"), "_")
-	pkgName, version := filename, "0.0.0"
-	if len(parts) >= 2 {
-		pkgName = parts[0]
-		version = parts[1]
-	}
+	pkgName, version := debCoords(filename)
 
 	// Normalize root-level uploads into the canonical pool layout so the
 	// Packages index (which lists /pool/ assets) still finds them.
