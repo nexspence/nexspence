@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -53,8 +54,14 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{"ok": true})
 			return
 		}
+		// Conan revision files are content-addressed (immutable); the "/latest"
+		// endpoints resolve to a moving recipe/package revision, so revalidate those.
+		var maxAge time.Duration
+		if strings.HasSuffix(p, "/latest") {
+			maxAge = repoproxy.MetadataMaxAge(repo)
+		}
 		coords := base.Coords{}
-		if err := repoproxy.ServeGET(c, h.deps, repo, p, "", coords, "application/octet-stream"); err != nil {
+		if err := repoproxy.ServeGET(c, h.deps, repo, p, "", coords, "application/octet-stream", maxAge); err != nil {
 			c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		}
 		return

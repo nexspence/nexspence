@@ -43,7 +43,9 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 			if ct == "" {
 				ct = "application/octet-stream"
 			}
-			if err := repoproxy.ServeGET(c, h.deps, repo, filePath, "", coords, ct); err != nil {
+			// Raw repositories have no metadata/index concept — treat all paths as
+			// immutable cached content (maxAge 0), preserving prior behavior.
+			if err := repoproxy.ServeGET(c, h.deps, repo, filePath, "", coords, ct, 0); err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			}
 			return

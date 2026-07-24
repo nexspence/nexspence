@@ -103,6 +103,60 @@ func TestStoreArtifact_HappyPath(t *testing.T) {
 	assert.Len(t, assetList.Items, 1)
 }
 
+// Formats that cache proxied files without parsing coordinates (apt, yum, nuget,
+// conan, cargo, gomod) pass empty Coords. Those must not collapse into one
+// nameless component: the browse UI keys rows off the component name, and an
+// empty name made every cached file share a single unusable row (#76).
+func TestRegisterStoredBlob_EmptyCoords_DerivesNameFromPath(t *testing.T) {
+	repo := testutil.SimpleRepo("apt-proxy", "apt")
+	d, _, comps, _ := deps(repo)
+
+	_, err := base.RegisterStoredBlob(context.Background(), d, repo,
+		"/dists/trixie/InRelease", "text/plain", base.Coords{},
+		"blobkey-1", "sha256", "sha1", "md5", 10, "", "")
+	require.NoError(t, err)
+
+	compList, err := comps.List(context.Background(), "apt-proxy", 100, 0)
+	require.NoError(t, err)
+	require.Len(t, compList.Items, 1)
+	assert.Equal(t, "dists/trixie/InRelease", compList.Items[0].Name)
+}
+
+// Two different cached paths must produce two distinct components.
+func TestRegisterStoredBlob_EmptyCoords_DistinctPathsDistinctComponents(t *testing.T) {
+	repo := testutil.SimpleRepo("apt-proxy", "apt")
+	d, _, comps, _ := deps(repo)
+
+	for _, p := range []string{"/dists/trixie/InRelease", "/dists/trixie/Release"} {
+		_, err := base.RegisterStoredBlob(context.Background(), d, repo,
+			p, "text/plain", base.Coords{},
+			"key"+p, "sha256", "sha1", "md5", 10, "", "")
+		require.NoError(t, err)
+	}
+
+	compList, err := comps.List(context.Background(), "apt-proxy", 100, 0)
+	require.NoError(t, err)
+	assert.Len(t, compList.Items, 2, "each cached path is its own component")
+}
+
+// An explicit name still wins — the fallback only fills a gap.
+func TestRegisterStoredBlob_ExplicitCoordsWin(t *testing.T) {
+	repo := testutil.SimpleRepo("npm-proxy", "npm")
+	d, _, comps, _ := deps(repo)
+
+	_, err := base.RegisterStoredBlob(context.Background(), d, repo,
+		"/lodash/-/lodash-4.17.21.tgz", "application/octet-stream",
+		base.Coords{Name: "lodash", Version: "4.17.21"},
+		"blobkey-2", "sha256", "sha1", "md5", 10, "", "")
+	require.NoError(t, err)
+
+	compList, err := comps.List(context.Background(), "npm-proxy", 100, 0)
+	require.NoError(t, err)
+	require.Len(t, compList.Items, 1)
+	assert.Equal(t, "lodash", compList.Items[0].Name)
+	assert.Equal(t, "4.17.21", compList.Items[0].Version)
+}
+
 func TestStoreArtifact_RepoNotFound(t *testing.T) {
 	repo := testutil.SimpleRepo("exists", "raw")
 	d, _, _, _ := deps(repo)

@@ -157,6 +157,11 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 	repoSvc.WithWebhooks(webhookSvc)
 	cleanupSvc := service.NewCleanupService(cleanupRepo, repoRepo, assetRepo, blobRepo, localBlob, log)
 	cleanupSvc.WithLocker(locker)
+	// Resolve each asset's physical store so cleanup deletes blobs from S3 /
+	// group members, not just the global default store.
+	cleanupSvc.WithResolver(blobRegistry)
+	// Prune components left empty after a run so the repo doesn't keep showing rows.
+	cleanupSvc.WithComponents(componentRepo)
 
 	// Start per-policy cron scheduler in background (default: cfg.Cleanup.DefaultSchedule).
 	go cleanupSvc.StartCronScheduler(context.Background(), cfg.Cleanup.DefaultSchedule)

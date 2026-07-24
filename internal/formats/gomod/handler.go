@@ -63,7 +63,13 @@ func (h *Handler) handleGet(c *gin.Context, repoName, p string) {
 		return
 	}
 	if repo != nil && repo.Type == domain.TypeProxy {
-		if err := repoproxy.ServeGET(c, h.deps, repo, p, "", goProxyCoords(p), goContentType(p)); err != nil {
+		// @latest and @v/list resolve to a moving target (newest version / the full
+		// version list); @v/<ver>.{info,mod,zip} are immutable per version.
+		var maxAge time.Duration
+		if strings.HasSuffix(p, "/@latest") || strings.HasSuffix(p, "/@v/list") {
+			maxAge = repoproxy.MetadataMaxAge(repo)
+		}
+		if err := repoproxy.ServeGET(c, h.deps, repo, p, "", goProxyCoords(p), goContentType(p), maxAge); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		}
 		return

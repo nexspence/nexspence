@@ -63,6 +63,11 @@ type AssetRepo interface {
 	ListStale(ctx context.Context, format string, repoNames []string, lastDownloadedDays, artifactAgeDays int, pathPrefix, nameGlob string, retainNVersions int, limit int) ([]domain.Asset, error)
 	Create(ctx context.Context, a *domain.Asset) error
 	Delete(ctx context.Context, id string) error
+	// TouchLastModified sets last_modified = NOW() for the asset. The proxy cache
+	// uses last_modified as the "last validated" timestamp for metadata freshness:
+	// on a successful upstream 304 revalidation the cached copy is confirmed current,
+	// so its freshness window is extended without rewriting the blob.
+	TouchLastModified(ctx context.Context, id string) error
 	// IncrementDownloads applies batched download-count increments (asset ID → count)
 	// to assets and their parent components in one transaction.
 	IncrementDownloads(ctx context.Context, counts map[string]int64) error
@@ -199,6 +204,10 @@ type CleanupPolicyRepo interface {
 	Get(ctx context.Context, id string) (*domain.CleanupPolicy, error)
 	Create(ctx context.Context, p *domain.CleanupPolicy) error
 	Update(ctx context.Context, p *domain.CleanupPolicy) error
+	// RecordRun persists the outcome of a cleanup run (last run time, deleted
+	// count, freed bytes). Kept separate from Update so editing a policy through
+	// the form — which carries no run stats — does not wipe them.
+	RecordRun(ctx context.Context, id string, at time.Time, count int, freed int64) error
 	Delete(ctx context.Context, id string) error
 }
 

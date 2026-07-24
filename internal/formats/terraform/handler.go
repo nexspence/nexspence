@@ -327,7 +327,8 @@ func (h *Handler) serveProxy(c *gin.Context, repo *domain.Repository, repoName, 
 	// Pattern: /v1/providers/<ns>/<type>/<ver>/download/<os>/<arch>
 	if strings.HasPrefix(p, "/v1/providers/") && strings.Contains(p, "/download/") {
 		coords := base.Coords{Name: p}
-		if err := repoproxy.ServeGET(c, h.deps, repo, p, "", coords, "application/zip"); err != nil {
+		// Provider binaries are immutable per version — never revalidate.
+		if err := repoproxy.ServeGET(c, h.deps, repo, p, "", coords, "application/zip", 0); err != nil {
 			c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		}
 		return
@@ -335,7 +336,8 @@ func (h *Handler) serveProxy(c *gin.Context, repo *domain.Repository, repoName, 
 	// Module source archives (actual .tar.gz, not the /download redirect or /versions JSON):
 	if strings.HasPrefix(p, "/v1/modules/") && strings.HasSuffix(p, ".tar.gz") {
 		coords := base.Coords{Name: p}
-		if err := repoproxy.ServeGET(c, h.deps, repo, p, "", coords, "application/x-tar"); err != nil {
+		// Module source archives are immutable per version — never revalidate.
+		if err := repoproxy.ServeGET(c, h.deps, repo, p, "", coords, "application/x-tar", 0); err != nil {
 			c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		}
 		return
@@ -350,7 +352,7 @@ func (h *Handler) serveProxy(c *gin.Context, repo *domain.Repository, repoName, 
 	}
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := repoproxy.UpstreamClient.Do(req)
+	resp, err := repoproxy.ClientFor(repo).Do(req)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "upstream: " + err.Error()})
 		return

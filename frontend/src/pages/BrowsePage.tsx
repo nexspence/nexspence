@@ -1020,7 +1020,11 @@ export default function BrowsePage() {
     path: string; repo: string;
     dockerImage?: string; dockerRef?: string;
     label?: string;
+    // affectedPaths is display-only (listed in the modal); paths is what actually
+    // gets deleted. A component row deletes every asset it owns, so both are set.
     affectedPaths?: string[];
+    paths?: string[];
+    heading?: string;
   } | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
@@ -1054,7 +1058,15 @@ export default function BrowsePage() {
       } else if (deleteTarget.dockerImage) {
         await nexspenceApi.deleteDockerImage(deleteTarget.repo, deleteTarget.dockerImage)
       } else {
-        await nexspenceApi.deleteByPath(deleteTarget.repo, deleteTarget.path)
+        // Deleting by an empty path would hit the server as a 400 with nothing to
+        // act on, so surface the real reason instead of firing the request.
+        const targets = (deleteTarget.paths ?? [deleteTarget.path]).filter(Boolean)
+        if (targets.length === 0) {
+          throw new Error('This component has no assets to delete.')
+        }
+        for (const p of targets) {
+          await nexspenceApi.deleteByPath(deleteTarget.repo, p)
+        }
       }
       const repo = deleteTarget.repo
       setDeleteTarget(null)
@@ -1062,7 +1074,9 @@ export default function BrowsePage() {
       void queryClient.invalidateQueries({ queryKey: ['dockerBrowseTree', repo] })
       void queryClient.invalidateQueries({ queryKey: ['rawBrowseTree', repo] })
     } catch (err: unknown) {
-      const msg = axios.isAxiosError(err) ? err.response?.data?.message ?? err.message : String(err)
+      const msg = axios.isAxiosError(err)
+        ? err.response?.data?.message ?? err.response?.data?.error ?? err.message
+        : err instanceof Error ? err.message : String(err)
       setDeleteError(msg)
     } finally {
       setDeleting(false)
@@ -1525,7 +1539,10 @@ export default function BrowsePage() {
             {items.map((c) => {
               const color = FORMAT_COLORS[c.format] ?? '#6b7280'
               const firstAsset = c.assets?.[0]
-              const assetPath = firstAsset?.path ?? c.name
+              // Delete targets asset paths only. Falling back to the component
+              // name produced a prefix that matched nothing (npm) or an empty
+              // path the server rejected (apt proxy) — see #75/#76.
+              const assetPaths = (c.assets ?? []).map((a) => a.path).filter(Boolean)
               const isHighlighted = (!!highlightComponentId && c.id === highlightComponentId) ||
                 (!!highlightAssetPath && !!c.assets?.some((a) => a.path === highlightAssetPath))
               return (
@@ -1565,7 +1582,15 @@ export default function BrowsePage() {
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     {canDeleteRepo && (
-                      <GhostBtn danger onClick={() => setDeleteTarget({ path: assetPath, repo: repoName })} title="Delete">
+                      <GhostBtn danger onClick={() => setDeleteTarget({
+                        path: assetPaths[0] ?? '',
+                        paths: assetPaths,
+                        repo: repoName,
+                        label: `${c.name}${c.version ? ` ${c.version}` : ''}`,
+                        ...(assetPaths.length > 1
+                          ? { affectedPaths: assetPaths, heading: 'Delete component?' }
+                          : {}),
+                      })} title="Delete">
                         <Trash2 size={13} />
                       </GhostBtn>
                     )}
@@ -1622,13 +1647,15 @@ export default function BrowsePage() {
           {deleteTarget && <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: 'var(--holo-text)', display: 'flex', alignItems: 'center', gap: 8 }}>
               <Trash2 size={17} style={{ color: '#ef4444' }} />
-              {deleteTarget.affectedPaths ? 'Delete folder?' : 'Delete file?'}
+              {deleteTarget.heading ?? (deleteTarget.affectedPaths ? 'Delete folder?' : 'Delete file?')}
             </h3>
             <div style={{ fontSize: 13, color: 'var(--holo-text-dim)' }}>
               <span style={{ fontFamily: 'monospace', color: '#fca5a5', fontSize: 12 }}>{deleteTarget.label ?? deleteTarget.path}</span>
               {deleteTarget.affectedPaths && (
                 <p style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--holo-text-faint)' }}>
-                  All files in this folder will be permanently deleted:
+                  {deleteTarget.heading
+                    ? 'All assets of this component will be permanently deleted:'
+                    : 'All files in this folder will be permanently deleted:'}
                 </p>
               )}
             </div>

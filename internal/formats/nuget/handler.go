@@ -57,8 +57,14 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 			h.fetchAndRewriteNuGetIndex(c, repo)
 			return
 		}
+		// .nupkg package content is immutable; registration/flat-container index
+		// pages are mutable metadata (new versions appear) and revalidate on a TTL.
+		var maxAge time.Duration
+		if !strings.HasSuffix(p, ".nupkg") {
+			maxAge = repoproxy.MetadataMaxAge(repo)
+		}
 		coords := base.Coords{}
-		if err := repoproxy.ServeGET(c, h.deps, repo, p, "", coords, "application/octet-stream"); err != nil {
+		if err := repoproxy.ServeGET(c, h.deps, repo, p, "", coords, "application/octet-stream", maxAge); err != nil {
 			c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		}
 		return
@@ -304,7 +310,7 @@ func (h *Handler) fetchAndRewriteNuGetIndex(c *gin.Context, repo *domain.Reposit
 	}
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := repoproxy.UpstreamClient.Do(req)
+	resp, err := repoproxy.ClientFor(repo).Do(req)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "upstream fetch failed: " + err.Error()})
 		return

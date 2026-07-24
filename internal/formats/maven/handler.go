@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -41,12 +42,19 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 		}
 		if repo != nil && repo.Type == domain.TypeProxy {
 			coords := parsePath(filePath)
+			main := filePath
 			if isChecksum(filePath) {
-				main := strings.TrimSuffix(filePath, path.Ext(filePath))
+				main = strings.TrimSuffix(filePath, path.Ext(filePath))
 				coords = parsePath(main)
 			}
 			ct := mavenContentType(filePath)
-			if err := repoproxy.ServeGET(c, h.deps, repo, filePath, "", coords, ct); err != nil {
+			// maven-metadata.xml (and its .md5/.sha1 siblings) is the mutable index
+			// that lists released/snapshot versions; jars/poms are immutable.
+			var maxAge time.Duration
+			if path.Base(main) == "maven-metadata.xml" {
+				maxAge = repoproxy.MetadataMaxAge(repo)
+			}
+			if err := repoproxy.ServeGET(c, h.deps, repo, filePath, "", coords, ct, maxAge); err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			}
 			return

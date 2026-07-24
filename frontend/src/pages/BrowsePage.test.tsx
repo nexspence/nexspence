@@ -124,6 +124,98 @@ describe('BrowsePage — repo selector & empty states', () => {
     await user.click(delBtns[delBtns.length - 1])
     await waitFor(() => expect(deleted).toBe(true))
   })
+
+  // Regression for #75/#76: the row delete must target the asset path. When the
+  // component name was used instead, the prefix matched nothing (npm: silent
+  // no-op) or was empty (apt proxy: 400 with no server-side error).
+  it('deletes using the asset path, not the component name', async () => {
+    const user = userEvent.setup()
+    const deletedPaths: string[] = []
+    server.use(
+      http.get('/service/rest/v1/components', () =>
+        HttpResponse.json({
+          items: [{
+            id: 'c1', name: 'lodash', group: '', version: '4.17.21', format: 'npm',
+            assets: [{ id: 'a1', path: '/lodash/-/lodash-4.17.21.tgz', fileSize: 1, contentType: 't' }],
+          }],
+          continuationToken: null,
+        }),
+      ),
+      http.delete('/api/v1/browse/repositories/:name/path', ({ request }) => {
+        deletedPaths.push(new URL(request.url).searchParams.get('path') ?? '')
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+    renderBrowse('?repo=maven-hosted')
+    await screen.findByText('lodash')
+    await user.click(screen.getByTitle('Delete'))
+    await screen.findByText('Delete file?')
+    const delBtns = screen.getAllByRole('button', { name: /^Delete/ })
+    await user.click(delBtns[delBtns.length - 1])
+    await waitFor(() => expect(deletedPaths).toEqual(['/lodash/-/lodash-4.17.21.tgz']))
+  })
+
+  // An apt proxy stores every cached file under one component, so deleting the
+  // row must remove all of its assets — not just the first one.
+  it('deletes every asset of a multi-asset component', async () => {
+    const user = userEvent.setup()
+    const deletedPaths: string[] = []
+    server.use(
+      http.get('/service/rest/v1/components', () =>
+        HttpResponse.json({
+          items: [{
+            id: 'c1', name: 'nginx', group: '', version: '1.24', format: 'apt',
+            assets: [
+              { id: 'a1', path: '/pool/main/n/nginx/nginx_1.24_amd64.deb', fileSize: 1, contentType: 't' },
+              { id: 'a2', path: '/dists/trixie/InRelease', fileSize: 1, contentType: 't' },
+            ],
+          }],
+          continuationToken: null,
+        }),
+      ),
+      http.delete('/api/v1/browse/repositories/:name/path', ({ request }) => {
+        deletedPaths.push(new URL(request.url).searchParams.get('path') ?? '')
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+    renderBrowse('?repo=maven-hosted')
+    await screen.findByText('nginx')
+    await user.click(screen.getByTitle('Delete'))
+    await screen.findByText('Delete component?')
+    const delBtns = screen.getAllByRole('button', { name: /^Delete/ })
+    await user.click(delBtns[delBtns.length - 1])
+    await waitFor(() => expect(deletedPaths.sort()).toEqual([
+      '/dists/trixie/InRelease',
+      '/pool/main/n/nginx/nginx_1.24_amd64.deb',
+    ]))
+  })
+
+  // A component with no assets has nothing to delete: report it instead of
+  // firing a request that the server rejects with an unexplained 400.
+  it('reports an error instead of deleting a component that has no assets', async () => {
+    const user = userEvent.setup()
+    let called = false
+    server.use(
+      http.get('/service/rest/v1/components', () =>
+        HttpResponse.json({
+          items: [{ id: 'c1', name: 'ghost', group: '', version: '1', format: 'npm', assets: [] }],
+          continuationToken: null,
+        }),
+      ),
+      http.delete('/api/v1/browse/repositories/:name/path', () => {
+        called = true
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+    renderBrowse('?repo=maven-hosted')
+    await screen.findByText('ghost')
+    await user.click(screen.getByTitle('Delete'))
+    await screen.findByText('Delete file?')
+    const delBtns = screen.getAllByRole('button', { name: /^Delete/ })
+    await user.click(delBtns[delBtns.length - 1])
+    expect(await screen.findByText(/no assets to delete/i)).toBeInTheDocument()
+    expect(called).toBe(false)
+  })
 })
 
 describe('BrowsePage — Raw tree', () => {

@@ -22,10 +22,12 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/config"
 	"github.com/nexspence-oss/nexspence/internal/db"
 	"github.com/nexspence-oss/nexspence/internal/domain"
+	"github.com/nexspence-oss/nexspence/internal/formats/repoproxy"
 	"github.com/nexspence-oss/nexspence/internal/logger"
 	"github.com/nexspence-oss/nexspence/internal/metrics"
 	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/repository/postgres"
+	"github.com/nexspence-oss/nexspence/internal/storage"
 )
 
 func main() {
@@ -55,6 +57,15 @@ func cmdServe() *cobra.Command {
 
 			log := logger.New(cfg.Log.Level, cfg.Log.Format)
 			log.Info("starting nexspence", "version", Version, "addr", cfg.HTTP.Addr)
+
+			// Install any server-wide outbound proxy default for upstream fetches.
+			// Per-repository proxy_config overrides these; when unset, env
+			// HTTP_PROXY/HTTPS_PROXY/NO_PROXY are honored by the guarded client.
+			if p := cfg.Proxy; p.HTTPProxy != "" || p.HTTPSProxy != "" || p.SOCKS5Proxy != "" || p.NoProxy != "" {
+				repoproxy.SetGlobalProxy(p.HTTPProxy, p.HTTPSProxy, p.SOCKS5Proxy, p.NoProxy, p.Username, p.Password)
+				log.Info("outbound proxy configured for upstream fetches",
+					"http", p.HTTPProxy != "", "https", p.HTTPSProxy != "", "socks5", p.SOCKS5Proxy != "")
+			}
 			if cfg.Auth.AnonymousEnabled {
 				log.Warn("auth.anonymous_enabled is true — unauthenticated artifact access is allowed; set false to require authentication")
 			}
@@ -150,6 +161,11 @@ func cmdServe() *cobra.Command {
 
 			if err := syncBlobStorePaths(cmd.Context(), pool, cfg, log); err != nil {
 				log.Warn("blob store path sync failed", "err", err)
+				// Non-fatal — server still starts
+			}
+
+			if err := syncS3BlobStores(cmd.Context(), pool, cfg, log); err != nil {
+				log.Warn("s3 blob store sync failed", "err", err)
 				// Non-fatal — server still starts
 			}
 
@@ -274,6 +290,90 @@ func syncBlobStorePaths(ctx context.Context, pool *pgxpool.Pool, cfg *config.Con
 		}
 	}
 	return nil
+}
+
+// s3SeedStores are the blob stores the initial migration seeds as local
+// ("default", "docker"). "default" is the fallback store resolveBlobStoreRef
+// uses for every repository without an explicit blobStoreId; "docker" is the
+// store docker repositories may be assigned. Both are reconciled to s3 when
+// storage.default_type=s3 so no local store silently captures writes.
+var s3SeedStores = []string{"default", "docker"}
+
+// desiredS3Config maps the config-file S3 settings onto the config-key names the
+// storage registry expects when instantiating an s3 BlobStore. Note the key
+// rename: the registry reads access_key/secret_key (see newFromDescriptor in
+// internal/storage/registry.go), NOT the config file's access_key_id/secret_access_key.
+func desiredS3Config(s3 config.S3Config) map[string]any {
+	return map[string]any{
+		"bucket":           s3.Bucket,
+		"region":           s3.Region,
+		"endpoint":         s3.Endpoint,
+		"access_key":       s3.AccessKeyID,
+		"secret_key":       s3.SecretAccessKey,
+		"force_path_style": s3.ForcePathStyle,
+	}
+}
+
+// syncS3BlobStores reconciles the configured S3 settings into the seed blob
+// stores when storage.default_type=s3. Without it (issue #81) the seed migration
+// leaves "default"/"docker" as local stores, so repositories with no explicit
+// blobStoreId resolve to local disk even though the operator configured S3 —
+// only the health display and the d.BlobStore fallback reflect S3. Mirrors
+// syncBlobStorePaths: runs on every startup so the DB always reflects the
+// configured storage backend.
+func syncS3BlobStores(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config, log logger.Logger) error {
+	if cfg.Storage.DefaultType != "s3" {
+		return nil
+	}
+	return reconcileS3BlobStores(ctx, postgres.NewBlobStoreRepo(pool), cfg.Storage.S3, nil, log)
+}
+
+// reconcileS3BlobStores upserts the s3SeedStores to type=s3 with s3, creating
+// any that are missing. Idempotent: stores already matching the desired s3
+// config are left untouched. When reg is non-nil, updated stores are
+// invalidated so a cached local instance isn't reused (reg is nil on startup —
+// the Registry is built after this runs, so it reads the reconciled rows fresh).
+func reconcileS3BlobStores(ctx context.Context, blobRepo repository.BlobStoreRepo, s3 config.S3Config, reg *storage.Registry, log logger.Logger) error {
+	desired := desiredS3Config(s3)
+	for _, name := range s3SeedStores {
+		bs, err := blobRepo.Get(ctx, name)
+		if err != nil && !errors.Is(err, repository.ErrNotFound) {
+			return err
+		}
+		if bs == nil {
+			if createErr := blobRepo.Create(ctx, &domain.BlobStore{Name: name, Type: "s3", Config: desired}); createErr != nil {
+				return createErr
+			}
+			log.Info("s3 blob store created", "name", name, "bucket", s3.Bucket, "endpoint", s3.Endpoint)
+			continue
+		}
+		if bs.Type == "s3" && s3ConfigEqual(bs.Config, desired) {
+			continue // already reconciled
+		}
+		bs.Type = "s3"
+		bs.Config = desired
+		if updateErr := blobRepo.Update(ctx, bs); updateErr != nil {
+			return updateErr
+		}
+		if reg != nil && bs.ID != "" {
+			reg.Invalidate(bs.ID)
+		}
+		log.Info("s3 blob store reconciled", "name", name, "bucket", s3.Bucket, "endpoint", s3.Endpoint)
+	}
+	return nil
+}
+
+// s3ConfigEqual reports whether cur already holds exactly the desired s3 config.
+func s3ConfigEqual(cur, desired map[string]any) bool {
+	if len(cur) != len(desired) {
+		return false
+	}
+	for k, dv := range desired {
+		if cur[k] != dv {
+			return false
+		}
+	}
+	return true
 }
 
 // seedPlaceholderAdminHash is the bcrypt hash the initial migration (001) seeds
