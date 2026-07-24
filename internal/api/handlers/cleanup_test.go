@@ -182,7 +182,10 @@ func TestCleanupHandler_Delete_DeleteError_500(t *testing.T) {
 
 // ── Run ───────────────────────────────────────────────────────────────────────
 
-func TestCleanupHandler_Run_Single_202(t *testing.T) {
+// A single-policy run is synchronous and returns the run summary. A policy not
+// attached to any repository reports a skip with a reason (issue #62: "manual
+// execution produces no results" — now the reason is surfaced).
+func TestCleanupHandler_Run_Single_Unattached_ReportsSkip(t *testing.T) {
 	r, policies, _, _ := mountCleanup(t)
 	p := &domain.CleanupPolicy{
 		Name: "run-me", Format: "*", Enabled: true,
@@ -190,11 +193,32 @@ func TestCleanupHandler_Run_Single_202(t *testing.T) {
 	}
 	require.NoError(t, policies.Create(testContext(), p))
 	rec := do(t, r, http.MethodPost, "/service/rest/v1/cleanup-policies/"+p.ID+"/run", nil)
-	require.Equal(t, http.StatusAccepted, rec.Code)
-	var body map[string]any
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
-	assert.Equal(t, "running", body["status"])
-	assert.Equal(t, p.ID, body["id"])
+	require.Equal(t, http.StatusOK, rec.Code)
+	var res domain.CleanupRunResult
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &res))
+	assert.True(t, res.Skipped)
+	assert.Contains(t, res.SkippedReason, "not attached")
+}
+
+// A single-policy run that deletes assets returns counts.
+func TestCleanupHandler_Run_Single_ReportsCounts(t *testing.T) {
+	r, policies, repos, assets := mountCleanup(t)
+	p := &domain.CleanupPolicy{
+		Name: "clear", Format: "*", Enabled: true, Criteria: map[string]any{},
+	}
+	require.NoError(t, policies.Create(testContext(), p))
+	require.NoError(t, repos.Create(testContext(), &domain.Repository{
+		Name: "debian", ID: "r1", Format: domain.FormatApt, CleanupPolicyIDs: []string{p.ID},
+	}))
+	assets.Stale = []domain.Asset{{ID: "a1", BlobKey: "bk1", SizeBytes: 42, Path: "/x"}}
+
+	rec := do(t, r, http.MethodPost, "/service/rest/v1/cleanup-policies/"+p.ID+"/run", nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	var res domain.CleanupRunResult
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &res))
+	assert.False(t, res.Skipped)
+	assert.Equal(t, 1, res.Deleted)
+	assert.Equal(t, int64(42), res.FreedBytes)
 }
 
 func TestCleanupHandler_Run_All_202(t *testing.T) {

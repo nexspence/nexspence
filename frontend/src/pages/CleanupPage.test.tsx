@@ -80,7 +80,7 @@ describe('CleanupPage', () => {
     server.use(
       http.post('/service/rest/v1/cleanup-policies/:id/run', () => {
         ran = true
-        return HttpResponse.json({ ok: true })
+        return HttpResponse.json({ deleted: 0, freedBytes: 0 })
       }),
     )
     renderWithProviders(<CleanupPage />)
@@ -88,6 +88,34 @@ describe('CleanupPage', () => {
     const runBtns = screen.getAllByTitle('Run now')
     fireEvent.click(runBtns[0])
     await waitFor(() => expect(ran).toBe(true))
+  })
+
+  // #62: a manual run now reports how many assets were deleted, instead of the
+  // old fire-and-forget acknowledgement that showed nothing.
+  it('shows deleted count after a manual run', async () => {
+    server.use(
+      http.post('/service/rest/v1/cleanup-policies/:id/run', () =>
+        HttpResponse.json({ deleted: 3, freedBytes: 2048, dryRun: false }),
+      ),
+    )
+    renderWithProviders(<CleanupPage />)
+    await screen.findByText('delete-old-snapshots')
+    fireEvent.click(screen.getAllByTitle('Run now')[0])
+    expect(await screen.findByText(/Deleted 3 asset\(s\)/)).toBeInTheDocument()
+  })
+
+  // A policy attached to nothing reports the skip reason so the user knows why
+  // nothing happened (issue #62: "manual execution produces no results").
+  it('shows the skip reason for an unattached policy', async () => {
+    server.use(
+      http.post('/service/rest/v1/cleanup-policies/:id/run', () =>
+        HttpResponse.json({ deleted: 0, skipped: true, skippedReason: 'policy is not attached to any repository' }),
+      ),
+    )
+    renderWithProviders(<CleanupPage />)
+    await screen.findByText('delete-old-snapshots')
+    fireEvent.click(screen.getAllByTitle('Run now')[0])
+    expect(await screen.findByText(/not attached to any repository/)).toBeInTheDocument()
   })
 
   it('deletes a policy after confirm', async () => {

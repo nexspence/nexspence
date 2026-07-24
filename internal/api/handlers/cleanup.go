@@ -13,6 +13,7 @@ import (
 // cleanupRunner is the minimal interface CleanupHandler needs from CleanupService.
 type cleanupRunner interface {
 	RunPolicy(ctx context.Context, id string) error
+	RunPolicyResult(ctx context.Context, id string) (*domain.CleanupRunResult, error)
 	RunAll(ctx context.Context) error
 	ReloadPolicy(ctx context.Context, id string)
 	PreviewPolicy(ctx context.Context, id string) (*domain.CleanupPreviewResult, error)
@@ -118,7 +119,10 @@ func (h *CleanupHandler) Delete(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-// Run POST /service/rest/v1/cleanup-policies/:id/run — trigger policy immediately
+// Run POST /service/rest/v1/cleanup-policies/:id/run — trigger policy immediately.
+// A single policy runs synchronously and returns its outcome (deleted count,
+// freed bytes, or a skip reason) so the UI can report a result instead of a bare
+// acknowledgement. Running all policies stays asynchronous.
 func (h *CleanupHandler) Run(c *gin.Context) {
 	id := c.Param("id")
 	if id == "_all" {
@@ -126,8 +130,12 @@ func (h *CleanupHandler) Run(c *gin.Context) {
 		c.JSON(http.StatusAccepted, gin.H{"status": "running all policies"})
 		return
 	}
-	go func() { _ = h.runner.RunPolicy(context.Background(), id) }()
-	c.JSON(http.StatusAccepted, gin.H{"status": "running", "id": id})
+	res, err := h.runner.RunPolicyResult(c.Request.Context(), id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, res)
 }
 
 // Preview POST /api/v1/cleanup-policies/:id/preview — dry-run preview (no deletes)
