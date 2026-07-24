@@ -22,6 +22,7 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/config"
 	"github.com/nexspence-oss/nexspence/internal/db"
 	"github.com/nexspence-oss/nexspence/internal/domain"
+	"github.com/nexspence-oss/nexspence/internal/formats/repoproxy"
 	"github.com/nexspence-oss/nexspence/internal/logger"
 	"github.com/nexspence-oss/nexspence/internal/metrics"
 	"github.com/nexspence-oss/nexspence/internal/repository"
@@ -56,6 +57,15 @@ func cmdServe() *cobra.Command {
 
 			log := logger.New(cfg.Log.Level, cfg.Log.Format)
 			log.Info("starting nexspence", "version", Version, "addr", cfg.HTTP.Addr)
+
+			// Install any server-wide outbound proxy default for upstream fetches.
+			// Per-repository proxy_config overrides these; when unset, env
+			// HTTP_PROXY/HTTPS_PROXY/NO_PROXY are honored by the guarded client.
+			if p := cfg.Proxy; p.HTTPProxy != "" || p.HTTPSProxy != "" || p.SOCKS5Proxy != "" || p.NoProxy != "" {
+				repoproxy.SetGlobalProxy(p.HTTPProxy, p.HTTPSProxy, p.SOCKS5Proxy, p.NoProxy, p.Username, p.Password)
+				log.Info("outbound proxy configured for upstream fetches",
+					"http", p.HTTPProxy != "", "https", p.HTTPSProxy != "", "socks5", p.SOCKS5Proxy != "")
+			}
 			if cfg.Auth.AnonymousEnabled {
 				log.Warn("auth.anonymous_enabled is true — unauthenticated artifact access is allowed; set false to require authentication")
 			}

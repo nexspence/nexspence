@@ -403,6 +403,8 @@ function CreateRepoModal({ onClose, onCreated }: {
   const [form, setForm] = useState({
     name: '', format: 'maven2', type: 'hosted', description: '',
     remoteUrl: PROXY_DEFAULTS['maven2'],
+    httpProxy: '', httpsProxy: '', socks5Proxy: '', noProxy: '',
+    proxyUsername: '', proxyPassword: '',
     memberNames: [] as string[],
     cleanupPolicyIds: [] as string[],
     quotaGB: '',
@@ -465,7 +467,16 @@ function CreateRepoModal({ onClose, onCreated }: {
         description: form.description,
       }
       if (effectiveStoreId) body.blobStoreId = effectiveStoreId
-      if (form.type === 'proxy') body.proxyConfig = { remote_url: form.remoteUrl.trim() }
+      if (form.type === 'proxy') {
+        const proxyConfig: Record<string, string> = { remote_url: form.remoteUrl.trim() }
+        if (form.httpProxy.trim()) proxyConfig.http_proxy = form.httpProxy.trim()
+        if (form.httpsProxy.trim()) proxyConfig.https_proxy = form.httpsProxy.trim()
+        if (form.socks5Proxy.trim()) proxyConfig.socks5_proxy = form.socks5Proxy.trim()
+        if (form.noProxy.trim()) proxyConfig.no_proxy = form.noProxy.trim()
+        if (form.proxyUsername.trim()) proxyConfig.proxy_username = form.proxyUsername.trim()
+        if (form.proxyPassword) proxyConfig.proxy_password = form.proxyPassword
+        body.proxyConfig = proxyConfig
+      }
       if (form.type === 'group') body.formatConfig = { member_names: form.memberNames }
       if (form.type === 'group' && form.routingRuleId) {
         body.routingRuleId = form.routingRuleId
@@ -544,6 +555,64 @@ function CreateRepoModal({ onClose, onCreated }: {
           />
           <span className={styles.hint}>URL of the upstream registry to proxy and cache</span>
         </div>
+      )}
+      {form.type === 'proxy' && (
+        <details className={styles.formRow}>
+          <summary style={{ cursor: 'pointer', ...LABEL_STYLE }}>Outbound proxy (optional)</summary>
+          <span className={styles.hint}>
+            Route upstream fetches through an HTTP or SOCKS5 proxy. Leave blank to use the
+            server default (HTTP_PROXY/HTTPS_PROXY/NO_PROXY environment).
+          </span>
+          <div className={styles.formRow}>
+            <label style={LABEL_STYLE}>HTTP proxy</label>
+            <HoloInput
+              value={form.httpProxy}
+              onChange={e => setField('httpProxy', e.target.value)}
+              placeholder="http://proxy.internal:3128"
+            />
+          </div>
+          <div className={styles.formRow}>
+            <label style={LABEL_STYLE}>HTTPS proxy</label>
+            <HoloInput
+              value={form.httpsProxy}
+              onChange={e => setField('httpsProxy', e.target.value)}
+              placeholder="http://secure-proxy.internal:3128"
+            />
+          </div>
+          <div className={styles.formRow}>
+            <label style={LABEL_STYLE}>SOCKS5 proxy</label>
+            <HoloInput
+              value={form.socks5Proxy}
+              onChange={e => setField('socks5Proxy', e.target.value)}
+              placeholder="socks5://proxy.internal:1080"
+            />
+          </div>
+          <div className={styles.formRow}>
+            <label style={LABEL_STYLE}>No proxy</label>
+            <HoloInput
+              value={form.noProxy}
+              onChange={e => setField('noProxy', e.target.value)}
+              placeholder="localhost,.internal.example.com"
+            />
+          </div>
+          <div className={styles.formRow}>
+            <label style={LABEL_STYLE}>Proxy username</label>
+            <HoloInput
+              value={form.proxyUsername}
+              onChange={e => setField('proxyUsername', e.target.value)}
+              placeholder="Optional"
+            />
+          </div>
+          <div className={styles.formRow}>
+            <label style={LABEL_STYLE}>Proxy password</label>
+            <HoloInput
+              type="password"
+              value={form.proxyPassword}
+              onChange={e => setField('proxyPassword', e.target.value)}
+              placeholder="Optional"
+            />
+          </div>
+        </details>
       )}
       {form.type === 'group' && (
         <div className={styles.formRow}>
