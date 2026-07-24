@@ -270,6 +270,9 @@ type ComponentRepo struct {
 	// ListByRepoNames call so handler tests can assert the offset was decoded.
 	LastListLimit  int
 	LastListOffset int
+	// DeleteOrphansCalls records the repo names passed to DeleteOrphans so cleanup
+	// tests can assert orphan components are pruned after their assets are deleted.
+	DeleteOrphansCalls []string
 }
 
 func NewComponentRepo() *ComponentRepo {
@@ -408,7 +411,10 @@ func (c *ComponentRepo) Delete(_ context.Context, id string) error {
 	return nil
 }
 
-func (c *ComponentRepo) DeleteOrphans(_ context.Context, _ string) error {
+func (c *ComponentRepo) DeleteOrphans(_ context.Context, repoName string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.DeleteOrphansCalls = append(c.DeleteOrphansCalls, repoName)
 	return nil
 }
 
@@ -451,14 +457,21 @@ func (c *ComponentRepo) AddComponent(comp *domain.Component) {
 // ── AssetRepo ─────────────────────────────────────────────────
 
 type AssetRepo struct {
-	mu            sync.Mutex
-	assets        map[string]*domain.Asset // key: "repo:path"
-	byID          map[string]*domain.Asset
-	nextID        int
-	Stale         []domain.Asset // populated by tests to control ListStale output
-	LastRetainN   int
-	MigrationRows []domain.MigrationAssetRow
-	Err           error // when non-nil, ListByComponentID/ListByComponentIDs/SearchAssets/SumSizeByRepo return it (500-branch seam)
+	mu          sync.Mutex
+	assets      map[string]*domain.Asset // key: "repo:path"
+	byID        map[string]*domain.Asset
+	nextID      int
+	Stale       []domain.Asset // populated by tests to control ListStale output
+	LastRetainN int
+	// StaleRepeat, when true, makes ListStale return the full Stale slice on every
+	// call without consuming it — simulating a dry run where nothing is deleted, so
+	// the same rows keep matching. Used to prove the dry-run loop terminates.
+	StaleRepeat bool
+	// ListStaleCalls counts ListStale invocations so tests can assert the dry-run
+	// path does a single pass instead of looping.
+	ListStaleCalls int
+	MigrationRows  []domain.MigrationAssetRow
+	Err            error // when non-nil, ListByComponentID/ListByComponentIDs/SearchAssets/SumSizeByRepo return it (500-branch seam)
 	// ListByComponentIDsCalls counts how many times ListByComponentIDs has been called.
 	ListByComponentIDsCalls int
 	// ListByComponentIDCalls counts how many times the singular ListByComponentID has been called.
@@ -533,9 +546,18 @@ func (a *AssetRepo) SearchAssets(_ context.Context, params domain.SearchParams) 
 func (a *AssetRepo) ListStale(_ context.Context, _ string, _ []string, _, _ int, _, _ string, retainNVersions int, limit int) ([]domain.Asset, error) {
 	a.mu.Lock()
 	a.LastRetainN = retainNVersions
+	a.ListStaleCalls++
 	defer a.mu.Unlock()
 	if len(a.Stale) == 0 {
 		return nil, nil
+	}
+	// Non-consuming mode: return the same rows each call (dry-run has no deletes).
+	if a.StaleRepeat {
+		n := limit
+		if n <= 0 || n > len(a.Stale) {
+			n = len(a.Stale)
+		}
+		return append([]domain.Asset(nil), a.Stale[:n]...), nil
 	}
 	n := limit
 	if n <= 0 {
@@ -759,7 +781,17 @@ type CleanupPolicyRepo struct {
 	policies map[string]*domain.CleanupPolicy
 	nextID   int
 	Updates  []*domain.CleanupPolicy // records Update calls
-	Err      error                   // when set, List/Get/Create/Update/Delete return it (500-branch seam)
+	// RunRecords records RecordRun calls (run stats persisted after a policy run).
+	RunRecords []CleanupRunRecord
+	Err        error // when set, List/Get/Create/Update/Delete return it (500-branch seam)
+}
+
+// CleanupRunRecord captures the arguments of a RecordRun call.
+type CleanupRunRecord struct {
+	ID    string
+	At    time.Time
+	Count int
+	Freed int64
 }
 
 func NewCleanupPolicyRepo(policies ...*domain.CleanupPolicy) *CleanupPolicyRepo {
@@ -809,6 +841,20 @@ func (r *CleanupPolicyRepo) Update(_ context.Context, p *domain.CleanupPolicy) e
 	}
 	r.policies[p.ID] = p
 	r.Updates = append(r.Updates, p)
+	return nil
+}
+func (r *CleanupPolicyRepo) RecordRun(_ context.Context, id string, at time.Time, count int, freed int64) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.Err != nil {
+		return r.Err
+	}
+	r.RunRecords = append(r.RunRecords, CleanupRunRecord{ID: id, At: at, Count: count, Freed: freed})
+	if p, ok := r.policies[id]; ok {
+		p.LastRunAt = &at
+		p.LastRunCount = count
+		p.LastRunFreed = freed
+	}
 	return nil
 }
 func (r *CleanupPolicyRepo) Delete(_ context.Context, id string) error {

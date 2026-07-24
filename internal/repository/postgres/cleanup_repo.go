@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -102,6 +103,22 @@ func (r *CleanupPolicyRepo) Update(ctx context.Context, p *domain.CleanupPolicy)
 	}
 	if tag.RowsAffected() == 0 {
 		return fmt.Errorf("cleanup policy not found: %s", p.ID)
+	}
+	return nil
+}
+
+// RecordRun persists only the run statistics, leaving the policy's configuration
+// untouched (so a concurrent form edit is not clobbered, and vice versa).
+func (r *CleanupPolicyRepo) RecordRun(ctx context.Context, id string, at time.Time, count int, freed int64) error {
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE cleanup_policies
+		SET last_run_at=$1, last_run_count=$2, last_run_freed=$3
+		WHERE id=$4`, at, count, freed, id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("cleanup policy not found: %s", id)
 	}
 	return nil
 }

@@ -477,6 +477,18 @@ type CleanupPreviewResult struct {
 	TotalBytes int64                 `json:"totalBytes"`
 }
 
+// CleanupRunResult summarizes a single cleanup-policy execution. It is returned
+// to the manual-run endpoint so the UI can report what happened instead of a
+// fire-and-forget acknowledgement.
+type CleanupRunResult struct {
+	PolicyID      string `json:"policyId"`
+	Deleted       int    `json:"deleted"`
+	FreedBytes    int64  `json:"freedBytes"`
+	DryRun        bool   `json:"dryRun"`
+	Skipped       bool   `json:"skipped"`
+	SkippedReason string `json:"skippedReason,omitempty"`
+}
+
 // ── Audit Event ──────────────────────────────────────────────
 
 // AuditEvent is a single recorded action (who, what, when, result) in the audit log.

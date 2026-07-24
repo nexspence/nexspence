@@ -19,13 +19,15 @@ import (
 
 // CleanupService runs cleanup policies — finds stale assets and removes them.
 type CleanupService struct {
-	policies  repository.CleanupPolicyRepo
-	repos     repository.RepositoryRepo
-	assets    repository.AssetRepo
-	blobs     repository.BlobStoreRepo
-	blobStore storage.BlobStore
-	log       logger.Logger
-	locker    distlock.Locker
+	policies   repository.CleanupPolicyRepo
+	repos      repository.RepositoryRepo
+	assets     repository.AssetRepo
+	components repository.ComponentRepo
+	blobs      repository.BlobStoreRepo
+	blobStore  storage.BlobStore
+	resolver   StoreResolver
+	log        logger.Logger
+	locker     distlock.Locker
 
 	mu              sync.Mutex
 	cronScheduler   *cron.Cron
@@ -57,6 +59,39 @@ func NewCleanupService(
 func (s *CleanupService) WithLocker(l distlock.Locker) *CleanupService {
 	s.locker = l
 	return s
+}
+
+// WithResolver sets the store resolver so blobs are deleted from the physical
+// blob store each asset actually lives on (S3, a group member, ...) rather than
+// the global default. Without a resolver the service falls back to blobStore.
+func (s *CleanupService) WithResolver(r StoreResolver) *CleanupService {
+	s.resolver = r
+	return s
+}
+
+// WithComponents sets the component repo so components left without any assets
+// after a cleanup run are pruned. Without it, deleted assets leave empty
+// component rows that make the repository still look populated in the UI.
+func (s *CleanupService) WithComponents(c repository.ComponentRepo) *CleanupService {
+	s.components = c
+	return s
+}
+
+// storeForAsset resolves the physical blob store an asset lives on. Falls back to
+// the global default store when no resolver is configured or resolution fails.
+func (s *CleanupService) storeForAsset(ctx context.Context, a *domain.Asset) storage.BlobStore {
+	if s.resolver == nil || a.BlobStoreID == "" {
+		return s.blobStore
+	}
+	bs, err := s.blobs.GetByID(ctx, a.BlobStoreID)
+	if err != nil || bs == nil {
+		return s.blobStore
+	}
+	store, err := s.resolver.Get(ctx, storage.BlobStoreDescriptor{ID: bs.ID, Type: bs.Type, Config: bs.Config})
+	if err != nil || store == nil {
+		return s.blobStore
+	}
+	return store
 }
 
 // StartCronScheduler starts cron-based per-policy scheduling. Run as a goroutine.
@@ -118,7 +153,7 @@ func (s *CleanupService) addEntryLocked(p domain.CleanupPolicy) {
 	}
 
 	job := func() {
-		if err := s.runPolicy(context.Background(), p); err != nil {
+		if _, err := s.runPolicy(context.Background(), p); err != nil {
 			s.log.Error("cleanup cron error", "policy", p.Name, "err", err)
 		}
 	}
@@ -157,35 +192,41 @@ func (s *CleanupService) RunAll(ctx context.Context) error {
 		if !p.Enabled {
 			continue
 		}
-		if err := s.runPolicy(ctx, p); err != nil {
+		if _, err := s.runPolicy(ctx, p); err != nil {
 			s.log.Error("cleanup policy failed", "policy", p.Name, "err", err)
 		}
 	}
 	return nil
 }
 
-// RunPolicy executes a single policy by ID.
+// RunPolicy executes a single policy by ID, discarding the run summary.
+// Retained for callers (task scheduler) that only need success/failure.
 func (s *CleanupService) RunPolicy(ctx context.Context, id string) error {
+	_, err := s.RunPolicyResult(ctx, id)
+	return err
+}
+
+// RunPolicyResult executes a single policy by ID and returns a summary of what
+// happened (deleted count, freed bytes, or a skip reason). The manual-run
+// endpoint uses this to report the outcome instead of a fire-and-forget ack.
+func (s *CleanupService) RunPolicyResult(ctx context.Context, id string) (*domain.CleanupRunResult, error) {
 	p, err := s.policies.Get(ctx, id)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if p == nil {
-		return fmt.Errorf("cleanup policy %q not found", id)
+		return nil, fmt.Errorf("cleanup policy %q not found", id)
 	}
 	return s.runPolicy(ctx, *p)
 }
 
-func (s *CleanupService) runPolicy(ctx context.Context, p domain.CleanupPolicy) error {
+func (s *CleanupService) runPolicy(ctx context.Context, p domain.CleanupPolicy) (*domain.CleanupRunResult, error) {
+	res := &domain.CleanupRunResult{PolicyID: p.ID, DryRun: p.DryRun}
+
 	lastDownloadedDays := intCriteria(p.Criteria, "lastDownloadedDays")
 	artifactAgeDays := intCriteria(p.Criteria, "artifactAgeDays")
 	pathPrefix := strCriteria(p.Criteria, "pathPrefix")
 	nameGlob := strCriteria(p.Criteria, "nameGlob")
-
-	if lastDownloadedDays == 0 && artifactAgeDays == 0 {
-		s.log.Info("cleanup: no criteria set, skipping", "policy", p.Name)
-		return nil
-	}
 
 	var repoNames []string
 	var err error
@@ -197,12 +238,24 @@ func (s *CleanupService) runPolicy(ctx context.Context, p domain.CleanupPolicy) 
 	} else {
 		repoNames, err = s.repos.ListNamesByCleanupPolicyID(ctx, p.ID)
 		if err != nil {
-			return fmt.Errorf("cleanup: list repos for policy: %w", err)
+			return nil, fmt.Errorf("cleanup: list repos for policy: %w", err)
 		}
 	}
 	if len(repoNames) == 0 {
-		s.log.Info("cleanup: policy not attached to any repository (set cleanup policies on repositories), skipping", "policy", p.Name)
-		return nil
+		reason := "policy is not attached to any repository — attach it to a repository or set a scope"
+		s.log.Info("cleanup: "+reason, "policy", p.Name)
+		res.Skipped = true
+		res.SkippedReason = reason
+		return res, nil
+	}
+
+	// No age/download criteria means "delete everything matching the scope"
+	// (path/name filters and retainNVersions still apply). This is intentional
+	// for a clear-all policy; the repository targeting above is the safety gate.
+	if lastDownloadedDays == 0 && artifactAgeDays == 0 {
+		s.log.Info("cleanup: no age criteria — removing all artifacts matching scope",
+			"policy", p.Name, "repos", repoNames, "path_prefix", pathPrefix,
+			"name_glob", nameGlob, "retain_versions", p.RetainNVersions, "dry_run", p.DryRun)
 	}
 
 	const batchLimit = 500
@@ -211,7 +264,7 @@ func (s *CleanupService) runPolicy(ctx context.Context, p domain.CleanupPolicy) 
 	for {
 		stale, err := s.assets.ListStale(ctx, p.Format, repoNames, lastDownloadedDays, artifactAgeDays, pathPrefix, nameGlob, p.RetainNVersions, batchLimit)
 		if err != nil {
-			return fmt.Errorf("cleanup: list stale assets: %w", err)
+			return nil, fmt.Errorf("cleanup: list stale assets: %w", err)
 		}
 		if len(stale) == 0 {
 			break
@@ -224,26 +277,43 @@ func (s *CleanupService) runPolicy(ctx context.Context, p domain.CleanupPolicy) 
 				deleted++
 				continue
 			}
-			if err := s.blobStore.Delete(ctx, a.BlobKey); err != nil {
+			asset := a
+			if err := s.storeForAsset(ctx, &asset).Delete(ctx, a.BlobKey); err != nil {
 				s.log.Warn("cleanup: blob delete failed", "key", a.BlobKey, "err", err)
 			}
 			if err := s.assets.Delete(ctx, a.ID); err != nil {
 				s.log.Warn("cleanup: asset delete failed", "id", a.ID, "err", err)
 				continue
 			}
-			asset := a
 			_ = base.DecrementBlobStoreUsage(ctx, s.blobs, &asset)
 			freed += a.SizeBytes
 			deleted++
 		}
+		// A real run advances the cursor by deleting the batch, so the next query
+		// returns the following rows. A dry run deletes nothing, so re-querying
+		// would return the same rows forever — report the first batch and stop.
+		if p.DryRun {
+			if len(stale) == batchLimit {
+				s.log.Info("cleanup dry-run: results capped at one batch — actual run would delete more",
+					"policy", p.Name, "batch", batchLimit)
+			}
+			break
+		}
+	}
+
+	// Prune components left without any assets so the repository no longer shows
+	// empty rows in the browse UI. Skipped on dry runs (nothing was deleted).
+	if s.components != nil && !p.DryRun && deleted > 0 {
+		for _, rn := range repoNames {
+			if err := s.components.DeleteOrphans(ctx, rn); err != nil {
+				s.log.Warn("cleanup: failed to prune orphan components", "repo", rn, "err", err)
+			}
+		}
 	}
 
 	now := time.Now()
-	p.LastRunAt = &now
-	p.LastRunFreed = freed
-	p.LastRunCount = deleted
-	if err := s.policies.Update(ctx, &p); err != nil {
-		s.log.Warn("cleanup: failed to update policy stats", "policy", p.Name, "err", err)
+	if err := s.policies.RecordRun(ctx, p.ID, now, deleted, freed); err != nil {
+		s.log.Warn("cleanup: failed to record run stats", "policy", p.Name, "err", err)
 	}
 
 	s.log.Info("cleanup policy complete",
@@ -251,7 +321,10 @@ func (s *CleanupService) runPolicy(ctx context.Context, p domain.CleanupPolicy) 
 		"deleted", deleted,
 		"freed_bytes", freed,
 		"dry_run", p.DryRun)
-	return nil
+
+	res.Deleted = deleted
+	res.FreedBytes = freed
+	return res, nil
 }
 
 // PreviewPolicy loads stale assets for a policy (limit 200) without deleting them.

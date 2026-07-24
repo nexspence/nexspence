@@ -301,13 +301,15 @@ function PolicyModal({
   const [wizardLoading, setWizardLoading] = useState(false)
   const [showBrowser, setShowBrowser] = useState(false)
 
-  // Fetch repos for scope picker (only when format is not '*')
+  // Fetch repos for the scope picker. Available for every format, including '*'
+  // (a clear-all policy still needs to target a specific repository).
   const { data: reposData } = useQuery<{ name: string; format: string }[]>({
     queryKey: ['repositories'],
     queryFn: () => nexusApi.listRepositories().then(r => r.data),
-    enabled: form.format !== '*',
   })
-  const filteredRepos = (reposData ?? []).filter(r => r.format === form.format)
+  const filteredRepos = form.format === '*'
+    ? (reposData ?? [])
+    : (reposData ?? []).filter(r => r.format === form.format)
 
   const payload = () => ({
     name: form.name.trim(),
@@ -349,8 +351,9 @@ function PolicyModal({
 
   const LABEL = { fontSize: 12, fontWeight: 600 as const, color: 'var(--holo-text-dim)', textTransform: 'uppercase' as const, letterSpacing: '0.04em' }
 
-  // Scope section — shared between wizard and edit modal
-  const scopeSection = form.format !== '*' ? (
+  // Scope section — shared between wizard and edit modal. Shown for all formats
+  // (including '*') so a clear-all policy can be pinned to a repository.
+  const scopeSection = (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       {/* Divider */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
@@ -441,7 +444,7 @@ function PolicyModal({
         </div>
       )}
     </div>
-  ) : null
+  )
 
   // ── Create mode: stepped wizard ───────────────────────────────────────
   if (!initial) {
@@ -683,6 +686,7 @@ export default function CleanupPage() {
   const [modal, setModal] = useState<'create' | CleanupPolicy | null>(null)
   const [running, setRunning] = useState<string | null>(null)
   const [previewId, setPreviewId] = useState<string | null>(null)
+  const [runResult, setRunResult] = useState<{ tone: 'ok' | 'warn' | 'err'; text: string } | null>(null)
 
   const { data: policies = [], isLoading, refetch } = useQuery<CleanupPolicy[]>({
     queryKey: ['cleanupPolicies'],
@@ -696,10 +700,26 @@ export default function CleanupPage() {
 
   const handleRun = async (id: string) => {
     setRunning(id)
+    setRunResult(null)
     try {
-      await nexusApi.runCleanupPolicy(id)
-      setTimeout(() => { refetch(); setRunning(null) }, 1500)
-    } catch { setRunning(null) }
+      // A single-policy run is synchronous and returns its outcome.
+      const res = await nexusApi.runCleanupPolicy(id)
+      const r = res.data as { deleted?: number; freedBytes?: number; dryRun?: boolean; skipped?: boolean; skippedReason?: string } | undefined
+      if (r?.skipped) {
+        setRunResult({ tone: 'warn', text: `Skipped: ${r.skippedReason ?? 'nothing to do'}` })
+      } else if (r) {
+        const freedKb = Math.round((r.freedBytes ?? 0) / 1024)
+        const verb = r.dryRun ? 'Would delete' : 'Deleted'
+        setRunResult({ tone: 'ok', text: `${verb} ${r.deleted ?? 0} asset(s), ${freedKb} KB${r.dryRun ? ' (dry run)' : ''}` })
+      } else {
+        setRunResult({ tone: 'ok', text: 'Cleanup started' })
+      }
+      refetch()
+    } catch (e) {
+      setRunResult({ tone: 'err', text: apiErrorMessage(e, 'Run failed') })
+    } finally {
+      setRunning(null)
+    }
   }
 
   const previewPolicy = previewId ? policies.find(p => p.id === previewId) : null
@@ -737,6 +757,24 @@ export default function CleanupPage() {
           <HoloButton variant="primary" icon={<Plus size={15} />} onClick={() => setModal('create')}>New Policy</HoloButton>
         </div>
       </div>
+
+      {runResult && (
+        <div
+          role="status"
+          onClick={() => setRunResult(null)}
+          style={{
+            cursor: 'pointer',
+            padding: '10px 14px',
+            borderRadius: 8,
+            fontSize: 13,
+            border: `1px solid ${runResult.tone === 'err' ? 'rgba(239,68,68,0.4)' : runResult.tone === 'warn' ? 'rgba(234,179,8,0.4)' : 'rgba(34,211,153,0.4)'}`,
+            background: runResult.tone === 'err' ? 'rgba(239,68,68,0.1)' : runResult.tone === 'warn' ? 'rgba(234,179,8,0.1)' : 'rgba(34,211,153,0.1)',
+            color: runResult.tone === 'err' ? '#fca5a5' : runResult.tone === 'warn' ? '#fde68a' : '#6ee7b7',
+          }}
+        >
+          {runResult.text}
+        </div>
+      )}
 
       {isLoading ? (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, color: 'var(--holo-text-faint)', fontSize: 14, paddingTop: 48 }}>Loading…</div>

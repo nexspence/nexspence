@@ -199,6 +199,10 @@ type CleanupPolicyRepo interface {
 	Get(ctx context.Context, id string) (*domain.CleanupPolicy, error)
 	Create(ctx context.Context, p *domain.CleanupPolicy) error
 	Update(ctx context.Context, p *domain.CleanupPolicy) error
+	// RecordRun persists the outcome of a cleanup run (last run time, deleted
+	// count, freed bytes). Kept separate from Update so editing a policy through
+	// the form — which carries no run stats — does not wipe them.
+	RecordRun(ctx context.Context, id string, at time.Time, count int, freed int64) error
 	Delete(ctx context.Context, id string) error
 }
 
