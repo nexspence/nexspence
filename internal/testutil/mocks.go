@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -265,6 +266,10 @@ type ComponentRepo struct {
 	// union of rows for the requested repo names (mirrors the SQL WHERE rep.name IN (...)).
 	DockerRowsByRepo map[string][]domain.DockerBrowseRow
 	DockerBrowseErr  error // when non-nil, ListDockerBrowseRows returns it (500-branch seam)
+	// LastListLimit/LastListOffset record the paging arguments of the most recent
+	// ListByRepoNames call so handler tests can assert the offset was decoded.
+	LastListLimit  int
+	LastListOffset int
 }
 
 func NewComponentRepo() *ComponentRepo {
@@ -275,9 +280,10 @@ func (c *ComponentRepo) List(ctx context.Context, repoName string, limit, offset
 	return c.ListByRepoNames(ctx, []string{repoName}, limit, offset)
 }
 
-func (c *ComponentRepo) ListByRepoNames(_ context.Context, names []string, _, _ int) (*domain.Page[domain.Component], error) {
+func (c *ComponentRepo) ListByRepoNames(_ context.Context, names []string, limit, offset int) (*domain.Page[domain.Component], error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.LastListLimit, c.LastListOffset = limit, offset
 	if c.Err != nil {
 		return nil, c.Err
 	}
@@ -297,7 +303,29 @@ func (c *ComponentRepo) ListByRepoNames(_ context.Context, names []string, _, _ 
 			items = append(items, *v)
 		}
 	}
-	return &domain.Page[domain.Component]{Items: items}, nil
+	// Stable order (map iteration is random) so paging is deterministic, mirroring
+	// the SQL "ORDER BY c.name, c.version".
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].Name != items[j].Name {
+			return items[i].Name < items[j].Name
+		}
+		return items[i].Version < items[j].Version
+	})
+
+	if limit <= 0 {
+		return &domain.Page[domain.Component]{Items: items}, nil
+	}
+	if offset >= len(items) {
+		return &domain.Page[domain.Component]{Items: []domain.Component{}}, nil
+	}
+	items = items[offset:]
+	var token *string
+	if len(items) > limit {
+		items = items[:limit]
+		next := strconv.Itoa(offset + limit)
+		token = &next
+	}
+	return &domain.Page[domain.Component]{Items: items, ContinuationToken: token}, nil
 }
 func (c *ComponentRepo) Get(_ context.Context, id string) (*domain.Component, error) {
 	c.mu.Lock()
@@ -352,6 +380,19 @@ func (c *ComponentRepo) ListDockerBrowseRows(_ context.Context, names []string, 
 func (c *ComponentRepo) Create(_ context.Context, comp *domain.Component) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	// Mirrors the SQL upsert key ON CONFLICT (repository_id, format, group_id,
+	// name, version): re-creating the same coordinates reuses the existing row
+	// rather than adding a duplicate.
+	key := strings.Join([]string{comp.Repository, comp.RepositoryID, comp.Format, comp.Group, comp.Name, comp.Version}, "\x00")
+	for _, existing := range c.components {
+		ek := strings.Join([]string{existing.Repository, existing.RepositoryID, existing.Format, existing.Group, existing.Name, existing.Version}, "\x00")
+		if ek == key {
+			comp.ID = existing.ID
+			comp.CreatedAt = existing.CreatedAt
+			c.components[existing.ID] = comp
+			return nil
+		}
+	}
 	c.nextID++
 	comp.ID = fmt.Sprintf("comp-%d", c.nextID)
 	c.components[comp.ID] = comp

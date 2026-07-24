@@ -171,12 +171,20 @@ func RegisterStoredBlob(ctx context.Context, d formats.Deps, repo *domain.Reposi
 	if version == "" {
 		version = "1"
 	}
+	name := coords.Name
+	if name == "" {
+		// Formats that cache proxied files verbatim (apt, yum, nuget, conan, ...)
+		// have no coordinates to parse. Components are upserted on
+		// (repo, format, group, name, version), so an empty name would fold every
+		// cached file into one nameless component that the browse UI can't act on.
+		name = strings.TrimPrefix(filePath, "/")
+	}
 	comp := &domain.Component{
 		RepositoryID: repo.ID,
 		Repository:   repo.Name,
 		Format:       string(repo.Format),
 		Group:        coords.Group,
-		Name:         coords.Name,
+		Name:         name,
 		Version:      version,
 	}
 	if err := d.Components.Create(ctx, comp); err != nil {

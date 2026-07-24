@@ -65,6 +65,13 @@ func (h *ComponentHandler) List(c *gin.Context) {
 			limit = v
 		}
 	}
+	// The browse UI pages with ?offset=; the Nexus-compatible clients use
+	// ?continuationToken=. Accept both — continuationToken wins when both are sent.
+	if off := c.Query("offset"); off != "" {
+		if v, err := strconv.Atoi(off); err == nil && v >= 0 {
+			offset = v
+		}
+	}
 	if tok := c.Query("continuationToken"); tok != "" {
 		if v, err := strconv.Atoi(tok); err == nil {
 			offset = v
@@ -101,6 +108,10 @@ func (h *ComponentHandler) List(c *gin.Context) {
 		items = h.rbacSvc.FilterComponents(c.Request.Context(),
 			stringVal(userID), stringSliceVal(roles), items, anonMap)
 	}
+	if err := h.attachAssets(c.Request.Context(), items); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	for i := range items {
 		h.enrichComponent(c, &items[i])
 	}
@@ -109,6 +120,35 @@ func (h *ComponentHandler) List(c *gin.Context) {
 		"items":             items,
 		"continuationToken": page.ContinuationToken,
 	})
+}
+
+// attachAssets fills in Assets for every component that doesn't have them yet,
+// using a single batched query instead of one per component. Callers that already
+// populated Assets (e.g. Get) pay nothing.
+//
+// The browse UI keys its per-row actions (download, delete) off asset paths, so a
+// component listing without assets makes those actions target the component name
+// and silently do nothing.
+func (h *ComponentHandler) attachAssets(ctx context.Context, items []domain.Component) error {
+	var needsAssets []string
+	for i := range items {
+		if len(items[i].Assets) == 0 {
+			needsAssets = append(needsAssets, items[i].ID)
+		}
+	}
+	if len(needsAssets) == 0 {
+		return nil
+	}
+	byID, err := h.assets.ListByComponentIDs(ctx, needsAssets)
+	if err != nil {
+		return err
+	}
+	for i := range items {
+		if len(items[i].Assets) == 0 {
+			items[i].Assets = byID[items[i].ID]
+		}
+	}
+	return nil
 }
 
 // Get handles GET /service/rest/v1/components/:id
@@ -237,25 +277,11 @@ func (h *ComponentHandler) Search(c *gin.Context) {
 			stringVal(userID), stringSliceVal(roles), items, anonMap)
 	}
 	// Preload assets in a single batched query instead of one query per component.
-	var needsAssets []string
-	for i := range items {
-		if len(items[i].Assets) == 0 {
-			needsAssets = append(needsAssets, items[i].ID)
-		}
-	}
-	var byID map[string][]domain.Asset
-	if len(needsAssets) > 0 {
-		var err error
-		byID, err = h.assets.ListByComponentIDs(c.Request.Context(), needsAssets)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
+	if err := h.attachAssets(c.Request.Context(), items); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
 	}
 	for i := range items {
-		if len(items[i].Assets) == 0 {
-			items[i].Assets = byID[items[i].ID]
-		}
 		h.enrichComponent(c, &items[i])
 	}
 
