@@ -29,7 +29,7 @@ func TestServeGETRewritten_MissAndHit_RewriteOnServe(t *testing.T) {
 
 	repo := proxyRepo("rw1", upstream.URL)
 	d := makeDeps(repo)
-	rewrite := func(b []byte) []byte { return bytes.ToUpper(b) }
+	rewrite := bytes.ToUpper
 
 	// Cache miss → fetch upstream, serve rewritten.
 	w := httptest.NewRecorder()
