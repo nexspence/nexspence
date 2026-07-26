@@ -1,6 +1,7 @@
 package nuget_test
 
 import (
+	"archive/zip"
 	"bytes"
 	"fmt"
 	"mime/multipart"
@@ -235,4 +236,67 @@ func TestNuGet_ProxyServiceIndex_UpstreamError(t *testing.T) {
 	r.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusBadGateway, w.Code)
+}
+
+func TestNuGet_ServiceIndex_AdvertisesPublish(t *testing.T) {
+	// Regression for #97: without a PackagePublish/2.0.0 resource in the
+	// service index, `dotnet nuget push` refuses to publish client-side.
+	repo := testutil.SimpleRepo("pkgs-pub", "nuget")
+	r := setup(repo)
+
+	req := httptest.NewRequest(http.MethodGet, "/repository/pkgs-pub/index.json", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), "PackagePublish/2.0.0")
+	assert.Contains(t, w.Body.String(), "/repository/pkgs-pub/v2/package")
+}
+
+// buildNupkg builds a minimal real .nupkg (zip with a root .nuspec).
+func buildNupkg(t *testing.T, id, version string) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	f, err := zw.Create(id + ".nuspec")
+	require.NoError(t, err)
+	_, err = f.Write([]byte(`<?xml version="1.0"?><package><metadata><id>` +
+		id + `</id><version>` + version + `</version></metadata></package>`))
+	require.NoError(t, err)
+	require.NoError(t, zw.Close())
+	return buf.Bytes()
+}
+
+func TestNuGet_Push_SemverFilename_Heuristic(t *testing.T) {
+	// Regression for #100: non-zip body falls back to filename parsing.
+	// The version must be the trailing digit-led parts, not just the
+	// last dot segment.
+	repo := testutil.SimpleRepo("pkgs-semver", "nuget")
+	r := setup(repo)
+
+	require.Equal(t, http.StatusCreated,
+		pushNupkg(r, "pkgs-semver", "Newtonsoft.Json.13.0.1.nupkg", "fake-bytes"))
+
+	req := httptest.NewRequest(http.MethodGet,
+		"/repository/pkgs-semver/v3/flatcontainer/newtonsoft.json/13.0.1/newtonsoft.json.13.0.1.nupkg", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code,
+		"stored coordinates must be id=newtonsoft.json version=13.0.1")
+	assert.Equal(t, "fake-bytes", w.Body.String())
+}
+
+func TestNuGet_Push_NuspecAuthoritative(t *testing.T) {
+	// A real zip with a .nuspec: manifest id/version win over the filename.
+	repo := testutil.SimpleRepo("pkgs-nuspec", "nuget")
+	r := setup(repo)
+
+	nupkg := buildNupkg(t, "My.Lib", "2.1.0")
+	require.Equal(t, http.StatusCreated,
+		pushNupkg(r, "pkgs-nuspec", "whatever.nupkg", string(nupkg)))
+
+	req := httptest.NewRequest(http.MethodGet,
+		"/repository/pkgs-nuspec/v3/flatcontainer/my.lib/2.1.0/my.lib.2.1.0.nupkg", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code, "coordinates must come from the .nuspec")
 }

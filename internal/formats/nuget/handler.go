@@ -15,10 +15,12 @@
 package nuget
 
 import (
+	"archive/zip"
 	"context"
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"path"
@@ -126,6 +128,7 @@ func (h *Handler) serveIndex(c *gin.Context, repoName string) {
 		"resources": []gin.H{
 			{"@id": base2 + "/v3/flatcontainer/", "@type": "PackageBaseAddress/3.0.0"},
 			{"@id": base2 + "/v3/registration/", "@type": "RegistrationsBaseUrl/3.0.0"},
+			{"@id": base2 + "/v2/package", "@type": "PackagePublish/2.0.0"},
 			{"@id": base2 + "/v2/", "@type": "LegacyGallery/2.0.0"},
 		},
 	})
@@ -268,17 +271,7 @@ func (h *Handler) handlePush(c *gin.Context, repoName string) {
 	}
 	defer func() { _ = f.Close() }()
 
-	// Filename: id.version.nupkg
-	filename := fh.Filename
-	name2 := strings.TrimSuffix(filename, ".nupkg")
-	// Split on last dot to get version (id may contain dots)
-	lastDot := strings.LastIndex(name2, ".")
-	pkgID, version := name2, "0.0.0"
-	if lastDot > 0 {
-		pkgID = name2[:lastDot]
-		version = name2[lastDot+1:]
-	}
-	pkgID = strings.ToLower(pkgID)
+	pkgID, version := nupkgCoords(f, fh.Size, fh.Filename)
 	filePath := "/" + pkgID + "/" + version + "/" + pkgID + "." + version + ".nupkg"
 
 	coords := base.Coords{Name: pkgID, Version: version}
@@ -288,6 +281,47 @@ func (h *Handler) handlePush(c *gin.Context, repoName string) {
 		return
 	}
 	c.Status(http.StatusCreated)
+}
+
+// nuspecMeta is the subset of the .nuspec manifest needed for coordinates.
+type nuspecMeta struct {
+	Metadata struct {
+		ID      string `xml:"id"`
+		Version string `xml:"version"`
+	} `xml:"metadata"`
+}
+
+// nupkgCoords resolves the package id and version for an uploaded .nupkg.
+// The .nuspec inside the archive is authoritative; the filename is a fallback
+// (version = the trailing dot-separated parts starting at the first digit-led
+// part, so "Newtonsoft.Json.13.0.1" → id "newtonsoft.json", version "13.0.1"
+// — a naive last-dot split corrupts real semver coordinates, #100).
+func nupkgCoords(f io.ReaderAt, size int64, filename string) (string, string) {
+	if zr, err := zip.NewReader(f, size); err == nil {
+		for _, zf := range zr.File {
+			if !strings.HasSuffix(zf.Name, ".nuspec") || strings.Contains(zf.Name, "/") {
+				continue
+			}
+			rc, err := zf.Open()
+			if err != nil {
+				continue
+			}
+			var meta nuspecMeta
+			err = xml.NewDecoder(io.LimitReader(rc, 1<<20)).Decode(&meta)
+			_ = rc.Close()
+			if err == nil && meta.Metadata.ID != "" && meta.Metadata.Version != "" {
+				return strings.ToLower(meta.Metadata.ID), meta.Metadata.Version
+			}
+		}
+	}
+	name := strings.TrimSuffix(filename, ".nupkg")
+	parts := strings.Split(name, ".")
+	for i := 1; i < len(parts); i++ {
+		if parts[i] != "" && parts[i][0] >= '0' && parts[i][0] <= '9' {
+			return strings.ToLower(strings.Join(parts[:i], ".")), strings.Join(parts[i:], ".")
+		}
+	}
+	return strings.ToLower(name), "0.0.0"
 }
 
 // fetchAndRewriteNuGetIndex fetches the NuGet v3 service index from upstream,
