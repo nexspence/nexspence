@@ -66,7 +66,15 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 			maxAge = repoproxy.MetadataMaxAge(repo)
 		}
 		coords := base.Coords{}
-		if err := repoproxy.ServeGET(c, h.deps, repo, p, "", coords, "application/octet-stream", maxAge); err != nil {
+		// Registration pages embed absolute upstream URLs (packageContent,
+		// @id) — rewrite them on serve so clients pull packages through this
+		// proxy (#98); the cache keeps the upstream original.
+		var rewrite func([]byte) []byte
+		if strings.HasPrefix(p, "/v3/registration/") {
+			localBase := strings.TrimRight(h.deps.BaseURL, "/") + "/repository/" + repo.Name
+			rewrite = func(b []byte) []byte { return RewriteRegistration(b, localBase) }
+		}
+		if err := repoproxy.ServeGETRewritten(c, h.deps, repo, p, "", coords, "application/octet-stream", maxAge, rewrite); err != nil {
 			c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		}
 		return

@@ -67,7 +67,11 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 			normalized := normalizePackageName(pkgName)
 			coords := base.Coords{Name: normalized, Version: "simple-page"}
 			// A per-package simple page is mutable metadata (new releases appear).
-			if err := repoproxy.ServeGET(c, h.deps, repo, p, "", coords, "text/html; charset=utf-8", repoproxy.MetadataMaxAge(repo)); err != nil {
+			// File hrefs are rewritten on serve so pip pulls wheels/sdists through
+			// this proxy instead of upstream (#98); the cache keeps the original.
+			localBase := strings.TrimRight(h.deps.BaseURL, "/") + "/repository/" + repo.Name
+			rewrite := func(b []byte) []byte { return RewriteSimplePage(b, localBase) }
+			if err := repoproxy.ServeGETRewritten(c, h.deps, repo, p, "", coords, "text/html; charset=utf-8", repoproxy.MetadataMaxAge(repo), rewrite); err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			}
 			return
