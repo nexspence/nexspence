@@ -139,7 +139,12 @@ func (h *Handler) serveMetadata(c *gin.Context, repoName, pkgPath string) {
 		up := "/" + repoproxy.NPMMetadataPath(trim)
 		coords := base.Coords{Name: pkgName, Version: "metadata"}
 		// The packument is mutable metadata (new versions appear over time).
-		if err := repoproxy.ServeGET(c, h.deps, repo, pkgPath, up, coords, "application/json", repoproxy.MetadataMaxAge(repo)); err != nil {
+		// dist.tarball URLs are rewritten on serve so installs pull tarballs
+		// through this proxy instead of upstream (#98); the cache keeps the
+		// upstream original.
+		localBase := strings.TrimRight(h.deps.BaseURL, "/") + "/repository/" + repo.Name
+		rewrite := func(b []byte) []byte { return RewritePackument(b, localBase) }
+		if err := repoproxy.ServeGETRewritten(c, h.deps, repo, pkgPath, up, coords, "application/json", repoproxy.MetadataMaxAge(repo), rewrite); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		}
 		return
