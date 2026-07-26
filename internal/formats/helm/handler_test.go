@@ -63,6 +63,31 @@ func uploadRaw(r *gin.Engine, repoName, filename, content string) int {
 	return w.Code
 }
 
+// uploadPut uploads a chart via PUT to the .tgz path (Nexus/ChartMuseum-compatible,
+// e.g. `curl -T chart.tgz .../repository/<repo>/<chart>-<version>.tgz`).
+func uploadPut(r *gin.Engine, repoName, filename, content string) int {
+	req := httptest.NewRequest(http.MethodPut, "/repository/"+repoName+"/"+filename,
+		strings.NewReader(content))
+	req.Header.Set("Content-Type", "application/x-tar")
+	req.ContentLength = int64(len(content))
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	return w.Code
+}
+
+func TestHelm_UploadAndDownload_Put(t *testing.T) {
+	repo := testutil.SimpleRepo("charts-put", "helm")
+	r := setup(repo)
+
+	require.Equal(t, http.StatusCreated, uploadPut(r, "charts-put", "nfs-helm1-0.1.1.tgz", "put-chart"))
+
+	req := httptest.NewRequest(http.MethodGet, "/repository/charts-put/nfs-helm1-0.1.1.tgz", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "put-chart", w.Body.String())
+}
+
 func TestHelm_UploadAndDownload_Multipart(t *testing.T) {
 	repo := testutil.SimpleRepo("charts", "helm")
 	r := setup(repo)
