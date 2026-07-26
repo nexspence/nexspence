@@ -12,10 +12,14 @@ package apt
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
+	"crypto/md5" //nolint:gosec // apt protocol checksum, not security
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"net/http"
 	"path"
+	"sort"
 	"strings"
 	"time"
 
@@ -108,27 +112,28 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 	}
 }
 
-func (h *Handler) servePackagesIndex(c *gin.Context, repoName, p string) {
-	gzipped := strings.HasSuffix(p, ".gz")
+// debArch extracts the architecture from a "name_version_arch.deb" filename.
+func debArch(filePath string) string {
+	filename := path.Base(filePath)
+	if parts := strings.Split(strings.TrimSuffix(filename, ".deb"), "_"); len(parts) >= 3 {
+		return parts[len(parts)-1]
+	}
+	return "amd64" // default for non-conforming names
+}
 
-	// Parse: /dists/:dist/:component/binary-:arch/Packages[.gz]
-	// We use all components regardless of the specific path for now
-	page, err := h.deps.Components.Search(c.Request.Context(), domain.SearchParams{
+// buildPackagesIndex generates the Packages index. arch filters to that
+// architecture (plus "all" debs, per Debian convention); empty = no filter.
+func (h *Handler) buildPackagesIndex(ctx context.Context, repoName, arch string) ([]byte, error) {
+	page, err := h.deps.Components.Search(ctx, domain.SearchParams{
 		Repository: repoName, Limit: 1000,
 	})
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
+		return nil, err
 	}
-
-	// List assets to get file details
-	assetPage, err := h.deps.Assets.List(c.Request.Context(), repoName, 1000, 0)
+	assetPage, err := h.deps.Assets.List(ctx, repoName, 1000, 0)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
+		return nil, err
 	}
-
-	// Build component → asset map
 	compMap := map[string]*domain.Component{}
 	for i := range page.Items {
 		compMap[page.Items[i].ID] = &page.Items[i]
@@ -143,17 +148,13 @@ func (h *Handler) servePackagesIndex(c *gin.Context, repoName, p string) {
 		if comp == nil {
 			continue
 		}
-		// Minimal Packages stanza
-		pkgName := comp.Name
-		version := comp.Version
-		arch := "amd64" // default; ideally parsed from filename
-		filename := path.Base(a.Path)
-		if parts := strings.Split(strings.TrimSuffix(filename, ".deb"), "_"); len(parts) >= 3 {
-			arch = parts[len(parts)-1]
+		debA := debArch(a.Path)
+		if arch != "" && debA != arch && debA != "all" {
+			continue // the binary-<arch> index lists that arch plus "all" (#103)
 		}
-		fmt.Fprintf(&sb, "Package: %s\n", pkgName)
-		fmt.Fprintf(&sb, "Version: %s\n", version)
-		fmt.Fprintf(&sb, "Architecture: %s\n", arch)
+		fmt.Fprintf(&sb, "Package: %s\n", comp.Name)
+		fmt.Fprintf(&sb, "Version: %s\n", comp.Version)
+		fmt.Fprintf(&sb, "Architecture: %s\n", debA)
 		fmt.Fprintf(&sb, "Filename: %s\n", a.Path)
 		fmt.Fprintf(&sb, "Size: %d\n", a.SizeBytes)
 		if a.SHA256 != "" {
@@ -164,8 +165,26 @@ func (h *Handler) servePackagesIndex(c *gin.Context, repoName, p string) {
 		}
 		sb.WriteString("\n")
 	}
+	return []byte(sb.String()), nil
+}
 
-	data := []byte(sb.String())
+func (h *Handler) servePackagesIndex(c *gin.Context, repoName, p string) {
+	gzipped := strings.HasSuffix(p, ".gz")
+
+	// Parse the requested architecture from /dists/:dist/:component/binary-:arch/...
+	arch := ""
+	for _, seg := range strings.Split(p, "/") {
+		if a, found := strings.CutPrefix(seg, "binary-"); found {
+			arch = a
+			break
+		}
+	}
+
+	data, err := h.buildPackagesIndex(c.Request.Context(), repoName, arch)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	if gzipped {
 		var buf bytes.Buffer
 		gw := gzip.NewWriter(&buf)
@@ -177,7 +196,31 @@ func (h *Handler) servePackagesIndex(c *gin.Context, repoName, p string) {
 	c.Data(http.StatusOK, "text/plain; charset=utf-8", data)
 }
 
-func (h *Handler) serveRelease(c *gin.Context, _, p string) {
+// repoArchitectures collects the set of architectures present in the repo.
+func (h *Handler) repoArchitectures(ctx context.Context, repoName string) []string {
+	assetPage, err := h.deps.Assets.List(ctx, repoName, 1000, 0)
+	if err != nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	var archs []string
+	for _, a := range assetPage.Items {
+		if !strings.HasSuffix(a.Path, ".deb") {
+			continue
+		}
+		arch := debArch(a.Path)
+		if arch == "all" || seen[arch] {
+			continue
+		}
+		seen[arch] = true
+		archs = append(archs, arch)
+	}
+	sort.Strings(archs)
+	return archs
+}
+
+func (h *Handler) serveRelease(c *gin.Context, repoName, p string) {
+	ctx := c.Request.Context()
 	// Parse distribution from path: /dists/:dist/Release
 	parts := strings.Split(strings.TrimPrefix(p, "/dists/"), "/")
 	dist := "stable"
@@ -185,17 +228,51 @@ func (h *Handler) serveRelease(c *gin.Context, _, p string) {
 		dist = parts[0]
 	}
 
+	archs := h.repoArchitectures(ctx, repoName)
+	archList := strings.Join(append(append([]string{}, archs...), "all"), " ")
+
+	// apt verifies the Packages indexes against these checksum sections —
+	// without them a default (verifying) client rejects the repo (#103).
+	type indexFile struct {
+		relPath string
+		body    []byte
+	}
+	var files []indexFile
+	for _, arch := range archs {
+		plain, err := h.buildPackagesIndex(ctx, repoName, arch)
+		if err != nil {
+			continue
+		}
+		var buf bytes.Buffer
+		gw := gzip.NewWriter(&buf)
+		_, _ = gw.Write(plain)
+		_ = gw.Close()
+		files = append(files,
+			indexFile{relPath: "main/binary-" + arch + "/Packages", body: plain},
+			indexFile{relPath: "main/binary-" + arch + "/Packages.gz", body: buf.Bytes()},
+		)
+	}
+
 	now := time.Now().UTC().Format("Mon, 02 Jan 2006 15:04:05 UTC")
-	release := fmt.Sprintf(`Origin: Nexspence
+	var sb strings.Builder
+	fmt.Fprintf(&sb, `Origin: Nexspence
 Label: Nexspence
 Suite: %s
 Codename: %s
 Date: %s
-Architectures: amd64 arm64 all
-Components: main contrib non-free
+Architectures: %s
+Components: main
 Description: Nexspence APT Repository
-`, dist, dist, now)
-	c.Data(http.StatusOK, "text/plain; charset=utf-8", []byte(release))
+`, dist, dist, now, archList)
+	sb.WriteString("MD5Sum:\n")
+	for _, f := range files {
+		fmt.Fprintf(&sb, " %x %d %s\n", md5.Sum(f.body), len(f.body), f.relPath) //nolint:gosec // apt protocol checksum
+	}
+	sb.WriteString("SHA256:\n")
+	for _, f := range files {
+		fmt.Fprintf(&sb, " %x %d %s\n", sha256.Sum256(f.body), len(f.body), f.relPath)
+	}
+	c.Data(http.StatusOK, "text/plain; charset=utf-8", []byte(sb.String()))
 }
 
 // debCoords parses the Debian "name_version_arch.deb" filename convention.
