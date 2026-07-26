@@ -2,6 +2,7 @@
 package repoproxy
 
 import (
+	"bytes"
 	"context"
 	"crypto/md5"  //nolint:gosec // md5/sha1 required for artifact-protocol checksums (Maven .md5/.sha1, npm shasum), not security
 	"crypto/sha1" //nolint:gosec // md5/sha1 required for artifact-protocol checksums (Maven .md5/.sha1, npm shasum), not security
@@ -207,8 +208,9 @@ func cacheFetchStore(ctx context.Context, d formats.Deps, asset *domain.Asset) s
 }
 
 // serveCachedAsset streams (or, for HEAD, describes) a cached asset to the client.
-// It takes ownership of rc and closes it.
-func serveCachedAsset(c *gin.Context, d formats.Deps, asset *domain.Asset, rc io.ReadCloser) {
+// A non-nil rewrite is applied to the body on the way out (the cache keeps the
+// upstream original). It takes ownership of rc and closes it.
+func serveCachedAsset(c *gin.Context, d formats.Deps, asset *domain.Asset, rc io.ReadCloser, rewrite func([]byte) []byte) {
 	defer func() { _ = rc.Close() }()
 	// Count only real GETs so a HEAD probe + GET pull don't double-count.
 	if c.Request.Method == http.MethodGet && d.Downloads != nil {
@@ -217,10 +219,19 @@ func serveCachedAsset(c *gin.Context, d formats.Deps, asset *domain.Asset, rc io
 	applyChecksumHeaders(c, asset)
 	if c.Request.Method == http.MethodHead {
 		c.Header("Content-Type", asset.ContentType)
-		if asset.SizeBytes > 0 {
+		if asset.SizeBytes > 0 && rewrite == nil {
 			c.Header("Content-Length", fmt.Sprintf("%d", asset.SizeBytes))
 		}
 		c.Status(http.StatusOK)
+		return
+	}
+	if rewrite != nil {
+		body, err := io.ReadAll(rc)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "cache read: " + err.Error()})
+			return
+		}
+		c.Data(http.StatusOK, asset.ContentType, rewrite(body))
 		return
 	}
 	c.DataFromReader(http.StatusOK, asset.SizeBytes, asset.ContentType, rc, nil)
@@ -239,6 +250,19 @@ func serveCachedAsset(c *gin.Context, d formats.Deps, asset *domain.Asset, rc io
 // a conditional request before being served. See revalidateAndServe.
 func ServeGET(c *gin.Context, d formats.Deps, repo *domain.Repository, repoRelativePath, upstreamPath string,
 	coords base.Coords, defaultContentType string, maxAge time.Duration,
+) error {
+	return ServeGETRewritten(c, d, repo, repoRelativePath, upstreamPath, coords, defaultContentType, maxAge, nil)
+}
+
+// ServeGETRewritten is ServeGET for metadata documents whose body must be
+// transformed before serving — e.g. rewriting embedded upstream download URLs
+// to this proxy (#98). The blob cache stores the upstream ORIGINAL and rewrite
+// runs on every response (cache hit, miss, and revalidation), so a BaseURL
+// change never invalidates cached metadata. A nil rewrite streams exactly like
+// ServeGET. rewrite must be pure and tolerate arbitrary input (on malformed
+// bodies, return the input unchanged).
+func ServeGETRewritten(c *gin.Context, d formats.Deps, repo *domain.Repository, repoRelativePath, upstreamPath string,
+	coords base.Coords, defaultContentType string, maxAge time.Duration, rewrite func([]byte) []byte,
 ) error {
 	ctx := c.Request.Context()
 	if repo.Type != domain.TypeProxy {
@@ -267,23 +291,23 @@ func ServeGET(c *gin.Context, d formats.Deps, repo *domain.Repository, repoRelat
 			// revalidated against upstream before serving. Immutable content
 			// (maxAge == 0) and HEAD probes always serve straight from cache.
 			if maxAge > 0 && c.Request.Method == http.MethodGet && time.Since(asset.LastModified) > maxAge {
-				return revalidateAndServe(c, d, repo, asset, repoRelativePath, upJoin, coords, defaultContentType, rc)
+				return revalidateAndServe(c, d, repo, asset, repoRelativePath, upJoin, coords, defaultContentType, rc, rewrite)
 			}
-			serveCachedAsset(c, d, asset, rc)
+			serveCachedAsset(c, d, asset, rc, rewrite)
 			return nil
 		}
 		// Blob file missing from cache storage (storage path changed or file deleted).
 		// Fall through to upstream fetch so the client gets content and the cache is repaired.
 	}
 
-	return fetchAndCache(c, d, repo, repoRelativePath, upJoin, coords, defaultContentType)
+	return fetchAndCache(c, d, repo, repoRelativePath, upJoin, coords, defaultContentType, rewrite)
 }
 
 // fetchAndCache handles a cache miss (or a cache entry whose blob went missing):
 // it fetches from upstream, forwarding the client's own conditional headers, and
 // on success stores the blob and serves it.
 func fetchAndCache(c *gin.Context, d formats.Deps, repo *domain.Repository,
-	repoRelativePath, upJoin string, coords base.Coords, defaultContentType string,
+	repoRelativePath, upJoin string, coords base.Coords, defaultContentType string, rewrite func([]byte) []byte,
 ) error {
 	ctx := c.Request.Context()
 
@@ -336,7 +360,7 @@ func fetchAndCache(c *gin.Context, d formats.Deps, repo *domain.Repository,
 		return nil
 	}
 
-	return storeAndServeResponse(c, d, repo, repoRelativePath, defaultContentType, coords, resp)
+	return storeAndServeResponse(c, d, repo, repoRelativePath, defaultContentType, coords, resp, rewrite)
 }
 
 // revalidateAndServe is invoked when a cached metadata asset is older than its
@@ -348,18 +372,18 @@ func fetchAndCache(c *gin.Context, d formats.Deps, repo *domain.Repository,
 //
 // It takes ownership of rc (the open cache blob) and always closes it.
 func revalidateAndServe(c *gin.Context, d formats.Deps, repo *domain.Repository, asset *domain.Asset,
-	repoRelativePath, upJoin string, coords base.Coords, defaultContentType string, rc io.ReadCloser,
+	repoRelativePath, upJoin string, coords base.Coords, defaultContentType string, rc io.ReadCloser, rewrite func([]byte) []byte,
 ) error {
 	ctx := c.Request.Context()
 
 	baseRemote, err := RemoteURL(repo)
 	if err != nil {
-		serveCachedAsset(c, d, asset, rc)
+		serveCachedAsset(c, d, asset, rc, rewrite)
 		return nil
 	}
 	upstream, err := JoinURL(baseRemote, upJoin)
 	if err != nil {
-		serveCachedAsset(c, d, asset, rc)
+		serveCachedAsset(c, d, asset, rc, rewrite)
 		return nil
 	}
 
@@ -381,7 +405,7 @@ func revalidateAndServe(c *gin.Context, d formats.Deps, repo *domain.Repository,
 	if err != nil {
 		// Upstream unreachable → serve stale cache so metadata consumers keep working.
 		dispatchProxyError(d, repo.Name, repoRelativePath, upstream, err)
-		serveCachedAsset(c, d, asset, rc)
+		serveCachedAsset(c, d, asset, rc, rewrite)
 		return nil
 	}
 	defer func() { _ = resp.Body.Close() }()
@@ -393,18 +417,18 @@ func revalidateAndServe(c *gin.Context, d formats.Deps, repo *domain.Repository,
 		if d.Assets != nil {
 			_ = d.Assets.TouchLastModified(context.Background(), asset.ID)
 		}
-		serveCachedAsset(c, d, asset, rc)
+		serveCachedAsset(c, d, asset, rc, rewrite)
 		return nil
 	case resp.StatusCode >= 200 && resp.StatusCode <= 299:
 		// Upstream returned a newer copy: replace the cached blob and serve it.
 		_ = rc.Close()
-		return storeAndServeResponse(c, d, repo, repoRelativePath, defaultContentType, coords, resp)
+		return storeAndServeResponse(c, d, repo, repoRelativePath, defaultContentType, coords, resp, rewrite)
 	default:
 		// Any other status (404/410/5xx): don't discard a good cache on a transient
 		// upstream hiccup — serve stale and record the anomaly.
 		dispatchProxyError(d, repo.Name, repoRelativePath, upstream,
 			fmt.Errorf("revalidation returned status %d", resp.StatusCode))
-		serveCachedAsset(c, d, asset, rc)
+		serveCachedAsset(c, d, asset, rc, rewrite)
 		return nil
 	}
 }
@@ -413,13 +437,35 @@ func revalidateAndServe(c *gin.Context, d formats.Deps, repo *domain.Repository,
 // client while persisting it to the blob store and registering the DB asset,
 // replacing any prior cache entry for repoRelativePath.
 func storeAndServeResponse(c *gin.Context, d formats.Deps, repo *domain.Repository,
-	repoRelativePath, defaultContentType string, coords base.Coords, resp *http.Response,
+	repoRelativePath, defaultContentType string, coords base.Coords, resp *http.Response, rewrite func([]byte) []byte,
 ) error {
 	ctx := c.Request.Context()
 
 	ct := resp.Header.Get("Content-Type")
 	if ct == "" {
 		ct = defaultContentType
+	}
+
+	// Rewritten metadata cannot stream: buffer the upstream body, persist the
+	// ORIGINAL to the cache (hashes over the original), and serve the client
+	// the transformed copy. Metadata documents are small, so buffering is fine.
+	if rewrite != nil {
+		body, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			return fmt.Errorf("proxy metadata read: %w", readErr)
+		}
+		if err := storeOriginal(ctx, c, d, repo, repoRelativePath, ct, coords, body); err != nil {
+			return err
+		}
+		copyRespHeaders(c.Writer.Header(), resp.Header)
+		c.Writer.Header().Del("Content-Length") // length changes after rewrite
+		if c.Request.Method == http.MethodHead {
+			c.Header("Content-Type", ct)
+			c.Status(resp.StatusCode)
+			return nil
+		}
+		c.Data(resp.StatusCode, ct, rewrite(body))
+		return nil
 	}
 
 	copyRespHeaders(c.Writer.Header(), resp.Header)
@@ -476,6 +522,33 @@ func storeAndServeResponse(c *gin.Context, d formats.Deps, repo *domain.Reposito
 	}
 	// Count a download only for GET. Otherwise a HEAD probe + GET hit would
 	// double-count the same pull.
+	if regAsset != nil && regAsset.ID != "" && c.Request.Method == http.MethodGet && d.Downloads != nil {
+		d.Downloads.Add(regAsset.ID)
+	}
+	return nil
+}
+
+// storeOriginal persists an already-buffered upstream body to the blob store
+// and registers the DB asset (the buffered counterpart of the streaming path
+// in storeAndServeResponse, used when a rewrite forces buffering).
+func storeOriginal(ctx context.Context, c *gin.Context, d formats.Deps, repo *domain.Repository,
+	repoRelativePath, ct string, coords base.Coords, body []byte,
+) error {
+	blobKey := base.BlobKey(repo.Name, repoRelativePath)
+	resolvedID, resolvedName, physStore := base.ResolveBlobStore(ctx, d, repo)
+	if err := physStore.Put(ctx, blobKey, bytes.NewReader(body), int64(len(body))); err != nil {
+		return fmt.Errorf("proxy cache write: %w", err)
+	}
+	sha256sum := fmt.Sprintf("%x", sha256.Sum256(body))
+	sha1sum := fmt.Sprintf("%x", sha1.Sum(body)) //nolint:gosec // protocol checksum, not security
+	md5sum := fmt.Sprintf("%x", md5.Sum(body))   //nolint:gosec // protocol checksum, not security
+
+	// context.Background so DB registration survives request cancellation.
+	regAsset, regErr := base.RegisterStoredBlob(context.Background(), d, repo, repoRelativePath, ct, coords,
+		blobKey, sha256sum, sha1sum, md5sum, int64(len(body)), resolvedID, resolvedName)
+	if regErr != nil {
+		return regErr
+	}
 	if regAsset != nil && regAsset.ID != "" && c.Request.Method == http.MethodGet && d.Downloads != nil {
 		d.Downloads.Add(regAsset.ID)
 	}
