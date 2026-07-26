@@ -18,10 +18,10 @@ import (
 // GroupIndexSourcePath implements formats.GroupIndexMerger. The .gz flavor
 // of primary fans out on the PLAIN document — the merger gzips the result.
 func (h *Handler) GroupIndexSourcePath(p string) (string, bool) {
-	switch {
-	case p == "/repodata/repomd.xml":
+	switch p {
+	case "/repodata/repomd.xml":
 		return p, true
-	case p == "/repodata/primary.xml" || p == "/repodata/primary.xml.gz":
+	case "/repodata/primary.xml", "/repodata/primary.xml.gz":
 		return "/repodata/primary.xml", true
 	}
 	return "", false

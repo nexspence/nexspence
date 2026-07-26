@@ -16,7 +16,7 @@ func TestCompareLooseVersions(t *testing.T) {
 		{"1.0", "1.0", 0},
 		{"1.0", "2.0", -1},
 		{"2.0", "1.0", 1},
-		{"1.10", "1.9", 1},        // numeric, not lexicographic
+		{"1.10", "1.9", 1},         // numeric, not lexicographic
 		{"1.0", "1.0-SNAPSHOT", 1}, // numeric beats qualifier
 		{"1.0-alpha", "1.0-beta", -1},
 		{"", "1.0", -1},
