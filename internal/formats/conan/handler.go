@@ -12,6 +12,9 @@
 //	PUT  /files/:name/:version/:user/:channel/:revision/package/:pkgid/:prevision/:file → upload package file
 //	GET  /files/:name/:version/:user/:channel/:revision/export/:file → download recipe file
 //	GET  /files/:name/:version/:user/:channel/:revision/package/:pkgid/:prevision/:file → download package file
+//
+// The Conan v2 revisions API (Conan 2.x clients) is served under
+// /v2/conans/... — see v2.go for the route list.
 package conan
 
 import (
@@ -51,7 +54,7 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 		}
 		// Ping is always local
 		if p == "/ping" || p == "/v1/ping" {
-			c.JSON(http.StatusOK, gin.H{"ok": true})
+			servePing(c)
 			return
 		}
 		// Conan revision files are content-addressed (immutable); the "/latest"
@@ -70,7 +73,7 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 	switch {
 	// Ping
 	case (p == "/ping" || p == "/v1/ping") && c.Request.Method == http.MethodGet:
-		c.JSON(http.StatusOK, gin.H{"ok": true})
+		servePing(c)
 
 	// Upload recipe/package file: PUT /files/...
 	case c.Request.Method == http.MethodPut && strings.HasPrefix(p, "/files/"):
@@ -92,9 +95,21 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 	case c.Request.Method == http.MethodGet && strings.HasPrefix(p, "/v1/conans/"):
 		h.handleManifest(c, repoName, p)
 
+	// Conan v2 revisions API (Conan 2.x clients): /v2/conans/... (#95)
+	case strings.HasPrefix(p, "/v2/conans/"):
+		h.serveV2(c, repoName, p)
+
 	default:
 		c.Status(http.StatusMethodNotAllowed)
 	}
+}
+
+// servePing answers the Conan ping and advertises server capabilities.
+// Conan 2.x (and 1.x with revisions enabled) requires the "revisions"
+// capability before it will talk v2 endpoints to us.
+func servePing(c *gin.Context) {
+	c.Header("X-Conan-Server-Capabilities", "revisions")
+	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
 // parseRef extracts (name, version, user, channel) from a /v1/conans/:name/:ver/:user/:channel[/...] path.
@@ -122,14 +137,24 @@ func coordsFromRef(name, version, user, channel string) base.Coords {
 	}
 }
 
-func (h *Handler) handleUpload(c *gin.Context, repoName, p string) {
-	// Extract coords from /files/:name/:version/:user/:channel/:rev/export/:file
-	// or /files/:name/:version/:user/:channel/:rev/package/:pkgid/:prevision/:file
-	parts := strings.SplitN(strings.TrimPrefix(p, "/files/"), "/", 6)
-	coords := base.Coords{}
-	if len(parts) >= 4 {
-		coords = coordsFromRef(parts[0], parts[1], parts[2], parts[3])
+// uploadCoords derives component coordinates from a v1 /files/... or a
+// v2 /v2/conans/... upload path (both start with name/version/user/channel).
+func uploadCoords(p string) base.Coords {
+	var parts []string
+	switch {
+	case strings.HasPrefix(p, "/files/"):
+		parts = strings.SplitN(strings.TrimPrefix(p, "/files/"), "/", 6)
+	case strings.HasPrefix(p, "/v2/conans/"):
+		parts = strings.SplitN(strings.TrimPrefix(p, "/v2/conans/"), "/", 5)
 	}
+	if len(parts) >= 4 {
+		return coordsFromRef(parts[0], parts[1], parts[2], parts[3])
+	}
+	return base.Coords{}
+}
+
+func (h *Handler) handleUpload(c *gin.Context, repoName, p string) {
+	coords := uploadCoords(p)
 
 	ct := c.GetHeader("Content-Type")
 	if ct == "" {
