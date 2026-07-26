@@ -12,8 +12,6 @@
 package yum
 
 import (
-	"bytes"
-	"compress/gzip"
 	"encoding/xml"
 	"fmt"
 	"net/http"
@@ -77,7 +75,7 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 
 	// filelists.xml, other.xml — return empty valid XML for now
 	case c.Request.Method == http.MethodGet && strings.HasPrefix(p, "/repodata/"):
-		h.serveEmptyMetadata(c, p)
+		h.serveOtherMetadata(c, repoName, p)
 
 	// Upload RPM
 	case c.Request.Method == http.MethodPut && strings.HasSuffix(p, ".rpm"):
@@ -108,10 +106,13 @@ type repomdXML struct {
 	Data     []repomdEntry `xml:"data"`
 }
 type repomdEntry struct {
-	Type      string      `xml:"type,attr"`
-	Location  repomdLoc   `xml:"location"`
-	Checksum  repomdCksum `xml:"checksum"`
-	Timestamp int64       `xml:"timestamp"`
+	Type         string       `xml:"type,attr"`
+	Location     repomdLoc    `xml:"location"`
+	Checksum     repomdCksum  `xml:"checksum"`
+	OpenChecksum *repomdCksum `xml:"open-checksum,omitempty"`
+	Timestamp    int64        `xml:"timestamp"`
+	Size         int64        `xml:"size,omitempty"`
+	OpenSize     int64        `xml:"open-size,omitempty"`
 }
 type repomdLoc struct {
 	Href string `xml:"href,attr"`
@@ -122,23 +123,12 @@ type repomdCksum struct {
 }
 
 func (h *Handler) serveRepomd(c *gin.Context, repoName string) {
-	base2 := "/repository/" + repoName
-	now := time.Now().Unix()
-	doc := repomdXML{
-		XMLNS:    "http://linux.duke.edu/metadata/repo",
-		Revision: now,
-		Data: []repomdEntry{
-			{
-				Type:      "primary",
-				Location:  repomdLoc{Href: base2 + "/repodata/primary.xml.gz"},
-				Checksum:  repomdCksum{Type: "sha256", Value: ""},
-				Timestamp: now,
-			},
-		},
+	docs, err := h.buildRepodata(c.Request.Context(), repoName)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
 	}
-	out, _ := xml.Marshal(doc)
-	c.Data(http.StatusOK, "application/xml; charset=utf-8",
-		append([]byte(xml.Header), out...))
+	c.Data(http.StatusOK, "application/xml; charset=utf-8", docs.Repomd)
 }
 
 // primaryXML is the minimal primary.xml structure
@@ -149,12 +139,13 @@ type primaryXML struct {
 	Packages []rpmPackage `xml:"package"`
 }
 type rpmPackage struct {
-	Type     string     `xml:"type,attr"`
-	Name     string     `xml:"name"`
-	Arch     string     `xml:"arch"`
-	Version  rpmVersion `xml:"version"`
-	Size     rpmSize    `xml:"size"`
-	Location rpmLoc     `xml:"location"`
+	Type     string      `xml:"type,attr"`
+	Name     string      `xml:"name"`
+	Arch     string      `xml:"arch"`
+	Version  rpmVersion  `xml:"version"`
+	Checksum rpmChecksum `xml:"checksum"`
+	Size     rpmSize     `xml:"size"`
+	Location rpmLoc      `xml:"location"`
 }
 type rpmVersion struct {
 	Epoch string `xml:"epoch,attr"`
@@ -169,101 +160,59 @@ type rpmLoc struct {
 }
 
 func (h *Handler) servePrimary(c *gin.Context, repoName, p string) {
-	gzipped := strings.HasSuffix(p, ".gz")
-
-	page, err := h.deps.Components.Search(c.Request.Context(), domain.SearchParams{
-		Repository: repoName, Limit: 1000,
-	})
+	docs, err := h.buildRepodata(c.Request.Context(), repoName)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
-	assetPage, err := h.deps.Assets.List(c.Request.Context(), repoName, 1000, 0)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if strings.HasSuffix(p, ".gz") {
+		c.Data(http.StatusOK, "application/x-gzip", docs.PrimaryGz)
 		return
 	}
-
-	compMap := map[string]*domain.Component{}
-	for i := range page.Items {
-		compMap[page.Items[i].ID] = &page.Items[i]
-	}
-
-	doc := primaryXML{
-		XMLNS: "http://linux.duke.edu/metadata/common",
-	}
-	for _, a := range assetPage.Items {
-		if !strings.HasSuffix(a.Path, ".rpm") {
-			continue
-		}
-		comp := compMap[a.ComponentID]
-		if comp == nil {
-			continue
-		}
-		arch := "x86_64"
-		filename := path.Base(a.Path)
-		// name-version-release.arch.rpm
-		parts := strings.Split(strings.TrimSuffix(filename, ".rpm"), ".")
-		if len(parts) >= 2 {
-			arch = parts[len(parts)-1]
-		}
-		doc.Packages = append(doc.Packages, rpmPackage{
-			Type: "rpm",
-			Name: comp.Name,
-			Arch: arch,
-			Version: rpmVersion{
-				Epoch: "0",
-				Ver:   comp.Version,
-				Rel:   "1",
-			},
-			Size:     rpmSize{Package: a.SizeBytes},
-			Location: rpmLoc{Href: a.Path},
-		})
-	}
-	doc.Count = len(doc.Packages)
-
-	out, _ := xml.Marshal(doc)
-	data := append([]byte(xml.Header), out...)
-
-	if gzipped {
-		var buf bytes.Buffer
-		gw := gzip.NewWriter(&buf)
-		_, _ = gw.Write(data)
-		_ = gw.Close()
-		c.Data(http.StatusOK, "application/x-gzip", buf.Bytes())
-		return
-	}
-	c.Data(http.StatusOK, "application/xml; charset=utf-8", data)
+	c.Data(http.StatusOK, "application/xml; charset=utf-8", docs.Primary)
 }
 
-func (h *Handler) serveEmptyMetadata(c *gin.Context, p string) {
-	gzipped := strings.HasSuffix(p, ".gz")
-	data := []byte(xml.Header + `<metadata xmlns="http://linux.duke.edu/metadata/common" packages="0"/>`)
-	if gzipped {
-		var buf bytes.Buffer
-		gw := gzip.NewWriter(&buf)
-		_, _ = gw.Write(data)
-		_ = gw.Close()
-		c.Data(http.StatusOK, "application/x-gzip", buf.Bytes())
+// serveOtherMetadata serves filelists/other (and unknown repodata paths as
+// valid empty metadata) from the same snapshot repomd was built from.
+func (h *Handler) serveOtherMetadata(c *gin.Context, repoName, p string) {
+	docs, err := h.buildRepodata(c.Request.Context(), repoName)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.Data(http.StatusOK, "application/xml; charset=utf-8", data)
+	gzipped := strings.HasSuffix(p, ".gz")
+	var plain, gz []byte
+	switch {
+	case strings.HasPrefix(p, "/repodata/filelists"):
+		plain, gz = docs.Filelists, docs.FilelistsGz
+	case strings.HasPrefix(p, "/repodata/other"):
+		plain, gz = docs.Other, docs.OtherGz
+	default:
+		plain = []byte(xml.Header + `<metadata xmlns="http://linux.duke.edu/metadata/common" packages="0"/>`)
+		gz = gzipBytes(plain)
+	}
+	if gzipped {
+		c.Data(http.StatusOK, "application/x-gzip", gz)
+		return
+	}
+	c.Data(http.StatusOK, "application/xml; charset=utf-8", plain)
 }
 
 func (h *Handler) handleUpload(c *gin.Context, repoName, p string) {
 	filename := path.Base(p)
-	// Parse: name-version-release.arch.rpm
+	// Parse NVR: name-version-release.arch.rpm — the last two dash segments
+	// are version and release ("curl-8.0.0-1.x86_64.rpm" → curl / 8.0.0).
 	name := strings.TrimSuffix(filename, ".rpm")
+	if dot := strings.LastIndex(name, "."); dot > 0 { // strip .arch
+		name = name[:dot]
+	}
 	parts := strings.Split(name, "-")
 	pkgName, version := name, "0"
-	if len(parts) >= 2 {
-		pkgName = strings.Join(parts[:len(parts)-1], "-")
-		version = parts[len(parts)-1]
-		// strip arch from version: "1.0-1.x86_64" → version="1.0", release="1.x86_64"
-		if dot := strings.LastIndex(version, "."); dot > 0 {
-			version = version[:dot]
-		}
+	if len(parts) >= 3 {
+		pkgName = strings.Join(parts[:len(parts)-2], "-")
+		version = parts[len(parts)-2]
+	} else if len(parts) == 2 {
+		pkgName, version = parts[0], parts[1]
 	}
 
 	coords := base.Coords{Name: pkgName, Version: version}
