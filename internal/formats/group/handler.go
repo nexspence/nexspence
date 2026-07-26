@@ -10,10 +10,12 @@
 package group
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -71,18 +73,23 @@ func (h *Handler) serveGet(c *gin.Context) {
 		rule, _ = h.deps.RoutingRules.Get(ctx, *repoDef.RoutingRuleID)
 	}
 
+	// Index documents are merged across ALL members (member order = priority)
+	// instead of first-non-404: a single member's index would hide the others,
+	// and formats whose "not found" is an empty 200 would shadow every member
+	// behind them (#99).
+	if merger, ok := h.formatRegistry[string(repoDef.Format)].(formats.GroupIndexMerger); ok {
+		if source, isIndex := merger.GroupIndexSourcePath(filePath); isIndex {
+			h.serveMergedIndex(c, repoDef, members, rule, merger, source, filePath)
+			return
+		}
+	}
+
 	for _, memberName := range members {
 		if !service.Allow(rule, filePath) {
 			continue
 		}
-		memberRepo, err := h.deps.Repos.Get(ctx, memberName)
-		if err != nil || memberRepo == nil || !memberRepo.Online {
-			continue
-		}
-		if memberRepo.Type == domain.TypeGroup {
-			continue
-		}
-		if string(memberRepo.Format) != string(repoDef.Format) {
+		memberRepo := h.eligibleMember(ctx, memberName, repoDef)
+		if memberRepo == nil {
 			continue
 		}
 		handler, ok := h.formatRegistry[string(memberRepo.Format)]
@@ -90,15 +97,7 @@ func (h *Handler) serveGet(c *gin.Context) {
 			continue
 		}
 
-		rec := httptest.NewRecorder()
-		sub, _ := gin.CreateTestContext(rec)
-		sub.Request = c.Request.Clone(ctx)
-		sub.Params = gin.Params{
-			{Key: "repoName", Value: memberName},
-			{Key: "path", Value: filePath},
-		}
-
-		handler.ServeHTTP(sub)
+		rec := h.callMember(ctx, c, memberName, filePath, handler)
 
 		code := rec.Code
 		if code == 0 {
@@ -124,6 +123,90 @@ func (h *Handler) serveGet(c *gin.Context) {
 	c.JSON(http.StatusNotFound, gin.H{
 		"error": fmt.Sprintf("artifact not found in any member of group %q", repoName),
 	})
+}
+
+// eligibleMember resolves a member repo eligible for fan-out: online,
+// not a nested group, and format-matched to the group. Returns nil otherwise.
+func (h *Handler) eligibleMember(ctx context.Context, memberName string, groupDef *domain.Repository) *domain.Repository {
+	memberRepo, err := h.deps.Repos.Get(ctx, memberName)
+	if err != nil || memberRepo == nil || !memberRepo.Online {
+		return nil
+	}
+	if memberRepo.Type == domain.TypeGroup {
+		return nil
+	}
+	if string(memberRepo.Format) != string(groupDef.Format) {
+		return nil
+	}
+	return memberRepo
+}
+
+// callMember invokes a member's format handler on a cloned request/recorder.
+func (h *Handler) callMember(ctx context.Context, c *gin.Context, memberName, filePath string, handler formats.FormatHandler) *httptest.ResponseRecorder {
+	rec := httptest.NewRecorder()
+	sub, _ := gin.CreateTestContext(rec)
+	sub.Request = c.Request.Clone(ctx)
+	sub.Params = gin.Params{
+		{Key: "repoName", Value: memberName},
+		{Key: "path", Value: filePath},
+	}
+	handler.ServeHTTP(sub)
+	sub.Writer.WriteHeaderNow() // flush buffered status to rec.Code
+	return rec
+}
+
+// serveMergedIndex fans an index request out to every eligible member on the
+// merger's source path, collects the 2xx bodies (member order preserved,
+// failing members skipped so the group survives a down upstream), and serves
+// the merged document. A merge failure degrades to the first member body —
+// never a 500 for a merge bug.
+func (h *Handler) serveMergedIndex(c *gin.Context, repoDef *domain.Repository, members []string,
+	rule *domain.RoutingRule, merger formats.GroupIndexMerger, source, requestPath string,
+) {
+	ctx := c.Request.Context()
+
+	var parts []formats.GroupIndexPart
+	var contributing []string
+	for _, memberName := range members {
+		if !service.Allow(rule, source) {
+			continue
+		}
+		memberRepo := h.eligibleMember(ctx, memberName, repoDef)
+		if memberRepo == nil {
+			continue
+		}
+		handler, ok := h.formatRegistry[string(memberRepo.Format)]
+		if !ok {
+			continue
+		}
+
+		rec := h.callMember(ctx, c, memberName, source, handler)
+		code := rec.Code
+		if code == 0 {
+			code = http.StatusOK
+		}
+		if code < 200 || code > 299 {
+			continue
+		}
+		parts = append(parts, formats.GroupIndexPart{Member: memberName, Body: rec.Body.Bytes()})
+		contributing = append(contributing, memberName)
+	}
+
+	if len(parts) == 0 {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": fmt.Sprintf("index not found in any member of group %q", repoDef.Name),
+		})
+		return
+	}
+
+	c.Writer.Header().Set("X-Nexspence-Source", strings.Join(contributing, ","))
+	body, contentType, err := merger.MergeGroupIndex(repoDef.Name, requestPath, parts)
+	if err != nil {
+		// Degrade to the first member's document rather than failing the group.
+		c.Data(http.StatusOK, "application/octet-stream", parts[0].Body)
+		return
+	}
+	c.Data(http.StatusOK, contentType, body)
 }
 
 func (h *Handler) serveWrite(c *gin.Context) {
