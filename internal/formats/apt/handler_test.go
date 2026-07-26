@@ -1,6 +1,8 @@
 package apt_test
 
 import (
+	"bytes"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -154,4 +156,64 @@ func TestApt_ProxyRejectMutation(t *testing.T) {
 	r := setup(repo)
 	code := putDeb(r, "debs7", "/pool/main/pkg_1.0_amd64.deb", "data")
 	assert.Equal(t, http.StatusMethodNotAllowed, code)
+}
+
+// postDeb uploads a .deb via POST to an explicit path (body = raw deb bytes).
+func postDeb(r *gin.Engine, repoName, path, content string) int {
+	req := httptest.NewRequest(http.MethodPost, "/repository/"+repoName+path,
+		strings.NewReader(content))
+	req.Header.Set("Content-Type", "application/vnd.debian.binary-package")
+	req.ContentLength = int64(len(content))
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	return w.Code
+}
+
+// postDebMultipart uploads a .deb via Nexus-style POST to the repo root
+// (multipart/form-data with a "file" field carrying the filename).
+func postDebMultipart(r *gin.Engine, repoName, filename, content string) int {
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	part, _ := mw.CreateFormFile("file", filename)
+	_, _ = part.Write([]byte(content))
+	_ = mw.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/repository/"+repoName+"/", &buf)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	return w.Code
+}
+
+func TestApt_PostDebPath_Upload(t *testing.T) {
+	// Regression for #96: Nexus-compatible clients publish .deb files via
+	// POST, which previously fell through to the default 405 branch.
+	repo := testutil.SimpleRepo("debs-post", "apt")
+	r := setup(repo)
+
+	require.Equal(t, http.StatusCreated,
+		postDeb(r, "debs-post", "/nginx_1.25.0_amd64.deb", "deb-bytes"))
+
+	// Root-level uploads normalize into the pool layout (same as PUT, #46).
+	req := httptest.NewRequest(http.MethodGet,
+		"/repository/debs-post/pool/main/n/nginx/nginx_1.25.0_amd64.deb", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "deb-bytes", w.Body.String())
+}
+
+func TestApt_PostRootMultipart_Upload(t *testing.T) {
+	repo := testutil.SimpleRepo("debs-mp", "apt")
+	r := setup(repo)
+
+	require.Equal(t, http.StatusCreated,
+		postDebMultipart(r, "debs-mp", "curl_8.5.0_amd64.deb", "curl-bytes"))
+
+	req := httptest.NewRequest(http.MethodGet,
+		"/repository/debs-mp/pool/main/c/curl/curl_8.5.0_amd64.deb", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "curl-bytes", w.Body.String())
 }

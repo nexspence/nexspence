@@ -13,6 +13,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"fmt"
+	"io"
 	"net/http"
 	"path"
 	"strings"
@@ -87,8 +88,11 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 
 	// Upload .deb: PUT /pool/:component/:file.deb, or a root-level PUT of a .deb
 	// (apt clients and `curl --upload-file foo.deb .../repository/<repo>/` upload
-	// to the repository root rather than an explicit pool path).
-	case c.Request.Method == http.MethodPut && (strings.HasPrefix(p, "/pool/") || strings.HasSuffix(p, ".deb")):
+	// to the repository root rather than an explicit pool path). POST is the
+	// Nexus-compatible verb: either to a .deb path (raw body) or to the repo
+	// root as multipart/form-data with a "file"/"package" field (#96).
+	case (c.Request.Method == http.MethodPut || c.Request.Method == http.MethodPost) &&
+		(p == "/" || strings.HasPrefix(p, "/pool/") || strings.HasSuffix(p, ".deb")):
 		h.handleUpload(c, repoName, p)
 
 	// Delete .deb
@@ -218,6 +222,24 @@ func proxyCoords(p string) base.Coords {
 
 func (h *Handler) handleUpload(c *gin.Context, repoName, p string) {
 	filename := path.Base(p)
+	body := io.Reader(c.Request.Body)
+	size := c.Request.ContentLength
+
+	// Nexus-style root POST: the .deb arrives as a multipart file field
+	// ("file" or "package") and the filename comes from the part, not the path.
+	if !strings.HasSuffix(filename, ".deb") {
+		f, fh, err := c.Request.FormFile("file")
+		if err != nil {
+			f, fh, err = c.Request.FormFile("package")
+		}
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "expected a *.deb path or a multipart 'file' field"})
+			return
+		}
+		defer func() { _ = f.Close() }()
+		filename, body, size = fh.Filename, f, fh.Size
+	}
+
 	pkgName, version := debCoords(filename)
 
 	// Normalize root-level uploads into the canonical pool layout so the
@@ -230,7 +252,7 @@ func (h *Handler) handleUpload(c *gin.Context, repoName, p string) {
 	coords := base.Coords{Name: pkgName, Version: version}
 	if _, err := base.StoreArtifact(c.Request.Context(), h.deps,
 		repoName, storePath, "application/vnd.debian.binary-package",
-		coords, c.Request.Body, c.Request.ContentLength); err != nil {
+		coords, body, size); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
