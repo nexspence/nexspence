@@ -12,10 +12,10 @@ import (
 	"encoding/xml"
 	"fmt"
 	"path"
-	"strconv"
 	"strings"
 
 	"github.com/nexspence-oss/nexspence/internal/formats"
+	"github.com/nexspence-oss/nexspence/internal/formats/base"
 )
 
 const metadataFile = "maven-metadata.xml"
@@ -76,11 +76,11 @@ func (h *Handler) MergeGroupIndex(_, p string, parts []formats.GroupIndexPart) (
 	// latest/release are recomputed over the union — taking any single
 	// member's value would hide newer versions held by other members.
 	for _, v := range merged.Versioning.Versions {
-		if compareVersions(v, merged.Versioning.Latest) > 0 {
+		if base.CompareLooseVersions(v, merged.Versioning.Latest) > 0 {
 			merged.Versioning.Latest = v
 		}
 		if !strings.Contains(strings.ToUpper(v), "SNAPSHOT") &&
-			compareVersions(v, merged.Versioning.Release) > 0 {
+			base.CompareLooseVersions(v, merged.Versioning.Release) > 0 {
 			merged.Versioning.Release = v
 		}
 	}
@@ -100,52 +100,4 @@ func (h *Handler) MergeGroupIndex(_, p string, parts []formats.GroupIndexPart) (
 		return []byte(fmt.Sprintf("%x", sha256.Sum256(doc))), "text/plain", nil
 	}
 	return doc, "application/xml", nil
-}
-
-// compareVersions orders maven-ish version strings: dot/dash-split segments,
-// numeric segments compare numerically, otherwise lexicographically. An empty
-// string sorts first. Good enough for latest/release selection; not a full
-// maven ComparableVersion implementation.
-func compareVersions(a, b string) int {
-	if a == b {
-		return 0
-	}
-	if a == "" {
-		return -1
-	}
-	if b == "" {
-		return 1
-	}
-	split := func(s string) []string {
-		return strings.FieldsFunc(s, func(r rune) bool { return r == '.' || r == '-' })
-	}
-	as, bs := split(a), split(b)
-	for i := 0; i < len(as) && i < len(bs); i++ {
-		an, aErr := strconv.Atoi(as[i])
-		bn, bErr := strconv.Atoi(bs[i])
-		switch {
-		case aErr == nil && bErr == nil:
-			if an != bn {
-				if an < bn {
-					return -1
-				}
-				return 1
-			}
-		case aErr == nil: // numeric beats qualifier ("1.0" > "1.0-SNAPSHOT" segment-wise)
-			return 1
-		case bErr == nil:
-			return -1
-		default:
-			if c := strings.Compare(as[i], bs[i]); c != 0 {
-				return c
-			}
-		}
-	}
-	switch {
-	case len(as) < len(bs):
-		return -1
-	case len(as) > len(bs):
-		return 1
-	}
-	return 0
 }
