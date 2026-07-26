@@ -97,7 +97,7 @@ func (h *Handler) serveGet(c *gin.Context) {
 			continue
 		}
 
-		rec := h.callMember(c, ctx, memberName, filePath, handler)
+		rec := h.callMember(ctx, c, memberName, filePath, handler)
 
 		code := rec.Code
 		if code == 0 {
@@ -142,7 +142,7 @@ func (h *Handler) eligibleMember(ctx context.Context, memberName string, groupDe
 }
 
 // callMember invokes a member's format handler on a cloned request/recorder.
-func (h *Handler) callMember(c *gin.Context, ctx context.Context, memberName, filePath string, handler formats.FormatHandler) *httptest.ResponseRecorder {
+func (h *Handler) callMember(ctx context.Context, c *gin.Context, memberName, filePath string, handler formats.FormatHandler) *httptest.ResponseRecorder {
 	rec := httptest.NewRecorder()
 	sub, _ := gin.CreateTestContext(rec)
 	sub.Request = c.Request.Clone(ctx)
@@ -180,7 +180,7 @@ func (h *Handler) serveMergedIndex(c *gin.Context, repoDef *domain.Repository, m
 			continue
 		}
 
-		rec := h.callMember(c, ctx, memberName, source, handler)
+		rec := h.callMember(ctx, c, memberName, source, handler)
 		code := rec.Code
 		if code == 0 {
 			code = http.StatusOK
