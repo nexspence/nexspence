@@ -2,6 +2,7 @@
 //
 // GET  /index.yaml              → Chart.yaml index (generated from DB)
 // GET  /:chart-:version.tgz    → download chart archive
+// PUT  /:chart-:version.tgz    → upload chart (Nexus/ChartMuseum-compatible, `curl -T`)
 // POST /api/charts              → upload chart (multipart or raw body)
 // DELETE /api/charts/:name/:ver → delete chart version
 package helm
@@ -64,7 +65,11 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 
 	// Upload: POST /api/charts
 	case c.Request.Method == http.MethodPost && p == "/api/charts":
-		h.handleUpload(c, repoName)
+		h.handleUpload(c, repoName, "")
+
+	// Upload: PUT /:chart-:version.tgz (Nexus/ChartMuseum-compatible, `curl -T`)
+	case c.Request.Method == http.MethodPut && strings.HasSuffix(p, ".tgz"):
+		h.handleUpload(c, repoName, path.Base(p))
 
 	// Delete: DELETE /api/charts/:name/:version
 	case c.Request.Method == http.MethodDelete && strings.HasPrefix(p, "/api/charts/"):
@@ -123,13 +128,16 @@ func (h *Handler) serveIndex(c *gin.Context, repoName string) {
 	c.Data(http.StatusOK, "application/yaml", data)
 }
 
-func (h *Handler) handleUpload(c *gin.Context, repoName string) {
+// handleUpload stores an uploaded chart. pathFilename, when non-empty (PUT to the
+// .tgz path), supplies the chart filename; otherwise it comes from the multipart
+// part or the X-Chart-Name header.
+func (h *Handler) handleUpload(c *gin.Context, repoName, pathFilename string) {
 	var chartName, version, filename string
 	var data []byte
 	var size int64
 
 	ct := c.GetHeader("Content-Type")
-	if strings.HasPrefix(ct, "multipart/form-data") {
+	if pathFilename == "" && strings.HasPrefix(ct, "multipart/form-data") {
 		if err := c.Request.ParseMultipartForm(32 << 20); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
@@ -151,8 +159,12 @@ func (h *Handler) handleUpload(c *gin.Context, repoName string) {
 		_, _ = buf.ReadFrom(c.Request.Body)
 		data = buf.Bytes()
 		size = int64(len(data))
-		filename = c.GetHeader("X-Chart-Name")
-		if filename == "" {
+		switch {
+		case pathFilename != "":
+			filename = pathFilename
+		case c.GetHeader("X-Chart-Name") != "":
+			filename = c.GetHeader("X-Chart-Name")
+		default:
 			filename = "chart.tgz"
 		}
 	}
