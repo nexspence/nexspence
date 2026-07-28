@@ -8,6 +8,15 @@ updates:
     directory: "/frontend"
     schedule:
       interval: weekly
+    groups:
+      # react and react-dom must always be on the exact same version —
+      # bumping one without the other breaks the whole test suite.
+      react:
+        patterns:
+          - "react"
+          - "react-dom"
+          - "@types/react"
+          - "@types/react-dom"
   - package-ecosystem: docker
     directory: "/"
     schedule:
