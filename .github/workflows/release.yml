@@ -106,9 +106,10 @@ jobs:
           STAGE="release-bundle"
           DIR="${STAGE}/nexspence-${VERSION}"
           rm -rf "$STAGE"
-          mkdir -p "$DIR/deploy/helm" "$DIR/scripts"
+          mkdir -p "$DIR/deploy/helm" "$DIR/scripts" "$DIR/docs"
 
           cp config.yaml.example README.md LICENSE "$DIR/"
+          cp docs/api-spec.yaml "$DIR/docs/"   # the docs site points users here
           cp -r deploy/helm/nexspence "$DIR/deploy/helm/nexspence"
           cp deploy/nginx-ha.conf "$DIR/deploy/"
           cp -r deploy/monitoring "$DIR/deploy/monitoring"
