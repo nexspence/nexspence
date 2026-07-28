@@ -88,6 +88,37 @@ func TestNPM_PublishAndDownload(t *testing.T) {
 	assert.Equal(t, "fake-tgz-content", w2.Body.String())
 }
 
+// TestNPM_PublishScoped_TarballPathDropsScope covers #113: npm names the
+// attachment "@scope/name-ver.tgz" but requests the tarball at
+// /@scope/name/-/name-ver.tgz, so the scope must not leak into the filename.
+func TestNPM_PublishScoped_TarballPathDropsScope(t *testing.T) {
+	repo := testutil.SimpleRepo("npm-scoped", "npm")
+	r := setup(repo)
+
+	body := publishBody("@babel/runtime", "7.29.7", "fake-tgz-content")
+	req := httptest.NewRequest(http.MethodPut, "/repository/npm-scoped/@babel/runtime",
+		strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusCreated, w.Code)
+
+	req2 := httptest.NewRequest(http.MethodGet,
+		"/repository/npm-scoped/@babel/runtime/-/runtime-7.29.7.tgz", nil)
+	w2 := httptest.NewRecorder()
+	r.ServeHTTP(w2, req2)
+	require.Equal(t, http.StatusOK, w2.Code)
+	assert.Equal(t, "fake-tgz-content", w2.Body.String())
+
+	// The packument must advertise exactly that URL.
+	req3 := httptest.NewRequest(http.MethodGet, "/repository/npm-scoped/@babel/runtime", nil)
+	w3 := httptest.NewRecorder()
+	r.ServeHTTP(w3, req3)
+	require.Equal(t, http.StatusOK, w3.Code)
+	assert.Contains(t, w3.Body.String(),
+		"http://localhost:8080/repository/npm-scoped/@babel/runtime/-/runtime-7.29.7.tgz")
+}
+
 func TestNPM_Metadata_NotFound(t *testing.T) {
 	repo := testutil.SimpleRepo("npm-empty", "npm")
 	r := setup(repo)

@@ -239,7 +239,9 @@ func (h *Handler) handlePublish(c *gin.Context, repoName, pkgPath string) {
 		if ct == "" {
 			ct = "application/octet-stream"
 		}
-		filePath := "/" + pkgName + "/-/" + filename
+		// npm names the attachment "@scope/name-ver.tgz" but requests the
+		// tarball at /@scope/name/-/name-ver.tgz (#113) — drop the scope.
+		filePath := "/" + pkgName + "/-/" + path.Base(filename)
 		coords := base.Coords{Name: pkgName, Version: version}
 		if _, err := base.StoreArtifact(c.Request.Context(), h.deps,
 			repoName, filePath, ct, coords,
