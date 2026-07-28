@@ -79,6 +79,14 @@ func TestNPM_Delete_Hosted(t *testing.T) {
 	r.ServeHTTP(w, req2)
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Contains(t, w.Body.String(), `"ok"`)
+
+	// …and the tarball is really gone. Asserting only on the 200 above let an
+	// idempotent no-op pass for a delete (#101).
+	req3 := httptest.NewRequest(http.MethodGet,
+		"/repository/npm-del/todelete/-/todelete-1.0.0.tgz", nil)
+	w3 := httptest.NewRecorder()
+	r.ServeHTTP(w3, req3)
+	assert.Equal(t, http.StatusNotFound, w3.Code)
 }
 
 func TestNPM_Delete_ProxyRejected(t *testing.T) {

@@ -18,11 +18,9 @@ package docker
 import (
 	"bytes"
 	"fmt"
-	"io"
 	"net/http"
 	"path"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -34,22 +32,16 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/requestctx"
 )
 
-// uploadSession stores an in-progress blob upload.
-type uploadSession struct {
-	repoName string
-	buf      bytes.Buffer
-	mu       sync.Mutex
-	created  time.Time
-}
-
 // Handler implements the Docker registry v2 / OCI Distribution API.
 type Handler struct {
 	deps    formats.Deps
-	uploads sync.Map // uuid → *uploadSession
+	uploads uploadStore
 }
 
 // New creates a Docker format Handler with the given dependencies.
-func New(deps formats.Deps) *Handler { return &Handler{deps: deps} }
+func New(deps formats.Deps) *Handler {
+	return &Handler{deps: deps, uploads: uploadStore{deps: deps}}
+}
 
 // Name returns the format identifier.
 func (h *Handler) Name() string { return "docker" }
@@ -267,6 +259,11 @@ func (h *Handler) handleBlobs(c *gin.Context, repoName, imageName, digest string
 		}
 		h.pullBlob(c, repoName, imageName, digest)
 	case http.MethodDelete:
+		// A proxy repository is read-only: deleting here would evict the cached
+		// copy, which manifest DELETE and the upload flow already reject (#104).
+		if repoproxy.RejectMutation(c, repo) {
+			return
+		}
 		fp := blobPath(imageName, digest)
 		if err := base.DeleteArtifact(c.Request.Context(), h.deps, repoName, fp); err != nil {
 			dockerError(c, http.StatusInternalServerError, "UNKNOWN", err.Error())
@@ -333,15 +330,11 @@ func (h *Handler) handleBlobUploads(c *gin.Context, repoName, imageName, uuid st
 			c.Status(http.StatusNotFound)
 			return
 		}
-		raw, ok := h.uploads.Load(uuid)
+		offset, ok := h.uploads.size(c.Request.Context(), uuid)
 		if !ok {
 			dockerError(c, http.StatusNotFound, "BLOB_UPLOAD_UNKNOWN", "upload unknown")
 			return
 		}
-		sess := raw.(*uploadSession)
-		sess.mu.Lock()
-		offset := int64(sess.buf.Len())
-		sess.mu.Unlock()
 		c.Header("Range", fmt.Sprintf("0-%d", offset-1))
 		c.Header("Docker-Upload-UUID", uuid)
 		c.Status(http.StatusNoContent)
@@ -351,17 +344,17 @@ func (h *Handler) handleBlobUploads(c *gin.Context, repoName, imageName, uuid st
 	}
 }
 
-func (h *Handler) initiateUpload(c *gin.Context, repoName, _ string) {
+func (h *Handler) initiateUpload(c *gin.Context, _, _ string) {
 	if !requireDockerAuth(c) {
 		return
 	}
 	// Cross-repo mount shortcut: ?mount=<digest>&from=<repo>
 	// We ignore mount for now and always start a fresh upload
-	uuid := newUUID()
-	h.uploads.Store(uuid, &uploadSession{
-		repoName: repoName,
-		created:  time.Now(),
-	})
+	uuid, err := h.uploads.create(c.Request.Context())
+	if err != nil {
+		dockerError(c, http.StatusInternalServerError, "UNKNOWN", err.Error())
+		return
+	}
 	// The Location must stay under the same /v2/ prefix (and short/long path
 	// form) the client authenticated against. Deriving it from the request's
 	// own URL keeps the blob PATCH/PUT on the authenticated /v2/ surface; a
@@ -375,20 +368,15 @@ func (h *Handler) initiateUpload(c *gin.Context, repoName, _ string) {
 }
 
 func (h *Handler) patchUpload(c *gin.Context, _, _, uuid string) {
-	raw, ok := h.uploads.Load(uuid)
+	offset, ok, err := h.uploads.append(c.Request.Context(), uuid, c.Request.Body)
 	if !ok {
 		dockerError(c, http.StatusNotFound, "BLOB_UPLOAD_UNKNOWN", "upload unknown")
 		return
 	}
-	sess := raw.(*uploadSession)
-	sess.mu.Lock()
-	defer sess.mu.Unlock()
-
-	if _, err := io.Copy(&sess.buf, c.Request.Body); err != nil {
+	if err != nil {
 		dockerError(c, http.StatusInternalServerError, "UNKNOWN", err.Error())
 		return
 	}
-	offset := int64(sess.buf.Len())
 	// The request URL already is the upload location — echo it verbatim so the
 	// finalizing PUT stays on the same authenticated /v2/ path (see #47).
 	c.Header("Location", c.Request.URL.Path)
@@ -404,23 +392,30 @@ func (h *Handler) finalizeUpload(c *gin.Context, repoName, imageName, uuid strin
 		return
 	}
 
-	raw, ok := h.uploads.Load(uuid)
+	ctx := c.Request.Context()
+
+	// Any remaining body data (e.g. monolithic PUT with body)
+	if c.Request.ContentLength > 0 {
+		if _, ok, err := h.uploads.append(ctx, uuid, c.Request.Body); !ok {
+			dockerError(c, http.StatusNotFound, "BLOB_UPLOAD_UNKNOWN", "upload unknown")
+			return
+		} else if err != nil {
+			dockerError(c, http.StatusInternalServerError, "UNKNOWN", err.Error())
+			return
+		}
+	}
+
+	data, ok, err := h.uploads.read(ctx, uuid)
 	if !ok {
 		dockerError(c, http.StatusNotFound, "BLOB_UPLOAD_UNKNOWN", "upload unknown")
 		return
 	}
-	sess := raw.(*uploadSession)
-
-	sess.mu.Lock()
-	defer sess.mu.Unlock()
-
-	// Any remaining body data (e.g. monolithic PUT with body)
-	if c.Request.ContentLength > 0 {
-		_, _ = io.Copy(&sess.buf, c.Request.Body)
+	if err != nil {
+		dockerError(c, http.StatusInternalServerError, "UNKNOWN", err.Error())
+		return
 	}
 
 	fp := blobPath(imageName, digest)
-	data := sess.buf.Bytes()
 	coords := base.Coords{Name: imageName, Version: digest}
 	if _, err := base.StoreArtifact(c.Request.Context(), h.deps,
 		repoName, fp, "application/octet-stream", coords,
@@ -429,7 +424,7 @@ func (h *Handler) finalizeUpload(c *gin.Context, repoName, imageName, uuid strin
 		return
 	}
 	// Delete session only after successful store — allows retry on failure.
-	h.uploads.Delete(uuid)
+	h.uploads.remove(ctx, uuid)
 
 	c.Header("Docker-Content-Digest", digest)
 	// Point at the stored blob under the same /v2/ prefix the client used.
@@ -490,17 +485,6 @@ func segmentIndex(parts []string, seg string) int {
 		}
 	}
 	return -1
-}
-
-var uuidCounter uint64
-var uuidMu sync.Mutex
-
-func newUUID() string {
-	uuidMu.Lock()
-	uuidCounter++
-	n := uuidCounter
-	uuidMu.Unlock()
-	return fmt.Sprintf("%016x-%d", time.Now().UnixNano(), n)
 }
 
 func normPath(p string) string {

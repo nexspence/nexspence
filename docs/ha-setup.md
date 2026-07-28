@@ -77,6 +77,16 @@ readinessProbe:
 | Cleanup lock | `nexspence:lock:cleanup:run` | 30 min |
 | Blob migration lock | `nexspence:lock:blobmig:<repo>` | 2 hours |
 
+## Docker Blob Uploads
+
+A `docker push` is a chain of requests (POST → PATCH → PUT) that a load balancer
+may spread over different nodes. The in-progress upload is staged in the blob
+store under `_uploads/docker/<id>`, not in a node's memory, so the chain works
+without sticky sessions and survives a restart mid-push. Abandoned uploads are
+unreferenced blobs and are reclaimed by the blob GC once older than its minimum
+age. This does require every node to share one blob store — the same assumption
+the rest of HA already makes.
+
 ## Production Redis
 
 For production, use Redis Sentinel (for automatic failover) or Redis Cluster

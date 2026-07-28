@@ -73,18 +73,31 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 		return
 	}
 
+	h.serveHosted(c, repo, repoName, p)
+}
+
+// serveHosted routes the hosted (non-proxy) surface of the apt protocol.
+func (h *Handler) serveHosted(c *gin.Context, repo *domain.Repository, repoName, p string) {
 	switch {
 	// Packages index (plain or gzip)
 	case c.Request.Method == http.MethodGet && strings.HasPrefix(p, "/dists/") && strings.Contains(p, "/Packages"):
 		h.servePackagesIndex(c, repoName, p)
 
+	// Public half of the signing key, so clients can trust this repository.
+	case c.Request.Method == http.MethodGet && p == "/public.gpg":
+		h.servePublicKey(c, repo)
+
+	// Detached signature of Release (#103)
+	case c.Request.Method == http.MethodGet && strings.HasSuffix(p, "/Release.gpg"):
+		h.serveReleaseSignature(c, repo, repoName, strings.TrimSuffix(p, ".gpg"))
+
 	// Release file
 	case c.Request.Method == http.MethodGet && strings.HasSuffix(p, "/Release"):
 		h.serveRelease(c, repoName, p)
 
-	// InRelease (signed — serve same as Release for compatibility)
+	// InRelease — the same document, signed inline when a key is configured.
 	case c.Request.Method == http.MethodGet && strings.HasSuffix(p, "/InRelease"):
-		h.serveRelease(c, repoName, p)
+		h.serveInRelease(c, repo, repoName, p)
 
 	// Download .deb
 	case (c.Request.Method == http.MethodGet || c.Request.Method == http.MethodHead) && strings.HasPrefix(p, "/pool/"):
@@ -220,11 +233,78 @@ func (h *Handler) repoArchitectures(ctx context.Context, repoName string) []stri
 }
 
 func (h *Handler) serveRelease(c *gin.Context, repoName, p string) {
-	ctx := c.Request.Context()
+	body, err := h.buildRelease(c.Request.Context(), repoName, p)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.Data(http.StatusOK, "text/plain; charset=utf-8", body)
+}
+
+// serveInRelease serves the clearsigned Release. Unsigned repositories keep
+// serving the plain document, which is what [trusted=yes] sources expect.
+func (h *Handler) serveInRelease(c *gin.Context, repo *domain.Repository, repoName, p string) {
+	body, err := h.buildRelease(c.Request.Context(), repoName, p)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if !signingConfigured(repo) {
+		c.Data(http.StatusOK, "text/plain; charset=utf-8", body)
+		return
+	}
+	signed, err := clearSign(repo, body)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.Data(http.StatusOK, "text/plain; charset=utf-8", signed)
+}
+
+// serveReleaseSignature serves Release.gpg — the detached signature apt checks
+// against the Release document it fetched separately.
+func (h *Handler) serveReleaseSignature(c *gin.Context, repo *domain.Repository, repoName, releasePath string) {
+	if !signingConfigured(repo) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "repository is not signed"})
+		return
+	}
+	body, err := h.buildRelease(c.Request.Context(), repoName, releasePath)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	sig, err := detachSign(repo, body)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.Data(http.StatusOK, "application/pgp-signature", sig)
+}
+
+func (h *Handler) servePublicKey(c *gin.Context, repo *domain.Repository) {
+	if !signingConfigured(repo) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "repository is not signed"})
+		return
+	}
+	key, err := armoredPublicKey(repo)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.Data(http.StatusOK, "application/pgp-keys", key)
+}
+
+// buildRelease renders the Release document for the distribution named in p.
+//
+// The result must be byte-identical across requests: apt fetches Release and
+// its signature separately and verifies one against the other, so a wall-clock
+// Date would break verification. The date therefore tracks the content — the
+// newest package in the repository (#103).
+func (h *Handler) buildRelease(ctx context.Context, repoName, p string) ([]byte, error) {
 	// Parse distribution from path: /dists/:dist/Release
 	parts := strings.Split(strings.TrimPrefix(p, "/dists/"), "/")
 	dist := "stable"
-	if len(parts) > 0 {
+	if len(parts) > 0 && parts[0] != "" {
 		dist = parts[0]
 	}
 
@@ -253,7 +333,7 @@ func (h *Handler) serveRelease(c *gin.Context, repoName, p string) {
 		)
 	}
 
-	now := time.Now().UTC().Format("Mon, 02 Jan 2006 15:04:05 UTC")
+	date := h.releaseDate(ctx, repoName).UTC().Format("Mon, 02 Jan 2006 15:04:05 UTC")
 	var sb strings.Builder
 	fmt.Fprintf(&sb, `Origin: Nexspence
 Label: Nexspence
@@ -263,7 +343,7 @@ Date: %s
 Architectures: %s
 Components: main
 Description: Nexspence APT Repository
-`, dist, dist, now, archList)
+`, dist, dist, date, archList)
 	sb.WriteString("MD5Sum:\n")
 	for _, f := range files {
 		fmt.Fprintf(&sb, " %x %d %s\n", md5.Sum(f.body), len(f.body), f.relPath) //nolint:gosec // apt protocol checksum
@@ -272,7 +352,30 @@ Description: Nexspence APT Repository
 	for _, f := range files {
 		fmt.Fprintf(&sb, " %x %d %s\n", sha256.Sum256(f.body), len(f.body), f.relPath)
 	}
-	c.Data(http.StatusOK, "text/plain; charset=utf-8", []byte(sb.String()))
+	return []byte(sb.String()), nil
+}
+
+// releaseDate is the timestamp stamped into Release. It follows the newest
+// stored package so the document only changes when its content does; an empty
+// repository has nothing to pin it to and falls back to the current time.
+func (h *Handler) releaseDate(ctx context.Context, repoName string) time.Time {
+	assetPage, err := h.deps.Assets.List(ctx, repoName, 1000, 0)
+	if err != nil {
+		return time.Now()
+	}
+	var newest time.Time
+	for _, a := range assetPage.Items {
+		if !strings.HasSuffix(a.Path, ".deb") {
+			continue
+		}
+		if a.LastModified.After(newest) {
+			newest = a.LastModified
+		}
+	}
+	if newest.IsZero() {
+		return time.Now()
+	}
+	return newest
 }
 
 // debCoords parses the Debian "name_version_arch.deb" filename convention.

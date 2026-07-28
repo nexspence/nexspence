@@ -1,6 +1,7 @@
 package docker_test
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -395,6 +396,137 @@ func TestDocker_ProxyBlob_Get_FallsThrough(t *testing.T) {
 	r.ServeHTTP(w, req)
 	// Proxy branch taken; upstream unreachable → non-200
 	assert.NotEqual(t, http.StatusOK, w.Code)
+}
+
+// ── Proxy DELETE (blob) ───────────────────────────────────────
+
+// Deleting a blob from a proxy repository must be rejected like every other
+// mutation (#104) — otherwise the request evicts the locally cached copy.
+func TestDocker_ProxyBlob_Delete_Rejected(t *testing.T) {
+	repo := testutil.SimpleRepo("dreg-proxy-del", "docker")
+	repo.Type = "proxy"
+	repo.ProxyConfig = map[string]any{"remote_url": "http://127.0.0.1:1"}
+	r := setup(repo)
+
+	req := httptest.NewRequest(http.MethodDelete,
+		"/repository/dreg-proxy-del/v2/library/alpine/blobs/sha256:deadbeef", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusMethodNotAllowed, w.Code)
+}
+
+// ── Blob upload across instances (HA) ─────────────────────────
+
+// engineFor wires one gin engine per Handler so a test can drive several
+// handler instances that share the same Deps — the multi-node deployment where
+// consecutive requests of one push land on different nodes.
+func engineFor(h *docker.Handler) *gin.Engine {
+	r := gin.New()
+	r.Use(func(c *gin.Context) {
+		ctx := requestctx.WithUser(c.Request.Context(), "test-user-id", "testuser")
+		c.Request = c.Request.WithContext(ctx)
+		c.Next()
+	})
+	r.Any("/repository/:repoName/*path", func(c *gin.Context) { h.ServeHTTP(c) })
+	return r
+}
+
+// A blob push must survive landing on different instances: upload state lives in
+// shared storage, not in one process's memory (#104).
+func TestDocker_BlobUpload_SpansInstances(t *testing.T) {
+	repo := testutil.SimpleRepo("dreg-ha", "docker")
+	d := formats.Deps{
+		Repos:      testutil.NewRepoRepo(repo),
+		Blobs:      testutil.NewBlobStoreRepo(),
+		Components: testutil.NewComponentRepo(),
+		Assets:     testutil.NewAssetRepo(),
+		BlobStore:  testutil.NewBlobStore(),
+		BaseURL:    "http://localhost:8080",
+	}
+	node1, node2 := engineFor(docker.New(d)), engineFor(docker.New(d))
+
+	const first, second = "layer-part-one|", "layer-part-two"
+	dgst := digest(first + second)
+
+	// Initiate on node 1.
+	req := httptest.NewRequest(http.MethodPost, "/repository/dreg-ha/v2/app/blobs/uploads/", nil)
+	w := httptest.NewRecorder()
+	node1.ServeHTTP(w, req)
+	require.Equal(t, http.StatusAccepted, w.Code)
+	loc := w.Header().Get("Location")
+	require.NotEmpty(t, loc)
+
+	// First chunk on node 2.
+	req2 := httptest.NewRequest(http.MethodPatch, loc, strings.NewReader(first))
+	req2.ContentLength = int64(len(first))
+	w2 := httptest.NewRecorder()
+	node2.ServeHTTP(w2, req2)
+	require.Equal(t, http.StatusAccepted, w2.Code)
+	assert.Equal(t, fmt.Sprintf("0-%d", len(first)-1), w2.Header().Get("Range"))
+
+	// Second chunk back on node 1 — appends to what node 2 wrote.
+	req3 := httptest.NewRequest(http.MethodPatch, loc, strings.NewReader(second))
+	req3.ContentLength = int64(len(second))
+	w3 := httptest.NewRecorder()
+	node1.ServeHTTP(w3, req3)
+	require.Equal(t, http.StatusAccepted, w3.Code)
+	assert.Equal(t, fmt.Sprintf("0-%d", len(first+second)-1), w3.Header().Get("Range"))
+
+	// Progress query on node 2 sees the full offset.
+	req4 := httptest.NewRequest(http.MethodGet, loc, nil)
+	w4 := httptest.NewRecorder()
+	node2.ServeHTTP(w4, req4)
+	require.Equal(t, http.StatusNoContent, w4.Code)
+	assert.Equal(t, fmt.Sprintf("0-%d", len(first+second)-1), w4.Header().Get("Range"))
+
+	// Finalize on node 2.
+	req5 := httptest.NewRequest(http.MethodPut, loc+"?digest="+dgst, nil)
+	w5 := httptest.NewRecorder()
+	node2.ServeHTTP(w5, req5)
+	require.Equal(t, http.StatusCreated, w5.Code)
+
+	// The stored blob is the concatenation of both chunks.
+	req6 := httptest.NewRequest(http.MethodGet, "/repository/dreg-ha/v2/app/blobs/"+dgst, nil)
+	w6 := httptest.NewRecorder()
+	node1.ServeHTTP(w6, req6)
+	require.Equal(t, http.StatusOK, w6.Code)
+	assert.Equal(t, first+second, w6.Body.String())
+
+	// The session is gone after finalize — a stale retry must not resurrect it.
+	req7 := httptest.NewRequest(http.MethodGet, loc, nil)
+	w7 := httptest.NewRecorder()
+	node1.ServeHTTP(w7, req7)
+	assert.Equal(t, http.StatusNotFound, w7.Code)
+}
+
+// Upload ids must be unpredictable rather than a per-process counter, so two
+// instances never hand out the same id (#104).
+func TestDocker_BlobUpload_IDsAreUnguessable(t *testing.T) {
+	repo := testutil.SimpleRepo("dreg-uuid", "docker")
+	d := formats.Deps{
+		Repos:      testutil.NewRepoRepo(repo),
+		Blobs:      testutil.NewBlobStoreRepo(),
+		Components: testutil.NewComponentRepo(),
+		Assets:     testutil.NewAssetRepo(),
+		BlobStore:  testutil.NewBlobStore(),
+		BaseURL:    "http://localhost:8080",
+	}
+	node1, node2 := engineFor(docker.New(d)), engineFor(docker.New(d))
+
+	ids := map[string]bool{}
+	for _, node := range []*gin.Engine{node1, node2, node1, node2} {
+		req := httptest.NewRequest(http.MethodPost, "/repository/dreg-uuid/v2/app/blobs/uploads/", nil)
+		w := httptest.NewRecorder()
+		node.ServeHTTP(w, req)
+		require.Equal(t, http.StatusAccepted, w.Code)
+		id := w.Header().Get("Docker-Upload-UUID")
+		require.NotEmpty(t, id)
+		require.False(t, ids[id], "upload id %q handed out twice", id)
+		// A counter suffix ("...-1", "...-2") is guessable from another node.
+		require.NotRegexp(t, `-\d+$`, id)
+		require.GreaterOrEqual(t, len(id), 32, "id should carry enough entropy")
+		ids[id] = true
+	}
 }
 
 // ── Monolithic PUT (body included in finalize) ────────────────

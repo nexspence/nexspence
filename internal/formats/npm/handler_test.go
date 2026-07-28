@@ -57,6 +57,24 @@ func publishBody(pkgName, version, tgzContent string) string {
 	return string(b)
 }
 
+// setupWithComponents is setup plus a handle on the component store, for tests
+// that assert on rows rather than on responses.
+func setupWithComponents(repo *domain.Repository) (*gin.Engine, *testutil.ComponentRepo) {
+	comps := testutil.NewComponentRepo()
+	d := formats.Deps{
+		Repos:      testutil.NewRepoRepo(repo),
+		Blobs:      testutil.NewBlobStoreRepo(),
+		Components: comps,
+		Assets:     testutil.NewAssetRepo(),
+		BlobStore:  testutil.NewBlobStore(),
+		BaseURL:    "http://localhost:8080",
+	}
+	h := npm.New(d)
+	r := gin.New()
+	r.Any("/repository/:repoName/*path", func(c *gin.Context) { h.ServeHTTP(c) })
+	return r, comps
+}
+
 func TestNPM_Ping(t *testing.T) {
 	repo := testutil.SimpleRepo("npm-repo", "npm")
 	r := setup(repo)

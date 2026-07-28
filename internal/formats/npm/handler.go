@@ -43,6 +43,13 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 		return
 	}
 
+	// dist-tag API. Matched before anything else: these paths also contain
+	// "/-/", which would otherwise route them to the tarball handler (#101).
+	if pkgName, tag, ok := parseDistTags(p); ok {
+		h.handleDistTags(c, repoName, pkgName, tag)
+		return
+	}
+
 	switch c.Request.Method {
 	case http.MethodGet, http.MethodHead:
 		// Tarball: contains "/-/" in path
@@ -61,6 +68,12 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 		if repoproxy.RejectMutation(c, repo) {
 			return
 		}
+		// PUT /:pkg/-rev/:rev rewrites the packument — that is how the npm
+		// client unpublishes a single version (#101).
+		if target, ok := splitRev(p); ok {
+			h.handleRevPut(c, repoName, target)
+			return
+		}
 		h.handlePublish(c, repoName, p)
 
 	case http.MethodDelete:
@@ -72,11 +85,7 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 		if repoproxy.RejectMutation(c, repo) {
 			return
 		}
-		if err := base.DeleteArtifact(c.Request.Context(), h.deps, repoName, p); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-		c.JSON(http.StatusOK, gin.H{"ok": true})
+		h.handleUnpublish(c, repoName, p)
 
 	default:
 		c.Status(http.StatusMethodNotAllowed)
@@ -150,21 +159,18 @@ func (h *Handler) serveMetadata(c *gin.Context, repoName, pkgPath string) {
 		return
 	}
 
-	page, err := h.deps.Components.Search(ctx, domain.SearchParams{
-		Repository: repoName, Name: pkgName, Limit: 200,
-	})
+	comps, err := h.packageComponents(ctx, repoName, pkgName)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	if len(page.Items) == 0 {
+	if len(comps) == 0 {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Not found"})
 		return
 	}
 
 	versions := map[string]any{}
-	latest := ""
-	for _, comp := range page.Items {
+	for _, comp := range comps {
 		baseName := path.Base(pkgName)
 		tarball := h.deps.BaseURL + "/repository/" + repoName +
 			"/" + pkgName + "/-/" + baseName + "-" + comp.Version + ".tgz"
@@ -173,24 +179,27 @@ func (h *Handler) serveMetadata(c *gin.Context, repoName, pkgPath string) {
 			"version": comp.Version,
 			"dist":    map[string]any{"tarball": tarball},
 		}
-		latest = comp.Version
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"name":      pkgName,
 		"versions":  versions,
-		"dist-tags": gin.H{"latest": latest},
+		"dist-tags": distTagsOf(comps),
 	})
 }
 
 func (h *Handler) handlePublish(c *gin.Context, repoName, pkgPath string) {
-	pkgName := strings.TrimPrefix(pkgPath, "/")
-
 	var doc map[string]json.RawMessage
 	if err := c.ShouldBindJSON(&doc); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	h.publishDoc(c, repoName, strings.TrimPrefix(pkgPath, "/"), doc)
+}
 
+// publishDoc stores the tarballs carried by an already-parsed packument and
+// applies its dist-tags. Shared with the `-rev` PUT, which carries the same
+// document shape.
+func (h *Handler) publishDoc(c *gin.Context, repoName, pkgName string, doc map[string]json.RawMessage) {
 	// Parse dist-tags for version
 	version := ""
 	if raw, ok := doc["dist-tags"]; ok {
@@ -248,6 +257,22 @@ func (h *Handler) handlePublish(c *gin.Context, repoName, pkgPath string) {
 			strings.NewReader(string(data)), int64(len(data))); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
+		}
+	}
+	// Honor the tags the client published under (`npm publish --tag beta`);
+	// a plain publish carries "latest" (#101).
+	if raw, ok := doc["dist-tags"]; ok {
+		var tags map[string]string
+		if json.Unmarshal(raw, &tags) == nil {
+			for tag, ver := range tags {
+				if tag == "" || ver == "" {
+					continue
+				}
+				if err := h.setDistTag(c.Request.Context(), repoName, pkgName, tag, ver); err != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+					return
+				}
+			}
 		}
 	}
 	c.JSON(http.StatusCreated, gin.H{"ok": true})
