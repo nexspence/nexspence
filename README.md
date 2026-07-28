@@ -321,6 +321,31 @@ The Helm chart reference ships with the chart itself: [`deploy/helm/nexspence/RE
 
 ---
 
+## Sponsors
+
+Nexspence is free and AGPLv3 — no paid tier, no license fees, nothing behind a paywall.
+Sponsorship pays for the demo instance, the docs site, CI minutes and development time.
+
+<div align="center">
+  <a href="https://github.com/sponsors/nexspence">
+    <img src="https://img.shields.io/badge/Sponsor%20on%20GitHub-ea4aaa?style=for-the-badge&logo=githubsponsors&logoColor=white" alt="Sponsor Nexspence on GitHub">
+  </a>
+</div>
+
+| Tier | Price | Rewards |
+|------|-------|---------|
+| ☕ Supporter | $5/mo | Sponsor badge · your name in [SPONSORS.md](SPONSORS.md) · newsletter |
+| 🚀 Backer | $25/mo | + your name and link in this README · a say in roadmap polls |
+| 🏢 Sponsor | $100/mo | + your logo here and on [nexspence.com](https://nexspence.com) · priority issue triage |
+
+<!-- SPONSORS:START — company logos and backer names go here -->
+_No sponsors yet — [be the first](https://github.com/sponsors/nexspence), your logo goes here._
+<!-- SPONSORS:END -->
+
+Full list and details: **[SPONSORS.md](SPONSORS.md)**
+
+---
+
 ## Contributing
 
 Contributions are welcome. Please open an issue to discuss proposed changes before submitting a pull request.
