@@ -360,6 +360,10 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
     <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
     <span>Compare</span>
   </button>
+  <button class="npill" data-target="sponsors" aria-label="Go to Sponsors">
+    <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 1 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+    <span>Sponsor</span>
+  </button>
   <a href="/docs/" class="npill" aria-label="Go to Docs" style="color:#a78bfa">
     <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
     <span>Docs</span>
@@ -1086,6 +1090,75 @@ resource <span style="color:#7dd3fc">"nexspence_repository"</span> <span style="
   </div>
 </section>
 
+<div class="gline"></div>
+
+<!-- ══════════════════════════════ -->
+<!-- ⑦  SPONSORS                  -->
+<!-- ══════════════════════════════ -->
+<section id="sponsors" class="sect" aria-label="Sponsors">
+  <div class="sect-wrap">
+    <div class="rev" style="text-align:center;margin-bottom:36px">
+      <div class="stag" style="justify-content:center">Support</div>
+      <h2 class="stitle">Free forever — funded by sponsors</h2>
+      <p class="ssub" style="margin:0 auto">No paid tier, no license fees, nothing behind a paywall. Sponsorship pays for the public demo instance, the docs site, CI minutes for every release, and development time.</p>
+    </div>
+    <div class="g3">
+      <div class="card rev" style="padding:24px">
+        <div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:9px">
+          <div style="font-size:.95rem;font-weight:800"><span style="margin-right:7px">☕</span>Supporter</div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:.86rem;font-weight:700;color:var(--blue)">$5<span style="color:var(--dim);font-weight:500">/mo</span></div>
+        </div>
+        <div style="font-size:.8rem;color:var(--dim);line-height:1.6;margin-bottom:14px">Small, steady support that keeps the lights on.</div>
+        <ul class="cl">
+          <li>Sponsor badge on your GitHub profile</li>
+          <li>Your name listed in <code style="font-family:'JetBrains Mono',monospace;font-size:.72rem;background:var(--glasm);padding:1px 5px;border-radius:4px">SPONSORS.md</code></li>
+          <li>Release and roadmap newsletter</li>
+        </ul>
+      </div>
+      <div class="card rev" style="padding:24px;border-color:var(--borhi)">
+        <div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:9px">
+          <div style="font-size:.95rem;font-weight:800"><span style="margin-right:7px">🚀</span>Backer</div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:.86rem;font-weight:700;color:var(--blue)">$25<span style="color:var(--dim);font-weight:500">/mo</span></div>
+        </div>
+        <div style="font-size:.8rem;color:var(--dim);line-height:1.6;margin-bottom:14px">For developers and small teams running Nexspence in production.</div>
+        <ul class="cl">
+          <li>Everything in Supporter</li>
+          <li>Your name and link in the project README</li>
+          <li>A say in roadmap polls — help pick what gets built next</li>
+          <li>A thank-you in the next release notes</li>
+        </ul>
+      </div>
+      <div class="card rev" style="padding:24px">
+        <div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:9px">
+          <div style="font-size:.95rem;font-weight:800"><span style="margin-right:7px">🏢</span>Sponsor</div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:.86rem;font-weight:700;color:var(--blue)">$100<span style="color:var(--dim);font-weight:500">/mo</span></div>
+        </div>
+        <div style="font-size:.8rem;color:var(--dim);line-height:1.6;margin-bottom:14px">For companies whose build pipelines depend on Nexspence.</div>
+        <ul class="cl">
+          <li>Everything in Backer</li>
+          <li>Your logo and link in the README and on this page</li>
+          <li>Priority triage on your issues and bug reports</li>
+          <li>Direct line to the maintainer for deployment questions</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Company sponsor logos. Add one <a> per sponsor and drop the display:none. -->
+    <div class="rev" style="display:none;flex-wrap:wrap;gap:24px;justify-content:center;align-items:center;margin-top:28px">
+      <!-- <a href="https://example.com" target="_blank" rel="noopener"><img src="https://example.com/logo.svg" alt="Example Inc." height="40" style="opacity:.85"></a> -->
+    </div>
+
+    <div class="cta-box rev" style="margin-top:26px">
+      <div style="flex:1"><div class="ct">Want your logo here?</div><div class="cs">The current goal is $50 a month — enough to cover the infrastructure. Nexspence stays AGPLv3 and free for everyone; sponsorship funds the work, it doesn't paywall it.</div></div>
+      <a href="https://github.com/sponsors/nexspence" target="_blank" rel="noopener" class="btn btn-primary">
+        <svg fill="currentColor" viewBox="0 0 24 24" aria-hidden="true" width="16" height="16"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 1 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+        Become a sponsor
+      </a>
+      <a href="https://github.com/nexspence/nexspence/blob/main/SPONSORS.md" target="_blank" rel="noopener" class="btn btn-ghost">All sponsors →</a>
+    </div>
+  </div>
+</section>
+
 <!-- ════ FOOTER ════ -->
 <footer class="footer">
   <div class="footer-logo">
@@ -1100,6 +1173,7 @@ resource <span style="color:#7dd3fc">"nexspence_repository"</span> <span style="
     <a href="#security">Security</a>
     <a href="#deploy">Install</a>
     <a href="#compare">Compare</a>
+    <a href="#sponsors">Sponsor</a>
     <a href="/docs/">Docs</a>
     <a href="https://github.com/nexspence/nexspence" target="_blank" rel="noopener">GitHub</a>
     <a href="https://github.com/nexspence/nexspence/releases" target="_blank" rel="noopener">Releases</a>
@@ -1190,7 +1264,7 @@ function copyBlock(btn) {
 
 // ── Floating nav highlight on scroll ─────────────────────────
 (function(){
-  const sections = ['overview','formats','architecture','security','deploy','compare'];
+  const sections = ['overview','formats','architecture','security','deploy','compare','sponsors'];
   const pills = {};
   sections.forEach(id=>{ pills[id] = document.querySelector(`.npill[data-target="${id}"]`); });
   const io = new IntersectionObserver((entries)=>{
