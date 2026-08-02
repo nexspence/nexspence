@@ -37,6 +37,10 @@ func parseDistTags(p string) (pkg, tag string, ok bool) {
 	return pkg, tag, true
 }
 
+// sentinelVersion is the pseudo-version a proxy stores its cached packument
+// under. It is not a package version and must never be served as one (#131).
+const sentinelVersion = "metadata"
+
 // packageComponents returns the components of exactly this package. The search
 // filter matches names loosely (ILIKE %name%), so "lib" would otherwise pull in
 // "mylib" — the exact match has to happen here.
@@ -49,7 +53,7 @@ func (h *Handler) packageComponents(ctx context.Context, repoName, pkgName strin
 	}
 	out := make([]domain.Component, 0, len(page.Items))
 	for _, comp := range page.Items {
-		if comp.Name == pkgName {
+		if comp.Name == pkgName && comp.Version != sentinelVersion {
 			out = append(out, comp)
 		}
 	}

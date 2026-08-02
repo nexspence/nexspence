@@ -9,6 +9,7 @@
 package npm
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -174,17 +175,46 @@ func (h *Handler) serveMetadata(c *gin.Context, repoName, pkgPath string) {
 		baseName := path.Base(pkgName)
 		tarball := h.deps.BaseURL + "/repository/" + repoName +
 			"/" + pkgName + "/-/" + baseName + "-" + comp.Version + ".tgz"
-		versions[comp.Version] = map[string]any{
-			"name":    pkgName,
-			"version": comp.Version,
-			"dist":    map[string]any{"tarball": tarball},
+		manifest := manifestOf(comp)
+		if manifest == nil {
+			manifest = h.backfillManifest(ctx, repoName, comp)
 		}
+		versions[comp.Version] = versionDocument(manifest, pkgName, comp.Version, tarball)
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"name":      pkgName,
 		"versions":  versions,
 		"dist-tags": distTagsOf(comps),
 	})
+}
+
+// backfillManifest recovers the package.json of a version stored before the
+// manifest was persisted (#131) by reading it out of the tarball, and caches it
+// on the component so the archive is opened once. Best effort: a version whose
+// manifest cannot be recovered keeps the bare document it had before.
+func (h *Handler) backfillManifest(ctx context.Context, repoName string, comp domain.Component) map[string]any {
+	assets, err := h.deps.Assets.ListByComponentID(ctx, comp.ID)
+	if err != nil {
+		return nil
+	}
+	for _, asset := range assets {
+		if !strings.HasSuffix(asset.Path, ".tgz") {
+			continue
+		}
+		rc, _, err := base.FetchArtifact(ctx, h.deps, repoName, asset.Path)
+		if err != nil {
+			continue
+		}
+		manifest := manifestFromTarball(rc)
+		_ = rc.Close()
+		if manifest == nil {
+			continue
+		}
+		manifest = withDistShasum(manifest, asset.SHA1)
+		_ = h.deps.Components.UpdateExtra(ctx, comp.ID, map[string]any{extraManifestKey: manifest})
+		return manifest
+	}
+	return nil
 }
 
 func (h *Handler) handlePublish(c *gin.Context, repoName, pkgPath string) {
@@ -252,9 +282,24 @@ func (h *Handler) publishDoc(c *gin.Context, repoName, pkgName string, doc map[s
 		// tarball at /@scope/name/-/name-ver.tgz (#113) — drop the scope.
 		filePath := "/" + pkgName + "/-/" + path.Base(filename)
 		coords := base.Coords{Name: pkgName, Version: version}
-		if _, err := base.StoreArtifact(c.Request.Context(), h.deps,
+		res, err := base.StoreArtifact(c.Request.Context(), h.deps,
 			repoName, filePath, ct, coords,
-			strings.NewReader(string(data)), int64(len(data))); err != nil {
+			strings.NewReader(string(data)), int64(len(data)))
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		// Keep the published package.json — it is the only place the dependency
+		// lists exist outside the tarball (#131).
+		if res == nil || res.Asset == nil || res.Asset.ComponentID == "" {
+			continue
+		}
+		manifest := withDistShasum(manifestFromPublish(doc, version), res.SHA1)
+		if manifest == nil {
+			continue
+		}
+		if err := h.deps.Components.UpdateExtra(c.Request.Context(),
+			res.Asset.ComponentID, map[string]any{extraManifestKey: manifest}); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
