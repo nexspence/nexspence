@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="no-js">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -22,6 +22,7 @@
 <meta name="twitter:description" content="Nexspence documentation — guides, API reference, and versioned changelog.">
 <meta name="twitter:image" content="https://nexspence.com/assets/og-image.jpg">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script>document.documentElement.classList.remove('no-js')</script>
 <style>
 :root{
   --bg:#070b14;--bg2:#0c1322;
@@ -193,6 +194,18 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .mob-bnav-item svg{width:18px;height:18px}
 .mob-bnav-item.active{color:#a78bfa}
 
+/* Progressive enhancement (#114): with the script blocked or still loading,
+   every section stays visible and the anchor table of contents replaces the
+   JS-built tab bar, so the manual is readable — and indexable — without JS. */
+#nojs-nav{display:none}
+.no-js #nojs-nav{display:block;padding:18px 0}
+.no-js #sidebar-inner{display:none}
+.no-js .doc-section[hidden]{display:block}
+.no-js .doc-section{margin-bottom:46px;padding-bottom:34px;border-bottom:1px solid var(--border)}
+.no-js #doc-changelog{display:none}
+.no-js .doc-tabs,.no-js .mob-nav-toggle,.no-js .ver-dd,.no-js .lang-bar{display:none}
+.nojs-note{margin:0 0 18px;padding:12px 14px;border:1px solid var(--border);border-radius:12px;background:var(--glass);color:var(--dim);font-size:.8rem;line-height:1.6}
+
 @media(max-width:768px){
   .docs-layout{grid-template-columns:1fr}
   .docs-sidebar{display:none}
@@ -333,6 +346,37 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
   <div class="docs-layout">
     <aside class="docs-sidebar" aria-label="Documentation navigation">
       <div class="dsb-inner" id="sidebar-inner"></div>
+      <nav id="nojs-nav" aria-label="Documentation contents">
+        <div class="dsb-label">Getting Started</div>
+        <a class="dsb-link" href="#sec-quickstart">Quick Start</a>
+        <a class="dsb-link" href="#sec-install">Installation</a>
+        <a class="dsb-link" href="#sec-native-install">Native Install</a>
+        <a class="dsb-link" href="#sec-upgrade">Upgrade Notes</a>
+        <div class="dsb-label">Using Nexspence</div>
+        <a class="dsb-link" href="#sec-repositories">Repositories</a>
+        <a class="dsb-link" href="#sec-formats-guide">Format Setup Guides</a>
+        <a class="dsb-link" href="#sec-browse-search">Browse & Search</a>
+        <div class="dsb-label">Administration</div>
+        <a class="dsb-link" href="#sec-users">Users & API Tokens</a>
+        <a class="dsb-link" href="#sec-rbac">Roles & Privileges</a>
+        <a class="dsb-link" href="#sec-cleanup">Cleanup Policies</a>
+        <a class="dsb-link" href="#sec-webhooks">Webhooks</a>
+        <a class="dsb-link" href="#sec-migration">Migration from Nexus</a>
+        <div class="dsb-label">Advanced</div>
+        <a class="dsb-link" href="#sec-monitoring">Monitoring</a>
+        <a class="dsb-link" href="#sec-promotion">Build Promotion</a>
+        <a class="dsb-link" href="#sec-replication">Content Replication</a>
+        <div class="dsb-label">Terraform Provider</div>
+        <a class="dsb-link" href="#sec-tf-overview">Overview</a>
+        <a class="dsb-link" href="#sec-tf-auth">Authentication</a>
+        <a class="dsb-link" href="#sec-tf-resources">Resources</a>
+        <a class="dsb-link" href="#sec-tf-data">Data Sources</a>
+        <a class="dsb-link" href="#sec-tf-examples">Examples</a>
+        <div class="dsb-label">Reference</div>
+        <a class="dsb-link" href="#sec-security">Security & RBAC</a>
+        <a class="dsb-link" href="#sec-formats">Formats</a>
+        <a class="dsb-link" href="#sec-api">API Reference</a>
+      </nav>
     </aside>
     <div class="docs-content">
       <nav class="doc-breadcrumb" aria-label="Breadcrumb">
@@ -343,47 +387,16 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
         <span class="current" id="breadcrumb-current">changelog</span>
       </nav>
       <div id="doc-content">
+      <noscript><p class="nojs-note">JavaScript is disabled, so the whole manual is shown on one page and the changelog — which is fetched from the GitHub Releases API — is omitted. <a href="https://github.com/nexspence/nexspence/releases" rel="noopener">Release notes on GitHub</a>.</p></noscript>
+      <section id="sec-intro" class="doc-section">
         <div class="doc-section-title">Nexspence Documentation</div>
         <div class="doc-section-sub">Guides, configuration reference, and versioned changelog for Nexspence — the free, open-source universal artifact repository manager and drop-in alternative to commercial artifact repository managers.</div>
         <p style="color:var(--dim);line-height:1.7;margin:14px 0">Nexspence manages Maven, npm, PyPI, Docker, Go modules, NuGet, Cargo, Helm, Apt, Yum/RPM, Conan, Raw, Conda and Terraform artifacts from a single self-hosted registry. Repositories can be Hosted (your published artifacts), Proxy (cached remote registries) or Group (multiple repositories under one URL).</p>
         <p style="color:var(--dim);line-height:1.7;margin:14px 0">This documentation covers Quick Start, Installation, Repositories, per-format guides, Browse &amp; Search, Users, Roles &amp; Privileges (RBAC), Cleanup policies, Webhooks, Migration from Nexus, Monitoring, Build Promotion, Replication, and the full REST API reference.</p>
         <p style="color:var(--dim);line-height:1.7;margin:14px 0">Get started in under two minutes with Docker Compose: download the latest release, set a strong <code>admin_password</code> and <code>jwt_secret</code> in <code>config.yaml</code>, then run <code>docker compose up -d</code> and open the UI at <code>http://localhost:8081</code>.</p>
-      </div>
-    </div>
-  </div>
-
-  <footer class="docs-footer">
-    <div class="docs-footer-left">© 2026 Nexspence Contributors · AGPLv3</div>
-    <div class="docs-footer-right">
-      <a href="/">nexspence.com</a>
-      <a href="https://github.com/nexspence/nexspence" target="_blank" rel="noopener">GitHub</a>
-      <a href="https://github.com/nexspence/nexspence/releases" target="_blank" rel="noopener">All Releases</a>
-    </div>
-  </footer>
-</main>
-
-<nav class="mob-bottomnav" aria-label="Mobile navigation">
-  <div class="mob-bottomnav-inner">
-    <a href="/" class="mob-bnav-item">
-      <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-      Overview
-    </a>
-    <a href="/#deploy" class="mob-bnav-item">
-      <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-      Install
-    </a>
-    <a href="/docs/" class="mob-bnav-item active" aria-current="page">
-      <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-      Docs
-    </a>
-    <a href="https://github.com/nexspence/nexspence" target="_blank" rel="noopener" class="mob-bnav-item">
-      <svg fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
-      GitHub
-    </a>
-  </div>
-</nav>
-
-<template id="tpl-quickstart">
+      </section>
+      <div id="doc-changelog" class="doc-section" hidden></div>
+      <section id="sec-quickstart" class="doc-section" hidden>
   <div class="doc-section-title" data-i18n="qs.title">Quick Start</div>
   <div class="doc-section-sub" data-i18n="qs.sub">Run Nexspence locally in under 2 minutes using Docker Compose.</div>
   <div class="step-list">
@@ -416,608 +429,8 @@ docker compose up -d
 open http://localhost:8081  <span class="cc"># default login: admin / admin123</span></div>
   </div>
   <div class="alert-info" data-i18n="qs.note"><strong>Note:</strong> Since v1.18.0 the server refuses to start with the shipped defaults (<code>admin123</code> / the example <code>jwt_secret</code>) unless <code>auth.allow_insecure_defaults: true</code> is set. The dev compose sets this so the quick-start boots; for production set a real <code>admin_password</code> and <code>jwt_secret</code> (e.g. via <code>NEXSPENCE_AUTH_JWT_SECRET</code>) instead.</div>
-</template>
-
-<template id="tpl-repositories">
-  <div class="doc-section-title" data-i18n="repo.title">Repositories</div>
-  <div class="doc-section-sub" data-i18n="repo.sub">Nexspence organises artifacts into repositories. Each repository has a type (Hosted, Proxy, or Group) and a format (Maven, Docker, npm, etc.).</div>
-
-  <figure class="doc-shot"><img src="../assets/screenshots/repositories.PNG" alt="Repositories list with format badges and type filters" loading="lazy"><figcaption data-i18n="shot.repos">Repositories view — format badges, type filters, and per-repo storage usage.</figcaption></figure>
-
-  <div class="inst-sep" data-i18n="repo.types.sep">Repository Types</div>
-  <div class="step-list">
-    <div class="step-item">
-      <div class="step-num" style="background:linear-gradient(135deg,#22c55e,#16a34a)">H</div>
-      <div>
-        <div class="step-title" data-i18n="repo.hosted.title">Hosted</div>
-        <div class="step-desc" data-i18n="repo.hosted.desc">Stores artifacts you publish directly. Use for internal builds, release binaries, private packages. Supports upload via CI/CD pipelines.</div>
-      </div>
-    </div>
-    <div class="step-item">
-      <div class="step-num" style="background:linear-gradient(135deg,#f59e0b,#d97706)">P</div>
-      <div>
-        <div class="step-title" data-i18n="repo.proxy.title">Proxy</div>
-        <div class="step-desc" data-i18n="repo.proxy.desc">Caches artifacts from a remote registry (Maven Central, npmjs, PyPI, Docker Hub, etc.). First request fetches from upstream; subsequent requests serve from cache. Reduces bandwidth and provides availability even if upstream is down.</div>
-      </div>
-    </div>
-    <div class="step-item">
-      <div class="step-num" style="background:linear-gradient(135deg,#8b5cf6,#7c3aed)">G</div>
-      <div>
-        <div class="step-title" data-i18n="repo.group.title">Group</div>
-        <div class="step-desc" data-i18n="repo.group.desc">Aggregates multiple repositories (hosted + proxy) under one URL. Clients use a single endpoint; Nexspence searches members in order and returns the first match. Ideal for giving developers one URL for all dependencies.</div>
-      </div>
-    </div>
-  </div>
-
-  <div class="inst-sep" data-i18n="repo.create.sep">Creating a Repository</div>
-  <div class="step-list">
-    <div class="step-item"><div class="step-num">01</div><div><div class="step-title" data-i18n="repo.create.s1.title">Open the Repositories page</div><div class="step-desc" data-i18n="repo.create.s1.desc">Navigate to <strong>Repositories</strong> in the sidebar. Click the <strong>+ Create</strong> button in the top-right corner.</div></div></div>
-    <div class="step-item"><div class="step-num">02</div><div><div class="step-title" data-i18n="repo.create.s2.title">Choose type and format</div><div class="step-desc" data-i18n="repo.create.s2.desc">Select the repository type (Hosted / Proxy / Group) and format (Maven, npm, Docker, etc.) in the wizard. The name must be unique and URL-safe.</div></div></div>
-    <div class="step-item"><div class="step-num">03</div><div><div class="step-title" data-i18n="repo.create.s3.title">Configure format-specific settings</div><div class="step-desc" data-i18n="repo.create.s3.desc">For <strong>Proxy</strong>: enter the upstream Remote URL (e.g. <code>https://registry.npmjs.org</code>). For <strong>Group</strong>: select member repositories in order. For all types: optionally assign a blob store and cleanup policy.</div></div></div>
-    <div class="step-item"><div class="step-num">04</div><div><div class="step-title" data-i18n="repo.create.s4.title">Use the repository URL</div><div class="step-desc" data-i18n="repo.create.s4.desc">After creation the URL is shown on the repository card: <code>http://localhost:8081/repository/{name}/</code>. Point your build tool at this URL.</div></div></div>
-  </div>
-
-  <div class="inst-sep" data-i18n="repo.urls.sep">Repository URL Patterns</div>
-  <table class="doc-table">
-    <thead><tr><th data-i18n="repo.urls.th.format">Format</th><th data-i18n="repo.urls.th.url">URL pattern</th><th data-i18n="repo.urls.th.notes">Notes</th></tr></thead>
-    <tbody>
-      <tr><td>Maven</td><td><code>/repository/{name}/</code></td><td data-i18n="repo.urls.maven">Use as <code>&lt;url&gt;</code> in <code>pom.xml</code> or <code>settings.xml</code></td></tr>
-      <tr><td>npm</td><td><code>/repository/{name}/</code></td><td data-i18n="repo.urls.npm">Use as <code>registry</code> in <code>.npmrc</code></td></tr>
-      <tr><td>PyPI</td><td><code>/repository/{name}/simple/</code></td><td data-i18n="repo.urls.pypi">Use as <code>index-url</code> in <code>pip.conf</code></td></tr>
-      <tr><td>Docker</td><td><code>localhost:5000/{name}</code></td><td data-i18n="repo.urls.docker">Registry port 5000, image name includes repo</td></tr>
-      <tr><td>Helm</td><td><code>/repository/{name}/</code></td><td data-i18n="repo.urls.helm">Add with <code>helm repo add</code></td></tr>
-      <tr><td>Go</td><td><code>/repository/{name}/</code></td><td data-i18n="repo.urls.go">Set as <code>GOPROXY</code></td></tr>
-      <tr><td>NuGet</td><td><code>/repository/{name}/index.json</code></td><td data-i18n="repo.urls.nuget">v3 flat container endpoint</td></tr>
-      <tr><td>Cargo</td><td><code>/repository/{name}/</code></td><td data-i18n="repo.urls.cargo">Sparse index endpoint</td></tr>
-      <tr><td>Raw</td><td><code>/repository/{name}/</code></td><td data-i18n="repo.urls.raw">PUT/GET any path</td></tr>
-    </tbody>
-  </table>
-
-  <div class="inst-sep" data-i18n="repo.anon.sep">Anonymous Access</div>
-  <div class="alert-info" data-i18n="repo.anon.info">Enable <strong>Allow anonymous access</strong> on a repository to let unauthenticated users download artifacts. Write operations always require authentication. Configure globally in <strong>Admin → Security → Anonymous Access</strong> and per-repository in the repo settings.</div>
-</template>
-
-<template id="tpl-formats-guide">
-  <div class="doc-section-title" data-i18n="fg.title">Format Setup Guides</div>
-  <div class="doc-section-sub" data-i18n="fg.sub">How to configure your build tools and package managers to use Nexspence repositories. Replace <code>localhost:8081</code> with your server URL and <code>{repo}</code> with your repository name.</div>
-
-  <!-- Maven -->
-  <div class="inst-sep">Maven / Gradle</div>
-  <p style="font-size:.8rem;color:var(--dim);margin-bottom:10px;line-height:1.6" data-i18n="fg.maven.desc">Add Nexspence as a mirror in <code>~/.m2/settings.xml</code> to route all dependency downloads through your proxy repository.</p>
-  <div class="cb"><div class="cb-bar"><span>~/.m2/settings.xml</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
-  <div class="cb-body">&lt;settings&gt;
-  &lt;mirrors&gt;
-    &lt;mirror&gt;
-      &lt;id&gt;nexspence&lt;/id&gt;
-      &lt;url&gt;http://localhost:8081/repository/maven-public/&lt;/url&gt;
-      &lt;mirrorOf&gt;*&lt;/mirrorOf&gt;
-    &lt;/mirror&gt;
-  &lt;/mirrors&gt;
-  &lt;servers&gt;
-    &lt;server&gt;
-      &lt;id&gt;nexspence&lt;/id&gt;
-      &lt;username&gt;admin&lt;/username&gt;
-      &lt;password&gt;admin123&lt;/password&gt;
-    &lt;/server&gt;
-  &lt;/servers&gt;
-&lt;/settings&gt;</div></div>
-  <div class="cb"><div class="cb-bar"><span>pom.xml — deploy</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
-  <div class="cb-body">&lt;distributionManagement&gt;
-  &lt;repository&gt;
-    &lt;id&gt;nexspence&lt;/id&gt;
-    &lt;url&gt;http://localhost:8081/repository/maven-releases/&lt;/url&gt;
-  &lt;/repository&gt;
-  &lt;snapshotRepository&gt;
-    &lt;id&gt;nexspence&lt;/id&gt;
-    &lt;url&gt;http://localhost:8081/repository/maven-snapshots/&lt;/url&gt;
-  &lt;/snapshotRepository&gt;
-&lt;/distributionManagement&gt;</div></div>
-
-  <!-- npm -->
-  <div class="inst-sep">npm / yarn</div>
-  <div class="cb"><div class="cb-bar"><span>.npmrc</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
-  <div class="cb-body">registry=http://localhost:8081/repository/npm-public/
-//localhost:8081/repository/npm-public/:_auth=YWRtaW46YWRtaW4xMjM=
-//localhost:8081/repository/npm-public/:always-auth=true</div></div>
-  <div class="alert-info" data-i18n="fg.npm.auth.note"><strong>Auth token:</strong> <code>_auth</code> is base64 of <code>username:password</code>. Generate: <code>echo -n "admin:admin123" | base64</code>. To publish: <code>npm publish --registry http://localhost:8081/repository/npm-hosted/</code></div>
-
-  <!-- PyPI -->
-  <div class="inst-sep">PyPI / pip</div>
-  <div class="cb"><div class="cb-bar"><span>~/.config/pip/pip.conf</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
-  <div class="cb-body">[global]
-index-url = http://admin:admin123@localhost:8081/repository/pypi-proxy/simple/
-trusted-host = localhost</div></div>
-  <div class="cb"><div class="cb-bar"><span>publish with twine</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
-  <div class="cb-body">twine upload \
-  --repository-url http://localhost:8081/repository/pypi-hosted/ \
-  --username admin --password admin123 \
-  dist/*</div></div>
-
-  <!-- Docker -->
-  <div class="inst-sep">Docker / OCI</div>
-  <div class="alert-info" data-i18n="fg.docker.insecure.note"><strong>HTTP registry:</strong> Add <code>"insecure-registries": ["localhost:5000"]</code> to Docker daemon config (<code>/etc/docker/daemon.json</code>) when using HTTP. Restart Docker after.</div>
-  <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
-  <div class="cb-body"><span class="cc"># Login</span>
-docker login localhost:5000 -u admin -p admin123
-
-<span class="cc"># Pull through proxy</span>
-docker pull localhost:5000/docker-proxy/library/nginx:latest
-
-<span class="cc"># Push to hosted</span>
-docker tag myimage:1.0 localhost:5000/docker-hosted/myimage:1.0
-docker push localhost:5000/docker-hosted/myimage:1.0</div></div>
-
-  <!-- Helm -->
-  <div class="inst-sep">Helm Charts</div>
-  <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
-  <div class="cb-body"><span class="cc"># Add repository</span>
-helm repo add nexspence \
-  http://localhost:8081/repository/helm-public/ \
-  --username admin --password admin123
-
-helm repo update
-
-<span class="cc"># Search and install</span>
-helm search repo nexspence/
-helm install my-release nexspence/my-chart
-
-<span class="cc"># Push chart (requires helm-push plugin)</span>
-helm plugin install https://github.com/chartmuseum/helm-push
-helm cm-push my-chart/ nexspence</div></div>
-
-  <!-- Go -->
-  <div class="inst-sep">Go Modules</div>
-  <div class="cb"><div class="cb-bar"><span>shell / go.env</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
-  <div class="cb-body"><span class="cc"># Set GOPROXY</span>
-go env -w GOPROXY=http://localhost:8081/repository/go-proxy/|direct
-go env -w GONOSUMCHECK=localhost:8081
-
-<span class="cc"># Use in project</span>
-go get github.com/some/module@v1.2.3</div></div>
-
-  <!-- Cargo -->
-  <div class="inst-sep">Cargo (Rust)</div>
-  <div class="cb"><div class="cb-bar"><span>~/.cargo/config.toml</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
-  <div class="cb-body">[source.crates-io]
-replace-with = "nexspence"
-
-[source.nexspence]
-registry = "sparse+http://localhost:8081/repository/cargo-proxy/"
-
-[net]
-git-fetch-with-cli = true</div></div>
-
-  <!-- NuGet -->
-  <div class="inst-sep">NuGet (.NET)</div>
-  <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
-  <div class="cb-body"><span class="cc"># Add source</span>
-dotnet nuget add source \
-  http://localhost:8081/repository/nuget-public/index.json \
-  --name nexspence \
-  --username admin \
-  --password admin123 \
-  --store-password-in-clear-text
-
-<span class="cc"># Push package</span>
-dotnet nuget push mypackage.nupkg \
-  --source http://localhost:8081/repository/nuget-hosted/ \
-  --api-key admin123</div></div>
-
-  <!-- Raw -->
-  <div class="inst-sep">Raw Files</div>
-  <div class="cb"><div class="cb-bar"><span>curl</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
-  <div class="cb-body"><span class="cc"># Upload a file</span>
-curl -u admin:admin123 \
-  -T myfile.tar.gz \
-  http://localhost:8081/repository/raw-hosted/releases/myfile.tar.gz
-
-<span class="cc"># Download</span>
-curl -u admin:admin123 \
-  -O http://localhost:8081/repository/raw-hosted/releases/myfile.tar.gz</div></div>
-</template>
-
-<template id="tpl-browse-search">
-  <div class="doc-section-title" data-i18n="bs.title">Browse &amp; Search</div>
-  <div class="doc-section-sub" data-i18n="bs.sub">Find, inspect, and download artifacts stored in Nexspence repositories.</div>
-
-  <div class="inst-sep" data-i18n="bs.browse.sep">Browse</div>
-  <div class="step-list">
-    <div class="step-item"><div class="step-num">01</div><div><div class="step-title" data-i18n="bs.browse.s1.title">Open Browse</div><div class="step-desc" data-i18n="bs.browse.s1.desc">Click <strong>Browse</strong> in the sidebar. Select a repository from the dropdown on the left.</div></div></div>
-    <div class="step-item"><div class="step-num">02</div><div><div class="step-title" data-i18n="bs.browse.s2.title">Navigate the tree</div><div class="step-desc" data-i18n="bs.browse.s2.desc">For most formats a file tree is shown. For Docker repositories a two-column view shows image names on the left and tags on the right.</div></div></div>
-    <div class="step-item"><div class="step-num">03</div><div><div class="step-title" data-i18n="bs.browse.s3.title">Inspect a component</div><div class="step-desc" data-i18n="bs.browse.s3.desc">Click any file or component to open a detail panel with metadata (size, SHA-256, upload date), download link, and usage examples for common tools.</div></div></div>
-  </div>
-
-  <figure class="doc-shot"><img src="../assets/screenshots/browse.PNG" alt="Browse page with the file tree expanded and a component detail panel open" loading="lazy"><figcaption data-i18n="shot.browse">Browse — file tree on the left, component metadata and download panel on the right.</figcaption></figure>
-
-  <div class="inst-sep" data-i18n="bs.search.sep">Search</div>
-  <div class="step-list">
-    <div class="step-item"><div class="step-num">01</div><div><div class="step-title" data-i18n="bs.search.s1.title">Open Search</div><div class="step-desc" data-i18n="bs.search.s1.desc">Click <strong>Search</strong> in the sidebar. Enter a keyword in the search box — matches component names, group IDs, and artifact IDs.</div></div></div>
-    <div class="step-item"><div class="step-num">02</div><div><div class="step-title" data-i18n="bs.search.s2.title">Filter by format or repository</div><div class="step-desc" data-i18n="bs.search.s2.desc">Use the <strong>Format</strong> and <strong>Repository</strong> dropdowns to narrow results. You can also filter by tag.</div></div></div>
-    <div class="step-item"><div class="step-num">03</div><div><div class="step-title" data-i18n="bs.search.s3.title">Use the API</div><div class="step-desc" data-i18n="bs.search.s3.desc">Search is also available via the REST API for CI/CD integration.</div></div></div>
-  </div>
-
-  <figure class="doc-shot"><img src="../assets/screenshots/search.PNG" alt="Search results with format badges and tag chips" loading="lazy"><figcaption data-i18n="shot.search">Search — keyword results with format badges, repository filter, and tag chips.</figcaption></figure>
-
-  <div class="cb"><div class="cb-bar"><span>curl — search API</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
-  <div class="cb-body"><span class="cc"># Search by keyword</span>
-curl -u admin:admin123 \
-  "http://localhost:8081/service/rest/v1/search?q=mylib"
-
-<span class="cc"># Filter by format and repository</span>
-curl -u admin:admin123 \
-  "http://localhost:8081/service/rest/v1/search?format=maven2&repository=maven-releases&q=spring"
-
-<span class="cc"># List all components in a repository</span>
-curl -u admin:admin123 \
-  "http://localhost:8081/service/rest/v1/components?repository=npm-hosted"</div></div>
-</template>
-
-<template id="tpl-users">
-  <div class="doc-section-title" data-i18n="usr.title">Users &amp; API Tokens</div>
-  <div class="doc-section-sub" data-i18n="usr.sub">Manage user accounts, passwords, and programmatic API tokens for CI/CD pipelines.</div>
-
-  <div class="inst-sep" data-i18n="usr.users.sep">User Management</div>
-  <div class="step-list">
-    <div class="step-item"><div class="step-num">01</div><div><div class="step-title" data-i18n="usr.create.title">Create a user</div><div class="step-desc" data-i18n="usr.create.desc">Go to <strong>Admin → Security → Users</strong>. Click <strong>+ Create User</strong>. Fill in username, email, first/last name, and initial password. Assign roles immediately or later.</div></div></div>
-    <div class="step-item"><div class="step-num">02</div><div><div class="step-title" data-i18n="usr.roles.title">Assign roles</div><div class="step-desc" data-i18n="usr.roles.desc">Open a user and click <strong>Assign Roles</strong>. Select roles from the transfer list. The built-in <code>nx-admin</code> role grants full access; custom roles control per-repository access via privileges.</div></div></div>
-    <div class="step-item"><div class="step-num">03</div><div><div class="step-title" data-i18n="usr.ldap.title">LDAP / Active Directory</div><div class="step-desc" data-i18n="usr.ldap.desc">Configure LDAP in <code>config.yaml</code> under the <code>ldap</code> section. Users are provisioned on first login (JIT). Groups map to Nexspence roles via <code>role_mappings</code>.</div></div></div>
-  </div>
-  <div class="cb"><div class="cb-bar"><span>curl — create user via API</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
-  <div class="cb-body">curl -u admin:admin123 -X POST \
-  http://localhost:8081/service/rest/v1/security/users \
-  -H "Content-Type: application/json" \
-  -d '{
-    "userId": "alice",
-    "firstName": "Alice",
-    "lastName": "Smith",
-    "emailAddress": "alice@example.com",
-    "password": "secret",
-    "status": "active",
-    "roles": ["nx-anonymous"]
-  }'</div></div>
-
-  <div class="inst-sep" data-i18n="usr.tokens.sep">API Tokens</div>
-  <div class="step-list">
-    <div class="step-item"><div class="step-num">01</div><div><div class="step-title" data-i18n="usr.token.create.title">Create a token</div><div class="step-desc" data-i18n="usr.token.create.desc">Open your profile (click your username in the bottom-left). Go to <strong>API Tokens</strong> tab. Click <strong>Generate Token</strong>. Set an optional expiry. The token is shown <strong>once</strong> — copy it immediately.</div></div></div>
-    <div class="step-item"><div class="step-num">02</div><div><div class="step-title" data-i18n="usr.token.use.title">Use the token</div><div class="step-desc" data-i18n="usr.token.use.desc">Tokens start with <code>nxs_</code>. Use as Bearer token or as the password in HTTP Basic auth (username = your username, password = token).</div></div></div>
-  </div>
-  <div class="cb"><div class="cb-bar"><span>curl — using an API token</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
-  <div class="cb-body"><span class="cc"># Bearer auth</span>
-curl -H "Authorization: Bearer nxs_abc123..." \
-  http://localhost:8081/service/rest/v1/repositories
-
-<span class="cc"># Basic auth (username + token as password)</span>
-curl -u admin:nxs_abc123... \
-  http://localhost:8081/service/rest/v1/components?repository=maven-releases</div></div>
-  <div class="alert-info" data-i18n="usr.token.limit.note"><strong>Token expiry:</strong> Maximum lifetime is controlled by <code>auth.token_max_days</code> in <code>config.yaml</code> (default 180 days). Tokens are hashed (SHA-256) — the plaintext is never stored.</div>
-</template>
-
-<template id="tpl-rbac">
-  <div class="doc-section-title" data-i18n="rbac.title">Roles &amp; Privileges</div>
-  <div class="doc-section-sub" data-i18n="rbac.sub">Nexspence uses a three-layer access control model: Content Selectors → Privileges → Roles → Users.</div>
-
-  <figure class="doc-shot"><img src="../assets/screenshots/security_roles.PNG" alt="Security Roles tab showing roles with privilege chips" loading="lazy"><figcaption data-i18n="shot.roles">Security → Roles — each role lists its granted privileges as chips.</figcaption></figure>
-
-  <div class="inst-sep" data-i18n="rbac.model.sep">Access Control Model</div>
-  <div class="step-list">
-    <div class="step-item">
-      <div class="step-num" style="background:linear-gradient(135deg,#06b6d4,#0891b2)">1</div>
-      <div><div class="step-title" data-i18n="rbac.cs.title">Content Selector</div><div class="step-desc" data-i18n="rbac.cs.desc">A CEL expression that defines <em>which artifacts</em> the rule applies to. Variables available: <code>format</code>, <code>path</code>, <code>repository</code>. Example: <code>format == "maven2" &amp;&amp; path.startsWith("/com/example/")</code></div></div>
-    </div>
-    <div class="step-item">
-      <div class="step-num" style="background:linear-gradient(135deg,#f59e0b,#d97706)">2</div>
-      <div><div class="step-title" data-i18n="rbac.priv.title">Privilege</div><div class="step-desc" data-i18n="rbac.priv.desc">Binds a Content Selector to a permission. In Nexspence all user-created privileges are of type <code>repository-content-selector</code>. Create in <strong>Admin → Security → Privileges</strong>.</div></div>
-    </div>
-    <div class="step-item">
-      <div class="step-num" style="background:linear-gradient(135deg,#8b5cf6,#7c3aed)">3</div>
-      <div><div class="step-title" data-i18n="rbac.role.title">Role</div><div class="step-desc" data-i18n="rbac.role.desc">A named set of privileges. Assign roles to users. The built-in <code>nx-admin</code> role grants full access to everything.</div></div>
-    </div>
-  </div>
-
-  <div class="inst-sep" data-i18n="rbac.cel.sep">CEL Expression Examples</div>
-  <table class="doc-table">
-    <thead><tr><th data-i18n="rbac.cel.th.desc">What it matches</th><th data-i18n="rbac.cel.th.expr">CEL expression</th></tr></thead>
-    <tbody>
-      <tr><td data-i18n="rbac.cel.ex1.desc">All Maven artifacts</td><td><code>format == "maven2"</code></td></tr>
-      <tr><td data-i18n="rbac.cel.ex2.desc">Specific Maven group</td><td><code>format == "maven2" &amp;&amp; path.startsWith("/com/example/")</code></td></tr>
-      <tr><td data-i18n="rbac.cel.ex3.desc">All Docker images</td><td><code>format == "docker"</code></td></tr>
-      <tr><td data-i18n="rbac.cel.ex4.desc">Specific repository</td><td><code>repository == "npm-releases"</code></td></tr>
-      <tr><td data-i18n="rbac.cel.ex5.desc">All npm packages</td><td><code>format == "npm"</code></td></tr>
-      <tr><td data-i18n="rbac.cel.ex6.desc">PyPI in specific repo</td><td><code>format == "pypi" &amp;&amp; repository == "pypi-releases"</code></td></tr>
-      <tr><td data-i18n="rbac.cel.ex7.desc">Exclude snapshots</td><td><code>format == "maven2" &amp;&amp; !path.contains("SNAPSHOT")</code></td></tr>
-    </tbody>
-  </table>
-
-  <div class="inst-sep" data-i18n="rbac.setup.sep">Setting Up Access Control</div>
-  <div class="step-list">
-    <div class="step-item"><div class="step-num">01</div><div><div class="step-title" data-i18n="rbac.setup.s1.title">Create a Content Selector</div><div class="step-desc" data-i18n="rbac.setup.s1.desc"><strong>Admin → Security → Content Selectors → + Create</strong>. Enter a name and a CEL expression. The preview shows matching artifacts.</div></div></div>
-    <div class="step-item"><div class="step-num">02</div><div><div class="step-title" data-i18n="rbac.setup.s2.title">Create a Privilege</div><div class="step-desc" data-i18n="rbac.setup.s2.desc"><strong>Admin → Security → Privileges → + Create</strong>. Select the Content Selector you just created.</div></div></div>
-    <div class="step-item"><div class="step-num">03</div><div><div class="step-title" data-i18n="rbac.setup.s3.title">Create a Role</div><div class="step-desc" data-i18n="rbac.setup.s3.desc"><strong>Admin → Security → Roles → + Create</strong>. Add the privilege to the role.</div></div></div>
-    <div class="step-item"><div class="step-num">04</div><div><div class="step-title" data-i18n="rbac.setup.s4.title">Assign the Role to a User</div><div class="step-desc" data-i18n="rbac.setup.s4.desc"><strong>Admin → Security → Users</strong>. Open the user, click <strong>Assign Roles</strong>, add the role.</div></div></div>
-  </div>
-</template>
-
-<template id="tpl-cleanup">
-  <div class="doc-section-title" data-i18n="cl.title">Cleanup Policies</div>
-  <div class="doc-section-sub" data-i18n="cl.sub">Automatically remove old or unused artifacts to reclaim storage space.</div>
-
-  <figure class="doc-shot"><img src="../assets/screenshots/cleanup.PNG" alt="Cleanup Policies page with policy cards and the create wizard" loading="lazy"><figcaption data-i18n="shot.cleanup">Cleanup Policies — policy cards with the create wizard (criteria step) open.</figcaption></figure>
-
-  <div class="inst-sep" data-i18n="cl.criteria.sep">Cleanup Criteria</div>
-  <table class="doc-table">
-    <thead><tr><th data-i18n="cl.th.criterion">Criterion</th><th data-i18n="cl.th.desc">Description</th></tr></thead>
-    <tbody>
-      <tr><td data-i18n="cl.age.label">Published before</td><td data-i18n="cl.age.desc">Remove artifacts published more than N days ago.</td></tr>
-      <tr><td data-i18n="cl.last.label">Last downloaded before</td><td data-i18n="cl.last.desc">Remove artifacts not downloaded in the last N days.</td></tr>
-      <tr><td data-i18n="cl.retain.label">Retain N versions</td><td data-i18n="cl.retain.desc">Keep only the N newest versions of each component. All older versions are eligible for removal.</td></tr>
-    </tbody>
-  </table>
-  <div class="step-list">
-    <div class="step-item"><div class="step-num">01</div><div><div class="step-title" data-i18n="cl.s1.title">Create a policy</div><div class="step-desc" data-i18n="cl.s1.desc">Go to <strong>Admin → Cleanup Policies</strong>. Click <strong>+ Create</strong>. Choose format scope (<code>*</code> for all formats or a specific one), set criteria, and optionally set a cron schedule.</div></div></div>
-    <div class="step-item"><div class="step-num">02</div><div><div class="step-title" data-i18n="cl.s2.title">Attach to repositories</div><div class="step-desc" data-i18n="cl.s2.desc">Open a repository settings (gear icon) and select one or more cleanup policies. Only artifacts in attached repositories are affected.</div></div></div>
-    <div class="step-item"><div class="step-num">03</div><div><div class="step-title" data-i18n="cl.s3.title">Run now or wait for schedule</div><div class="step-desc" data-i18n="cl.s3.desc">On the policy card click <strong>Run Now</strong> to trigger an immediate dry-run (preview) or full run. The default global cron is <code>0 2 * * *</code> (2 AM daily).</div></div></div>
-  </div>
-  <div class="alert-info" data-i18n="cl.dryrun.note"><strong>Dry run:</strong> The first run shows what <em>would</em> be deleted without actually removing anything. Review the preview before enabling full deletion.</div>
-
-  <div class="inst-sep" data-i18n="cl.gc.sep">Blob Garbage Collection</div>
-  <div class="doc-section-sub" data-i18n="cl.gc.sub">Cleanup policies delete <em>asset records</em>. Blob GC then reclaims the underlying <em>blobs</em> that are no longer referenced by any asset — orphans left behind by deletions, failed uploads, or migrations.</div>
-  <figure class="doc-shot"><img src="../assets/screenshots/admin_blobstores.PNG" alt="Admin Blob Stores page where garbage collection is run" loading="lazy"><figcaption data-i18n="shot.blobgc">Admin → Blob Stores. Open a store to reach the <strong>Garbage collection</strong> panel (Dry run / Compact).</figcaption></figure>
-  <div class="step-list">
-    <div class="step-item"><div class="step-num">01</div><div><div class="step-title" data-i18n="cl.gc.s1.title">Grace period</div><div class="step-desc" data-i18n="cl.gc.s1.desc">Only orphans older than <code>gc.min_age</code> (default <code>24h</code>) are collected, so an in-flight upload whose asset row is not yet committed is never removed.</div></div></div>
-    <div class="step-item"><div class="step-num">02</div><div><div class="step-title" data-i18n="cl.gc.s2.title">Run on demand</div><div class="step-desc" data-i18n="cl.gc.s2.desc">Open <strong>Admin → Blob Stores</strong>, click a store, then use <strong>Dry run</strong> to preview orphans or <strong>Compact</strong> to reclaim them. A scheduled run (<code>gc.schedule</code>, weekly by default) sweeps every store automatically.</div></div></div>
-  </div>
-  <div class="cb"><div class="cb-bar"><span data-i18n="cl.gc.cb">API &amp; CLI</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
-  <div class="cb-body"><span class="cc"># Preview orphans (dry run) via REST</span>
-curl -u admin:admin123 -X POST \
-  "http://localhost:8081/api/v1/blobstores/default/compact?dry_run=true"
-
-<span class="cc"># Reclaim now with the nxs CLI</span>
-nxs blobstore compact default --dry-run
-nxs blobstore compact default</div></div>
-</template>
-
-<template id="tpl-webhooks">
-  <div class="doc-section-title" data-i18n="wh.title">Webhooks</div>
-  <div class="doc-section-sub" data-i18n="wh.sub">Receive HTTP POST callbacks when repository events occur. Use for CI/CD triggers, Slack notifications, audit systems, and more.</div>
-
-  <div class="inst-sep" data-i18n="wh.events.sep">Events</div>
-  <table class="doc-table">
-    <thead><tr><th data-i18n="wh.th.event">Event</th><th data-i18n="wh.th.when">When</th></tr></thead>
-    <tbody>
-      <tr><td><code>artifact.published</code></td><td data-i18n="wh.ev.published">Artifact pushed to hosted or cached by proxy</td></tr>
-      <tr><td><code>artifact.deleted</code></td><td data-i18n="wh.ev.deleted">Artifact deleted</td></tr>
-      <tr><td><code>repo.created</code></td><td data-i18n="wh.ev.repo-created">Repository created</td></tr>
-      <tr><td><code>repo.updated</code></td><td data-i18n="wh.ev.repo-updated">Repository configuration updated</td></tr>
-      <tr><td><code>repo.deleted</code></td><td data-i18n="wh.ev.repo-deleted">Repository deleted</td></tr>
-      <tr><td><code>proxy.error</code></td><td data-i18n="wh.ev.proxy-error">Proxy failed to fetch from upstream</td></tr>
-    </tbody>
-  </table>
-
-  <div class="inst-sep" data-i18n="wh.setup.sep">Setting Up a Webhook</div>
-  <div class="step-list">
-    <div class="step-item"><div class="step-num">01</div><div><div class="step-title" data-i18n="wh.s1.title">Create a webhook</div><div class="step-desc" data-i18n="wh.s1.desc"><strong>Admin → Security → Webhooks → + Create</strong>. Enter a URL, select events to subscribe to, and optionally set a secret for HMAC-SHA256 signature verification.</div></div></div>
-    <div class="step-item"><div class="step-num">02</div><div><div class="step-title" data-i18n="wh.s2.title">Test delivery</div><div class="step-desc" data-i18n="wh.s2.desc">Click the ⚡ button on the webhook card to send a test event. The response status and latency are shown inline.</div></div></div>
-    <div class="step-item"><div class="step-num">03</div><div><div class="step-title" data-i18n="wh.s3.title">Verify the signature</div><div class="step-desc" data-i18n="wh.s3.desc">If a secret is set, each request carries an <code>X-Nexspence-Signature</code> header (HMAC-SHA256 of the body). Verify it on your receiver to reject forged requests.</div></div></div>
-  </div>
-  <div class="cb"><div class="cb-bar"><span>Python — verify HMAC signature</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
-  <div class="cb-body">import hashlib, hmac
-
-def verify(secret: str, body: bytes, header: str) -&gt; bool:
-    expected = "sha256=" + hmac.new(
-        secret.encode(), body, hashlib.sha256
-    ).hexdigest()
-    return hmac.compare_digest(expected, header)</div></div>
-  <div class="alert-info" data-i18n="wh.retry.note"><strong>Delivery:</strong> Webhooks are fired asynchronously (fire-and-forget). If your endpoint is unavailable, the event is not retried. Use a queue or durable receiver for critical integrations.</div>
-</template>
-
-<template id="tpl-migration">
-  <div class="doc-section-title" data-i18n="mig.title">Migration from Nexus</div>
-  <div class="doc-section-sub" data-i18n="mig.sub">Migrate repositories, users, roles, and artifacts from a live Nexus OSS or Pro instance without downtime.</div>
-
-  <div class="inst-sep" data-i18n="mig.what.sep">What Gets Migrated</div>
-  <table class="doc-table">
-    <thead><tr><th data-i18n="mig.th.item">Item</th><th data-i18n="mig.th.detail">Detail</th></tr></thead>
-    <tbody>
-      <tr><td data-i18n="mig.repos.label">Repositories</td><td data-i18n="mig.repos.desc">Hosted, proxy, and group repo definitions (format, type, configuration)</td></tr>
-      <tr><td data-i18n="mig.users.label">Users &amp; Roles</td><td data-i18n="mig.users.desc">Local Nexus users, roles, and privileges</td></tr>
-      <tr><td data-i18n="mig.blobs.label">Artifacts</td><td data-i18n="mig.blobs.desc">All components streamed via Nexus REST API — large repos pause/resume</td></tr>
-      <tr><td data-i18n="mig.cleanup.label">Cleanup policies</td><td data-i18n="mig.cleanup.desc">Imported and attached to the corresponding repositories</td></tr>
-    </tbody>
-  </table>
-  <div class="step-list">
-    <div class="step-item"><div class="step-num">01</div><div><div class="step-title" data-i18n="mig.s1.title">Open the Migration tab</div><div class="step-desc" data-i18n="mig.s1.desc">Go to <strong>Admin → System → Migration</strong>. Enter the source Nexus URL, admin username, and password.</div></div></div>
-    <div class="step-item"><div class="step-num">02</div><div><div class="step-title" data-i18n="mig.s2.title">Select scope</div><div class="step-desc" data-i18n="mig.s2.desc">Choose what to migrate: Repositories, Users, Cleanup Policies, Artifacts (blobs). You can run each separately.</div></div></div>
-    <div class="step-item"><div class="step-num">03</div><div><div class="step-title" data-i18n="mig.s3.title">Start and monitor</div><div class="step-desc" data-i18n="mig.s3.desc">Click <strong>Start Migration</strong>. Progress is shown in the job history table. Large artifact migrations can be paused and resumed.</div></div></div>
-  </div>
-  <div class="alert-info" data-i18n="mig.note"><strong>No downtime:</strong> Migration reads from a live Nexus instance via its REST API. Your existing Nexus continues serving traffic during migration. Switch DNS/clients to Nexspence when ready.</div>
-</template>
-
-<template id="tpl-monitoring">
-  <div class="doc-section-title" data-i18n="mon.title">Monitoring</div>
-  <div class="doc-section-sub" data-i18n="mon.sub">Nexspence exposes a Prometheus metrics endpoint and ships a pre-built Grafana dashboard with 8 panels.</div>
-
-  <div class="inst-sep" data-i18n="mon.metrics.sep">Available Metrics</div>
-  <table class="doc-table">
-    <thead><tr><th data-i18n="mon.th.metric">Metric</th><th data-i18n="mon.th.desc">Description</th></tr></thead>
-    <tbody>
-      <tr><td><code>nexspence_requests_total</code></td><td data-i18n="mon.m.requests">Total HTTP requests (by method, path, status)</td></tr>
-      <tr><td><code>nexspence_request_duration_seconds</code></td><td data-i18n="mon.m.duration">Request latency histogram (p50, p95, p99)</td></tr>
-      <tr><td><code>nexspence_artifacts_total</code></td><td data-i18n="mon.m.artifacts">Total artifacts stored</td></tr>
-      <tr><td><code>nexspence_bytes_stored_bytes</code></td><td data-i18n="mon.m.bytes">Total storage used in bytes</td></tr>
-      <tr><td><code>nexspence_downloads_total</code></td><td data-i18n="mon.m.downloads">Total artifact downloads</td></tr>
-      <tr><td><code>nexspence_artifacts_deleted_total</code></td><td data-i18n="mon.m.deleted">Total artifacts deleted</td></tr>
-      <tr><td><code>nexspence_goroutines</code></td><td data-i18n="mon.m.goroutines">Active Go goroutines</td></tr>
-      <tr><td><code>nexspence_memory_alloc_bytes</code></td><td data-i18n="mon.m.memory">Heap memory in use</td></tr>
-    </tbody>
-  </table>
-  <div class="step-list">
-    <div class="step-item"><div class="step-num">01</div><div><div class="step-title" data-i18n="mon.s1.title">Create an API token for Prometheus</div><div class="step-desc" data-i18n="mon.s1.desc">In the UI go to your profile → <strong>API Tokens → Generate Token</strong>. Paste the <code>nxs_*</code> token into <code>deploy/monitoring/prometheus-token</code>.</div></div></div>
-    <div class="step-item"><div class="step-num">02</div><div><div class="step-title" data-i18n="mon.s2.title">Start the monitoring stack</div><div class="step-desc" data-i18n="mon.s2.desc">Run <code>docker compose --profile monitoring up -d</code>. Prometheus scrapes <code>/metrics</code> every 10 seconds. The Grafana dashboard loads automatically.</div></div></div>
-    <div class="step-item"><div class="step-num">03</div><div><div class="step-title" data-i18n="mon.s3.title">Open the UI Charts tab</div><div class="step-desc" data-i18n="mon.s3.desc">In the Nexspence UI, go to <strong>Admin → Monitoring</strong>. The <strong>Charts</strong> tab shows request rate, error rate, and storage growth without needing Grafana.</div></div></div>
-  </div>
-  <div class="cb"><div class="cb-bar"><span>curl — metrics endpoint</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
-  <div class="cb-body">curl -H "Authorization: Bearer nxs_your_token" \
-  http://localhost:8081/metrics</div></div>
-</template>
-
-<template id="tpl-promotion">
-  <div class="doc-section-title" data-i18n="promo.title">Build Promotion</div>
-  <div class="doc-section-sub" data-i18n="promo.sub">Promote artifacts through environments (e.g. staging → production) with optional vulnerability scan gates and approval workflows.</div>
-
-  <div class="inst-sep" data-i18n="promo.how.sep">How It Works</div>
-  <div class="step-list">
-    <div class="step-item"><div class="step-num">01</div><div><div class="step-title" data-i18n="promo.s1.title">Create a Promotion Rule</div><div class="step-desc" data-i18n="promo.s1.desc"><strong>Admin → Promotion → + Create Rule</strong>. Set source repository, target repository, an optional CEL path filter, and whether a passing vulnerability scan is required before promotion.</div></div></div>
-    <div class="step-item"><div class="step-num">02</div><div><div class="step-title" data-i18n="promo.s2.title">Request promotion</div><div class="step-desc" data-i18n="promo.s2.desc">In <strong>Browse</strong>, select an artifact and click <strong>Promote</strong>. Or use the REST API. A promotion request is created in the queue.</div></div></div>
-    <div class="step-item"><div class="step-num">03</div><div><div class="step-title" data-i18n="promo.s3.title">Approve or reject</div><div class="step-desc" data-i18n="promo.s3.desc">Admins review the request queue in <strong>Admin → Promotion → Requests</strong>. Approve to copy the artifact blob to the target repository (no data duplication — shared blob key).</div></div></div>
-  </div>
-  <div class="cb"><div class="cb-bar"><span>curl — promote via API</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
-  <div class="cb-body">curl -u admin:admin123 -X POST \
-  http://localhost:8081/api/v1/promotion/promote \
-  -H "Content-Type: application/json" \
-  -d '{
-    "component_id": "abc-123",
-    "rule_id": "rule-456",
-    "note": "Approved for production"
-  }'</div></div>
-  <div class="alert-info" data-i18n="promo.scan.note"><strong>Scan gate:</strong> If <em>Require scan pass</em> is enabled on the rule, components with HIGH or CRITICAL vulnerabilities are blocked from promotion until the issues are resolved.</div>
-</template>
-
-<template id="tpl-replication">
-  <div class="doc-section-title" data-i18n="repl.title">Content Replication</div>
-  <div class="doc-section-sub" data-i18n="repl.sub">Automatically push artifacts from one Nexspence instance to another on a schedule — for geo-distribution, DR, or environment promotion.</div>
-
-  <div class="step-list">
-    <div class="step-item"><div class="step-num">01</div><div><div class="step-title" data-i18n="repl.s1.title">Create a Replication Rule</div><div class="step-desc" data-i18n="repl.s1.desc"><strong>Admin → Replication → + Create</strong>. Set: source repository, target Nexspence URL, target repository name, credentials for the remote instance, and a cron schedule.</div></div></div>
-    <div class="step-item"><div class="step-num">02</div><div><div class="step-title" data-i18n="repl.s2.title">Test the connection</div><div class="step-desc" data-i18n="repl.s2.desc">Click <strong>Test Connection</strong> on the rule card. Nexspence sends a probe request to the remote URL and reports success or error.</div></div></div>
-    <div class="step-item"><div class="step-num">03</div><div><div class="step-title" data-i18n="repl.s3.title">Monitor replication history</div><div class="step-desc" data-i18n="repl.s3.desc">The history table on each rule shows past runs: timestamp, artifacts synced, errors. Click <strong>Run Now</strong> to trigger an immediate sync.</div></div></div>
-  </div>
-  <div class="alert-info" data-i18n="repl.diff.note"><strong>Differential sync:</strong> Each run compares asset paths between source and target and only pushes artifacts that are missing or changed on the remote. Credentials are stored AES-256-GCM encrypted.</div>
-</template>
-
-<template id="tpl-tf-overview">
-  <div class="doc-section-title"><span data-i18n="tf.title">Terraform Provider</span> <span class="vbadge-inline tf">Provider v0.2.0</span> <span class="vbadge-inline reg" data-i18n="tf.ov.reg">on Terraform Registry</span></div>
-  <div class="doc-section-sub" data-i18n="tf.sub">Manage Nexspence as code with the official Terraform provider — repositories, blob stores, users, roles, content selectors, and privileges, all version-controlled and reproducible. Published on the <a href="https://registry.terraform.io/providers/nexspence/nexspence" target="_blank" rel="noopener" style="color:var(--blue)">Terraform Registry</a> as <code>nexspence/nexspence</code>.</div>
-
-  <div class="inst-sep" data-i18n="tf.qs.sep">Quick Start</div>
-  <p style="font-size:.8rem;color:var(--dim);margin-bottom:10px;line-height:1.6" data-i18n="tf.qs.desc">Declare the provider, point it at your Nexspence server, and define resources. Run <code>terraform init</code>, then <code>terraform apply</code>.</p>
-  <div class="cb"><div class="cb-bar"><span>main.tf</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
-  <div class="cb-body">terraform {
-  required_providers {
-    nexspence = {
-      source  = <span class="cs">"nexspence/nexspence"</span>
-      version = <span class="cs">"~> 0.1"</span>
-    }
-  }
-}
-
-provider <span class="cs">"nexspence"</span> {
-  url   = <span class="cs">"https://nexspence.example.com"</span>
-  token = var.nexspence_token
-}
-
-resource <span class="cs">"nexspence_repository"</span> <span class="cs">"maven_central"</span> {
-  name       = <span class="cs">"maven-central"</span>
-  format     = <span class="cs">"maven2"</span>
-  type       = <span class="cs">"proxy"</span>
-  blob_store = <span class="cs">"default"</span>
-  proxy {
-    remote_url = <span class="cs">"https://repo1.maven.org/maven2/"</span>
-  }
-}</div></div>
-</template>
-
-<template id="tpl-tf-auth">
-  <div class="doc-section-title" data-i18n="tf.auth.sep">Authentication</div>
-  <p style="font-size:.8rem;color:var(--dim);margin:6px 0 14px;line-height:1.6" data-i18n="tf.auth.desc">Authenticate with an <code>nxs_*</code> API token (preferred) or username + password. Set credentials in the provider block or via environment variables.</p>
-  <div class="cb"><div class="cb-bar"><span>shell — environment variables</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
-  <div class="cb-body"><span class="cc"># API token (preferred)</span>
-export NEXSPENCE_URL=<span class="cs">"https://nexspence.example.com"</span>
-export NEXSPENCE_TOKEN=<span class="cs">"nxs_xxxxxxxxxxxxxxxx"</span>
-
-<span class="cc"># or HTTP Basic auth</span>
-export NEXSPENCE_USERNAME=<span class="cs">"admin"</span>
-export NEXSPENCE_PASSWORD=<span class="cs">"admin123"</span></div></div>
-  <div class="alert-info" data-i18n="tf.auth.note"><strong>Token:</strong> Generate an <code>nxs_*</code> token in <strong>Security → API Tokens</strong> and pass it via the <code>token</code> argument or <code>NEXSPENCE_TOKEN</code>. Never commit secrets to version control — use a Terraform variable or a secrets manager.</div>
-</template>
-
-<template id="tpl-tf-resources">
-  <div class="doc-section-title"><span data-i18n="tf.res.title">Resources</span> <span class="vbadge-inline tf">10</span></div>
-  <div class="doc-section-sub" data-i18n="tf.res.desc">Each resource maps to a Nexspence object and supports create, read, update, delete, and <code>terraform import</code>.</div>
-  <table class="doc-table">
-    <thead><tr><th data-i18n="tf.res.th.name">Name</th><th data-i18n="tf.res.th.desc">Manages</th></tr></thead>
-    <tbody>
-      <tr><td><code>nexspence_repository</code></td><td data-i18n="tf.res.repository">Hosted, proxy, and group repositories for any format</td></tr>
-      <tr><td><code>nexspence_blobstore</code></td><td data-i18n="tf.res.blobstore">Local or S3-compatible blob stores</td></tr>
-      <tr><td><code>nexspence_content_selector</code></td><td data-i18n="tf.res.cs">CEL content selectors</td></tr>
-      <tr><td><code>nexspence_privilege</code></td><td data-i18n="tf.res.priv">Content-selector privileges</td></tr>
-      <tr><td><code>nexspence_role</code></td><td data-i18n="tf.res.role">Roles grouping privileges together</td></tr>
-      <tr><td><code>nexspence_user</code></td><td data-i18n="tf.res.user">User accounts and their role assignments</td></tr>
-      <tr><td><code>nexspence_cleanup_policy</code></td><td data-i18n="tf.res.cleanup">Scheduled cleanup policies (age / downloads / retain N)</td></tr>
-      <tr><td><code>nexspence_routing_rule</code></td><td data-i18n="tf.res.routing">ALLOW/BLOCK path routing rules</td></tr>
-      <tr><td><code>nexspence_webhook</code></td><td data-i18n="tf.res.webhook">Outbound event webhooks (HMAC-signed)</td></tr>
-      <tr><td><code>nexspence_promotion_rule</code></td><td data-i18n="tf.res.promotion">Build-promotion rules (scan gate / manual approval)</td></tr>
-    </tbody>
-  </table>
-</template>
-
-<template id="tpl-tf-data">
-  <div class="doc-section-title"><span data-i18n="tf.data.title">Data Sources</span> <span class="vbadge-inline tf">2</span></div>
-  <div class="doc-section-sub" data-i18n="tf.data.desc">Read existing Nexspence state into Terraform without managing it.</div>
-  <table class="doc-table">
-    <thead><tr><th data-i18n="tf.res.th.name">Name</th><th data-i18n="tf.data.th.ret">Returns</th></tr></thead>
-    <tbody>
-      <tr><td><code>nexspence_repository</code></td><td data-i18n="tf.res.d-repository">Look up a single existing repository</td></tr>
-      <tr><td><code>nexspence_repositories</code></td><td data-i18n="tf.res.d-repositories">List all repositories, optionally filtered by format or type</td></tr>
-    </tbody>
-  </table>
-  <div class="cb"><div class="cb-bar"><span>data.tf</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
-  <div class="cb-body">data <span class="cs">"nexspence_repositories"</span> <span class="cs">"all_docker"</span> {
-  format = <span class="cs">"docker"</span>
-}
-
-output <span class="cs">"docker_repo_names"</span> {
-  value = [for r in data.nexspence_repositories.all_docker.repositories : r.name]
-}</div></div>
-</template>
-
-<template id="tpl-tf-examples">
-  <div class="doc-section-title" data-i18n="tf.ex.title">Examples &amp; local development</div>
-  <div class="doc-section-sub" data-i18n="tf.ex.desc">A full manifest exercising every resource and data source ships at <code>deploy/terraform-example/</code>. You can define local or S3 blob stores as code, too.</div>
-
-  <div class="inst-sep" data-i18n="tf.bs.sep">Blob Stores (local &amp; S3)</div>
-  <p style="font-size:.8rem;color:var(--dim);margin-bottom:10px;line-height:1.6" data-i18n="tf.bs.desc">Define local or S3-compatible blob stores. The S3 <code>endpoint</code> is dialed by the Nexspence server, so use an address the server can reach (e.g. an in-network hostname) — not your workstation's localhost.</p>
-  <div class="cb"><div class="cb-bar"><span>blobstores.tf</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
-  <div class="cb-body">resource <span class="cs">"nexspence_blobstore"</span> <span class="cs">"main"</span> {
-  name = <span class="cs">"main"</span>
-  type = <span class="cs">"local"</span>
-  path = <span class="cs">"./data/blobs/main"</span>
-}
-
-resource <span class="cs">"nexspence_blobstore"</span> <span class="cs">"s3"</span> {
-  name = <span class="cs">"s3-store"</span>
-  type = <span class="cs">"s3"</span>
-  s3 = {
-    bucket           = <span class="cs">"nexspence-blobs"</span>
-    region           = <span class="cs">"us-east-1"</span>
-    endpoint         = <span class="cs">"http://minio:9000"</span>
-    access_key       = <span class="cs">"minioadmin"</span>
-    secret_key       = var.s3_secret_key
-    force_path_style = <span class="cs">true</span>
-  }
-}</div></div>
-
-  <div class="inst-sep" data-i18n="tf.dev.sep">Local development override</div>
-  <p style="font-size:.8rem;color:var(--dim);margin-bottom:10px;line-height:1.6" data-i18n="tf.dev.desc">To hack on the provider itself, point Terraform at your locally built binary with a dev override in <code>~/.terraformrc</code>.</p>
-  <div class="cb"><div class="cb-bar"><span>~/.terraformrc</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
-  <div class="cb-body">provider_installation {
-  dev_overrides {
-    <span class="cs">"nexspence/nexspence"</span> = <span class="cs">"/Users/you/go/bin"</span>
-  }
-  direct {}
-}</div></div>
-</template>
-
-<template id="tpl-install">
+      </section>
+      <section id="sec-install" class="doc-section" hidden>
   <div class="doc-section-title" data-i18n="inst.title">Installation</div>
   <div class="doc-section-sub" data-i18n="inst.sub">Docker image: <code>ghcr.io/nexspence/nexspence:latest</code> — linux/amd64 and linux/arm64. Download the release zip from <a href="https://github.com/nexspence/nexspence/releases/latest" target="_blank" rel="noopener" style="color:var(--blue)">GitHub Releases</a>.</div>
 
@@ -1233,9 +646,8 @@ helm install nexspence deploy/helm/nexspence \
       <tr><td><code>auth.rate_limit_enabled</code></td><td><code>false</code></td><td>Enable per-IP / per-user rate limiting</td></tr>
     </tbody>
   </table>
-</template>
-
-<template id="tpl-native-install">
+      </section>
+      <section id="sec-native-install" class="doc-section" hidden>
   <div class="doc-section-title" data-i18n="ni.title">Native Install (no Docker)</div>
   <div class="doc-section-sub" data-i18n="ni.sub">Run Nexspence directly on Linux, macOS, or Windows. The single binary embeds the web UI and requires only an external PostgreSQL — no Docker needed.</div>
 
@@ -1419,55 +831,602 @@ server {
     }
 }</div></div>
   <div class="alert-info" data-i18n="ni.docker.login">After enabling the connector and restarting Nexspence, <code>docker login repo-name.registry.example.com</code> targets that hosted repository directly — no port or path prefix needed.</div>
-</template>
+      </section>
+      <section id="sec-upgrade" class="doc-section" hidden>
+  <div class="doc-section-title" data-i18n="upg.title">Upgrading</div>
+  <div class="doc-section-sub" data-i18n="upg.sub">Notes for moving an existing deployment to a newer Nexspence release.</div>
 
-<template id="tpl-formats">
-  <div class="doc-section-title" data-i18n="fmt.title">Supported Formats</div>
-  <div class="doc-section-sub" data-i18n="fmt.sub">14 artifact formats — each supports Hosted, Proxy, and Group repository types.</div>
-  <table class="doc-table">
-    <thead><tr><th>Format</th><th>Protocol</th><th>Hosted</th><th>Proxy</th><th>Group</th></tr></thead>
-    <tbody>
-      <tr><td>Maven 2/3</td><td>Maven HTTP</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
-      <tr><td>npm</td><td>npm registry v1</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
-      <tr><td>PyPI</td><td>Simple index + twine</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
-      <tr><td>Docker / OCI</td><td>OCI Distribution v2</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
-      <tr><td>Go Modules</td><td>GOPROXY v2</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
-      <tr><td>NuGet</td><td>v2 OData + v3 flat</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
-      <tr><td>Helm</td><td>chart index.yaml</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
-      <tr><td>Cargo</td><td>Sparse index</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
-      <tr><td>Apt</td><td>Debian Packages index</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
-      <tr><td>Yum / RPM</td><td>repomd.xml</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
-      <tr><td>Conan</td><td>Conan v1</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
-      <tr><td>Raw</td><td>HTTP PUT/GET</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
-      <tr><td>Conda</td><td>conda index</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
-      <tr><td>Terraform</td><td>Registry protocol v1</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
-    </tbody>
-  </table>
-</template>
+  <div class="inst-sep" data-i18n="upg.v1180.sep">Upgrading to v1.18.0 — Blob Ownership Fix</div>
+  <div class="alert-info" style="background:rgba(245,158,11,.06);border-color:rgba(245,158,11,.2)" data-i18n="upg.v1180.info"><strong style="color:var(--amber)">One-time step for existing single-node Docker Compose deployments.</strong> The v1.18.0 image now runs as non-root <code>uid 1000</code>, but blob volumes created by older root-running images are owned by <code>root</code>. Fix ownership once before starting the new image, otherwise Nexspence cannot write to its blob store.</div>
+  <div class="cb"><div class="cb-bar"><span>shell — run once before upgrading</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body">docker compose run --rm --user 0 nexspence \
+  chown -R 1000:1000 /app/data/blobs</div></div>
+  <p style="font-size:.8rem;color:var(--dim);margin-top:14px;line-height:1.6" data-i18n="upg.v1180.note">Fresh installs and S3 blob stores are unaffected. After the <code>chown</code>, start the stack normally with <code>docker compose up -d</code>.</p>
+      </section>
+      <section id="sec-repositories" class="doc-section" hidden>
+  <div class="doc-section-title" data-i18n="repo.title">Repositories</div>
+  <div class="doc-section-sub" data-i18n="repo.sub">Nexspence organises artifacts into repositories. Each repository has a type (Hosted, Proxy, or Group) and a format (Maven, Docker, npm, etc.).</div>
 
-<template id="tpl-api">
-  <div class="doc-section-title" data-i18n="api.title">API Reference</div>
-  <div class="doc-section-sub" data-i18n="api.sub">Nexspence exposes two API surfaces.</div>
-  <table class="doc-table" style="margin-bottom:20px">
-    <thead><tr><th>Base Path</th><th>Purpose</th></tr></thead>
-    <tbody>
-      <tr><td><code>/service/rest/v1/</code></td><td>Nexus OSS v1 REST API — 100% compatible, drop-in for existing pipelines</td></tr>
-      <tr><td><code>/service/rest/beta/</code></td><td>Nexus beta endpoints — partial support</td></tr>
-      <tr><td><code>/api/v1/</code></td><td>Native Nexspence API — migration, extended system info, monitoring</td></tr>
-      <tr><td><code>/repository/:name/*</code></td><td>Artifact protocol endpoints (Maven, npm, Docker, etc.)</td></tr>
-      <tr><td><code>/v2/</code></td><td>Docker OCI Distribution Spec v2</td></tr>
-    </tbody>
-  </table>
-  <div class="alert-info" data-i18n="api.spec"><strong>Full OpenAPI 3.1 spec</strong> is included in the release zip as <code>docs/api-spec.yaml</code>.</div>
+  <figure class="doc-shot"><img src="../assets/screenshots/repositories.PNG" alt="Repositories list with format badges and type filters" loading="lazy"><figcaption data-i18n="shot.repos">Repositories view — format badges, type filters, and per-repo storage usage.</figcaption></figure>
+
+  <div class="inst-sep" data-i18n="repo.types.sep">Repository Types</div>
   <div class="step-list">
     <div class="step-item">
-      <div class="step-num" style="font-size:1rem">🔑</div>
-      <div><div class="step-title" data-i18n="api.auth.title">Authentication</div><div class="step-desc" data-i18n="api.auth.desc">JWT Bearer token (from <code>POST /api/v1/auth/login</code>), API tokens (<code>nxs_*</code> prefix via Bearer or Basic password), or HTTP Basic with username + password.</div></div>
+      <div class="step-num" style="background:linear-gradient(135deg,#22c55e,#16a34a)">H</div>
+      <div>
+        <div class="step-title" data-i18n="repo.hosted.title">Hosted</div>
+        <div class="step-desc" data-i18n="repo.hosted.desc">Stores artifacts you publish directly. Use for internal builds, release binaries, private packages. Supports upload via CI/CD pipelines.</div>
+      </div>
+    </div>
+    <div class="step-item">
+      <div class="step-num" style="background:linear-gradient(135deg,#f59e0b,#d97706)">P</div>
+      <div>
+        <div class="step-title" data-i18n="repo.proxy.title">Proxy</div>
+        <div class="step-desc" data-i18n="repo.proxy.desc">Caches artifacts from a remote registry (Maven Central, npmjs, PyPI, Docker Hub, etc.). First request fetches from upstream; subsequent requests serve from cache. Reduces bandwidth and provides availability even if upstream is down.</div>
+      </div>
+    </div>
+    <div class="step-item">
+      <div class="step-num" style="background:linear-gradient(135deg,#8b5cf6,#7c3aed)">G</div>
+      <div>
+        <div class="step-title" data-i18n="repo.group.title">Group</div>
+        <div class="step-desc" data-i18n="repo.group.desc">Aggregates multiple repositories (hosted + proxy) under one URL. Clients use a single endpoint; Nexspence searches members in order and returns the first match. Ideal for giving developers one URL for all dependencies.</div>
+      </div>
     </div>
   </div>
-</template>
 
-<template id="tpl-security">
+  <div class="inst-sep" data-i18n="repo.create.sep">Creating a Repository</div>
+  <div class="step-list">
+    <div class="step-item"><div class="step-num">01</div><div><div class="step-title" data-i18n="repo.create.s1.title">Open the Repositories page</div><div class="step-desc" data-i18n="repo.create.s1.desc">Navigate to <strong>Repositories</strong> in the sidebar. Click the <strong>+ Create</strong> button in the top-right corner.</div></div></div>
+    <div class="step-item"><div class="step-num">02</div><div><div class="step-title" data-i18n="repo.create.s2.title">Choose type and format</div><div class="step-desc" data-i18n="repo.create.s2.desc">Select the repository type (Hosted / Proxy / Group) and format (Maven, npm, Docker, etc.) in the wizard. The name must be unique and URL-safe.</div></div></div>
+    <div class="step-item"><div class="step-num">03</div><div><div class="step-title" data-i18n="repo.create.s3.title">Configure format-specific settings</div><div class="step-desc" data-i18n="repo.create.s3.desc">For <strong>Proxy</strong>: enter the upstream Remote URL (e.g. <code>https://registry.npmjs.org</code>). For <strong>Group</strong>: select member repositories in order. For all types: optionally assign a blob store and cleanup policy.</div></div></div>
+    <div class="step-item"><div class="step-num">04</div><div><div class="step-title" data-i18n="repo.create.s4.title">Use the repository URL</div><div class="step-desc" data-i18n="repo.create.s4.desc">After creation the URL is shown on the repository card: <code>http://localhost:8081/repository/{name}/</code>. Point your build tool at this URL.</div></div></div>
+  </div>
+
+  <div class="inst-sep" data-i18n="repo.urls.sep">Repository URL Patterns</div>
+  <table class="doc-table">
+    <thead><tr><th data-i18n="repo.urls.th.format">Format</th><th data-i18n="repo.urls.th.url">URL pattern</th><th data-i18n="repo.urls.th.notes">Notes</th></tr></thead>
+    <tbody>
+      <tr><td>Maven</td><td><code>/repository/{name}/</code></td><td data-i18n="repo.urls.maven">Use as <code>&lt;url&gt;</code> in <code>pom.xml</code> or <code>settings.xml</code></td></tr>
+      <tr><td>npm</td><td><code>/repository/{name}/</code></td><td data-i18n="repo.urls.npm">Use as <code>registry</code> in <code>.npmrc</code></td></tr>
+      <tr><td>PyPI</td><td><code>/repository/{name}/simple/</code></td><td data-i18n="repo.urls.pypi">Use as <code>index-url</code> in <code>pip.conf</code></td></tr>
+      <tr><td>Docker</td><td><code>localhost:5000/{name}</code></td><td data-i18n="repo.urls.docker">Registry port 5000, image name includes repo</td></tr>
+      <tr><td>Helm</td><td><code>/repository/{name}/</code></td><td data-i18n="repo.urls.helm">Add with <code>helm repo add</code></td></tr>
+      <tr><td>Go</td><td><code>/repository/{name}/</code></td><td data-i18n="repo.urls.go">Set as <code>GOPROXY</code></td></tr>
+      <tr><td>NuGet</td><td><code>/repository/{name}/index.json</code></td><td data-i18n="repo.urls.nuget">v3 flat container endpoint</td></tr>
+      <tr><td>Cargo</td><td><code>/repository/{name}/</code></td><td data-i18n="repo.urls.cargo">Sparse index endpoint</td></tr>
+      <tr><td>Raw</td><td><code>/repository/{name}/</code></td><td data-i18n="repo.urls.raw">PUT/GET any path</td></tr>
+    </tbody>
+  </table>
+
+  <div class="inst-sep" data-i18n="repo.anon.sep">Anonymous Access</div>
+  <div class="alert-info" data-i18n="repo.anon.info">Enable <strong>Allow anonymous access</strong> on a repository to let unauthenticated users download artifacts. Write operations always require authentication. Configure globally in <strong>Admin → Security → Anonymous Access</strong> and per-repository in the repo settings.</div>
+      </section>
+      <section id="sec-formats-guide" class="doc-section" hidden>
+  <div class="doc-section-title" data-i18n="fg.title">Format Setup Guides</div>
+  <div class="doc-section-sub" data-i18n="fg.sub">How to configure your build tools and package managers to use Nexspence repositories. Replace <code>localhost:8081</code> with your server URL and <code>{repo}</code> with your repository name.</div>
+
+  <!-- Maven -->
+  <div class="inst-sep">Maven / Gradle</div>
+  <p style="font-size:.8rem;color:var(--dim);margin-bottom:10px;line-height:1.6" data-i18n="fg.maven.desc">Add Nexspence as a mirror in <code>~/.m2/settings.xml</code> to route all dependency downloads through your proxy repository.</p>
+  <div class="cb"><div class="cb-bar"><span>~/.m2/settings.xml</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body">&lt;settings&gt;
+  &lt;mirrors&gt;
+    &lt;mirror&gt;
+      &lt;id&gt;nexspence&lt;/id&gt;
+      &lt;url&gt;http://localhost:8081/repository/maven-public/&lt;/url&gt;
+      &lt;mirrorOf&gt;*&lt;/mirrorOf&gt;
+    &lt;/mirror&gt;
+  &lt;/mirrors&gt;
+  &lt;servers&gt;
+    &lt;server&gt;
+      &lt;id&gt;nexspence&lt;/id&gt;
+      &lt;username&gt;admin&lt;/username&gt;
+      &lt;password&gt;admin123&lt;/password&gt;
+    &lt;/server&gt;
+  &lt;/servers&gt;
+&lt;/settings&gt;</div></div>
+  <div class="cb"><div class="cb-bar"><span>pom.xml — deploy</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body">&lt;distributionManagement&gt;
+  &lt;repository&gt;
+    &lt;id&gt;nexspence&lt;/id&gt;
+    &lt;url&gt;http://localhost:8081/repository/maven-releases/&lt;/url&gt;
+  &lt;/repository&gt;
+  &lt;snapshotRepository&gt;
+    &lt;id&gt;nexspence&lt;/id&gt;
+    &lt;url&gt;http://localhost:8081/repository/maven-snapshots/&lt;/url&gt;
+  &lt;/snapshotRepository&gt;
+&lt;/distributionManagement&gt;</div></div>
+
+  <!-- npm -->
+  <div class="inst-sep">npm / yarn</div>
+  <div class="cb"><div class="cb-bar"><span>.npmrc</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body">registry=http://localhost:8081/repository/npm-public/
+//localhost:8081/repository/npm-public/:_auth=YWRtaW46YWRtaW4xMjM=
+//localhost:8081/repository/npm-public/:always-auth=true</div></div>
+  <div class="alert-info" data-i18n="fg.npm.auth.note"><strong>Auth token:</strong> <code>_auth</code> is base64 of <code>username:password</code>. Generate: <code>echo -n "admin:admin123" | base64</code>. To publish: <code>npm publish --registry http://localhost:8081/repository/npm-hosted/</code></div>
+
+  <!-- PyPI -->
+  <div class="inst-sep">PyPI / pip</div>
+  <div class="cb"><div class="cb-bar"><span>~/.config/pip/pip.conf</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body">[global]
+index-url = http://admin:admin123@localhost:8081/repository/pypi-proxy/simple/
+trusted-host = localhost</div></div>
+  <div class="cb"><div class="cb-bar"><span>publish with twine</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body">twine upload \
+  --repository-url http://localhost:8081/repository/pypi-hosted/ \
+  --username admin --password admin123 \
+  dist/*</div></div>
+
+  <!-- Docker -->
+  <div class="inst-sep">Docker / OCI</div>
+  <div class="alert-info" data-i18n="fg.docker.insecure.note"><strong>HTTP registry:</strong> Add <code>"insecure-registries": ["localhost:5000"]</code> to Docker daemon config (<code>/etc/docker/daemon.json</code>) when using HTTP. Restart Docker after.</div>
+  <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body"><span class="cc"># Login</span>
+docker login localhost:5000 -u admin -p admin123
+
+<span class="cc"># Pull through proxy</span>
+docker pull localhost:5000/docker-proxy/library/nginx:latest
+
+<span class="cc"># Push to hosted</span>
+docker tag myimage:1.0 localhost:5000/docker-hosted/myimage:1.0
+docker push localhost:5000/docker-hosted/myimage:1.0</div></div>
+
+  <!-- Helm -->
+  <div class="inst-sep">Helm Charts</div>
+  <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body"><span class="cc"># Add repository</span>
+helm repo add nexspence \
+  http://localhost:8081/repository/helm-public/ \
+  --username admin --password admin123
+
+helm repo update
+
+<span class="cc"># Search and install</span>
+helm search repo nexspence/
+helm install my-release nexspence/my-chart
+
+<span class="cc"># Push chart (requires helm-push plugin)</span>
+helm plugin install https://github.com/chartmuseum/helm-push
+helm cm-push my-chart/ nexspence</div></div>
+
+  <!-- Go -->
+  <div class="inst-sep">Go Modules</div>
+  <div class="cb"><div class="cb-bar"><span>shell / go.env</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body"><span class="cc"># Set GOPROXY</span>
+go env -w GOPROXY=http://localhost:8081/repository/go-proxy/|direct
+go env -w GONOSUMCHECK=localhost:8081
+
+<span class="cc"># Use in project</span>
+go get github.com/some/module@v1.2.3</div></div>
+
+  <!-- Cargo -->
+  <div class="inst-sep">Cargo (Rust)</div>
+  <div class="cb"><div class="cb-bar"><span>~/.cargo/config.toml</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body">[source.crates-io]
+replace-with = "nexspence"
+
+[source.nexspence]
+registry = "sparse+http://localhost:8081/repository/cargo-proxy/"
+
+[net]
+git-fetch-with-cli = true</div></div>
+
+  <!-- NuGet -->
+  <div class="inst-sep">NuGet (.NET)</div>
+  <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body"><span class="cc"># Add source</span>
+dotnet nuget add source \
+  http://localhost:8081/repository/nuget-public/index.json \
+  --name nexspence \
+  --username admin \
+  --password admin123 \
+  --store-password-in-clear-text
+
+<span class="cc"># Push package</span>
+dotnet nuget push mypackage.nupkg \
+  --source http://localhost:8081/repository/nuget-hosted/ \
+  --api-key admin123</div></div>
+
+  <!-- Raw -->
+  <div class="inst-sep">Raw Files</div>
+  <div class="cb"><div class="cb-bar"><span>curl</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body"><span class="cc"># Upload a file</span>
+curl -u admin:admin123 \
+  -T myfile.tar.gz \
+  http://localhost:8081/repository/raw-hosted/releases/myfile.tar.gz
+
+<span class="cc"># Download</span>
+curl -u admin:admin123 \
+  -O http://localhost:8081/repository/raw-hosted/releases/myfile.tar.gz</div></div>
+      </section>
+      <section id="sec-browse-search" class="doc-section" hidden>
+  <div class="doc-section-title" data-i18n="bs.title">Browse &amp; Search</div>
+  <div class="doc-section-sub" data-i18n="bs.sub">Find, inspect, and download artifacts stored in Nexspence repositories.</div>
+
+  <div class="inst-sep" data-i18n="bs.browse.sep">Browse</div>
+  <div class="step-list">
+    <div class="step-item"><div class="step-num">01</div><div><div class="step-title" data-i18n="bs.browse.s1.title">Open Browse</div><div class="step-desc" data-i18n="bs.browse.s1.desc">Click <strong>Browse</strong> in the sidebar. Select a repository from the dropdown on the left.</div></div></div>
+    <div class="step-item"><div class="step-num">02</div><div><div class="step-title" data-i18n="bs.browse.s2.title">Navigate the tree</div><div class="step-desc" data-i18n="bs.browse.s2.desc">For most formats a file tree is shown. For Docker repositories a two-column view shows image names on the left and tags on the right.</div></div></div>
+    <div class="step-item"><div class="step-num">03</div><div><div class="step-title" data-i18n="bs.browse.s3.title">Inspect a component</div><div class="step-desc" data-i18n="bs.browse.s3.desc">Click any file or component to open a detail panel with metadata (size, SHA-256, upload date), download link, and usage examples for common tools.</div></div></div>
+  </div>
+
+  <figure class="doc-shot"><img src="../assets/screenshots/browse.PNG" alt="Browse page with the file tree expanded and a component detail panel open" loading="lazy"><figcaption data-i18n="shot.browse">Browse — file tree on the left, component metadata and download panel on the right.</figcaption></figure>
+
+  <div class="inst-sep" data-i18n="bs.search.sep">Search</div>
+  <div class="step-list">
+    <div class="step-item"><div class="step-num">01</div><div><div class="step-title" data-i18n="bs.search.s1.title">Open Search</div><div class="step-desc" data-i18n="bs.search.s1.desc">Click <strong>Search</strong> in the sidebar. Enter a keyword in the search box — matches component names, group IDs, and artifact IDs.</div></div></div>
+    <div class="step-item"><div class="step-num">02</div><div><div class="step-title" data-i18n="bs.search.s2.title">Filter by format or repository</div><div class="step-desc" data-i18n="bs.search.s2.desc">Use the <strong>Format</strong> and <strong>Repository</strong> dropdowns to narrow results. You can also filter by tag.</div></div></div>
+    <div class="step-item"><div class="step-num">03</div><div><div class="step-title" data-i18n="bs.search.s3.title">Use the API</div><div class="step-desc" data-i18n="bs.search.s3.desc">Search is also available via the REST API for CI/CD integration.</div></div></div>
+  </div>
+
+  <figure class="doc-shot"><img src="../assets/screenshots/search.PNG" alt="Search results with format badges and tag chips" loading="lazy"><figcaption data-i18n="shot.search">Search — keyword results with format badges, repository filter, and tag chips.</figcaption></figure>
+
+  <div class="cb"><div class="cb-bar"><span>curl — search API</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body"><span class="cc"># Search by keyword</span>
+curl -u admin:admin123 \
+  "http://localhost:8081/service/rest/v1/search?q=mylib"
+
+<span class="cc"># Filter by format and repository</span>
+curl -u admin:admin123 \
+  "http://localhost:8081/service/rest/v1/search?format=maven2&repository=maven-releases&q=spring"
+
+<span class="cc"># List all components in a repository</span>
+curl -u admin:admin123 \
+  "http://localhost:8081/service/rest/v1/components?repository=npm-hosted"</div></div>
+      </section>
+      <section id="sec-users" class="doc-section" hidden>
+  <div class="doc-section-title" data-i18n="usr.title">Users &amp; API Tokens</div>
+  <div class="doc-section-sub" data-i18n="usr.sub">Manage user accounts, passwords, and programmatic API tokens for CI/CD pipelines.</div>
+
+  <div class="inst-sep" data-i18n="usr.users.sep">User Management</div>
+  <div class="step-list">
+    <div class="step-item"><div class="step-num">01</div><div><div class="step-title" data-i18n="usr.create.title">Create a user</div><div class="step-desc" data-i18n="usr.create.desc">Go to <strong>Admin → Security → Users</strong>. Click <strong>+ Create User</strong>. Fill in username, email, first/last name, and initial password. Assign roles immediately or later.</div></div></div>
+    <div class="step-item"><div class="step-num">02</div><div><div class="step-title" data-i18n="usr.roles.title">Assign roles</div><div class="step-desc" data-i18n="usr.roles.desc">Open a user and click <strong>Assign Roles</strong>. Select roles from the transfer list. The built-in <code>nx-admin</code> role grants full access; custom roles control per-repository access via privileges.</div></div></div>
+    <div class="step-item"><div class="step-num">03</div><div><div class="step-title" data-i18n="usr.ldap.title">LDAP / Active Directory</div><div class="step-desc" data-i18n="usr.ldap.desc">Configure LDAP in <code>config.yaml</code> under the <code>ldap</code> section. Users are provisioned on first login (JIT). Groups map to Nexspence roles via <code>role_mappings</code>.</div></div></div>
+  </div>
+  <div class="cb"><div class="cb-bar"><span>curl — create user via API</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body">curl -u admin:admin123 -X POST \
+  http://localhost:8081/service/rest/v1/security/users \
+  -H "Content-Type: application/json" \
+  -d '{
+    "userId": "alice",
+    "firstName": "Alice",
+    "lastName": "Smith",
+    "emailAddress": "alice@example.com",
+    "password": "secret",
+    "status": "active",
+    "roles": ["nx-anonymous"]
+  }'</div></div>
+
+  <div class="inst-sep" data-i18n="usr.tokens.sep">API Tokens</div>
+  <div class="step-list">
+    <div class="step-item"><div class="step-num">01</div><div><div class="step-title" data-i18n="usr.token.create.title">Create a token</div><div class="step-desc" data-i18n="usr.token.create.desc">Open your profile (click your username in the bottom-left). Go to <strong>API Tokens</strong> tab. Click <strong>Generate Token</strong>. Set an optional expiry. The token is shown <strong>once</strong> — copy it immediately.</div></div></div>
+    <div class="step-item"><div class="step-num">02</div><div><div class="step-title" data-i18n="usr.token.use.title">Use the token</div><div class="step-desc" data-i18n="usr.token.use.desc">Tokens start with <code>nxs_</code>. Use as Bearer token or as the password in HTTP Basic auth (username = your username, password = token).</div></div></div>
+  </div>
+  <div class="cb"><div class="cb-bar"><span>curl — using an API token</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body"><span class="cc"># Bearer auth</span>
+curl -H "Authorization: Bearer nxs_abc123..." \
+  http://localhost:8081/service/rest/v1/repositories
+
+<span class="cc"># Basic auth (username + token as password)</span>
+curl -u admin:nxs_abc123... \
+  http://localhost:8081/service/rest/v1/components?repository=maven-releases</div></div>
+  <div class="alert-info" data-i18n="usr.token.limit.note"><strong>Token expiry:</strong> Maximum lifetime is controlled by <code>auth.token_max_days</code> in <code>config.yaml</code> (default 180 days). Tokens are hashed (SHA-256) — the plaintext is never stored.</div>
+      </section>
+      <section id="sec-rbac" class="doc-section" hidden>
+  <div class="doc-section-title" data-i18n="rbac.title">Roles &amp; Privileges</div>
+  <div class="doc-section-sub" data-i18n="rbac.sub">Nexspence uses a three-layer access control model: Content Selectors → Privileges → Roles → Users.</div>
+
+  <figure class="doc-shot"><img src="../assets/screenshots/security_roles.PNG" alt="Security Roles tab showing roles with privilege chips" loading="lazy"><figcaption data-i18n="shot.roles">Security → Roles — each role lists its granted privileges as chips.</figcaption></figure>
+
+  <div class="inst-sep" data-i18n="rbac.model.sep">Access Control Model</div>
+  <div class="step-list">
+    <div class="step-item">
+      <div class="step-num" style="background:linear-gradient(135deg,#06b6d4,#0891b2)">1</div>
+      <div><div class="step-title" data-i18n="rbac.cs.title">Content Selector</div><div class="step-desc" data-i18n="rbac.cs.desc">A CEL expression that defines <em>which artifacts</em> the rule applies to. Variables available: <code>format</code>, <code>path</code>, <code>repository</code>. Example: <code>format == "maven2" &amp;&amp; path.startsWith("/com/example/")</code></div></div>
+    </div>
+    <div class="step-item">
+      <div class="step-num" style="background:linear-gradient(135deg,#f59e0b,#d97706)">2</div>
+      <div><div class="step-title" data-i18n="rbac.priv.title">Privilege</div><div class="step-desc" data-i18n="rbac.priv.desc">Binds a Content Selector to a permission. In Nexspence all user-created privileges are of type <code>repository-content-selector</code>. Create in <strong>Admin → Security → Privileges</strong>.</div></div>
+    </div>
+    <div class="step-item">
+      <div class="step-num" style="background:linear-gradient(135deg,#8b5cf6,#7c3aed)">3</div>
+      <div><div class="step-title" data-i18n="rbac.role.title">Role</div><div class="step-desc" data-i18n="rbac.role.desc">A named set of privileges. Assign roles to users. The built-in <code>nx-admin</code> role grants full access to everything.</div></div>
+    </div>
+  </div>
+
+  <div class="inst-sep" data-i18n="rbac.cel.sep">CEL Expression Examples</div>
+  <table class="doc-table">
+    <thead><tr><th data-i18n="rbac.cel.th.desc">What it matches</th><th data-i18n="rbac.cel.th.expr">CEL expression</th></tr></thead>
+    <tbody>
+      <tr><td data-i18n="rbac.cel.ex1.desc">All Maven artifacts</td><td><code>format == "maven2"</code></td></tr>
+      <tr><td data-i18n="rbac.cel.ex2.desc">Specific Maven group</td><td><code>format == "maven2" &amp;&amp; path.startsWith("/com/example/")</code></td></tr>
+      <tr><td data-i18n="rbac.cel.ex3.desc">All Docker images</td><td><code>format == "docker"</code></td></tr>
+      <tr><td data-i18n="rbac.cel.ex4.desc">Specific repository</td><td><code>repository == "npm-releases"</code></td></tr>
+      <tr><td data-i18n="rbac.cel.ex5.desc">All npm packages</td><td><code>format == "npm"</code></td></tr>
+      <tr><td data-i18n="rbac.cel.ex6.desc">PyPI in specific repo</td><td><code>format == "pypi" &amp;&amp; repository == "pypi-releases"</code></td></tr>
+      <tr><td data-i18n="rbac.cel.ex7.desc">Exclude snapshots</td><td><code>format == "maven2" &amp;&amp; !path.contains("SNAPSHOT")</code></td></tr>
+    </tbody>
+  </table>
+
+  <div class="inst-sep" data-i18n="rbac.setup.sep">Setting Up Access Control</div>
+  <div class="step-list">
+    <div class="step-item"><div class="step-num">01</div><div><div class="step-title" data-i18n="rbac.setup.s1.title">Create a Content Selector</div><div class="step-desc" data-i18n="rbac.setup.s1.desc"><strong>Admin → Security → Content Selectors → + Create</strong>. Enter a name and a CEL expression. The preview shows matching artifacts.</div></div></div>
+    <div class="step-item"><div class="step-num">02</div><div><div class="step-title" data-i18n="rbac.setup.s2.title">Create a Privilege</div><div class="step-desc" data-i18n="rbac.setup.s2.desc"><strong>Admin → Security → Privileges → + Create</strong>. Select the Content Selector you just created.</div></div></div>
+    <div class="step-item"><div class="step-num">03</div><div><div class="step-title" data-i18n="rbac.setup.s3.title">Create a Role</div><div class="step-desc" data-i18n="rbac.setup.s3.desc"><strong>Admin → Security → Roles → + Create</strong>. Add the privilege to the role.</div></div></div>
+    <div class="step-item"><div class="step-num">04</div><div><div class="step-title" data-i18n="rbac.setup.s4.title">Assign the Role to a User</div><div class="step-desc" data-i18n="rbac.setup.s4.desc"><strong>Admin → Security → Users</strong>. Open the user, click <strong>Assign Roles</strong>, add the role.</div></div></div>
+  </div>
+      </section>
+      <section id="sec-cleanup" class="doc-section" hidden>
+  <div class="doc-section-title" data-i18n="cl.title">Cleanup Policies</div>
+  <div class="doc-section-sub" data-i18n="cl.sub">Automatically remove old or unused artifacts to reclaim storage space.</div>
+
+  <figure class="doc-shot"><img src="../assets/screenshots/cleanup.PNG" alt="Cleanup Policies page with policy cards and the create wizard" loading="lazy"><figcaption data-i18n="shot.cleanup">Cleanup Policies — policy cards with the create wizard (criteria step) open.</figcaption></figure>
+
+  <div class="inst-sep" data-i18n="cl.criteria.sep">Cleanup Criteria</div>
+  <table class="doc-table">
+    <thead><tr><th data-i18n="cl.th.criterion">Criterion</th><th data-i18n="cl.th.desc">Description</th></tr></thead>
+    <tbody>
+      <tr><td data-i18n="cl.age.label">Published before</td><td data-i18n="cl.age.desc">Remove artifacts published more than N days ago.</td></tr>
+      <tr><td data-i18n="cl.last.label">Last downloaded before</td><td data-i18n="cl.last.desc">Remove artifacts not downloaded in the last N days.</td></tr>
+      <tr><td data-i18n="cl.retain.label">Retain N versions</td><td data-i18n="cl.retain.desc">Keep only the N newest versions of each component. All older versions are eligible for removal.</td></tr>
+    </tbody>
+  </table>
+  <div class="step-list">
+    <div class="step-item"><div class="step-num">01</div><div><div class="step-title" data-i18n="cl.s1.title">Create a policy</div><div class="step-desc" data-i18n="cl.s1.desc">Go to <strong>Admin → Cleanup Policies</strong>. Click <strong>+ Create</strong>. Choose format scope (<code>*</code> for all formats or a specific one), set criteria, and optionally set a cron schedule.</div></div></div>
+    <div class="step-item"><div class="step-num">02</div><div><div class="step-title" data-i18n="cl.s2.title">Attach to repositories</div><div class="step-desc" data-i18n="cl.s2.desc">Open a repository settings (gear icon) and select one or more cleanup policies. Only artifacts in attached repositories are affected.</div></div></div>
+    <div class="step-item"><div class="step-num">03</div><div><div class="step-title" data-i18n="cl.s3.title">Run now or wait for schedule</div><div class="step-desc" data-i18n="cl.s3.desc">On the policy card click <strong>Run Now</strong> to trigger an immediate dry-run (preview) or full run. The default global cron is <code>0 2 * * *</code> (2 AM daily).</div></div></div>
+  </div>
+  <div class="alert-info" data-i18n="cl.dryrun.note"><strong>Dry run:</strong> The first run shows what <em>would</em> be deleted without actually removing anything. Review the preview before enabling full deletion.</div>
+
+  <div class="inst-sep" data-i18n="cl.gc.sep">Blob Garbage Collection</div>
+  <div class="doc-section-sub" data-i18n="cl.gc.sub">Cleanup policies delete <em>asset records</em>. Blob GC then reclaims the underlying <em>blobs</em> that are no longer referenced by any asset — orphans left behind by deletions, failed uploads, or migrations.</div>
+  <figure class="doc-shot"><img src="../assets/screenshots/admin_blobstores.PNG" alt="Admin Blob Stores page where garbage collection is run" loading="lazy"><figcaption data-i18n="shot.blobgc">Admin → Blob Stores. Open a store to reach the <strong>Garbage collection</strong> panel (Dry run / Compact).</figcaption></figure>
+  <div class="step-list">
+    <div class="step-item"><div class="step-num">01</div><div><div class="step-title" data-i18n="cl.gc.s1.title">Grace period</div><div class="step-desc" data-i18n="cl.gc.s1.desc">Only orphans older than <code>gc.min_age</code> (default <code>24h</code>) are collected, so an in-flight upload whose asset row is not yet committed is never removed.</div></div></div>
+    <div class="step-item"><div class="step-num">02</div><div><div class="step-title" data-i18n="cl.gc.s2.title">Run on demand</div><div class="step-desc" data-i18n="cl.gc.s2.desc">Open <strong>Admin → Blob Stores</strong>, click a store, then use <strong>Dry run</strong> to preview orphans or <strong>Compact</strong> to reclaim them. A scheduled run (<code>gc.schedule</code>, weekly by default) sweeps every store automatically.</div></div></div>
+  </div>
+  <div class="cb"><div class="cb-bar"><span data-i18n="cl.gc.cb">API &amp; CLI</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body"><span class="cc"># Preview orphans (dry run) via REST</span>
+curl -u admin:admin123 -X POST \
+  "http://localhost:8081/api/v1/blobstores/default/compact?dry_run=true"
+
+<span class="cc"># Reclaim now with the nxs CLI</span>
+nxs blobstore compact default --dry-run
+nxs blobstore compact default</div></div>
+      </section>
+      <section id="sec-webhooks" class="doc-section" hidden>
+  <div class="doc-section-title" data-i18n="wh.title">Webhooks</div>
+  <div class="doc-section-sub" data-i18n="wh.sub">Receive HTTP POST callbacks when repository events occur. Use for CI/CD triggers, Slack notifications, audit systems, and more.</div>
+
+  <div class="inst-sep" data-i18n="wh.events.sep">Events</div>
+  <table class="doc-table">
+    <thead><tr><th data-i18n="wh.th.event">Event</th><th data-i18n="wh.th.when">When</th></tr></thead>
+    <tbody>
+      <tr><td><code>artifact.published</code></td><td data-i18n="wh.ev.published">Artifact pushed to hosted or cached by proxy</td></tr>
+      <tr><td><code>artifact.deleted</code></td><td data-i18n="wh.ev.deleted">Artifact deleted</td></tr>
+      <tr><td><code>repo.created</code></td><td data-i18n="wh.ev.repo-created">Repository created</td></tr>
+      <tr><td><code>repo.updated</code></td><td data-i18n="wh.ev.repo-updated">Repository configuration updated</td></tr>
+      <tr><td><code>repo.deleted</code></td><td data-i18n="wh.ev.repo-deleted">Repository deleted</td></tr>
+      <tr><td><code>proxy.error</code></td><td data-i18n="wh.ev.proxy-error">Proxy failed to fetch from upstream</td></tr>
+    </tbody>
+  </table>
+
+  <div class="inst-sep" data-i18n="wh.setup.sep">Setting Up a Webhook</div>
+  <div class="step-list">
+    <div class="step-item"><div class="step-num">01</div><div><div class="step-title" data-i18n="wh.s1.title">Create a webhook</div><div class="step-desc" data-i18n="wh.s1.desc"><strong>Admin → Security → Webhooks → + Create</strong>. Enter a URL, select events to subscribe to, and optionally set a secret for HMAC-SHA256 signature verification.</div></div></div>
+    <div class="step-item"><div class="step-num">02</div><div><div class="step-title" data-i18n="wh.s2.title">Test delivery</div><div class="step-desc" data-i18n="wh.s2.desc">Click the ⚡ button on the webhook card to send a test event. The response status and latency are shown inline.</div></div></div>
+    <div class="step-item"><div class="step-num">03</div><div><div class="step-title" data-i18n="wh.s3.title">Verify the signature</div><div class="step-desc" data-i18n="wh.s3.desc">If a secret is set, each request carries an <code>X-Nexspence-Signature</code> header (HMAC-SHA256 of the body). Verify it on your receiver to reject forged requests.</div></div></div>
+  </div>
+  <div class="cb"><div class="cb-bar"><span>Python — verify HMAC signature</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body">import hashlib, hmac
+
+def verify(secret: str, body: bytes, header: str) -&gt; bool:
+    expected = "sha256=" + hmac.new(
+        secret.encode(), body, hashlib.sha256
+    ).hexdigest()
+    return hmac.compare_digest(expected, header)</div></div>
+  <div class="alert-info" data-i18n="wh.retry.note"><strong>Delivery:</strong> Webhooks are fired asynchronously (fire-and-forget). If your endpoint is unavailable, the event is not retried. Use a queue or durable receiver for critical integrations.</div>
+      </section>
+      <section id="sec-migration" class="doc-section" hidden>
+  <div class="doc-section-title" data-i18n="mig.title">Migration from Nexus</div>
+  <div class="doc-section-sub" data-i18n="mig.sub">Migrate repositories, users, roles, and artifacts from a live Nexus OSS or Pro instance without downtime.</div>
+
+  <div class="inst-sep" data-i18n="mig.what.sep">What Gets Migrated</div>
+  <table class="doc-table">
+    <thead><tr><th data-i18n="mig.th.item">Item</th><th data-i18n="mig.th.detail">Detail</th></tr></thead>
+    <tbody>
+      <tr><td data-i18n="mig.repos.label">Repositories</td><td data-i18n="mig.repos.desc">Hosted, proxy, and group repo definitions (format, type, configuration)</td></tr>
+      <tr><td data-i18n="mig.users.label">Users &amp; Roles</td><td data-i18n="mig.users.desc">Local Nexus users, roles, and privileges</td></tr>
+      <tr><td data-i18n="mig.blobs.label">Artifacts</td><td data-i18n="mig.blobs.desc">All components streamed via Nexus REST API — large repos pause/resume</td></tr>
+      <tr><td data-i18n="mig.cleanup.label">Cleanup policies</td><td data-i18n="mig.cleanup.desc">Imported and attached to the corresponding repositories</td></tr>
+    </tbody>
+  </table>
+  <div class="step-list">
+    <div class="step-item"><div class="step-num">01</div><div><div class="step-title" data-i18n="mig.s1.title">Open the Migration tab</div><div class="step-desc" data-i18n="mig.s1.desc">Go to <strong>Admin → System → Migration</strong>. Enter the source Nexus URL, admin username, and password.</div></div></div>
+    <div class="step-item"><div class="step-num">02</div><div><div class="step-title" data-i18n="mig.s2.title">Select scope</div><div class="step-desc" data-i18n="mig.s2.desc">Choose what to migrate: Repositories, Users, Cleanup Policies, Artifacts (blobs). You can run each separately.</div></div></div>
+    <div class="step-item"><div class="step-num">03</div><div><div class="step-title" data-i18n="mig.s3.title">Start and monitor</div><div class="step-desc" data-i18n="mig.s3.desc">Click <strong>Start Migration</strong>. Progress is shown in the job history table. Large artifact migrations can be paused and resumed.</div></div></div>
+  </div>
+  <div class="alert-info" data-i18n="mig.note"><strong>No downtime:</strong> Migration reads from a live Nexus instance via its REST API. Your existing Nexus continues serving traffic during migration. Switch DNS/clients to Nexspence when ready.</div>
+      </section>
+      <section id="sec-monitoring" class="doc-section" hidden>
+  <div class="doc-section-title" data-i18n="mon.title">Monitoring</div>
+  <div class="doc-section-sub" data-i18n="mon.sub">Nexspence exposes a Prometheus metrics endpoint and ships a pre-built Grafana dashboard with 8 panels.</div>
+
+  <div class="inst-sep" data-i18n="mon.metrics.sep">Available Metrics</div>
+  <table class="doc-table">
+    <thead><tr><th data-i18n="mon.th.metric">Metric</th><th data-i18n="mon.th.desc">Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>nexspence_requests_total</code></td><td data-i18n="mon.m.requests">Total HTTP requests (by method, path, status)</td></tr>
+      <tr><td><code>nexspence_request_duration_seconds</code></td><td data-i18n="mon.m.duration">Request latency histogram (p50, p95, p99)</td></tr>
+      <tr><td><code>nexspence_artifacts_total</code></td><td data-i18n="mon.m.artifacts">Total artifacts stored</td></tr>
+      <tr><td><code>nexspence_bytes_stored_bytes</code></td><td data-i18n="mon.m.bytes">Total storage used in bytes</td></tr>
+      <tr><td><code>nexspence_downloads_total</code></td><td data-i18n="mon.m.downloads">Total artifact downloads</td></tr>
+      <tr><td><code>nexspence_artifacts_deleted_total</code></td><td data-i18n="mon.m.deleted">Total artifacts deleted</td></tr>
+      <tr><td><code>nexspence_goroutines</code></td><td data-i18n="mon.m.goroutines">Active Go goroutines</td></tr>
+      <tr><td><code>nexspence_memory_alloc_bytes</code></td><td data-i18n="mon.m.memory">Heap memory in use</td></tr>
+    </tbody>
+  </table>
+  <div class="step-list">
+    <div class="step-item"><div class="step-num">01</div><div><div class="step-title" data-i18n="mon.s1.title">Create an API token for Prometheus</div><div class="step-desc" data-i18n="mon.s1.desc">In the UI go to your profile → <strong>API Tokens → Generate Token</strong>. Paste the <code>nxs_*</code> token into <code>deploy/monitoring/prometheus-token</code>.</div></div></div>
+    <div class="step-item"><div class="step-num">02</div><div><div class="step-title" data-i18n="mon.s2.title">Start the monitoring stack</div><div class="step-desc" data-i18n="mon.s2.desc">Run <code>docker compose --profile monitoring up -d</code>. Prometheus scrapes <code>/metrics</code> every 10 seconds. The Grafana dashboard loads automatically.</div></div></div>
+    <div class="step-item"><div class="step-num">03</div><div><div class="step-title" data-i18n="mon.s3.title">Open the UI Charts tab</div><div class="step-desc" data-i18n="mon.s3.desc">In the Nexspence UI, go to <strong>Admin → Monitoring</strong>. The <strong>Charts</strong> tab shows request rate, error rate, and storage growth without needing Grafana.</div></div></div>
+  </div>
+  <div class="cb"><div class="cb-bar"><span>curl — metrics endpoint</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body">curl -H "Authorization: Bearer nxs_your_token" \
+  http://localhost:8081/metrics</div></div>
+      </section>
+      <section id="sec-promotion" class="doc-section" hidden>
+  <div class="doc-section-title" data-i18n="promo.title">Build Promotion</div>
+  <div class="doc-section-sub" data-i18n="promo.sub">Promote artifacts through environments (e.g. staging → production) with optional vulnerability scan gates and approval workflows.</div>
+
+  <div class="inst-sep" data-i18n="promo.how.sep">How It Works</div>
+  <div class="step-list">
+    <div class="step-item"><div class="step-num">01</div><div><div class="step-title" data-i18n="promo.s1.title">Create a Promotion Rule</div><div class="step-desc" data-i18n="promo.s1.desc"><strong>Admin → Promotion → + Create Rule</strong>. Set source repository, target repository, an optional CEL path filter, and whether a passing vulnerability scan is required before promotion.</div></div></div>
+    <div class="step-item"><div class="step-num">02</div><div><div class="step-title" data-i18n="promo.s2.title">Request promotion</div><div class="step-desc" data-i18n="promo.s2.desc">In <strong>Browse</strong>, select an artifact and click <strong>Promote</strong>. Or use the REST API. A promotion request is created in the queue.</div></div></div>
+    <div class="step-item"><div class="step-num">03</div><div><div class="step-title" data-i18n="promo.s3.title">Approve or reject</div><div class="step-desc" data-i18n="promo.s3.desc">Admins review the request queue in <strong>Admin → Promotion → Requests</strong>. Approve to copy the artifact blob to the target repository (no data duplication — shared blob key).</div></div></div>
+  </div>
+  <div class="cb"><div class="cb-bar"><span>curl — promote via API</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body">curl -u admin:admin123 -X POST \
+  http://localhost:8081/api/v1/promotion/promote \
+  -H "Content-Type: application/json" \
+  -d '{
+    "component_id": "abc-123",
+    "rule_id": "rule-456",
+    "note": "Approved for production"
+  }'</div></div>
+  <div class="alert-info" data-i18n="promo.scan.note"><strong>Scan gate:</strong> If <em>Require scan pass</em> is enabled on the rule, components with HIGH or CRITICAL vulnerabilities are blocked from promotion until the issues are resolved.</div>
+      </section>
+      <section id="sec-replication" class="doc-section" hidden>
+  <div class="doc-section-title" data-i18n="repl.title">Content Replication</div>
+  <div class="doc-section-sub" data-i18n="repl.sub">Automatically push artifacts from one Nexspence instance to another on a schedule — for geo-distribution, DR, or environment promotion.</div>
+
+  <div class="step-list">
+    <div class="step-item"><div class="step-num">01</div><div><div class="step-title" data-i18n="repl.s1.title">Create a Replication Rule</div><div class="step-desc" data-i18n="repl.s1.desc"><strong>Admin → Replication → + Create</strong>. Set: source repository, target Nexspence URL, target repository name, credentials for the remote instance, and a cron schedule.</div></div></div>
+    <div class="step-item"><div class="step-num">02</div><div><div class="step-title" data-i18n="repl.s2.title">Test the connection</div><div class="step-desc" data-i18n="repl.s2.desc">Click <strong>Test Connection</strong> on the rule card. Nexspence sends a probe request to the remote URL and reports success or error.</div></div></div>
+    <div class="step-item"><div class="step-num">03</div><div><div class="step-title" data-i18n="repl.s3.title">Monitor replication history</div><div class="step-desc" data-i18n="repl.s3.desc">The history table on each rule shows past runs: timestamp, artifacts synced, errors. Click <strong>Run Now</strong> to trigger an immediate sync.</div></div></div>
+  </div>
+  <div class="alert-info" data-i18n="repl.diff.note"><strong>Differential sync:</strong> Each run compares asset paths between source and target and only pushes artifacts that are missing or changed on the remote. Credentials are stored AES-256-GCM encrypted.</div>
+      </section>
+      <section id="sec-tf-overview" class="doc-section" hidden>
+  <div class="doc-section-title"><span data-i18n="tf.title">Terraform Provider</span> <span class="vbadge-inline tf">Provider v0.2.0</span> <span class="vbadge-inline reg" data-i18n="tf.ov.reg">on Terraform Registry</span></div>
+  <div class="doc-section-sub" data-i18n="tf.sub">Manage Nexspence as code with the official Terraform provider — repositories, blob stores, users, roles, content selectors, and privileges, all version-controlled and reproducible. Published on the <a href="https://registry.terraform.io/providers/nexspence/nexspence" target="_blank" rel="noopener" style="color:var(--blue)">Terraform Registry</a> as <code>nexspence/nexspence</code>.</div>
+
+  <div class="inst-sep" data-i18n="tf.qs.sep">Quick Start</div>
+  <p style="font-size:.8rem;color:var(--dim);margin-bottom:10px;line-height:1.6" data-i18n="tf.qs.desc">Declare the provider, point it at your Nexspence server, and define resources. Run <code>terraform init</code>, then <code>terraform apply</code>.</p>
+  <div class="cb"><div class="cb-bar"><span>main.tf</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body">terraform {
+  required_providers {
+    nexspence = {
+      source  = <span class="cs">"nexspence/nexspence"</span>
+      version = <span class="cs">"~> 0.1"</span>
+    }
+  }
+}
+
+provider <span class="cs">"nexspence"</span> {
+  url   = <span class="cs">"https://nexspence.example.com"</span>
+  token = var.nexspence_token
+}
+
+resource <span class="cs">"nexspence_repository"</span> <span class="cs">"maven_central"</span> {
+  name       = <span class="cs">"maven-central"</span>
+  format     = <span class="cs">"maven2"</span>
+  type       = <span class="cs">"proxy"</span>
+  blob_store = <span class="cs">"default"</span>
+  proxy {
+    remote_url = <span class="cs">"https://repo1.maven.org/maven2/"</span>
+  }
+}</div></div>
+      </section>
+      <section id="sec-tf-auth" class="doc-section" hidden>
+  <div class="doc-section-title" data-i18n="tf.auth.sep">Authentication</div>
+  <p style="font-size:.8rem;color:var(--dim);margin:6px 0 14px;line-height:1.6" data-i18n="tf.auth.desc">Authenticate with an <code>nxs_*</code> API token (preferred) or username + password. Set credentials in the provider block or via environment variables.</p>
+  <div class="cb"><div class="cb-bar"><span>shell — environment variables</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body"><span class="cc"># API token (preferred)</span>
+export NEXSPENCE_URL=<span class="cs">"https://nexspence.example.com"</span>
+export NEXSPENCE_TOKEN=<span class="cs">"nxs_xxxxxxxxxxxxxxxx"</span>
+
+<span class="cc"># or HTTP Basic auth</span>
+export NEXSPENCE_USERNAME=<span class="cs">"admin"</span>
+export NEXSPENCE_PASSWORD=<span class="cs">"admin123"</span></div></div>
+  <div class="alert-info" data-i18n="tf.auth.note"><strong>Token:</strong> Generate an <code>nxs_*</code> token in <strong>Security → API Tokens</strong> and pass it via the <code>token</code> argument or <code>NEXSPENCE_TOKEN</code>. Never commit secrets to version control — use a Terraform variable or a secrets manager.</div>
+      </section>
+      <section id="sec-tf-resources" class="doc-section" hidden>
+  <div class="doc-section-title"><span data-i18n="tf.res.title">Resources</span> <span class="vbadge-inline tf">10</span></div>
+  <div class="doc-section-sub" data-i18n="tf.res.desc">Each resource maps to a Nexspence object and supports create, read, update, delete, and <code>terraform import</code>.</div>
+  <table class="doc-table">
+    <thead><tr><th data-i18n="tf.res.th.name">Name</th><th data-i18n="tf.res.th.desc">Manages</th></tr></thead>
+    <tbody>
+      <tr><td><code>nexspence_repository</code></td><td data-i18n="tf.res.repository">Hosted, proxy, and group repositories for any format</td></tr>
+      <tr><td><code>nexspence_blobstore</code></td><td data-i18n="tf.res.blobstore">Local or S3-compatible blob stores</td></tr>
+      <tr><td><code>nexspence_content_selector</code></td><td data-i18n="tf.res.cs">CEL content selectors</td></tr>
+      <tr><td><code>nexspence_privilege</code></td><td data-i18n="tf.res.priv">Content-selector privileges</td></tr>
+      <tr><td><code>nexspence_role</code></td><td data-i18n="tf.res.role">Roles grouping privileges together</td></tr>
+      <tr><td><code>nexspence_user</code></td><td data-i18n="tf.res.user">User accounts and their role assignments</td></tr>
+      <tr><td><code>nexspence_cleanup_policy</code></td><td data-i18n="tf.res.cleanup">Scheduled cleanup policies (age / downloads / retain N)</td></tr>
+      <tr><td><code>nexspence_routing_rule</code></td><td data-i18n="tf.res.routing">ALLOW/BLOCK path routing rules</td></tr>
+      <tr><td><code>nexspence_webhook</code></td><td data-i18n="tf.res.webhook">Outbound event webhooks (HMAC-signed)</td></tr>
+      <tr><td><code>nexspence_promotion_rule</code></td><td data-i18n="tf.res.promotion">Build-promotion rules (scan gate / manual approval)</td></tr>
+    </tbody>
+  </table>
+      </section>
+      <section id="sec-tf-data" class="doc-section" hidden>
+  <div class="doc-section-title"><span data-i18n="tf.data.title">Data Sources</span> <span class="vbadge-inline tf">2</span></div>
+  <div class="doc-section-sub" data-i18n="tf.data.desc">Read existing Nexspence state into Terraform without managing it.</div>
+  <table class="doc-table">
+    <thead><tr><th data-i18n="tf.res.th.name">Name</th><th data-i18n="tf.data.th.ret">Returns</th></tr></thead>
+    <tbody>
+      <tr><td><code>nexspence_repository</code></td><td data-i18n="tf.res.d-repository">Look up a single existing repository</td></tr>
+      <tr><td><code>nexspence_repositories</code></td><td data-i18n="tf.res.d-repositories">List all repositories, optionally filtered by format or type</td></tr>
+    </tbody>
+  </table>
+  <div class="cb"><div class="cb-bar"><span>data.tf</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body">data <span class="cs">"nexspence_repositories"</span> <span class="cs">"all_docker"</span> {
+  format = <span class="cs">"docker"</span>
+}
+
+output <span class="cs">"docker_repo_names"</span> {
+  value = [for r in data.nexspence_repositories.all_docker.repositories : r.name]
+}</div></div>
+      </section>
+      <section id="sec-tf-examples" class="doc-section" hidden>
+  <div class="doc-section-title" data-i18n="tf.ex.title">Examples &amp; local development</div>
+  <div class="doc-section-sub" data-i18n="tf.ex.desc">A full manifest exercising every resource and data source ships at <code>deploy/terraform-example/</code>. You can define local or S3 blob stores as code, too.</div>
+
+  <div class="inst-sep" data-i18n="tf.bs.sep">Blob Stores (local &amp; S3)</div>
+  <p style="font-size:.8rem;color:var(--dim);margin-bottom:10px;line-height:1.6" data-i18n="tf.bs.desc">Define local or S3-compatible blob stores. The S3 <code>endpoint</code> is dialed by the Nexspence server, so use an address the server can reach (e.g. an in-network hostname) — not your workstation's localhost.</p>
+  <div class="cb"><div class="cb-bar"><span>blobstores.tf</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body">resource <span class="cs">"nexspence_blobstore"</span> <span class="cs">"main"</span> {
+  name = <span class="cs">"main"</span>
+  type = <span class="cs">"local"</span>
+  path = <span class="cs">"./data/blobs/main"</span>
+}
+
+resource <span class="cs">"nexspence_blobstore"</span> <span class="cs">"s3"</span> {
+  name = <span class="cs">"s3-store"</span>
+  type = <span class="cs">"s3"</span>
+  s3 = {
+    bucket           = <span class="cs">"nexspence-blobs"</span>
+    region           = <span class="cs">"us-east-1"</span>
+    endpoint         = <span class="cs">"http://minio:9000"</span>
+    access_key       = <span class="cs">"minioadmin"</span>
+    secret_key       = var.s3_secret_key
+    force_path_style = <span class="cs">true</span>
+  }
+}</div></div>
+
+  <div class="inst-sep" data-i18n="tf.dev.sep">Local development override</div>
+  <p style="font-size:.8rem;color:var(--dim);margin-bottom:10px;line-height:1.6" data-i18n="tf.dev.desc">To hack on the provider itself, point Terraform at your locally built binary with a dev override in <code>~/.terraformrc</code>.</p>
+  <div class="cb"><div class="cb-bar"><span>~/.terraformrc</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body">provider_installation {
+  dev_overrides {
+    <span class="cs">"nexspence/nexspence"</span> = <span class="cs">"/Users/you/go/bin"</span>
+  }
+  direct {}
+}</div></div>
+      </section>
+      <section id="sec-security" class="doc-section" hidden>
   <div class="doc-section-title" data-i18n="sec.title">Security &amp; Hardening</div>
   <div class="doc-section-sub" data-i18n="sec.sub">Nexspence ships secure by default. The server refuses to start with shipped dev secrets, blocks server-side request forgery, revokes JWTs on account changes, and runs as a non-root, capability-dropped container.</div>
 
@@ -1525,19 +1484,85 @@ export NEXSPENCE_OIDC_CLIENT_SECRET="..."</div></div>
     "current_password": "old-pass",
     "new_password": "a-much-stronger-pass"
   }'</div></div>
-</template>
+      </section>
+      <section id="sec-formats" class="doc-section" hidden>
+  <div class="doc-section-title" data-i18n="fmt.title">Supported Formats</div>
+  <div class="doc-section-sub" data-i18n="fmt.sub">14 artifact formats — each supports Hosted, Proxy, and Group repository types.</div>
+  <table class="doc-table">
+    <thead><tr><th>Format</th><th>Protocol</th><th>Hosted</th><th>Proxy</th><th>Group</th></tr></thead>
+    <tbody>
+      <tr><td>Maven 2/3</td><td>Maven HTTP</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
+      <tr><td>npm</td><td>npm registry v1</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
+      <tr><td>PyPI</td><td>Simple index + twine</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
+      <tr><td>Docker / OCI</td><td>OCI Distribution v2</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
+      <tr><td>Go Modules</td><td>GOPROXY v2</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
+      <tr><td>NuGet</td><td>v2 OData + v3 flat</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
+      <tr><td>Helm</td><td>chart index.yaml</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
+      <tr><td>Cargo</td><td>Sparse index</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
+      <tr><td>Apt</td><td>Debian Packages index</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
+      <tr><td>Yum / RPM</td><td>repomd.xml</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
+      <tr><td>Conan</td><td>Conan v1</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
+      <tr><td>Raw</td><td>HTTP PUT/GET</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
+      <tr><td>Conda</td><td>conda index</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
+      <tr><td>Terraform</td><td>Registry protocol v1</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
+    </tbody>
+  </table>
+      </section>
+      <section id="sec-api" class="doc-section" hidden>
+  <div class="doc-section-title" data-i18n="api.title">API Reference</div>
+  <div class="doc-section-sub" data-i18n="api.sub">Nexspence exposes two API surfaces.</div>
+  <table class="doc-table" style="margin-bottom:20px">
+    <thead><tr><th>Base Path</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td><code>/service/rest/v1/</code></td><td>Nexus OSS v1 REST API — 100% compatible, drop-in for existing pipelines</td></tr>
+      <tr><td><code>/service/rest/beta/</code></td><td>Nexus beta endpoints — partial support</td></tr>
+      <tr><td><code>/api/v1/</code></td><td>Native Nexspence API — migration, extended system info, monitoring</td></tr>
+      <tr><td><code>/repository/:name/*</code></td><td>Artifact protocol endpoints (Maven, npm, Docker, etc.)</td></tr>
+      <tr><td><code>/v2/</code></td><td>Docker OCI Distribution Spec v2</td></tr>
+    </tbody>
+  </table>
+  <div class="alert-info" data-i18n="api.spec"><strong>Full OpenAPI 3.1 spec</strong> is included in the release zip as <code>docs/api-spec.yaml</code>.</div>
+  <div class="step-list">
+    <div class="step-item">
+      <div class="step-num" style="font-size:1rem">🔑</div>
+      <div><div class="step-title" data-i18n="api.auth.title">Authentication</div><div class="step-desc" data-i18n="api.auth.desc">JWT Bearer token (from <code>POST /api/v1/auth/login</code>), API tokens (<code>nxs_*</code> prefix via Bearer or Basic password), or HTTP Basic with username + password.</div></div>
+    </div>
+  </div>
+      </section>
+      </div>
+    </div>
+  </div>
 
-<template id="tpl-upgrade">
-  <div class="doc-section-title" data-i18n="upg.title">Upgrading</div>
-  <div class="doc-section-sub" data-i18n="upg.sub">Notes for moving an existing deployment to a newer Nexspence release.</div>
+  <footer class="docs-footer">
+    <div class="docs-footer-left">© 2026 Nexspence Contributors · AGPLv3</div>
+    <div class="docs-footer-right">
+      <a href="/">nexspence.com</a>
+      <a href="https://github.com/nexspence/nexspence" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://github.com/nexspence/nexspence/releases" target="_blank" rel="noopener">All Releases</a>
+    </div>
+  </footer>
+</main>
 
-  <div class="inst-sep" data-i18n="upg.v1180.sep">Upgrading to v1.18.0 — Blob Ownership Fix</div>
-  <div class="alert-info" style="background:rgba(245,158,11,.06);border-color:rgba(245,158,11,.2)" data-i18n="upg.v1180.info"><strong style="color:var(--amber)">One-time step for existing single-node Docker Compose deployments.</strong> The v1.18.0 image now runs as non-root <code>uid 1000</code>, but blob volumes created by older root-running images are owned by <code>root</code>. Fix ownership once before starting the new image, otherwise Nexspence cannot write to its blob store.</div>
-  <div class="cb"><div class="cb-bar"><span>shell — run once before upgrading</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
-  <div class="cb-body">docker compose run --rm --user 0 nexspence \
-  chown -R 1000:1000 /app/data/blobs</div></div>
-  <p style="font-size:.8rem;color:var(--dim);margin-top:14px;line-height:1.6" data-i18n="upg.v1180.note">Fresh installs and S3 blob stores are unaffected. After the <code>chown</code>, start the stack normally with <code>docker compose up -d</code>.</p>
-</template>
+<nav class="mob-bottomnav" aria-label="Mobile navigation">
+  <div class="mob-bottomnav-inner">
+    <a href="/" class="mob-bnav-item">
+      <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      Overview
+    </a>
+    <a href="/#deploy" class="mob-bnav-item">
+      <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      Install
+    </a>
+    <a href="/docs/" class="mob-bnav-item active" aria-current="page">
+      <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+      Docs
+    </a>
+    <a href="https://github.com/nexspence/nexspence" target="_blank" rel="noopener" class="mob-bnav-item">
+      <svg fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
+      GitHub
+    </a>
+  </div>
+</nav>
 
 <script>
 'use strict';
@@ -2174,7 +2199,10 @@ const TRANSLATIONS={
 };
 
 function t(key){const d=TRANSLATIONS[state.lang]||TRANSLATIONS.en;return d[key]!==undefined?d[key]:TRANSLATIONS.en[key]!==undefined?TRANSLATIONS.en[key]:key;}
-function applyTranslations(root){root.querySelectorAll('[data-i18n]').forEach(el=>{const v=t(el.dataset.i18n);if(v!==undefined)el.innerHTML=v;});}
+// A key missing from the tables must leave the authored markup alone: the
+// sections carry the English copy in the document itself now (#114).
+function hasTranslation(key){const d=TRANSLATIONS[state.lang]||TRANSLATIONS.en;return d[key]!==undefined||TRANSLATIONS.en[key]!==undefined;}
+function applyTranslations(root){root.querySelectorAll('[data-i18n]').forEach(el=>{if(hasTranslation(el.dataset.i18n))el.innerHTML=t(el.dataset.i18n);});}
 function switchLang(lang,btn){
   state.lang=lang;
   try{localStorage.setItem('nx_docs_lang',lang)}catch(_){}
@@ -2185,30 +2213,30 @@ function switchLang(lang,btn){
 }
 
 const SECTIONS=[
-  {key:'quickstart',  templateId:'tpl-quickstart'},
-  {key:'install',         templateId:'tpl-install'},
-  {key:'native-install',  templateId:'tpl-native-install'},
-  {key:'upgrade',         templateId:'tpl-upgrade'},
-  {key:'repositories',    templateId:'tpl-repositories'},
-  {key:'formats-guide',templateId:'tpl-formats-guide'},
-  {key:'browse-search',templateId:'tpl-browse-search'},
-  {key:'users',       templateId:'tpl-users'},
-  {key:'rbac',        templateId:'tpl-rbac'},
-  {key:'cleanup',     templateId:'tpl-cleanup'},
-  {key:'webhooks',    templateId:'tpl-webhooks'},
-  {key:'migration',   templateId:'tpl-migration'},
-  {key:'monitoring',  templateId:'tpl-monitoring'},
-  {key:'promotion',   templateId:'tpl-promotion'},
-  {key:'replication', templateId:'tpl-replication'},
-  {key:'tf-overview',  templateId:'tpl-tf-overview'},
-  {key:'tf-auth',      templateId:'tpl-tf-auth'},
-  {key:'tf-resources', templateId:'tpl-tf-resources'},
-  {key:'tf-data',      templateId:'tpl-tf-data'},
-  {key:'tf-examples',  templateId:'tpl-tf-examples'},
-  {key:'security',    templateId:'tpl-security'},
-  {key:'formats',     templateId:'tpl-formats'},
-  {key:'api',         templateId:'tpl-api'},
-  {key:'changelog',   templateId:null},
+  {key:'quickstart'},
+  {key:'install'},
+  {key:'native-install'},
+  {key:'upgrade'},
+  {key:'repositories'},
+  {key:'formats-guide'},
+  {key:'browse-search'},
+  {key:'users'},
+  {key:'rbac'},
+  {key:'cleanup'},
+  {key:'webhooks'},
+  {key:'migration'},
+  {key:'monitoring'},
+  {key:'promotion'},
+  {key:'replication'},
+  {key:'tf-overview'},
+  {key:'tf-auth'},
+  {key:'tf-resources'},
+  {key:'tf-data'},
+  {key:'tf-examples'},
+  {key:'security'},
+  {key:'formats'},
+  {key:'api'},
+  {key:'changelog'},
 ];
 // "in vX.Y" badges — POST-1.0 features ONLY. v1.0.0 sections intentionally have none.
 let FEATURE_BADGE={
@@ -2426,7 +2454,8 @@ function closeMobileDrawer(){
 }
 
 function renderChangelog(activeTag){
-  const container=document.getElementById('doc-content');
+  const container=document.getElementById('doc-changelog');
+  showOnly('doc-changelog');
   if(!activeTag){
     container.innerHTML=`<div class="empty-state"><svg fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><p>${t('ch.empty')}<br><a href="https://github.com/nexspence/nexspence/releases" target="_blank" rel="noopener">${t('ch.empty-link')}</a></p></div>`;
     return;
@@ -2451,21 +2480,22 @@ function renderChangelog(activeTag){
   container.innerHTML=html+`<div style="text-align:center;padding:18px 0;border-top:1px solid var(--border);margin-top:4px"><a href="https://github.com/nexspence/nexspence/releases" target="_blank" rel="noopener" style="font-size:.78rem;color:#a78bfa;text-decoration:none;font-weight:600">${t('ch.view-all')}</a></div>`;
 }
 
+// Sections live in the document (#114) — navigating reveals one and hides the
+// rest, so a browser that never runs this script still shows all of them.
+function showOnly(id){
+  document.querySelectorAll('#doc-content > .doc-section').forEach(el=>{el.hidden=el.id!==id;});
+}
 function renderStaticSection(key){
-  const section=SECTIONS.find(s=>s.key===key);
-  if(!section||!section.templateId)return;
-  const tpl=document.getElementById(section.templateId);
-  if(!tpl)return;
-  const container=document.getElementById('doc-content');
-  container.innerHTML='';
-  const node=tpl.content.cloneNode(true);
-  applyTranslations(node);
+  const section=document.getElementById('sec-'+key);
+  if(!section)return;
+  showOnly('sec-'+key);
+  applyTranslations(section);
+  const title=section.querySelector('.doc-section-title');
+  if(!title)return;
+  const old=title.querySelector('.vbadge-inline');
+  if(old)old.remove();
   const bad=FEATURE_BADGE[key];
-  if(bad){
-    const title=node.querySelector('.doc-section-title');
-    if(title){const span=document.createElement('span');span.className='vbadge-inline';span.textContent='in '+bad;title.appendChild(span);}
-  }
-  container.appendChild(node);
+  if(bad){const span=document.createElement('span');span.className='vbadge-inline';span.textContent='in '+bad;title.appendChild(span);}
 }
 
 function setSection(key){
@@ -2543,10 +2573,10 @@ document.addEventListener('click',function(e){
   renderMobileDrawer();
   document.getElementById('breadcrumb-current').textContent=t('crumb.changelog');
   document.getElementById('mob-active-page').textContent=t('tab.changelog');
-  // #doc-content keeps its static intro paragraphs until releases load (SEO/offline fallback).
+  showOnly('sec-intro');  // the intro stays until a section or the changelog renders
 
   // Deep-link: /docs/#<section-key> opens that section; legacy #terraform → Terraform Provider tab.
-  const _hash=(location.hash||'').replace(/^#/,'');
+  const _hash=(location.hash||'').replace(/^#/,'').replace(/^sec-/,'');
   if(_hash){
     const _target=_hash==='terraform'?'tf-overview':_hash;
     if(SECTIONS.some(s=>s.key===_target))setSection(_target);
