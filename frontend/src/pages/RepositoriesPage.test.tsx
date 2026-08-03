@@ -632,4 +632,203 @@ describe('RepositoriesPage', () => {
     await waitFor(() => expect(started).toBe(true))
     expect(await screen.findByText(/Migrating content…/)).toBeInTheDocument()
   })
+
+  // ── proxy remote URL & group members (issue #134) ──────────────
+
+  const proxyRepo = fixtures.repository({
+    id: 'repo-2',
+    name: 'npm-proxy',
+    format: 'npm',
+    type: 'proxy',
+    online: true,
+    proxyConfig: {
+      remote_url: 'https://registry.npmjs.org/',
+      proxy_username: 'svc',
+      proxy_password_set: true,
+    },
+  })
+
+  const groupRepo = fixtures.repository({
+    id: 'repo-3',
+    name: 'docker-group',
+    format: 'docker',
+    type: 'group',
+    online: true,
+    formatConfig: { member_names: ['docker-hosted'] },
+  })
+
+  const dockerHosted = fixtures.repository({
+    id: 'repo-4', name: 'docker-hosted', format: 'docker', type: 'hosted', online: true,
+  })
+
+  const dockerProxy = fixtures.repository({
+    id: 'repo-5', name: 'docker-proxy', format: 'docker', type: 'proxy', online: true,
+    proxyConfig: { remote_url: 'https://registry-1.docker.io/' },
+  })
+
+  /** Opens the settings modal for the row whose name is `name`. */
+  async function openSettingsFor(name: string) {
+    const label = await screen.findByText(name)
+    const row = label.closest('div[tabindex]') as HTMLElement
+    fireEvent.click(within(row).getByTitle('Settings'))
+    await screen.findByText('Repository settings')
+  }
+
+  it('shows the remote URL of a proxy repository in the list', async () => {
+    seedRepos([proxyRepo])
+    renderWithProviders(<RepositoriesPage />)
+    expect(await screen.findByText('https://registry.npmjs.org/')).toBeInTheDocument()
+  })
+
+  it('prefills the remote URL when editing a proxy repository', async () => {
+    seedRepos([proxyRepo])
+    renderWithProviders(<RepositoriesPage />)
+    await openSettingsFor('npm-proxy')
+    expect(screen.getByDisplayValue('https://registry.npmjs.org/')).toBeInTheDocument()
+  })
+
+  it('saves a changed remote URL for a proxy repository', async () => {
+    const user = userEvent.setup()
+    seedRepos([proxyRepo])
+    let put: Record<string, unknown> | null = null
+    server.use(
+      http.put('/service/rest/v1/repositories/:format/:type/:name', async ({ request }) => {
+        put = (await request.json()) as Record<string, unknown>
+        return HttpResponse.json(proxyRepo)
+      }),
+    )
+    renderWithProviders(<RepositoriesPage />)
+    await openSettingsFor('npm-proxy')
+    const remote = screen.getByDisplayValue('https://registry.npmjs.org/')
+    await user.clear(remote)
+    await user.type(remote, 'https://npm.mirror.internal/')
+    const form = document.querySelector('form') as HTMLFormElement
+    fireEvent.click(within(form).getByRole('button', { name: /^Save$/ }))
+    await waitFor(() => expect(put).toBeTruthy())
+    const pc = (put! as { proxyConfig?: Record<string, unknown> }).proxyConfig
+    expect(pc?.remote_url).toBe('https://npm.mirror.internal/')
+    expect(pc?.proxy_username).toBe('svc')
+  })
+
+  it('omits proxy_password on save when the password field is left untouched', async () => {
+    seedRepos([proxyRepo])
+    let put: Record<string, unknown> | null = null
+    server.use(
+      http.put('/service/rest/v1/repositories/:format/:type/:name', async ({ request }) => {
+        put = (await request.json()) as Record<string, unknown>
+        return HttpResponse.json(proxyRepo)
+      }),
+    )
+    renderWithProviders(<RepositoriesPage />)
+    await openSettingsFor('npm-proxy')
+    const form = document.querySelector('form') as HTMLFormElement
+    fireEvent.click(within(form).getByRole('button', { name: /^Save$/ }))
+    await waitFor(() => expect(put).toBeTruthy())
+    const pc = (put! as { proxyConfig?: Record<string, unknown> }).proxyConfig
+    expect(pc).not.toHaveProperty('proxy_password')
+    expect(pc).not.toHaveProperty('proxy_password_set')
+  })
+
+  it('sends proxy_password on save when a new password is typed', async () => {
+    const user = userEvent.setup()
+    seedRepos([proxyRepo])
+    let put: Record<string, unknown> | null = null
+    server.use(
+      http.put('/service/rest/v1/repositories/:format/:type/:name', async ({ request }) => {
+        put = (await request.json()) as Record<string, unknown>
+        return HttpResponse.json(proxyRepo)
+      }),
+    )
+    renderWithProviders(<RepositoriesPage />)
+    await openSettingsFor('npm-proxy')
+    await user.click(screen.getByText(/Outbound proxy/))
+    await user.type(screen.getByPlaceholderText('Leave blank to keep current'), 'n3w')
+    const form = document.querySelector('form') as HTMLFormElement
+    fireEvent.click(within(form).getByRole('button', { name: /^Save$/ }))
+    await waitFor(() => expect(put).toBeTruthy())
+    const pc = (put! as { proxyConfig?: Record<string, unknown> }).proxyConfig
+    expect(pc?.proxy_password).toBe('n3w')
+  })
+
+  it('rejects an empty remote URL when editing a proxy repository', async () => {
+    const user = userEvent.setup()
+    seedRepos([proxyRepo])
+    let called = false
+    server.use(
+      http.put('/service/rest/v1/repositories/:format/:type/:name', () => {
+        called = true
+        return HttpResponse.json(proxyRepo)
+      }),
+    )
+    renderWithProviders(<RepositoriesPage />)
+    await openSettingsFor('npm-proxy')
+    await user.clear(screen.getByDisplayValue('https://registry.npmjs.org/'))
+    const form = document.querySelector('form') as HTMLFormElement
+    fireEvent.click(within(form).getByRole('button', { name: /^Save$/ }))
+    expect(await screen.findByText(/Remote URL is required/)).toBeInTheDocument()
+    expect(called).toBe(false)
+  })
+
+  it('does not show remote URL fields when editing a hosted repository', async () => {
+    seedRepos([fixtures.repository({ id: 'repo-1', name: 'maven-hosted' })])
+    renderWithProviders(<RepositoriesPage />)
+    await openSettingsFor('maven-hosted')
+    expect(screen.queryByText('Remote URL *')).not.toBeInTheDocument()
+  })
+
+  it('lists group members with the current selection checked', async () => {
+    seedRepos([groupRepo, dockerHosted, dockerProxy])
+    renderWithProviders(<RepositoriesPage />)
+    await openSettingsFor('docker-group')
+    const hosted = await screen.findByRole('checkbox', { name: /docker-hosted/ })
+    const proxy = screen.getByRole('checkbox', { name: /docker-proxy/ })
+    expect(hosted).toBeChecked()
+    expect(proxy).not.toBeChecked()
+  })
+
+  it('saves an updated member list for a group repository', async () => {
+    const user = userEvent.setup()
+    seedRepos([groupRepo, dockerHosted, dockerProxy])
+    let put: Record<string, unknown> | null = null
+    server.use(
+      http.put('/service/rest/v1/repositories/:format/:type/:name', async ({ request }) => {
+        put = (await request.json()) as Record<string, unknown>
+        return HttpResponse.json(groupRepo)
+      }),
+    )
+    renderWithProviders(<RepositoriesPage />)
+    await openSettingsFor('docker-group')
+    await user.click(await screen.findByRole('checkbox', { name: /docker-proxy/ }))
+    const form = document.querySelector('form') as HTMLFormElement
+    fireEvent.click(within(form).getByRole('button', { name: /^Save$/ }))
+    await waitFor(() => expect(put).toBeTruthy())
+    const fc = (put! as { formatConfig?: { member_names?: string[] } }).formatConfig
+    expect(fc?.member_names).toEqual(['docker-hosted', 'docker-proxy'])
+  })
+
+  it('rejects an empty member list when editing a group repository', async () => {
+    const user = userEvent.setup()
+    seedRepos([groupRepo, dockerHosted, dockerProxy])
+    let called = false
+    server.use(
+      http.put('/service/rest/v1/repositories/:format/:type/:name', () => {
+        called = true
+        return HttpResponse.json(groupRepo)
+      }),
+    )
+    renderWithProviders(<RepositoriesPage />)
+    await openSettingsFor('docker-group')
+    await user.click(await screen.findByRole('checkbox', { name: /docker-hosted/ }))
+    const form = document.querySelector('form') as HTMLFormElement
+    fireEvent.click(within(form).getByRole('button', { name: /^Save$/ }))
+    expect(await screen.findByText(/at least one member/i)).toBeInTheDocument()
+    expect(called).toBe(false)
+  })
+
+  it('does not show a member list when editing a hosted repository', async () => {
+    seedRepos([fixtures.repository({ id: 'repo-1', name: 'maven-hosted' })])
+    renderWithProviders(<RepositoriesPage />)
+    await openSettingsFor('maven-hosted')
+    expect(screen.queryByText('Member Repositories *')).not.toBeInTheDocument()
+  })
 })

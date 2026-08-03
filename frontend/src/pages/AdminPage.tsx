@@ -1613,10 +1613,12 @@ function BlobStoreDetailModal({ name, blobStores: _blobStores, onClose }: { name
   const editMut = useMutation({
     mutationFn: () => {
       if (!bs) return Promise.reject('no store')
-      const secret = editSecretKey || (bs.config?.secret_key as string) || ''
+      // The API never sends the secret key back (only a secret_key_set marker), so an
+      // untouched field must omit it entirely — the server then keeps the stored one.
       const config: Record<string, unknown> = bs.type === 's3'
         ? { bucket: editBucket, region: editRegion, endpoint: editEndpoint,
-            access_key: editAccessKey, secret_key: secret }
+            access_key: editAccessKey,
+            ...(editSecretKey ? { secret_key: editSecretKey } : {}) }
         : { path: editPath }
       return nexusApi.updateBlobStore(bs.type, bs.name, { config, quotaBytes: bs.quotaBytes ?? null })
     },
@@ -1776,6 +1778,11 @@ function BlobStoreDetailModal({ name, blobStores: _blobStores, onClose }: { name
                     <div>
                       <label style={{ fontSize: 11, color: 'var(--holo-text-faint)', display: 'block', marginBottom: 3 }}>Secret Key (leave blank to keep)</label>
                       <HoloInput type="password" value={editSecretKey} onChange={e => setEditSecretKey(e.target.value)} placeholder="unchanged" />
+                      <div style={{ fontSize: 11, color: 'var(--holo-text-faint)', marginTop: 3 }}>
+                        {bs.config?.secret_key_set
+                          ? 'A secret key is stored. It is never sent to the browser — leave this blank to keep it.'
+                          : 'No secret key stored; the store falls back to the instance IAM role.'}
+                      </div>
                     </div>
                   </div>
                 </div>

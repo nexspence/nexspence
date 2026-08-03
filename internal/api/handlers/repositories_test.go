@@ -354,3 +354,86 @@ func TestRepositoryHandler_Delete_RepoError_500(t *testing.T) {
 	rec := do(t, r, http.MethodDelete, "/service/rest/v1/repositories/any", nil)
 	assert.Equal(t, http.StatusInternalServerError, rec.Code)
 }
+
+// ── proxy_password redaction ──────────────────────────────────
+
+func proxyRepo(name, password string) *domain.Repository {
+	return &domain.Repository{
+		ID: name, Name: name, Format: domain.FormatMaven2, Type: domain.TypeProxy,
+		ProxyConfig: map[string]any{
+			"remote_url":     "https://repo1.maven.org/maven2/",
+			"proxy_username": "svc",
+			"proxy_password": password,
+		},
+	}
+}
+
+func TestRepositoryHandler_List_RedactsProxyPassword(t *testing.T) {
+	r, repos, _, _ := mountRepos(t)
+	seedRepo(t, repos, proxyRepo("maven-proxy", "s3cret"))
+	rec := do(t, r, http.MethodGet, "/service/rest/v1/repositories", nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.NotContains(t, rec.Body.String(), "s3cret")
+
+	var got []domain.Repository
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Len(t, got, 1)
+	assert.NotContains(t, got[0].ProxyConfig, "proxy_password")
+	assert.Equal(t, true, got[0].ProxyConfig[domain.ProxyPasswordSetKey])
+	assert.Equal(t, "https://repo1.maven.org/maven2/", got[0].ProxyConfig["remote_url"])
+}
+
+func TestRepositoryHandler_Get_RedactsProxyPassword(t *testing.T) {
+	r, repos, _, _ := mountRepos(t)
+	seedRepo(t, repos, proxyRepo("maven-proxy", "s3cret"))
+	rec := do(t, r, http.MethodGet, "/service/rest/v1/repositories/maven-proxy", nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.NotContains(t, rec.Body.String(), "s3cret")
+
+	var got domain.Repository
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	assert.NotContains(t, got.ProxyConfig, "proxy_password")
+	assert.Equal(t, true, got.ProxyConfig[domain.ProxyPasswordSetKey])
+}
+
+func TestRepositoryHandler_Create_RedactsProxyPasswordInResponse(t *testing.T) {
+	r, _, _, _ := mountRepos(t)
+	rec := do(t, r, http.MethodPost, "/service/rest/v1/repositories/maven2/proxy",
+		map[string]any{
+			"name":        "maven-proxy",
+			"proxyConfig": map[string]any{"remote_url": "https://repo1.maven.org/maven2/", "proxy_password": "s3cret"},
+		})
+	require.Equal(t, http.StatusCreated, rec.Code)
+	assert.NotContains(t, rec.Body.String(), "s3cret")
+}
+
+func TestRepositoryHandler_Update_RedactsProxyPasswordInResponse(t *testing.T) {
+	r, repos, _, _ := mountRepos(t)
+	seedRepo(t, repos, proxyRepo("maven-proxy", "s3cret"))
+	rec := do(t, r, http.MethodPut, "/service/rest/v1/repositories/maven2/proxy/maven-proxy",
+		map[string]any{"description": "updated"})
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.NotContains(t, rec.Body.String(), "s3cret")
+}
+
+func TestRepositoryHandler_Patch_RedactsProxyPasswordInResponse(t *testing.T) {
+	r, repos, _, _ := mountRepos(t)
+	seedRepo(t, repos, proxyRepo("maven-proxy", "s3cret"))
+	rec := do(t, r, http.MethodPatch, "/service/rest/v1/repositories/maven-proxy",
+		map[string]any{"online": false})
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.NotContains(t, rec.Body.String(), "s3cret")
+}
+
+func TestRepositoryHandler_Create_KeepsProxyPasswordStored(t *testing.T) {
+	r, repos, _, _ := mountRepos(t)
+	rec := do(t, r, http.MethodPost, "/service/rest/v1/repositories/maven2/proxy",
+		map[string]any{
+			"name":        "maven-proxy",
+			"proxyConfig": map[string]any{"remote_url": "https://repo1.maven.org/maven2/", "proxy_password": "s3cret"},
+		})
+	require.Equal(t, http.StatusCreated, rec.Code)
+	stored, err := repos.Get(testContext(), "maven-proxy")
+	require.NoError(t, err)
+	assert.Equal(t, "s3cret", stored.ProxyConfig["proxy_password"])
+}

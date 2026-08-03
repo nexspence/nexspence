@@ -93,14 +93,15 @@ func (s *RepositoryService) Create(ctx context.Context, r *domain.Repository) er
 		return fmt.Errorf("%w: repository %q", ErrAlreadyExists, r.Name)
 	}
 
+	if r.ProxyConfig != nil {
+		delete(r.ProxyConfig, domain.ProxyPasswordSetKey)
+	}
 	if r.Type == domain.TypeProxy {
 		if r.ProxyConfig == nil {
 			return fmt.Errorf("%w: proxy repositories require proxy_config with remote_url", ErrInvalidInput)
 		}
-		raw, ok := r.ProxyConfig["remote_url"]
-		s, strOK := raw.(string)
-		if !ok || !strOK || s == "" {
-			return fmt.Errorf("%w: proxy_config.remote_url must be a non-empty string", ErrInvalidInput)
+		if err := validateRemoteURL(r.ProxyConfig); err != nil {
+			return err
 		}
 	}
 
@@ -169,7 +170,12 @@ func (s *RepositoryService) Update(ctx context.Context, name string, updates *do
 		r.HTTPConfig = updates.HTTPConfig
 	}
 	if updates.ProxyConfig != nil {
-		r.ProxyConfig = updates.ProxyConfig
+		r.ProxyConfig = mergeProxyConfig(r.ProxyConfig, updates.ProxyConfig)
+		if r.Type == domain.TypeProxy {
+			if err := validateRemoteURL(r.ProxyConfig); err != nil {
+				return nil, err
+			}
+		}
 	}
 	if updates.QuotaBytes != nil {
 		r.QuotaBytes = updates.QuotaBytes
@@ -230,6 +236,42 @@ func (s *RepositoryService) Update(ctx context.Context, name string, updates *do
 	return r, nil
 }
 
+// mergeProxyConfig produces the proxyConfig to persist from the stored one and the
+// caller's replacement. The replacement wins wholesale, except for the password:
+// clients read a redacted config (see domain.RedactedRepository), so an omitted
+// proxy_password means "unchanged" rather than "clear it". Sending an explicit empty
+// proxy_password clears the credential. The read-only proxy_password_set marker a
+// client may echo back is always dropped.
+func mergeProxyConfig(stored, updates map[string]any) map[string]any {
+	merged := make(map[string]any, len(updates)+1)
+	for k, v := range updates {
+		if k == domain.ProxyPasswordSetKey {
+			continue
+		}
+		merged[k] = v
+	}
+	if pw, sent := merged[domain.ProxyPasswordKey]; sent {
+		if s, _ := pw.(string); s == "" {
+			delete(merged, domain.ProxyPasswordKey)
+		}
+		return merged
+	}
+	if pw, ok := stored[domain.ProxyPasswordKey].(string); ok && pw != "" {
+		merged[domain.ProxyPasswordKey] = pw
+	}
+	return merged
+}
+
+// validateRemoteURL rejects a proxy config whose remote_url is missing or blank.
+func validateRemoteURL(pc map[string]any) error {
+	raw, ok := pc["remote_url"]
+	s, strOK := raw.(string)
+	if !ok || !strOK || strings.TrimSpace(s) == "" {
+		return fmt.Errorf("%w: proxy_config.remote_url must be a non-empty string", ErrInvalidInput)
+	}
+	return nil
+}
+
 // validateRepoQuotaAgainstStore rejects a repository quota that exceeds the
 // owning blob store's quota. Either quota being nil (unlimited) passes.
 func validateRepoQuotaAgainstStore(repoQuota *int64, bs *domain.BlobStore) error {
@@ -272,7 +314,13 @@ func (s *RepositoryService) validateGroupMembers(ctx context.Context, group *dom
 	if len(names) == 0 {
 		return fmt.Errorf("%w: group repositories require formatConfig.member_names with at least one member", ErrInvalidInput)
 	}
+	seen := make(map[string]struct{}, len(names))
 	for _, name := range names {
+		if _, dup := seen[name]; dup {
+			return fmt.Errorf("%w: group member %q is listed more than once", ErrInvalidInput, name)
+		}
+		seen[name] = struct{}{}
+
 		m, err := s.repos.Get(ctx, name)
 		if errors.Is(err, repository.ErrNotFound) {
 			return fmt.Errorf("%w: group member repository %q does not exist", ErrInvalidInput, name)
