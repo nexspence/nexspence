@@ -21,6 +21,20 @@ interface Repository {
   quotaBytes?: number | null
   blobStoreId?: string | null
   routingRuleId?: string | null
+  proxyConfig?: Record<string, unknown> | null
+  formatConfig?: Record<string, unknown> | null
+}
+
+/** Reads a string entry out of a repository config map, tolerating absent/typed-wrong values. */
+function cfgString(cfg: Record<string, unknown> | null | undefined, key: string): string {
+  const v = cfg?.[key]
+  return typeof v === 'string' ? v : ''
+}
+
+/** Ordered member repository names of a group repo. */
+function groupMemberNames(repo: Repository): string[] {
+  const raw = repo.formatConfig?.['member_names']
+  return Array.isArray(raw) ? raw.filter((n): n is string => typeof n === 'string') : []
 }
 
 interface BlobStoreLite {
@@ -306,6 +320,15 @@ function RepoRow({
             {repo.description || (storeName ? `on ${storeName}` : '')}
           </div>
         )}
+        {repo.type === 'proxy' && cfgString(repo.proxyConfig, 'remote_url') && (
+          <div
+            title={cfgString(repo.proxyConfig, 'remote_url')}
+            style={{ fontSize: 11, color: 'var(--holo-text-faint)', fontFamily: 'ui-monospace,monospace', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}
+          >
+            <span aria-hidden="true">↗ </span>
+            <span>{cfgString(repo.proxyConfig, 'remote_url')}</span>
+          </div>
+        )}
       </div>
       <HoloPill tone={repo.type === 'hosted' ? 'success' : repo.type === 'proxy' ? 'default' : 'warn'}>
         {TYPE_LABELS[repo.type] ?? repo.type}
@@ -372,6 +395,13 @@ const PROXY_DEFAULTS: Record<string, string> = {
   raw:       '',
   conda:     'https://conda.anaconda.org/conda-forge/',
   terraform: 'https://registry.terraform.io/',
+}
+
+/** Sets a trimmed value on cfg, or removes the key entirely when the field was cleared. */
+function assignOrDelete(cfg: Record<string, unknown>, key: string, value: string) {
+  const v = value.trim()
+  if (v) cfg[key] = v
+  else delete cfg[key]
 }
 
 const LABEL_STYLE = { fontSize: 12, fontWeight: 500, color: 'var(--holo-text-dim)', textTransform: 'uppercase' as const, letterSpacing: '0.4px' }
@@ -778,6 +808,11 @@ function EditRepoModal({
     queryKey: ['routing-rules'],
     queryFn: () => nexusApi.listRoutingRules().then(r => r.data),
   })
+  const { data: allRepos = [] } = useQuery<Repository[]>({
+    queryKey: ['repositories'],
+    queryFn: () => nexusApi.listRepositories({}).then(r => r.data),
+    enabled: repo.type === 'group',
+  })
 
   const applicable = cleanupPoliciesForFormat(policies, repo.format)
   const [description, setDescription] = useState(repo.description ?? '')
@@ -789,6 +824,19 @@ function EditRepoModal({
   )
   const [blobStoreId, setBlobStoreId] = useState<string>(repo.blobStoreId ?? '')
   const [routingRuleId, setRoutingRuleId] = useState<string>(repo.routingRuleId ?? '')
+  const [remoteUrl, setRemoteUrl] = useState(cfgString(repo.proxyConfig, 'remote_url'))
+  const [httpProxy, setHttpProxy] = useState(cfgString(repo.proxyConfig, 'http_proxy'))
+  const [httpsProxy, setHttpsProxy] = useState(cfgString(repo.proxyConfig, 'https_proxy'))
+  const [socks5Proxy, setSocks5Proxy] = useState(cfgString(repo.proxyConfig, 'socks5_proxy'))
+  const [noProxy, setNoProxy] = useState(cfgString(repo.proxyConfig, 'no_proxy'))
+  const [proxyUsername, setProxyUsername] = useState(cfgString(repo.proxyConfig, 'proxy_username'))
+  // Passwords are never sent back by the API (see domain.RedactedRepository); an empty
+  // field means "keep the stored one", so it starts blank regardless of what is stored.
+  const [proxyPassword, setProxyPassword] = useState('')
+  const [clearProxyPassword, setClearProxyPassword] = useState(false)
+  const hasStoredProxyPassword = repo.proxyConfig?.['proxy_password_set'] === true
+  const [memberNames, setMemberNames] = useState<string[]>(groupMemberNames(repo))
+  const memberCandidates = allRepos.filter(r => r.format === repo.format && r.type !== 'group')
   const originalStoreId = repo.blobStoreId ?? ''
   const storeChanged = blobStoreId !== originalStoreId
   const [error, setError] = useState('')
@@ -850,9 +898,24 @@ function EditRepoModal({
     }
   }
 
+  const togglePolicyMember = (name: string) => {
+    setMemberNames(prev =>
+      prev.includes(name) ? prev.filter(n => n !== name) : [...prev, name],
+    )
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
+
+    if (repo.type === 'proxy' && !remoteUrl.trim()) {
+      setError('Remote URL is required for proxy repositories')
+      return
+    }
+    if (repo.type === 'group' && memberNames.length === 0) {
+      setError('Select at least one member repository')
+      return
+    }
 
     // Enforce repo quota <= blob store quota (backend also checks).
     if (repo.type !== 'group' && quotaGB.trim() !== '') {
@@ -882,6 +945,26 @@ function EditRepoModal({
       }
       if (repo.type === 'group') {
         updateBody.routingRuleId = routingRuleId || null
+        // Preserve any other formatConfig entries (e.g. writable_member) the API set.
+        const { proxy_password_set: _drop, ...rest } = (repo.formatConfig ?? {}) as Record<string, unknown>
+        void _drop
+        updateBody.formatConfig = { ...rest, member_names: memberNames }
+      }
+      if (repo.type === 'proxy') {
+        const proxyConfig: Record<string, unknown> = {}
+        for (const [k, v] of Object.entries(repo.proxyConfig ?? {})) {
+          if (k !== 'proxy_password_set') proxyConfig[k] = v
+        }
+        proxyConfig.remote_url = remoteUrl.trim()
+        assignOrDelete(proxyConfig, 'http_proxy', httpProxy)
+        assignOrDelete(proxyConfig, 'https_proxy', httpsProxy)
+        assignOrDelete(proxyConfig, 'socks5_proxy', socks5Proxy)
+        assignOrDelete(proxyConfig, 'no_proxy', noProxy)
+        assignOrDelete(proxyConfig, 'proxy_username', proxyUsername)
+        // Omitted proxy_password means "unchanged"; an explicit empty string clears it.
+        if (proxyPassword) proxyConfig.proxy_password = proxyPassword
+        else if (clearProxyPassword) proxyConfig.proxy_password = ''
+        updateBody.proxyConfig = proxyConfig
       }
       await nexusApi.updateRepository(repo.format, repo.type, repo.name, updateBody)
       onSaved()
@@ -932,6 +1015,118 @@ function EditRepoModal({
             placeholder="Optional"
           />
         </div>
+        {repo.type === 'proxy' && (
+          <div className={styles.formRow}>
+            <label style={LABEL_STYLE}>Remote URL *</label>
+            <HoloInput
+              type="url"
+              value={remoteUrl}
+              onChange={e => setRemoteUrl(e.target.value)}
+              placeholder="https://registry.example.com/"
+            />
+            <span className={styles.hint}>
+              URL of the upstream registry to proxy and cache. Already-cached artifacts are kept;
+              new fetches go to the new upstream.
+            </span>
+          </div>
+        )}
+        {repo.type === 'proxy' && (
+          <details className={styles.formRow}>
+            <summary style={{ cursor: 'pointer', ...LABEL_STYLE }}>Outbound proxy (optional)</summary>
+            <span className={styles.hint}>
+              Route upstream fetches through an HTTP or SOCKS5 proxy. Leave blank to use the
+              server default (HTTP_PROXY/HTTPS_PROXY/NO_PROXY environment).
+            </span>
+            <div className={styles.formRow}>
+              <label style={LABEL_STYLE}>HTTP proxy</label>
+              <HoloInput
+                value={httpProxy}
+                onChange={e => setHttpProxy(e.target.value)}
+                placeholder="http://proxy.internal:3128"
+              />
+            </div>
+            <div className={styles.formRow}>
+              <label style={LABEL_STYLE}>HTTPS proxy</label>
+              <HoloInput
+                value={httpsProxy}
+                onChange={e => setHttpsProxy(e.target.value)}
+                placeholder="http://secure-proxy.internal:3128"
+              />
+            </div>
+            <div className={styles.formRow}>
+              <label style={LABEL_STYLE}>SOCKS5 proxy</label>
+              <HoloInput
+                value={socks5Proxy}
+                onChange={e => setSocks5Proxy(e.target.value)}
+                placeholder="socks5://proxy.internal:1080"
+              />
+            </div>
+            <div className={styles.formRow}>
+              <label style={LABEL_STYLE}>No proxy</label>
+              <HoloInput
+                value={noProxy}
+                onChange={e => setNoProxy(e.target.value)}
+                placeholder="localhost,.internal.example.com"
+              />
+            </div>
+            <div className={styles.formRow}>
+              <label style={LABEL_STYLE}>Proxy username</label>
+              <HoloInput
+                value={proxyUsername}
+                onChange={e => setProxyUsername(e.target.value)}
+                placeholder="Optional"
+              />
+            </div>
+            <div className={styles.formRow}>
+              <label style={LABEL_STYLE}>Proxy password</label>
+              <HoloInput
+                type="password"
+                value={proxyPassword}
+                onChange={e => { setProxyPassword(e.target.value); setClearProxyPassword(false) }}
+                placeholder="Leave blank to keep current"
+              />
+              {hasStoredProxyPassword && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--holo-text)', cursor: 'pointer', marginTop: 6 }}>
+                  <input
+                    type="checkbox"
+                    checked={clearProxyPassword}
+                    disabled={proxyPassword !== ''}
+                    onChange={e => setClearProxyPassword(e.target.checked)}
+                  />
+                  Remove the stored password
+                </label>
+              )}
+              <span className={styles.hint}>
+                {hasStoredProxyPassword
+                  ? 'A password is stored. It is never sent to the browser — leave this blank to keep it.'
+                  : 'No password stored for this repository.'}
+              </span>
+            </div>
+          </details>
+        )}
+        {repo.type === 'group' && (
+          <div className={styles.formRow}>
+            <label style={LABEL_STYLE}>Member Repositories *</label>
+            {memberCandidates.length === 0 ? (
+              <p className={styles.hint}>No {repo.format} hosted/proxy repos found. Create them first.</p>
+            ) : (
+              <div className={styles.memberList}>
+                {memberCandidates.map(r => (
+                  <label key={r.id} className={styles.memberItem}>
+                    <input
+                      type="checkbox"
+                      checked={memberNames.includes(r.name)}
+                      onChange={() => togglePolicyMember(r.name)}
+                    />
+                    <span className={styles.memberName}>{r.name}</span>
+                    <span className={styles.memberType}>{r.type}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+            <span className={styles.hint}>Members are searched in the order shown; the first hit wins.</span>
+          </div>
+        )}
         {repo.type !== 'group' && blobStores.length > 0 && (
           <div className={styles.formRow}>
             <label style={LABEL_STYLE}>Blob Store</label>
