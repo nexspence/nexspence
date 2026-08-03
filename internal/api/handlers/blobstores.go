@@ -66,7 +66,7 @@ func (h *BlobStoreHandler) List(c *gin.Context) {
 	if stores == nil {
 		stores = []domain.BlobStore{}
 	}
-	c.JSON(http.StatusOK, stores)
+	c.JSON(http.StatusOK, domain.RedactedBlobStores(stores))
 }
 
 // Get handles GET /service/rest/v1/blobstores/:name
@@ -81,7 +81,36 @@ func (h *BlobStoreHandler) Get(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, bs)
+	c.JSON(http.StatusOK, domain.RedactedBlobStore(*bs))
+}
+
+// mergeBlobStoreConfig produces the config to persist from the stored one and the
+// caller's replacement. The replacement wins wholesale, except for the S3 secret key:
+// clients read a redacted config (see domain.RedactedBlobStore), so an omitted
+// secret_key means "unchanged" rather than "clear it". Sending an explicit empty
+// secret_key clears the credential. The read-only secret_key_set marker a client may
+// echo back is always dropped.
+func mergeBlobStoreConfig(stored, updates map[string]any) map[string]any {
+	if updates == nil {
+		return nil
+	}
+	merged := make(map[string]any, len(updates)+1)
+	for k, v := range updates {
+		if k == domain.SecretKeySetKey {
+			continue
+		}
+		merged[k] = v
+	}
+	if secret, sent := merged[domain.SecretKeyKey]; sent {
+		if s, _ := secret.(string); s == "" {
+			delete(merged, domain.SecretKeyKey)
+		}
+		return merged
+	}
+	if secret, ok := stored[domain.SecretKeyKey].(string); ok && secret != "" {
+		merged[domain.SecretKeyKey] = secret
+	}
+	return merged
 }
 
 var validFillPolicies = map[string]bool{
@@ -170,6 +199,7 @@ func (h *BlobStoreHandler) Create(c *gin.Context) {
 		return
 	}
 	bs.Type = blobType
+	delete(bs.Config, domain.SecretKeySetKey)
 
 	if bs.Name == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "name is required"})
@@ -187,7 +217,7 @@ func (h *BlobStoreHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusCreated, bs)
+	c.JSON(http.StatusCreated, domain.RedactedBlobStore(bs))
 }
 
 // Update handles PUT /service/rest/v1/blobstores/:type/:name
@@ -211,6 +241,7 @@ func (h *BlobStoreHandler) Update(c *gin.Context) {
 	}
 	updates.Name = name
 	updates.Type = existing.Type
+	updates.Config = mergeBlobStoreConfig(existing.Config, updates.Config)
 
 	if updates.Type == "group" {
 		if msg := h.validateGroupConfig(c.Request.Context(), updates.Config); msg != "" {
@@ -226,7 +257,7 @@ func (h *BlobStoreHandler) Update(c *gin.Context) {
 	if h.registry != nil && existing.ID != "" {
 		h.registry.Invalidate(existing.ID)
 	}
-	c.JSON(http.StatusOK, updates)
+	c.JSON(http.StatusOK, domain.RedactedBlobStore(updates))
 }
 
 // Delete handles DELETE /service/rest/v1/blobstores/:name

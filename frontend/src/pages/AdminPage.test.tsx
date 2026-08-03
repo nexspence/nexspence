@@ -77,6 +77,76 @@ describe('AdminPage — Info tab', () => {
 })
 
 describe('AdminPage — Blob Stores tab', () => {
+  const s3Store = {
+    id: 'bs-2',
+    name: 'archive',
+    type: 's3',
+    usedBytes: 1024,
+    quotaBytes: null,
+    config: {
+      bucket: 'artifacts',
+      region: 'eu-central-1',
+      access_key: 'AKIAEXAMPLE',
+      secret_key_set: true,
+    },
+  }
+
+  /** Opens the archive store's detail modal and switches it into edit mode. */
+  async function openS3Edit() {
+    server.use(
+      http.get('/service/rest/v1/blobstores', () => HttpResponse.json([s3Store])),
+      http.get('/api/v1/blob-stores/:name/usage', () =>
+        HttpResponse.json({ store: s3Store, linkedRepositories: [], totalAssetBytes: 0 }),
+      ),
+    )
+    renderAdmin('blobs')
+    fireEvent.click(await screen.findByText('archive'))
+    await screen.findByText('Blob Store: archive')
+    fireEvent.click(await screen.findByRole('button', { name: /Edit Config/i }))
+    await screen.findByText('Edit Configuration')
+  }
+
+  it('never receives the S3 secret key from the API', async () => {
+    await openS3Edit()
+    // The redacted payload carries a marker instead of the credential.
+    expect(screen.getByText(/A secret key is stored/i)).toBeInTheDocument()
+  })
+
+  it('omits secret_key on save when the field is left blank', async () => {
+    let put: Record<string, unknown> | null = null
+    server.use(
+      http.put('/service/rest/v1/blobstores/:type/:name', async ({ request }) => {
+        put = (await request.json()) as Record<string, unknown>
+        return HttpResponse.json(s3Store)
+      }),
+    )
+    await openS3Edit()
+    fireEvent.click(screen.getByRole('button', { name: /^Save$/ }))
+    await waitFor(() => expect(put).toBeTruthy())
+    const cfg = (put! as { config?: Record<string, unknown> }).config
+    expect(cfg).not.toHaveProperty('secret_key')
+    expect(cfg).not.toHaveProperty('secret_key_set')
+    expect(cfg?.bucket).toBe('artifacts')
+    expect(cfg?.access_key).toBe('AKIAEXAMPLE')
+  })
+
+  it('sends secret_key on save when a new one is typed', async () => {
+    const user = userEvent.setup()
+    let put: Record<string, unknown> | null = null
+    server.use(
+      http.put('/service/rest/v1/blobstores/:type/:name', async ({ request }) => {
+        put = (await request.json()) as Record<string, unknown>
+        return HttpResponse.json(s3Store)
+      }),
+    )
+    await openS3Edit()
+    await user.type(screen.getByPlaceholderText('unchanged'), 'rotat3d')
+    fireEvent.click(screen.getByRole('button', { name: /^Save$/ }))
+    await waitFor(() => expect(put).toBeTruthy())
+    const cfg = (put! as { config?: Record<string, unknown> }).config
+    expect(cfg?.secret_key).toBe('rotat3d')
+  })
+
   it('shows empty state', async () => {
     server.use(http.get('/service/rest/v1/blobstores', () => HttpResponse.json([])))
     renderAdmin('blobs')

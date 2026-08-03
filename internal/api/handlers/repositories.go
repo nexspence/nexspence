@@ -39,7 +39,7 @@ func (h *RepositoryHandler) List(c *gin.Context) {
 	repos = h.rbacSvc.FilterRepos(c.Request.Context(),
 		stringVal(userID), stringSliceVal(roles), repos)
 
-	c.JSON(http.StatusOK, repos)
+	c.JSON(http.StatusOK, domain.RedactedRepositories(repos))
 }
 
 func stringVal(v any) string        { s, _ := v.(string); return s }
@@ -57,7 +57,7 @@ func (h *RepositoryHandler) Get(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, r)
+	c.JSON(http.StatusOK, domain.RedactedRepository(*r))
 }
 
 // Create handles POST /service/rest/v1/repositories/:format/:type
@@ -85,7 +85,7 @@ func (h *RepositoryHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusCreated, r)
+	c.JSON(http.StatusCreated, domain.RedactedRepository(r))
 }
 
 // Update handles PUT /service/rest/v1/repositories/:format/:type/:name
@@ -111,7 +111,7 @@ func (h *RepositoryHandler) Update(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, r)
+	c.JSON(http.StatusOK, domain.RedactedRepository(*r))
 }
 
 // Patch handles PATCH /service/rest/v1/repositories/:name — partial update (currently: online toggle only)
@@ -145,7 +145,7 @@ func (h *RepositoryHandler) Patch(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, r)
+	c.JSON(http.StatusOK, domain.RedactedRepository(*r))
 }
 
 // Delete handles DELETE /service/rest/v1/repositories/:name

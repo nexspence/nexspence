@@ -339,3 +339,121 @@ func TestBlobStore_Compact_Delete_Success(t *testing.T) {
 	assert.Equal(t, 1, res.Orphans)
 	assert.False(t, blobStore.Has("orphan-key"))
 }
+
+// ── secret_key redaction ──────────────────────────────────────
+
+func s3Store(name, secret string) *domain.BlobStore {
+	return &domain.BlobStore{
+		ID: name, Name: name, Type: "s3",
+		Config: map[string]any{
+			"bucket":     "artifacts",
+			"access_key": "AKIAEXAMPLE",
+			"secret_key": secret,
+		},
+	}
+}
+
+func TestBlobStoreHandler_List_RedactsSecretKey(t *testing.T) {
+	r, _, _, _, _ := mountBlobStores(t, s3Store("archive", "sup3rs3cret"))
+	rec := do(t, r, http.MethodGet, "/service/rest/v1/blobstores", nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.NotContains(t, rec.Body.String(), "sup3rs3cret")
+
+	var got []domain.BlobStore
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Len(t, got, 1)
+	assert.NotContains(t, got[0].Config, "secret_key")
+	assert.Equal(t, true, got[0].Config[domain.SecretKeySetKey])
+	assert.Equal(t, "AKIAEXAMPLE", got[0].Config["access_key"])
+}
+
+func TestBlobStoreHandler_Get_RedactsSecretKey(t *testing.T) {
+	r, _, _, _, _ := mountBlobStores(t, s3Store("archive", "sup3rs3cret"))
+	rec := do(t, r, http.MethodGet, "/service/rest/v1/blobstores/archive", nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.NotContains(t, rec.Body.String(), "sup3rs3cret")
+
+	var got domain.BlobStore
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	assert.NotContains(t, got.Config, "secret_key")
+	assert.Equal(t, true, got.Config[domain.SecretKeySetKey])
+}
+
+func TestBlobStoreHandler_Create_RedactsSecretKeyInResponse(t *testing.T) {
+	r, blobs, _, _, _ := mountBlobStores(t)
+	rec := do(t, r, http.MethodPost, "/service/rest/v1/blobstores/s3", map[string]any{
+		"name":   "archive",
+		"config": map[string]any{"bucket": "artifacts", "secret_key": "sup3rs3cret"},
+	})
+	require.Equal(t, http.StatusCreated, rec.Code)
+	assert.NotContains(t, rec.Body.String(), "sup3rs3cret")
+
+	stored, err := blobs.Get(testContext(), "archive")
+	require.NoError(t, err)
+	assert.Equal(t, "sup3rs3cret", stored.Config["secret_key"], "the secret is still persisted")
+}
+
+func TestBlobStoreHandler_Create_DropsSecretKeySetMarker(t *testing.T) {
+	r, blobs, _, _, _ := mountBlobStores(t)
+	rec := do(t, r, http.MethodPost, "/service/rest/v1/blobstores/s3", map[string]any{
+		"name":   "archive",
+		"config": map[string]any{"bucket": "artifacts", domain.SecretKeySetKey: true},
+	})
+	require.Equal(t, http.StatusCreated, rec.Code)
+
+	stored, err := blobs.Get(testContext(), "archive")
+	require.NoError(t, err)
+	assert.NotContains(t, stored.Config, domain.SecretKeySetKey, "the read-only marker must never be stored")
+}
+
+func TestBlobStoreHandler_Update_KeepsSecretKeyWhenOmitted(t *testing.T) {
+	r, blobs, _, _, _ := mountBlobStores(t, s3Store("archive", "sup3rs3cret"))
+	rec := do(t, r, http.MethodPut, "/service/rest/v1/blobstores/s3/archive", map[string]any{
+		"config": map[string]any{"bucket": "artifacts-v2", "access_key": "AKIAEXAMPLE"},
+	})
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.NotContains(t, rec.Body.String(), "sup3rs3cret")
+
+	stored, err := blobs.Get(testContext(), "archive")
+	require.NoError(t, err)
+	assert.Equal(t, "sup3rs3cret", stored.Config["secret_key"], "omitted secret must survive the edit")
+	assert.Equal(t, "artifacts-v2", stored.Config["bucket"])
+}
+
+func TestBlobStoreHandler_Update_ReplacesSecretKeyWhenProvided(t *testing.T) {
+	r, blobs, _, _, _ := mountBlobStores(t, s3Store("archive", "sup3rs3cret"))
+	rec := do(t, r, http.MethodPut, "/service/rest/v1/blobstores/s3/archive", map[string]any{
+		"config": map[string]any{"bucket": "artifacts", "secret_key": "rotat3d"},
+	})
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	stored, err := blobs.Get(testContext(), "archive")
+	require.NoError(t, err)
+	assert.Equal(t, "rotat3d", stored.Config["secret_key"])
+}
+
+func TestBlobStoreHandler_Update_ClearsSecretKeyWhenEmpty(t *testing.T) {
+	r, blobs, _, _, _ := mountBlobStores(t, s3Store("archive", "sup3rs3cret"))
+	rec := do(t, r, http.MethodPut, "/service/rest/v1/blobstores/s3/archive", map[string]any{
+		"config": map[string]any{"bucket": "artifacts", "secret_key": ""},
+	})
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	stored, err := blobs.Get(testContext(), "archive")
+	require.NoError(t, err)
+	assert.NotContains(t, stored.Config, "secret_key", "an explicit empty secret clears the credential")
+}
+
+func TestBlobStoreHandler_Update_DropsSecretKeySetMarker(t *testing.T) {
+	r, blobs, _, _, _ := mountBlobStores(t, s3Store("archive", "sup3rs3cret"))
+	// A client that round-trips a redacted payload sends the marker back.
+	rec := do(t, r, http.MethodPut, "/service/rest/v1/blobstores/s3/archive", map[string]any{
+		"config": map[string]any{"bucket": "artifacts", domain.SecretKeySetKey: true},
+	})
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	stored, err := blobs.Get(testContext(), "archive")
+	require.NoError(t, err)
+	assert.NotContains(t, stored.Config, domain.SecretKeySetKey)
+	assert.Equal(t, "sup3rs3cret", stored.Config["secret_key"])
+}
