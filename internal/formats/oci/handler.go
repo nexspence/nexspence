@@ -302,17 +302,27 @@ func (h *Handler) recordCachedManifestMeta(ctx context.Context, repo *domain.Rep
 	}
 	defer func() { _ = rc.Close() }()
 
-	body, err := io.ReadAll(io.LimitReader(rc, maxManifestBytes))
+	// One byte past the cap, as the push path does, so an oversized body is
+	// visible rather than silently truncated into unparsable JSON. Unlike a push
+	// there is nothing to reject here — the blob is already cached and already
+	// served — so an overflow only skips the parse.
+	body, err := io.ReadAll(io.LimitReader(rc, maxManifestBytes+1))
 	if err != nil {
 		return
 	}
-	meta, ok := parseManifestMeta(body)
-	if !ok {
-		return
+	var extra map[string]any
+	if len(body) <= maxManifestBytes {
+		if meta, ok := parseManifestMeta(body); ok {
+			extra = extraFrom(meta)
+		}
+	}
+	if extra == nil {
+		extra = make(map[string]any, 1)
 	}
 	// The source digest is written unconditionally: it is what arms the guard
-	// above, including for a manifest that yields no metadata at all.
-	extra := extraFrom(meta)
+	// above, including for a manifest that yields no metadata at all — one that
+	// is not JSON, or one too large to parse. Without it every pull would read
+	// the whole blob back from the store forever.
 	extra[extraSourceDigestKey] = asset.SHA256
 	_ = h.deps.Components.UpdateExtra(ctx, comp.ID, extra)
 }

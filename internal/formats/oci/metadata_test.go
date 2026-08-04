@@ -259,6 +259,43 @@ func pullTag(t *testing.T, r *gin.Engine, repoName, tag string) string {
 	return w.Body.String()
 }
 
+// oversizedManifest is valid JSON larger than the 4 MiB spec cap, padded with an
+// annotation. Nothing rejects it on the proxy read-back path — it is already in
+// the cache — so the metadata helper must still arm its guard on it.
+func oversizedManifest() string {
+	return `{
+  "schemaVersion": 2,
+  "mediaType": "application/vnd.oci.image.manifest.v1+json",
+  "config": {"mediaType": "application/vnd.cncf.helm.config.v1+json", "digest": "sha256:aa", "size": 12},
+  "annotations": {"pad": "` + strings.Repeat("x", 5<<20) + `"}
+}`
+}
+
+// A cached manifest over the 4 MiB cap must not be re-read from the blob store on
+// every pull: parsing it is optional, arming the guard is not.
+func TestProxyManifest_DoesNotRereadOversizedManifest(t *testing.T) {
+	body := oversizedManifest()
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.oci.image.manifest.v1+json")
+		_, _ = w.Write([]byte(body))
+	}))
+	defer upstream.Close()
+
+	repo := &domain.Repository{
+		ID: "r6", Name: "oci-proxy", Format: domain.FormatOCI, Type: domain.TypeProxy, Online: true,
+		ProxyConfig: map[string]any{"remote_url": upstream.URL},
+	}
+	r, _, store := setupCounting(repo)
+
+	require.Equal(t, body, pullTag(t, r, "oci-proxy", "1.2.3"))
+	afterFirst := store.getCount()
+	require.Positive(t, afterFirst, "the counting store must actually be the one in use")
+
+	require.Equal(t, body, pullTag(t, r, "oci-proxy", "1.2.3"))
+	assert.Equal(t, afterFirst+1, store.getCount(),
+		"an oversized cached manifest must not be re-read for metadata on every pull")
+}
+
 // A mutable tag re-pointed upstream must re-type the component: the cached blob
 // now holds a different manifest, so metadata describing the old one is wrong.
 func TestProxyManifest_RetypesRepointedTag(t *testing.T) {
