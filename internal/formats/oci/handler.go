@@ -151,7 +151,10 @@ func (h *Handler) handleManifests(c *gin.Context, repoName, imageName, reference
 				dockerError(c, http.StatusBadGateway, "UNKNOWN", err.Error())
 				return
 			}
-			h.recordCachedManifestMeta(c.Request.Context(), repo, cachePath)
+			// Post-response work: drop cancellation (the client may already have
+			// hung up) while keeping request values, as repoproxy does for its
+			// own after-the-fact freshness update.
+			h.recordCachedManifestMeta(context.WithoutCancel(c.Request.Context()), repo, cachePath)
 			return
 		}
 		h.pullManifest(c, repoName, imageName, reference)
@@ -267,9 +270,10 @@ func (h *Handler) pushManifest(c *gin.Context, repoName, imageName, reference st
 }
 
 // recordCachedManifestMeta types a manifest that repoproxy has just written to
-// the cache. ServeGET does not expose the body, so it is read back once — a
-// component that already carries a media type is left alone, keeping revalidated
-// manifests off the blob store.
+// the cache. ServeGET does not expose the body, so it is read back once per
+// distinct manifest: the recorded source digest keeps a steady-state cache hit
+// off the blob store, while a tag re-pointed upstream re-types because the
+// cached content — and so its digest — changed.
 func (h *Handler) recordCachedManifestMeta(ctx context.Context, repo *domain.Repository, cachePath string) {
 	asset, err := h.deps.Assets.GetByPath(ctx, repo.Name, cachePath)
 	if err != nil || asset == nil {
@@ -279,7 +283,10 @@ func (h *Handler) recordCachedManifestMeta(ctx context.Context, repo *domain.Rep
 	if err != nil || comp == nil {
 		return
 	}
-	if _, typed := comp.Extra[extraMediaTypeKey]; typed {
+	// Keyed on WHICH manifest was typed, not on whether anything was typed. A
+	// re-pointed tag changes the cached blob's digest and re-types; an unchanged
+	// one skips the read even when the manifest carries no mediaType of its own.
+	if dg, ok := comp.Extra[extraSourceDigestKey].(string); ok && dg == asset.SHA256 {
 		return
 	}
 
@@ -303,9 +310,11 @@ func (h *Handler) recordCachedManifestMeta(ctx context.Context, repo *domain.Rep
 	if !ok {
 		return
 	}
-	if extra := extraFrom(meta); len(extra) > 0 {
-		_ = h.deps.Components.UpdateExtra(ctx, comp.ID, extra)
-	}
+	// The source digest is written unconditionally: it is what arms the guard
+	// above, including for a manifest that yields no metadata at all.
+	extra := extraFrom(meta)
+	extra[extraSourceDigestKey] = asset.SHA256
+	_ = h.deps.Components.UpdateExtra(ctx, comp.ID, extra)
 }
 
 func (h *Handler) deleteManifest(c *gin.Context, repoName, imageName, reference string) {

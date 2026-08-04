@@ -9,6 +9,9 @@ const (
 	extraArtifactTypeKey = "oci_artifact_type"
 	extraSubjectKey      = "oci_subject"
 	extraAnnotationsKey  = "oci_annotations"
+	// extraSourceDigestKey records which manifest the other keys were derived
+	// from, so a cached copy is re-typed exactly when its content changes.
+	extraSourceDigestKey = "oci_source_digest"
 )
 
 // maxManifestBytes is the manifest size limit from the OCI Distribution Spec.

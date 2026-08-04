@@ -2,9 +2,12 @@ package oci_test
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -190,4 +193,154 @@ func TestProxyManifest_RecordsArtifactMetadata(t *testing.T) {
 	comp := componentOf(t, d, "oci-proxy", "charts/nginx", "1.2.3")
 	assert.Equal(t, "application/vnd.cncf.helm.config.v1+json", comp.Extra["oci_artifact_type"],
 		"a cached chart must be typed like a pushed one")
+}
+
+// cosignManifest carries no top-level mediaType — the artifact type lives only in
+// config.mediaType. Real cosign signatures and older OCI 1.0 producers look like
+// this, so the "have we typed this yet?" guard cannot key on the media type.
+const cosignManifest = `{
+  "schemaVersion": 2,
+  "config": {"mediaType": "application/vnd.oci.image.config.v1+json", "digest": "sha256:cc", "size": 12},
+  "layers": [{"mediaType": "application/vnd.dev.cosign.simplesigning.v1+json", "digest": "sha256:dd", "size": 34}]
+}`
+
+// countingStore wraps the blob store double to count Get calls, so a test can
+// observe whether the metadata helper re-reads a manifest it has already typed.
+// Embedding supplies every other BlobStore method unchanged.
+type countingStore struct {
+	*testutil.BlobStore
+	mu   sync.Mutex
+	gets int
+}
+
+func (s *countingStore) Get(ctx context.Context, key string) (io.ReadCloser, int64, error) {
+	s.mu.Lock()
+	s.gets++
+	s.mu.Unlock()
+	return s.BlobStore.Get(ctx, key)
+}
+
+func (s *countingStore) getCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.gets
+}
+
+// setupCounting is setupWithDeps with a Get-counting blob store.
+func setupCounting(repo *domain.Repository) (*gin.Engine, formats.Deps, *countingStore) {
+	store := &countingStore{BlobStore: testutil.NewBlobStore()}
+	d := formats.Deps{
+		Repos:      testutil.NewRepoRepo(repo),
+		Blobs:      testutil.NewBlobStoreRepo(),
+		Components: testutil.NewComponentRepo(),
+		Assets:     testutil.NewAssetRepo(),
+		BlobStore:  store,
+		BaseURL:    "http://localhost:8080",
+	}
+	h := oci.New(d)
+	r := gin.New()
+	r.Use(func(c *gin.Context) {
+		ctx := requestctx.WithUser(c.Request.Context(), "test-user-id", "testuser")
+		c.Request = c.Request.WithContext(ctx)
+		c.Next()
+	})
+	r.Any("/repository/:repoName/*path", func(c *gin.Context) { h.ServeHTTP(c) })
+	return r, d, store
+}
+
+// pullTag issues one proxy pull and asserts it succeeded.
+func pullTag(t *testing.T, r *gin.Engine, repoName, tag string) string {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet,
+		"/repository/"+repoName+"/v2/charts/nginx/manifests/"+tag, nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code, "proxy pull should succeed")
+	return w.Body.String()
+}
+
+// A mutable tag re-pointed upstream must re-type the component: the cached blob
+// now holds a different manifest, so metadata describing the old one is wrong.
+func TestProxyManifest_RetypesRepointedTag(t *testing.T) {
+	var serveSecond atomic.Bool
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.oci.image.manifest.v1+json")
+		if serveSecond.Load() {
+			_, _ = w.Write([]byte(cosignManifest))
+			return
+		}
+		_, _ = w.Write([]byte(helmChartManifest))
+	}))
+	defer upstream.Close()
+
+	// A 1ns metadata TTL forces revalidation on the second pull without sleeping:
+	// any elapsed time between the two requests already exceeds it.
+	repo := &domain.Repository{
+		ID: "r3", Name: "oci-proxy", Format: domain.FormatOCI, Type: domain.TypeProxy, Online: true,
+		ProxyConfig: map[string]any{"remote_url": upstream.URL, "metadata_max_age": 0.000000001},
+	}
+	r, d := setupWithDeps(repo)
+
+	require.Equal(t, helmChartManifest, pullTag(t, r, "oci-proxy", "1.2.3"))
+	require.Equal(t, "application/vnd.cncf.helm.config.v1+json",
+		componentOf(t, d, "oci-proxy", "charts/nginx", "1.2.3").Extra["oci_artifact_type"])
+
+	serveSecond.Store(true)
+	require.Equal(t, cosignManifest, pullTag(t, r, "oci-proxy", "1.2.3"),
+		"revalidation should have replaced the cached body")
+
+	comp := componentOf(t, d, "oci-proxy", "charts/nginx", "1.2.3")
+	assert.Equal(t, "application/vnd.oci.image.config.v1+json", comp.Extra["oci_artifact_type"],
+		"a re-pointed tag must carry the NEW manifest's artifact type, not the old one")
+}
+
+// Steady state: a second pull of an unchanged manifest serves from cache and must
+// not read the blob a second time for metadata it already recorded.
+func TestProxyManifest_DoesNotRereadUnchangedManifest(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.oci.image.manifest.v1+json")
+		_, _ = w.Write([]byte(helmChartManifest))
+	}))
+	defer upstream.Close()
+
+	repo := &domain.Repository{
+		ID: "r4", Name: "oci-proxy", Format: domain.FormatOCI, Type: domain.TypeProxy, Online: true,
+		ProxyConfig: map[string]any{"remote_url": upstream.URL},
+	}
+	r, _, store := setupCounting(repo)
+
+	require.Equal(t, helmChartManifest, pullTag(t, r, "oci-proxy", "1.2.3"))
+	afterFirst := store.getCount()
+	require.Positive(t, afterFirst, "the counting store must actually be the one in use")
+
+	require.Equal(t, helmChartManifest, pullTag(t, r, "oci-proxy", "1.2.3"))
+	assert.Equal(t, afterFirst+1, store.getCount(),
+		"the second pull may read the blob once to serve it, never twice")
+}
+
+// The same steady-state guarantee for a manifest with no top-level mediaType:
+// the guard must still arm, or every pull re-reads the blob forever.
+func TestProxyManifest_DoesNotRereadManifestWithoutMediaType(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.oci.image.manifest.v1+json")
+		_, _ = w.Write([]byte(cosignManifest))
+	}))
+	defer upstream.Close()
+
+	repo := &domain.Repository{
+		ID: "r5", Name: "oci-proxy", Format: domain.FormatOCI, Type: domain.TypeProxy, Online: true,
+		ProxyConfig: map[string]any{"remote_url": upstream.URL},
+	}
+	r, d, store := setupCounting(repo)
+
+	require.Equal(t, cosignManifest, pullTag(t, r, "oci-proxy", "1.2.3"))
+	require.Equal(t, "application/vnd.oci.image.config.v1+json",
+		componentOf(t, d, "oci-proxy", "charts/nginx", "1.2.3").Extra["oci_artifact_type"],
+		"a manifest with no top-level mediaType is still typed from config.mediaType")
+	afterFirst := store.getCount()
+	require.Positive(t, afterFirst, "the counting store must actually be the one in use")
+
+	require.Equal(t, cosignManifest, pullTag(t, r, "oci-proxy", "1.2.3"))
+	assert.Equal(t, afterFirst+1, store.getCount(),
+		"a manifest without mediaType must not be re-read on every pull")
 }
