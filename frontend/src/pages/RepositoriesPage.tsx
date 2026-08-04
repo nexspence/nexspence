@@ -59,6 +59,7 @@ const FORMAT_COLORS: Record<string, string> = {
   maven2:    '#f97316',
   npm:       '#ef4444',
   docker:    '#3b82f6',
+  oci:       '#5b8def',
   pypi:      '#a78bfa',
   go:        '#06b6d4',
   nuget:     '#8b5cf6',
@@ -156,7 +157,7 @@ export default function RepositoriesPage() {
         <Select
           options={[
             { value: '', label: 'All formats' },
-            ...['maven2','npm','docker','pypi','go','nuget','helm','raw','apt','yum','cargo','conan','conda','terraform'].map(f => ({ value: f, label: f })),
+            ...['maven2','npm','docker','oci','pypi','go','nuget','helm','raw','apt','yum','cargo','conan','conda','terraform'].map(f => ({ value: f, label: f })),
           ]}
           value={formatFilter}
           onChange={setFormatFilter}
@@ -387,6 +388,7 @@ const PROXY_DEFAULTS: Record<string, string> = {
   pypi:      'https://pypi.org/',
   go:        'https://proxy.golang.org/',
   docker:    'https://registry-1.docker.io/',
+  oci:       'https://ghcr.io/',
   helm:      'https://charts.bitnami.com/bitnami/',
   nuget:     'https://api.nuget.org/v3/',
   cargo:     'https://index.crates.io/',
@@ -531,7 +533,7 @@ function CreateRepoModal({ onClose, onCreated }: {
       <div className={styles.formRow}>
         <label style={LABEL_STYLE}>Format</label>
         <Select
-          options={['maven2','npm','docker','pypi','go','nuget','helm','raw','apt','yum','cargo','conan','conda','terraform'].map(f => ({ value: f, label: f }))}
+          options={['maven2','npm','docker','oci','pypi','go','nuget','helm','raw','apt','yum','cargo','conan','conda','terraform'].map(f => ({ value: f, label: f }))}
           value={form.format}
           onChange={handleFormatChange}
         />

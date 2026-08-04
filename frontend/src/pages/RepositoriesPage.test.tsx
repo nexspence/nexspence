@@ -831,4 +831,14 @@ describe('RepositoriesPage', () => {
     await openSettingsFor('maven-hosted')
     expect(screen.queryByText('Member Repositories *')).not.toBeInTheDocument()
   })
+
+  it('offers oci as a repository format', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<RepositoriesPage />)
+    expect(await screen.findByText('maven-hosted')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /All formats/ }))
+
+    expect(screen.getByText('oci')).toBeInTheDocument()
+  })
 })

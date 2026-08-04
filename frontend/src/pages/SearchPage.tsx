@@ -294,7 +294,7 @@ export default function SearchPage() {
             <Select
               options={[
                 { value: '', label: 'any' },
-                ...['maven2','npm','docker','pypi','go','nuget','helm','raw','apt','yum'].map(f => ({ value: f, label: f })),
+                ...['maven2','npm','docker','oci','pypi','go','nuget','helm','raw','apt','yum'].map(f => ({ value: f, label: f })),
               ]}
               value={filters.format}
               onChange={v => setFilters(f => ({ ...f, format: v }))}
