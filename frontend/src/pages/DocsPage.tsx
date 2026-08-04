@@ -263,10 +263,10 @@ twine upload \\
   },
   {
     id: 'docker',
-    name: 'Docker / OCI',
+    name: 'Docker',
     icon: '🐳',
     iconUrl: 'https://cdn.simpleicons.org/docker/2496ED',
-    description: 'OCI Distribution Spec v2 compliant registry. Supports docker pull/push, image tagging, and multi-arch manifests.',
+    description: 'Container images over the OCI Distribution Spec v2. Supports docker pull/push, image tagging, and multi-arch manifests. For charts and ORAS artifacts, see OCI Artifacts.',
     sections: (base) => {
       const regHost = base.replace(/^https?:\/\//, '')
       return [
@@ -301,6 +301,68 @@ docker push ${regHost}/docker-hosted/myapp:latest` }],
         {
           title: 'List Tags',
           codes: [{ lang: 'bash', content: `curl -u admin:admin123 "${base}/v2/myapp/tags/list"` }],
+        },
+      ]
+    },
+  },
+  {
+    id: 'oci',
+    name: 'OCI Artifacts',
+    icon: '📦',
+    description: 'The same OCI Distribution registry, for everything that is not a container image: Helm charts pushed over oci://, ORAS artifacts such as WASM modules and ML models, and the cosign signatures, SBOMs and attestations attached to them.',
+    sections: (base) => {
+      const regHost = base.replace(/^https?:\/\//, '')
+      return [
+        {
+          title: 'Registry Host',
+          text: 'Like Docker, OCI clients address the host:port directly — no /repository/ prefix. The artifact name includes the Nexspence repository name.',
+          codes: [{ lang: 'text', content: `${regHost}/<repository-name>/<artifact-name>:<tag>` }],
+        },
+        {
+          title: 'Login',
+          codes: [
+            { label: 'Using oras:', lang: 'bash', content: `oras login ${regHost} -u admin -p admin123` },
+            { label: 'Using helm:', lang: 'bash', content: `helm registry login ${regHost} -u admin -p admin123` },
+          ],
+        },
+        {
+          title: 'Push a Helm Chart',
+          text: 'helm push takes an already-packaged chart and an oci:// target. The chart name and version come from the archive, so the target is the namespace it goes in — not the full reference.',
+          codes: [{ lang: 'bash', content: `helm package mychart/
+
+helm push mychart-1.2.3.tgz oci://${regHost}/oci-hosted/charts` }],
+        },
+        {
+          title: 'Install a Helm Chart',
+          codes: [
+            { label: 'Install directly from the registry:', lang: 'bash', content: `helm install my-release \\
+  oci://${regHost}/oci-hosted/charts/mychart --version 1.2.3` },
+            { label: 'Or pull the archive first:', lang: 'bash', content: `helm pull oci://${regHost}/oci-hosted/charts/mychart --version 1.2.3` },
+          ],
+        },
+        {
+          title: 'Push an Artifact with ORAS',
+          text: 'Each file is pushed with its own layer media type, and --artifact-type declares what the whole thing is. Nexspence records both and shows the artifact type in the browse tree.',
+          codes: [{ lang: 'bash', content: `oras push ${regHost}/oci-hosted/my-module:1.0 \\
+  --artifact-type application/vnd.wasm.config.v1+json \\
+  module.wasm:application/vnd.wasm.content.layer.v1+wasm` }],
+        },
+        {
+          title: 'Pull an Artifact',
+          codes: [
+            { label: 'Using oras pull:', lang: 'bash', content: `oras pull ${regHost}/oci-hosted/my-module:1.0` },
+            { label: 'Inspect the manifest with curl:', lang: 'bash', content: `curl -u admin:admin123 \\
+  "${base}/v2/oci-hosted/my-module/manifests/1.0" \\
+  -H "Accept: application/vnd.oci.image.manifest.v1+json"` },
+          ],
+        },
+        {
+          title: 'Signatures, SBOMs and Attestations',
+          text: 'Artifacts attached with a subject are discoverable through the referrers API.',
+          codes: [
+            { label: 'Sign a chart or artifact:', lang: 'bash', content: `cosign sign --key cosign.key ${regHost}/oci-hosted/my-module:1.0` },
+            { label: 'List what is attached to it:', lang: 'bash', content: `oras discover ${regHost}/oci-hosted/my-module:1.0` },
+          ],
         },
       ]
     },

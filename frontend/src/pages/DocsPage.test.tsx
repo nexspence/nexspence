@@ -39,7 +39,29 @@ describe('DocsPage', () => {
     expect(screen.getByRole('button', { name: /Cleanup Policies/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /API Tokens/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Maven 2/3' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Docker / OCI' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Docker' })).toBeInTheDocument()
+    // Formats without a brand icon render an emoji into the button label.
+    expect(screen.getByRole('button', { name: /OCI Artifacts/ })).toBeInTheDocument()
+  })
+
+  // The two OCI Distribution formats are pushed with different tools: `docker`
+  // repositories hold container images, `oci` ones hold charts and ORAS
+  // artifacts. Showing docker commands for both left oci users with nothing.
+  it('shows docker commands for the docker format', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<DocsPage />)
+    await user.click(screen.getByRole('button', { name: 'Docker' }))
+    expect(screen.getByText(new RegExp(`docker login ${ORIGIN.replace(/^https?:\/\//, '')}`))).toBeInTheDocument()
+    expect(screen.getByText(/docker pull /)).toBeInTheDocument()
+  })
+
+  it('shows oras and helm oci:// commands for the oci format', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<DocsPage />)
+    await user.click(screen.getByRole('button', { name: /OCI Artifacts/ }))
+    expect(screen.getByRole('heading', { name: /OCI Artifacts/ })).toBeInTheDocument()
+    expect(screen.getByText(/oras push /)).toBeInTheDocument()
+    expect(screen.getByText(/helm push mychart-1\.2\.3\.tgz oci:\/\//)).toBeInTheDocument()
   })
 
   it('switches through every guide section', async () => {
@@ -76,7 +98,8 @@ describe('DocsPage', () => {
       { label: /Maven 2\/3/, heading: /Maven 2\/3/ },
       { label: /^npm$/, heading: /npm/ },
       { label: /PyPI/, heading: /PyPI/ },
-      { label: /Docker \/ OCI/, heading: /Docker \/ OCI/ },
+      { label: /^Docker$/, heading: /Docker/ },
+      { label: /OCI Artifacts/, heading: /OCI Artifacts/ },
       { label: /Go Modules/, heading: /Go Modules/ },
       { label: /NuGet/, heading: /NuGet/ },
       { label: /Raw/, heading: /Raw/ },
