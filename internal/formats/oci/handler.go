@@ -23,6 +23,7 @@ import (
 	"io"
 	"net/http"
 	"path"
+	"sort"
 	"strings"
 	"time"
 
@@ -121,23 +122,71 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 
 // ─── Tags ──────────────────────────────────────────────────────────────────
 
+// searchPageSize is how many components one tag-list search asks for. It is not
+// a cap on the answer: the component search clamps a Limit above 500 back down
+// to 50 (see internal/repository/postgres/component_repo.go), so raising it
+// would silently return FEWER tags. The list is assembled by paging over the
+// search with a growing offset instead, which keeps a repository with more tags
+// than one search page fully enumerable.
+const searchPageSize = 500
+
 func (h *Handler) handleTagsList(c *gin.Context, repoName, imageName string) {
 	if c.Request.Method != http.MethodGet {
 		c.Status(http.StatusMethodNotAllowed)
 		return
 	}
-	page, err := h.deps.Components.Search(c.Request.Context(), domain.SearchParams{
-		Repository: repoName, Name: imageName, Limit: 500,
-	})
+	tags, err := h.collectTags(c.Request.Context(), repoName, imageName)
 	if err != nil {
 		dockerError(c, http.StatusInternalServerError, "UNKNOWN", err.Error())
 		return
 	}
-	tags := make([]string, 0, len(page.Items))
-	for _, comp := range page.Items {
-		tags = append(tags, comp.Version)
+	// The spec requires the tag list sorted; the search orders by (name,
+	// version) across every image in the repository, which is not the same
+	// thing, and an unsorted list would make the ?last= cursor meaningless.
+	sort.Strings(tags)
+
+	params := parsePageParams(c)
+	page, more := paginate(tags, params)
+	setNextLink(c, params, page, more)
+	if page == nil {
+		page = []string{}
 	}
-	c.JSON(http.StatusOK, gin.H{"name": imageName, "tags": tags})
+	c.JSON(http.StatusOK, gin.H{"name": imageName, "tags": page})
+}
+
+// collectTags returns every tag of one image, paging over the component search
+// until it is exhausted. The loop terminates because a continuation token is
+// only handed back for a full page, and each round advances the offset by one
+// full page.
+func (h *Handler) collectTags(ctx context.Context, repoName, imageName string) ([]string, error) {
+	var tags []string
+	for offset := 0; ; offset += searchPageSize {
+		page, err := h.deps.Components.Search(ctx, domain.SearchParams{
+			Repository: repoName, Name: imageName, Limit: searchPageSize, Offset: offset,
+		})
+		if err != nil {
+			return nil, err
+		}
+		for _, comp := range page.Items {
+			// The search matches the name with a substring ILIKE, so a sibling
+			// image whose name merely contains this one would otherwise donate
+			// its tags to this list.
+			if comp.Name != imageName {
+				continue
+			}
+			// A manifest pushed by tag also registers an alias under its content
+			// digest so a pull by digest resolves (see pushManifest). Those are
+			// references, not tags, and the spec's tag grammar has no ':', so
+			// the digest form is what identifies them.
+			if strings.Contains(comp.Version, ":") {
+				continue
+			}
+			tags = append(tags, comp.Version)
+		}
+		if page.ContinuationToken == nil || len(page.Items) == 0 {
+			return tags, nil
+		}
+	}
 }
 
 // ─── Manifests ─────────────────────────────────────────────────────────────
