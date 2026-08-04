@@ -667,7 +667,10 @@ func (a *AssetRepo) Delete(_ context.Context, id string) error {
 		return nil
 	}
 	delete(a.byID, id)
-	delete(a.assets, asset.RepositoryID+":"+asset.Path)
+	// Keyed the same way Create keys it — by repository NAME. Keying the removal
+	// off RepositoryID left the path index pointing at a deleted asset, so
+	// GetByPath kept resolving it.
+	delete(a.assets, asset.Repository+":"+asset.Path)
 	return nil
 }
 func (a *AssetRepo) IncrementDownloads(_ context.Context, counts map[string]int64) error {
@@ -818,8 +821,23 @@ func (a *AssetRepo) ListRawBrowseAssets(_ context.Context, names []string) ([]do
 	return out, nil
 }
 
-func (a *AssetRepo) CountByBlobKey(_ context.Context, _, _ string) (int, error) {
-	return 0, nil
+// CountByBlobKey mirrors the postgres query: how many assets reference blobKey,
+// not counting the one being excluded. DeleteArtifact reads it to decide whether
+// the physical blob is still needed, so a stub answer would make that decision
+// untestable.
+func (a *AssetRepo) CountByBlobKey(_ context.Context, blobKey, excludeID string) (int, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.Err != nil {
+		return 0, a.Err
+	}
+	n := 0
+	for _, v := range a.byID {
+		if v.BlobKey == blobKey && v.ID != excludeID {
+			n++
+		}
+	}
+	return n, nil
 }
 
 func (a *AssetRepo) ListRawAssetPaths(_ context.Context, repoName string) ([]string, error) {

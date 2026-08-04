@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"testing"
 
@@ -240,6 +241,56 @@ func TestDeleteArtifact_HappyPath(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.False(t, blobStore.Has(key))
+}
+
+// An OCI manifest push registers two assets on ONE blob: the tag path and the
+// digest-alias path. Deleting either one — DELETE by the tag cosign signs under,
+// for instance — must not destroy the bytes the other one still points at, or
+// the surviving asset (and the referrers index built from it) advertises content
+// that is gone.
+func TestDeleteArtifact_KeepsBlobWhileAnotherAssetReferencesIt(t *testing.T) {
+	repo := testutil.SimpleRepo("aliasrepo", "oci")
+	d, blobStore, _, _ := deps(repo)
+
+	ctx := context.Background()
+	content := `{"schemaVersion":2}`
+	tagPath := "/manifests/app/1.0"
+	res, err := base.StoreArtifact(ctx, d,
+		"aliasrepo", tagPath, "application/vnd.oci.image.manifest.v1+json",
+		base.Coords{Name: "app", Version: "1.0"},
+		strings.NewReader(content), int64(len(content)))
+	require.NoError(t, err)
+
+	// The digest alias: a second asset record on the SAME blob key.
+	digestPath := "/manifests/app/sha256:" + res.SHA256
+	_, err = base.RegisterStoredBlob(ctx, d, repo,
+		digestPath, "application/vnd.oci.image.manifest.v1+json",
+		base.Coords{Name: "app", Version: "sha256:" + res.SHA256},
+		res.Asset.BlobKey, res.SHA256, res.SHA1, res.MD5, res.Size, "", "")
+	require.NoError(t, err)
+
+	key := base.BlobKey("aliasrepo", tagPath)
+	require.True(t, blobStore.Has(key))
+
+	// Delete by tag: the alias still needs the bytes.
+	require.NoError(t, base.DeleteArtifact(ctx, d, "aliasrepo", tagPath))
+	assert.True(t, blobStore.Has(key), "blob is still referenced by the digest alias")
+
+	rc, asset, err := base.FetchArtifact(ctx, d, "aliasrepo", digestPath)
+	require.NoError(t, err, "the surviving asset must still serve its content")
+	defer func() { _ = rc.Close() }()
+	body, err := io.ReadAll(rc)
+	require.NoError(t, err)
+	assert.Equal(t, content, string(body))
+	assert.Equal(t, res.SHA256, asset.SHA256)
+
+	// The tag itself is gone.
+	_, _, err = base.FetchArtifact(ctx, d, "aliasrepo", tagPath)
+	require.Error(t, err)
+
+	// Delete the last asset on the blob: now the bytes go.
+	require.NoError(t, base.DeleteArtifact(ctx, d, "aliasrepo", digestPath))
+	assert.False(t, blobStore.Has(key), "no asset references the blob any more")
 }
 
 func TestDeleteArtifact_Idempotent(t *testing.T) {

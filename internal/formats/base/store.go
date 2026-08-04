@@ -265,11 +265,25 @@ func DeleteArtifact(ctx context.Context, d formats.Deps, repoName, filePath stri
 	if delStore == nil {
 		delStore = d.BlobStore
 	}
-	_ = delStore.Delete(ctx, asset.BlobKey)
+	// One blob can carry several assets: an OCI manifest push registers the tag
+	// path and the digest-alias path on the same blob key, and a client that
+	// deletes one still pulls the other. Deleting the bytes here would leave the
+	// survivor — and the referrers index built from it — advertising content that
+	// is gone. A count that cannot be read keeps the blob: an orphan is reclaimed
+	// by the blob GC, whereas bytes deleted under a live asset are lost.
+	others, cerr := d.Assets.CountByBlobKey(ctx, asset.BlobKey, asset.ID)
+	if cerr == nil && others == 0 {
+		_ = delStore.Delete(ctx, asset.BlobKey)
+	}
 	if err := d.Assets.Delete(ctx, asset.ID); err != nil {
 		return err
 	}
 	metrics.ArtifactsDeleted.Add(1)
+	// Decremented whether or not the bytes went away, because the counter is
+	// incremented once per registered asset — the alias registration in
+	// RegisterStoredBlob adds size a second time for the same blob. Skipping the
+	// decrement for a surviving blob would leave that second size on the store
+	// forever and walk it into a false quota rejection.
 	_ = DecrementBlobStoreUsage(ctx, d.Blobs, asset)
 	if d.Webhooks != nil {
 		d.Webhooks.Dispatch(domain.WebhookPayload{

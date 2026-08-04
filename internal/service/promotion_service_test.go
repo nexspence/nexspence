@@ -358,5 +358,104 @@ func TestPromotionService_PathFilter(t *testing.T) {
 	})
 }
 
+// A component's Extra is what the OCI layer reads to answer the referrers API:
+// a signature manifest is found through Extra["oci_subject"]. Promoting one to
+// another repository without its Extra lands a signature the target repository
+// can never list, so the promoted copy carries the metadata over.
+func TestPromotionService_CopiesComponentExtra(t *testing.T) {
+	svc, promoRepo, compRepo, assetRepo, blobStore, repoRepo, _, _ := newTestPromotionSvc(t)
+	ctx := context.Background()
+
+	fromRepo := testutil.SimpleRepo("oci-staging", "oci")
+	toRepo := testutil.SimpleRepo("oci-production", "oci")
+	repoRepo.Create(ctx, fromRepo)
+	repoRepo.Create(ctx, toRepo)
+
+	subject := "sha256:" + strings.Repeat("a", 64)
+	comp := &domain.Component{
+		ID:           "comp-sig-1",
+		RepositoryID: fromRepo.ID,
+		Repository:   fromRepo.Name,
+		Format:       "oci",
+		Name:         "charts/nginx",
+		Version:      strings.Replace(subject, ":", "-", 1) + ".sig",
+		Extra: map[string]any{
+			"oci_subject":       subject,
+			"oci_artifact_type": "application/vnd.dev.cosign.artifact.sig.v1+json",
+			"oci_media_type":    "application/vnd.oci.image.manifest.v1+json",
+			"oci_annotations":   map[string]any{"org.opencontainers.image.created": "2026-08-04T00:00:00Z"},
+			// Deliberately not promoted: see below.
+			"scan_result": map[string]any{"imageRef": "localhost/oci-staging/charts/nginx", "status": "ok"},
+		},
+	}
+	compRepo.AddComponent(comp)
+
+	blobKey := "oci-staging:signature-manifest"
+	if err := blobStore.PutBytes(ctx, blobKey, []byte(`{"schemaVersion":2}`)); err != nil {
+		t.Fatalf("PutBytes: %v", err)
+	}
+	assetRepo.Create(ctx, &domain.Asset{
+		ComponentID:  comp.ID,
+		RepositoryID: fromRepo.ID,
+		Repository:   fromRepo.Name,
+		Path:         "/manifests/charts/nginx/" + comp.Version,
+		BlobKey:      blobKey,
+		SizeBytes:    19,
+		ContentType:  "application/vnd.oci.image.manifest.v1+json",
+	})
+
+	rule := &domain.PromotionRule{
+		Name:     "oci-auto",
+		FromRepo: "oci-staging",
+		ToRepo:   "oci-production",
+	}
+	if err := promoRepo.CreateRule(ctx, rule); err != nil {
+		t.Fatalf("CreateRule: %v", err)
+	}
+
+	results, err := svc.Promote(ctx, rule.ID, []string{comp.ID}, "user-1")
+	if err != nil {
+		t.Fatalf("Promote: %v", err)
+	}
+	if len(results) != 1 || results[0].Status != domain.PromotionCompleted {
+		t.Fatalf("promotion did not complete: %+v", results)
+	}
+
+	page, err := compRepo.ListByRepoNames(ctx, []string{"oci-production"}, 100, 0)
+	if err != nil {
+		t.Fatalf("ListByRepoNames: %v", err)
+	}
+	if len(page.Items) != 1 {
+		t.Fatalf("expected 1 promoted component, got %d", len(page.Items))
+	}
+	promoted := page.Items[0]
+	if got := promoted.Extra["oci_subject"]; got != subject {
+		t.Errorf("promoted component lost oci_subject: got %v want %s", got, subject)
+	}
+	if got := promoted.Extra["oci_artifact_type"]; got != "application/vnd.dev.cosign.artifact.sig.v1+json" {
+		t.Errorf("promoted component lost oci_artifact_type: got %v", got)
+	}
+	if got := promoted.Extra["oci_media_type"]; got != "application/vnd.oci.image.manifest.v1+json" {
+		t.Errorf("promoted component lost oci_media_type: got %v", got)
+	}
+	ann, ok := promoted.Extra["oci_annotations"].(map[string]any)
+	if !ok || ann["org.opencontainers.image.created"] != "2026-08-04T00:00:00Z" {
+		t.Errorf("promoted component lost oci_annotations: got %v", promoted.Extra["oci_annotations"])
+	}
+
+	// A scan result is a record of a scan run against the SOURCE repository's
+	// image reference, and the scan rows the promotion gate reads are not copied
+	// either, so it does not travel: the promoted copy has not been scanned.
+	if got, ok := promoted.Extra["scan_result"]; ok {
+		t.Errorf("scan_result must not be promoted: got %v", got)
+	}
+
+	// The copy is its own map: mutating the source afterwards must not reach it.
+	comp.Extra["oci_subject"] = "sha256:" + strings.Repeat("b", 64)
+	if got := promoted.Extra["oci_subject"]; got != subject {
+		t.Errorf("promoted component shares the source map: got %v", got)
+	}
+}
+
 // Ensure time package is used (referenced in domain types).
 var _ = time.Now
