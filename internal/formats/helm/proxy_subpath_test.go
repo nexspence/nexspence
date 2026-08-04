@@ -175,9 +175,114 @@ func TestHelm_Proxy_AbsoluteURLForeignHost_LeftAlone(t *testing.T) {
 		"a chart on another host cannot be proxied and must not be rewritten")
 }
 
-// TestHelm_Proxy_NestedPath_NoTraversal guards the nested download path against
-// escaping the configured remote: normPath resolves ".." before the path is ever
-// forwarded upstream, so a traversal attempt lands back inside the remote subtree.
+// prefixedUpstream serves a repository rooted at /charts-repo, i.e. a remote whose
+// URL carries a path prefix. index.yaml lists two entries: one inside the prefixed
+// subtree and one outside it.
+func prefixedUpstream(t *testing.T) *httptest.Server {
+	t.Helper()
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/charts-repo/index.yaml":
+			w.Header().Set("Content-Type", "application/yaml")
+			_, _ = w.Write([]byte("apiVersion: v1\n" +
+				"entries:\n" +
+				"  inside:\n" +
+				"  - name: inside\n" +
+				"    version: \"1.0.0\"\n" +
+				"    urls:\n" +
+				"    - " + srv.URL + "/charts-repo/charts/inside-1.0.0.tgz\n" +
+				"  outside:\n" +
+				"  - name: outside\n" +
+				"    version: \"1.0.0\"\n" +
+				"    urls:\n" +
+				"    - " + srv.URL + "/other-repo/outside-1.0.0.tgz\n" +
+				"generated: \"2024-01-01T00:00:00Z\"\n"))
+		case "/charts-repo/charts/inside-1.0.0.tgz":
+			w.Header().Set("Content-Type", "application/x-tar")
+			_, _ = w.Write([]byte("inside-chart-bytes"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	return srv
+}
+
+// TestHelm_Proxy_RemoteWithPathPrefix covers a remote_url that has its own path
+// prefix: an entry inside that subtree is proxied with the prefix stripped, and one
+// outside it is handed to the client untouched.
+func TestHelm_Proxy_RemoteWithPathPrefix(t *testing.T) {
+	upstream := prefixedUpstream(t)
+	defer upstream.Close()
+
+	r, _ := setupProxy(t, "helm-prefix", upstream.URL+"/charts-repo")
+
+	req := httptest.NewRequest(http.MethodGet, "/repository/helm-prefix/index.yaml", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body.String())
+
+	var index struct {
+		Entries map[string][]struct {
+			URLs []string `yaml:"urls"`
+		} `yaml:"entries"`
+	}
+	require.NoError(t, yaml.Unmarshal(w.Body.Bytes(), &index))
+
+	inside := index.Entries["inside"][0].URLs[0]
+	assert.Equal(t, testBaseURL+"/repository/helm-prefix/charts/inside-1.0.0.tgz", inside,
+		"the remote's own path prefix must be stripped, the rest kept")
+	assert.Equal(t, upstream.URL+"/other-repo/outside-1.0.0.tgz",
+		index.Entries["outside"][0].URLs[0],
+		"a URL outside the proxied subtree is not ours to rewrite")
+
+	req = httptest.NewRequest(http.MethodGet, strings.TrimPrefix(inside, testBaseURL), nil)
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body.String())
+	assert.Equal(t, "inside-chart-bytes", w.Body.String())
+}
+
+// TestHelm_Proxy_ProvenanceFile_SharesChartCoords verifies the ".prov" signature
+// Helm fetches alongside a chart is filed under the chart's own coordinates rather
+// than registering a junk component of its own.
+func TestHelm_Proxy_ProvenanceFile_SharesChartCoords(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/charts/ingress-nginx-4.11.2.tgz":
+			_, _ = w.Write([]byte("chart"))
+		case "/charts/ingress-nginx-4.11.2.tgz.prov":
+			_, _ = w.Write([]byte("signature"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer upstream.Close()
+
+	r, comps := setupProxy(t, "helm-prov", upstream.URL)
+
+	for _, p := range []string{
+		"/repository/helm-prov/charts/ingress-nginx-4.11.2.tgz",
+		"/repository/helm-prov/charts/ingress-nginx-4.11.2.tgz.prov",
+	} {
+		req := httptest.NewRequest(http.MethodGet, p, nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		require.Equal(t, http.StatusOK, w.Code, "%s body: %s", p, w.Body.String())
+	}
+
+	page, err := comps.List(t.Context(), "helm-prov", 100, 0)
+	require.NoError(t, err)
+	require.Len(t, page.Items, 1, "the provenance file must not register its own component")
+	assert.Equal(t, "ingress-nginx", page.Items[0].Name)
+	assert.Equal(t, "4.11.2", page.Items[0].Version)
+}
+
+// TestHelm_Proxy_NestedPath_NoTraversal is a standing guard on the pre-existing
+// normPath: it resolves ".." before the request path is forwarded upstream, so a
+// traversal attempt lands back inside the remote subtree. This held before the
+// nested-path fix too — ServeGET already received the full request path — and the
+// test exists to keep it that way now that nested paths are routinely in play.
 func TestHelm_Proxy_NestedPath_NoTraversal(t *testing.T) {
 	var gotPath string
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

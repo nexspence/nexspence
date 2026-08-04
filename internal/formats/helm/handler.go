@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"regexp"
 	"strings"
 	"time"
 
@@ -51,10 +52,13 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 			return
 		}
 		// The request path may be nested (charts/mychart-1.2.3.tgz), so the component
-		// coordinates come from the filename, never from the path.
-		coords := base.Coords{Name: path.Base(p)}
-		if strings.HasSuffix(p, ".tgz") {
-			chartName, version := splitChartFilename(path.Base(p))
+		// coordinates come from the filename, never from the path. Helm fetches a
+		// "<chart>.tgz.prov" signature alongside each chart; file that under the
+		// chart's own coordinates instead of as a component in its own right.
+		filename := strings.TrimSuffix(path.Base(p), ".prov")
+		coords := base.Coords{Name: filename}
+		if strings.HasSuffix(filename, ".tgz") {
+			chartName, version := splitChartFilename(filename)
 			coords = base.Coords{Name: chartName, Version: version}
 		}
 		// Chart tarballs are immutable (index.yaml — the mutable index — is
@@ -302,11 +306,22 @@ func normPath(p string) string {
 	return path.Clean("/" + strings.TrimPrefix(p, "/"))
 }
 
+// chartVersionRe matches the "-<version>" tail of a chart archive name, right-anchored
+// on a SemVer-shaped version. Splitting at the last dash instead would cut a
+// prerelease in half: "cert-manager-v1.13.0-beta.0" is version "v1.13.0-beta.0", not
+// name "cert-manager-v1.13.0" at version "beta.0".
+var chartVersionRe = regexp.MustCompile(
+	`-(v?[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)$`)
+
 // splitChartFilename splits a chart archive filename ("mychart-1.2.3.tgz") into its
-// chart name and version at the last dash. A filename with no usable dash keeps the
-// whole stem as the name and gets the placeholder version "0.0.0".
+// chart name and version. Charts whose version is not SemVer-shaped fall back to a
+// split at the last dash; a filename with no usable dash keeps the whole stem as the
+// name and gets the placeholder version "0.0.0".
 func splitChartFilename(filename string) (chartName, version string) {
 	stem := strings.TrimSuffix(filename, ".tgz")
+	if m := chartVersionRe.FindStringSubmatchIndex(stem); m != nil {
+		return stem[:m[0]], stem[m[2]:m[3]]
+	}
 	if lastDash := strings.LastIndex(stem, "-"); lastDash > 0 {
 		return stem[:lastDash], stem[lastDash+1:]
 	}
@@ -314,42 +329,98 @@ func splitChartFilename(filename string) (chartName, version string) {
 }
 
 // rewriteChartURL maps one `urls` entry of an upstream index.yaml onto this proxy.
-// Entries come in three shapes:
+//
+// Helm resolves each entry as a URL reference against the repository URL (see
+// helm.sh/helm/v3/pkg/repo.ResolveReferenceURL), so an entry takes one of four shapes:
 //
 //  1. a repository-relative path of any depth ("charts/mychart-1.2.3.tgz") — kept
 //     whole, because the download handler forwards the request path upstream verbatim;
-//  2. an absolute URL under the configured remote — the remote prefix is stripped and
-//     the remainder is treated as case 1;
-//  3. an absolute URL on some other host (charts published to GitHub releases, say) —
-//     returned untouched. We cannot express it as a path under this proxy, so the
-//     client fetches it directly. That skips the cache, but it beats handing back a
-//     proxy path that would 404.
+//  2. an absolute URL under the configured remote — the remote's own path prefix is
+//     stripped and the remainder is treated as case 1;
+//  3. an absolute URL we cannot serve: another host (charts published to GitHub
+//     releases, say), a sibling subtree of the same host, or any URL carrying a query;
+//  4. a root-relative path ("/charts/mychart-1.2.3.tgz"), which resolves against the
+//     HOST root and NOT the remote's path prefix — case 2 when it happens to land
+//     inside the proxied subtree, case 3 otherwise.
 //
-// localBase must end in "/" and remoteBase must not.
+// Whatever falls to case 3 is handed back as the absolute upstream URL it resolves to,
+// unchanged when the entry was already absolute. Such an artifact cannot be expressed
+// as a path under this proxy, so the client fetches it directly: that skips the cache
+// and needs egress, but it beats a proxy path that would 404 or, worse, quietly serve
+// a different artifact.
+//
+// localBase must end in "/"; remoteBase is the repository's remote_url.
 func rewriteChartURL(rawURL, remoteBase, localBase string) string {
-	rel := rawURL
-
-	u, err := url.Parse(rawURL)
+	remote, err := url.Parse(remoteBase)
+	if err != nil {
+		return rawURL
+	}
+	ref, err := url.Parse(rawURL)
 	if err != nil {
 		return rawURL // unparsable: leave it for the client to deal with
 	}
-	if u.Host != "" { // absolute (or protocol-relative) URL
-		remote, err := url.Parse(remoteBase)
-		if err != nil {
+
+	// Resolve the reference the way Helm does: against the remote URL with a trailing
+	// slash, so a relative entry lands beside index.yaml rather than beside the
+	// remote's last path segment, and a root-relative entry lands at the host root.
+	resolveBase := *remote
+	resolveBase.Path = strings.TrimSuffix(remote.Path, "/") + "/"
+	resolveBase.RawPath = ""
+	abs := resolveBase.ResolveReference(ref)
+
+	// unproxyable hands the client the upstream URL. An entry that was already
+	// absolute goes back byte for byte rather than as a re-serialized copy.
+	unproxyable := func() string {
+		if ref.Scheme != "" || ref.Host != "" {
 			return rawURL
 		}
-		// Compare hosts only: an index served over https regularly lists http URLs
-		// (and the reverse), and that is still the same upstream repository.
-		if !strings.EqualFold(u.Host, remote.Host) {
-			return rawURL // case 3
-		}
-		remotePath := strings.TrimSuffix(remote.Path, "/")
-		if remotePath != "" && u.Path != remotePath && !strings.HasPrefix(u.Path, remotePath+"/") {
-			return rawURL // same host but outside the proxied subtree — case 3
-		}
-		rel = strings.TrimPrefix(u.Path, remotePath)
+		return abs.String()
 	}
 
-	rel = strings.TrimPrefix(path.Clean("/"+strings.TrimPrefix(rel, "/")), "/")
-	return localBase + rel
+	// A query cannot survive the round trip: the download path forwards only the
+	// request path upstream, so a signed or tokenized URL would be re-fetched
+	// unsigned and rejected. Send the client to the original instead.
+	if abs.RawQuery != "" || abs.ForceQuery {
+		return unproxyable()
+	}
+	if !sameUpstreamHost(abs, remote) {
+		return unproxyable()
+	}
+
+	// Compare cleaned paths, so a ".." segment cannot slip past the subtree check and
+	// only afterwards collapse into a path pointing at a different upstream file.
+	remotePath := path.Clean("/" + strings.Trim(remote.Path, "/"))
+	absPath := path.Clean("/" + strings.TrimPrefix(abs.Path, "/"))
+	if remotePath != "/" {
+		if absPath != remotePath && !strings.HasPrefix(absPath, remotePath+"/") {
+			return unproxyable()
+		}
+		absPath = strings.TrimPrefix(absPath, remotePath)
+	}
+	return localBase + strings.TrimPrefix(absPath, "/")
+}
+
+// sameUpstreamHost reports whether two URLs address the same upstream host. The
+// scheme itself is ignored — an index served over https routinely lists http URLs and
+// the reverse — but each scheme's default port is normalized away first, so an entry
+// on "host:443" and a remote of bare "host" are recognized as one upstream.
+func sameUpstreamHost(a, b *url.URL) bool {
+	return normalizedHost(a, b.Scheme) == normalizedHost(b, a.Scheme)
+}
+
+// normalizedHost lowercases u's host and drops the port when it is the default for
+// u's scheme. fallbackScheme supplies the scheme for a protocol-relative reference.
+func normalizedHost(u *url.URL, fallbackScheme string) string {
+	scheme := strings.ToLower(u.Scheme)
+	if scheme == "" {
+		scheme = strings.ToLower(fallbackScheme)
+	}
+	host := strings.ToLower(u.Host)
+	switch scheme {
+	case "http":
+		return strings.TrimSuffix(host, ":80")
+	case "https":
+		return strings.TrimSuffix(host, ":443")
+	}
+	return host
 }
