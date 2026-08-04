@@ -563,6 +563,62 @@ func (r *assetRepo) ListRawBrowseAssets(ctx context.Context, repoNames []string)
 	return out, rows.Err()
 }
 
+// ListOCIImageNames returns the distinct image names the given OCI Distribution
+// repositories hold. It answers GET /v2/<repo>/_catalog.
+//
+// The order is unspecified: the catalog has to be sorted the way Go compares
+// strings, because that is what the ?last= cursor is resolved against, and a
+// database ORDER BY sorts under the server's collation — which for anything but
+// C places "img-a" and "img/a" differently. The caller sorts.
+//
+// The names are cut out of the manifest asset paths — /manifests/<name>/<ref> —
+// rather than read off components.name, because a component row is not evidence
+// of a pullable image: every blob upload registers one, so the components table
+// carries a row per layer and per abandoned upload as well. Joining components
+// to their manifest assets would answer the same question, but this way the
+// answer is one column from one table.
+//
+// The DISTINCT is done in SQL on purpose. The alternative — ListByRepoAndPath
+// with a "/manifests/" prefix and the reduction in Go — ships one full asset row
+// per manifest, which for a registry holding tags and per-manifest digest
+// aliases is a few hundred thousand rows to produce a few thousand names.
+//
+// The scan is bounded by repository, which idx_assets_repo_path (repository_id,
+// path) serves. The LIKE is redundant with the pattern below — it is the pattern
+// that decides what is a manifest — and is there so the planner drops the blob
+// rows, the bulk of the table, before the regexp runs on them.
+func (r *assetRepo) ListOCIImageNames(ctx context.Context, repoNames []string) ([]string, error) {
+	if len(repoNames) == 0 {
+		return nil, nil
+	}
+	// The reference is the last segment and never contains a slash — a tag has
+	// no '/' in the OCI grammar and a digest is <algorithm>:<hex> — so the greedy
+	// group is exactly the image name, however many segments it has.
+	rows, err := r.db.Query(ctx,
+		`SELECT DISTINCT image FROM (
+		     SELECT substring(a.path from '^/manifests/(.+)/[^/]+$') AS image
+		     FROM assets a
+		     JOIN repositories rep ON rep.id = a.repository_id
+		     WHERE rep.name = ANY($1) AND a.path LIKE '/manifests/%'
+		 ) named
+		 WHERE image IS NOT NULL AND image <> ''`,
+		repoNames,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		out = append(out, name)
+	}
+	return out, rows.Err()
+}
+
 func (r *assetRepo) ListByRepoAndPath(ctx context.Context, repoName, pathPrefix string) ([]domain.Asset, error) {
 	var q string
 	var args []any

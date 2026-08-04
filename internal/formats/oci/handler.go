@@ -3,6 +3,7 @@
 // All endpoints under /repository/:repoName/v2/:
 //
 //	GET  /v2/                                   → API version check (200 OK)
+//	GET  /v2/_catalog                           → list the image names in the repository
 //	GET  /v2/:name/tags/list                    → list tags
 //	GET  /v2/:name/referrers/:digest            → list manifests referring to :digest
 //	GET  /v2/:name/manifests/:reference         → pull manifest
@@ -66,6 +67,18 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 	rest := strings.TrimPrefix(p, "/v2/")
 	if rest == p { // no /v2/ prefix
 		c.Status(http.StatusNotFound)
+		return
+	}
+
+	// The catalog is the one endpoint with no image name in front of it, so it is
+	// matched before the split below rejects a single-segment path. Matching the
+	// whole rest rather than a keyword segment keeps it unambiguous: "_catalog"
+	// is not a legal image name — the OCI grammar starts every path component
+	// with an alphanumeric — so no image can be shadowed by this case, and an
+	// image whose name merely ends in "_catalog" still has its own endpoint
+	// segment behind it and never reaches here.
+	if rest == "_catalog" {
+		h.handleCatalog(c, repoName)
 		return
 	}
 

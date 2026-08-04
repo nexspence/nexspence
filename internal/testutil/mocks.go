@@ -821,6 +821,48 @@ func (a *AssetRepo) ListRawBrowseAssets(_ context.Context, names []string) ([]do
 	return out, nil
 }
 
+// ListOCIImageNames mirrors the SQL: the distinct <name> of every
+// /manifests/<name>/<reference> asset in the named repositories, unordered.
+// Assets stored under any other prefix — every blob — name no image.
+func (a *AssetRepo) ListOCIImageNames(_ context.Context, repoNames []string) ([]string, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.BrowseErr != nil {
+		return nil, a.BrowseErr
+	}
+	if len(repoNames) == 0 {
+		return nil, nil
+	}
+	allow := make(map[string]struct{}, len(repoNames))
+	for _, n := range repoNames {
+		allow[n] = struct{}{}
+	}
+	seen := make(map[string]struct{})
+	var out []string
+	for _, asset := range a.byID {
+		if _, ok := allow[asset.Repository]; !ok {
+			continue
+		}
+		rest, ok := strings.CutPrefix(asset.Path, "/manifests/")
+		if !ok {
+			continue
+		}
+		// The reference is the last segment, exactly as the SQL regexp's greedy
+		// group leaves it: a path with no reference names no image.
+		idx := strings.LastIndex(rest, "/")
+		if idx <= 0 {
+			continue
+		}
+		name := rest[:idx]
+		if _, dup := seen[name]; dup {
+			continue
+		}
+		seen[name] = struct{}{}
+		out = append(out, name)
+	}
+	return out, nil
+}
+
 // CountByBlobKey mirrors the postgres query: how many assets reference blobKey,
 // not counting the one being excluded. DeleteArtifact reads it to decide whether
 // the physical blob is still needed, so a stub answer would make that decision
