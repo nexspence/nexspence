@@ -169,12 +169,14 @@ func (r *repositoryRepo) ListByBlobStoreID(ctx context.Context, blobStoreID stri
 	return repos, rows.Err()
 }
 
+// HasAnyAnonymousDocker reports whether any repository on the /v2/ surface
+// (docker or oci — one protocol, two labels) allows anonymous access.
 func (r *repositoryRepo) HasAnyAnonymousDocker(ctx context.Context) (bool, error) {
 	var exists bool
 	err := r.db.QueryRow(ctx, `
 		SELECT EXISTS(
 			SELECT 1 FROM repositories
-			WHERE format = 'docker' AND allow_anonymous = true
+			WHERE format IN ('docker', 'oci') AND allow_anonymous = true
 		)`).Scan(&exists)
 	if err != nil {
 		return false, err
