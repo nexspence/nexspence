@@ -3,6 +3,8 @@ package oci_test
 import (
 	"encoding/json"
 	"fmt"
+	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -338,19 +340,109 @@ func TestReferrers_ProxyUpstreamWithoutEndpointIsEmptyIndex(t *testing.T) {
 	assert.Contains(t, w.Body.String(), `"manifests":[]`, "manifests must be [] and not null")
 }
 
-// An unreachable upstream must not become a 500: a signature-checking client
-// cannot interpret a proxy's connectivity failure, so it gets an empty index.
-func TestReferrers_ProxyUnreachableUpstreamIsEmptyIndex(t *testing.T) {
+// An upstream that does not implement the endpoint may say so with 405 or 501
+// as well as 404. Those three are the only statuses that mean "no referrers
+// information here" rather than "I could not look".
+func TestReferrers_ProxyUpstreamMethodNotAllowedAndNotImplementedAreEmptyIndex(t *testing.T) {
+	for _, status := range []int{http.StatusMethodNotAllowed, http.StatusNotImplemented} {
+		t.Run(strconv.Itoa(status), func(t *testing.T) {
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(status)
+			}))
+			defer upstream.Close()
+
+			r, _ := setupWithDeps(proxyOCIRepo("r2", "oci-proxy", upstream.URL))
+
+			w, _, descs := getReferrers(t, r, "oci-proxy", "charts/nginx", digest("subject"), "")
+			require.Equal(t, http.StatusOK, w.Code)
+			assert.Empty(t, descs)
+			assert.JSONEq(t, emptyIndexJSON, w.Body.String())
+		})
+	}
+}
+
+// An unreachable upstream is "I could not check", not "there is nothing to
+// check": answering an empty index would let a policy gate read a DNS failure,
+// a refused connection or a TLS error as proof that an image is unsigned.
+func TestReferrers_ProxyUnreachableUpstreamIsBadGateway(t *testing.T) {
 	closed := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	remote := closed.URL
 	closed.Close() // nothing listens on this port any more
 
-	r, _ := setupWithDeps(proxyOCIRepo("r2", "oci-proxy", remote))
+	disp := &recordingDispatcher{}
+	r := setupWithWebhooks(proxyOCIRepo("r2", "oci-proxy", remote), disp)
 
-	w, _, descs := getReferrers(t, r, "oci-proxy", "charts/nginx", digest("subject"), "")
-	require.Equal(t, http.StatusOK, w.Code)
-	assert.Empty(t, descs)
-	assert.JSONEq(t, emptyIndexJSON, w.Body.String())
+	w := doReferrers(r, "oci-proxy", "charts/nginx", digest("subject"), "")
+	requireProxyFailure(t, w, disp, "UNKNOWN")
+}
+
+// A misconfigured proxy_config never reaches the network at all, and that is
+// the same fact as an unreachable host: not an absence of referrers.
+func TestReferrers_ProxyMisconfiguredRemoteURLIsBadGateway(t *testing.T) {
+	repo := &domain.Repository{
+		ID: "r2", Name: "oci-proxy", Format: domain.FormatOCI, Type: domain.TypeProxy, Online: true,
+		ProxyConfig: map[string]any{}, // no remote_url: RemoteURL fails before any fetch
+	}
+	disp := &recordingDispatcher{}
+	r := setupWithWebhooks(repo, disp)
+
+	w := doReferrers(r, "oci-proxy", "charts/nginx", digest("subject"), "")
+	requireProxyFailure(t, w, disp, "UNKNOWN")
+}
+
+// A rate-limited upstream told us to come back later; it did not tell us the
+// subject has no referrers.
+func TestReferrers_ProxyUpstreamTooManyRequestsIsBadGateway(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer upstream.Close()
+
+	disp := &recordingDispatcher{}
+	r := setupWithWebhooks(proxyOCIRepo("r2", "oci-proxy", upstream.URL), disp)
+
+	w := doReferrers(r, "oci-proxy", "charts/nginx", digest("subject"), "")
+	requireProxyFailure(t, w, disp, "TOOMANYREQUESTS")
+}
+
+// A 503 is an upstream that is temporarily broken, which is a failure to look
+// and must never be flattened into "nothing to find".
+func TestReferrers_ProxyUpstreamUnavailableIsBadGateway(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer upstream.Close()
+
+	disp := &recordingDispatcher{}
+	r := setupWithWebhooks(proxyOCIRepo("r2", "oci-proxy", upstream.URL), disp)
+
+	w := doReferrers(r, "oci-proxy", "charts/nginx", digest("subject"), "")
+	requireProxyFailure(t, w, disp, "UNKNOWN")
+}
+
+// A body that dies mid-read is a truncated list, which can only under-report.
+func TestReferrers_ProxyTruncatedBodyIsBadGateway(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", ociIndexMediaType)
+		// A Content-Length longer than what is written, then a hang-up: the read
+		// fails with an unexpected EOF part way through the index.
+		w.Header().Set("Content-Length", strconv.Itoa(len(upstreamReferrersIndex)+512))
+		_, _ = w.Write([]byte(upstreamReferrersIndex[:40]))
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		panic(http.ErrAbortHandler) // drop the connection mid-body
+	}))
+	defer upstream.Close()
+	upstream.Config.ErrorLog = quietLogger()
+
+	disp := &recordingDispatcher{}
+	r := setupWithWebhooks(proxyOCIRepo("r2", "oci-proxy", upstream.URL), disp)
+
+	w := doReferrers(r, "oci-proxy", "charts/nginx", digest("subject"), "")
+	requireProxyFailure(t, w, disp, "UNKNOWN")
+	assert.Contains(t, w.Body.String(), "could not be read whole",
+		"the truncated-read branch is what must be exercised here, not the shape check")
 }
 
 // ─── Proxy failures the client must be able to distinguish ─────────────────
@@ -408,6 +500,39 @@ func requireUpstreamAuthRelayed(t *testing.T, w *httptest.ResponseRecorder, want
 	assert.Equal(t, wantCode, doc.Errors[0].Code)
 	assert.Contains(t, doc.Errors[0].Message, strconv.Itoa(wantStatus),
 		"the message must name the upstream status so an operator can see it is a credentials problem")
+}
+
+// doReferrers issues the referrers GET without decoding the body, for the cases
+// where the answer is expected not to be an index at all.
+func doReferrers(r *gin.Engine, repoName, imageName, subjectDigest, query string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodGet,
+		"/repository/"+repoName+"/v2/"+imageName+"/referrers/"+subjectDigest+query, nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	return w
+}
+
+// quietLogger keeps a deliberately aborted upstream handler from writing a panic
+// trace to the test output; the abort is the fixture, not a failure.
+func quietLogger() *log.Logger { return log.New(io.Discard, "", 0) }
+
+// requireProxyFailure asserts the client got a 502 in the OCI error shape rather
+// than an index, and that the operator got a proxy_error event for it. "I could
+// not check" must never be reported as "there is nothing to check".
+func requireProxyFailure(t *testing.T, w *httptest.ResponseRecorder, disp *recordingDispatcher, wantCode string) {
+	t.Helper()
+	require.Equal(t, http.StatusBadGateway, w.Code,
+		"a failure to reach a usable upstream answer is not the same fact as 'this subject has no referrers'")
+	assert.NotContains(t, w.Body.String(), `"manifests"`,
+		"a failure must never be dressed up as an index")
+	var doc ociErrors
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &doc), "response should be an OCI error document")
+	require.Len(t, doc.Errors, 1)
+	assert.Equal(t, wantCode, doc.Errors[0].Code)
+	assert.NotEmpty(t, doc.Errors[0].Message)
+	require.Len(t, disp.events, 1, "the failure must be recorded for the operator, not only returned")
+	assert.Equal(t, domain.EventProxyError, disp.events[0].Event)
+	assert.Equal(t, "oci-proxy", disp.events[0].Repository)
 }
 
 // A 401 from upstream means "I could not check", which is a different fact from
@@ -482,36 +607,36 @@ func TestReferrers_ProxyOversizedUpstreamIndexIsBadGateway(t *testing.T) {
 }
 
 // A 200 carrying something that is not an index — a captive portal's HTML, an
-// error page — is no referrers information, which is a fact a client can act on.
-func TestReferrers_ProxyNonIndexBodyIsEmptyIndex(t *testing.T) {
+// error page — means we never reached a registry, so we know nothing about this
+// subject's referrers and must not claim it has none.
+func TestReferrers_ProxyNonIndexBodyIsBadGateway(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		_, _ = w.Write([]byte(`<html><body>Sign in to your network</body></html>`))
 	}))
 	defer upstream.Close()
 
-	r, _ := setupWithDeps(proxyOCIRepo("r2", "oci-proxy", upstream.URL))
+	disp := &recordingDispatcher{}
+	r := setupWithWebhooks(proxyOCIRepo("r2", "oci-proxy", upstream.URL), disp)
 
-	w, _, descs := getReferrers(t, r, "oci-proxy", "charts/nginx", digest("subject"), "")
-	require.Equal(t, http.StatusOK, w.Code)
-	assert.Empty(t, descs)
-	assert.JSONEq(t, emptyIndexJSON, w.Body.String())
-	assert.Equal(t, ociIndexMediaType, w.Header().Get("Content-Type"),
-		"upstream HTML must never reach the client under an index content type")
+	w := doReferrers(r, "oci-proxy", "charts/nginx", digest("subject"), "")
+	requireProxyFailure(t, w, disp, "UNKNOWN")
+	assert.NotContains(t, w.Body.String(), "Sign in to your network",
+		"upstream HTML must never reach the client")
 }
 
-// A 500 from upstream is not an auth failure and keeps the specified behavior.
-func TestReferrers_ProxyUpstreamServerErrorIsEmptyIndex(t *testing.T) {
+// A 500 from upstream is a failure to look, not an answer.
+func TestReferrers_ProxyUpstreamServerErrorIsBadGateway(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer upstream.Close()
 
-	r, _ := setupWithDeps(proxyOCIRepo("r2", "oci-proxy", upstream.URL))
+	disp := &recordingDispatcher{}
+	r := setupWithWebhooks(proxyOCIRepo("r2", "oci-proxy", upstream.URL), disp)
 
-	w, _, descs := getReferrers(t, r, "oci-proxy", "charts/nginx", digest("subject"), "")
-	require.Equal(t, http.StatusOK, w.Code)
-	assert.Empty(t, descs)
+	w := doReferrers(r, "oci-proxy", "charts/nginx", digest("subject"), "")
+	requireProxyFailure(t, w, disp, "UNKNOWN")
 }
 
 // Only GET (and HEAD, which gin serves through the same handler) reads referrers;
