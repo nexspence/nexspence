@@ -324,11 +324,14 @@ func (h *Handler) pushManifest(c *gin.Context, repoName, imageName, reference st
 	digestRef := "sha256:" + res.SHA256
 	if reference != digestRef {
 		if repo, err2 := h.deps.Repos.Get(c.Request.Context(), repoName); err2 == nil && repo != nil {
+			// Pinned to the store the manifest bytes went to. Re-resolving would
+			// let a group store round-robin the alias onto a different member,
+			// which holds neither the object the alias names nor its size.
 			alias, aerr := base.RegisterStoredBlob(c.Request.Context(), h.deps, repo,
 				manifestPath(imageName, digestRef), ct,
 				base.Coords{Name: imageName, Version: digestRef},
 				res.Asset.BlobKey,
-				res.SHA256, res.SHA1, res.MD5, res.Size, "", "")
+				res.SHA256, res.SHA1, res.MD5, res.Size, res.Asset.BlobStoreID, "")
 			// The alias carries the same metadata: the referrers API resolves a
 			// subject by digest, not by tag.
 			if aerr == nil && alias != nil && len(extra) > 0 {

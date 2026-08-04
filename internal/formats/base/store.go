@@ -167,6 +167,20 @@ func RegisterStoredBlob(ctx context.Context, d formats.Deps, repo *domain.Reposi
 			return nil, err
 		}
 	}
+	if blobStoreName == "" {
+		// A caller that pins the store by id — the OCI digest alias, a mount —
+		// pins where the bytes are, and used_bytes is keyed by name.
+		if bs, err := d.Blobs.GetByID(ctx, blobStoreID); err == nil && bs != nil {
+			blobStoreName = bs.Name
+		}
+	}
+
+	// Read before the upsert: whether these bytes are new to the store depends on
+	// what the path held a moment ago.
+	prev, perr := d.Assets.GetByPath(ctx, repo.Name, filePath)
+	if perr != nil {
+		prev = nil
+	}
 
 	version := coords.Version
 	if version == "" {
@@ -212,8 +226,36 @@ func RegisterStoredBlob(ctx context.Context, d formats.Deps, repo *domain.Reposi
 		return nil, fmt.Errorf("upsert asset: %w", err)
 	}
 
-	_ = d.Blobs.UpdateUsedBytes(ctx, blobStoreName, size)
+	if delta := usageDelta(ctx, d, asset, prev); delta != 0 {
+		_ = d.Blobs.UpdateUsedBytes(ctx, blobStoreName, delta)
+	}
 	return asset, nil
+}
+
+// usageDelta reports how much the blob store's used_bytes has to move for a
+// registration. The counter is how full the store is, not what its asset rows
+// add up to: several assets routinely name one blob — an OCI manifest's tag and
+// its digest alias, a cross-repository mount — and the store holds one copy of
+// it (issue #146). prev is the asset that held the same path before the upsert,
+// or nil if the path is new.
+func usageDelta(ctx context.Context, d formats.Deps, asset, prev *domain.Asset) int64 {
+	if prev != nil && prev.BlobKey == asset.BlobKey && prev.BlobStoreID == asset.BlobStoreID {
+		// The write landed on the object the path already had: the store holds
+		// the new size where it held the old one.
+		return asset.SizeBytes - prev.SizeBytes
+	}
+	// A blob key another asset already carries is already counted. Shared keys
+	// live in one store by construction: a key is derived from (repository,
+	// path), and the two paths that deliberately share one — an OCI digest alias
+	// and a mounted blob — are registered against the store of the asset they
+	// alias. A count that cannot be read counts the bytes: overstating a store
+	// costs a rejected write, understating it overfills the disk.
+	if others, err := d.Assets.CountByBlobKey(ctx, asset.BlobKey, asset.ID); err == nil && others > 0 {
+		return 0
+	}
+	// A path that moved to a different key or store leaves its old bytes behind;
+	// they stay counted where they lie until the blob GC reclaims them.
+	return asset.SizeBytes
 }
 
 // FetchArtifact retrieves a blob from storage and increments download count.
@@ -271,20 +313,24 @@ func DeleteArtifact(ctx context.Context, d formats.Deps, repoName, filePath stri
 	// survivor — and the referrers index built from it — advertising content that
 	// is gone. A count that cannot be read keeps the blob: an orphan is reclaimed
 	// by the blob GC, whereas bytes deleted under a live asset are lost.
+	freed := false
 	others, cerr := d.Assets.CountByBlobKey(ctx, asset.BlobKey, asset.ID)
 	if cerr == nil && others == 0 {
-		_ = delStore.Delete(ctx, asset.BlobKey)
+		// Both blob store backends report a missing object as a successful
+		// delete, so a nil error means the bytes are not there any more.
+		freed = delStore.Delete(ctx, asset.BlobKey) == nil
 	}
 	if err := d.Assets.Delete(ctx, asset.ID); err != nil {
 		return err
 	}
 	metrics.ArtifactsDeleted.Add(1)
-	// Decremented whether or not the bytes went away, because the counter is
-	// incremented once per registered asset — the alias registration in
-	// RegisterStoredBlob adds size a second time for the same blob. Skipping the
-	// decrement for a surviving blob would leave that second size on the store
-	// forever and walk it into a false quota rejection.
-	_ = DecrementBlobStoreUsage(ctx, d.Blobs, asset)
+	// Decremented only when the bytes actually left the store, mirroring the
+	// registration side, which counts a blob once however many assets name it.
+	// Decrementing for a blob a surviving asset still reads would take a size off
+	// the store that is still on the disk.
+	if freed {
+		_ = DecrementBlobStoreUsage(ctx, d.Blobs, asset)
+	}
 	if d.Webhooks != nil {
 		d.Webhooks.Dispatch(domain.WebhookPayload{
 			Event:      domain.EventArtifactDeleted,

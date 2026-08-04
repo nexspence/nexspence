@@ -396,12 +396,11 @@ func TestMount_SourceAssetWithMissingBlob_FallsBackInsteadOfPromisingABrokenLaye
 
 // ── Usage accounting ──────────────────────────────────────────
 
-// The bytes are already on disk, so a mount writes none. The used_bytes counter
-// follows the convention RegisterStoredBlob already sets everywhere else — one
-// increment per registered asset, exactly as the manifest digest alias does
-// (issue #146). Deletion decrements per asset unconditionally, so skipping the
-// increment here would drive the counter permanently negative.
-func TestMount_WritesNoBytesAndCountsUsageOncePerAsset(t *testing.T) {
+// The bytes are already on disk, so a mount writes none — and used_bytes, which
+// is what checkQuota reads to decide whether a write fits, is how full the store
+// is. A second asset on a blob the store already holds moves it by nothing
+// (issue #146).
+func TestMount_WritesNoBytesAndCountsNoUsage(t *testing.T) {
 	repo := testutil.SimpleRepo("mnt10", "docker")
 	r, _, d, store := mountDeps(repo)
 
@@ -421,13 +420,13 @@ func TestMount_WritesNoBytesAndCountsUsageOncePerAsset(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, physicalBefore, physicalAfter, "a mount adds no bytes to the store")
 
-	assert.Equal(t, countedBefore+int64(len(layer)), usedBytes(t, d),
-		"one asset, one increment — the same convention the manifest digest alias follows (#146)")
+	assert.Equal(t, countedBefore, usedBytes(t, d),
+		"no bytes were stored, so the store is no fuller than it was (#146)")
 }
 
 // Mounting makes two images depend on one stored object, so deleting either one
-// must not take the bytes out from under the other (#144). The counter comes
-// back down with each asset, matching the per-asset increment above.
+// must not take the bytes out from under the other (#144). The counter follows
+// the bytes: it moves only when the object itself goes.
 func TestMount_DeletingTheSourceLeavesTheMountedBlobPullable(t *testing.T) {
 	repo := testutil.SimpleRepo("mnt11", "docker")
 	r, _, d, _ := mountDeps(repo)
@@ -449,6 +448,14 @@ func TestMount_DeletingTheSourceLeavesTheMountedBlobPullable(t *testing.T) {
 	require.Equal(t, http.StatusOK, wg.Code, "the mounted image still needs the bytes the source registered")
 	assert.Equal(t, layer, wg.Body.String())
 
+	assert.Equal(t, counted, usedBytes(t, d),
+		"the object is still stored for the mounted image, so its size is still used")
+
+	// Deleting the last asset on the object frees it, and the size with it.
+	delMount := httptest.NewRequest(http.MethodDelete, "/repository/mnt11/v2/library/ubuntu/blobs/"+dgst, nil)
+	wdm := httptest.NewRecorder()
+	r.ServeHTTP(wdm, delMount)
+	require.Equal(t, http.StatusAccepted, wdm.Code)
 	assert.Equal(t, counted-int64(len(layer)), usedBytes(t, d),
-		"the deleted asset gives back exactly the size its registration added")
+		"the last reference gives the object's size back to the store")
 }
