@@ -526,6 +526,10 @@ type DockerBrowseRow struct {
 	ImageName   string `json:"imageName"`
 	Version     string `json:"version"`
 	SamplePath  string `json:"samplePath"`
+	// ArtifactType is the raw oci_artifact_type recorded on the component when
+	// its manifest was stored, or empty for anything pushed before that metadata
+	// existed. It is carried verbatim; naming it is the browse handler's job.
+	ArtifactType string `json:"artifactType,omitempty"`
 }
 
 // RawBrowseAsset is a flat asset record used to build the raw browse tree.

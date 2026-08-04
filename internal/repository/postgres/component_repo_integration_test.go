@@ -1275,6 +1275,73 @@ func TestComponentRepo_ListDockerBrowseRows_ReturnsOCIComponents(t *testing.T) {
 	}
 }
 
+// The browse tree names the kind of each artifact, and the only record of that
+// is oci_artifact_type on the component. A row that dropped it would leave the
+// UI unable to tell a chart from an image.
+func TestComponentRepo_ListDockerBrowseRows_CarriesArtifactType(t *testing.T) {
+	pool := pgtest.Pool(t)
+	pgtest.Truncate(t, pool, "blob_stores", "repositories")
+	ctx := context.Background()
+
+	bsRepo := NewBlobStoreRepo(pool)
+	bs := &domain.BlobStore{
+		Name:   "oci_bs_arttype",
+		Type:   "local",
+		Config: map[string]any{"path": "/data/oci_arttype"},
+	}
+	if err := bsRepo.Create(ctx, bs); err != nil {
+		t.Fatalf("Create blob store: %v", err)
+	}
+	rRepo := NewRepositoryRepo(pool)
+	r := &domain.Repository{
+		Name:        "oci-arttype-repo",
+		Format:      domain.FormatOCI,
+		Type:        domain.TypeHosted,
+		BlobStoreID: &bs.ID,
+		Online:      true,
+	}
+	if err := rRepo.Create(ctx, r); err != nil {
+		t.Fatalf("Create oci repo: %v", err)
+	}
+
+	repo := NewComponentRepo(pool)
+	chart := &domain.Component{
+		RepositoryID: r.ID,
+		Format:       "oci",
+		Name:         "charts/nginx",
+		Version:      "1.2.3",
+		Extra:        map[string]any{"oci_artifact_type": "application/vnd.cncf.helm.config.v1+json"},
+	}
+	if err := repo.Create(ctx, chart); err != nil {
+		t.Fatalf("Create chart component: %v", err)
+	}
+	// A component pushed before this metadata was recorded.
+	legacy := &domain.Component{
+		RepositoryID: r.ID,
+		Format:       "oci",
+		Name:         "legacy/app",
+		Version:      "1.0",
+	}
+	if err := repo.Create(ctx, legacy); err != nil {
+		t.Fatalf("Create legacy component: %v", err)
+	}
+
+	rows, err := repo.ListDockerBrowseRows(ctx, []string{"oci-arttype-repo"}, 100)
+	if err != nil {
+		t.Fatalf("ListDockerBrowseRows: %v", err)
+	}
+	byName := map[string]domain.DockerBrowseRow{}
+	for _, row := range rows {
+		byName[row.ImageName] = row
+	}
+	if got := byName["charts/nginx"].ArtifactType; got != "application/vnd.cncf.helm.config.v1+json" {
+		t.Errorf("chart row lost its artifact type: got %q", got)
+	}
+	if got := byName["legacy/app"].ArtifactType; got != "" {
+		t.Errorf("a component with no OCI metadata must report no artifact type, got %q", got)
+	}
+}
+
 func TestComponentRepo_ListDockerBrowseRows_EmptyRepoNamesReturnsNil(t *testing.T) {
 	pool := pgtest.Pool(t)
 	pgtest.Truncate(t, pool, "blob_stores", "repositories")

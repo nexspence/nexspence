@@ -34,13 +34,17 @@ func NewBrowseHandler(deps formats.Deps, rbac *service.RBACService) *BrowseHandl
 
 // dockerBrowseNode is a Nexus-style folder or leaf in the Docker browse tree.
 type dockerBrowseNode struct {
-	Kind        string              `json:"kind"` // folder | tag | manifest | blob
-	Label       string              `json:"label"`
-	Path        string              `json:"path"`
-	ImageRef    string              `json:"imageRef,omitempty"`
-	Version     string              `json:"version,omitempty"`
-	ComponentID string              `json:"componentId,omitempty"`
-	Children    []*dockerBrowseNode `json:"children,omitempty"`
+	Kind        string `json:"kind"` // folder | tag | manifest | blob
+	Label       string `json:"label"`
+	Path        string `json:"path"`
+	ImageRef    string `json:"imageRef,omitempty"`
+	Version     string `json:"version,omitempty"`
+	ComponentID string `json:"componentId,omitempty"`
+	// ArtifactType names what the manifest holds — "chart", "image", "wasm" — or
+	// repeats the raw media type when it is not one this registry recognizes. It
+	// is omitted entirely for a component that carries no OCI metadata.
+	ArtifactType string              `json:"artifactType,omitempty"`
+	Children     []*dockerBrowseNode `json:"children,omitempty"`
 }
 
 // DockerTree handles GET /api/v1/browse/repositories/:name/docker-tree
@@ -251,12 +255,13 @@ func insertDockerBrowseRow(root *dockerBrowseNode, row domain.DockerBrowseRow) {
 		}
 	}
 	leaf := &dockerBrowseNode{
-		Kind:        leafKind,
-		Label:       row.Version,
-		Path:        leafPath,
-		ImageRef:    image,
-		Version:     row.Version,
-		ComponentID: row.ComponentID,
+		Kind:         leafKind,
+		Label:        row.Version,
+		Path:         leafPath,
+		ImageRef:     image,
+		Version:      row.Version,
+		ComponentID:  row.ComponentID,
+		ArtifactType: ociArtifactLabel(row.ArtifactType),
 	}
 	catNode.Children = append(catNode.Children, leaf)
 }

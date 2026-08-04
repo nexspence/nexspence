@@ -75,6 +75,10 @@ interface DockerTreeNode {
   imageRef?: string
   version?: string
   componentId?: string
+  /** What the manifest holds — 'chart', 'image', 'wasm' — or the raw media type
+   *  when the server did not recognize it. Absent for components stored before
+   *  the registry recorded OCI metadata. */
+  artifactType?: string
   children?: DockerTreeNode[]
 }
 
@@ -638,6 +642,18 @@ const FORMAT_COLORS: Record<string, string> = {
   yum: '#10b981',
 }
 
+// Colors for the artifact-type labels the registry browse tree reports. A media
+// type the server did not recognize arrives verbatim and has no entry here, so
+// it falls back to a neutral tone rather than borrowing another kind's color.
+const ARTIFACT_TYPE_COLORS: Record<string, string> = {
+  chart: '#0ea5e9',
+  image: '#3b82f6',
+  wasm: '#8b5cf6',
+  sbom: '#10b981',
+  signature: '#f59e0b',
+  attestation: '#f97316',
+}
+
 function DockerBrowseDetailBody({
   comp,
   sel,
@@ -757,6 +773,14 @@ function DockerTreeRows({
       >
         {icon}
         <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{node.label}</span>
+        {node.artifactType && (
+          <span
+            data-testid="artifact-type"
+            style={S.badge(ARTIFACT_TYPE_COLORS[node.artifactType] ?? '#94a3b8')}
+          >
+            {node.artifactType}
+          </span>
+        )}
         {node.imageRef && <span style={S.muted}>— {node.imageRef}</span>}
         {showDelete && (node.kind === 'tag') && onDelete && (
           <GhostBtn danger onClick={e => { e.stopPropagation(); onDelete(node) }} title="Delete tag">
