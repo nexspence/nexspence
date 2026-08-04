@@ -183,6 +183,10 @@ func (r *RepoRepo) DetachCleanupPolicyID(_ context.Context, policyID string) err
 type BlobStoreRepo struct {
 	mu     sync.Mutex
 	stores map[string]*domain.BlobStore
+	// assets backs RecomputeUsedBytes, which in postgres reads the assets table
+	// this repo shares a database with. Without it a recompute finds no assets
+	// and zeroes every store, exactly as the SQL would against an empty table.
+	assets *AssetRepo
 }
 
 func NewBlobStoreRepo(stores ...*domain.BlobStore) *BlobStoreRepo {
@@ -254,6 +258,66 @@ func (b *BlobStoreRepo) UpdateUsedBytes(_ context.Context, name string, delta in
 	defer b.mu.Unlock()
 	if s, ok := b.stores[name]; ok {
 		s.UsedBytes += delta
+	}
+	return nil
+}
+
+// WithAssets wires the asset repo a recompute reads, mirroring the single
+// database the postgres implementations share. Returns the repo for chaining.
+func (b *BlobStoreRepo) WithAssets(a *AssetRepo) *BlobStoreRepo {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.assets = a
+	return b
+}
+
+// RecomputeUsedBytes mirrors the SQL: every store's used_bytes becomes the sum
+// of its assets' DISTINCT blob keys, largest size per key, with an unset
+// blob_store_id read as the store named "default". A stub answer would leave the
+// repair — the only thing that fixes a counter inflated by the old per-asset
+// increment — untestable.
+func (b *BlobStoreRepo) RecomputeUsedBytes(_ context.Context) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	var assets []domain.Asset
+	if b.assets != nil {
+		assets = b.assets.Snapshot()
+	}
+	defaultID := ""
+	if def, ok := b.stores["default"]; ok {
+		defaultID = def.ID
+	}
+
+	// storeID → blobKey → largest size seen for that key.
+	perStore := make(map[string]map[string]int64)
+	for _, a := range assets {
+		if strings.TrimSpace(a.BlobKey) == "" {
+			continue
+		}
+		storeID := a.BlobStoreID
+		if storeID == "" {
+			storeID = defaultID
+		}
+		if storeID == "" {
+			continue
+		}
+		keys, ok := perStore[storeID]
+		if !ok {
+			keys = make(map[string]int64)
+			perStore[storeID] = keys
+		}
+		if a.SizeBytes > keys[a.BlobKey] {
+			keys[a.BlobKey] = a.SizeBytes
+		}
+	}
+
+	for _, s := range b.stores {
+		var total int64
+		for _, size := range perStore[s.ID] {
+			total += size
+		}
+		s.UsedBytes = total
 	}
 	return nil
 }
@@ -539,6 +603,18 @@ func NewAssetRepo() *AssetRepo {
 		assets: make(map[string]*domain.Asset),
 		byID:   make(map[string]*domain.Asset),
 	}
+}
+
+// Snapshot returns a copy of every stored asset row — the whole assets table,
+// as a recompute over it would see.
+func (a *AssetRepo) Snapshot() []domain.Asset {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	out := make([]domain.Asset, 0, len(a.byID))
+	for _, v := range a.byID {
+		out = append(out, *v)
+	}
+	return out
 }
 
 func (a *AssetRepo) List(_ context.Context, _ string, _, _ int) (*domain.Page[domain.Asset], error) {

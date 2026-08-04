@@ -461,6 +461,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 		admin.PUT("/service/rest/v1/blobstores/:type/:name", blobH.Update)
 		admin.DELETE("/service/rest/v1/blobstores/:name", blobH.Delete)
 		admin.POST("/api/v1/blobstores/:name/compact", blobH.Compact)
+		admin.POST("/api/v1/blobstores/recompute-usage", blobH.RecomputeUsage)
 
 		// ── Users ─────────────────────────────────────────────
 		admin.GET("/service/rest/v1/security/users", userH.List)

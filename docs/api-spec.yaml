@@ -774,6 +774,25 @@ paths:
         '400': { description: Invalid min_age }
         '503': { description: GC service not configured }
 
+  /api/v1/blobstores/recompute-usage:
+    post:
+      tags: [BlobStores]
+      summary: Recompute every blob store's used_bytes
+      description: >
+        Restates each store's usage from the assets that reference it: one size
+        per stored object, however many assets name it. Repairs a counter that
+        drifted from what is on the disk — a store emptied out of band, a
+        restored backup. Admin only.
+      operationId: recomputeBlobStoreUsage
+      responses:
+        '200':
+          description: The repaired blob stores
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/BlobStore' }
+
   /service/rest/v1/blobstores/file:
     post:
       tags: [BlobStores]

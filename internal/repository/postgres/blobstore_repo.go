@@ -96,6 +96,41 @@ func (r *blobStoreRepo) UpdateUsedBytes(ctx context.Context, name string, delta 
 	return err
 }
 
+// recomputeUsedBytesSQL restates every store's used_bytes as the bytes it
+// holds: one size per distinct blob key, since several assets routinely name
+// one stored object (an OCI manifest's tag and its digest alias, a
+// cross-repository mount). Rows that disagree about the size of a key — an
+// alias left behind by an in-place overwrite — are read at their largest, which
+// is the reading that cannot let a store overfill.
+//
+// Kept in step with migration 024, which runs the same statement once to repair
+// deployments whose counters were inflated by the old per-asset increment.
+const recomputeUsedBytesSQL = `
+	UPDATE blob_stores bs
+	SET used_bytes = COALESCE((
+		    SELECT SUM(k.size_bytes) FROM (
+		        SELECT DISTINCT ON (a.blob_key) a.size_bytes
+		        FROM assets a
+		        WHERE COALESCE(a.blob_store_id,
+		                       (SELECT d.id FROM blob_stores d WHERE d.name = 'default')) = bs.id
+		          AND a.blob_key IS NOT NULL AND TRIM(a.blob_key) <> ''
+		        ORDER BY a.blob_key, a.size_bytes DESC
+		    ) k
+		), 0),
+	    updated_at = NOW()`
+
+// RecomputeUsedBytes restates every blob store's used_bytes from the assets that
+// reference it. It repairs counters that drifted — the per-asset inflation this
+// release fixes, a store whose blobs were removed out of band, a restored
+// backup. One statement, so it never loses a concurrent increment the way a
+// read-modify-write would; an upload that commits its asset row while the
+// statement is in flight can still land on either side of the new figure, which
+// is why the repair is repeatable rather than a one-shot.
+func (r *blobStoreRepo) RecomputeUsedBytes(ctx context.Context) error {
+	_, err := r.db.Exec(ctx, recomputeUsedBytesSQL)
+	return err
+}
+
 func scanBlobStore(row scanner) (*domain.BlobStore, error) {
 	var bs domain.BlobStore
 	var cfgRaw []byte
