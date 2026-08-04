@@ -347,8 +347,9 @@ func DeleteArtifact(ctx context.Context, d formats.Deps, repoName, filePath stri
 }
 
 // DecrementBlobStoreUsage reduces the owning blob store's used_bytes by asset.SizeBytes.
-// Symmetric to the UpdateUsedBytes(+size) call in RegisterStoredBlob. Best-effort — callers
-// typically ignore the error.
+// Call it only once the object itself has left the store: the counter is how full the
+// store is, and a registration adds a blob's size once however many assets name it.
+// Best-effort — callers typically ignore the error.
 func DecrementBlobStoreUsage(ctx context.Context, blobs repository.BlobStoreRepo, asset *domain.Asset) error {
 	if asset == nil || asset.SizeBytes <= 0 {
 		return nil
