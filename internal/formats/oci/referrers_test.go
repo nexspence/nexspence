@@ -1,6 +1,7 @@
 package oci_test
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -229,6 +230,55 @@ func TestReferrers_DoesNotSwallowImageNamedReferrers(t *testing.T) {
 	r.ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code, "a manifest GET under such a name must still route to manifests")
 	assert.Equal(t, helmChartManifest, w.Body.String())
+}
+
+// An asset lookup that fails is not a referrer that does not exist. Dropping it
+// from the index and still answering 200 is the same under-report the proxy path
+// refuses to produce: the client would read a database blip as "unsigned".
+func TestReferrers_AssetLookupErrorIsBadGateway(t *testing.T) {
+	repo := hostedOCIRepo("r1", "oci-hosted")
+	r, d := setupWithDeps(repo)
+
+	subjectDigest := pushManifestBody(t, r, "oci-hosted", "charts/nginx", "1.2.3", helmChartManifest)
+	pushManifestBody(t, r, "oci-hosted", "charts/nginx", "sig",
+		referrerManifest(cosignSigArtifactType, subjectDigest))
+
+	// The referrer is really there — without this the test would pass on an
+	// empty result rather than on the error branch.
+	w, _, descs := getReferrers(t, r, "oci-hosted", "charts/nginx", subjectDigest, "")
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Len(t, descs, 1)
+
+	assets, ok := d.Assets.(*testutil.AssetRepo)
+	require.True(t, ok)
+	assets.GetByPathErr = errors.New("connection to the database was lost")
+
+	w2 := doReferrers(r, "oci-hosted", "charts/nginx", subjectDigest, "")
+	require.Equal(t, http.StatusBadGateway, w2.Code,
+		"a lookup that failed is not a referrer that does not exist")
+	assert.NotContains(t, w2.Body.String(), `"manifests"`,
+		"a lookup failure must never be dressed up as an index")
+}
+
+// A referrer whose manifest asset is genuinely gone is still skipped: the
+// component outlived its asset, and there is nothing to name in the index.
+func TestReferrers_MissingAssetIsSkippedNotAnError(t *testing.T) {
+	repo := hostedOCIRepo("r1", "oci-hosted")
+	r, d := setupWithDeps(repo)
+
+	subjectDigest := pushManifestBody(t, r, "oci-hosted", "charts/nginx", "1.2.3", helmChartManifest)
+	pushManifestBody(t, r, "oci-hosted", "charts/nginx", "sig",
+		referrerManifest(cosignSigArtifactType, subjectDigest))
+
+	// A component pointing at a manifest path that was never stored.
+	require.NoError(t, d.Components.Create(context.Background(), &domain.Component{
+		RepositoryID: "r1", Repository: "oci-hosted", Format: "oci", Name: "charts/nginx", Version: "vanished",
+		Extra: map[string]any{"oci_subject": subjectDigest},
+	}))
+
+	w, _, descs := getReferrers(t, r, "oci-hosted", "charts/nginx", subjectDigest, "")
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Len(t, descs, 1, "the referrer with an asset is listed; the one without is skipped")
 }
 
 // ─── Proxy repositories ────────────────────────────────────────────────────

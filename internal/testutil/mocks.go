@@ -523,6 +523,10 @@ type AssetRepo struct {
 	RawRowsByRepo map[string][]domain.RawBrowseAsset
 	RawBrowseErr  error // when non-nil, ListRawBrowseAssets returns it (500-branch seam)
 	BrowseErr     error // when non-nil, ListByRepoAndPath/ListPathsByRepo/ListRawAssetPaths return it (500-branch seam)
+	// GetByPathErr, when non-nil, makes GetByPath return it. Separate from Err so
+	// a test can tell a lookup that failed from a path that does not exist —
+	// callers that must not treat the two alike need exactly that distinction.
+	GetByPathErr error
 	// DownloadIncrements records aggregated counts passed to IncrementDownloads.
 	DownloadIncrements map[string]int64
 }
@@ -555,6 +559,9 @@ func (a *AssetRepo) Get(_ context.Context, id string) (*domain.Asset, error) {
 func (a *AssetRepo) GetByPath(_ context.Context, repoName, path string) (*domain.Asset, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if a.GetByPathErr != nil {
+		return nil, a.GetByPathErr
+	}
 	v, ok := a.assets[repoName+":"+path]
 	if !ok {
 		return nil, repository.ErrNotFound

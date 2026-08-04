@@ -78,7 +78,16 @@ func (h *Handler) handleReferrers(c *gin.Context, repoName, imageName, subjectDi
 
 	seen := make(map[string]struct{}, len(comps))
 	for _, comp := range comps {
-		desc, ok := h.descriptorOf(ctx, repoName, imageName, comp)
+		desc, ok, err := h.descriptorOf(ctx, repoName, imageName, comp)
+		if err != nil {
+			// A referrer we failed to look up is not a referrer that is not there.
+			// Dropping it and still answering 200 would hand the client a short
+			// index — the same under-report the proxy path refuses to produce.
+			dockerError(c, http.StatusBadGateway, "UNKNOWN", fmt.Sprintf(
+				"could not read the manifest behind referrer %s:%s, so the referrers index for %q would be "+
+					"incomplete: %v", comp.Name, comp.Version, subjectDigest, err))
+			return
+		}
 		if !ok {
 			continue
 		}
@@ -275,10 +284,22 @@ func emptyIndex(c *gin.Context) {
 // descriptorOf renders one referring component as an index entry. The digest and
 // size come from the stored manifest asset, the rest from the metadata phase 1
 // recorded on the component.
-func (h *Handler) descriptorOf(ctx context.Context, repoName, imageName string, comp domain.Component) (descriptor, bool) {
+//
+// The two ways this can fail are deliberately not the same. ok is false when the
+// asset is genuinely absent — a component that outlived its manifest, which has
+// nothing to name in the index and is skipped. A non-nil error means the lookup
+// itself failed, and the caller must fail the whole request rather than serve a
+// short index: a missing entry reads to a signature checker as "not signed".
+func (h *Handler) descriptorOf(ctx context.Context, repoName, imageName string, comp domain.Component) (descriptor, bool, error) {
 	asset, err := h.deps.Assets.GetByPath(ctx, repoName, manifestPath(imageName, comp.Version))
-	if err != nil || asset == nil || asset.SHA256 == "" {
-		return descriptor{}, false
+	if errors.Is(err, repository.ErrNotFound) {
+		return descriptor{}, false, nil
+	}
+	if err != nil {
+		return descriptor{}, false, err
+	}
+	if asset == nil || asset.SHA256 == "" {
+		return descriptor{}, false, nil
 	}
 	mediaType, _ := comp.Extra[extraMediaTypeKey].(string)
 	if mediaType == "" {
@@ -291,7 +312,7 @@ func (h *Handler) descriptorOf(ctx context.Context, repoName, imageName string, 
 		Size:         asset.SizeBytes,
 		ArtifactType: artifactType,
 		Annotations:  annotationsOf(comp),
-	}, true
+	}, true, nil
 }
 
 // annotationsOf converts the stored annotation map back to string values.
