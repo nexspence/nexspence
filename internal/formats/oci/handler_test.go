@@ -1,4 +1,4 @@
-package docker_test
+package oci_test
 
 import (
 	"crypto/sha256"
@@ -15,7 +15,7 @@ import (
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/formats"
-	"github.com/nexspence-oss/nexspence/internal/formats/docker"
+	"github.com/nexspence-oss/nexspence/internal/formats/oci"
 	"github.com/nexspence-oss/nexspence/internal/requestctx"
 	"github.com/nexspence-oss/nexspence/internal/testutil"
 )
@@ -31,7 +31,7 @@ func setup(repo *domain.Repository) *gin.Engine {
 		BlobStore:  testutil.NewBlobStore(),
 		BaseURL:    "http://localhost:8080",
 	}
-	h := docker.New(d)
+	h := oci.New(d)
 	r := gin.New()
 	// Inject a user into context so requireDockerAuth passes.
 	r.Use(func(c *gin.Context) {
@@ -91,7 +91,7 @@ func setupV2Scoped(repo *domain.Repository) *gin.Engine {
 		BlobStore:  testutil.NewBlobStore(),
 		BaseURL:    "http://localhost:8080",
 	}
-	h := docker.New(d)
+	h := oci.New(d)
 	r := gin.New()
 	// Credentials are only attached to /v2/ requests (as a real Docker client does).
 	r.Use(func(c *gin.Context) {
@@ -273,7 +273,7 @@ func TestDocker_BlobUpload_NoAuth_Returns401(t *testing.T) {
 		Components: testutil.NewComponentRepo(), Assets: testutil.NewAssetRepo(),
 		BlobStore: testutil.NewBlobStore(),
 	}
-	h := docker.New(d)
+	h := oci.New(d)
 	r := gin.New()
 	// No user injected — requireDockerAuth should challenge with 401
 	r.Any("/repository/:repoName/*path", func(c *gin.Context) { h.ServeHTTP(c) })

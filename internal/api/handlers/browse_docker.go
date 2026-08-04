@@ -52,8 +52,8 @@ func (h *BrowseHandler) DockerTree(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "repository not found"})
 		return
 	}
-	if !strings.EqualFold(string(repo.Format), string(domain.FormatDocker)) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "repository is not a docker format"})
+	if !repo.Format.IsOCIRegistry() {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "repository is not an OCI registry format"})
 		return
 	}
 
@@ -63,7 +63,7 @@ func (h *BrowseHandler) DockerTree(c *gin.Context) {
 		if len(repoNames) == 0 {
 			c.JSON(http.StatusOK, gin.H{
 				"repository": repoName,
-				"format":     "docker",
+				"format":     string(repo.Format),
 				"root":       &dockerBrowseNode{Kind: "folder", Label: "/", Path: "/"},
 			})
 			return
@@ -89,7 +89,7 @@ func (h *BrowseHandler) DockerTree(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"repository": repoName,
-		"format":     "docker",
+		"format":     string(repo.Format),
 		"root":       root,
 	})
 }
@@ -112,7 +112,7 @@ func (h *BrowseHandler) PathTree(c *gin.Context) {
 	}
 
 	var paths []string
-	if strings.EqualFold(string(repo.Format), "docker") {
+	if repo.Format.IsOCIRegistry() {
 		raw, err := h.assets.ListRawAssetPaths(ctx, repoName)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

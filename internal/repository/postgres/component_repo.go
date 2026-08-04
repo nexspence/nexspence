@@ -256,7 +256,7 @@ func (r *componentRepo) ListDockerBrowseRows(ctx context.Context, repoNames []st
 		FROM components c
 		JOIN repositories rep ON rep.id = c.repository_id
 		LEFT JOIN assets a ON a.component_id = c.id
-		WHERE rep.name IN (%s) AND lower(trim(rep.format)) = 'docker'
+		WHERE rep.name IN (%s) AND lower(trim(rep.format)) IN ('docker', 'oci')
 		GROUP BY c.id, c.name, c.version
 		ORDER BY c.name, c.version
 		LIMIT $%d`, strings.Join(ph, ","), lim)

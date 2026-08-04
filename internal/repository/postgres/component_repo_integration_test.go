@@ -1224,6 +1224,57 @@ func TestComponentRepo_ListDockerBrowseRows_ReturnsDockerComponents(t *testing.T
 	}
 }
 
+// An oci repository speaks the same OCI Distribution protocol as a docker one,
+// so its components must appear in the registry browse rows too.
+func TestComponentRepo_ListDockerBrowseRows_ReturnsOCIComponents(t *testing.T) {
+	pool := pgtest.Pool(t)
+	pgtest.Truncate(t, pool, "blob_stores", "repositories")
+	ctx := context.Background()
+
+	bsRepo := NewBlobStoreRepo(pool)
+	bs := &domain.BlobStore{
+		Name:   "oci_bs_browse",
+		Type:   "local",
+		Config: map[string]any{"path": "/data/oci_browse"},
+	}
+	if err := bsRepo.Create(ctx, bs); err != nil {
+		t.Fatalf("Create blob store: %v", err)
+	}
+	rRepo := NewRepositoryRepo(pool)
+	r := &domain.Repository{
+		Name:        "oci-browse-repo",
+		Format:      domain.FormatOCI,
+		Type:        domain.TypeHosted,
+		BlobStoreID: &bs.ID,
+		Online:      true,
+	}
+	if err := rRepo.Create(ctx, r); err != nil {
+		t.Fatalf("Create oci repo: %v", err)
+	}
+
+	repo := NewComponentRepo(pool)
+	c := &domain.Component{
+		RepositoryID: r.ID,
+		Format:       "oci",
+		Name:         "charts/nginx",
+		Version:      "1.2.3",
+	}
+	if err := repo.Create(ctx, c); err != nil {
+		t.Fatalf("Create component: %v", err)
+	}
+
+	rows, err := repo.ListDockerBrowseRows(ctx, []string{"oci-browse-repo"}, 100)
+	if err != nil {
+		t.Fatalf("ListDockerBrowseRows: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 row for an oci repository, got %d", len(rows))
+	}
+	if rows[0].ImageName != "charts/nginx" || rows[0].Version != "1.2.3" {
+		t.Errorf("unexpected row: %+v", rows[0])
+	}
+}
+
 func TestComponentRepo_ListDockerBrowseRows_EmptyRepoNamesReturnsNil(t *testing.T) {
 	pool := pgtest.Pool(t)
 	pgtest.Truncate(t, pool, "blob_stores", "repositories")

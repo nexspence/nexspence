@@ -92,7 +92,7 @@ const S = {
 }
 
 const FORMAT_COLORS: Record<string, string> = {
-  maven2: '#f97316', npm: '#ef4444', docker: '#3b82f6', pypi: '#a78bfa',
+  maven2: '#f97316', npm: '#ef4444', docker: '#3b82f6', oci: '#5b8def', pypi: '#a78bfa',
   go: '#06b6d4', nuget: '#8b5cf6', helm: '#0ea5e9', raw: '#6b7280', apt: '#f59e0b', yum: '#10b981',
 }
 
@@ -202,12 +202,14 @@ export default function SearchPage() {
 
   const allItems = useMemo(() => data?.items ?? [], [data])
 
-  // Docker digest-alias components (version = "sha256:...") are filtered from the main list
-  // but kept in a lookup map so they can appear inside the expanded view of their parent tag.
+  // OCI Distribution digest-alias components (version = "sha256:...") are filtered from the
+  // main list but kept in a lookup map so they can appear inside the expanded view of their
+  // parent tag. Both 'docker' and 'oci' formats speak the OCI Distribution protocol and get
+  // the same digest-alias component created on every manifest push.
   const dockerDigests = useMemo(() => {
     const map = new Map<string, SearchComponent[]>()
     for (const c of allItems) {
-      if (c.format === 'docker' && c.version?.startsWith('sha256:')) {
+      if ((c.format === 'docker' || c.format === 'oci') && c.version?.startsWith('sha256:')) {
         const key = `${c.repository}::${c.name}`
         const arr = map.get(key) ?? []
         arr.push(c)
@@ -218,7 +220,7 @@ export default function SearchPage() {
   }, [allItems])
 
   const items = useMemo(() =>
-    allItems.filter(c => !(c.format === 'docker' && c.version?.startsWith('sha256:')))
+    allItems.filter(c => !((c.format === 'docker' || c.format === 'oci') && c.version?.startsWith('sha256:')))
   , [allItems])
 
   const sorted = useMemo(() => {
@@ -294,7 +296,7 @@ export default function SearchPage() {
             <Select
               options={[
                 { value: '', label: 'any' },
-                ...['maven2','npm','docker','pypi','go','nuget','helm','raw','apt','yum'].map(f => ({ value: f, label: f })),
+                ...['maven2','npm','docker','oci','pypi','go','nuget','helm','raw','apt','yum'].map(f => ({ value: f, label: f })),
               ]}
               value={filters.format}
               onChange={v => setFilters(f => ({ ...f, format: v }))}

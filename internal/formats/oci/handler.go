@@ -1,4 +1,4 @@
-// Package docker implements the OCI Distribution Spec v2 (Docker registry v2 protocol).
+// Package oci implements the OCI Distribution Spec v2 (Docker registry v2 protocol).
 //
 // All endpoints under /repository/:repoName/v2/:
 //
@@ -13,11 +13,13 @@
 //	PATCH /v2/:name/blobs/uploads/:uuid         → stream blob chunks
 //	PUT  /v2/:name/blobs/uploads/:uuid?digest=  → finalize blob upload
 //	DELETE /v2/:name/blobs/:digest              → delete blob
-package docker
+package oci
 
 import (
 	"bytes"
+	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"path"
 	"strings"
@@ -43,8 +45,9 @@ func New(deps formats.Deps) *Handler {
 	return &Handler{deps: deps, uploads: uploadStore{deps: deps}}
 }
 
-// Name returns the format identifier.
-func (h *Handler) Name() string { return "docker" }
+// Name returns the format identifier. Dispatch happens through the router's
+// format registry, which maps both "docker" and "oci" to this handler.
+func (h *Handler) Name() string { return "oci" }
 
 func (h *Handler) ServeHTTP(c *gin.Context) {
 	p := normPath(c.Param("path"))
@@ -146,7 +149,12 @@ func (h *Handler) handleManifests(c *gin.Context, repoName, imageName, reference
 			}
 			if err := repoproxy.ServeGET(c, h.deps, repo, cachePath, upPath, coords, ct, maxAge); err != nil {
 				dockerError(c, http.StatusBadGateway, "UNKNOWN", err.Error())
+				return
 			}
+			// Post-response work: drop cancellation (the client may already have
+			// hung up) while keeping request values, as repoproxy does for its
+			// own after-the-fact freshness update.
+			h.recordCachedManifestMeta(context.WithoutCancel(c.Request.Context()), repo, cachePath)
 			return
 		}
 		h.pullManifest(c, repoName, imageName, reference)
@@ -199,12 +207,41 @@ func (h *Handler) pushManifest(c *gin.Context, repoName, imageName, reference st
 	}
 	fp := manifestPath(imageName, reference)
 	coords := base.Coords{Name: imageName, Version: reference}
+
+	// The body is buffered because it is needed twice: stored verbatim, and
+	// parsed for the artifact type. Manifests are capped at 4 MiB by the spec.
+	// Reading one byte past the cap is what makes an overflow visible: a reader
+	// limited to exactly the cap returns the trimmed prefix and a nil error, so
+	// an oversized manifest would be stored corrupt under a digest of bytes the
+	// client never sent.
+	body, err := io.ReadAll(io.LimitReader(c.Request.Body, maxManifestBytes+1))
+	if err != nil {
+		dockerError(c, http.StatusBadRequest, "MANIFEST_INVALID", err.Error())
+		return
+	}
+	if len(body) > maxManifestBytes {
+		dockerError(c, http.StatusRequestEntityTooLarge, "MANIFEST_INVALID",
+			"manifest exceeds the 4MiB limit")
+		return
+	}
+
 	res, err := base.StoreArtifact(c.Request.Context(), h.deps,
 		repoName, fp, ct, coords,
-		c.Request.Body, c.Request.ContentLength)
+		bytes.NewReader(body), int64(len(body)))
 	if err != nil {
 		dockerError(c, http.StatusInternalServerError, "UNKNOWN", err.Error())
 		return
+	}
+
+	// Held outside the block because the digest alias below is typed from the
+	// same metadata. Recording it is best effort throughout: the manifest is
+	// already stored and nothing in the protocol reads these keys.
+	var extra map[string]any
+	if meta, ok := parseManifestMeta(body); ok {
+		extra = extraFrom(meta)
+	}
+	if len(extra) > 0 {
+		_ = h.deps.Components.UpdateExtra(c.Request.Context(), res.Asset.ComponentID, extra)
 	}
 
 	// Docker pulls always re-fetch the manifest by content digest after getting it by tag.
@@ -213,11 +250,16 @@ func (h *Handler) pushManifest(c *gin.Context, repoName, imageName, reference st
 	digestRef := "sha256:" + res.SHA256
 	if reference != digestRef {
 		if repo, err2 := h.deps.Repos.Get(c.Request.Context(), repoName); err2 == nil && repo != nil {
-			_, _ = base.RegisterStoredBlob(c.Request.Context(), h.deps, repo,
+			alias, aerr := base.RegisterStoredBlob(c.Request.Context(), h.deps, repo,
 				manifestPath(imageName, digestRef), ct,
 				base.Coords{Name: imageName, Version: digestRef},
 				res.Asset.BlobKey,
 				res.SHA256, res.SHA1, res.MD5, res.Size, "", "")
+			// The alias carries the same metadata: the referrers API resolves a
+			// subject by digest, not by tag.
+			if aerr == nil && alias != nil && len(extra) > 0 {
+				_ = h.deps.Components.UpdateExtra(c.Request.Context(), alias.ComponentID, extra)
+			}
 		}
 	}
 
@@ -225,6 +267,64 @@ func (h *Handler) pushManifest(c *gin.Context, repoName, imageName, reference st
 	c.Header("Docker-Content-Digest", digest)
 	c.Header("Location", "/v2/"+imageName+"/manifests/"+digest)
 	c.Status(http.StatusCreated)
+}
+
+// recordCachedManifestMeta types a manifest that repoproxy has just written to
+// the cache. ServeGET does not expose the body, so it is read back once per
+// distinct manifest: the recorded source digest keeps a steady-state cache hit
+// off the blob store, while a tag re-pointed upstream re-types because the
+// cached content — and so its digest — changed.
+func (h *Handler) recordCachedManifestMeta(ctx context.Context, repo *domain.Repository, cachePath string) {
+	asset, err := h.deps.Assets.GetByPath(ctx, repo.Name, cachePath)
+	if err != nil || asset == nil {
+		return
+	}
+	comp, err := h.deps.Components.Get(ctx, asset.ComponentID)
+	if err != nil || comp == nil {
+		return
+	}
+	// Keyed on WHICH manifest was typed, not on whether anything was typed. A
+	// re-pointed tag changes the cached blob's digest and re-types; an unchanged
+	// one skips the read even when the manifest carries no mediaType of its own.
+	if dg, ok := comp.Extra[extraSourceDigestKey].(string); ok && dg == asset.SHA256 {
+		return
+	}
+
+	store := h.deps.BlobStore
+	if asset.BlobStoreID != "" {
+		if bsMeta, getErr := h.deps.Blobs.GetByID(ctx, asset.BlobStoreID); getErr == nil {
+			store = base.PhysicalStore(ctx, h.deps, bsMeta)
+		}
+	}
+	rc, _, err := store.Get(ctx, asset.BlobKey)
+	if err != nil {
+		return
+	}
+	defer func() { _ = rc.Close() }()
+
+	// One byte past the cap, as the push path does, so an oversized body is
+	// visible rather than silently truncated into unparsable JSON. Unlike a push
+	// there is nothing to reject here — the blob is already cached and already
+	// served — so an overflow only skips the parse.
+	body, err := io.ReadAll(io.LimitReader(rc, maxManifestBytes+1))
+	if err != nil {
+		return
+	}
+	var extra map[string]any
+	if len(body) <= maxManifestBytes {
+		if meta, ok := parseManifestMeta(body); ok {
+			extra = extraFrom(meta)
+		}
+	}
+	if extra == nil {
+		extra = make(map[string]any, 1)
+	}
+	// The source digest is written unconditionally: it is what arms the guard
+	// above, including for a manifest that yields no metadata at all — one that
+	// is not JSON, or one too large to parse. Without it every pull would read
+	// the whole blob back from the store forever.
+	extra[extraSourceDigestKey] = asset.SHA256
+	_ = h.deps.Components.UpdateExtra(ctx, comp.ID, extra)
 }
 
 func (h *Handler) deleteManifest(c *gin.Context, repoName, imageName, reference string) {

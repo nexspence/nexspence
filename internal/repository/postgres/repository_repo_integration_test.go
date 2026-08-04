@@ -10,6 +10,8 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/testutil/pgtest"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -631,6 +633,22 @@ func TestRepositoryRepo_HasAnyAnonymousDocker_FalseWhenOnlyNonDockerAnonymous(t 
 	if ok {
 		t.Error("HasAnyAnonymousDocker: got true for non-docker anonymous repo, want false")
 	}
+}
+
+func TestRepositoryRepo_HasAnyAnonymousDocker_OCIFormatCounts(t *testing.T) {
+	pool := pgtest.Pool(t)
+	pgtest.Truncate(t, pool, "blob_stores", "repositories")
+	ctx := context.Background()
+	repo := NewRepositoryRepo(pool)
+
+	// An oci repo serves the same /v2/ surface, so it must open the door too.
+	r := makeRepo("rr_anon_oci", domain.FormatOCI, domain.TypeHosted, nil)
+	r.AllowAnonymous = true
+	require.NoError(t, repo.Create(ctx, r))
+
+	got, err := repo.HasAnyAnonymousDocker(ctx)
+	require.NoError(t, err)
+	assert.True(t, got, "a public oci repository must allow anonymous /v2/ access")
 }
 
 // ── ListNamesByCleanupPolicyID ────────────────────────────────────────────────

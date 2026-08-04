@@ -27,13 +27,13 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/formats/cargo"
 	"github.com/nexspence-oss/nexspence/internal/formats/conan"
 	"github.com/nexspence-oss/nexspence/internal/formats/conda"
-	"github.com/nexspence-oss/nexspence/internal/formats/docker"
 	"github.com/nexspence-oss/nexspence/internal/formats/gomod"
 	"github.com/nexspence-oss/nexspence/internal/formats/group"
 	"github.com/nexspence-oss/nexspence/internal/formats/helm"
 	"github.com/nexspence-oss/nexspence/internal/formats/maven"
 	"github.com/nexspence-oss/nexspence/internal/formats/npm"
 	"github.com/nexspence-oss/nexspence/internal/formats/nuget"
+	"github.com/nexspence-oss/nexspence/internal/formats/oci"
 	"github.com/nexspence-oss/nexspence/internal/formats/pypi"
 	"github.com/nexspence-oss/nexspence/internal/formats/raw"
 	"github.com/nexspence-oss/nexspence/internal/formats/terraform"
@@ -220,8 +220,11 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 		"apt":       apt.New(formatDeps),
 		"terraform": terraform.New(formatDeps),
 		"yum":       yum.New(formatDeps),
-		"docker":    docker.New(formatDeps),
+		"docker":    oci.New(formatDeps),
 	}
+	// The OCI Distribution protocol is served under two labels — same handler,
+	// different presentation (proxy defaults, UI, command hints).
+	formatRegistry["oci"] = formatRegistry["docker"]
 	// Group handler needs a reference to the registry to fan-out to members.
 	groupHandler := group.New(formatDeps, formatRegistry)
 
@@ -698,8 +701,8 @@ func serveDockerV2(
 		}
 
 		if repoDef.Type == domain.TypeGroup {
-			if string(repoDef.Format) != "docker" {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "repository is not a docker registry"})
+			if !repoDef.Format.IsOCIRegistry() {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "repository is not an OCI registry"})
 				return
 			}
 			c.Params = gin.Params{
@@ -710,19 +713,27 @@ func serveDockerV2(
 			return
 		}
 
-		if string(repoDef.Format) != "docker" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "repository is not a docker registry"})
+		if !repoDef.Format.IsOCIRegistry() {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "repository is not an OCI registry"})
 			return
 		}
 
-		// Rewrite params so the docker handler sees what it expects:
+		// Rewrite params so the registry handler sees what it expects:
 		//   c.Param("repoName") = <repoName>
 		//   c.Param("path")     = /v2/<imagePath>/<endpoint>
 		c.Params = gin.Params{
 			{Key: "repoName", Value: repoName},
 			{Key: "path", Value: "/v2" + dockerPath},
 		}
-		fmtRegistry["docker"].ServeHTTP(c)
+		h, ok := fmtRegistry[string(repoDef.Format)]
+		if !ok {
+			// Defensive backstop: RepoFormat.IsOCIRegistry and fmtRegistry are two
+			// separate format lists that should always agree. This only fires
+			// if they drift apart; not reachable in normal operation.
+			c.JSON(http.StatusBadRequest, gin.H{"error": "repository is not an OCI registry"})
+			return
+		}
+		h.ServeHTTP(c)
 	}
 }
 

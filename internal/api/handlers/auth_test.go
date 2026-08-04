@@ -362,6 +362,28 @@ func TestDockerV2Auth_NoAuth_AnyAnonymousRepo_Returns200(t *testing.T) {
 	assert.Empty(t, w.Header().Get("WWW-Authenticate"))
 }
 
+// An oci repository serves the same /v2/ surface, so a public one must open the
+// anonymous door exactly like a public docker one.
+func TestDockerV2Auth_NoAuth_AnonymousOCIRepo_Returns200(t *testing.T) {
+	svc := newUserSvc()
+	publicRepo := &domain.Repository{
+		ID:             "r-pub-oci",
+		Name:           "public-oci",
+		Format:         domain.FormatOCI,
+		Type:           domain.TypeHosted,
+		Online:         true,
+		AllowAnonymous: true,
+	}
+	r := buildDockerV2AuthRouter(svc, publicRepo)
+
+	req := httptest.NewRequest(http.MethodGet, "/v2/", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Empty(t, w.Header().Get("WWW-Authenticate"))
+}
+
 func TestDockerV2Auth_NoAuth_OnlyPrivateDockerRepo_Returns401(t *testing.T) {
 	svc := newUserSvc()
 	privateRepo := &domain.Repository{

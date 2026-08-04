@@ -143,7 +143,8 @@ func (s *ScanService) WithCredentials(username, password string) *ScanService {
 }
 
 // Scan runs trivy against imageRef, persists the result in component.Extra["scan_result"],
-// and returns it. Only docker-format components are supported; others get a clear error.
+// and returns it. Components of the two OCI Distribution formats (docker, oci) go to
+// Trivy, a few language formats go to OSV, and anything else gets a clear error.
 func (s *ScanService) Scan(ctx context.Context, componentID, imageRef string) (*domain.ScanResult, error) {
 	comp, err := s.Components.Get(ctx, componentID)
 	if err != nil {
@@ -153,8 +154,12 @@ func (s *ScanService) Scan(ctx context.Context, componentID, imageRef string) (*
 		return nil, fmt.Errorf("component %s not found", componentID)
 	}
 	switch strings.ToLower(comp.Format) {
-	case "docker":
-		// falls through to Trivy path below
+	case "docker", "oci":
+		// Falls through to the Trivy path below. An oci repository holds the same
+		// content a docker one does — an ORAS artifact is an image by structure —
+		// so refusing it on its format label would be wrong. A non-image artifact
+		// (a chart, a signature) surfaces as a Trivy error instead of being
+		// refused up front, which is the more honest answer.
 	case "maven", "npm", "pypi", "cargo":
 		return s.scanOSV(ctx, comp)
 	default:

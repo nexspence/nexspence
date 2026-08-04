@@ -36,7 +36,8 @@ type ComponentRepo interface {
 	ListByRepoNames(ctx context.Context, repoNames []string, limit int, offset int) (*domain.Page[domain.Component], error)
 	Get(ctx context.Context, id string) (*domain.Component, error)
 	Search(ctx context.Context, p domain.SearchParams) (*domain.Page[domain.Component], error)
-	// ListDockerBrowseRows returns Docker-format components with one asset path per row (for Tags vs Manifests vs Blobs).
+	// ListDockerBrowseRows returns components of both OCI Distribution formats — docker
+	// and oci — with one asset path per row (for Tags vs Manifests vs Blobs).
 	ListDockerBrowseRows(ctx context.Context, repoNames []string, maxRows int) ([]domain.DockerBrowseRow, error)
 	Create(ctx context.Context, c *domain.Component) error
 	Delete(ctx context.Context, id string) error
