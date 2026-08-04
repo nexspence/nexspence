@@ -1,9 +1,11 @@
 package group_test
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -87,6 +89,13 @@ func ociGroup(name string, members ...string) *domain.Repository {
 // ociGroupEngine wires the real OCI handler behind a group handler, the way the
 // router does.
 func ociGroupEngine(repos ...*domain.Repository) *gin.Engine {
+	return ociGroupEngineWithDeps(nil, repos...)
+}
+
+// ociGroupEngineWithDeps is ociGroupEngine with a hook that may swap a
+// dependency for a decorated one, which is how a test makes ONE member fail
+// while the others answer normally — the mocks' error seams are per-process.
+func ociGroupEngineWithDeps(customize func(*formats.Deps), repos ...*domain.Repository) *gin.Engine {
 	repoRepo := testutil.NewRepoRepo(repos...)
 	d := formats.Deps{
 		Repos:      repoRepo,
@@ -95,6 +104,9 @@ func ociGroupEngine(repos ...*domain.Repository) *gin.Engine {
 		Assets:     testutil.NewAssetRepo(),
 		BlobStore:  testutil.NewBlobStore(),
 		BaseURL:    "http://localhost:8080",
+	}
+	if customize != nil {
+		customize(&d)
 	}
 	ociH := oci.New(d)
 	registry := map[string]formats.FormatHandler{string(domain.FormatOCI): ociH}
@@ -258,6 +270,313 @@ func TestGroupMerge_OCIReferrers_RateLimitedMemberIsBadGateway(t *testing.T) {
 	w := getGroupReferrers(r, "grp", "img", subject, "")
 	require.Equal(t, http.StatusBadGateway, w.Code)
 	assert.NotContains(t, w.Body.String(), `"manifests"`)
+}
+
+// ── tags/list ──────────────────────────────────────────────────────────────
+
+type ociTagList struct {
+	Name string   `json:"name"`
+	Tags []string `json:"tags"`
+}
+
+// getGroupTags asks the group for one image's tag list.
+func getGroupTags(r *gin.Engine, groupName, imageName, query string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodGet,
+		"/repository/"+groupName+"/v2/"+imageName+"/tags/list"+query, nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	return w
+}
+
+func decodeTags(t *testing.T, w *httptest.ResponseRecorder) ociTagList {
+	t.Helper()
+	require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body.String())
+	var doc ociTagList
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &doc), "response should be a tag list")
+	return doc
+}
+
+// One image's tags are spread over two members — the ordinary result of
+// promoting v1 to a release repository while v2 is still in a staging one. The
+// group must list both: first-non-404 fan-out answers with member one's list
+// alone, and a tag list is read as the set of versions that exist.
+func TestGroupMerge_OCITags_UnionsMembersSortedUnderTheImageName(t *testing.T) {
+	r := ociGroupEngine(ociGroup("grp", "m1", "m2"), hostedOCI("m1"), hostedOCI("m2"))
+
+	pushOCIManifest(t, r, "m1", "library/ubuntu", "v3", ociImageManifest)
+	pushOCIManifest(t, r, "m1", "library/ubuntu", "v1", ociImageManifest)
+	pushOCIManifest(t, r, "m2", "library/ubuntu", "v2", ociImageManifest)
+
+	doc := decodeTags(t, getGroupTags(r, "grp", "library/ubuntu", ""))
+	assert.Equal(t, "library/ubuntu", doc.Name,
+		"the merged list names the image, which is what the client addressed")
+	assert.Equal(t, []string{"v1", "v2", "v3"}, doc.Tags,
+		"every member's tags reach the client, sorted")
+}
+
+// The same tag in two members is one tag. A registry that listed it twice would
+// break a client that counts versions, and the spec's ?last= cursor assumes a
+// strictly ascending list.
+func TestGroupMerge_OCITags_TagInBothMembersIsListedOnce(t *testing.T) {
+	r := ociGroupEngine(ociGroup("grp", "m1", "m2"), hostedOCI("m1"), hostedOCI("m2"))
+
+	pushOCIManifest(t, r, "m1", "img", "1.0.0", ociImageManifest)
+	pushOCIManifest(t, r, "m2", "img", "1.0.0", ociImageManifest)
+	pushOCIManifest(t, r, "m2", "img", "2.0.0", ociImageManifest)
+
+	doc := decodeTags(t, getGroupTags(r, "grp", "img", ""))
+	assert.Equal(t, []string{"1.0.0", "2.0.0"}, doc.Tags, "the shared tag is one tag")
+}
+
+// An image no member holds is an empty list, never a null one: a null breaks
+// clients that range over the tags, and the single-repository answer is an empty
+// 200 too, so the group must not invent a 404 the client would read as "no such
+// registry".
+func TestGroupMerge_OCITags_NoMemberHoldsTheImageIsEmptyList(t *testing.T) {
+	r := ociGroupEngine(ociGroup("grp", "m1", "m2"), hostedOCI("m1"), hostedOCI("m2"))
+
+	w := getGroupTags(r, "grp", "img", "")
+	doc := decodeTags(t, w)
+	assert.Equal(t, "img", doc.Name)
+	assert.Empty(t, doc.Tags)
+	assert.Contains(t, w.Body.String(), `"tags":[]`, "tags must be [] and not null in the bytes")
+}
+
+// Paging is applied to the MERGED list, not to each member's own. A member asked
+// for its first n tags contributes a truncated list, and the tags past its cut
+// are then unreachable through every page of the group: no cursor the client can
+// send brings them back. So the members are asked for their complete lists and
+// the group cuts the page out of the union — which is also what makes the Link
+// header's cursor mean the same thing on the next request.
+func TestGroupMerge_OCITags_PagesTheMergedUnionNotEachMember(t *testing.T) {
+	r := ociGroupEngine(ociGroup("grp", "m1", "m2"), hostedOCI("m1"), hostedOCI("m2"))
+
+	for _, tag := range []string{"a", "b", "c"} {
+		pushOCIManifest(t, r, "m1", "img", tag, ociImageManifest)
+	}
+	pushOCIManifest(t, r, "m2", "img", "d", ociImageManifest)
+
+	w := getGroupTags(r, "grp", "img", "?n=2")
+	doc := decodeTags(t, w)
+	assert.Equal(t, []string{"a", "b"}, doc.Tags, "the first page of the union")
+	assert.Equal(t, `</repository/grp/v2/img/tags/list?last=b&n=2>; rel="next"`, w.Header().Get("Link"),
+		"the cursor names an entry of the merged list, on the group's own URL")
+
+	// Following the link must reach "c" — the tag a per-member page would have
+	// cut off, and the one no later request could recover.
+	next := decodeTags(t, getGroupTags(r, "grp", "img", "?n=2&last=b"))
+	assert.Equal(t, []string{"c", "d"}, next.Tags)
+}
+
+// A complete answer carries no Link header: its absence is what tells a client
+// to stop paging.
+func TestGroupMerge_OCITags_CompletePageHasNoLinkHeader(t *testing.T) {
+	r := ociGroupEngine(ociGroup("grp", "m1", "m2"), hostedOCI("m1"), hostedOCI("m2"))
+
+	pushOCIManifest(t, r, "m1", "img", "a", ociImageManifest)
+	pushOCIManifest(t, r, "m2", "img", "b", ociImageManifest)
+
+	w := getGroupTags(r, "grp", "img", "?n=10")
+	assert.Equal(t, []string{"a", "b"}, decodeTags(t, w).Tags)
+	assert.Empty(t, w.Header().Get("Link"), "nothing was truncated")
+}
+
+// failingComponents fails the tag search for one member and answers normally for
+// every other, which is what a group hitting one broken member looks like.
+type failingComponents struct {
+	*testutil.ComponentRepo
+	repo string
+	err  error
+}
+
+func (f *failingComponents) Search(ctx context.Context, p domain.SearchParams) (*domain.Page[domain.Component], error) {
+	if p.Repository == f.repo {
+		return nil, f.err
+	}
+	return f.ComponentRepo.Search(ctx, p)
+}
+
+// A member that could not be consulted fails the whole group. On this endpoint a
+// member with nothing to contribute answers 200 with an empty list, so a non-2xx
+// is never "I hold no tags" — it is "I could not look". Serving the remaining
+// members' tags as the answer would hand a retention job a short list, and the
+// tags missing from it are the ones it deletes.
+func TestGroupMerge_OCITags_UnconsultableMemberIsBadGatewayNotAShortList(t *testing.T) {
+	r := ociGroupEngineWithDeps(func(d *formats.Deps) {
+		d.Components = &failingComponents{
+			ComponentRepo: d.Components.(*testutil.ComponentRepo),
+			repo:          "broken",
+			err:           errors.New("component store unreachable"),
+		}
+	}, ociGroup("grp", "m1", "broken"), hostedOCI("m1"), hostedOCI("broken"))
+
+	pushOCIManifest(t, r, "m1", "img", "1.0.0", ociImageManifest)
+
+	w := getGroupTags(r, "grp", "img", "")
+	require.NotEqual(t, http.StatusOK, w.Code,
+		"a member that could not be checked must not be silently dropped from the list")
+	assert.NotContains(t, w.Body.String(), `"tags"`,
+		"an incomplete list must never be dressed up as a tag list")
+}
+
+// Merging the LIST must not move the pull. A tag held by both members resolves
+// to the earlier member's manifest, exactly as it did before the list was
+// merged: the union answers "which versions exist", and the manifest request
+// behind it still answers "whose".
+func TestGroupMerge_OCITags_MergedListDoesNotChangeWhichMemberServesThePull(t *testing.T) {
+	r := ociGroupEngine(ociGroup("grp", "m1", "m2"), hostedOCI("m1"), hostedOCI("m2"))
+
+	first := pushOCIManifest(t, r, "m1", "img", "1.0.0", ociImageManifest)
+	second := pushOCIManifest(t, r, "m2", "img", "1.0.0",
+		ociReferrerManifest(ociSBOMArtifactType, ociDigest("other"), "m2"))
+	require.NotEqual(t, first, second, "the two members must hold different bytes under the tag")
+
+	assert.Equal(t, []string{"1.0.0"}, decodeTags(t, getGroupTags(r, "grp", "img", "")).Tags)
+
+	req := httptest.NewRequest(http.MethodGet, "/repository/grp/v2/img/manifests/1.0.0", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Equal(t, first, w.Header().Get("Docker-Content-Digest"), "the earlier member still wins the pull")
+	assert.Equal(t, "m1", w.Header().Get("X-Nexspence-Source"))
+}
+
+// A member of another format is not a member of this group's protocol at all:
+// the group skips it before it is ever called, so it neither contributes to nor
+// breaks the merge. Same for an offline member — which is the one gap in the
+// "never answer with a list one entry short" policy, because a member skipped by
+// configuration is skipped silently.
+func TestGroupMerge_OCITags_ForeignFormatAndOfflineMembersAreSkipped(t *testing.T) {
+	maven := &domain.Repository{
+		ID: "repo-mvn", Name: "mvn", Format: domain.FormatMaven2, Type: domain.TypeHosted, Online: true,
+	}
+	offline := hostedOCI("dark")
+	offline.Online = false
+
+	r := ociGroupEngine(ociGroup("grp", "mvn", "m1", "dark"), maven, hostedOCI("m1"), offline)
+	pushOCIManifest(t, r, "m1", "img", "1.0.0", ociImageManifest)
+
+	doc := decodeTags(t, getGroupTags(r, "grp", "img", ""))
+	assert.Equal(t, []string{"1.0.0"}, doc.Tags,
+		"the OCI member still answers; the foreign and offline members are not consulted")
+}
+
+// HEAD is not a tag-list method. The members say so with a 405, and the strict
+// policy relays it rather than turning it into "no such image".
+func TestGroupMerge_OCITags_HeadIsRelayedAsMethodNotAllowed(t *testing.T) {
+	r := ociGroupEngine(ociGroup("grp", "m1", "m2"), hostedOCI("m1"), hostedOCI("m2"))
+	pushOCIManifest(t, r, "m1", "img", "1.0.0", ociImageManifest)
+
+	req := httptest.NewRequest(http.MethodHead, "/repository/grp/v2/img/tags/list", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusMethodNotAllowed, w.Code)
+}
+
+// ── _catalog ───────────────────────────────────────────────────────────────
+
+// getGroupCatalog asks the group for the image names it holds.
+func getGroupCatalog(r *gin.Engine, groupName, query string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodGet, "/repository/"+groupName+"/v2/_catalog"+query, nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	return w
+}
+
+func decodeCatalog(t *testing.T, w *httptest.ResponseRecorder) []string {
+	t.Helper()
+	require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body.String())
+	var doc struct {
+		Repositories []string `json:"repositories"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &doc), "response should be a catalog")
+	return doc.Repositories
+}
+
+// The catalog of a group is the set of image names a client can pull from it,
+// which is the union of its members'. Answering with the first member's alone
+// hides every image that lives only further down the member list.
+func TestGroupMerge_OCICatalog_UnionsMembersDeduplicatedSorted(t *testing.T) {
+	r := ociGroupEngine(ociGroup("grp", "m1", "m2"), hostedOCI("m1"), hostedOCI("m2"))
+
+	pushOCIManifest(t, r, "m1", "library/ubuntu", "22.04", ociImageManifest)
+	pushOCIManifest(t, r, "m1", "charts/nginx", "1.2.3", ociImageManifest)
+	// The same image in both members is one image name, not two.
+	pushOCIManifest(t, r, "m2", "charts/nginx", "1.3.0", ociImageManifest)
+	pushOCIManifest(t, r, "m2", "apps/api", "2.0.0", ociImageManifest)
+
+	repos := decodeCatalog(t, getGroupCatalog(r, "grp", ""))
+	assert.Equal(t, []string{"apps/api", "charts/nginx", "library/ubuntu"}, repos,
+		"every member's image names, deduplicated and sorted")
+}
+
+// A group whose members hold nothing is an empty catalog, not a 404 and not a
+// null list — the same document a hosted repository with no images returns.
+func TestGroupMerge_OCICatalog_EmptyMembersIsEmptyList(t *testing.T) {
+	r := ociGroupEngine(ociGroup("grp", "m1", "m2"), hostedOCI("m1"), hostedOCI("m2"))
+
+	w := getGroupCatalog(r, "grp", "")
+	assert.Empty(t, decodeCatalog(t, w))
+	assert.Contains(t, w.Body.String(), `"repositories":[]`,
+		"repositories must be [] and not null in the bytes")
+}
+
+// The catalog pages the merged union for the same reason the tag list does: a
+// member that paged its own catalog would put the names past its cut out of
+// reach of every page the client can ask for.
+func TestGroupMerge_OCICatalog_PagesTheMergedUnionNotEachMember(t *testing.T) {
+	r := ociGroupEngine(ociGroup("grp", "m1", "m2"), hostedOCI("m1"), hostedOCI("m2"))
+
+	for _, img := range []string{"img/a", "img/b", "img/c"} {
+		pushOCIManifest(t, r, "m1", img, "1.0.0", ociImageManifest)
+	}
+	pushOCIManifest(t, r, "m2", "img/d", "1.0.0", ociImageManifest)
+
+	w := getGroupCatalog(r, "grp", "?n=2")
+	assert.Equal(t, []string{"img/a", "img/b"}, decodeCatalog(t, w))
+	assert.Equal(t, `</repository/grp/v2/_catalog?last=img%2Fb&n=2>; rel="next"`, w.Header().Get("Link"),
+		"the cursor names an entry of the merged catalog, on the group's own URL")
+
+	next := decodeCatalog(t, getGroupCatalog(r, "grp", "?n=2&last=img%2Fb"))
+	assert.Equal(t, []string{"img/c", "img/d"}, next)
+}
+
+// failingImageNames fails the catalog query for one member and answers normally
+// for every other.
+type failingImageNames struct {
+	*testutil.AssetRepo
+	repo string
+	err  error
+}
+
+func (f *failingImageNames) ListOCIImageNames(ctx context.Context, repoNames []string) ([]string, error) {
+	for _, n := range repoNames {
+		if n == f.repo {
+			return nil, f.err
+		}
+	}
+	return f.AssetRepo.ListOCIImageNames(ctx, repoNames)
+}
+
+// A member that could not be consulted fails the whole group. A catalog is what
+// a mirroring or retention job enumerates, and the names missing from a short
+// one are the images it does not copy — or does delete.
+func TestGroupMerge_OCICatalog_UnconsultableMemberIsAnErrorNotAShortCatalog(t *testing.T) {
+	r := ociGroupEngineWithDeps(func(d *formats.Deps) {
+		d.Assets = &failingImageNames{
+			AssetRepo: d.Assets.(*testutil.AssetRepo),
+			repo:      "broken",
+			err:       errors.New("asset store unreachable"),
+		}
+	}, ociGroup("grp", "m1", "broken"), hostedOCI("m1"), hostedOCI("broken"))
+
+	pushOCIManifest(t, r, "m1", "library/ubuntu", "22.04", ociImageManifest)
+
+	w := getGroupCatalog(r, "grp", "")
+	require.NotEqual(t, http.StatusOK, w.Code,
+		"a member that could not be checked must not be silently dropped from the catalog")
+	assert.NotContains(t, w.Body.String(), `"repositories"`,
+		"an incomplete catalog must never be dressed up as one")
 }
 
 // The artifactType filter must still select through the group, or a cosign query
