@@ -12,6 +12,7 @@
 //	GET  /v2/:name/blobs/:digest                → pull blob (content-addressable)
 //	HEAD /v2/:name/blobs/:digest                → blob exists check
 //	POST /v2/:name/blobs/uploads/               → initiate blob upload
+//	POST /v2/:name/blobs/uploads/?mount=&from=  → mount an existing blob
 //	PATCH /v2/:name/blobs/uploads/:uuid         → stream blob chunks
 //	PUT  /v2/:name/blobs/uploads/:uuid?digest=  → finalize blob upload
 //	DELETE /v2/:name/blobs/:digest              → delete blob
@@ -525,12 +526,19 @@ func (h *Handler) handleBlobUploads(c *gin.Context, repoName, imageName, uuid st
 	}
 }
 
-func (h *Handler) initiateUpload(c *gin.Context, _, _ string) {
+func (h *Handler) initiateUpload(c *gin.Context, repoName, imageName string) {
 	if !requireDockerAuth(c) {
 		return
 	}
-	// Cross-repo mount shortcut: ?mount=<digest>&from=<repo>
-	// We ignore mount for now and always start a fresh upload
+	// Cross-repository blob mount: ?mount=<digest>&from=<name>. When it cannot be
+	// served the request falls through to a normal upload session, which the spec
+	// explicitly allows and which costs the client only the bandwidth it would
+	// have spent anyway.
+	if dgst, from := c.Query("mount"), c.Query("from"); dgst != "" && from != "" {
+		if h.mountBlob(c, repoName, imageName, dgst, from) {
+			return
+		}
+	}
 	uuid, err := h.uploads.create(c.Request.Context())
 	if err != nil {
 		dockerError(c, http.StatusInternalServerError, "UNKNOWN", err.Error())
@@ -546,6 +554,141 @@ func (h *Handler) initiateUpload(c *gin.Context, _, _ string) {
 	c.Header("Docker-Upload-UUID", uuid)
 	c.Header("Range", "0-0")
 	c.Status(http.StatusAccepted)
+}
+
+// mountBlob serves POST .../blobs/uploads/?mount=<digest>&from=<name> by
+// registering a second asset over the bytes the source already stores. It
+// reports whether it answered the request; false means "start a normal upload".
+//
+// Mounting is the digest-alias registration pushManifest does after a tagged
+// push, with the image name changing instead of the reference.
+//
+// Access control: `from` is client-supplied, and the only authorization this
+// request has passed is RBACMiddleware's check of the repository and path in the
+// URL. The source is therefore resolved strictly inside repoName — the very
+// repository that check covered — so no mount can read out of a repository (or,
+// since format is a property of the repository, a format) the caller was not
+// authorized against.
+//
+// What that does NOT cover is a content selector narrower than the repository:
+// a privilege of the form `repository == "R" && path.startsWith("/library/")`
+// authorizes the POST by its own path while the mount source is a different
+// path in R. Closing it needs the caller's privileges, and a format handler has
+// none — formats.Deps carries no RBACService and requestctx carries only the
+// user's id and name, not their roles or selectors. Plumbing either through is a
+// change to every format handler's contract, not to this endpoint, so the gap is
+// recorded here rather than papered over with a check that checks nothing.
+func (h *Handler) mountBlob(c *gin.Context, repoName, imageName, dgst, from string) bool {
+	// The digest lands in an asset path, so a value that is not a digest is not
+	// a lookup key — it is someone else's path.
+	if !validDigest(dgst) {
+		return false
+	}
+	ctx := c.Request.Context()
+	repo, err := h.deps.Repos.Get(ctx, repoName)
+	if err != nil || repo == nil {
+		return false
+	}
+
+	for _, sourceImage := range mountSourceImages(repoName, from) {
+		if sourceImage == imageName {
+			continue // mounting an image onto itself has nothing to alias
+		}
+		src, err := h.deps.Assets.GetByPath(ctx, repoName, blobPath(sourceImage, dgst))
+		if err != nil || src == nil {
+			continue
+		}
+		// An asset row outlives its bytes: a manual blob delete or a GC pass can
+		// leave the record behind. Answering 201 off one of those would hand the
+		// client a layer that 404s on pull, and the client — told the registry
+		// already has it — would never upload the copy it still holds.
+		storeName, present := h.locateBlob(ctx, src)
+		if !present {
+			continue
+		}
+		blobStoreID := src.BlobStoreID
+		if storeName == "" {
+			// The store the source names could not be resolved, so let the
+			// registration fall back to the repository's own default, exactly as
+			// a fetch of that asset would.
+			blobStoreID = ""
+		}
+		if _, err := base.RegisterStoredBlob(ctx, h.deps, repo,
+			blobPath(imageName, dgst), "application/octet-stream",
+			base.Coords{Name: imageName, Version: dgst},
+			src.BlobKey, src.SHA256, src.SHA1, src.MD5, src.SizeBytes,
+			blobStoreID, storeName); err != nil {
+			return false
+		}
+		c.Header("Docker-Content-Digest", dgst)
+		c.Header("Location", blobLocation(c, imageName, dgst))
+		c.Status(http.StatusCreated)
+		return true
+	}
+	return false
+}
+
+// mountSourceImages returns the image names inside repoName that a client's
+// `from` value can name.
+//
+// A client composes `from` as the repository name it pushed the source under
+// minus the registry host — reference.Path of the source reference — so its
+// spelling follows whichever URL shape the push used:
+//
+//	host/<repo>/<image>             → from=<repo>/<image>
+//	host/repository/<repo>/<image>  → from=repository/<repo>/<image>
+//	<repo>.<baseDomain>/<image>     → from=<image>
+//
+// The last one is bare because the subdomain connector rewrites only the path;
+// the query string the client built never sees the repository name. Every form
+// therefore resolves inside the repository the request was already authorized
+// against, and a `from` naming any other Nexspence repository resolves to
+// nothing — see the access-control note on mountBlob.
+//
+// The two readings of "<repo>/<image>" are both returned because they are
+// genuinely ambiguous: an image may legitimately be named after the repository
+// it lives in. The digest pins the content either way, so whichever exists wins.
+func mountSourceImages(repoName, from string) []string {
+	from = strings.Trim(from, "/")
+	if from == "" {
+		return nil
+	}
+	images := []string{from}
+	for _, prefix := range []string{repoName + "/", "repository/" + repoName + "/"} {
+		if rest := strings.TrimPrefix(from, prefix); rest != from && rest != "" {
+			images = append(images, rest)
+		}
+	}
+	return images
+}
+
+// locateBlob reports whether an asset's bytes are really in the store, and
+// returns the name of the store holding them (empty when the asset names no
+// store, or names one that no longer resolves).
+func (h *Handler) locateBlob(ctx context.Context, asset *domain.Asset) (storeName string, present bool) {
+	store := h.deps.BlobStore
+	if asset.BlobStoreID != "" {
+		if meta, err := h.deps.Blobs.GetByID(ctx, asset.BlobStoreID); err == nil && meta != nil {
+			store = base.PhysicalStore(ctx, h.deps, meta)
+			storeName = meta.Name
+		}
+	}
+	exists, err := store.Exists(ctx, asset.BlobKey)
+	if err != nil || !exists {
+		return "", false
+	}
+	return storeName, true
+}
+
+// blobLocation is the URL of a stored blob under the same /v2/ prefix — and the
+// same short or long path form — the client authenticated against. A hardcoded
+// /repository/... URL sent the follow-up request to a different auth surface and
+// returned 401 (issue #47).
+func blobLocation(c *gin.Context, imageName, digest string) string {
+	if i := strings.Index(c.Request.URL.Path, "/blobs/"); i >= 0 {
+		return c.Request.URL.Path[:i] + "/blobs/" + digest
+	}
+	return "/v2/" + imageName + "/blobs/" + digest
 }
 
 func (h *Handler) patchUpload(c *gin.Context, _, _, uuid string) {
@@ -608,12 +751,7 @@ func (h *Handler) finalizeUpload(c *gin.Context, repoName, imageName, uuid strin
 	h.uploads.remove(ctx, uuid)
 
 	c.Header("Docker-Content-Digest", digest)
-	// Point at the stored blob under the same /v2/ prefix the client used.
-	blobLoc := "/v2/" + imageName + "/blobs/" + digest
-	if i := strings.Index(c.Request.URL.Path, "/blobs/"); i >= 0 {
-		blobLoc = c.Request.URL.Path[:i] + "/blobs/" + digest
-	}
-	c.Header("Location", blobLoc)
+	c.Header("Location", blobLocation(c, imageName, digest))
 	c.Header("Content-Range", fmt.Sprintf("0-%d", len(data)-1))
 	c.Status(http.StatusCreated)
 }
