@@ -25,9 +25,10 @@ import (
 var ErrQuotaExceeded = errors.New("storage quota exceeded")
 
 // HTTPStatusForError maps known storage errors to appropriate HTTP status codes.
-// Returns 507 Insufficient Storage for quota errors, 500 for everything else.
+// Returns 507 Insufficient Storage for quota and out-of-space errors, 500 for
+// everything else.
 func HTTPStatusForError(err error) int {
-	if errors.Is(err, ErrQuotaExceeded) {
+	if errors.Is(err, ErrQuotaExceeded) || errors.Is(err, storage.ErrNoSpace) {
 		return http.StatusInsufficientStorage
 	}
 	return http.StatusInternalServerError

@@ -30,6 +30,11 @@ func TestHTTPStatusForError_WrappedQuotaExceeded(t *testing.T) {
 	assert.Equal(t, http.StatusInsufficientStorage, base.HTTPStatusForError(wrapped))
 }
 
+func TestHTTPStatusForError_NoSpaceLeft(t *testing.T) {
+	wrapped := fmt.Errorf("store blob: %w", storage.ErrNoSpace)
+	assert.Equal(t, http.StatusInsufficientStorage, base.HTTPStatusForError(wrapped))
+}
+
 func TestHTTPStatusForError_OtherError(t *testing.T) {
 	code := base.HTTPStatusForError(errors.New("some other error"))
 	assert.Equal(t, http.StatusInternalServerError, code)

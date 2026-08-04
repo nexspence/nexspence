@@ -2,18 +2,23 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 )
 
 // LocalBlobStore stores blobs as files under a base directory.
 // Key "ab/cd/abcdef123..." maps to <basePath>/ab/cd/abcdef123...
 type LocalBlobStore struct {
 	basePath string
+	// syncFile flushes a file (or directory) to durable storage. It is a field so
+	// tests can simulate fsync failures, which cannot be provoked otherwise.
+	syncFile func(*os.File) error
 }
 
 // NewLocalBlobStore creates a LocalBlobStore rooted at basePath, creating the directory if needed.
@@ -21,7 +26,7 @@ func NewLocalBlobStore(basePath string) (*LocalBlobStore, error) {
 	if err := os.MkdirAll(basePath, 0o750); err != nil {
 		return nil, fmt.Errorf("create blob store dir %s: %w", basePath, err)
 	}
-	return &LocalBlobStore{basePath: basePath}, nil
+	return &LocalBlobStore{basePath: basePath, syncFile: (*os.File).Sync}, nil
 }
 
 func (s *LocalBlobStore) keyPath(key string) (string, error) {
@@ -61,13 +66,46 @@ func (s *LocalBlobStore) Put(_ context.Context, key string, r io.Reader, _ int64
 	if _, err := io.Copy(f, r); err != nil {
 		_ = f.Close()
 		_ = os.Remove(tmp)
-		return err
+		return classifyWriteErr(err)
+	}
+	// Rename is atomic with respect to the name only: without an fsync the bytes
+	// may still be in the page cache, so a crash could publish a truncated blob.
+	if err := s.syncFile(f); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmp)
+		return classifyWriteErr(err)
 	}
 	if err := f.Close(); err != nil {
 		_ = os.Remove(tmp)
 		return err
 	}
-	return os.Rename(tmp, dst)
+	if err := os.Rename(tmp, dst); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	s.syncDir(filepath.Dir(dst))
+	return nil
+}
+
+// classifyWriteErr tags a full-disk failure with ErrNoSpace so handlers can
+// answer 507 Insufficient Storage; any other error is returned unchanged.
+func classifyWriteErr(err error) error {
+	if errors.Is(err, syscall.ENOSPC) {
+		return fmt.Errorf("%w: %w", ErrNoSpace, err)
+	}
+	return err
+}
+
+// syncDir flushes a directory entry so a completed rename survives a crash.
+// Best effort: some filesystems reject fsync on directories, and by this point
+// the blob contents are already durable.
+func (s *LocalBlobStore) syncDir(dir string) {
+	d, err := os.Open(dir) //nolint:gosec // dir is derived from a key validated by keyPath
+	if err != nil {
+		return
+	}
+	_ = s.syncFile(d)
+	_ = d.Close()
 }
 
 // Get opens the blob for key and returns its reader and size.

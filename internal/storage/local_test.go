@@ -3,9 +3,11 @@ package storage_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"os"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -89,6 +91,26 @@ func TestLocalBlobStore_Put_PathTraversal_Rejected(t *testing.T) {
 	require.Error(t, err)
 	_, err = store.Size(ctx, traversalKey)
 	require.Error(t, err)
+}
+
+// A full disk must surface as a distinguishable sentinel so callers can map it
+// to 507 Insufficient Storage instead of an opaque 500.
+func TestLocalBlobStore_Put_DiskFull_ReturnsErrNoSpace(t *testing.T) {
+	store := newLocal(t)
+
+	err := store.Put(context.Background(), "abcdef1234567890", failingReader{err: syscall.ENOSPC}, 10)
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, storage.ErrNoSpace)
+}
+
+func TestLocalBlobStore_Put_OtherWriteError_IsNotNoSpace(t *testing.T) {
+	store := newLocal(t)
+
+	err := store.Put(context.Background(), "abcdef1234567890", failingReader{err: errors.New("boom")}, 10)
+
+	require.Error(t, err)
+	assert.NotErrorIs(t, err, storage.ErrNoSpace)
 }
 
 func TestLocalBlobStore_Delete_Existing(t *testing.T) {
@@ -201,6 +223,12 @@ func newLocal(t *testing.T) *storage.LocalBlobStore {
 	require.NoError(t, err)
 	return s
 }
+
+// failingReader fails every read with err, standing in for an I/O error hit
+// while streaming a blob to disk (e.g. ENOSPC on a full filesystem).
+type failingReader struct{ err error }
+
+func (r failingReader) Read([]byte) (int, error) { return 0, r.err }
 
 // writeFile creates a plain file at path with content (used to create a
 // path that is a file so sub-directory creation fails).
