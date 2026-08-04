@@ -31,7 +31,7 @@ CREATE TABLE repositories (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name            TEXT NOT NULL UNIQUE,
     format          TEXT NOT NULL CHECK (format IN (
-                        'maven2', 'npm', 'docker', 'pypi',
+                        'maven2', 'npm', 'docker', 'oci', 'pypi',
                         'go', 'nuget', 'helm', 'raw', 'apt', 'yum', 'cargo', 'conan', 'conda', 'terraform'
                     )),
     type            TEXT NOT NULL CHECK (type IN ('hosted', 'proxy', 'group')),
