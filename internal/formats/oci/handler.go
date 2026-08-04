@@ -4,6 +4,7 @@
 //
 //	GET  /v2/                                   → API version check (200 OK)
 //	GET  /v2/:name/tags/list                    → list tags
+//	GET  /v2/:name/referrers/:digest            → list manifests referring to :digest
 //	GET  /v2/:name/manifests/:reference         → pull manifest
 //	PUT  /v2/:name/manifests/:reference         → push manifest
 //	DELETE /v2/:name/manifests/:reference       → delete manifest
@@ -76,11 +77,21 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 	}
 
 	// Find the endpoint keyword from the right
-	// patterns: .../tags/list | .../manifests/:ref | .../blobs/:digest | .../blobs/uploads/[uuid]
+	// patterns: .../tags/list | .../referrers/:digest | .../manifests/:ref |
+	//           .../blobs/:digest | .../blobs/uploads/[uuid]
 	switch {
 	case endsWithSegments(parts, "tags", "list"):
 		imageName := strings.Join(parts[:len(parts)-2], "/")
 		h.handleTagsList(c, repoName, imageName)
+
+	// Before manifests and blobs: the shape is <name>/referrers/<digest>, and
+	// referrersIndex only matches the keyword in that exact position, so no
+	// existing path can be re-routed by this case.
+	case referrersIndex(parts) >= 0:
+		idx := referrersIndex(parts)
+		imageName := strings.Join(parts[:idx], "/")
+		subjectDigest := strings.Join(parts[idx+1:], "/")
+		h.handleReferrers(c, repoName, imageName, subjectDigest)
 
 	case hasSegment(parts, "manifests"):
 		idx := segmentIndex(parts, "manifests")
