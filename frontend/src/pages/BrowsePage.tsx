@@ -1109,7 +1109,7 @@ export default function BrowsePage() {
   }))
 
   const selectedRepo = useMemo(() => repos.find((r) => r.name === repoName), [repos, repoName])
-  const isDocker = selectedRepo?.format?.toLowerCase() === 'docker'
+  const isOciDistribution = selectedRepo?.format?.toLowerCase() === 'docker' || selectedRepo?.format?.toLowerCase() === 'oci'
   const isRaw = selectedRepo?.format?.toLowerCase() === 'raw'
 
   const { data: components, isLoading, isError, error: componentsError, refetch } = useQuery({
@@ -1120,7 +1120,7 @@ export default function BrowsePage() {
           params: { repository: repoName, limit, offset: page * limit },
         })
         .then((r) => r.data as { items: Component[]; continuationToken: string | null }),
-    enabled: !!repoName && !isDocker && !isRaw,
+    enabled: !!repoName && !isOciDistribution && !isRaw,
     retry: (failureCount, err: unknown) => {
       const status = (err as { response?: { status?: number } })?.response?.status
       if (status === 403) return false
@@ -1136,7 +1136,7 @@ export default function BrowsePage() {
     queryKey: ['dockerBrowseTree', repoName],
     queryFn: () =>
       nexspenceApi.getDockerBrowseTree(repoName).then((r) => r.data as { root: DockerTreeNode }),
-    enabled: !!repoName && isDocker,
+    enabled: !!repoName && isOciDistribution,
   })
 
   const {
@@ -1154,7 +1154,7 @@ export default function BrowsePage() {
     queryKey: ['dockerComponentDetail', dockerSelection?.componentId],
     queryFn: () =>
       nexusApi.getComponent(dockerSelection!.componentId).then((r) => r.data as DockerComponentDetail),
-    enabled: !!repoName && isDocker && !!dockerSelection?.componentId,
+    enabled: !!repoName && isOciDistribution && !!dockerSelection?.componentId,
   })
 
   const toggleTree = useCallback((p: string) => {
@@ -1184,7 +1184,7 @@ export default function BrowsePage() {
 
   // Auto-drill Docker tree: walk to leaf with matching componentId, expand ancestors, select it.
   useEffect(() => {
-    if (!highlightComponentId || !isDocker || !dockerTree?.root) return
+    if (!highlightComponentId || !isOciDistribution || !dockerTree?.root) return
     const key = `docker:${repoName}:${highlightComponentId}`
     if (drilledRef.current === key) return
     const hit = findWithAncestors(
@@ -1207,7 +1207,7 @@ export default function BrowsePage() {
         version: hit.leaf.version ?? hit.leaf.label,
       })
     }
-  }, [highlightComponentId, isDocker, dockerTree, repoName])
+  }, [highlightComponentId, isOciDistribution, dockerTree, repoName])
 
   // Auto-drill Raw tree by componentId.
   useEffect(() => {
@@ -1230,7 +1230,7 @@ export default function BrowsePage() {
 
   const subtitle = !repoName
     ? 'Select a repository to browse'
-    : isDocker || isRaw
+    : isOciDistribution || isRaw
       ? selectedRepo!.name
       : `${items.length} components loaded`
 
@@ -1246,7 +1246,7 @@ export default function BrowsePage() {
         {repoName && (
           <HoloButton
             style={{ padding: 8, lineHeight: 0 }}
-            onClick={() => isDocker ? refetchDockerTree() : isRaw ? refetchRawTree() : refetch()}
+            onClick={() => isOciDistribution ? refetchDockerTree() : isRaw ? refetchRawTree() : refetch()}
             title="Refresh"
           >
             <RefreshCw size={16} />
@@ -1283,7 +1283,7 @@ export default function BrowsePage() {
           <FolderOpen size={40} style={{ opacity: 0.3 }} />
           <p>Choose a repository above</p>
         </div>
-      ) : isDocker ? (
+      ) : isOciDistribution ? (
         dockerTreeLoading ? (
           <div style={S.empty}>Loading tree…</div>
         ) : !dockerTree?.root?.children?.length ? (

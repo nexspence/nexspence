@@ -12,6 +12,7 @@ const repos = [
   fixtures.repository({ id: 'r1', name: 'maven-hosted', format: 'maven2', type: 'hosted' }),
   fixtures.repository({ id: 'r2', name: 'docker-hosted', format: 'docker', type: 'hosted' }),
   fixtures.repository({ id: 'r3', name: 'raw-hosted', format: 'raw', type: 'hosted' }),
+  fixtures.repository({ id: 'r4', name: 'oci-hosted', format: 'oci', type: 'hosted' }),
 ]
 
 function renderBrowse(search = '') {
@@ -492,6 +493,33 @@ describe('BrowsePage — Docker tree', () => {
     renderBrowse('?repo=docker-hosted&cid=dc1')
     expect(await screen.findByText('Component details')).toBeInTheDocument()
     expect(await screen.findByText('Vulnerability scan')).toBeInTheDocument()
+  })
+})
+
+describe('BrowsePage — OCI tree', () => {
+  it('renders the registry tree (not the generic component list) for an oci repository', async () => {
+    server.use(
+      http.get('/api/v1/browse/repositories/:name/docker-tree', () =>
+        HttpResponse.json({
+          root: {
+            kind: 'folder', label: '', path: '', children: [
+              {
+                kind: 'folder', label: 'my-chart', path: '/my-chart', imageRef: 'my-chart', children: [
+                  {
+                    kind: 'folder', label: 'Tags', path: '/my-chart/Tags', children: [
+                      { kind: 'tag', label: '1.0.0', path: '/my-chart/Tags/1.0.0', imageRef: 'my-chart', version: '1.0.0', componentId: 'oc1' },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        }),
+      ),
+    )
+    renderBrowse('?repo=oci-hosted')
+    expect(await screen.findByText('my-chart')).toBeInTheDocument()
+    expect(screen.queryByText('No components in this repository')).not.toBeInTheDocument()
   })
 })
 
