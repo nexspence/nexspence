@@ -3,6 +3,8 @@ package oci
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 
@@ -106,12 +108,38 @@ func (h *Handler) proxyReferrers(c *gin.Context, repo *domain.Repository, imageN
 		return
 	}
 	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+	case http.StatusUnauthorized, http.StatusForbidden:
+		// "I could not check" is not "there is nothing to check". Collapsing an
+		// upstream refusal into an empty index would let a policy gate read a
+		// proxy's missing or rejected credentials as proof that an image is
+		// unsigned — the one direction this endpoint must never fail in.
+		h.upstreamRefused(c, repo, upPath, upstreamURLOf(resp), resp.StatusCode)
+		return
+	default:
+		// 404 (no referrers API upstream) and every other status genuinely mean
+		// "no referrers information here", which a client can act on.
 		emptyIndex(c)
 		return
 	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxManifestBytes))
-	if err != nil || !looksLikeIndex(body) {
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxReferrersBytes+1))
+	if err != nil {
+		emptyIndex(c)
+		return
+	}
+	if len(body) > maxReferrersBytes {
+		// A list too large to read whole can only ever under-report referrers, so
+		// it is an error for the same reason a refusal is.
+		msg := fmt.Sprintf("upstream referrers index for %q exceeds the %d byte limit and cannot be served complete",
+			repo.Name, maxReferrersBytes)
+		repoproxy.DispatchProxyError(h.deps, repo.Name, upPath, upstreamURLOf(resp), errors.New(msg))
+		dockerError(c, http.StatusBadGateway, "TOOBIG", msg)
+		return
+	}
+	if !looksLikeIndex(body) {
 		emptyIndex(c)
 		return
 	}
@@ -119,6 +147,33 @@ func (h *Handler) proxyReferrers(c *gin.Context, repo *domain.Repository, imageN
 		c.Header("OCI-Filters-Applied", applied)
 	}
 	c.Data(http.StatusOK, mediaTypeImageIndex, body)
+}
+
+// upstreamRefused relays a 401/403 from upstream as a 502 in the OCI error shape,
+// and records it on the proxy-error bus. formats.Deps carries no logger — the
+// webhook bus is the reporting channel repoproxy already uses for a failed
+// upstream fetch, so an operator sees this the same way.
+func (h *Handler) upstreamRefused(c *gin.Context, repo *domain.Repository, upPath, upstream string, status int) {
+	code := "UNAUTHORIZED"
+	if status == http.StatusForbidden {
+		code = "DENIED"
+	}
+	msg := fmt.Sprintf(
+		"upstream registry refused the referrers request with %d %s: proxy repository %q could not list referrers, "+
+			"so this is a credentials problem on the proxy and not an absence of referrers",
+		status, http.StatusText(status), repo.Name)
+	repoproxy.DispatchProxyError(h.deps, repo.Name, upPath, upstream, errors.New(msg))
+	dockerError(c, http.StatusBadGateway, code, msg)
+}
+
+// upstreamURLOf reports the URL actually requested, for the error record. The
+// client fills in Response.Request, but a nil guard keeps a doubled transport
+// from turning a reporting path into a panic.
+func upstreamURLOf(resp *http.Response) string {
+	if resp == nil || resp.Request == nil || resp.Request.URL == nil {
+		return ""
+	}
+	return resp.Request.URL.String()
 }
 
 // looksLikeIndex reports whether the upstream body is at least shaped like an

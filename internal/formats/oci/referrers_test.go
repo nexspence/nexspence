@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -15,6 +16,9 @@ import (
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/formats"
+	"github.com/nexspence-oss/nexspence/internal/formats/oci"
+	"github.com/nexspence-oss/nexspence/internal/requestctx"
+	"github.com/nexspence-oss/nexspence/internal/testutil"
 )
 
 const (
@@ -347,6 +351,167 @@ func TestReferrers_ProxyUnreachableUpstreamIsEmptyIndex(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code)
 	assert.Empty(t, descs)
 	assert.JSONEq(t, emptyIndexJSON, w.Body.String())
+}
+
+// ─── Proxy failures the client must be able to distinguish ─────────────────
+
+// recordingDispatcher captures the proxy_error events the handler emits — the
+// only reporting channel a format handler has (formats.Deps carries no logger).
+type recordingDispatcher struct {
+	events []domain.WebhookPayload
+}
+
+func (r *recordingDispatcher) Dispatch(p domain.WebhookPayload) { r.events = append(r.events, p) }
+
+// setupWithWebhooks is setupWithDeps with a webhook dispatcher installed, so a
+// test can assert the operator-facing record of an upstream failure.
+func setupWithWebhooks(repo *domain.Repository, disp domain.WebhookDispatcher) *gin.Engine {
+	d := formats.Deps{
+		Repos:      testutil.NewRepoRepo(repo),
+		Blobs:      testutil.NewBlobStoreRepo(),
+		Components: testutil.NewComponentRepo(),
+		Assets:     testutil.NewAssetRepo(),
+		BlobStore:  testutil.NewBlobStore(),
+		BaseURL:    "http://localhost:8080",
+		Webhooks:   disp,
+	}
+	h := oci.New(d)
+	r := gin.New()
+	r.Use(func(c *gin.Context) {
+		ctx := requestctx.WithUser(c.Request.Context(), "test-user-id", "testuser")
+		c.Request = c.Request.WithContext(ctx)
+		c.Next()
+	})
+	r.Any("/repository/:repoName/*path", func(c *gin.Context) { h.ServeHTTP(c) })
+	return r
+}
+
+// ociErrors is the OCI error document shape.
+type ociErrors struct {
+	Errors []struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	} `json:"errors"`
+}
+
+// requireUpstreamAuthRelayed asserts the response is a 502 naming the upstream
+// refusal, and that an empty index was NOT what the client got.
+func requireUpstreamAuthRelayed(t *testing.T, w *httptest.ResponseRecorder, wantCode string, wantStatus int) {
+	t.Helper()
+	require.Equal(t, http.StatusBadGateway, w.Code,
+		"an upstream refusal is not the same fact as 'this subject has no referrers'")
+	assert.NotContains(t, w.Body.String(), `"manifests"`,
+		"a refusal must never be dressed up as an index")
+	var doc ociErrors
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &doc), "response should be an OCI error document")
+	require.Len(t, doc.Errors, 1)
+	assert.Equal(t, wantCode, doc.Errors[0].Code)
+	assert.Contains(t, doc.Errors[0].Message, strconv.Itoa(wantStatus),
+		"the message must name the upstream status so an operator can see it is a credentials problem")
+}
+
+// A 401 from upstream means "I could not check", which is a different fact from
+// "there is nothing to check". Reporting it as an empty index would let a policy
+// gate read a misconfigured proxy as proof that an image is unsigned.
+func TestReferrers_ProxyUpstream401IsBadGatewayNotEmptyIndex(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer upstream.Close()
+
+	disp := &recordingDispatcher{}
+	r := setupWithWebhooks(proxyOCIRepo("r2", "oci-proxy", upstream.URL), disp)
+
+	req := httptest.NewRequest(http.MethodGet,
+		"/repository/oci-proxy/v2/charts/nginx/referrers/"+digest("subject"), nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	requireUpstreamAuthRelayed(t, w, "UNAUTHORIZED", http.StatusUnauthorized)
+	require.Len(t, disp.events, 1, "the failure must be recorded for the operator, not only returned")
+	assert.Equal(t, domain.EventProxyError, disp.events[0].Event)
+	assert.Equal(t, "oci-proxy", disp.events[0].Repository)
+}
+
+// A 403 is the same class of fact as a 401 — the proxy was not allowed to look —
+// and carries the OCI code for a denied request.
+func TestReferrers_ProxyUpstream403IsBadGatewayNotEmptyIndex(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer upstream.Close()
+
+	disp := &recordingDispatcher{}
+	r := setupWithWebhooks(proxyOCIRepo("r2", "oci-proxy", upstream.URL), disp)
+
+	req := httptest.NewRequest(http.MethodGet,
+		"/repository/oci-proxy/v2/charts/nginx/referrers/"+digest("subject"), nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	requireUpstreamAuthRelayed(t, w, "DENIED", http.StatusForbidden)
+	require.Len(t, disp.events, 1)
+	assert.Equal(t, domain.EventProxyError, disp.events[0].Event)
+}
+
+// An index too large to read is a truncated list, and a truncated list read as
+// complete is the same unsafe direction as the auth case: it can only ever
+// under-report referrers. It must be an error, never a short answer.
+func TestReferrers_ProxyOversizedUpstreamIndexIsBadGateway(t *testing.T) {
+	// A single valid descriptor padded past the cap: a legitimately huge index,
+	// not garbage, so the size limit is what is under test and nothing else.
+	huge := `{"schemaVersion":2,"mediaType":"` + ociIndexMediaType + `","manifests":[` +
+		`{"mediaType":"application/vnd.oci.image.manifest.v1+json","digest":"` + upstreamSigDigest +
+		`","size":419,"annotations":{"pad":"` + strings.Repeat("x", 17<<20) + `"}}]}`
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", ociIndexMediaType)
+		_, _ = w.Write([]byte(huge))
+	}))
+	defer upstream.Close()
+
+	r, _ := setupWithDeps(proxyOCIRepo("r2", "oci-proxy", upstream.URL))
+
+	req := httptest.NewRequest(http.MethodGet,
+		"/repository/oci-proxy/v2/charts/nginx/referrers/"+digest("subject"), nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusBadGateway, w.Code,
+		"a list too large to read whole must not be served as if it were complete")
+	assert.NotContains(t, w.Body.String(), `"manifests":[]`)
+}
+
+// A 200 carrying something that is not an index — a captive portal's HTML, an
+// error page — is no referrers information, which is a fact a client can act on.
+func TestReferrers_ProxyNonIndexBodyIsEmptyIndex(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(`<html><body>Sign in to your network</body></html>`))
+	}))
+	defer upstream.Close()
+
+	r, _ := setupWithDeps(proxyOCIRepo("r2", "oci-proxy", upstream.URL))
+
+	w, _, descs := getReferrers(t, r, "oci-proxy", "charts/nginx", digest("subject"), "")
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Empty(t, descs)
+	assert.JSONEq(t, emptyIndexJSON, w.Body.String())
+	assert.Equal(t, ociIndexMediaType, w.Header().Get("Content-Type"),
+		"upstream HTML must never reach the client under an index content type")
+}
+
+// A 500 from upstream is not an auth failure and keeps the specified behavior.
+func TestReferrers_ProxyUpstreamServerErrorIsEmptyIndex(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer upstream.Close()
+
+	r, _ := setupWithDeps(proxyOCIRepo("r2", "oci-proxy", upstream.URL))
+
+	w, _, descs := getReferrers(t, r, "oci-proxy", "charts/nginx", digest("subject"), "")
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Empty(t, descs)
 }
 
 // Only GET (and HEAD, which gin serves through the same handler) reads referrers;

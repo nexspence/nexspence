@@ -367,7 +367,7 @@ func fetchAndCache(c *gin.Context, d formats.Deps, repo *domain.Repository,
 
 	resp, err := fetchUpstreamWithDockerHubAuth(ctx, ClientFor(repo), upstreamMethod, upstream, baseRemote, upHdr)
 	if err != nil {
-		dispatchProxyError(d, repo.Name, repoRelativePath, upstream, err)
+		DispatchProxyError(d, repo.Name, repoRelativePath, upstream, err)
 		c.JSON(http.StatusBadGateway, gin.H{"error": "upstream fetch failed: " + err.Error()})
 		return nil
 	}
@@ -430,7 +430,7 @@ func revalidateAndServe(c *gin.Context, d formats.Deps, repo *domain.Repository,
 	resp, err := fetchUpstreamWithDockerHubAuth(ctx, ClientFor(repo), http.MethodGet, upstream, baseRemote, upHdr)
 	if err != nil {
 		// Upstream unreachable → serve stale cache so metadata consumers keep working.
-		dispatchProxyError(d, repo.Name, repoRelativePath, upstream, err)
+		DispatchProxyError(d, repo.Name, repoRelativePath, upstream, err)
 		serveCachedAsset(c, d, asset, rc, rewrite)
 		return nil
 	}
@@ -452,7 +452,7 @@ func revalidateAndServe(c *gin.Context, d formats.Deps, repo *domain.Repository,
 	default:
 		// Any other status (404/410/5xx): don't discard a good cache on a transient
 		// upstream hiccup — serve stale and record the anomaly.
-		dispatchProxyError(d, repo.Name, repoRelativePath, upstream,
+		DispatchProxyError(d, repo.Name, repoRelativePath, upstream,
 			fmt.Errorf("revalidation returned status %d", resp.StatusCode))
 		serveCachedAsset(c, d, asset, rc, rewrite)
 		return nil
@@ -581,9 +581,12 @@ func storeOriginal(ctx context.Context, c *gin.Context, d formats.Deps, repo *do
 	return nil
 }
 
-// dispatchProxyError records an upstream fetch/revalidation failure via the
+// DispatchProxyError records an upstream fetch/revalidation failure via the
 // webhook bus (the package's proxy-error reporting channel), if configured.
-func dispatchProxyError(d formats.Deps, repoName, repoRelativePath, upstream string, cause error) {
+// Exported because format handlers that talk upstream outside ServeGET — the OCI
+// referrers endpoint, for one — must report a failure the same way; formats.Deps
+// carries no logger, so this bus is the only operator-facing channel they have.
+func DispatchProxyError(d formats.Deps, repoName, repoRelativePath, upstream string, cause error) {
 	if d.Webhooks == nil {
 		return
 	}

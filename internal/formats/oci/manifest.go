@@ -18,6 +18,15 @@ const (
 // It caps how much of a push body is buffered for parsing.
 const maxManifestBytes = 4 << 20
 
+// maxReferrersBytes caps a referrers index read from an upstream registry. It is
+// deliberately larger than maxManifestBytes because the two are not the same kind
+// of object: a manifest describes one artifact and its size is bounded by its own
+// layer count, while a referrers index grows without bound in the number of
+// signatures, attestations and SBOMs ever attached to one subject. A heavily
+// attested image legitimately produces a far bigger document than any manifest,
+// and sizing the two alike would turn a normal index into a truncated one.
+const maxReferrersBytes = 16 << 20
+
 // manifestMeta is the descriptive subset of an OCI manifest the registry stores.
 type manifestMeta struct {
 	MediaType    string
