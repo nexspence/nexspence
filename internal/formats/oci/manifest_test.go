@@ -70,3 +70,35 @@ func TestExtraFrom_OmitsEmptyFields(t *testing.T) {
 	assert.NotContains(t, extra, extraSubjectKey)
 	assert.NotContains(t, extra, extraAnnotationsKey)
 }
+
+// An empty annotations object must not be treated differently from a manifest
+// that omits annotations entirely: extraFrom must omit the key in both cases.
+func TestParseManifestMeta_EmptyAnnotationsOmittedFromExtra(t *testing.T) {
+	withEmptyObject := []byte(`{
+	  "schemaVersion": 2,
+	  "mediaType": "application/vnd.oci.image.manifest.v1+json",
+	  "config": {"mediaType": "application/vnd.oci.empty.v1+json", "digest": "sha256:cc", "size": 2},
+	  "annotations": {}
+	}`)
+	withoutKey := []byte(`{
+	  "schemaVersion": 2,
+	  "mediaType": "application/vnd.oci.image.manifest.v1+json",
+	  "config": {"mediaType": "application/vnd.oci.empty.v1+json", "digest": "sha256:cc", "size": 2}
+	}`)
+
+	metaWithEmptyObject, ok := parseManifestMeta(withEmptyObject)
+	require.True(t, ok)
+	metaWithoutKey, ok := parseManifestMeta(withoutKey)
+	require.True(t, ok)
+
+	assert.NotContains(t, extraFrom(metaWithEmptyObject), extraAnnotationsKey)
+	assert.NotContains(t, extraFrom(metaWithoutKey), extraAnnotationsKey)
+}
+
+// A body that parses as JSON but is not an object (a bare array here) is not a
+// manifest; parseManifestMeta must report ok=false rather than silently
+// returning zero-valued metadata.
+func TestParseManifestMeta_JSONArrayIsNotAManifest(t *testing.T) {
+	_, ok := parseManifestMeta([]byte(`[1,2,3]`))
+	assert.False(t, ok)
+}
