@@ -57,7 +57,14 @@ func parseDockerBearerChallenge(h http.Header) (realm, service, scope string, ok
 	return "", "", "", false
 }
 
-// scopeFromRegistryV2URL builds "repository:<name>:pull" from a registry URL path /v2/<name>/manifests/... or /v2/<name>/blobs/...
+// scopeFromRegistryV2URL builds "repository:<name>:pull" from a registry URL
+// path /v2/<name>/manifests/..., /v2/<name>/blobs/... or
+// /v2/<name>/referrers/....
+//
+// referrers belongs here for the same reason the other two do: without a scope
+// no Bearer token is fetched and the request is retried anonymously, which Hub
+// answers with another 401 — and at the referrers endpoint that reads as an
+// upstream refusal for a repository the proxy can otherwise pull.
 func scopeFromRegistryV2URL(u *url.URL) string {
 	p := u.Path
 	if !strings.HasPrefix(p, "/v2/") {
@@ -70,7 +77,7 @@ func scopeFromRegistryV2URL(u *url.URL) string {
 	parts := strings.Split(rest, "/")
 	split := -1
 	for i, seg := range parts {
-		if seg == "blobs" || seg == "manifests" {
+		if seg == "blobs" || seg == "manifests" || seg == "referrers" {
 			split = i
 			break
 		}

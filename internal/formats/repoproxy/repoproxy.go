@@ -586,7 +586,14 @@ func storeOriginal(ctx context.Context, c *gin.Context, d formats.Deps, repo *do
 // Exported because format handlers that talk upstream outside ServeGET — the OCI
 // referrers endpoint, for one — must report a failure the same way; formats.Deps
 // carries no logger, so this bus is the only operator-facing channel they have.
-func DispatchProxyError(d formats.Deps, repoName, repoRelativePath, upstream string, cause error) {
+//
+// path is the path on THIS side: the repository-relative path the client asked
+// for, which for a cached artifact is also its asset path and cache key. It is
+// not the upstream path — the upstream side of the request is the separate
+// upstream argument, which carries the full URL actually requested. Every caller
+// must pass the same side, or the payload's "path" key would mean one thing per
+// caller and be unreadable to whoever consumes the webhook.
+func DispatchProxyError(d formats.Deps, repoName, path, upstream string, cause error) {
 	if d.Webhooks == nil {
 		return
 	}
@@ -595,7 +602,7 @@ func DispatchProxyError(d formats.Deps, repoName, repoRelativePath, upstream str
 		Timestamp:  time.Now(),
 		Repository: repoName,
 		Asset: map[string]any{
-			"path":     repoRelativePath,
+			"path":     path,
 			"upstream": upstream,
 			"error":    cause.Error(),
 		},

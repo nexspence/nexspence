@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -42,6 +43,17 @@ type imageIndex struct {
 func (h *Handler) handleReferrers(c *gin.Context, repoName, imageName, subjectDigest string) {
 	if c.Request.Method != http.MethodGet && c.Request.Method != http.MethodHead {
 		c.Status(http.StatusMethodNotAllowed)
+		return
+	}
+	// A digest that is not a digest is a client mistake, and the client is told
+	// so. Answering the usual empty index would report a typo'd or truncated
+	// digest as "this image has no signatures" — the reading this endpoint exists
+	// to avoid producing by accident. Checked before the proxy branch: there is
+	// nothing to ask an upstream about either.
+	if !validDigest(subjectDigest) {
+		dockerError(c, http.StatusBadRequest, "DIGEST_INVALID",
+			fmt.Sprintf("%q is not a valid digest: expected <algorithm>:<hex>, e.g. sha256 followed by 64 "+
+				"lowercase hex characters", subjectDigest))
 		return
 	}
 	ctx := c.Request.Context()
@@ -122,6 +134,10 @@ func (h *Handler) handleReferrers(c *gin.Context, repoName, imageName, subjectDi
 // reported as an absence: a policy gate reads an empty index as "unsigned".
 func (h *Handler) proxyReferrers(c *gin.Context, repo *domain.Repository, imageName, subjectDigest string) {
 	upPath := "/v2/" + imageName + "/referrers/" + subjectDigest
+	// What the failure record names is the path on THIS side, as every other
+	// DispatchProxyError caller does; the upstream side travels in the separate
+	// upstream argument.
+	repoPath := referrersPath(imageName, subjectDigest)
 	hdr := http.Header{"Accept": []string{mediaTypeImageIndex}}
 	// The query goes as its own argument: JoinURL escapes everything it is given
 	// as a path, so a "?" glued on would reach upstream as %3F and the
@@ -134,7 +150,7 @@ func (h *Handler) proxyReferrers(c *gin.Context, repo *domain.Repository, imageN
 		// No response at all: DNS failure, refused connection, TLS error, timeout,
 		// the SSRF guard, or a proxy_config that cannot even produce a URL. The
 		// upstream URL is unknown here, so the record carries the path alone.
-		h.upstreamUnusable(c, repo, upPath, "", "UNKNOWN",
+		h.upstreamUnusable(c, repo, repoPath, "", "UNKNOWN",
 			fmt.Sprintf("could not reach the upstream registry to list referrers: %v", err))
 		return
 	}
@@ -153,14 +169,14 @@ func (h *Handler) proxyReferrers(c *gin.Context, repo *domain.Repository, imageN
 		// upstream refusal into an empty index would let a policy gate read a
 		// proxy's missing or rejected credentials as proof that an image is
 		// unsigned — the one direction this endpoint must never fail in.
-		h.upstreamRefused(c, repo, upPath, upstreamURLOf(resp), resp.StatusCode)
+		h.upstreamRefused(c, repo, repoPath, upstreamURLOf(resp), resp.StatusCode)
 		return
 	default:
 		code := "UNKNOWN"
 		if resp.StatusCode == http.StatusTooManyRequests {
 			code = "TOOMANYREQUESTS"
 		}
-		h.upstreamUnusable(c, repo, upPath, upstreamURLOf(resp), code, fmt.Sprintf(
+		h.upstreamUnusable(c, repo, repoPath, upstreamURLOf(resp), code, fmt.Sprintf(
 			"upstream registry answered the referrers request with %d %s: proxy repository %q could not list "+
 				"referrers, so this is an upstream failure and not an absence of referrers",
 			resp.StatusCode, http.StatusText(resp.StatusCode), repo.Name))
@@ -171,14 +187,14 @@ func (h *Handler) proxyReferrers(c *gin.Context, repo *domain.Repository, imageN
 	if err != nil {
 		// A body that died mid-read is a truncated list, which can only ever
 		// under-report — the same direction as the size cap below.
-		h.upstreamUnusable(c, repo, upPath, upstreamURLOf(resp), "UNKNOWN", fmt.Sprintf(
+		h.upstreamUnusable(c, repo, repoPath, upstreamURLOf(resp), "UNKNOWN", fmt.Sprintf(
 			"upstream referrers index for %q could not be read whole: %v", repo.Name, err))
 		return
 	}
 	if len(body) > maxReferrersBytes {
 		// A list too large to read whole can only ever under-report referrers, so
 		// it is an error for the same reason a refusal is.
-		h.upstreamUnusable(c, repo, upPath, upstreamURLOf(resp), "TOOBIG", fmt.Sprintf(
+		h.upstreamUnusable(c, repo, repoPath, upstreamURLOf(resp), "TOOBIG", fmt.Sprintf(
 			"upstream referrers index for %q exceeds the %d byte limit and cannot be served complete",
 			repo.Name, maxReferrersBytes))
 		return
@@ -186,7 +202,7 @@ func (h *Handler) proxyReferrers(c *gin.Context, repo *domain.Repository, imageN
 	if !looksLikeIndex(body) {
 		// A 200 carrying an error page or a captive portal's HTML means we never
 		// reached a registry, so we learned nothing about this subject.
-		h.upstreamUnusable(c, repo, upPath, upstreamURLOf(resp), "UNKNOWN", fmt.Sprintf(
+		h.upstreamUnusable(c, repo, repoPath, upstreamURLOf(resp), "UNKNOWN", fmt.Sprintf(
 			"upstream answered the referrers request for %q with 200 but the body is not an image index, "+
 				"so no registry was reached", repo.Name))
 		return
@@ -218,12 +234,12 @@ func upstreamQuery(c *gin.Context) string {
 }
 
 // upstreamRefused relays a 401/403 from upstream as a 502 in the OCI error shape.
-func (h *Handler) upstreamRefused(c *gin.Context, repo *domain.Repository, upPath, upstream string, status int) {
+func (h *Handler) upstreamRefused(c *gin.Context, repo *domain.Repository, repoPath, upstream string, status int) {
 	code := "UNAUTHORIZED"
 	if status == http.StatusForbidden {
 		code = "DENIED"
 	}
-	h.upstreamUnusable(c, repo, upPath, upstream, code, fmt.Sprintf(
+	h.upstreamUnusable(c, repo, repoPath, upstream, code, fmt.Sprintf(
 		"upstream registry refused the referrers request with %d %s: proxy repository %q could not list referrers, "+
 			"so this is a credentials problem on the proxy and not an absence of referrers",
 		status, http.StatusText(status), repo.Name))
@@ -234,11 +250,10 @@ func (h *Handler) upstreamRefused(c *gin.Context, repo *domain.Repository, upPat
 // reporting channel repoproxy already uses for a failed upstream fetch, so an
 // operator sees this the same way.
 //
-// upPath is the upstream request path, which is what the other DispatchProxyError
-// callers pass as well: repoproxy's own cache paths are repository-relative and
-// are the path it asked upstream for.
-func (h *Handler) upstreamUnusable(c *gin.Context, repo *domain.Repository, upPath, upstream, code, msg string) {
-	repoproxy.DispatchProxyError(h.deps, repo.Name, upPath, upstream, errors.New(msg))
+// repoPath is the repository-relative path, the side every other
+// DispatchProxyError caller reports; upstream is the URL actually requested.
+func (h *Handler) upstreamUnusable(c *gin.Context, repo *domain.Repository, repoPath, upstream, code, msg string) {
+	repoproxy.DispatchProxyError(h.deps, repo.Name, repoPath, upstream, errors.New(msg))
 	dockerError(c, http.StatusBadGateway, code, msg)
 }
 
@@ -250,6 +265,35 @@ func upstreamURLOf(resp *http.Response) string {
 		return ""
 	}
 	return resp.Request.URL.String()
+}
+
+// digestHexLen is the encoded length each accepted digest algorithm produces.
+// sha256 is what this registry computes and stores; sha512 is admitted because
+// the browse layer already treats a "sha512:" version as a digest, and rejecting
+// a well-formed one here would turn a spec-conformant client's request into a
+// 400. Nothing wider is accepted: the point of the check is to catch a mistyped
+// or truncated digest, and an open-ended algorithm list catches nothing.
+var digestHexLen = map[string]int{"sha256": 64, "sha512": 128}
+
+// validDigest reports whether s has the shape <algorithm>:<hex>. The encoded
+// part must be lowercase hex of the algorithm's exact length — the OCI spec's
+// grammar, and what makes a truncated or mistyped digest visible.
+func validDigest(s string) bool {
+	algo, hex, ok := strings.Cut(s, ":")
+	if !ok {
+		return false
+	}
+	want, known := digestHexLen[algo]
+	if !known || len(hex) != want {
+		return false
+	}
+	for i := 0; i < len(hex); i++ {
+		ch := hex[i]
+		if (ch < '0' || ch > '9') && (ch < 'a' || ch > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 // looksLikeIndex reports whether the upstream body is at least shaped like an
@@ -328,18 +372,4 @@ func annotationsOf(comp domain.Component) map[string]string {
 		}
 	}
 	return out
-}
-
-// referrersIndex reports where the "referrers" keyword sits in a split path, or
-// -1 when the path is not a referrers request. The keyword is only recognized as
-// the second-to-last segment — the spec's shape is {name}/referrers/{digest} and
-// a digest is always exactly one segment. Matching it anywhere (as the manifests
-// and blobs cases do) would let an image legitimately named ".../referrers"
-// swallow its own manifest and blob requests.
-func referrersIndex(parts []string) int {
-	idx := len(parts) - 2
-	if idx < 1 || parts[idx] != "referrers" {
-		return -1
-	}
-	return idx
 }

@@ -232,6 +232,133 @@ func TestReferrers_DoesNotSwallowImageNamedReferrers(t *testing.T) {
 	assert.Equal(t, helmChartManifest, w.Body.String())
 }
 
+// A digest that is not a digest is a client mistake, and saying so is the whole
+// point: answering an empty index would report a typo'd or truncated digest as
+// "this image has no signatures", which is the reading this endpoint must never
+// produce by accident.
+func TestReferrers_InvalidDigestIsBadRequest(t *testing.T) {
+	repo := hostedOCIRepo("r1", "oci-hosted")
+	r, _ := setupWithDeps(repo)
+
+	valid := digest("something")
+	cases := map[string]string{
+		"no algorithm":        strings.TrimPrefix(valid, "sha256:"),
+		"unknown algorithm":   "md5:" + strings.Repeat("a", 32),
+		"one hex short":       "sha256:" + strings.Repeat("a", 63),
+		"one hex long":        "sha256:" + strings.Repeat("a", 65),
+		"not hex":             "sha256:" + strings.Repeat("z", 64),
+		"uppercase hex":       "sha256:" + strings.Repeat("A", 64),
+		"empty encoded part":  "sha256:",
+		"a tag, not a digest": "latest",
+	}
+	for name, bad := range cases {
+		t.Run(name, func(t *testing.T) {
+			w := doReferrers(r, "oci-hosted", "charts/nginx", bad, "")
+			require.Equal(t, http.StatusBadRequest, w.Code,
+				"a malformed digest must not read as 'no referrers'")
+			var doc ociErrors
+			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &doc))
+			require.Len(t, doc.Errors, 1)
+			assert.Equal(t, "DIGEST_INVALID", doc.Errors[0].Code)
+			assert.NotContains(t, w.Body.String(), `"manifests"`)
+		})
+	}
+}
+
+// A well-formed digest of any algorithm the rest of the codebase recognizes is
+// answered normally — validation exists to catch a mistake, not to narrow the
+// protocol.
+func TestReferrers_WellFormedDigestsAreAccepted(t *testing.T) {
+	repo := hostedOCIRepo("r1", "oci-hosted")
+	r, _ := setupWithDeps(repo)
+
+	for name, good := range map[string]string{
+		"sha256": "sha256:" + strings.Repeat("a", 64),
+		"sha512": "sha512:" + strings.Repeat("b", 128),
+	} {
+		t.Run(name, func(t *testing.T) {
+			w, _, descs := getReferrers(t, r, "oci-hosted", "charts/nginx", good, "")
+			require.Equal(t, http.StatusOK, w.Code)
+			assert.Empty(t, descs)
+		})
+	}
+}
+
+// A malformed digest must be rejected before a proxy repository forwards it:
+// there is nothing to ask an upstream about.
+func TestReferrers_InvalidDigestOnProxyIsNotForwarded(t *testing.T) {
+	var reached bool
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		reached = true
+		w.Header().Set("Content-Type", ociIndexMediaType)
+		_, _ = w.Write([]byte(upstreamReferrersIndex))
+	}))
+	defer upstream.Close()
+
+	r, _ := setupWithDeps(proxyOCIRepo("r2", "oci-proxy", upstream.URL))
+
+	w := doReferrers(r, "oci-proxy", "charts/nginx", "not-a-digest", "")
+	require.Equal(t, http.StatusBadRequest, w.Code)
+	assert.False(t, reached, "a malformed digest must never reach the upstream")
+}
+
+// descriptorOf prefers the manifest's own mediaType and falls back to the asset's
+// stored Content-Type. Every other test pushes the two identical, so neither half
+// of that rule is actually pinned; these two push them apart.
+func TestReferrers_MediaTypePrefersManifestOverContentType(t *testing.T) {
+	repo := hostedOCIRepo("r1", "oci-hosted")
+	r, _ := setupWithDeps(repo)
+
+	subjectDigest := pushManifestBody(t, r, "oci-hosted", "charts/nginx", "1.2.3", helmChartManifest)
+
+	// The manifest declares the OCI media type; it is pushed under the Docker one.
+	sig := referrerManifest(cosignSigArtifactType, subjectDigest)
+	pushManifestWithContentType(t, r, "oci-hosted", "charts/nginx", "sig", sig,
+		"application/vnd.docker.distribution.manifest.v2+json")
+
+	_, _, descs := getReferrers(t, r, "oci-hosted", "charts/nginx", subjectDigest, "")
+	require.Len(t, descs, 1)
+	assert.Equal(t, "application/vnd.oci.image.manifest.v1+json", descs[0].MediaType,
+		"the manifest's own mediaType wins over the Content-Type it was pushed under")
+}
+
+func TestReferrers_MediaTypeFallsBackToContentType(t *testing.T) {
+	repo := hostedOCIRepo("r1", "oci-hosted")
+	r, _ := setupWithDeps(repo)
+
+	subjectDigest := pushManifestBody(t, r, "oci-hosted", "charts/nginx", "1.2.3", helmChartManifest)
+
+	// A manifest carrying no mediaType of its own — legal, and what an OCI 1.0
+	// producer emits. The only thing left to name it is the Content-Type.
+	noMediaType := fmt.Sprintf(`{
+  "schemaVersion": 2,
+  "artifactType": %q,
+  "config": {"mediaType": "application/vnd.oci.empty.v1+json", "digest": "sha256:ee", "size": 2},
+  "layers": [],
+  "subject": {"digest": %q, "size": 100}
+}`, cosignSigArtifactType, subjectDigest)
+	pushManifestWithContentType(t, r, "oci-hosted", "charts/nginx", "sig", noMediaType,
+		"application/vnd.docker.distribution.manifest.v2+json")
+
+	_, _, descs := getReferrers(t, r, "oci-hosted", "charts/nginx", subjectDigest, "")
+	require.Len(t, descs, 1)
+	assert.Equal(t, "application/vnd.docker.distribution.manifest.v2+json", descs[0].MediaType,
+		"with no mediaType in the manifest the stored Content-Type is what names it")
+}
+
+// pushManifestWithContentType pushes a manifest under a Content-Type that need
+// not match the manifest's own mediaType.
+func pushManifestWithContentType(t *testing.T, r *gin.Engine, repoName, imageName, reference, body, contentType string) {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPut,
+		"/repository/"+repoName+"/v2/"+imageName+"/manifests/"+reference, strings.NewReader(body))
+	req.Header.Set("Content-Type", contentType)
+	req.ContentLength = int64(len(body))
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusCreated, w.Code, "manifest push should succeed")
+}
+
 // An asset lookup that fails is not a referrer that does not exist. Dropping it
 // from the index and still answering 200 is the same under-report the proxy path
 // refuses to produce: the client would read a database blip as "unsigned".
@@ -667,6 +794,12 @@ func requireProxyFailure(t *testing.T, w *httptest.ResponseRecorder, disp *recor
 	require.Len(t, disp.events, 1, "the failure must be recorded for the operator, not only returned")
 	assert.Equal(t, domain.EventProxyError, disp.events[0].Event)
 	assert.Equal(t, "oci-proxy", disp.events[0].Repository)
+
+	// The payload's "path" is the repository-relative side, as every other
+	// DispatchProxyError caller reports; the upstream side has its own key. A
+	// caller that mixed the two would make "path" mean one thing per caller.
+	assert.Equal(t, "/referrers/charts/nginx/"+digest("subject"), disp.events[0].Asset["path"],
+		"the recorded path is the one the client asked for, not the upstream path")
 }
 
 // A 401 from upstream means "I could not check", which is a different fact from
