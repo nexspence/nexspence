@@ -12,6 +12,7 @@ import (
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/formats/repoproxy"
+	"github.com/nexspence-oss/nexspence/internal/repository"
 )
 
 // mediaTypeImageIndex is the media type of the referrers response document.
@@ -48,7 +49,18 @@ func (h *Handler) handleReferrers(c *gin.Context, repoName, imageName, subjectDi
 	// referring manifests that happen to have been pulled through it, so the
 	// local query would under-report — and an under-reported index reads to a
 	// signature checker as "this image is unsigned".
-	repo, _ := h.deps.Repos.Get(ctx, repoName)
+	//
+	// A lookup that fails is therefore not the same as one that finds nothing:
+	// swallowing the error would leave repo nil, skip the proxy branch and answer
+	// a proxy's request from its cache without ever touching the network. Only a
+	// genuine absence falls through to the local query.
+	repo, err := h.deps.Repos.Get(ctx, repoName)
+	if err != nil && !errors.Is(err, repository.ErrNotFound) {
+		dockerError(c, http.StatusBadGateway, "UNKNOWN",
+			fmt.Sprintf("could not determine whether repository %q is a proxy, so its referrers cannot be listed: %v",
+				repoName, err))
+		return
+	}
 	if repo != nil && repo.Type == domain.TypeProxy {
 		h.proxyReferrers(c, repo, imageName, subjectDigest)
 		return

@@ -2,6 +2,7 @@ package oci_test
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -443,6 +444,44 @@ func TestReferrers_ProxyTruncatedBodyIsBadGateway(t *testing.T) {
 	requireProxyFailure(t, w, disp, "UNKNOWN")
 	assert.Contains(t, w.Body.String(), "could not be read whole",
 		"the truncated-read branch is what must be exercised here, not the shape check")
+}
+
+// A repository lookup that fails must not be read as "no such repository". On a
+// proxy that silently downgrades the request to the local cache — a 200
+// under-report reached without touching the network, which is the exact failure
+// the proxy branch exists to prevent.
+func TestReferrers_RepositoryLookupErrorIsBadGateway(t *testing.T) {
+	repos := testutil.NewRepoRepo(proxyOCIRepo("r2", "oci-proxy", "http://127.0.0.1:1"))
+	d := formats.Deps{
+		Repos:      repos,
+		Blobs:      testutil.NewBlobStoreRepo(),
+		Components: testutil.NewComponentRepo(),
+		Assets:     testutil.NewAssetRepo(),
+		BlobStore:  testutil.NewBlobStore(),
+		BaseURL:    "http://localhost:8080",
+	}
+	h := oci.New(d)
+	r := gin.New()
+	r.Any("/repository/:repoName/*path", func(c *gin.Context) { h.ServeHTTP(c) })
+
+	repos.Err = errors.New("connection to the database was lost")
+
+	w := doReferrers(r, "oci-proxy", "charts/nginx", digest("subject"), "")
+	require.Equal(t, http.StatusBadGateway, w.Code,
+		"a lookup failure is not the same fact as 'this subject has no referrers'")
+	assert.NotContains(t, w.Body.String(), `"manifests"`,
+		"a lookup failure must never be dressed up as an index")
+}
+
+// A repository that is genuinely absent is still not an error: the hosted path
+// answers an empty index for it, exactly as before.
+func TestReferrers_UnknownRepositoryStillAnswersEmptyIndex(t *testing.T) {
+	r, _ := setupWithDeps(hostedOCIRepo("r1", "oci-hosted"))
+
+	// The router accepts any repoName; the repository simply does not exist.
+	w, _, descs := getReferrers(t, r, "no-such-repo", "charts/nginx", digest("subject"), "")
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Empty(t, descs)
 }
 
 // ─── Proxy failures the client must be able to distinguish ─────────────────
