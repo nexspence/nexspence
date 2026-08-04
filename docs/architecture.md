@@ -103,11 +103,27 @@ type Deps struct {
     Components repository.ComponentRepo
     Assets     repository.AssetRepo
     Blobs      repository.BlobStoreRepo
-    BlobStore  storage.BlobStore
+    BlobStore  storage.BlobStore  // default / fallback store
+    Registry   *storage.Registry  // optional: per-blob-store routing
     BaseURL    string
-    Webhooks   WebhookDispatcher  // optional
+    Webhooks     WebhookDispatcher   // optional
+    Downloads    DownloadCounter     // optional
+    RoutingRules repository.RoutingRuleRepo  // optional
+    RBAC         RBACChecker         // optional: used where a handler acts on a
+                                     // path the middleware did not see, e.g. the
+                                     // source of a cross-repository blob mount
 }
 ```
+
+`Deps` is passed **by value** to every handler at construction, so anything it carries must be
+built before `formatDeps` is assembled — assigning a field afterwards leaves each handler holding
+a nil copy and looks like it works.
+
+**One protocol, two format labels.** `docker` and `oci` are the same OCI Distribution
+implementation (`internal/formats/oci`), registered in the format registry under both keys as one
+shared instance, so protocol drift between them is impossible. They differ only in presentation:
+proxy defaults, colour, command hints. Every place that special-cases a registry format asks
+`domain.RepoFormat.IsOCIRegistry()` rather than comparing to `"docker"`.
 
 **Hosted path**: `StoreArtifact` / `FetchArtifact` / `DeleteArtifact` in `base/store.go`
 - Checksums (SHA256/SHA1/MD5) computed via `io.MultiWriter` pipe during upload — no buffering
@@ -123,6 +139,28 @@ type Deps struct {
 - Fans out to each member's full `FormatHandler.ServeHTTP` in order
 - First non-404 wins; sets `X-Nexspence-Source` header
 - Uses `httptest.ResponseRecorder` + `gin.CreateTestContext` isolation
+
+First-non-404 is right for content addressed by name or digest and **wrong for an aggregated
+listing**, where the first member shadows every later one. Formats whose index documents must be
+combined implement one to three optional interfaces in `internal/formats/group_merge.go`:
+
+| Interface | What it changes |
+| --- | --- |
+| `GroupIndexMerger` | the path is recognised as an index and member bodies are merged instead of first-wins |
+| `GroupIndexStrictMerger` | a member that answers non-2xx is **relayed** rather than skipped, so a listing is never quietly short |
+| `GroupIndexPaginator` | members are queried unpaginated and the *merged* document is paged — paging each member truncates its contribution and makes the entries past its cut unreachable by any later cursor |
+
+maven implements the first (merged `maven-metadata.xml`); the OCI handler implements all three for
+`tags/list`, `_catalog` and `referrers`.
+
+**Blob store usage accounting**: `blob_stores.used_bytes` and the repository quota both count
+**stored bytes**, not asset rows. Several paths register more than one asset against one blob key
+— an OCI manifest push registers the tag and its `sha256:` digest alias, a cross-repository mount
+registers a second asset on a blob already present — so usage moves when the *blob* is first
+stored and moves back only when the physical object is actually removed. `DeleteArtifact` keeps a
+blob any other asset still references (`AssetRepo.CountByBlobKey`); blob GC decrements what it
+frees. `POST /api/v1/blobstores/recompute-usage` re-derives every counter from distinct blob keys
+when drift is suspected.
 
 ### Service Layer
 

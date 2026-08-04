@@ -266,7 +266,13 @@ Published on the [Terraform Registry](https://registry.terraform.io/providers/ne
 **Repository Types**
 - Hosted — direct upload and storage
 - Proxy — transparent remote caching; mutations rejected with 405
-- Group — ordered union of hosted + proxy repos under one URL
+- Group — ordered union of hosted + proxy repos under one URL; index documents are merged across members, not shadowed by the first one that answers
+
+**OCI Registry**
+- One implementation serving two format labels: `docker` for container images, `oci` for Helm charts pushed with `helm push oci://`, ORAS artifacts and cosign signatures
+- Referrers API (`/v2/{name}/referrers/{digest}`) with `artifactType` filtering — cosign signatures, SBOMs and in-toto attestations are discoverable
+- Catalog and paginated tag listing; cross-repository blob mounts, access-checked against the source
+- Artifact types recorded on push and on proxy cache-fill, and shown in the browse tree
 
 **Security & Auth**
 - Local accounts with JWT bearer tokens and bcrypt passwords

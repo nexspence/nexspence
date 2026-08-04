@@ -69,8 +69,12 @@ format == "helm" && repository == "helm-prod"
 # Maven artifacts under org.example group
 format == "maven2" && path.startsWith("/org/example/")
 
-# Docker images under a specific team namespace
-format == "docker" && path.startsWith("/v2/myteam/")
+# Docker or OCI images under a specific team namespace.
+# Registry paths are normalised before matching: the /v2/ prefix is stripped and
+# the path is cut at the /manifests/, /blobs/ or /tags/ keyword, so a request for
+# /v2/myteam/app/manifests/1.0 is matched as /myteam/app/. Write the selector
+# against that shape — a selector starting with /v2/ never matches.
+format == "docker" && path.startsWith("/myteam/")
 
 # All artifacts (no restriction)
 true
