@@ -19,7 +19,7 @@ const (
 	FormatMaven2 RepoFormat = "maven2"
 	FormatNPM    RepoFormat = "npm"
 	FormatDocker RepoFormat = "docker"
-	// FormatOCI is the same OCI Distribution protocol as FormatDocker, labelled
+	// FormatOCI is the same OCI Distribution protocol as FormatDocker, labeled
 	// for charts, ORAS artifacts and signatures rather than container images.
 	FormatOCI   RepoFormat = "oci"
 	FormatPyPI  RepoFormat = "pypi"
