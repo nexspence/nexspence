@@ -18,6 +18,7 @@ package oci
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"net/http"
 	"path"
 	"strings"
@@ -200,12 +201,27 @@ func (h *Handler) pushManifest(c *gin.Context, repoName, imageName, reference st
 	}
 	fp := manifestPath(imageName, reference)
 	coords := base.Coords{Name: imageName, Version: reference}
+
+	// The body is buffered because it is needed twice: stored verbatim, and
+	// parsed for the artifact type. Manifests are capped at 4 MiB by the spec.
+	body, err := io.ReadAll(io.LimitReader(c.Request.Body, maxManifestBytes))
+	if err != nil {
+		dockerError(c, http.StatusBadRequest, "MANIFEST_INVALID", err.Error())
+		return
+	}
+
 	res, err := base.StoreArtifact(c.Request.Context(), h.deps,
 		repoName, fp, ct, coords,
-		c.Request.Body, c.Request.ContentLength)
+		bytes.NewReader(body), int64(len(body)))
 	if err != nil {
 		dockerError(c, http.StatusInternalServerError, "UNKNOWN", err.Error())
 		return
+	}
+
+	if meta, ok := parseManifestMeta(body); ok {
+		if extra := extraFrom(meta); len(extra) > 0 {
+			_ = h.deps.Components.UpdateExtra(c.Request.Context(), res.Asset.ComponentID, extra)
+		}
 	}
 
 	// Docker pulls always re-fetch the manifest by content digest after getting it by tag.
