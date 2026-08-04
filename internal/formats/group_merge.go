@@ -1,5 +1,7 @@
 package formats
 
+import "github.com/gin-gonic/gin"
+
 // GroupIndexPart is one member's successful index response, in member order.
 type GroupIndexPart struct {
 	Member string // member repo name — used to rewrite member URLs to the group
@@ -40,4 +42,27 @@ type GroupIndexStrictMerger interface {
 	// on path means "I could not check" — which must fail the whole group —
 	// rather than "I have nothing to contribute", which is skipped as usual.
 	GroupIndexMemberFailureIsFatal(path string, status int) bool
+}
+
+// GroupIndexPaginator is optionally implemented alongside GroupIndexMerger by
+// formats whose index endpoints are paginated.
+//
+// Paging a member and paging the merge are different answers. A member asked for
+// its first n entries contributes a truncated list, and the entries past its own
+// cut are then unreachable through every page of the group: the cursor the
+// client sends back names an entry of the merged list, which each member resolves
+// against its own. So the group asks members for their COMPLETE documents and
+// cuts the client's page out of the merged one, where the order the cursor refers
+// to is the order the client was served.
+type GroupIndexPaginator interface {
+	// GroupIndexMemberQuery returns the raw query members are asked with,
+	// given the raw query the client sent. It is where a paginated index drops
+	// the paging arguments — and where an index that is filtered rather than
+	// paged keeps them, since a filter narrows a member's answer without
+	// hiding anything the merge would have to reach past.
+	GroupIndexMemberQuery(path, clientQuery string) string
+	// PageGroupIndex cuts the page the client asked for out of the merged
+	// document and sets whatever cursor header the format's protocol uses on
+	// c. Returning merged unchanged is what an unpaginated path does.
+	PageGroupIndex(c *gin.Context, path string, merged []byte) ([]byte, error)
 }

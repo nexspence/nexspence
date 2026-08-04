@@ -14,30 +14,90 @@ import (
 
 func groupMerger() *oci.Handler { return oci.New(formats.Deps{}) }
 
-// Only the referrers index is merged across members. A manifest or a blob is a
+// The aggregated documents are merged across members; a manifest or a blob is a
 // single artifact, and the first member holding it is the right answer.
 func TestOCI_GroupIndexSourcePath(t *testing.T) {
 	h := groupMerger()
 
-	src, ok := h.GroupIndexSourcePath("/v2/charts/nginx/referrers/" + digest("subject"))
-	assert.True(t, ok)
-	assert.Equal(t, "/v2/charts/nginx/referrers/"+digest("subject"), src,
-		"every member is asked the same question, so the source is the path itself")
+	for _, p := range []string{
+		"/v2/charts/nginx/referrers/" + digest("subject"),
+		"/v2/charts/nginx/tags/list",
+	} {
+		src, ok := h.GroupIndexSourcePath(p)
+		assert.True(t, ok, p)
+		assert.Equal(t, p, src,
+			"every member is asked the same question, so the source is the path itself")
+	}
 
-	_, ok = h.GroupIndexSourcePath("/v2/charts/nginx/manifests/1.0.0")
+	_, ok := h.GroupIndexSourcePath("/v2/charts/nginx/manifests/1.0.0")
 	assert.False(t, ok)
 	_, ok = h.GroupIndexSourcePath("/v2/charts/nginx/blobs/" + digest("layer"))
-	assert.False(t, ok)
-	_, ok = h.GroupIndexSourcePath("/v2/charts/nginx/tags/list")
 	assert.False(t, ok)
 	_, ok = h.GroupIndexSourcePath("/v2/")
 	assert.False(t, ok)
 	_, ok = h.GroupIndexSourcePath("/charts/nginx/referrers/" + digest("subject"))
 	assert.False(t, ok, "a path outside /v2/ is not a referrers request")
+	_, ok = h.GroupIndexSourcePath("/charts/nginx/tags/list")
+	assert.False(t, ok, "a path outside /v2/ is not a tag list either")
 
 	// An image legitimately named ".../referrers" must keep its own manifests.
 	_, ok = h.GroupIndexSourcePath("/v2/lib/referrers/manifests/1.0.0")
 	assert.False(t, ok)
+	// And one named ".../tags" keeps its own manifests too: only the exact
+	// tags/list tail is the list endpoint.
+	_, ok = h.GroupIndexSourcePath("/v2/lib/tags/manifests/1.0.0")
+	assert.False(t, ok)
+}
+
+// The merged tag list is the union of the members', sorted, each tag once, under
+// the image name the client addressed.
+func TestOCI_MergeGroupIndex_TagsUnionSortedDeduplicated(t *testing.T) {
+	h := groupMerger()
+	body, ct, err := h.MergeGroupIndex("grp", "/v2/library/ubuntu/tags/list", []formats.GroupIndexPart{
+		{Member: "m1", Body: []byte(`{"name":"library/ubuntu","tags":["v3","v1"]}`)},
+		{Member: "m2", Body: []byte(`{"name":"library/ubuntu","tags":["v2","v1"]}`)},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "application/json; charset=utf-8", ct)
+	assert.JSONEq(t, `{"name":"library/ubuntu","tags":["v1","v2","v3"]}`, string(body))
+}
+
+// Members holding nothing merge into an empty list whose tags is [] and not
+// null, and the name still names the image: a client reads the document to learn
+// that this image has no tags here, not to learn that the endpoint is broken.
+func TestOCI_MergeGroupIndex_TagsAllEmptyIsEmptyList(t *testing.T) {
+	h := groupMerger()
+	body, _, err := h.MergeGroupIndex("grp", "/v2/img/tags/list", []formats.GroupIndexPart{
+		{Member: "m1", Body: []byte(`{"name":"img","tags":[]}`)},
+		{Member: "m2", Body: []byte(`{"name":"img","tags":null}`)},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, `{"name":"img","tags":[]}`, string(body))
+}
+
+// A member body that cannot be read is a member whose tags are missing from the
+// result, and nothing in the merged list would show that it is short.
+func TestOCI_MergeGroupIndex_UnreadableTagListIsAnError(t *testing.T) {
+	h := groupMerger()
+	_, _, err := h.MergeGroupIndex("grp", "/v2/img/tags/list", []formats.GroupIndexPart{
+		{Member: "m1", Body: []byte("<html>captive portal</html>")},
+		{Member: "m2", Body: []byte(`{"name":"img","tags":["v1"]}`)},
+	})
+	require.Error(t, err)
+}
+
+// The paging arguments never reach a member: a member that paged its own list
+// would drop the entries past its cut out of every page of the group. Everything
+// else survives, because the referrers filter travels the same road.
+func TestOCI_GroupIndexMemberQuery(t *testing.T) {
+	h := groupMerger()
+
+	assert.Empty(t, h.GroupIndexMemberQuery("/v2/img/tags/list", "n=2&last=v1"))
+	assert.Equal(t, "flavor=x", h.GroupIndexMemberQuery("/v2/img/tags/list", "n=2&flavor=x"))
+
+	filter := "artifactType=application%2Fspdx%2Bjson"
+	assert.Equal(t, filter, h.GroupIndexMemberQuery("/v2/img/referrers/"+digest("s"), filter),
+		"a filter narrows a member's answer without hiding what the merge must reach")
 }
 
 // indexWith builds one member's referrers answer from raw descriptor bodies.
@@ -154,19 +214,21 @@ func TestOCI_MergeGroupIndex_UnreadableMemberBodyIsAnError(t *testing.T) {
 // one non-2xx that is a fact about the subject rather than about the member.
 func TestOCI_GroupIndexMemberFailureIsFatal(t *testing.T) {
 	h := groupMerger()
-	p := "/v2/img/referrers/" + digest("s")
 
-	assert.False(t, h.GroupIndexMemberFailureIsFatal(p, http.StatusNotFound),
-		"404 contributes nothing and is not a failure to look")
-	for _, status := range []int{
-		http.StatusBadRequest, http.StatusUnauthorized, http.StatusForbidden,
-		http.StatusTooManyRequests, http.StatusInternalServerError,
-		http.StatusBadGateway, http.StatusServiceUnavailable,
-	} {
-		assert.True(t, h.GroupIndexMemberFailureIsFatal(p, status),
-			"%d means the member could not be consulted", status)
+	for _, p := range []string{"/v2/img/referrers/" + digest("s"), "/v2/img/tags/list"} {
+		assert.False(t, h.GroupIndexMemberFailureIsFatal(p, http.StatusNotFound),
+			"404 contributes nothing and is not a failure to look")
+		for _, status := range []int{
+			http.StatusBadRequest, http.StatusUnauthorized, http.StatusForbidden,
+			http.StatusTooManyRequests, http.StatusInternalServerError,
+			http.StatusBadGateway, http.StatusServiceUnavailable,
+		} {
+			assert.True(t, h.GroupIndexMemberFailureIsFatal(p, status),
+				"%s: %d means the member could not be consulted", p, status)
+		}
 	}
 
 	assert.False(t, h.GroupIndexMemberFailureIsFatal("/v2/img/manifests/1.0.0", http.StatusBadGateway),
-		"the policy belongs to the referrers index alone")
+		"the policy belongs to the merged documents alone — a manifest a member cannot serve "+
+			"is a manifest another member may hold")
 }

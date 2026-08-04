@@ -141,11 +141,23 @@ func (h *Handler) eligibleMember(ctx context.Context, memberName string, groupDe
 	return memberRepo
 }
 
-// callMember invokes a member's format handler on a cloned request/recorder.
+// callMember invokes a member's format handler on a cloned request/recorder,
+// asking the question the client asked.
 func (h *Handler) callMember(ctx context.Context, c *gin.Context, memberName, filePath string, handler formats.FormatHandler) *httptest.ResponseRecorder {
+	return h.callMemberWithQuery(ctx, c, memberName, filePath, c.Request.URL.RawQuery, handler)
+}
+
+// callMemberWithQuery is callMember with the member's query spelled out, so a
+// merged index can ask members something the client did not ask literally — see
+// formats.GroupIndexPaginator for why a paginated index must.
+func (h *Handler) callMemberWithQuery(ctx context.Context, c *gin.Context, memberName, filePath, rawQuery string,
+	handler formats.FormatHandler,
+) *httptest.ResponseRecorder {
 	rec := httptest.NewRecorder()
 	sub, _ := gin.CreateTestContext(rec)
 	sub.Request = c.Request.Clone(ctx)
+	// Clone deep-copies the URL, so the client's own request is untouched.
+	sub.Request.URL.RawQuery = rawQuery
 	sub.Params = gin.Params{
 		{Key: "repoName", Value: memberName},
 		{Key: "path", Value: filePath},
@@ -170,6 +182,15 @@ func (h *Handler) serveMergedIndex(c *gin.Context, repoDef *domain.Repository, m
 ) {
 	ctx := c.Request.Context()
 	strict, isStrict := merger.(formats.GroupIndexStrictMerger)
+	pager, isPager := merger.(formats.GroupIndexPaginator)
+
+	// A paginated index is asked of members without the client's paging
+	// arguments: a member that truncated its own contribution would put the
+	// entries past its cut out of reach of every later page.
+	memberQuery := c.Request.URL.RawQuery
+	if isPager {
+		memberQuery = pager.GroupIndexMemberQuery(source, memberQuery)
+	}
 
 	var parts []formats.GroupIndexPart
 	var contributing []string
@@ -186,7 +207,7 @@ func (h *Handler) serveMergedIndex(c *gin.Context, repoDef *domain.Repository, m
 			continue
 		}
 
-		rec := h.callMember(ctx, c, memberName, source, handler)
+		rec := h.callMemberWithQuery(ctx, c, memberName, source, memberQuery, handler)
 		code := rec.Code
 		if code == 0 {
 			code = http.StatusOK
@@ -214,6 +235,11 @@ func (h *Handler) serveMergedIndex(c *gin.Context, repoDef *domain.Repository, m
 
 	c.Writer.Header().Set("X-Nexspence-Source", strings.Join(contributing, ","))
 	body, contentType, err := merger.MergeGroupIndex(repoDef.Name, requestPath, parts)
+	if err == nil && isPager {
+		// Paged after the merge, so the page and the cursor that walks it are
+		// both cut out of the order the client is being served.
+		body, err = pager.PageGroupIndex(c, requestPath, body)
+	}
 	if err != nil {
 		if isStrict {
 			// A member's document that could not be merged is a member whose
