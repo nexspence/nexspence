@@ -92,6 +92,31 @@ func TestScanService_TrivyNotInstalled(t *testing.T) {
 	}
 }
 
+// An oci repository holds the same content a docker one does, so its components
+// must reach the Trivy path rather than being refused on their format label.
+func TestScanService_OCIFormat_ReachesTrivy(t *testing.T) {
+	comp := &domain.Component{
+		ID:         "comp-scan-oci",
+		Repository: "oci-hosted",
+		Format:     "oci",
+		Name:       "charts/nginx",
+		Version:    "1.2.3",
+	}
+	comps := testutil.NewComponentRepo()
+	comps.Create(context.Background(), comp)
+
+	svc := service.NewScanService(comps, "")
+	svc.TrivyBin = "/no/such/binary"
+
+	_, err := svc.Scan(context.Background(), comp.ID, "")
+	if err == nil {
+		t.Fatal("expected ErrTrivyNotInstalled")
+	}
+	if !errors.Is(err, service.ErrTrivyNotInstalled) {
+		t.Fatalf("an oci component must reach the Trivy path, got %v", err)
+	}
+}
+
 func TestScanService_ParseTrivyJSON(t *testing.T) {
 	// Inject a fake "trivy" that echoes a minimal JSON report.
 	trivyOutput := `{
