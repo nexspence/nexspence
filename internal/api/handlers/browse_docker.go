@@ -52,7 +52,7 @@ func (h *BrowseHandler) DockerTree(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "repository not found"})
 		return
 	}
-	if !isOCIRegistryFormat(repo.Format) {
+	if !repo.Format.IsOCIRegistry() {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "repository is not an OCI registry format"})
 		return
 	}
@@ -112,7 +112,7 @@ func (h *BrowseHandler) PathTree(c *gin.Context) {
 	}
 
 	var paths []string
-	if isOCIRegistryFormat(repo.Format) {
+	if repo.Format.IsOCIRegistry() {
 		raw, err := h.assets.ListRawAssetPaths(ctx, repoName)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -456,10 +456,4 @@ func (h *BrowseHandler) DeleteDockerImage(c *gin.Context) {
 
 	_ = h.components.DeleteOrphans(ctx, repoName)
 	c.Status(http.StatusNoContent)
-}
-
-// isOCIRegistryFormat reports whether a repository stores its content the way the
-// OCI Distribution handler does — /manifests/... and /blobs/... paths.
-func isOCIRegistryFormat(f domain.RepoFormat) bool {
-	return f == domain.FormatDocker || f == domain.FormatOCI
 }

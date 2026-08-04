@@ -153,7 +153,7 @@ func (r *RepoRepo) HasAnyAnonymousDocker(_ context.Context) (bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for _, v := range r.repos {
-		if (v.Format == domain.FormatDocker || v.Format == domain.FormatOCI) && v.AllowAnonymous {
+		if v.Format.IsOCIRegistry() && v.AllowAnonymous {
 			return true, nil
 		}
 	}

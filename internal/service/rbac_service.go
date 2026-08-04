@@ -41,7 +41,7 @@ func (s *RBACService) CanAccessRepo(ctx context.Context, userID string, roles []
 	checkPath := path
 	// Both labels of the OCI Distribution protocol store /manifests/... and
 	// /blobs/... paths, so both need the same normalisation before matching.
-	if repo.Format == domain.FormatDocker || repo.Format == domain.FormatOCI {
+	if repo.Format.IsOCIRegistry() {
 		checkPath = assetSamplePath(path)
 	}
 	return matchPrivileges(privs, repo.Name, checkPath, action), nil

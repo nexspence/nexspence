@@ -35,6 +35,15 @@ const (
 	TypeGroup  RepoType = "group"
 )
 
+// IsOCIRegistry reports whether a repository of this format speaks the OCI
+// Distribution protocol — the /v2/ surface with /manifests/... and /blobs/...
+// paths. One handler serves both labels: "docker" for container images, "oci"
+// for charts, ORAS artifacts and signatures. They differ only in presentation,
+// never in protocol behavior, so every protocol-level check uses this one method.
+func (f RepoFormat) IsOCIRegistry() bool {
+	return f == FormatDocker || f == FormatOCI
+}
+
 // Repository is a hosted, proxy, or group artifact repository of a given format.
 type Repository struct {
 	ID               string         `json:"id"`
