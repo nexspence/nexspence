@@ -2,9 +2,14 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"io"
 	"time"
 )
+
+// ErrNoSpace reports that a write failed because the backing storage ran out of
+// space. Callers map it to 507 Insufficient Storage instead of an opaque 500.
+var ErrNoSpace = errors.New("no space left on device")
 
 // BlobStore is the interface every storage backend must implement.
 // Keys are opaque strings (typically UUID-based paths).
