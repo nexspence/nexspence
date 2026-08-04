@@ -521,6 +521,63 @@ describe('BrowsePage — OCI tree', () => {
     expect(await screen.findByText('my-chart')).toBeInTheDocument()
     expect(screen.queryByText('No components in this repository')).not.toBeInTheDocument()
   })
+
+  // The tree is where a chart, a WASM module and a signature stop looking alike.
+  function seedOciTree(leaves: Record<string, unknown>[]) {
+    server.use(
+      http.get('/api/v1/browse/repositories/:name/docker-tree', () =>
+        HttpResponse.json({
+          root: {
+            kind: 'folder', label: '', path: '', children: [
+              {
+                kind: 'folder', label: 'my-chart', path: '/my-chart', imageRef: 'my-chart', children: [
+                  { kind: 'folder', label: 'Tags', path: '/my-chart/Tags', children: leaves },
+                ],
+              },
+            ],
+          },
+        }),
+      ),
+    )
+  }
+
+  it('badges a tag with the artifact type the manifest declared', async () => {
+    const user = userEvent.setup()
+    seedOciTree([
+      { kind: 'tag', label: '1.0.0', path: '/my-chart/Tags/1.0.0', imageRef: 'my-chart', version: '1.0.0', componentId: 'oc1', artifactType: 'chart' },
+    ])
+    renderBrowse('?repo=oci-hosted')
+    await user.click(await screen.findByText('my-chart'))
+    await user.click(await screen.findByText('Tags'))
+    const tagRow = (await screen.findByText('1.0.0')).closest('[role="button"]') as HTMLElement
+    expect(within(tagRow).getByText('chart')).toBeInTheDocument()
+  })
+
+  it('shows an unrecognized artifact type verbatim', async () => {
+    const user = userEvent.setup()
+    seedOciTree([
+      { kind: 'tag', label: '2.0.0', path: '/my-chart/Tags/2.0.0', imageRef: 'my-chart', version: '2.0.0', componentId: 'oc2', artifactType: 'application/vnd.acme.model.config.v1+json' },
+    ])
+    renderBrowse('?repo=oci-hosted')
+    await user.click(await screen.findByText('my-chart'))
+    await user.click(await screen.findByText('Tags'))
+    const tagRow = (await screen.findByText('2.0.0')).closest('[role="button"]') as HTMLElement
+    expect(within(tagRow).getByText('application/vnd.acme.model.config.v1+json')).toBeInTheDocument()
+  })
+
+  // Everything pushed before this feature existed arrives without the field, and
+  // must render exactly as it did then — no badge, empty or otherwise.
+  it('renders no badge for a tag with no artifact type', async () => {
+    const user = userEvent.setup()
+    seedOciTree([
+      { kind: 'tag', label: '3.0.0', path: '/my-chart/Tags/3.0.0', imageRef: 'my-chart', version: '3.0.0', componentId: 'oc3' },
+    ])
+    renderBrowse('?repo=oci-hosted')
+    await user.click(await screen.findByText('my-chart'))
+    await user.click(await screen.findByText('Tags'))
+    const tagRow = (await screen.findByText('3.0.0')).closest('[role="button"]') as HTMLElement
+    expect(within(tagRow).queryByTestId('artifact-type')).not.toBeInTheDocument()
+  })
 })
 
 describe('BrowsePage — promote flow', () => {

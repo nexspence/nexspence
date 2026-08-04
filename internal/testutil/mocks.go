@@ -267,6 +267,9 @@ type ComponentRepo struct {
 	Err        error // when non-nil, ListByRepoNames/Get/Search/Delete/SetTags return it (500-branch seam)
 	// DockerRowsByRepo maps repoName→browse rows; ListDockerBrowseRows returns the
 	// union of rows for the requested repo names (mirrors the SQL WHERE rep.name IN (...)).
+	// A row's ArtifactType stands for the SQL's extra->>'oci_artifact_type': the
+	// query projects it verbatim and reports the absent key as the empty string,
+	// so a row here is set the same way.
 	DockerRowsByRepo map[string][]domain.DockerBrowseRow
 	DockerBrowseErr  error // when non-nil, ListDockerBrowseRows returns it (500-branch seam)
 	// LastListLimit/LastListOffset record the paging arguments of the most recent

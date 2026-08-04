@@ -54,15 +54,16 @@ func mountBrowse(t *testing.T) (*gin.Engine, *testutil.RepoRepo, *testutil.Compo
 
 // browseNode mirrors the JSON shape of dockerBrowseNode / rawBrowseNode for assertions.
 type browseNode struct {
-	Kind        string       `json:"kind"`
-	Label       string       `json:"label"`
-	Path        string       `json:"path"`
-	Size        int64        `json:"size"`
-	SHA256      string       `json:"sha256"`
-	ImageRef    string       `json:"imageRef"`
-	Version     string       `json:"version"`
-	ComponentID string       `json:"componentId"`
-	Children    []browseNode `json:"children"`
+	Kind         string       `json:"kind"`
+	Label        string       `json:"label"`
+	Path         string       `json:"path"`
+	Size         int64        `json:"size"`
+	SHA256       string       `json:"sha256"`
+	ImageRef     string       `json:"imageRef"`
+	Version      string       `json:"version"`
+	ComponentID  string       `json:"componentId"`
+	ArtifactType string       `json:"artifactType"`
+	Children     []browseNode `json:"children"`
 }
 
 type browseTreeResp struct {

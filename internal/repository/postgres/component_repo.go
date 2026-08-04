@@ -251,13 +251,18 @@ func (r *componentRepo) ListDockerBrowseRows(ctx context.Context, repoNames []st
 	}
 	lim := len(args) + 1
 	args = append(args, maxRows)
+	// oci_artifact_type is grouped, not aggregated: it belongs to the component,
+	// and c.id — the components primary key — is already in the GROUP BY, so one
+	// value per group is all there is. Components pushed before that metadata
+	// existed have no such key and COALESCE reports them as carrying no type.
 	q := fmt.Sprintf(`
-		SELECT c.id, c.name, c.version, COALESCE(MIN(a.path), '') AS sample_path
+		SELECT c.id, c.name, c.version, COALESCE(MIN(a.path), '') AS sample_path,
+		       COALESCE(c.extra->>'oci_artifact_type', '') AS artifact_type
 		FROM components c
 		JOIN repositories rep ON rep.id = c.repository_id
 		LEFT JOIN assets a ON a.component_id = c.id
 		WHERE rep.name IN (%s) AND lower(trim(rep.format)) IN ('docker', 'oci')
-		GROUP BY c.id, c.name, c.version
+		GROUP BY c.id, c.name, c.version, c.extra
 		ORDER BY c.name, c.version
 		LIMIT $%d`, strings.Join(ph, ","), lim)
 	rows, err := r.db.Query(ctx, q, args...)
@@ -269,7 +274,7 @@ func (r *componentRepo) ListDockerBrowseRows(ctx context.Context, repoNames []st
 	var out []domain.DockerBrowseRow
 	for rows.Next() {
 		var row domain.DockerBrowseRow
-		if err := rows.Scan(&row.ComponentID, &row.ImageName, &row.Version, &row.SamplePath); err != nil {
+		if err := rows.Scan(&row.ComponentID, &row.ImageName, &row.Version, &row.SamplePath, &row.ArtifactType); err != nil {
 			return nil, err
 		}
 		out = append(out, row)
