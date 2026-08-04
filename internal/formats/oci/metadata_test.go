@@ -163,3 +163,31 @@ func TestPushManifest_StoresBodyVerbatim(t *testing.T) {
 	require.Equal(t, http.StatusOK, gw.Code)
 	assert.Equal(t, helmChartManifest, gw.Body.String())
 }
+
+func TestProxyManifest_RecordsArtifactMetadata(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v2/charts/nginx/manifests/1.2.3" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/vnd.oci.image.manifest.v1+json")
+		_, _ = w.Write([]byte(helmChartManifest))
+	}))
+	defer upstream.Close()
+
+	repo := &domain.Repository{
+		ID: "r2", Name: "oci-proxy", Format: domain.FormatOCI, Type: domain.TypeProxy, Online: true,
+		ProxyConfig: map[string]any{"remote_url": upstream.URL},
+	}
+	r, d := setupWithDeps(repo)
+
+	req := httptest.NewRequest(http.MethodGet, "/repository/oci-proxy/v2/charts/nginx/manifests/1.2.3", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code, "proxy should serve the upstream manifest")
+	assert.Equal(t, helmChartManifest, w.Body.String())
+
+	comp := componentOf(t, d, "oci-proxy", "charts/nginx", "1.2.3")
+	assert.Equal(t, "application/vnd.cncf.helm.config.v1+json", comp.Extra["oci_artifact_type"],
+		"a cached chart must be typed like a pushed one")
+}

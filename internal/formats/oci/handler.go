@@ -17,6 +17,7 @@ package oci
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -148,7 +149,9 @@ func (h *Handler) handleManifests(c *gin.Context, repoName, imageName, reference
 			}
 			if err := repoproxy.ServeGET(c, h.deps, repo, cachePath, upPath, coords, ct, maxAge); err != nil {
 				dockerError(c, http.StatusBadGateway, "UNKNOWN", err.Error())
+				return
 			}
+			h.recordCachedManifestMeta(c.Request.Context(), repo, cachePath)
 			return
 		}
 		h.pullManifest(c, repoName, imageName, reference)
@@ -261,6 +264,48 @@ func (h *Handler) pushManifest(c *gin.Context, repoName, imageName, reference st
 	c.Header("Docker-Content-Digest", digest)
 	c.Header("Location", "/v2/"+imageName+"/manifests/"+digest)
 	c.Status(http.StatusCreated)
+}
+
+// recordCachedManifestMeta types a manifest that repoproxy has just written to
+// the cache. ServeGET does not expose the body, so it is read back once — a
+// component that already carries a media type is left alone, keeping revalidated
+// manifests off the blob store.
+func (h *Handler) recordCachedManifestMeta(ctx context.Context, repo *domain.Repository, cachePath string) {
+	asset, err := h.deps.Assets.GetByPath(ctx, repo.Name, cachePath)
+	if err != nil || asset == nil {
+		return
+	}
+	comp, err := h.deps.Components.Get(ctx, asset.ComponentID)
+	if err != nil || comp == nil {
+		return
+	}
+	if _, typed := comp.Extra[extraMediaTypeKey]; typed {
+		return
+	}
+
+	store := h.deps.BlobStore
+	if asset.BlobStoreID != "" {
+		if bsMeta, getErr := h.deps.Blobs.GetByID(ctx, asset.BlobStoreID); getErr == nil {
+			store = base.PhysicalStore(ctx, h.deps, bsMeta)
+		}
+	}
+	rc, _, err := store.Get(ctx, asset.BlobKey)
+	if err != nil {
+		return
+	}
+	defer func() { _ = rc.Close() }()
+
+	body, err := io.ReadAll(io.LimitReader(rc, maxManifestBytes))
+	if err != nil {
+		return
+	}
+	meta, ok := parseManifestMeta(body)
+	if !ok {
+		return
+	}
+	if extra := extraFrom(meta); len(extra) > 0 {
+		_ = h.deps.Components.UpdateExtra(ctx, comp.ID, extra)
+	}
 }
 
 func (h *Handler) deleteManifest(c *gin.Context, repoName, imageName, reference string) {
