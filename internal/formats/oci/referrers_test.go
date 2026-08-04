@@ -224,6 +224,131 @@ func TestReferrers_DoesNotSwallowImageNamedReferrers(t *testing.T) {
 	assert.Equal(t, helmChartManifest, w.Body.String())
 }
 
+// ─── Proxy repositories ────────────────────────────────────────────────────
+
+// proxyOCIRepo is an OCI proxy repository pointed at the given upstream base.
+func proxyOCIRepo(id, name, remote string) *domain.Repository {
+	return &domain.Repository{
+		ID: id, Name: name, Format: domain.FormatOCI, Type: domain.TypeProxy, Online: true,
+		ProxyConfig: map[string]any{"remote_url": remote},
+	}
+}
+
+// upstreamSigDigest is the digest an upstream registry reports for the signature
+// attached to the subject — a manifest this proxy has never cached.
+const upstreamSigDigest = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+
+// upstreamReferrersIndex is what a real upstream returns from its referrers API.
+const upstreamReferrersIndex = `{
+  "schemaVersion": 2,
+  "mediaType": "application/vnd.oci.image.index.v1+json",
+  "manifests": [
+    {
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "size": 419,
+      "artifactType": "application/vnd.dev.cosign.artifact.sig.v1+json",
+      "annotations": {"org.opencontainers.image.created": "2026-08-01T00:00:00Z"}
+    }
+  ]
+}`
+
+const emptyIndexJSON = `{"schemaVersion":2,"mediaType":"application/vnd.oci.image.index.v1+json","manifests":[]}`
+
+// A proxy repository must answer from the upstream, not from whichever referring
+// manifests happen to sit in its cache: an under-reported index reads to cosign
+// as "this image is unsigned", which is worse than no answer at all.
+func TestReferrers_ProxyForwardsUpstreamIndex(t *testing.T) {
+	subject := digest("an image manifest that lives upstream")
+	var gotPath, gotQuery string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath, gotQuery = r.URL.Path, r.URL.RawQuery
+		if r.URL.Path != "/v2/charts/nginx/referrers/"+subject {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", ociIndexMediaType)
+		_, _ = w.Write([]byte(upstreamReferrersIndex))
+	}))
+	defer upstream.Close()
+
+	r, _ := setupWithDeps(proxyOCIRepo("r2", "oci-proxy", upstream.URL))
+
+	w, idx, descs := getReferrers(t, r, "oci-proxy", "charts/nginx", subject, "")
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "/v2/charts/nginx/referrers/"+subject, gotPath,
+		"the upstream referrers endpoint must be asked, unescaped")
+	assert.Empty(t, gotQuery)
+	assert.Equal(t, ociIndexMediaType, w.Header().Get("Content-Type"))
+	assert.Equal(t, ociIndexMediaType, idx.MediaType)
+	require.Len(t, descs, 1, "the upstream's referrer must reach the client")
+	assert.Equal(t, upstreamSigDigest, descs[0].Digest)
+	assert.Equal(t, cosignSigArtifactType, descs[0].ArtifactType)
+	assert.JSONEq(t, upstreamReferrersIndex, w.Body.String(), "the index is passed through verbatim")
+}
+
+// artifactType must reach the upstream, and the upstream's OCI-Filters-Applied
+// must reach the client: without the header a client cannot tell a filtered list
+// from a complete one, and the filter itself would silently be ignored.
+func TestReferrers_ProxyForwardsArtifactTypeFilter(t *testing.T) {
+	subject := digest("an image manifest that lives upstream")
+	var gotQuery string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.RawQuery
+		w.Header().Set("Content-Type", ociIndexMediaType)
+		if r.URL.Query().Get("artifactType") == cosignSigArtifactType {
+			w.Header().Set("OCI-Filters-Applied", "artifactType")
+			_, _ = w.Write([]byte(upstreamReferrersIndex))
+			return
+		}
+		_, _ = w.Write([]byte(emptyIndexJSON))
+	}))
+	defer upstream.Close()
+
+	r, _ := setupWithDeps(proxyOCIRepo("r2", "oci-proxy", upstream.URL))
+
+	w, _, descs := getReferrers(t, r, "oci-proxy", "charts/nginx", subject,
+		"?artifactType="+url.QueryEscape(cosignSigArtifactType))
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "artifactType="+url.QueryEscape(cosignSigArtifactType), gotQuery,
+		"the filter must reach the upstream unmangled")
+	require.Len(t, descs, 1)
+	assert.Equal(t, "artifactType", w.Header().Get("OCI-Filters-Applied"),
+		"the upstream's filter announcement must reach the client")
+}
+
+// An upstream with no referrers API answers 404. That is not an error to relay:
+// a client asking "is this signed" needs a definite empty answer.
+func TestReferrers_ProxyUpstreamWithoutEndpointIsEmptyIndex(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer upstream.Close()
+
+	r, _ := setupWithDeps(proxyOCIRepo("r2", "oci-proxy", upstream.URL))
+
+	w, _, descs := getReferrers(t, r, "oci-proxy", "charts/nginx", digest("subject"), "")
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Empty(t, descs)
+	assert.JSONEq(t, emptyIndexJSON, w.Body.String())
+	assert.Contains(t, w.Body.String(), `"manifests":[]`, "manifests must be [] and not null")
+}
+
+// An unreachable upstream must not become a 500: a signature-checking client
+// cannot interpret a proxy's connectivity failure, so it gets an empty index.
+func TestReferrers_ProxyUnreachableUpstreamIsEmptyIndex(t *testing.T) {
+	closed := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	remote := closed.URL
+	closed.Close() // nothing listens on this port any more
+
+	r, _ := setupWithDeps(proxyOCIRepo("r2", "oci-proxy", remote))
+
+	w, _, descs := getReferrers(t, r, "oci-proxy", "charts/nginx", digest("subject"), "")
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Empty(t, descs)
+	assert.JSONEq(t, emptyIndexJSON, w.Body.String())
+}
+
 // Only GET (and HEAD, which gin serves through the same handler) reads referrers;
 // a write verb is not part of the API.
 func TestReferrers_RejectsNonGET(t *testing.T) {

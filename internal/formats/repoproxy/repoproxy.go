@@ -237,6 +237,32 @@ func serveCachedAsset(c *gin.Context, d formats.Deps, asset *domain.Asset, rc io
 	c.DataFromReader(http.StatusOK, asset.SizeBytes, asset.ContentType, rc, nil)
 }
 
+// FetchUpstreamOnce performs a single upstream GET and returns the raw response
+// without caching anything. It exists for computed registry endpoints — the
+// referrers API, the catalog — whose responses are generated per request and are
+// not artifacts, so the blob-backed cache in ServeGET does not apply.
+//
+// upstreamPath is the repository-relative path; rawQuery is the already-encoded
+// query string (without the leading "?") and must be passed separately, because
+// JoinURL percent-escapes whatever it is handed as a path — a "?" glued on would
+// arrive upstream as %3F, i.e. part of the digest, not a filter.
+//
+// The caller must close the response body.
+func FetchUpstreamOnce(ctx context.Context, repo *domain.Repository, upstreamPath, rawQuery string, hdr http.Header) (*http.Response, error) {
+	baseRemote, err := RemoteURL(repo)
+	if err != nil {
+		return nil, err
+	}
+	upstream, err := JoinURL(baseRemote, upstreamPath)
+	if err != nil {
+		return nil, err
+	}
+	if rawQuery != "" {
+		upstream += "?" + rawQuery
+	}
+	return fetchUpstreamWithDockerHubAuth(ctx, ClientFor(repo), http.MethodGet, upstream, baseRemote, hdr)
+}
+
 // ServeGET serves a cached asset or fetches upstream, streaming to the client
 // and persisting to the blob store on success. repo must be TypeProxy.
 // upstreamPath, when non-empty, is used only for the upstream URL (e.g. npm scoped metadata);

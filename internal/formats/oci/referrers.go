@@ -2,11 +2,14 @@ package oci
 
 import (
 	"context"
+	"encoding/json"
+	"io"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
+	"github.com/nexspence-oss/nexspence/internal/formats/repoproxy"
 )
 
 // mediaTypeImageIndex is the media type of the referrers response document.
@@ -39,9 +42,17 @@ func (h *Handler) handleReferrers(c *gin.Context, repoName, imageName, subjectDi
 	}
 	ctx := c.Request.Context()
 
-	// Non-nil so an empty result serializes as [] and not null: a null breaks
-	// clients that range over the list.
-	index := imageIndex{SchemaVersion: 2, MediaType: mediaTypeImageIndex, Manifests: []descriptor{}}
+	// A proxy repository answers from upstream. Its cache holds only the
+	// referring manifests that happen to have been pulled through it, so the
+	// local query would under-report — and an under-reported index reads to a
+	// signature checker as "this image is unsigned".
+	repo, _ := h.deps.Repos.Get(ctx, repoName)
+	if repo != nil && repo.Type == domain.TypeProxy {
+		h.proxyReferrers(c, repo, imageName, subjectDigest)
+		return
+	}
+
+	index := newIndex()
 	filter := c.Query("artifactType")
 
 	comps, err := h.deps.Components.ListOCIReferrers(ctx, []string{repoName}, imageName, subjectDigest)
@@ -77,6 +88,66 @@ func (h *Handler) handleReferrers(c *gin.Context, repoName, imageName, subjectDi
 	// Content-Type is present yet.
 	c.Header("Content-Type", mediaTypeImageIndex)
 	c.JSON(http.StatusOK, index)
+}
+
+// proxyReferrers forwards the request upstream. Anything other than a usable
+// upstream answer — no such endpoint, an error status, an unreachable host —
+// becomes an empty index: a client asking "is this image signed" must get a
+// definite "no referrers here" rather than a failure it cannot interpret.
+func (h *Handler) proxyReferrers(c *gin.Context, repo *domain.Repository, imageName, subjectDigest string) {
+	upPath := "/v2/" + imageName + "/referrers/" + subjectDigest
+	hdr := http.Header{"Accept": []string{mediaTypeImageIndex}}
+	// The query goes as its own argument: JoinURL escapes everything it is given
+	// as a path, so a "?" glued on would reach upstream as %3F and the
+	// artifactType filter would silently never be applied.
+	resp, err := repoproxy.FetchUpstreamOnce(c.Request.Context(), repo, upPath, c.Request.URL.RawQuery, hdr)
+	if err != nil {
+		emptyIndex(c)
+		return
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		emptyIndex(c)
+		return
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxManifestBytes))
+	if err != nil || !looksLikeIndex(body) {
+		emptyIndex(c)
+		return
+	}
+	if applied := resp.Header.Get("OCI-Filters-Applied"); applied != "" {
+		c.Header("OCI-Filters-Applied", applied)
+	}
+	c.Data(http.StatusOK, mediaTypeImageIndex, body)
+}
+
+// looksLikeIndex reports whether the upstream body is at least shaped like an
+// image index. The body is passed through byte for byte rather than re-encoded —
+// re-encoding through the local structs would drop spec fields this package does
+// not model (platform, urls, subject, top-level annotations) and corrupt valid
+// answers. So the check is deliberately shallow: it exists to stop a captive
+// portal's HTML, or an error document served with a 200, from being handed to a
+// client under an image-index content type.
+func looksLikeIndex(body []byte) bool {
+	var probe struct {
+		Manifests []json.RawMessage `json:"manifests"`
+	}
+	return json.Unmarshal(body, &probe) == nil && probe.Manifests != nil
+}
+
+// newIndex is a referrers index with no entries. Manifests is non-nil so an
+// empty result serializes as [] and not null: a null breaks clients that range
+// over the list.
+func newIndex() imageIndex {
+	return imageIndex{SchemaVersion: 2, MediaType: mediaTypeImageIndex, Manifests: []descriptor{}}
+}
+
+// emptyIndex answers with a well-formed index carrying no referrers.
+func emptyIndex(c *gin.Context) {
+	// Set before c.JSON, which only fills in application/json when no
+	// Content-Type is present yet.
+	c.Header("Content-Type", mediaTypeImageIndex)
+	c.JSON(http.StatusOK, newIndex())
 }
 
 // descriptorOf renders one referring component as an index entry. The digest and
