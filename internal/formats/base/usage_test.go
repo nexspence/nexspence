@@ -136,6 +136,35 @@ func TestDeleteArtifact_SharedBlobKey_DecrementsOnlyWhenTheBytesGo(t *testing.T)
 		"the last reference frees the blob and its size")
 }
 
+// The repository quota is measured the same way, off the assets in the
+// repository: a manifest the repository stores once must not be charged to it
+// twice because a digest alias names it too.
+func TestStoreArtifact_ManifestAliasDoesNotEatTheRepositoryQuota(t *testing.T) {
+	const manifest = `{"schemaVersion":2}`
+	quota := int64(2 * len(manifest))
+	repo := testutil.SimpleRepo("usage-repoquota", "oci")
+	repo.QuotaBytes = &quota
+	d, _, _, _ := deps(repo)
+	ctx := context.Background()
+
+	res, err := base.StoreArtifact(ctx, d,
+		"usage-repoquota", "/manifests/app/1.0", "application/vnd.oci.image.manifest.v1+json",
+		base.Coords{Name: "app", Version: "1.0"},
+		strings.NewReader(manifest), int64(len(manifest)))
+	require.NoError(t, err)
+	_, err = base.RegisterStoredBlob(ctx, d, repo,
+		"/manifests/app/sha256:"+res.SHA256, "application/vnd.oci.image.manifest.v1+json",
+		base.Coords{Name: "app", Version: "sha256:" + res.SHA256},
+		res.Asset.BlobKey, res.SHA256, res.SHA1, res.MD5, res.Size, "", "")
+	require.NoError(t, err)
+
+	_, err = base.StoreArtifact(ctx, d,
+		"usage-repoquota", "/manifests/app/2.0", "application/vnd.oci.image.manifest.v1+json",
+		base.Coords{Name: "app", Version: "2.0"},
+		strings.NewReader(manifest), int64(len(manifest)))
+	require.NoError(t, err, "the repository holds one manifest and has room for another")
+}
+
 // The user-visible symptom: a store whose counter double-counted an OCI
 // manifest refuses the next push although the bytes fit.
 func TestStoreArtifact_ManifestAliasDoesNotEatTheQuota(t *testing.T) {

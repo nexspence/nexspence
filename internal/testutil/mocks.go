@@ -830,11 +830,20 @@ func (a *AssetRepo) SumSizeByRepo(_ context.Context, repoName string) (int64, er
 	if a.Err != nil {
 		return 0, a.Err
 	}
-	var total int64
+	// Mirrors the SQL: one size per distinct blob key, largest wins. Several
+	// assets can name one stored object, and the repository holds it once.
+	perKey := make(map[string]int64)
 	for _, v := range a.byID {
-		if v.Repository == repoName {
-			total += v.SizeBytes
+		if v.Repository != repoName {
+			continue
 		}
+		if v.SizeBytes > perKey[v.BlobKey] {
+			perKey[v.BlobKey] = v.SizeBytes
+		}
+	}
+	var total int64
+	for _, size := range perKey {
+		total += size
 	}
 	return total, nil
 }

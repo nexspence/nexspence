@@ -667,6 +667,46 @@ func TestAssetRepo_SumSizeByRepo_ReturnsCorrectSum(t *testing.T) {
 	}
 }
 
+// A repository holds one copy of an object however many assets name it — an OCI
+// manifest's tag and its digest alias, a blob mounted from another image — and
+// the repository quota is measured off this sum (issue #146).
+func TestAssetRepo_SumSizeByRepo_SharedBlobKeyCountedOnce(t *testing.T) {
+	pool := pgtest.Pool(t)
+	pgtest.Truncate(t, pool, "blob_stores", "repositories", "components")
+	ctx := context.Background()
+
+	p := makeAssetParent(t, ctx, "sumshared")
+	repo := NewAssetRepo(pool)
+
+	const shared = "bk_sum_shared"
+	tag := makeAsset(p, "/manifests/app/1.0")
+	tag.BlobKey = shared
+	tag.SizeBytes = 500
+	if err := repo.Create(ctx, tag); err != nil {
+		t.Fatalf("Create tag: %v", err)
+	}
+	alias := makeAsset(p, "/manifests/app/sha256:abc")
+	alias.BlobKey = shared
+	alias.SizeBytes = 500
+	if err := repo.Create(ctx, alias); err != nil {
+		t.Fatalf("Create alias: %v", err)
+	}
+	other := makeAsset(p, "/blobs/app/layer")
+	other.BlobKey = "bk_sum_other"
+	other.SizeBytes = 70
+	if err := repo.Create(ctx, other); err != nil {
+		t.Fatalf("Create other: %v", err)
+	}
+
+	total, err := repo.SumSizeByRepo(ctx, p.RepoName)
+	if err != nil {
+		t.Fatalf("SumSizeByRepo: %v", err)
+	}
+	if total != 570 {
+		t.Errorf("SumSizeByRepo: got %d want 570 (one object counted once, plus the layer)", total)
+	}
+}
+
 func TestAssetRepo_SumSizeByRepo_EmptyReturnsZero(t *testing.T) {
 	pool := pgtest.Pool(t)
 	pgtest.Truncate(t, pool, "blob_stores", "repositories", "components")

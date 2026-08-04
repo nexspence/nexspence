@@ -353,12 +353,21 @@ func (r *assetRepo) ListAllBlobKeys(ctx context.Context) ([]string, error) {
 	return keys, rows.Err()
 }
 
+// SumSizeByRepo returns the bytes the repository occupies: one size per stored
+// object, since several assets can name one — an OCI manifest's tag and its
+// digest alias, a blob mounted from another image in the same repository.
+// Charging a repository once per asset row put it over its quota at half the
+// bytes it actually stored (issue #146). Rows that disagree about the size of a
+// key are read at their largest, the reading that cannot let a quota overrun.
 func (r *assetRepo) SumSizeByRepo(ctx context.Context, repoName string) (int64, error) {
 	row := r.db.QueryRow(ctx, `
-		SELECT COALESCE(SUM(a.size_bytes), 0)
-		FROM assets a
-		JOIN repositories rep ON rep.id = a.repository_id
-		WHERE rep.name = $1`, repoName)
+		SELECT COALESCE(SUM(k.size_bytes), 0) FROM (
+			SELECT DISTINCT ON (a.blob_key) a.size_bytes
+			FROM assets a
+			JOIN repositories rep ON rep.id = a.repository_id
+			WHERE rep.name = $1
+			ORDER BY a.blob_key, a.size_bytes DESC
+		) k`, repoName)
 	var n int64
 	if err := row.Scan(&n); err != nil {
 		return 0, err
