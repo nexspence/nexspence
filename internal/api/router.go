@@ -235,7 +235,10 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 	userH := handlers.NewUserHandler(userSvc)
 	blobH := handlers.NewBlobStoreHandler(blobRepo).WithUsageDeps(repoRepo, assetRepo).WithRegistry(blobRegistry).WithGC(gcSvc)
 	componentH := handlers.NewComponentHandler(componentRepo, assetRepo, repoRepo, cfg.HTTP.BaseURL).WithRBAC(rbacSvc)
-	browseH := handlers.NewBrowseHandler(repoRepo, componentRepo, assetRepo, blobRepo, localBlob, rbacSvc)
+	// The same Deps the format handlers get: a browse delete removes the same
+	// artifacts a registry delete does, from the same stores, with the same
+	// webhook.
+	browseH := handlers.NewBrowseHandler(formatDeps, rbacSvc)
 	cleanupH := handlers.NewCleanupHandler(cleanupRepo, repoRepo, cleanupSvc)
 	auditH := handlers.NewAuditHandler(auditRepo)
 	scanSvc := service.NewScanService(componentRepo, cfg.HTTP.BaseURL).

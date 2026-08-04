@@ -13,6 +13,7 @@ import (
 
 	"github.com/nexspence-oss/nexspence/internal/api/handlers"
 	"github.com/nexspence-oss/nexspence/internal/domain"
+	"github.com/nexspence-oss/nexspence/internal/formats"
 	"github.com/nexspence-oss/nexspence/internal/service"
 	"github.com/nexspence-oss/nexspence/internal/testutil"
 )
@@ -28,7 +29,13 @@ func mountBrowse(t *testing.T) (*gin.Engine, *testutil.RepoRepo, *testutil.Compo
 	blobs := testutil.NewBlobStoreRepo()
 	store := testutil.NewBlobStore()
 	rbacSvc := service.NewRBACService(emptyRBACRepo{}, repos, zap.NewNop().Sugar())
-	h := handlers.NewBrowseHandler(repos, comps, assets, blobs, store, rbacSvc)
+	h := handlers.NewBrowseHandler(formats.Deps{
+		Repos:      repos,
+		Components: comps,
+		Assets:     assets,
+		Blobs:      blobs,
+		BlobStore:  store,
+	}, rbacSvc)
 
 	r := gin.New()
 	r.Use(func(c *gin.Context) {

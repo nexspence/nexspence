@@ -27,7 +27,7 @@ func (h *BrowseHandler) RawTree(c *gin.Context) {
 	repoName := c.Param("name")
 	ctx := c.Request.Context()
 
-	repo, err := h.repos.Get(ctx, repoName)
+	repo, err := h.deps.Repos.Get(ctx, repoName)
 	if err != nil || repo == nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "repository not found"})
 		return
@@ -50,7 +50,7 @@ func (h *BrowseHandler) RawTree(c *gin.Context) {
 		}
 	}
 
-	rows, err := h.assets.ListRawBrowseAssets(ctx, repoNames)
+	rows, err := h.deps.Assets.ListRawBrowseAssets(ctx, repoNames)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

@@ -123,6 +123,14 @@ func rewritePackageURL(rawURL, remoteBase, platform, localBase string) string {
 	return localBase + rel
 }
 
+// sameUpstreamHost and normalizedHost below are, for now, twins of helm's. The two
+// rewriters around them are NOT interchangeable — conda resolves against the subdir
+// and proxies from the channel root, helm does both at the repository root — so only
+// these two leaves are shared logic. They are duplicated rather than lifted into
+// repoproxy because that move would have to change helm in the same commit, and this
+// change is scoped to the conda package; lifting them is worth doing once a third
+// format needs them.
+//
 // sameUpstreamHost reports whether two URLs address the same upstream host. The
 // scheme itself is ignored — an index served over https routinely lists http URLs and
 // the reverse — but each scheme's default port is normalized away first, so an entry

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -10,25 +11,25 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
+	"github.com/nexspence-oss/nexspence/internal/formats"
 	"github.com/nexspence-oss/nexspence/internal/formats/base"
-	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/service"
 	"github.com/nexspence-oss/nexspence/internal/storage"
 )
 
 // BrowseHandler serves Nexspence-native browse APIs.
 type BrowseHandler struct {
-	repos      repository.RepositoryRepo
-	components repository.ComponentRepo
-	assets     repository.AssetRepo
-	blobs      repository.BlobStoreRepo
-	blobStore  storage.BlobStore
-	rbac       *service.RBACService
+	deps formats.Deps
+	rbac *service.RBACService
 }
 
-// NewBrowseHandler constructs a BrowseHandler from the repositories, blob store, and RBAC service it needs.
-func NewBrowseHandler(repos repository.RepositoryRepo, components repository.ComponentRepo, assets repository.AssetRepo, blobs repository.BlobStoreRepo, blobStore storage.BlobStore, rbac *service.RBACService) *BrowseHandler {
-	return &BrowseHandler{repos: repos, components: components, assets: assets, blobs: blobs, blobStore: blobStore, rbac: rbac}
+// NewBrowseHandler constructs a BrowseHandler over the same formats.Deps the
+// format handlers are built from. Deleting through the browse API removes the
+// same artifacts the registry API removes, so it has to see storage the same
+// way: the blob store registry that resolves an asset's own store, and the
+// webhook bus that reports a deletion.
+func NewBrowseHandler(deps formats.Deps, rbac *service.RBACService) *BrowseHandler {
+	return &BrowseHandler{deps: deps, rbac: rbac}
 }
 
 // dockerBrowseNode is a Nexus-style folder or leaf in the Docker browse tree.
@@ -47,7 +48,7 @@ func (h *BrowseHandler) DockerTree(c *gin.Context) {
 	repoName := c.Param("name")
 	ctx := c.Request.Context()
 
-	repo, err := h.repos.Get(ctx, repoName)
+	repo, err := h.deps.Repos.Get(ctx, repoName)
 	if err != nil || repo == nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "repository not found"})
 		return
@@ -70,7 +71,7 @@ func (h *BrowseHandler) DockerTree(c *gin.Context) {
 		}
 	}
 
-	rows, err := h.components.ListDockerBrowseRows(ctx, repoNames, 3000)
+	rows, err := h.deps.Components.ListDockerBrowseRows(ctx, repoNames, 3000)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -105,7 +106,7 @@ func (h *BrowseHandler) PathTree(c *gin.Context) {
 	q := c.Query("q")
 	ctx := c.Request.Context()
 
-	repo, err := h.repos.Get(ctx, repoName)
+	repo, err := h.deps.Repos.Get(ctx, repoName)
 	if err != nil || repo == nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "repository not found"})
 		return
@@ -113,7 +114,7 @@ func (h *BrowseHandler) PathTree(c *gin.Context) {
 
 	var paths []string
 	if repo.Format.IsOCIRegistry() {
-		raw, err := h.assets.ListRawAssetPaths(ctx, repoName)
+		raw, err := h.deps.Assets.ListRawAssetPaths(ctx, repoName)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -121,7 +122,7 @@ func (h *BrowseHandler) PathTree(c *gin.Context) {
 		paths = dockerImageDirs(raw, q)
 	} else {
 		var err error
-		paths, err = h.assets.ListPathsByRepo(ctx, repoName, q)
+		paths, err = h.deps.Assets.ListPathsByRepo(ctx, repoName, q)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -284,9 +285,22 @@ func sortBrowseChildren(n *dockerBrowseNode) {
 	}
 }
 
+// assetStore returns the physical blob store that actually holds an asset's
+// bytes. A repository can be pinned to a blob store of its own, and reading or
+// deleting through the default store then addresses a store the asset was never
+// written to: the delete silently misses and the read comes back empty.
+func (h *BrowseHandler) assetStore(ctx context.Context, asset *domain.Asset) storage.BlobStore {
+	if asset != nil && asset.BlobStoreID != "" {
+		if bsMeta, err := h.deps.Blobs.GetByID(ctx, asset.BlobStoreID); err == nil {
+			return base.PhysicalStore(ctx, h.deps, bsMeta)
+		}
+	}
+	return h.deps.BlobStore
+}
+
 // DeleteByPath handles DELETE /api/v1/browse/repositories/:name/path
 // Query param: path=<prefix> (required). Deletes all assets whose path starts with
-// the prefix, then removes orphan components. Blobs are cleaned by the GC scheduler.
+// the prefix, then removes orphan components.
 func (h *BrowseHandler) DeleteByPath(c *gin.Context) {
 	repoName := c.Param("name")
 	pathPrefix := c.Query("path")
@@ -296,20 +310,18 @@ func (h *BrowseHandler) DeleteByPath(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	assets, err := h.assets.ListByRepoAndPath(ctx, repoName, pathPrefix)
+	assets, err := h.deps.Assets.ListByRepoAndPath(ctx, repoName, pathPrefix)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	for _, a := range assets {
-		if err := h.assets.Delete(ctx, a.ID); err != nil {
+		if err := base.DeleteArtifact(ctx, h.deps, repoName, a.Path); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-		asset := a
-		_ = base.DecrementBlobStoreUsage(ctx, h.blobs, &asset)
 	}
-	if err := h.components.DeleteOrphans(ctx, repoName); err != nil {
+	if err := h.deps.Components.DeleteOrphans(ctx, repoName); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -332,38 +344,40 @@ func (h *BrowseHandler) DeleteDockerTag(c *gin.Context) {
 
 	// 1. Load the tag manifest asset and read its content.
 	tagPath := "/manifests/" + imageName + "/" + ref
-	tagAsset, err := h.assets.GetByPath(ctx, repoName, tagPath)
+	tagAsset, err := h.deps.Assets.GetByPath(ctx, repoName, tagPath)
 	if err != nil || tagAsset == nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "manifest not found"})
 		return
 	}
 
-	deletedDigests := parseManifestDigests(h.blobStore.Get(ctx, tagAsset.BlobKey))
+	// Read through the store that holds this asset: a repository on its own blob
+	// store keeps its manifests there, and reading the default store would return
+	// nothing — leaving deletedDigests empty and the layers below never swept.
+	deletedDigests := parseManifestDigests(h.assetStore(ctx, tagAsset).Get(ctx, tagAsset.BlobKey))
 
-	// 2. Delete tag manifest asset record and its digest alias.
-	// Both share the same physical blob — delete it once after removing both records.
-	manifestBlobKey := tagAsset.BlobKey
-	if err := h.assets.Delete(ctx, tagAsset.ID); err == nil {
-		_ = base.DecrementBlobStoreUsage(ctx, h.blobs, tagAsset)
+	// 2. Delete the tag manifest record and its digest alias — two records of one
+	// manifest on one blob. DeleteArtifact keeps a blob alive while another asset
+	// still references it, so the shared blob goes with whichever record is
+	// deleted last and the order of these two no longer matters.
+	if err := base.DeleteArtifact(ctx, h.deps, repoName, tagPath); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
 	}
-
 	digestAliasPath := "/manifests/" + imageName + "/sha256:" + tagAsset.SHA256
 	if digestAliasPath != tagPath {
-		if aliasAsset, aerr := h.assets.GetByPath(ctx, repoName, digestAliasPath); aerr == nil && aliasAsset != nil {
-			if err := h.assets.Delete(ctx, aliasAsset.ID); err == nil {
-				_ = base.DecrementBlobStoreUsage(ctx, h.blobs, aliasAsset)
-			}
+		if err := base.DeleteArtifact(ctx, h.deps, repoName, digestAliasPath); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
 		}
 	}
-	// Physical manifest blob: safe to delete now that both asset records are gone.
-	_ = h.blobStore.Delete(ctx, manifestBlobKey)
 
 	// 3. Collect digests still referenced by remaining manifests of this image.
 	//    This correctly handles shared layers between tags (e.g. latest and 3.15-rc share base layers).
 	stillUsed := make(map[string]struct{})
-	remaining, _ := h.assets.ListByRepoAndPath(ctx, repoName, "/manifests/"+imageName+"/")
-	for _, ra := range remaining {
-		for _, d := range parseManifestDigests(h.blobStore.Get(ctx, ra.BlobKey)) {
+	remaining, _ := h.deps.Assets.ListByRepoAndPath(ctx, repoName, "/manifests/"+imageName+"/")
+	for i := range remaining {
+		ra := remaining[i]
+		for _, d := range parseManifestDigests(h.assetStore(ctx, &ra).Get(ctx, ra.BlobKey)) {
 			stillUsed[d] = struct{}{}
 		}
 	}
@@ -373,19 +387,14 @@ func (h *BrowseHandler) DeleteDockerTag(c *gin.Context) {
 		if _, inUse := stillUsed[digest]; inUse {
 			continue
 		}
-		blobPath := "/blobs/" + imageName + "/" + digest
-		blobAsset, berr := h.assets.GetByPath(ctx, repoName, blobPath)
-		if berr != nil || blobAsset == nil {
-			continue
-		}
-		_ = h.blobStore.Delete(ctx, blobAsset.BlobKey)
-		if err := h.assets.Delete(ctx, blobAsset.ID); err == nil {
-			_ = base.DecrementBlobStoreUsage(ctx, h.blobs, blobAsset)
+		if err := base.DeleteArtifact(ctx, h.deps, repoName, "/blobs/"+imageName+"/"+digest); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
 		}
 	}
 
 	// 5. Remove orphaned component records.
-	_ = h.components.DeleteOrphans(ctx, repoName)
+	_ = h.deps.Components.DeleteOrphans(ctx, repoName)
 
 	c.Status(http.StatusNoContent)
 }
@@ -434,26 +443,18 @@ func (h *BrowseHandler) DeleteDockerImage(c *gin.Context) {
 	ctx := c.Request.Context()
 	prefix := imageName + "/"
 
-	// Delete all manifest blobs and asset records.
-	manifests, _ := h.assets.ListByRepoAndPath(ctx, repoName, "/manifests/"+prefix)
-	for _, a := range manifests {
-		_ = h.blobStore.Delete(ctx, a.BlobKey)
-		if err := h.assets.Delete(ctx, a.ID); err == nil {
-			asset := a
-			_ = base.DecrementBlobStoreUsage(ctx, h.blobs, &asset)
+	// Delete all manifest records, then all layer/config blob records. Each goes
+	// through DeleteArtifact, so the bytes are removed from the store that holds
+	// them and the deletion is reported like any other.
+	manifests, _ := h.deps.Assets.ListByRepoAndPath(ctx, repoName, "/manifests/"+prefix)
+	blobs, _ := h.deps.Assets.ListByRepoAndPath(ctx, repoName, "/blobs/"+prefix)
+	for _, a := range append(manifests, blobs...) {
+		if err := base.DeleteArtifact(ctx, h.deps, repoName, a.Path); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
 		}
 	}
 
-	// Delete all layer/config blobs and asset records.
-	blobs, _ := h.assets.ListByRepoAndPath(ctx, repoName, "/blobs/"+prefix)
-	for _, a := range blobs {
-		_ = h.blobStore.Delete(ctx, a.BlobKey)
-		if err := h.assets.Delete(ctx, a.ID); err == nil {
-			asset := a
-			_ = base.DecrementBlobStoreUsage(ctx, h.blobs, &asset)
-		}
-	}
-
-	_ = h.components.DeleteOrphans(ctx, repoName)
+	_ = h.deps.Components.DeleteOrphans(ctx, repoName)
 	c.Status(http.StatusNoContent)
 }
