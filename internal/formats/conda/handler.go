@@ -205,7 +205,9 @@ func (h *Handler) serveProxy(c *gin.Context, repo *domain.Repository, repoName, 
 
 	// Package binary: cache via repoproxy. Conda packages are immutable
 	// (repodata.json — the mutable index — is handled by proxyRepodata above).
-	coords := base.Coords{Name: filename, Group: platform}
+	// A repodata.json entry may point below the subdir, so filename can carry a
+	// directory; the component is named after the package file alone.
+	coords := base.Coords{Name: path.Base(filename), Group: platform}
 	if err := repoproxy.ServeGET(c, h.deps, repo, p, "", coords, "application/x-tar", 0); err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 	}
@@ -243,35 +245,11 @@ func (h *Handler) proxyRepodata(c *gin.Context, repo *domain.Repository, repoNam
 		return
 	}
 
-	localBase := strings.TrimRight(h.deps.BaseURL, "/") + "/repository/" + repoName + "/" + platform + "/"
-	rewriteCondaURLs(doc, localBase)
+	// The proxy base is the CHANNEL root, not the subdir: an entry may name a sibling
+	// subdir, and rewritePackageURL resolves each one against the subdir it came from.
+	localBase := strings.TrimRight(h.deps.BaseURL, "/") + "/repository/" + repoName + "/"
+	rewriteCondaURLs(doc, remoteBase, platform, localBase)
 
 	data, _ := json.Marshal(doc)
 	c.Data(http.StatusOK, "application/json", data)
-}
-
-// rewriteCondaURLs rewrites "url" and "urls" fields inside "packages" and "packages.conda"
-// so downloads route through this proxy.
-func rewriteCondaURLs(doc map[string]any, localBase string) {
-	for _, key := range []string{"packages", "packages.conda"} {
-		pkgs, _ := doc[key].(map[string]any)
-		for filename, v := range pkgs {
-			entry, ok := v.(map[string]any)
-			if !ok {
-				continue
-			}
-			if u, ok := entry["url"].(string); ok {
-				entry["url"] = localBase + path.Base(u)
-			}
-			if urls, ok := entry["urls"].([]any); ok {
-				for i, u := range urls {
-					if s, ok := u.(string); ok {
-						urls[i] = localBase + path.Base(s)
-					}
-				}
-				entry["urls"] = urls
-			}
-			doc[key].(map[string]any)[filename] = entry
-		}
-	}
 }

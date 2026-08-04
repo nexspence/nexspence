@@ -392,7 +392,10 @@ func TestConda_Proxy_Package_Fetch(t *testing.T) {
 // ─── rewriteCondaURLs: urls array (packages.conda) ───────────────
 
 func TestConda_ProxyRepodata_RewritesUrlsArray(t *testing.T) {
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	// The entry is absolute under the configured channel — a URL on a foreign host is
+	// deliberately left alone, and is covered in proxy_subpath_test.go.
+	var upstream *httptest.Server
+	upstream = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		doc := map[string]any{
 			"info":     map[string]any{"subdir": "linux-64"},
@@ -401,7 +404,7 @@ func TestConda_ProxyRepodata_RewritesUrlsArray(t *testing.T) {
 				"numpy-1.24.0-py311_0.conda": map[string]any{
 					"name":    "numpy",
 					"version": "1.24.0",
-					"urls":    []any{"https://conda.anaconda.org/defaults/linux-64/numpy-1.24.0-py311_0.conda"},
+					"urls":    []any{upstream.URL + "/linux-64/numpy-1.24.0-py311_0.conda"},
 				},
 			},
 		}
