@@ -247,7 +247,8 @@ Published on the [Terraform Registry](https://registry.terraform.io/providers/ne
 | npm | ✓ | ✓ | ✓ |
 | PyPI | ✓ | ✓ | ✓ |
 | Go modules (GOPROXY v2) | ✓ | ✓ | ✓ |
-| Docker / OCI | ✓ | ✓ | ✓ |
+| Docker | ✓ | ✓ | ✓ |
+| OCI artifacts (Helm `oci://` push, ORAS, cosign) | ✓ | ✓ | ✓ |
 | NuGet v2 / v3 | ✓ | ✓ | ✓ |
 | Helm charts | ✓ | ✓ | ✓ |
 | Cargo (Rust) | ✓ | ✓ | ✓ |
