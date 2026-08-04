@@ -187,6 +187,25 @@ func TestRBAC_CanAccessRepo_Docker_PathConversion(t *testing.T) {
 	assert.True(t, ok)
 }
 
+func TestRBAC_CanAccessRepo_OCI_PathConversion(t *testing.T) {
+	// The oci format label serves the same OCI Distribution protocol as docker,
+	// so a path-restricted privilege must produce the same decision on an oci
+	// repository as it does on a docker one for the same registry path.
+	// OCI path /v2/myimage/manifests/latest → CanAccessRepo converts to /myimage/
+	privs := []repository.PrivilegeWithSelector{
+		{
+			Actions:    []string{"read"},
+			Expression: `repository == "oci-repo" && path.startsWith("/myimage/")`,
+		},
+	}
+	svc := newRBACTestSvc(privs)
+	repo := &domain.Repository{Name: "oci-repo", Format: domain.FormatOCI}
+
+	ok, err := svc.CanAccessRepo(context.Background(), "user1", nil, repo, "/v2/myimage/manifests/latest", "read")
+	require.NoError(t, err)
+	assert.True(t, ok)
+}
+
 // ── actionAllowed (tested via CanAccessRepo) ─────────────────
 
 func TestRBAC_ActionAllowed_EmptyActionsAllowsAll(t *testing.T) {

@@ -701,7 +701,7 @@ func serveDockerV2(
 		}
 
 		if repoDef.Type == domain.TypeGroup {
-			if !isRegistryFormat(repoDef.Format) {
+			if !isOCIRegistryFormat(repoDef.Format) {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "repository is not an OCI registry"})
 				return
 			}
@@ -713,7 +713,7 @@ func serveDockerV2(
 			return
 		}
 
-		if !isRegistryFormat(repoDef.Format) {
+		if !isOCIRegistryFormat(repoDef.Format) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "repository is not an OCI registry"})
 			return
 		}
@@ -727,6 +727,9 @@ func serveDockerV2(
 		}
 		h, ok := fmtRegistry[string(repoDef.Format)]
 		if !ok {
+			// Defensive backstop: isOCIRegistryFormat and fmtRegistry are two
+			// separate format lists that should always agree. This only fires
+			// if they drift apart; not reachable in normal operation.
 			c.JSON(http.StatusBadRequest, gin.H{"error": "repository is not an OCI registry"})
 			return
 		}
@@ -734,10 +737,10 @@ func serveDockerV2(
 	}
 }
 
-// isRegistryFormat reports whether a repository speaks the OCI Distribution
+// isOCIRegistryFormat reports whether a repository speaks the OCI Distribution
 // protocol. One handler serves both labels: "docker" for container images,
 // "oci" for charts, ORAS artifacts and signatures.
-func isRegistryFormat(f domain.RepoFormat) bool {
+func isOCIRegistryFormat(f domain.RepoFormat) bool {
 	return f == domain.FormatDocker || f == domain.FormatOCI
 }
 
