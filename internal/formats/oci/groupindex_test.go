@@ -22,6 +22,7 @@ func TestOCI_GroupIndexSourcePath(t *testing.T) {
 	for _, p := range []string{
 		"/v2/charts/nginx/referrers/" + digest("subject"),
 		"/v2/charts/nginx/tags/list",
+		"/v2/_catalog",
 	} {
 		src, ok := h.GroupIndexSourcePath(p)
 		assert.True(t, ok, p)
@@ -86,6 +87,44 @@ func TestOCI_MergeGroupIndex_UnreadableTagListIsAnError(t *testing.T) {
 	require.Error(t, err)
 }
 
+// The merged catalog is the union of the members' image names, sorted, each name
+// once, and empty is [] rather than null.
+func TestOCI_MergeGroupIndex_CatalogUnionSortedDeduplicated(t *testing.T) {
+	h := groupMerger()
+	body, ct, err := h.MergeGroupIndex("grp", "/v2/_catalog", []formats.GroupIndexPart{
+		{Member: "m1", Body: []byte(`{"repositories":["library/ubuntu","charts/nginx"]}`)},
+		{Member: "m2", Body: []byte(`{"repositories":["charts/nginx","apps/api"]}`)},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "application/json; charset=utf-8", ct)
+	assert.JSONEq(t, `{"repositories":["apps/api","charts/nginx","library/ubuntu"]}`, string(body))
+
+	empty, _, err := h.MergeGroupIndex("grp", "/v2/_catalog", []formats.GroupIndexPart{
+		{Member: "m1", Body: []byte(`{"repositories":[]}`)},
+		{Member: "m2", Body: []byte(`{"repositories":null}`)},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, `{"repositories":[]}`, string(empty))
+}
+
+// An image name is not a tag: the catalog merge must not pick up the tags field,
+// nor the tag merge the repositories field, or a group would answer one endpoint
+// with the other's content.
+func TestOCI_MergeGroupIndex_ListsDoNotBleedIntoEachOther(t *testing.T) {
+	h := groupMerger()
+	mixed := []formats.GroupIndexPart{
+		{Member: "m1", Body: []byte(`{"name":"img","tags":["v1"],"repositories":["img"]}`)},
+	}
+
+	tags, _, err := h.MergeGroupIndex("grp", "/v2/img/tags/list", mixed)
+	require.NoError(t, err)
+	assert.Equal(t, `{"name":"img","tags":["v1"]}`, string(tags))
+
+	catalog, _, err := h.MergeGroupIndex("grp", "/v2/_catalog", mixed)
+	require.NoError(t, err)
+	assert.Equal(t, `{"repositories":["img"]}`, string(catalog))
+}
+
 // The paging arguments never reach a member: a member that paged its own list
 // would drop the entries past its cut out of every page of the group. Everything
 // else survives, because the referrers filter travels the same road.
@@ -93,6 +132,7 @@ func TestOCI_GroupIndexMemberQuery(t *testing.T) {
 	h := groupMerger()
 
 	assert.Empty(t, h.GroupIndexMemberQuery("/v2/img/tags/list", "n=2&last=v1"))
+	assert.Empty(t, h.GroupIndexMemberQuery("/v2/_catalog", "n=2&last=img%2Fa"))
 	assert.Equal(t, "flavor=x", h.GroupIndexMemberQuery("/v2/img/tags/list", "n=2&flavor=x"))
 
 	filter := "artifactType=application%2Fspdx%2Bjson"

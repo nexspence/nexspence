@@ -13,13 +13,14 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/formats"
 )
 
-// Two OCI documents are merged across group members rather than taken from the
-// first member that answers: the referrers index and the tag list. Both are
-// aggregations, and both answer "I hold nothing" with a 200 carrying an empty
-// list rather than a 404 — so the group's first-non-404 fan-out would let member
-// one's empty document shadow every member behind it. A signature pushed to the
-// second member would be reported as absent, and a tag promoted into the second
-// member would be reported as unpublished.
+// Three OCI documents are merged across group members rather than taken from the
+// first member that answers: the referrers index, the tag list and the catalog.
+// All three are aggregations, and all three answer "I hold nothing" with a 200
+// carrying an empty list rather than a 404 — so the group's first-non-404 fan-out
+// would let member one's empty document shadow every member behind it. A
+// signature pushed to the second member would be reported as absent, a tag
+// promoted into the second member as unpublished, and an image that lives only
+// in the second member as not present in the registry at all.
 //
 // Nothing else under /v2/ is merged. A manifest or a blob is one artifact, and
 // the first member holding it is the right answer.
@@ -31,7 +32,12 @@ const (
 	indexNone ociIndexKind = iota
 	indexReferrers
 	indexTags
+	indexCatalog
 )
+
+// paginated reports whether the document takes the spec's ?n=/?last= arguments.
+// The referrers index does not: it is filtered, not paged.
+func (k ociIndexKind) paginated() bool { return k == indexTags || k == indexCatalog }
 
 // jsonListContentType is what gin's c.JSON writes, which is what a client gets
 // from a single repository. The merged document keeps the same content type so a
@@ -47,6 +53,12 @@ func groupIndexKind(p string) (kind ociIndexKind, imageName string) {
 	rest := strings.TrimPrefix(norm, "/v2/")
 	if rest == norm {
 		return indexNone, ""
+	}
+	// Matched whole, exactly as ServeHTTP matches it: "_catalog" is not a legal
+	// image name, so no image is shadowed, and an image name merely ending in
+	// "_catalog" still has its own endpoint segment behind it.
+	if rest == "_catalog" {
+		return indexCatalog, ""
 	}
 	parts := strings.Split(rest, "/")
 	if len(parts) < 2 {
@@ -78,6 +90,8 @@ func (h *Handler) MergeGroupIndex(_, p string, parts []formats.GroupIndexPart) (
 		return mergeReferrers(parts)
 	case indexTags:
 		return mergeTagLists(imageName, parts)
+	case indexCatalog:
+		return mergeCatalogs(parts)
 	default:
 		return nil, "", fmt.Errorf("path %q is not a mergeable OCI index", p)
 	}
@@ -173,11 +187,39 @@ func mergeTagLists(imageName string, parts []formats.GroupIndexPart) ([]byte, st
 	return body, jsonListContentType, nil
 }
 
+// mergeCatalogs builds the union of the image names the members hold.
+//
+// An image in two members is one image name: the client pulls it from the group,
+// and the group resolves the manifest through its usual first-member fan-out. A
+// name listed twice would also break the ?last= cursor, which assumes a strictly
+// ascending list.
+//
+// The catalog of a group is deliberately the catalog of its MEMBERS' images and
+// not the member repository names. Each Nexspence repository is its own registry
+// namespace, so a client that connected to the group addresses
+// <group>/<image> — the member it happens to live in is never part of a
+// pullable name, and listing member names would hand the client names it cannot
+// pull from where it is.
+func mergeCatalogs(parts []formats.GroupIndexPart) ([]byte, string, error) {
+	repos, err := mergeStringLists(parts, "repository", func(doc *mergedLists) []string { return doc.Repositories })
+	if err != nil {
+		return nil, "", err
+	}
+	body, err := json.Marshal(struct {
+		Repositories []string `json:"repositories"`
+	}{Repositories: repos})
+	if err != nil {
+		return nil, "", err
+	}
+	return body, jsonListContentType, nil
+}
+
 // mergedLists is the shape of the merged list documents; each merge reads its
 // own field out of it.
 type mergedLists struct {
-	Name string   `json:"name"`
-	Tags []string `json:"tags"`
+	Name         string   `json:"name"`
+	Tags         []string `json:"tags"`
+	Repositories []string `json:"repositories"`
 }
 
 // mergeStringLists unions one field of every member's document, sorted and
@@ -213,12 +255,13 @@ func mergeStringLists(parts []formats.GroupIndexPart, kind string, pick func(*me
 // credentials answers 502 for exactly that reason. Merging the remaining members
 // and calling the result complete would convert "I could not check" into a
 // statement about the content: no referrers, so the image is unsigned; no such
-// tag, so that version was never published. Signature gates and retention jobs
-// act on both, and a list one entry short reads exactly like a complete one.
+// tag, so that version was never published; no such image name, so nothing is
+// there to keep. Signature gates, retention jobs and mirroring jobs act on all
+// three, and a list one entry short reads exactly like a complete one.
 //
-// This is affordable because neither endpoint consults an upstream: a proxy
-// member answers both from what it has cached, so a non-2xx here is a local
-// fault rather than the ordinary flakiness of somebody else's registry. 404
+// This is affordable because none of the three endpoints consults an upstream: a
+// proxy member answers all of them from what it has cached, so a non-2xx here is
+// a local fault rather than the ordinary flakiness of somebody else's registry. 404
 // stays the one non-2xx that says something about the request rather than about
 // the member, and it contributes nothing.
 func (h *Handler) GroupIndexMemberFailureIsFatal(p string, status int) bool {
@@ -235,7 +278,7 @@ func (h *Handler) GroupIndexMemberFailureIsFatal(p string, status int) bool {
 // than paged, and its artifactType must reach the members — a filter narrows
 // what a member answers without putting anything the merge needs out of reach.
 func (h *Handler) GroupIndexMemberQuery(p, clientQuery string) string {
-	if kind, _ := groupIndexKind(p); kind != indexTags {
+	if kind, _ := groupIndexKind(p); !kind.paginated() {
 		return clientQuery
 	}
 	q, err := url.ParseQuery(clientQuery)
@@ -255,12 +298,18 @@ func (h *Handler) GroupIndexMemberQuery(p, clientQuery string) string {
 // own URL, so the cursor a client sends back names an entry of the list it was
 // actually served.
 func (h *Handler) PageGroupIndex(c *gin.Context, p string, merged []byte) ([]byte, error) {
-	if kind, _ := groupIndexKind(p); kind != indexTags {
+	kind, _ := groupIndexKind(p)
+	if !kind.paginated() {
 		return merged, nil
 	}
 	var doc mergedLists
 	if err := json.Unmarshal(merged, &doc); err != nil {
-		return nil, fmt.Errorf("the merged tag list could not be paginated: %w", err)
+		return nil, fmt.Errorf("the merged list could not be paginated: %w", err)
+	}
+	if kind == indexCatalog {
+		return json.Marshal(struct {
+			Repositories []string `json:"repositories"`
+		}{Repositories: pageMergedList(c, doc.Repositories)})
 	}
 	return json.Marshal(struct {
 		Name string   `json:"name"`

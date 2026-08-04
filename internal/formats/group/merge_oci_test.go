@@ -473,6 +473,112 @@ func TestGroupMerge_OCITags_HeadIsRelayedAsMethodNotAllowed(t *testing.T) {
 	assert.Equal(t, http.StatusMethodNotAllowed, w.Code)
 }
 
+// ── _catalog ───────────────────────────────────────────────────────────────
+
+// getGroupCatalog asks the group for the image names it holds.
+func getGroupCatalog(r *gin.Engine, groupName, query string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodGet, "/repository/"+groupName+"/v2/_catalog"+query, nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	return w
+}
+
+func decodeCatalog(t *testing.T, w *httptest.ResponseRecorder) []string {
+	t.Helper()
+	require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body.String())
+	var doc struct {
+		Repositories []string `json:"repositories"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &doc), "response should be a catalog")
+	return doc.Repositories
+}
+
+// The catalog of a group is the set of image names a client can pull from it,
+// which is the union of its members'. Answering with the first member's alone
+// hides every image that lives only further down the member list.
+func TestGroupMerge_OCICatalog_UnionsMembersDeduplicatedSorted(t *testing.T) {
+	r := ociGroupEngine(ociGroup("grp", "m1", "m2"), hostedOCI("m1"), hostedOCI("m2"))
+
+	pushOCIManifest(t, r, "m1", "library/ubuntu", "22.04", ociImageManifest)
+	pushOCIManifest(t, r, "m1", "charts/nginx", "1.2.3", ociImageManifest)
+	// The same image in both members is one image name, not two.
+	pushOCIManifest(t, r, "m2", "charts/nginx", "1.3.0", ociImageManifest)
+	pushOCIManifest(t, r, "m2", "apps/api", "2.0.0", ociImageManifest)
+
+	repos := decodeCatalog(t, getGroupCatalog(r, "grp", ""))
+	assert.Equal(t, []string{"apps/api", "charts/nginx", "library/ubuntu"}, repos,
+		"every member's image names, deduplicated and sorted")
+}
+
+// A group whose members hold nothing is an empty catalog, not a 404 and not a
+// null list — the same document a hosted repository with no images returns.
+func TestGroupMerge_OCICatalog_EmptyMembersIsEmptyList(t *testing.T) {
+	r := ociGroupEngine(ociGroup("grp", "m1", "m2"), hostedOCI("m1"), hostedOCI("m2"))
+
+	w := getGroupCatalog(r, "grp", "")
+	assert.Empty(t, decodeCatalog(t, w))
+	assert.Contains(t, w.Body.String(), `"repositories":[]`,
+		"repositories must be [] and not null in the bytes")
+}
+
+// The catalog pages the merged union for the same reason the tag list does: a
+// member that paged its own catalog would put the names past its cut out of
+// reach of every page the client can ask for.
+func TestGroupMerge_OCICatalog_PagesTheMergedUnionNotEachMember(t *testing.T) {
+	r := ociGroupEngine(ociGroup("grp", "m1", "m2"), hostedOCI("m1"), hostedOCI("m2"))
+
+	for _, img := range []string{"img/a", "img/b", "img/c"} {
+		pushOCIManifest(t, r, "m1", img, "1.0.0", ociImageManifest)
+	}
+	pushOCIManifest(t, r, "m2", "img/d", "1.0.0", ociImageManifest)
+
+	w := getGroupCatalog(r, "grp", "?n=2")
+	assert.Equal(t, []string{"img/a", "img/b"}, decodeCatalog(t, w))
+	assert.Equal(t, `</repository/grp/v2/_catalog?last=img%2Fb&n=2>; rel="next"`, w.Header().Get("Link"),
+		"the cursor names an entry of the merged catalog, on the group's own URL")
+
+	next := decodeCatalog(t, getGroupCatalog(r, "grp", "?n=2&last=img%2Fb"))
+	assert.Equal(t, []string{"img/c", "img/d"}, next)
+}
+
+// failingImageNames fails the catalog query for one member and answers normally
+// for every other.
+type failingImageNames struct {
+	*testutil.AssetRepo
+	repo string
+	err  error
+}
+
+func (f *failingImageNames) ListOCIImageNames(ctx context.Context, repoNames []string) ([]string, error) {
+	for _, n := range repoNames {
+		if n == f.repo {
+			return nil, f.err
+		}
+	}
+	return f.AssetRepo.ListOCIImageNames(ctx, repoNames)
+}
+
+// A member that could not be consulted fails the whole group. A catalog is what
+// a mirroring or retention job enumerates, and the names missing from a short
+// one are the images it does not copy — or does delete.
+func TestGroupMerge_OCICatalog_UnconsultableMemberIsAnErrorNotAShortCatalog(t *testing.T) {
+	r := ociGroupEngineWithDeps(func(d *formats.Deps) {
+		d.Assets = &failingImageNames{
+			AssetRepo: d.Assets.(*testutil.AssetRepo),
+			repo:      "broken",
+			err:       errors.New("asset store unreachable"),
+		}
+	}, ociGroup("grp", "m1", "broken"), hostedOCI("m1"), hostedOCI("broken"))
+
+	pushOCIManifest(t, r, "m1", "library/ubuntu", "22.04", ociImageManifest)
+
+	w := getGroupCatalog(r, "grp", "")
+	require.NotEqual(t, http.StatusOK, w.Code,
+		"a member that could not be checked must not be silently dropped from the catalog")
+	assert.NotContains(t, w.Body.String(), `"repositories"`,
+		"an incomplete catalog must never be dressed up as one")
+}
+
 // The artifactType filter must still select through the group, or a cosign query
 // would come back carrying every SBOM in every member.
 func TestGroupMerge_OCIReferrers_ArtifactTypeFilterAppliesThroughGroup(t *testing.T) {
