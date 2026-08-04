@@ -282,6 +282,7 @@ func (s *PromotionService) executeCopy(ctx context.Context, req *domain.Promotio
 		Name:         comp.Name,
 		Version:      comp.Version,
 		Tags:         comp.Tags,
+		Extra:        promotedExtra(comp.Extra),
 	}
 	if err := s.componentRepo.Create(ctx, newComp); err != nil {
 		return fmt.Errorf("upsert component in target: %w", err)
@@ -335,6 +336,34 @@ func (s *PromotionService) executeCopy(ctx context.Context, req *domain.Promotio
 		})
 	}
 	return nil
+}
+
+// promotedExtra is the source component's metadata as the promoted copy should
+// carry it. The keys describe the content, and the copy is that content byte for
+// byte, so they stay true in the target repository. The OCI ones have to travel
+// in particular: a signature manifest is found through Extra["oci_subject"], so
+// a copy without it is a signature the target repository's referrers API can
+// never list.
+//
+// scan_result is the one key left behind. It records a scan run against the
+// SOURCE repository's image reference, and the scan rows the promotion gate
+// actually reads are keyed by component ID and are not copied either — so
+// carrying it would report a scan of this copy that was never run.
+func promotedExtra(extra map[string]any) map[string]any {
+	if len(extra) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(extra))
+	for k, v := range extra {
+		if k == "scan_result" {
+			continue
+		}
+		out[k] = v
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // resolveStore returns the physical BlobStore for a given blobStoreID pointer.
