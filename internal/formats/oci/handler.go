@@ -1,4 +1,4 @@
-// Package docker implements the OCI Distribution Spec v2 (Docker registry v2 protocol).
+// Package oci implements the OCI Distribution Spec v2 (Docker registry v2 protocol).
 //
 // All endpoints under /repository/:repoName/v2/:
 //
@@ -43,8 +43,9 @@ func New(deps formats.Deps) *Handler {
 	return &Handler{deps: deps, uploads: uploadStore{deps: deps}}
 }
 
-// Name returns the format identifier.
-func (h *Handler) Name() string { return "docker" }
+// Name returns the format identifier. Dispatch happens through the router's
+// format registry, which maps both "docker" and "oci" to this handler.
+func (h *Handler) Name() string { return "oci" }
 
 func (h *Handler) ServeHTTP(c *gin.Context) {
 	p := normPath(c.Param("path"))

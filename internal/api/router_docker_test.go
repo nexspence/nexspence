@@ -42,7 +42,7 @@ func buildDockerRouter(repos ...*domain.Repository) *gin.Engine {
 	rbacSvc := service.NewRBACService(rbacRepo, repoRepo, zap.NewNop().Sugar())
 
 	stub := &stubDockerHandler{}
-	fmtRegistry := map[string]formats.FormatHandler{"docker": stub}
+	fmtRegistry := map[string]formats.FormatHandler{"docker": stub, "oci": stub}
 
 	dockerV2H := serveDockerV2(repoRepo, stub, fmtRegistry)
 

@@ -19,13 +19,16 @@ const (
 	FormatMaven2 RepoFormat = "maven2"
 	FormatNPM    RepoFormat = "npm"
 	FormatDocker RepoFormat = "docker"
-	FormatPyPI   RepoFormat = "pypi"
-	FormatGo     RepoFormat = "go"
-	FormatNuGet  RepoFormat = "nuget"
-	FormatHelm   RepoFormat = "helm"
-	FormatRaw    RepoFormat = "raw"
-	FormatApt    RepoFormat = "apt"
-	FormatYum    RepoFormat = "yum"
+	// FormatOCI is the same OCI Distribution protocol as FormatDocker, labelled
+	// for charts, ORAS artifacts and signatures rather than container images.
+	FormatOCI   RepoFormat = "oci"
+	FormatPyPI  RepoFormat = "pypi"
+	FormatGo    RepoFormat = "go"
+	FormatNuGet RepoFormat = "nuget"
+	FormatHelm  RepoFormat = "helm"
+	FormatRaw   RepoFormat = "raw"
+	FormatApt   RepoFormat = "apt"
+	FormatYum   RepoFormat = "yum"
 
 	TypeHosted RepoType = "hosted"
 	TypeProxy  RepoType = "proxy"

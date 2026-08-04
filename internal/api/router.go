@@ -222,6 +222,9 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 		"yum":       yum.New(formatDeps),
 		"docker":    oci.New(formatDeps),
 	}
+	// The OCI Distribution protocol is served under two labels — same handler,
+	// different presentation (proxy defaults, UI, command hints).
+	formatRegistry["oci"] = formatRegistry["docker"]
 	// Group handler needs a reference to the registry to fan-out to members.
 	groupHandler := group.New(formatDeps, formatRegistry)
 
@@ -698,8 +701,8 @@ func serveDockerV2(
 		}
 
 		if repoDef.Type == domain.TypeGroup {
-			if string(repoDef.Format) != "docker" {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "repository is not a docker registry"})
+			if !isRegistryFormat(repoDef.Format) {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "repository is not an OCI registry"})
 				return
 			}
 			c.Params = gin.Params{
@@ -710,20 +713,32 @@ func serveDockerV2(
 			return
 		}
 
-		if string(repoDef.Format) != "docker" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "repository is not a docker registry"})
+		if !isRegistryFormat(repoDef.Format) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "repository is not an OCI registry"})
 			return
 		}
 
-		// Rewrite params so the docker handler sees what it expects:
+		// Rewrite params so the registry handler sees what it expects:
 		//   c.Param("repoName") = <repoName>
 		//   c.Param("path")     = /v2/<imagePath>/<endpoint>
 		c.Params = gin.Params{
 			{Key: "repoName", Value: repoName},
 			{Key: "path", Value: "/v2" + dockerPath},
 		}
-		fmtRegistry["docker"].ServeHTTP(c)
+		h, ok := fmtRegistry[string(repoDef.Format)]
+		if !ok {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "repository is not an OCI registry"})
+			return
+		}
+		h.ServeHTTP(c)
 	}
+}
+
+// isRegistryFormat reports whether a repository speaks the OCI Distribution
+// protocol. One handler serves both labels: "docker" for container images,
+// "oci" for charts, ORAS artifacts and signatures.
+func isRegistryFormat(f domain.RepoFormat) bool {
+	return f == domain.FormatDocker || f == domain.FormatOCI
 }
 
 // cleanupTaskAdapter adapts the cleanup repo (List) and service (RunPolicy) to the

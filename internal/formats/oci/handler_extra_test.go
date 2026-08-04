@@ -30,7 +30,7 @@ func TestDocker_Name(t *testing.T) {
 		BaseURL:    "http://localhost:8080",
 	}
 	h := oci.New(d)
-	assert.Equal(t, "docker", h.Name())
+	assert.Equal(t, "oci", h.Name())
 }
 
 // ── Version check (no /v2/ prefix) ───────────────────────────
