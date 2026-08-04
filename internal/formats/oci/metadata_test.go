@@ -81,6 +81,67 @@ func TestPushManifest_RecordsArtifactMetadata(t *testing.T) {
 	assert.Equal(t, "application/vnd.oci.image.manifest.v1+json", comp.Extra["oci_media_type"])
 }
 
+// Docker clients re-fetch a manifest by digest after pulling it by tag, so the
+// digest reference gets a component of its own. Phase 2's referrers API resolves
+// a subject by digest — that component needs the same metadata as the tag.
+func TestPushManifest_TypesDigestAlias(t *testing.T) {
+	repo := &domain.Repository{
+		ID: "r1", Name: "oci-hosted", Format: domain.FormatOCI, Type: domain.TypeHosted, Online: true,
+	}
+	r, d := setupWithDeps(repo)
+
+	req := httptest.NewRequest(http.MethodPut,
+		"/repository/oci-hosted/v2/charts/nginx/manifests/1.2.3", strings.NewReader(helmChartManifest))
+	req.Header.Set("Content-Type", "application/vnd.oci.image.manifest.v1+json")
+	req.ContentLength = int64(len(helmChartManifest))
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusCreated, w.Code)
+
+	dgst := digest(helmChartManifest)
+	require.Equal(t, dgst, w.Header().Get("Docker-Content-Digest"))
+
+	comp := componentOf(t, d, "oci-hosted", "charts/nginx", dgst)
+	assert.Equal(t, "application/vnd.cncf.helm.config.v1+json", comp.Extra["oci_artifact_type"])
+	assert.Equal(t, "application/vnd.oci.image.manifest.v1+json", comp.Extra["oci_media_type"])
+}
+
+// maxManifest mirrors the unexported maxManifestBytes: the 4 MiB manifest limit
+// from the OCI Distribution Spec.
+const maxManifest = 4 << 20
+
+// A body past the limit must be rejected outright. Truncating it to the limit
+// would store a corrupt manifest and answer 201 with a digest over bytes the
+// client never pushed.
+func TestPushManifest_RejectsOversizedManifest(t *testing.T) {
+	repo := &domain.Repository{
+		ID: "r1", Name: "oci-hosted", Format: domain.FormatOCI, Type: domain.TypeHosted, Online: true,
+	}
+	r, d := setupWithDeps(repo)
+
+	// Exactly one byte over the limit, and valid JSON apart from its size.
+	head := `{"schemaVersion":2,"mediaType":"application/vnd.oci.image.manifest.v1+json","pad":"`
+	tail := `"}`
+	oversized := head + strings.Repeat("a", maxManifest+1-len(head)-len(tail)) + tail
+	require.Len(t, oversized, maxManifest+1)
+
+	req := httptest.NewRequest(http.MethodPut,
+		"/repository/oci-hosted/v2/charts/big/manifests/1.0.0", strings.NewReader(oversized))
+	req.Header.Set("Content-Type", "application/vnd.oci.image.manifest.v1+json")
+	req.ContentLength = int64(len(oversized))
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusRequestEntityTooLarge, w.Code)
+
+	// Rejection must be total — no half-stored manifest behind the error.
+	page, err := d.Components.Search(context.Background(), domain.SearchParams{Repository: "oci-hosted", Limit: 100})
+	require.NoError(t, err)
+	assert.Empty(t, page.Items, "a rejected push must leave no component")
+
+	_, err = d.Assets.GetByPath(context.Background(), "oci-hosted", "/manifests/charts/big/1.0.0")
+	assert.Error(t, err, "a rejected push must leave no asset")
+}
+
 // The pushed bytes must survive parsing untouched — reading the body for
 // metadata must not truncate what gets stored.
 func TestPushManifest_StoresBodyVerbatim(t *testing.T) {

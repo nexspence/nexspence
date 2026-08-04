@@ -204,9 +204,18 @@ func (h *Handler) pushManifest(c *gin.Context, repoName, imageName, reference st
 
 	// The body is buffered because it is needed twice: stored verbatim, and
 	// parsed for the artifact type. Manifests are capped at 4 MiB by the spec.
-	body, err := io.ReadAll(io.LimitReader(c.Request.Body, maxManifestBytes))
+	// Reading one byte past the cap is what makes an overflow visible: a reader
+	// limited to exactly the cap returns the trimmed prefix and a nil error, so
+	// an oversized manifest would be stored corrupt under a digest of bytes the
+	// client never sent.
+	body, err := io.ReadAll(io.LimitReader(c.Request.Body, maxManifestBytes+1))
 	if err != nil {
 		dockerError(c, http.StatusBadRequest, "MANIFEST_INVALID", err.Error())
+		return
+	}
+	if len(body) > maxManifestBytes {
+		dockerError(c, http.StatusRequestEntityTooLarge, "MANIFEST_INVALID",
+			"manifest exceeds the 4MiB limit")
 		return
 	}
 
@@ -218,10 +227,15 @@ func (h *Handler) pushManifest(c *gin.Context, repoName, imageName, reference st
 		return
 	}
 
+	// Held outside the block because the digest alias below is typed from the
+	// same metadata. Recording it is best effort throughout: the manifest is
+	// already stored and nothing in the protocol reads these keys.
+	var extra map[string]any
 	if meta, ok := parseManifestMeta(body); ok {
-		if extra := extraFrom(meta); len(extra) > 0 {
-			_ = h.deps.Components.UpdateExtra(c.Request.Context(), res.Asset.ComponentID, extra)
-		}
+		extra = extraFrom(meta)
+	}
+	if len(extra) > 0 {
+		_ = h.deps.Components.UpdateExtra(c.Request.Context(), res.Asset.ComponentID, extra)
 	}
 
 	// Docker pulls always re-fetch the manifest by content digest after getting it by tag.
@@ -230,11 +244,16 @@ func (h *Handler) pushManifest(c *gin.Context, repoName, imageName, reference st
 	digestRef := "sha256:" + res.SHA256
 	if reference != digestRef {
 		if repo, err2 := h.deps.Repos.Get(c.Request.Context(), repoName); err2 == nil && repo != nil {
-			_, _ = base.RegisterStoredBlob(c.Request.Context(), h.deps, repo,
+			alias, aerr := base.RegisterStoredBlob(c.Request.Context(), h.deps, repo,
 				manifestPath(imageName, digestRef), ct,
 				base.Coords{Name: imageName, Version: digestRef},
 				res.Asset.BlobKey,
 				res.SHA256, res.SHA1, res.MD5, res.Size, "", "")
+			// The alias carries the same metadata: the referrers API resolves a
+			// subject by digest, not by tag.
+			if aerr == nil && alias != nil && len(extra) > 0 {
+				_ = h.deps.Components.UpdateExtra(c.Request.Context(), alias.ComponentID, extra)
+			}
 		}
 	}
 
