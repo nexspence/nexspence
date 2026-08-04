@@ -12,6 +12,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"path"
 	"strings"
 	"time"
@@ -49,7 +50,13 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 			h.fetchAndRewriteHelmIndex(c, repo)
 			return
 		}
-		coords := base.Coords{Name: strings.TrimSuffix(strings.TrimPrefix(p, "/"), ".tgz")}
+		// The request path may be nested (charts/mychart-1.2.3.tgz), so the component
+		// coordinates come from the filename, never from the path.
+		coords := base.Coords{Name: path.Base(p)}
+		if strings.HasSuffix(p, ".tgz") {
+			chartName, version := splitChartFilename(path.Base(p))
+			coords = base.Coords{Name: chartName, Version: version}
+		}
 		// Chart tarballs are immutable (index.yaml — the mutable index — is
 		// fetched-and-rewritten above, not cached through here).
 		if err := repoproxy.ServeGET(c, h.deps, repo, p, "", coords, "application/x-tar", 0); err != nil {
@@ -169,16 +176,7 @@ func (h *Handler) handleUpload(c *gin.Context, repoName, pathFilename string) {
 		}
 	}
 
-	// Parse name-version from filename: "mychart-1.2.3.tgz"
-	base2 := strings.TrimSuffix(filename, ".tgz")
-	lastDash := strings.LastIndex(base2, "-")
-	if lastDash > 0 {
-		chartName = base2[:lastDash]
-		version = base2[lastDash+1:]
-	} else {
-		chartName = base2
-		version = "0.0.0"
-	}
+	chartName, version = splitChartFilename(filename)
 
 	filePath := "/" + filename
 	coords := base.Coords{Name: chartName, Version: version}
@@ -278,7 +276,7 @@ func (h *Handler) fetchAndRewriteHelmIndex(c *gin.Context, repo *domain.Reposito
 				if urls, ok := chart["urls"].([]any); ok {
 					for i, u := range urls {
 						if us, ok := u.(string); ok {
-							urls[i] = localBase + path.Base(us)
+							urls[i] = rewriteChartURL(us, remoteBase, localBase)
 						}
 					}
 					chart["urls"] = urls
@@ -302,4 +300,56 @@ func (h *Handler) fetchAndRewriteHelmIndex(c *gin.Context, repo *domain.Reposito
 
 func normPath(p string) string {
 	return path.Clean("/" + strings.TrimPrefix(p, "/"))
+}
+
+// splitChartFilename splits a chart archive filename ("mychart-1.2.3.tgz") into its
+// chart name and version at the last dash. A filename with no usable dash keeps the
+// whole stem as the name and gets the placeholder version "0.0.0".
+func splitChartFilename(filename string) (chartName, version string) {
+	stem := strings.TrimSuffix(filename, ".tgz")
+	if lastDash := strings.LastIndex(stem, "-"); lastDash > 0 {
+		return stem[:lastDash], stem[lastDash+1:]
+	}
+	return stem, "0.0.0"
+}
+
+// rewriteChartURL maps one `urls` entry of an upstream index.yaml onto this proxy.
+// Entries come in three shapes:
+//
+//  1. a repository-relative path of any depth ("charts/mychart-1.2.3.tgz") — kept
+//     whole, because the download handler forwards the request path upstream verbatim;
+//  2. an absolute URL under the configured remote — the remote prefix is stripped and
+//     the remainder is treated as case 1;
+//  3. an absolute URL on some other host (charts published to GitHub releases, say) —
+//     returned untouched. We cannot express it as a path under this proxy, so the
+//     client fetches it directly. That skips the cache, but it beats handing back a
+//     proxy path that would 404.
+//
+// localBase must end in "/" and remoteBase must not.
+func rewriteChartURL(rawURL, remoteBase, localBase string) string {
+	rel := rawURL
+
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL // unparsable: leave it for the client to deal with
+	}
+	if u.Host != "" { // absolute (or protocol-relative) URL
+		remote, err := url.Parse(remoteBase)
+		if err != nil {
+			return rawURL
+		}
+		// Compare hosts only: an index served over https regularly lists http URLs
+		// (and the reverse), and that is still the same upstream repository.
+		if !strings.EqualFold(u.Host, remote.Host) {
+			return rawURL // case 3
+		}
+		remotePath := strings.TrimSuffix(remote.Path, "/")
+		if remotePath != "" && u.Path != remotePath && !strings.HasPrefix(u.Path, remotePath+"/") {
+			return rawURL // same host but outside the proxied subtree — case 3
+		}
+		rel = strings.TrimPrefix(u.Path, remotePath)
+	}
+
+	rel = strings.TrimPrefix(path.Clean("/"+strings.TrimPrefix(rel, "/")), "/")
+	return localBase + rel
 }
