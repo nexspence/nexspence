@@ -324,6 +324,51 @@ func TestReferrers_ProxyForwardsArtifactTypeFilter(t *testing.T) {
 		"the upstream's filter announcement must reach the client")
 }
 
+// This endpoint does not implement pagination: it never relays the spec's
+// Link: <...>; rel="next" continuation. Forwarding the client's "n" would
+// therefore fetch page one from a paginating upstream and hand the client a
+// truncated list it would read as complete — the under-report this whole
+// endpoint is built to avoid. "n" and "last" are dropped so the upstream
+// answers in full; only artifactType goes through.
+func TestReferrers_ProxyDropsPaginationItCannotHonor(t *testing.T) {
+	var gotQuery string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.RawQuery
+		w.Header().Set("Content-Type", ociIndexMediaType)
+		w.Header().Set("Link", `</v2/charts/nginx/referrers/sha256:abc?n=1&last=x>; rel="next"`)
+		_, _ = w.Write([]byte(upstreamReferrersIndex))
+	}))
+	defer upstream.Close()
+
+	r, _ := setupWithDeps(proxyOCIRepo("r2", "oci-proxy", upstream.URL))
+
+	w, _, descs := getReferrers(t, r, "oci-proxy", "charts/nginx", digest("subject"),
+		"?n=1&artifactType="+url.QueryEscape(cosignSigArtifactType)+"&last=sha256:abc")
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "artifactType="+url.QueryEscape(cosignSigArtifactType), gotQuery,
+		"only artifactType may reach the upstream; n and last would truncate the list")
+	require.Len(t, descs, 1)
+	assert.Empty(t, w.Header().Get("Link"),
+		"a continuation this endpoint cannot serve must not be advertised to the client")
+}
+
+// A request with no artifactType sends no query at all.
+func TestReferrers_ProxyDropsPaginationWithoutFilter(t *testing.T) {
+	gotQuery := "unset"
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.RawQuery
+		w.Header().Set("Content-Type", ociIndexMediaType)
+		_, _ = w.Write([]byte(upstreamReferrersIndex))
+	}))
+	defer upstream.Close()
+
+	r, _ := setupWithDeps(proxyOCIRepo("r2", "oci-proxy", upstream.URL))
+
+	w, _, _ := getReferrers(t, r, "oci-proxy", "charts/nginx", digest("subject"), "?n=10&last=sha256:abc")
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Empty(t, gotQuery, "pagination alone must leave nothing to forward")
+}
+
 // An upstream with no referrers API answers 404. That is not an error to relay:
 // a client asking "is this signed" needs a definite empty answer.
 func TestReferrers_ProxyUpstreamWithoutEndpointIsEmptyIndex(t *testing.T) {

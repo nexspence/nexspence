@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 
 	"github.com/gin-gonic/gin"
 
@@ -116,7 +117,10 @@ func (h *Handler) proxyReferrers(c *gin.Context, repo *domain.Repository, imageN
 	// The query goes as its own argument: JoinURL escapes everything it is given
 	// as a path, so a "?" glued on would reach upstream as %3F and the
 	// artifactType filter would silently never be applied.
-	resp, err := repoproxy.FetchUpstreamOnce(c.Request.Context(), repo, upPath, c.Request.URL.RawQuery, hdr)
+	//
+	// Only artifactType is forwarded; the client's pagination is dropped. See
+	// upstreamQuery.
+	resp, err := repoproxy.FetchUpstreamOnce(c.Request.Context(), repo, upPath, upstreamQuery(c), hdr)
 	if err != nil {
 		// No response at all: DNS failure, refused connection, TLS error, timeout,
 		// the SSRF guard, or a proxy_config that cannot even produce a URL. The
@@ -181,7 +185,27 @@ func (h *Handler) proxyReferrers(c *gin.Context, repo *domain.Repository, imageN
 	if applied := resp.Header.Get("OCI-Filters-Applied"); applied != "" {
 		c.Header("OCI-Filters-Applied", applied)
 	}
+	// The upstream's Link header is deliberately not copied: it points at a
+	// continuation this endpoint cannot serve, since upstreamQuery has already
+	// asked for the whole list.
 	c.Data(http.StatusOK, mediaTypeImageIndex, body)
+}
+
+// upstreamQuery is the client's query as it should reach the upstream: the
+// artifactType filter and nothing else.
+//
+// The spec's "n" and "last" are dropped on purpose. Honoring pagination would
+// mean relaying the upstream's Link: <...>; rel="next" continuation, which this
+// endpoint does not implement — so a forwarded "n" would fetch page one from a
+// paginating upstream and the client would read a truncated list as the
+// complete one. Dropping the two parameters makes the upstream answer in full,
+// which is the only answer this endpoint can pass through honestly.
+func upstreamQuery(c *gin.Context) string {
+	artifactType := c.Query("artifactType")
+	if artifactType == "" {
+		return ""
+	}
+	return url.Values{"artifactType": []string{artifactType}}.Encode()
 }
 
 // upstreamRefused relays a 401/403 from upstream as a 502 in the OCI error shape.
