@@ -202,12 +202,14 @@ export default function SearchPage() {
 
   const allItems = useMemo(() => data?.items ?? [], [data])
 
-  // Docker digest-alias components (version = "sha256:...") are filtered from the main list
-  // but kept in a lookup map so they can appear inside the expanded view of their parent tag.
+  // OCI Distribution digest-alias components (version = "sha256:...") are filtered from the
+  // main list but kept in a lookup map so they can appear inside the expanded view of their
+  // parent tag. Both 'docker' and 'oci' formats speak the OCI Distribution protocol and get
+  // the same digest-alias component created on every manifest push.
   const dockerDigests = useMemo(() => {
     const map = new Map<string, SearchComponent[]>()
     for (const c of allItems) {
-      if (c.format === 'docker' && c.version?.startsWith('sha256:')) {
+      if ((c.format === 'docker' || c.format === 'oci') && c.version?.startsWith('sha256:')) {
         const key = `${c.repository}::${c.name}`
         const arr = map.get(key) ?? []
         arr.push(c)
@@ -218,7 +220,7 @@ export default function SearchPage() {
   }, [allItems])
 
   const items = useMemo(() =>
-    allItems.filter(c => !(c.format === 'docker' && c.version?.startsWith('sha256:')))
+    allItems.filter(c => !((c.format === 'docker' || c.format === 'oci') && c.version?.startsWith('sha256:')))
   , [allItems])
 
   const sorted = useMemo(() => {

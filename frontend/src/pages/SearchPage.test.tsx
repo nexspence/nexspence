@@ -111,6 +111,32 @@ describe('SearchPage', () => {
     expect(screen.getByText('blobs/sha256:abcdef')).toBeInTheDocument()
   })
 
+  it('renders oci digest aliases inside the expanded parent tag', async () => {
+    const user = userEvent.setup()
+    const tag = component({
+      id: 'o1', repository: 'oci-hosted', format: 'oci', name: 'mychart', version: '1.0.0', group: '',
+      assets: [{ id: 'oa1', path: 'manifests/1.0.0', fileSize: 1000, contentType: 'application/vnd.oci', lastModified: '2026-05-01T00:00:00Z' }],
+    })
+    const digest = component({
+      id: 'o2', repository: 'oci-hosted', format: 'oci', name: 'mychart', version: 'sha256:abcdef0123456789abcdef', group: '',
+      assets: [{ id: 'oa2', path: 'blobs/sha256:abcdef', fileSize: 999, contentType: 'application/octet-stream', lastModified: '2026-05-01T00:00:00Z' }],
+    })
+    server.use(
+      http.get('/service/rest/v1/search', () => HttpResponse.json({ items: [tag, digest] })),
+    )
+    renderWithProviders(<SearchPage />)
+    await user.type(screen.getByPlaceholderText('e.g. spring-core'), 'mychart')
+    await user.click(screen.getByRole('button', { name: /Search/ }))
+    await screen.findByText('mychart')
+    // Only the tag (1.0.0) is in the main list, not the sha256 alias.
+    expect(screen.getByText('1.0.0')).toBeInTheDocument()
+    expect(screen.queryByText(/sha256:abcdef0123456789/)).not.toBeInTheDocument()
+    // Expand and look for digest aliases section
+    await user.click(screen.getByTitle('Expand assets'))
+    expect(await screen.findByText('Digest aliases')).toBeInTheDocument()
+    expect(screen.getByText('blobs/sha256:abcdef')).toBeInTheDocument()
+  })
+
   it('navigates to Browse via the group Browse button', async () => {
     const user = userEvent.setup()
     server.use(
