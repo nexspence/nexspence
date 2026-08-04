@@ -107,6 +107,12 @@ type AssetRepo interface {
 	CountByBlobKey(ctx context.Context, blobKey, excludeID string) (int, error)
 	// ListRawBrowseAssets returns all assets for the given raw-format repos with metadata for tree building.
 	ListRawBrowseAssets(ctx context.Context, repoNames []string) ([]domain.RawBrowseAsset, error)
+	// ListOCIImageNames returns the distinct image names held by the given OCI
+	// Distribution repositories — the <name> of a stored
+	// /manifests/<name>/<reference> asset. Only images that have a manifest are
+	// named: a blob carries no image the client can pull. The order is
+	// unspecified; the caller sorts.
+	ListOCIImageNames(ctx context.Context, repoNames []string) ([]string, error)
 }
 
 // ContentSelectorRepo manages content selector definitions (privilege-scoped paths).

@@ -3,6 +3,7 @@
 // All endpoints under /repository/:repoName/v2/:
 //
 //	GET  /v2/                                   → API version check (200 OK)
+//	GET  /v2/_catalog                           → list the image names in the repository
 //	GET  /v2/:name/tags/list                    → list tags
 //	GET  /v2/:name/referrers/:digest            → list manifests referring to :digest
 //	GET  /v2/:name/manifests/:reference         → pull manifest
@@ -11,6 +12,7 @@
 //	GET  /v2/:name/blobs/:digest                → pull blob (content-addressable)
 //	HEAD /v2/:name/blobs/:digest                → blob exists check
 //	POST /v2/:name/blobs/uploads/               → initiate blob upload
+//	POST /v2/:name/blobs/uploads/?mount=&from=  → mount an existing blob
 //	PATCH /v2/:name/blobs/uploads/:uuid         → stream blob chunks
 //	PUT  /v2/:name/blobs/uploads/:uuid?digest=  → finalize blob upload
 //	DELETE /v2/:name/blobs/:digest              → delete blob
@@ -23,6 +25,7 @@ import (
 	"io"
 	"net/http"
 	"path"
+	"sort"
 	"strings"
 	"time"
 
@@ -65,6 +68,18 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 	rest := strings.TrimPrefix(p, "/v2/")
 	if rest == p { // no /v2/ prefix
 		c.Status(http.StatusNotFound)
+		return
+	}
+
+	// The catalog is the one endpoint with no image name in front of it, so it is
+	// matched before the split below rejects a single-segment path. Matching the
+	// whole rest rather than a keyword segment keeps it unambiguous: "_catalog"
+	// is not a legal image name — the OCI grammar starts every path component
+	// with an alphanumeric — so no image can be shadowed by this case, and an
+	// image whose name merely ends in "_catalog" still has its own endpoint
+	// segment behind it and never reaches here.
+	if rest == "_catalog" {
+		h.handleCatalog(c, repoName)
 		return
 	}
 
@@ -121,23 +136,71 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 
 // ─── Tags ──────────────────────────────────────────────────────────────────
 
+// searchPageSize is how many components one tag-list search asks for. It is not
+// a cap on the answer: the component search clamps a Limit above 500 back down
+// to 50 (see internal/repository/postgres/component_repo.go), so raising it
+// would silently return FEWER tags. The list is assembled by paging over the
+// search with a growing offset instead, which keeps a repository with more tags
+// than one search page fully enumerable.
+const searchPageSize = 500
+
 func (h *Handler) handleTagsList(c *gin.Context, repoName, imageName string) {
 	if c.Request.Method != http.MethodGet {
 		c.Status(http.StatusMethodNotAllowed)
 		return
 	}
-	page, err := h.deps.Components.Search(c.Request.Context(), domain.SearchParams{
-		Repository: repoName, Name: imageName, Limit: 500,
-	})
+	tags, err := h.collectTags(c.Request.Context(), repoName, imageName)
 	if err != nil {
 		dockerError(c, http.StatusInternalServerError, "UNKNOWN", err.Error())
 		return
 	}
-	tags := make([]string, 0, len(page.Items))
-	for _, comp := range page.Items {
-		tags = append(tags, comp.Version)
+	// The spec requires the tag list sorted; the search orders by (name,
+	// version) across every image in the repository, which is not the same
+	// thing, and an unsorted list would make the ?last= cursor meaningless.
+	sort.Strings(tags)
+
+	params := parsePageParams(c)
+	page, more := paginate(tags, params)
+	setNextLink(c, params, page, more)
+	if page == nil {
+		page = []string{}
 	}
-	c.JSON(http.StatusOK, gin.H{"name": imageName, "tags": tags})
+	c.JSON(http.StatusOK, gin.H{"name": imageName, "tags": page})
+}
+
+// collectTags returns every tag of one image, paging over the component search
+// until it is exhausted. The loop terminates because a continuation token is
+// only handed back for a full page, and each round advances the offset by one
+// full page.
+func (h *Handler) collectTags(ctx context.Context, repoName, imageName string) ([]string, error) {
+	var tags []string
+	for offset := 0; ; offset += searchPageSize {
+		page, err := h.deps.Components.Search(ctx, domain.SearchParams{
+			Repository: repoName, Name: imageName, Limit: searchPageSize, Offset: offset,
+		})
+		if err != nil {
+			return nil, err
+		}
+		for _, comp := range page.Items {
+			// The search matches the name with a substring ILIKE, so a sibling
+			// image whose name merely contains this one would otherwise donate
+			// its tags to this list.
+			if comp.Name != imageName {
+				continue
+			}
+			// A manifest pushed by tag also registers an alias under its content
+			// digest so a pull by digest resolves (see pushManifest). Those are
+			// references, not tags, and the spec's tag grammar has no ':', so
+			// the digest form is what identifies them.
+			if strings.Contains(comp.Version, ":") {
+				continue
+			}
+			tags = append(tags, comp.Version)
+		}
+		if page.ContinuationToken == nil || len(page.Items) == 0 {
+			return tags, nil
+		}
+	}
 }
 
 // ─── Manifests ─────────────────────────────────────────────────────────────
@@ -463,12 +526,19 @@ func (h *Handler) handleBlobUploads(c *gin.Context, repoName, imageName, uuid st
 	}
 }
 
-func (h *Handler) initiateUpload(c *gin.Context, _, _ string) {
+func (h *Handler) initiateUpload(c *gin.Context, repoName, imageName string) {
 	if !requireDockerAuth(c) {
 		return
 	}
-	// Cross-repo mount shortcut: ?mount=<digest>&from=<repo>
-	// We ignore mount for now and always start a fresh upload
+	// Cross-repository blob mount: ?mount=<digest>&from=<name>. When it cannot be
+	// served the request falls through to a normal upload session, which the spec
+	// explicitly allows and which costs the client only the bandwidth it would
+	// have spent anyway.
+	if dgst, from := c.Query("mount"), c.Query("from"); dgst != "" && from != "" {
+		if h.mountBlob(c, repoName, imageName, dgst, from) {
+			return
+		}
+	}
 	uuid, err := h.uploads.create(c.Request.Context())
 	if err != nil {
 		dockerError(c, http.StatusInternalServerError, "UNKNOWN", err.Error())
@@ -484,6 +554,173 @@ func (h *Handler) initiateUpload(c *gin.Context, _, _ string) {
 	c.Header("Docker-Upload-UUID", uuid)
 	c.Header("Range", "0-0")
 	c.Status(http.StatusAccepted)
+}
+
+// mountBlob serves POST .../blobs/uploads/?mount=<digest>&from=<name> by
+// registering a second asset over the bytes the source already stores. It
+// reports whether it answered the request; false means "start a normal upload".
+//
+// Mounting is the digest-alias registration pushManifest does after a tagged
+// push, with the image name changing instead of the reference.
+//
+// Access control: `from` is client-supplied and names a path RBACMiddleware
+// never saw — it checked the repository and path of the request URL, which is
+// the mount's target, not its source. Two things close that.
+//
+// The source is resolved strictly inside repoName, so no mount reads out of a
+// repository — or, since format is a property of the repository, a format — the
+// request was not authorized against at all.
+//
+// Within repoName, callerMayRead puts the source path through the same check a
+// direct blob GET would face, which is what makes a content selector narrower
+// than the repository (`repository == "R" && path.startsWith("/public/")`) hold
+// here too. Without it a selector would stop a pull but not a mount, and anyone
+// holding the digest could copy the blob into a path they can read and pull it
+// from there.
+//
+// A refused mount falls through to a normal upload session rather than 403: the
+// fallback is spec-legal, costs the client only bandwidth it was going to spend,
+// and does not disclose whether that digest is in the registry.
+func (h *Handler) mountBlob(c *gin.Context, repoName, imageName, dgst, from string) bool {
+	// The digest lands in an asset path, so a value that is not a digest is not
+	// a lookup key — it is someone else's path.
+	if !validDigest(dgst) {
+		return false
+	}
+	ctx := c.Request.Context()
+	repo, err := h.deps.Repos.Get(ctx, repoName)
+	if err != nil || repo == nil {
+		return false
+	}
+
+	for _, sourceImage := range mountSourceImages(repoName, from) {
+		if sourceImage == imageName {
+			continue // mounting an image onto itself has nothing to alias
+		}
+		sourcePath := blobPath(sourceImage, dgst)
+		src, err := h.deps.Assets.GetByPath(ctx, repoName, sourcePath)
+		if err != nil || src == nil {
+			continue
+		}
+		// Nothing about the source is acted on before the caller is shown to be
+		// allowed to read it.
+		if !h.callerMayRead(c, repo, sourcePath) {
+			continue
+		}
+		// An asset row outlives its bytes: a manual blob delete or a GC pass can
+		// leave the record behind. Answering 201 off one of those would hand the
+		// client a layer that 404s on pull, and the client — told the registry
+		// already has it — would never upload the copy it still holds.
+		storeName, present := h.locateBlob(ctx, src)
+		if !present {
+			continue
+		}
+		blobStoreID := src.BlobStoreID
+		if storeName == "" {
+			// The store the source names could not be resolved, so let the
+			// registration fall back to the repository's own default, exactly as
+			// a fetch of that asset would.
+			blobStoreID = ""
+		}
+		if _, err := base.RegisterStoredBlob(ctx, h.deps, repo,
+			blobPath(imageName, dgst), "application/octet-stream",
+			base.Coords{Name: imageName, Version: dgst},
+			src.BlobKey, src.SHA256, src.SHA1, src.MD5, src.SizeBytes,
+			blobStoreID, storeName); err != nil {
+			return false
+		}
+		c.Header("Docker-Content-Digest", dgst)
+		c.Header("Location", blobLocation(c, imageName, dgst))
+		c.Status(http.StatusCreated)
+		return true
+	}
+	return false
+}
+
+// callerMayRead asks of an asset path the question a direct GET of that path
+// would ask: may this caller read it, in this repository?
+//
+// The path handed over is the stored asset path, the same one FilterAssets
+// checks, so CanAccessRepo normalizes it through assetSamplePath and the
+// comparison happens against the form content selectors are written in.
+//
+// The caller's identity comes off the gin context, where OptionalAuth and
+// RBACMiddleware leave it — the route browse_docker.go takes to the same values.
+// An error is a denial: an access check that could not be completed has not
+// granted anything.
+func (h *Handler) callerMayRead(c *gin.Context, repo *domain.Repository, assetPath string) bool {
+	if h.deps.RBAC == nil {
+		return true
+	}
+	userID, _ := c.Get("userID")
+	roles, _ := c.Get("roles")
+	uid, _ := userID.(string)
+	roleList, _ := roles.([]string)
+	ok, err := h.deps.RBAC.CanAccessRepo(c.Request.Context(), uid, roleList, repo, assetPath, "read")
+	return err == nil && ok
+}
+
+// mountSourceImages returns the image names inside repoName that a client's
+// `from` value can name.
+//
+// A client composes `from` as the repository name it pushed the source under
+// minus the registry host — reference.Path of the source reference — so its
+// spelling follows whichever URL shape the push used:
+//
+//	host/<repo>/<image>             → from=<repo>/<image>
+//	host/repository/<repo>/<image>  → from=repository/<repo>/<image>
+//	<repo>.<baseDomain>/<image>     → from=<image>
+//
+// The last one is bare because the subdomain connector rewrites only the path;
+// the query string the client built never sees the repository name. Every form
+// therefore resolves inside the repository the request was already authorized
+// against, and a `from` naming any other Nexspence repository resolves to
+// nothing — see the access-control note on mountBlob.
+//
+// The two readings of "<repo>/<image>" are both returned because they are
+// genuinely ambiguous: an image may legitimately be named after the repository
+// it lives in. The digest pins the content either way, so whichever exists wins.
+func mountSourceImages(repoName, from string) []string {
+	from = strings.Trim(from, "/")
+	if from == "" {
+		return nil
+	}
+	images := []string{from}
+	for _, prefix := range []string{repoName + "/", "repository/" + repoName + "/"} {
+		if rest := strings.TrimPrefix(from, prefix); rest != from && rest != "" {
+			images = append(images, rest)
+		}
+	}
+	return images
+}
+
+// locateBlob reports whether an asset's bytes are really in the store, and
+// returns the name of the store holding them (empty when the asset names no
+// store, or names one that no longer resolves).
+func (h *Handler) locateBlob(ctx context.Context, asset *domain.Asset) (storeName string, present bool) {
+	store := h.deps.BlobStore
+	if asset.BlobStoreID != "" {
+		if meta, err := h.deps.Blobs.GetByID(ctx, asset.BlobStoreID); err == nil && meta != nil {
+			store = base.PhysicalStore(ctx, h.deps, meta)
+			storeName = meta.Name
+		}
+	}
+	exists, err := store.Exists(ctx, asset.BlobKey)
+	if err != nil || !exists {
+		return "", false
+	}
+	return storeName, true
+}
+
+// blobLocation is the URL of a stored blob under the same /v2/ prefix — and the
+// same short or long path form — the client authenticated against. A hardcoded
+// /repository/... URL sent the follow-up request to a different auth surface and
+// returned 401 (issue #47).
+func blobLocation(c *gin.Context, imageName, digest string) string {
+	if i := strings.Index(c.Request.URL.Path, "/blobs/"); i >= 0 {
+		return c.Request.URL.Path[:i] + "/blobs/" + digest
+	}
+	return "/v2/" + imageName + "/blobs/" + digest
 }
 
 func (h *Handler) patchUpload(c *gin.Context, _, _, uuid string) {
@@ -546,12 +783,7 @@ func (h *Handler) finalizeUpload(c *gin.Context, repoName, imageName, uuid strin
 	h.uploads.remove(ctx, uuid)
 
 	c.Header("Docker-Content-Digest", digest)
-	// Point at the stored blob under the same /v2/ prefix the client used.
-	blobLoc := "/v2/" + imageName + "/blobs/" + digest
-	if i := strings.Index(c.Request.URL.Path, "/blobs/"); i >= 0 {
-		blobLoc = c.Request.URL.Path[:i] + "/blobs/" + digest
-	}
-	c.Header("Location", blobLoc)
+	c.Header("Location", blobLocation(c, imageName, digest))
 	c.Header("Content-Range", fmt.Sprintf("0-%d", len(data)-1))
 	c.Status(http.StatusCreated)
 }

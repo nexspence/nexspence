@@ -194,6 +194,9 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 	go dlCounter.Start(context.Background(), 10*time.Second)
 
 	// ── Format handlers ───────────────────────────────────────
+	// Built before the format handlers because they take Deps by value: a
+	// handler constructed without the checker would keep a nil copy of it.
+	rbacSvc := service.NewRBACService(rbacRepo, repoRepo, log)
 	formatDeps := formats.Deps{
 		Repos:        repoRepo,
 		Components:   componentRepo,
@@ -205,6 +208,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 		Webhooks:     webhookSvc,
 		Downloads:    dlCounter,
 		RoutingRules: rrRepo,
+		RBAC:         rbacSvc,
 	}
 	formatRegistry := map[string]formats.FormatHandler{
 		"raw":       raw.New(formatDeps),
@@ -230,7 +234,6 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 
 	// ── Handlers ──────────────────────────────────────────────
 	authH := handlers.NewAuthHandler(userSvc, log).WithConfig(*cfg)
-	rbacSvc := service.NewRBACService(rbacRepo, repoRepo, log)
 	repoH := handlers.NewRepositoryHandler(repoSvc, rbacSvc)
 	userH := handlers.NewUserHandler(userSvc)
 	blobH := handlers.NewBlobStoreHandler(blobRepo).WithUsageDeps(repoRepo, assetRepo).WithRegistry(blobRegistry).WithGC(gcSvc)

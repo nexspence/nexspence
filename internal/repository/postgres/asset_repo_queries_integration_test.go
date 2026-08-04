@@ -1298,3 +1298,116 @@ func TestAssetRepoQueries_ListByComponentIDs_EmptyInput_ReturnsEmptyMap(t *testi
 		t.Errorf("expected empty map for empty input, got %d keys", len(byID))
 	}
 }
+
+// ── ListOCIImageNames ─────────────────────────────────────────────────────────
+
+// The catalog endpoint is built on this query, so what it must never do is name
+// something a client cannot pull: a layer, or an image whose upload was
+// abandoned before its manifest. Both leave assets behind under /blobs/.
+func TestAssetRepoQueries_ListOCIImageNames_OnlyImagesWithManifests(t *testing.T) {
+	pool := pgtest.Pool(t)
+	pgtest.Truncate(t, pool, "blob_stores", "repositories", "components")
+	ctx := context.Background()
+
+	p := makeAssetParent(t, ctx, "oci_names")
+	repo := NewAssetRepo(pool)
+
+	const dgst = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+	paths := []string{
+		// One image under two tags plus the digest alias every tagged push
+		// registers: three assets, one name.
+		"/manifests/library/ubuntu/latest",
+		"/manifests/library/ubuntu/22.04",
+		"/manifests/library/ubuntu/" + dgst,
+		// A single-segment image name, and a sibling whose name contains
+		// another's in full.
+		"/manifests/myapp/1.0",
+		"/manifests/charts/nginx/1.2.3",
+		"/manifests/charts/nginx-extra/1.0.0",
+		// Blobs name nothing: a layer of an image that is listed, and one of an
+		// upload that never got a manifest.
+		"/blobs/library/ubuntu/" + dgst,
+		"/blobs/aborted/upload/" + dgst,
+	}
+	for _, path := range paths {
+		if err := repo.Create(ctx, makeAsset(p, path)); err != nil {
+			t.Fatalf("Create %q: %v", path, err)
+		}
+	}
+
+	got, err := repo.ListOCIImageNames(ctx, []string{p.RepoName})
+	if err != nil {
+		t.Fatalf("ListOCIImageNames: %v", err)
+	}
+	sort.Strings(got)
+	want := []string{"charts/nginx", "charts/nginx-extra", "library/ubuntu", "myapp"}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("name[%d]: got %q want %q", i, got[i], want[i])
+		}
+	}
+}
+
+// Each repository is its own registry namespace, so one repository's images must
+// never appear in another's catalog.
+func TestAssetRepoQueries_ListOCIImageNames_ScopedToTheNamedRepositories(t *testing.T) {
+	pool := pgtest.Pool(t)
+	pgtest.Truncate(t, pool, "blob_stores", "repositories", "components")
+	ctx := context.Background()
+
+	p1 := makeAssetParent(t, ctx, "oci_scope1")
+	p2 := makeAssetParent(t, ctx, "oci_scope2")
+	repo := NewAssetRepo(pool)
+
+	if err := repo.Create(ctx, makeAsset(p1, "/manifests/only/in-one/1.0")); err != nil {
+		t.Fatalf("Create in repo 1: %v", err)
+	}
+	if err := repo.Create(ctx, makeAsset(p2, "/manifests/only/in-two/1.0")); err != nil {
+		t.Fatalf("Create in repo 2: %v", err)
+	}
+
+	got, err := repo.ListOCIImageNames(ctx, []string{p1.RepoName})
+	if err != nil {
+		t.Fatalf("ListOCIImageNames(repo1): %v", err)
+	}
+	if len(got) != 1 || got[0] != "only/in-one" {
+		t.Fatalf("repo1 must list only its own image, got %v", got)
+	}
+
+	both, err := repo.ListOCIImageNames(ctx, []string{p1.RepoName, p2.RepoName})
+	if err != nil {
+		t.Fatalf("ListOCIImageNames(both): %v", err)
+	}
+	sort.Strings(both)
+	if len(both) != 2 || both[0] != "only/in-one" || both[1] != "only/in-two" {
+		t.Fatalf("both repositories must contribute, got %v", both)
+	}
+}
+
+func TestAssetRepoQueries_ListOCIImageNames_EmptyInputs(t *testing.T) {
+	pool := pgtest.Pool(t)
+	pgtest.Truncate(t, pool, "blob_stores", "repositories", "components")
+	ctx := context.Background()
+
+	p := makeAssetParent(t, ctx, "oci_empty")
+	repo := NewAssetRepo(pool)
+
+	none, err := repo.ListOCIImageNames(ctx, []string{p.RepoName})
+	if err != nil {
+		t.Fatalf("ListOCIImageNames(empty repo): %v", err)
+	}
+	if len(none) != 0 {
+		t.Errorf("an empty repository holds no images, got %v", none)
+	}
+
+	noRepos, err := repo.ListOCIImageNames(ctx, nil)
+	if err != nil {
+		t.Fatalf("ListOCIImageNames(no repos): %v", err)
+	}
+	if len(noRepos) != 0 {
+		t.Errorf("no repositories means no images, got %v", noRepos)
+	}
+}
