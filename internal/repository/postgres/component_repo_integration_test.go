@@ -1405,3 +1405,86 @@ func TestComponentRepo_DeleteOrphans_EmptyRepoIsNoOp(t *testing.T) {
 		t.Fatalf("DeleteOrphans on empty repo: %v", err)
 	}
 }
+
+// ── ListOCIReferrers ─────────────────────────────────────────────────────────
+
+func TestComponentRepo_ListOCIReferrers_FiltersBySubjectDigest(t *testing.T) {
+	pool := pgtest.Pool(t)
+	pgtest.Truncate(t, pool, "blob_stores", "repositories")
+	ctx := context.Background()
+
+	p1 := makeCompParent(t, ctx, "referrers_r1")
+	p2 := makeCompParent(t, ctx, "referrers_r2")
+	repo := NewComponentRepo(pool)
+
+	subjectDigest := "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+
+	// repo1: one referrer of subjectDigest ...
+	referrer1 := &domain.Component{
+		RepositoryID: p1.RepositoryID,
+		Format:       "oci",
+		Name:         "signed-image",
+		Version:      "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+		Extra:        map[string]any{"oci_subject": subjectDigest},
+	}
+	if err := repo.Create(ctx, referrer1); err != nil {
+		t.Fatalf("Create referrer1: %v", err)
+	}
+
+	// ... and one unrelated component with no oci_subject at all.
+	unrelated := &domain.Component{
+		RepositoryID: p1.RepositoryID,
+		Format:       "oci",
+		Name:         "plain-image",
+		Version:      "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+	}
+	if err := repo.Create(ctx, unrelated); err != nil {
+		t.Fatalf("Create unrelated: %v", err)
+	}
+
+	// repo2: another referrer of the same subjectDigest.
+	referrer2 := &domain.Component{
+		RepositoryID: p2.RepositoryID,
+		Format:       "oci",
+		Name:         "sbom",
+		Version:      "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+		Extra:        map[string]any{"oci_subject": subjectDigest},
+	}
+	if err := repo.Create(ctx, referrer2); err != nil {
+		t.Fatalf("Create referrer2: %v", err)
+	}
+
+	// Querying repo1 alone returns only referrer1.
+	got, err := repo.ListOCIReferrers(ctx, []string{p1.RepoName}, "", subjectDigest)
+	if err != nil {
+		t.Fatalf("ListOCIReferrers(repo1): %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected 1 referrer in repo1, got %d: %+v", len(got), got)
+	}
+	if got[0].ID != referrer1.ID {
+		t.Errorf("expected referrer1 (%s), got %s (%s)", referrer1.ID, got[0].ID, got[0].Name)
+	}
+
+	// Querying both repo names returns both referrers.
+	gotBoth, err := repo.ListOCIReferrers(ctx, []string{p1.RepoName, p2.RepoName}, "", subjectDigest)
+	if err != nil {
+		t.Fatalf("ListOCIReferrers(both repos): %v", err)
+	}
+	if len(gotBoth) != 2 {
+		t.Fatalf("expected 2 referrers across both repos, got %d: %+v", len(gotBoth), gotBoth)
+	}
+	ids := map[string]bool{gotBoth[0].ID: true, gotBoth[1].ID: true}
+	if !ids[referrer1.ID] || !ids[referrer2.ID] {
+		t.Errorf("expected both referrer1 and referrer2, got %+v", gotBoth)
+	}
+
+	// A digest nothing points at returns no rows.
+	none, err := repo.ListOCIReferrers(ctx, []string{p1.RepoName, p2.RepoName}, "", "sha256:deadbeef")
+	if err != nil {
+		t.Fatalf("ListOCIReferrers(no match): %v", err)
+	}
+	if len(none) != 0 {
+		t.Errorf("expected 0 referrers for unmatched digest, got %d: %+v", len(none), none)
+	}
+}

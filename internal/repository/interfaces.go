@@ -47,6 +47,10 @@ type ComponentRepo interface {
 	SetTags(ctx context.Context, id string, tags []string) error
 	// DeleteOrphans removes components in repoName that have no remaining assets.
 	DeleteOrphans(ctx context.Context, repoName string) error
+	// ListOCIReferrers returns components whose stored manifest metadata names
+	// subjectDigest as its subject — the referrers of that manifest. imageName
+	// restricts the search to one repository path; empty means any.
+	ListOCIReferrers(ctx context.Context, repoNames []string, imageName, subjectDigest string) ([]domain.Component, error)
 }
 
 // AssetRepo manages artifact file records.

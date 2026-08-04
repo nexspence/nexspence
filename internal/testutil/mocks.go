@@ -383,6 +383,45 @@ func (c *ComponentRepo) ListDockerBrowseRows(_ context.Context, names []string, 
 	return out, nil
 }
 
+// ListOCIReferrers mirrors the SQL: filter by repository name (IN repoNames),
+// by extra["oci_subject"] == subjectDigest, and by name == imageName when
+// imageName is non-empty.
+func (c *ComponentRepo) ListOCIReferrers(_ context.Context, repoNames []string, imageName, subjectDigest string) ([]domain.Component, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.Err != nil {
+		return nil, c.Err
+	}
+	if len(repoNames) == 0 {
+		return nil, nil
+	}
+	allow := make(map[string]struct{}, len(repoNames))
+	for _, n := range repoNames {
+		allow[n] = struct{}{}
+	}
+	var items []domain.Component
+	for _, v := range c.components {
+		if _, ok := allow[v.Repository]; !ok {
+			continue
+		}
+		subj, _ := v.Extra["oci_subject"].(string)
+		if subj != subjectDigest {
+			continue
+		}
+		if imageName != "" && v.Name != imageName {
+			continue
+		}
+		items = append(items, *v)
+	}
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].Name != items[j].Name {
+			return items[i].Name < items[j].Name
+		}
+		return items[i].Version < items[j].Version
+	})
+	return items, nil
+}
+
 func (c *ComponentRepo) Create(_ context.Context, comp *domain.Component) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
