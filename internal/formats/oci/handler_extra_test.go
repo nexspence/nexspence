@@ -1,4 +1,4 @@
-package docker_test
+package oci_test
 
 import (
 	"fmt"
@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/nexspence-oss/nexspence/internal/formats"
-	"github.com/nexspence-oss/nexspence/internal/formats/docker"
+	"github.com/nexspence-oss/nexspence/internal/formats/oci"
 	"github.com/nexspence-oss/nexspence/internal/requestctx"
 	"github.com/nexspence-oss/nexspence/internal/testutil"
 )
@@ -29,7 +29,7 @@ func TestDocker_Name(t *testing.T) {
 		BlobStore:  testutil.NewBlobStore(),
 		BaseURL:    "http://localhost:8080",
 	}
-	h := docker.New(d)
+	h := oci.New(d)
 	assert.Equal(t, "docker", h.Name())
 }
 
@@ -349,7 +349,7 @@ func TestDocker_ProxyManifest_Get_FallsThrough(t *testing.T) {
 		BlobStore:  testutil.NewBlobStore(),
 		BaseURL:    "http://localhost:8080",
 	}
-	h := docker.New(d)
+	h := oci.New(d)
 	r := gin.New()
 	r.Use(func(c *gin.Context) {
 		ctx := requestctx.WithUser(c.Request.Context(), "test-user-id", "testuser")
@@ -381,7 +381,7 @@ func TestDocker_ProxyBlob_Get_FallsThrough(t *testing.T) {
 		BlobStore:  testutil.NewBlobStore(),
 		BaseURL:    "http://localhost:8080",
 	}
-	h := docker.New(d)
+	h := oci.New(d)
 	r := gin.New()
 	r.Use(func(c *gin.Context) {
 		ctx := requestctx.WithUser(c.Request.Context(), "test-user-id", "testuser")
@@ -420,7 +420,7 @@ func TestDocker_ProxyBlob_Delete_Rejected(t *testing.T) {
 // engineFor wires one gin engine per Handler so a test can drive several
 // handler instances that share the same Deps — the multi-node deployment where
 // consecutive requests of one push land on different nodes.
-func engineFor(h *docker.Handler) *gin.Engine {
+func engineFor(h *oci.Handler) *gin.Engine {
 	r := gin.New()
 	r.Use(func(c *gin.Context) {
 		ctx := requestctx.WithUser(c.Request.Context(), "test-user-id", "testuser")
@@ -443,7 +443,7 @@ func TestDocker_BlobUpload_SpansInstances(t *testing.T) {
 		BlobStore:  testutil.NewBlobStore(),
 		BaseURL:    "http://localhost:8080",
 	}
-	node1, node2 := engineFor(docker.New(d)), engineFor(docker.New(d))
+	node1, node2 := engineFor(oci.New(d)), engineFor(oci.New(d))
 
 	const first, second = "layer-part-one|", "layer-part-two"
 	dgst := digest(first + second)
@@ -511,7 +511,7 @@ func TestDocker_BlobUpload_IDsAreUnguessable(t *testing.T) {
 		BlobStore:  testutil.NewBlobStore(),
 		BaseURL:    "http://localhost:8080",
 	}
-	node1, node2 := engineFor(docker.New(d)), engineFor(docker.New(d))
+	node1, node2 := engineFor(oci.New(d)), engineFor(oci.New(d))
 
 	ids := map[string]bool{}
 	for _, node := range []*gin.Engine{node1, node2, node1, node2} {

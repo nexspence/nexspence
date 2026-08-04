@@ -13,7 +13,7 @@
 //	PATCH /v2/:name/blobs/uploads/:uuid         → stream blob chunks
 //	PUT  /v2/:name/blobs/uploads/:uuid?digest=  → finalize blob upload
 //	DELETE /v2/:name/blobs/:digest              → delete blob
-package docker
+package oci
 
 import (
 	"bytes"

@@ -27,13 +27,13 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/formats/cargo"
 	"github.com/nexspence-oss/nexspence/internal/formats/conan"
 	"github.com/nexspence-oss/nexspence/internal/formats/conda"
-	"github.com/nexspence-oss/nexspence/internal/formats/docker"
 	"github.com/nexspence-oss/nexspence/internal/formats/gomod"
 	"github.com/nexspence-oss/nexspence/internal/formats/group"
 	"github.com/nexspence-oss/nexspence/internal/formats/helm"
 	"github.com/nexspence-oss/nexspence/internal/formats/maven"
 	"github.com/nexspence-oss/nexspence/internal/formats/npm"
 	"github.com/nexspence-oss/nexspence/internal/formats/nuget"
+	"github.com/nexspence-oss/nexspence/internal/formats/oci"
 	"github.com/nexspence-oss/nexspence/internal/formats/pypi"
 	"github.com/nexspence-oss/nexspence/internal/formats/raw"
 	"github.com/nexspence-oss/nexspence/internal/formats/terraform"
@@ -220,7 +220,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 		"apt":       apt.New(formatDeps),
 		"terraform": terraform.New(formatDeps),
 		"yum":       yum.New(formatDeps),
-		"docker":    docker.New(formatDeps),
+		"docker":    oci.New(formatDeps),
 	}
 	// Group handler needs a reference to the registry to fan-out to members.
 	groupHandler := group.New(formatDeps, formatRegistry)
