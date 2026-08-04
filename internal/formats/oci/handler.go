@@ -4,6 +4,7 @@
 //
 //	GET  /v2/                                   → API version check (200 OK)
 //	GET  /v2/:name/tags/list                    → list tags
+//	GET  /v2/:name/referrers/:digest            → list manifests referring to :digest
 //	GET  /v2/:name/manifests/:reference         → pull manifest
 //	PUT  /v2/:name/manifests/:reference         → push manifest
 //	DELETE /v2/:name/manifests/:reference       → delete manifest
@@ -76,11 +77,21 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 	}
 
 	// Find the endpoint keyword from the right
-	// patterns: .../tags/list | .../manifests/:ref | .../blobs/:digest | .../blobs/uploads/[uuid]
+	// patterns: .../tags/list | .../referrers/:digest | .../manifests/:ref |
+	//           .../blobs/:digest | .../blobs/uploads/[uuid]
 	switch {
 	case endsWithSegments(parts, "tags", "list"):
 		imageName := strings.Join(parts[:len(parts)-2], "/")
 		h.handleTagsList(c, repoName, imageName)
+
+	// Before manifests and blobs: the shape is <name>/referrers/<digest>, and
+	// referrersIndex only matches the keyword in that exact position, so no
+	// existing path can be re-routed by this case.
+	case referrersIndex(parts) >= 0:
+		idx := referrersIndex(parts)
+		imageName := strings.Join(parts[:idx], "/")
+		subjectDigest := strings.Join(parts[idx+1:], "/")
+		h.handleReferrers(c, repoName, imageName, subjectDigest)
 
 	case hasSegment(parts, "manifests"):
 		idx := segmentIndex(parts, "manifests")
@@ -342,6 +353,14 @@ func blobPath(imageName, digest string) string {
 	return "/blobs/" + imageName + "/" + digest
 }
 
+// referrersPath is the repository-relative form of a referrers request, in the
+// same shape as manifestPath and blobPath. Nothing is stored under it — the
+// index is computed per request — but a proxy failure has to be reported against
+// the path on this side, as every other repoproxy caller does.
+func referrersPath(imageName, subjectDigest string) string {
+	return "/referrers/" + imageName + "/" + subjectDigest
+}
+
 func (h *Handler) handleBlobs(c *gin.Context, repoName, imageName, digest string) {
 	repo, _ := h.deps.Repos.Get(c.Request.Context(), repoName)
 	switch c.Request.Method {
@@ -585,6 +604,20 @@ func segmentIndex(parts []string, seg string) int {
 		}
 	}
 	return -1
+}
+
+// referrersIndex reports where the "referrers" keyword sits in a split path, or
+// -1 when the path is not a referrers request. The keyword is only recognized as
+// the second-to-last segment — the spec's shape is {name}/referrers/{digest} and
+// a digest is always exactly one segment. Matching it anywhere (as the manifests
+// and blobs cases do) would let an image legitimately named ".../referrers"
+// swallow its own manifest and blob requests.
+func referrersIndex(parts []string) int {
+	idx := len(parts) - 2
+	if idx < 1 || parts[idx] != "referrers" {
+		return -1
+	}
+	return idx
 }
 
 func normPath(p string) string {

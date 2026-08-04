@@ -277,6 +277,52 @@ func (r *componentRepo) ListDockerBrowseRows(ctx context.Context, repoNames []st
 	return out, rows.Err()
 }
 
+// ListOCIReferrers returns components whose stored manifest metadata names
+// subjectDigest as its subject. imageName restricts the search to one
+// repository path (the "name" segment of /v2/{name}/...); empty means any.
+func (r *componentRepo) ListOCIReferrers(ctx context.Context, repoNames []string, imageName, subjectDigest string) ([]domain.Component, error) {
+	if len(repoNames) == 0 {
+		return nil, nil
+	}
+	ph := make([]string, len(repoNames))
+	args := make([]any, 0, len(repoNames)+2)
+	for i, n := range repoNames {
+		ph[i] = fmt.Sprintf("$%d", i+1)
+		args = append(args, n)
+	}
+	digestPos := len(args) + 1
+	args = append(args, subjectDigest)
+	q := fmt.Sprintf(`
+		SELECT c.id, c.repository_id, rep.name, c.format,
+		       c.group_id, c.name, c.version, c.tags,
+		       c.extra, c.last_downloaded, c.download_count, c.created_at
+		FROM components c
+		JOIN repositories rep ON rep.id = c.repository_id
+		WHERE rep.name IN (%s) AND c.extra->>'oci_subject' = $%d`, strings.Join(ph, ","), digestPos)
+	if imageName != "" {
+		namePos := len(args) + 1
+		args = append(args, imageName)
+		q += fmt.Sprintf(" AND c.name = $%d", namePos)
+	}
+	q += " ORDER BY c.name, c.version"
+
+	rows, err := r.db.Query(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var items []domain.Component
+	for rows.Next() {
+		c, err := scanComponent(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, *c)
+	}
+	return items, rows.Err()
+}
+
 func (r *componentRepo) DeleteOrphans(ctx context.Context, repoName string) error {
 	_, err := r.db.Exec(ctx, `
 		DELETE FROM components c

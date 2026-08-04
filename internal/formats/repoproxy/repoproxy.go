@@ -237,6 +237,32 @@ func serveCachedAsset(c *gin.Context, d formats.Deps, asset *domain.Asset, rc io
 	c.DataFromReader(http.StatusOK, asset.SizeBytes, asset.ContentType, rc, nil)
 }
 
+// FetchUpstreamOnce performs a single upstream GET and returns the raw response
+// without caching anything. It exists for computed registry endpoints — the
+// referrers API, the catalog — whose responses are generated per request and are
+// not artifacts, so the blob-backed cache in ServeGET does not apply.
+//
+// upstreamPath is the repository-relative path; rawQuery is the already-encoded
+// query string (without the leading "?") and must be passed separately, because
+// JoinURL percent-escapes whatever it is handed as a path — a "?" glued on would
+// arrive upstream as %3F, i.e. part of the digest, not a filter.
+//
+// The caller must close the response body.
+func FetchUpstreamOnce(ctx context.Context, repo *domain.Repository, upstreamPath, rawQuery string, hdr http.Header) (*http.Response, error) {
+	baseRemote, err := RemoteURL(repo)
+	if err != nil {
+		return nil, err
+	}
+	upstream, err := JoinURL(baseRemote, upstreamPath)
+	if err != nil {
+		return nil, err
+	}
+	if rawQuery != "" {
+		upstream += "?" + rawQuery
+	}
+	return fetchUpstreamWithDockerHubAuth(ctx, ClientFor(repo), http.MethodGet, upstream, baseRemote, hdr)
+}
+
 // ServeGET serves a cached asset or fetches upstream, streaming to the client
 // and persisting to the blob store on success. repo must be TypeProxy.
 // upstreamPath, when non-empty, is used only for the upstream URL (e.g. npm scoped metadata);
@@ -341,7 +367,7 @@ func fetchAndCache(c *gin.Context, d formats.Deps, repo *domain.Repository,
 
 	resp, err := fetchUpstreamWithDockerHubAuth(ctx, ClientFor(repo), upstreamMethod, upstream, baseRemote, upHdr)
 	if err != nil {
-		dispatchProxyError(d, repo.Name, repoRelativePath, upstream, err)
+		DispatchProxyError(d, repo.Name, repoRelativePath, upstream, err)
 		c.JSON(http.StatusBadGateway, gin.H{"error": "upstream fetch failed: " + err.Error()})
 		return nil
 	}
@@ -404,7 +430,7 @@ func revalidateAndServe(c *gin.Context, d formats.Deps, repo *domain.Repository,
 	resp, err := fetchUpstreamWithDockerHubAuth(ctx, ClientFor(repo), http.MethodGet, upstream, baseRemote, upHdr)
 	if err != nil {
 		// Upstream unreachable → serve stale cache so metadata consumers keep working.
-		dispatchProxyError(d, repo.Name, repoRelativePath, upstream, err)
+		DispatchProxyError(d, repo.Name, repoRelativePath, upstream, err)
 		serveCachedAsset(c, d, asset, rc, rewrite)
 		return nil
 	}
@@ -426,7 +452,7 @@ func revalidateAndServe(c *gin.Context, d formats.Deps, repo *domain.Repository,
 	default:
 		// Any other status (404/410/5xx): don't discard a good cache on a transient
 		// upstream hiccup — serve stale and record the anomaly.
-		dispatchProxyError(d, repo.Name, repoRelativePath, upstream,
+		DispatchProxyError(d, repo.Name, repoRelativePath, upstream,
 			fmt.Errorf("revalidation returned status %d", resp.StatusCode))
 		serveCachedAsset(c, d, asset, rc, rewrite)
 		return nil
@@ -555,9 +581,19 @@ func storeOriginal(ctx context.Context, c *gin.Context, d formats.Deps, repo *do
 	return nil
 }
 
-// dispatchProxyError records an upstream fetch/revalidation failure via the
+// DispatchProxyError records an upstream fetch/revalidation failure via the
 // webhook bus (the package's proxy-error reporting channel), if configured.
-func dispatchProxyError(d formats.Deps, repoName, repoRelativePath, upstream string, cause error) {
+// Exported because format handlers that talk upstream outside ServeGET — the OCI
+// referrers endpoint, for one — must report a failure the same way; formats.Deps
+// carries no logger, so this bus is the only operator-facing channel they have.
+//
+// path is the path on THIS side: the repository-relative path the client asked
+// for, which for a cached artifact is also its asset path and cache key. It is
+// not the upstream path — the upstream side of the request is the separate
+// upstream argument, which carries the full URL actually requested. Every caller
+// must pass the same side, or the payload's "path" key would mean one thing per
+// caller and be unreadable to whoever consumes the webhook.
+func DispatchProxyError(d formats.Deps, repoName, path, upstream string, cause error) {
 	if d.Webhooks == nil {
 		return
 	}
@@ -566,7 +602,7 @@ func dispatchProxyError(d formats.Deps, repoName, repoRelativePath, upstream str
 		Timestamp:  time.Now(),
 		Repository: repoName,
 		Asset: map[string]any{
-			"path":     repoRelativePath,
+			"path":     path,
 			"upstream": upstream,
 			"error":    cause.Error(),
 		},

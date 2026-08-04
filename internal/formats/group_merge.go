@@ -22,3 +22,22 @@ type GroupIndexMerger interface {
 	// wins on conflict) into one document rooted at the group's URL.
 	MergeGroupIndex(groupName, path string, parts []GroupIndexPart) (body []byte, contentType string, err error)
 }
+
+// GroupIndexStrictMerger is optionally implemented alongside GroupIndexMerger by
+// formats whose merged index must never be served incomplete.
+//
+// By default the group skips a member that answered non-2xx, so one down
+// upstream cannot take the whole group with it. For most indexes a short list is
+// a degraded but honest answer. For the OCI referrers index it is not: a client
+// reads a short list as "this image carries no signature", so silently dropping
+// a member that could not be consulted turns "I could not check" into a
+// statement about the subject. A format that says so here gets the opposite
+// default — the group relays the member's failure instead of merging around it,
+// and a merge that cannot be completed is an error rather than a degradation to
+// the first member's document.
+type GroupIndexStrictMerger interface {
+	// GroupIndexMemberFailureIsFatal reports whether a member's non-2xx answer
+	// on path means "I could not check" — which must fail the whole group —
+	// rather than "I have nothing to contribute", which is skipped as usual.
+	GroupIndexMemberFailureIsFatal(path string, status int) bool
+}

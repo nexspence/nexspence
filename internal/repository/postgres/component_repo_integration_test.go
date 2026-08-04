@@ -1405,3 +1405,189 @@ func TestComponentRepo_DeleteOrphans_EmptyRepoIsNoOp(t *testing.T) {
 		t.Fatalf("DeleteOrphans on empty repo: %v", err)
 	}
 }
+
+// ── ListOCIReferrers ─────────────────────────────────────────────────────────
+
+func TestComponentRepo_ListOCIReferrers_FiltersBySubjectDigest(t *testing.T) {
+	pool := pgtest.Pool(t)
+	pgtest.Truncate(t, pool, "blob_stores", "repositories")
+	ctx := context.Background()
+
+	p1 := makeCompParent(t, ctx, "referrers_r1")
+	p2 := makeCompParent(t, ctx, "referrers_r2")
+	repo := NewComponentRepo(pool)
+
+	subjectDigest := "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+
+	// repo1: one referrer of subjectDigest ...
+	referrer1 := &domain.Component{
+		RepositoryID: p1.RepositoryID,
+		Format:       "oci",
+		Name:         "signed-image",
+		Version:      "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+		Extra:        map[string]any{"oci_subject": subjectDigest},
+	}
+	if err := repo.Create(ctx, referrer1); err != nil {
+		t.Fatalf("Create referrer1: %v", err)
+	}
+
+	// ... and one unrelated component with no oci_subject at all.
+	unrelated := &domain.Component{
+		RepositoryID: p1.RepositoryID,
+		Format:       "oci",
+		Name:         "plain-image",
+		Version:      "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+	}
+	if err := repo.Create(ctx, unrelated); err != nil {
+		t.Fatalf("Create unrelated: %v", err)
+	}
+
+	// repo2: another referrer of the same subjectDigest.
+	referrer2 := &domain.Component{
+		RepositoryID: p2.RepositoryID,
+		Format:       "oci",
+		Name:         "sbom",
+		Version:      "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+		Extra:        map[string]any{"oci_subject": subjectDigest},
+	}
+	if err := repo.Create(ctx, referrer2); err != nil {
+		t.Fatalf("Create referrer2: %v", err)
+	}
+
+	// Querying repo1 alone returns only referrer1.
+	got, err := repo.ListOCIReferrers(ctx, []string{p1.RepoName}, "", subjectDigest)
+	if err != nil {
+		t.Fatalf("ListOCIReferrers(repo1): %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected 1 referrer in repo1, got %d: %+v", len(got), got)
+	}
+	if got[0].ID != referrer1.ID {
+		t.Errorf("expected referrer1 (%s), got %s (%s)", referrer1.ID, got[0].ID, got[0].Name)
+	}
+
+	// Querying both repo names returns both referrers.
+	gotBoth, err := repo.ListOCIReferrers(ctx, []string{p1.RepoName, p2.RepoName}, "", subjectDigest)
+	if err != nil {
+		t.Fatalf("ListOCIReferrers(both repos): %v", err)
+	}
+	if len(gotBoth) != 2 {
+		t.Fatalf("expected 2 referrers across both repos, got %d: %+v", len(gotBoth), gotBoth)
+	}
+	ids := map[string]bool{gotBoth[0].ID: true, gotBoth[1].ID: true}
+	if !ids[referrer1.ID] || !ids[referrer2.ID] {
+		t.Errorf("expected both referrer1 and referrer2, got %+v", gotBoth)
+	}
+
+	// A digest nothing points at returns no rows.
+	none, err := repo.ListOCIReferrers(ctx, []string{p1.RepoName, p2.RepoName}, "", "sha256:deadbeef")
+	if err != nil {
+		t.Fatalf("ListOCIReferrers(no match): %v", err)
+	}
+	if len(none) != 0 {
+		t.Errorf("expected 0 referrers for unmatched digest, got %d: %+v", len(none), none)
+	}
+}
+
+// The referrers handler always passes a non-empty imageName — /v2/{name}/... —
+// so the "AND c.name = $N" clause and the placeholder arithmetic that positions
+// it after the repository names and the digest are what production actually
+// runs. Covered here against real SQL, not only against the in-memory mock.
+func TestComponentRepo_ListOCIReferrers_FiltersByImageName(t *testing.T) {
+	pool := pgtest.Pool(t)
+	pgtest.Truncate(t, pool, "blob_stores", "repositories")
+	ctx := context.Background()
+
+	p1 := makeCompParent(t, ctx, "referrers_name_r1")
+	p2 := makeCompParent(t, ctx, "referrers_name_r2")
+	repo := NewComponentRepo(pool)
+
+	subjectDigest := "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+
+	// The referrer we want: right image name, right subject.
+	wanted := &domain.Component{
+		RepositoryID: p1.RepositoryID,
+		Format:       "oci",
+		Name:         "charts/nginx",
+		Version:      "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+		Extra:        map[string]any{"oci_subject": subjectDigest},
+	}
+	if err := repo.Create(ctx, wanted); err != nil {
+		t.Fatalf("Create wanted: %v", err)
+	}
+
+	// The same subject digest under a different image name. Digests are global,
+	// so this row really can exist; naming it would leak another image's
+	// signature into this image's index.
+	otherName := &domain.Component{
+		RepositoryID: p1.RepositoryID,
+		Format:       "oci",
+		Name:         "charts/redis",
+		Version:      "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+		Extra:        map[string]any{"oci_subject": subjectDigest},
+	}
+	if err := repo.Create(ctx, otherName); err != nil {
+		t.Fatalf("Create otherName: %v", err)
+	}
+
+	// The right image name in a repository that was not asked for, so the name
+	// filter cannot be mistaken for the repository filter.
+	otherRepo := &domain.Component{
+		RepositoryID: p2.RepositoryID,
+		Format:       "oci",
+		Name:         "charts/nginx",
+		Version:      "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+		Extra:        map[string]any{"oci_subject": subjectDigest},
+	}
+	if err := repo.Create(ctx, otherRepo); err != nil {
+		t.Fatalf("Create otherRepo: %v", err)
+	}
+
+	// A prefix of the wanted name must not match: the clause is equality.
+	prefixName := &domain.Component{
+		RepositoryID: p1.RepositoryID,
+		Format:       "oci",
+		Name:         "charts/nginx-extra",
+		Version:      "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+		Extra:        map[string]any{"oci_subject": subjectDigest},
+	}
+	if err := repo.Create(ctx, prefixName); err != nil {
+		t.Fatalf("Create prefixName: %v", err)
+	}
+
+	got, err := repo.ListOCIReferrers(ctx, []string{p1.RepoName}, "charts/nginx", subjectDigest)
+	if err != nil {
+		t.Fatalf("ListOCIReferrers(imageName): %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected exactly the charts/nginx referrer in repo1, got %d: %+v", len(got), got)
+	}
+	if got[0].ID != wanted.ID {
+		t.Errorf("expected %s (charts/nginx), got %s (%s)", wanted.ID, got[0].ID, got[0].Name)
+	}
+
+	// Two repository names push the digest and image-name placeholders one
+	// position further along; the arithmetic must still line up.
+	gotBoth, err := repo.ListOCIReferrers(ctx, []string{p1.RepoName, p2.RepoName}, "charts/nginx", subjectDigest)
+	if err != nil {
+		t.Fatalf("ListOCIReferrers(both repos, imageName): %v", err)
+	}
+	if len(gotBoth) != 2 {
+		t.Fatalf("expected both charts/nginx referrers across the two repos, got %d: %+v", len(gotBoth), gotBoth)
+	}
+	for _, c := range gotBoth {
+		if c.Name != "charts/nginx" {
+			t.Errorf("image-name filter leaked %q into the result", c.Name)
+		}
+	}
+
+	// An image name nothing was pushed under returns no rows, even though the
+	// subject digest itself matches four components.
+	none, err := repo.ListOCIReferrers(ctx, []string{p1.RepoName, p2.RepoName}, "charts/absent", subjectDigest)
+	if err != nil {
+		t.Fatalf("ListOCIReferrers(absent imageName): %v", err)
+	}
+	if len(none) != 0 {
+		t.Errorf("expected 0 referrers for an unused image name, got %d: %+v", len(none), none)
+	}
+}

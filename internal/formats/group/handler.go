@@ -160,10 +160,16 @@ func (h *Handler) callMember(ctx context.Context, c *gin.Context, memberName, fi
 // failing members skipped so the group survives a down upstream), and serves
 // the merged document. A merge failure degrades to the first member body —
 // never a 500 for a merge bug.
+//
+// A format implementing formats.GroupIndexStrictMerger inverts both defaults for
+// the failures it calls fatal: the member's own response is relayed instead of
+// being merged around, and a merge that fails is reported as one. See that
+// interface for why an index nobody may read as short needs it.
 func (h *Handler) serveMergedIndex(c *gin.Context, repoDef *domain.Repository, members []string,
 	rule *domain.RoutingRule, merger formats.GroupIndexMerger, source, requestPath string,
 ) {
 	ctx := c.Request.Context()
+	strict, isStrict := merger.(formats.GroupIndexStrictMerger)
 
 	var parts []formats.GroupIndexPart
 	var contributing []string
@@ -186,6 +192,13 @@ func (h *Handler) serveMergedIndex(c *gin.Context, repoDef *domain.Repository, m
 			code = http.StatusOK
 		}
 		if code < 200 || code > 299 {
+			if isStrict && strict.GroupIndexMemberFailureIsFatal(source, code) {
+				// Relayed verbatim: the member's handler already phrased the
+				// failure in its own protocol's error shape, and re-wrapping it
+				// would cost the client the reason.
+				h.relayMemberFailure(c, memberName, rec)
+				return
+			}
 			continue
 		}
 		parts = append(parts, formats.GroupIndexPart{Member: memberName, Body: rec.Body.Bytes()})
@@ -202,11 +215,36 @@ func (h *Handler) serveMergedIndex(c *gin.Context, repoDef *domain.Repository, m
 	c.Writer.Header().Set("X-Nexspence-Source", strings.Join(contributing, ","))
 	body, contentType, err := merger.MergeGroupIndex(repoDef.Name, requestPath, parts)
 	if err != nil {
+		if isStrict {
+			// A member's document that could not be merged is a member whose
+			// contribution is missing from the result, which is the same fact a
+			// fatal member failure reports.
+			c.JSON(http.StatusBadGateway, gin.H{
+				"error": fmt.Sprintf("members of group %q could not be merged into one index, so the answer "+
+					"would be incomplete: %v", repoDef.Name, err),
+			})
+			return
+		}
 		// Degrade to the first member's document rather than failing the group.
 		c.Data(http.StatusOK, "application/octet-stream", parts[0].Body)
 		return
 	}
 	c.Data(http.StatusOK, contentType, body)
+}
+
+// relayMemberFailure passes a member's failed response through unchanged, so the
+// client reads the reason in the format's own error shape.
+func (h *Handler) relayMemberFailure(c *gin.Context, memberName string, rec *httptest.ResponseRecorder) {
+	for k, vals := range rec.Header() {
+		for _, v := range vals {
+			c.Writer.Header().Add(k, v)
+		}
+	}
+	c.Writer.Header().Set("X-Nexspence-Source", memberName)
+	c.Status(rec.Code)
+	if c.Request.Method != http.MethodHead && rec.Body.Len() > 0 {
+		_, _ = io.Copy(c.Writer, rec.Body)
+	}
 }
 
 func (h *Handler) serveWrite(c *gin.Context) {

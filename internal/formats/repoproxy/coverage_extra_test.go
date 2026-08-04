@@ -3,6 +3,7 @@ package repoproxy
 import (
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"testing"
 	"time"
 
@@ -98,5 +99,35 @@ func TestBuildProxyClient_Modes(t *testing.T) {
 	// no_proxy honored (client still builds)
 	if _, err := buildProxyClient(proxySettings{httpProxy: "http://127.0.0.1:3128", noProxy: "example.com"}); err != nil {
 		t.Fatalf("no_proxy client: %v", err)
+	}
+}
+
+// A Docker Hub pull needs a Bearer token scoped to the repository, and the scope
+// is derived from the request path when the 401 challenge does not carry one. The
+// splitter recognized only "blobs" and "manifests", so a referrers request
+// yielded an empty scope, no token was fetched, and the request was retried
+// anonymously — which Hub answers with another 401. That reads at the referrers
+// endpoint as an upstream refusal for a repository the proxy can otherwise pull.
+func TestScopeFromRegistryV2URL_Endpoints(t *testing.T) {
+	cases := map[string]string{
+		"/v2/library/nginx/manifests/latest":     "repository:library/nginx:pull",
+		"/v2/library/nginx/blobs/sha256:abc":     "repository:library/nginx:pull",
+		"/v2/library/nginx/referrers/sha256:abc": "repository:library/nginx:pull",
+		"/v2/nginx/referrers/sha256:abc":         "repository:nginx:pull",
+		"/v2/Library/NGINX/referrers/sha256:abc": "repository:library/nginx:pull",
+		// No endpoint keyword at all, and the keyword in first position (which
+		// would leave an empty repository name): neither yields a scope.
+		"/v2/library/nginx/tags/list":            "",
+		"/v2/referrers/sha256:abc":               "",
+		"/v1/library/nginx/referrers/sha256:abc": "",
+	}
+	for path, want := range cases {
+		u, err := url.Parse("https://registry-1.docker.io" + path)
+		if err != nil {
+			t.Fatalf("parse %s: %v", path, err)
+		}
+		if got := scopeFromRegistryV2URL(u); got != want {
+			t.Errorf("scopeFromRegistryV2URL(%s) = %q, want %q", path, got, want)
+		}
 	}
 }

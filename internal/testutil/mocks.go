@@ -383,6 +383,45 @@ func (c *ComponentRepo) ListDockerBrowseRows(_ context.Context, names []string, 
 	return out, nil
 }
 
+// ListOCIReferrers mirrors the SQL: filter by repository name (IN repoNames),
+// by extra["oci_subject"] == subjectDigest, and by name == imageName when
+// imageName is non-empty.
+func (c *ComponentRepo) ListOCIReferrers(_ context.Context, repoNames []string, imageName, subjectDigest string) ([]domain.Component, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.Err != nil {
+		return nil, c.Err
+	}
+	if len(repoNames) == 0 {
+		return nil, nil
+	}
+	allow := make(map[string]struct{}, len(repoNames))
+	for _, n := range repoNames {
+		allow[n] = struct{}{}
+	}
+	var items []domain.Component
+	for _, v := range c.components {
+		if _, ok := allow[v.Repository]; !ok {
+			continue
+		}
+		subj, _ := v.Extra["oci_subject"].(string)
+		if subj != subjectDigest {
+			continue
+		}
+		if imageName != "" && v.Name != imageName {
+			continue
+		}
+		items = append(items, *v)
+	}
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].Name != items[j].Name {
+			return items[i].Name < items[j].Name
+		}
+		return items[i].Version < items[j].Version
+	})
+	return items, nil
+}
+
 func (c *ComponentRepo) Create(_ context.Context, comp *domain.Component) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -484,6 +523,10 @@ type AssetRepo struct {
 	RawRowsByRepo map[string][]domain.RawBrowseAsset
 	RawBrowseErr  error // when non-nil, ListRawBrowseAssets returns it (500-branch seam)
 	BrowseErr     error // when non-nil, ListByRepoAndPath/ListPathsByRepo/ListRawAssetPaths return it (500-branch seam)
+	// GetByPathErr, when non-nil, makes GetByPath return it. Separate from Err so
+	// a test can tell a lookup that failed from a path that does not exist —
+	// callers that must not treat the two alike need exactly that distinction.
+	GetByPathErr error
 	// DownloadIncrements records aggregated counts passed to IncrementDownloads.
 	DownloadIncrements map[string]int64
 }
@@ -516,6 +559,9 @@ func (a *AssetRepo) Get(_ context.Context, id string) (*domain.Asset, error) {
 func (a *AssetRepo) GetByPath(_ context.Context, repoName, path string) (*domain.Asset, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if a.GetByPathErr != nil {
+		return nil, a.GetByPathErr
+	}
 	v, ok := a.assets[repoName+":"+path]
 	if !ok {
 		return nil, repository.ErrNotFound
