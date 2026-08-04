@@ -161,22 +161,24 @@ func TestHelm_GetNotFound(t *testing.T) {
 }
 
 func TestHelm_ProxyIndexYaml_RewritesURLs(t *testing.T) {
-	// Mock upstream helm repository
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	// Mock upstream helm repository. Its index spells the chart URL out in full
+	// against its own host, the way public repositories (Bitnami, …) do.
+	var upstream *httptest.Server
+	upstream = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/index.yaml" {
 			http.NotFound(w, r)
 			return
 		}
 		w.Header().Set("Content-Type", "application/yaml")
-		fmt.Fprint(w, `apiVersion: v1
+		fmt.Fprintf(w, `apiVersion: v1
 entries:
   nginx:
   - name: nginx
     version: "15.0.0"
     urls:
-    - https://charts.bitnami.com/bitnami/nginx-15.0.0.tgz
+    - %s/nginx-15.0.0.tgz
 generated: "2024-01-01T00:00:00Z"
-`)
+`, upstream.URL)
 	}))
 	defer upstream.Close()
 
@@ -195,7 +197,7 @@ generated: "2024-01-01T00:00:00Z"
 	body := w.Body.String()
 	assert.Contains(t, body, "http://localhost:8080/repository/helm-proxy/nginx-15.0.0.tgz",
 		"chart URL should be rewritten to local proxy")
-	assert.NotContains(t, body, "charts.bitnami.com",
+	assert.NotContains(t, body, upstream.URL,
 		"upstream URL must not appear in rewritten index")
 }
 
