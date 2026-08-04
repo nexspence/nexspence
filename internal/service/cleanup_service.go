@@ -278,14 +278,33 @@ func (s *CleanupService) runPolicy(ctx context.Context, p domain.CleanupPolicy) 
 				continue
 			}
 			asset := a
-			if err := s.storeForAsset(ctx, &asset).Delete(ctx, a.BlobKey); err != nil {
-				s.log.Warn("cleanup: blob delete failed", "key", a.BlobKey, "err", err)
+			// One object can carry several assets — an OCI manifest's tag and its
+			// digest alias, a mounted layer — and expiring one of them says
+			// nothing about the others. Deleting the bytes under a surviving
+			// asset would leave it advertising content that is gone (#144); an
+			// unreadable count keeps them, since an orphan is reclaimed by the
+			// blob GC while bytes deleted under a live asset are lost.
+			bytesFreed := false
+			others, cerr := s.assets.CountByBlobKey(ctx, a.BlobKey, a.ID)
+			if cerr != nil {
+				s.log.Warn("cleanup: blob reference count failed, keeping blob",
+					"key", a.BlobKey, "err", cerr)
+			} else if others == 0 {
+				if err := s.storeForAsset(ctx, &asset).Delete(ctx, a.BlobKey); err != nil {
+					s.log.Warn("cleanup: blob delete failed", "key", a.BlobKey, "err", err)
+				} else {
+					bytesFreed = true
+				}
 			}
 			if err := s.assets.Delete(ctx, a.ID); err != nil {
 				s.log.Warn("cleanup: asset delete failed", "id", a.ID, "err", err)
 				continue
 			}
-			_ = base.DecrementBlobStoreUsage(ctx, s.blobs, &asset)
+			// used_bytes is how full the store is, so it only moves when bytes
+			// actually left it (#146).
+			if bytesFreed {
+				_ = base.DecrementBlobStoreUsage(ctx, s.blobs, &asset)
+			}
 			freed += a.SizeBytes
 			deleted++
 		}

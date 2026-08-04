@@ -507,3 +507,74 @@ func TestRunPolicy_RecordsRunStats_NotViaUpdate(t *testing.T) {
 	assert.Equal(t, int64(7), policies.RunRecords[0].Freed)
 	assert.Empty(t, policies.Updates, "run stats must not go through the config Update path")
 }
+
+// ── Shared blobs ──────────────────────────────────────────────
+
+// One object can carry several assets: an OCI manifest's tag and its digest
+// alias, a cross-repository mount. Retention that expires one of them must not
+// delete the bytes the other still reads (#144) — and must not give their size
+// back to the store while they are still on the disk (#146).
+func TestRunPolicy_SharedBlob_KeepsBytesAndUsageForTheSurvivingAsset(t *testing.T) {
+	ctx := context.Background()
+	assets := testutil.NewAssetRepo()
+	require.NoError(t, assets.Create(ctx, &domain.Asset{
+		ComponentID: "c1", RepositoryID: "r1", Repository: "r",
+		Path: "/manifests/app/sha256:abc", BlobKey: "shared", SizeBytes: 100,
+	}))
+	assets.Stale = []domain.Asset{
+		{ID: "expiring", BlobKey: "shared", SizeBytes: 100, Path: "/manifests/app/1.0"},
+	}
+
+	blobs := testutil.NewBlobStore()
+	require.NoError(t, blobs.Put(ctx, "shared", testutil.MakeReader("payload"), 7))
+	blobRepo := testutil.NewBlobStoreRepo()
+	require.NoError(t, blobRepo.UpdateUsedBytes(ctx, "default", 100))
+
+	policies := testutil.NewCleanupPolicyRepo(&domain.CleanupPolicy{
+		ID: "p-shared", Name: "p-shared", Enabled: true, Format: "*",
+		Criteria: map[string]any{"artifactAgeDays": float64(7)},
+	})
+	repos := testutil.NewRepoRepo(&domain.Repository{
+		Name: "r", ID: "r1", Format: domain.FormatRaw, CleanupPolicyIDs: []string{"p-shared"},
+	})
+
+	svc := service.NewCleanupService(policies, repos, assets, blobRepo, blobs, nopLog())
+	require.NoError(t, svc.RunAll(ctx))
+
+	assert.True(t, blobs.Has("shared"), "the surviving asset still reads these bytes")
+	assert.Empty(t, blobs.Deleted)
+
+	got, err := blobRepo.Get(ctx, "default")
+	require.NoError(t, err)
+	assert.Equal(t, int64(100), got.UsedBytes, "nothing left the store, so nothing comes off the counter")
+}
+
+// The last asset on an object takes the object with it, and its size.
+func TestRunPolicy_LastAssetOnBlob_FreesBytesAndUsage(t *testing.T) {
+	ctx := context.Background()
+	assets := testutil.NewAssetRepo()
+	assets.Stale = []domain.Asset{
+		{ID: "only", BlobKey: "lonely", SizeBytes: 100, Path: "/pkg.tgz"},
+	}
+
+	blobs := testutil.NewBlobStore()
+	require.NoError(t, blobs.Put(ctx, "lonely", testutil.MakeReader("payload"), 7))
+	blobRepo := testutil.NewBlobStoreRepo()
+	require.NoError(t, blobRepo.UpdateUsedBytes(ctx, "default", 100))
+
+	policies := testutil.NewCleanupPolicyRepo(&domain.CleanupPolicy{
+		ID: "p-lonely", Name: "p-lonely", Enabled: true, Format: "*",
+		Criteria: map[string]any{"artifactAgeDays": float64(7)},
+	})
+	repos := testutil.NewRepoRepo(&domain.Repository{
+		Name: "r", ID: "r1", Format: domain.FormatRaw, CleanupPolicyIDs: []string{"p-lonely"},
+	})
+
+	svc := service.NewCleanupService(policies, repos, assets, blobRepo, blobs, nopLog())
+	require.NoError(t, svc.RunAll(ctx))
+
+	assert.Contains(t, blobs.Deleted, "lonely")
+	got, err := blobRepo.Get(ctx, "default")
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), got.UsedBytes)
+}
