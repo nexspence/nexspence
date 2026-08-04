@@ -563,21 +563,24 @@ func (h *Handler) initiateUpload(c *gin.Context, repoName, imageName string) {
 // Mounting is the digest-alias registration pushManifest does after a tagged
 // push, with the image name changing instead of the reference.
 //
-// Access control: `from` is client-supplied, and the only authorization this
-// request has passed is RBACMiddleware's check of the repository and path in the
-// URL. The source is therefore resolved strictly inside repoName — the very
-// repository that check covered — so no mount can read out of a repository (or,
-// since format is a property of the repository, a format) the caller was not
-// authorized against.
+// Access control: `from` is client-supplied and names a path RBACMiddleware
+// never saw — it checked the repository and path of the request URL, which is
+// the mount's target, not its source. Two things close that.
 //
-// What that does NOT cover is a content selector narrower than the repository:
-// a privilege of the form `repository == "R" && path.startsWith("/library/")`
-// authorizes the POST by its own path while the mount source is a different
-// path in R. Closing it needs the caller's privileges, and a format handler has
-// none — formats.Deps carries no RBACService and requestctx carries only the
-// user's id and name, not their roles or selectors. Plumbing either through is a
-// change to every format handler's contract, not to this endpoint, so the gap is
-// recorded here rather than papered over with a check that checks nothing.
+// The source is resolved strictly inside repoName, so no mount reads out of a
+// repository — or, since format is a property of the repository, a format — the
+// request was not authorized against at all.
+//
+// Within repoName, callerMayRead puts the source path through the same check a
+// direct blob GET would face, which is what makes a content selector narrower
+// than the repository (`repository == "R" && path.startsWith("/public/")`) hold
+// here too. Without it a selector would stop a pull but not a mount, and anyone
+// holding the digest could copy the blob into a path they can read and pull it
+// from there.
+//
+// A refused mount falls through to a normal upload session rather than 403: the
+// fallback is spec-legal, costs the client only bandwidth it was going to spend,
+// and does not disclose whether that digest is in the registry.
 func (h *Handler) mountBlob(c *gin.Context, repoName, imageName, dgst, from string) bool {
 	// The digest lands in an asset path, so a value that is not a digest is not
 	// a lookup key — it is someone else's path.
@@ -594,8 +597,14 @@ func (h *Handler) mountBlob(c *gin.Context, repoName, imageName, dgst, from stri
 		if sourceImage == imageName {
 			continue // mounting an image onto itself has nothing to alias
 		}
-		src, err := h.deps.Assets.GetByPath(ctx, repoName, blobPath(sourceImage, dgst))
+		sourcePath := blobPath(sourceImage, dgst)
+		src, err := h.deps.Assets.GetByPath(ctx, repoName, sourcePath)
 		if err != nil || src == nil {
+			continue
+		}
+		// Nothing about the source is acted on before the caller is shown to be
+		// allowed to read it.
+		if !h.callerMayRead(c, repo, sourcePath) {
 			continue
 		}
 		// An asset row outlives its bytes: a manual blob delete or a GC pass can
@@ -626,6 +635,29 @@ func (h *Handler) mountBlob(c *gin.Context, repoName, imageName, dgst, from stri
 		return true
 	}
 	return false
+}
+
+// callerMayRead asks of an asset path the question a direct GET of that path
+// would ask: may this caller read it, in this repository?
+//
+// The path handed over is the stored asset path, the same one FilterAssets
+// checks, so CanAccessRepo normalizes it through assetSamplePath and the
+// comparison happens against the form content selectors are written in.
+//
+// The caller's identity comes off the gin context, where OptionalAuth and
+// RBACMiddleware leave it — the route browse_docker.go takes to the same values.
+// An error is a denial: an access check that could not be completed has not
+// granted anything.
+func (h *Handler) callerMayRead(c *gin.Context, repo *domain.Repository, assetPath string) bool {
+	if h.deps.RBAC == nil {
+		return true
+	}
+	userID, _ := c.Get("userID")
+	roles, _ := c.Get("roles")
+	uid, _ := userID.(string)
+	roleList, _ := roles.([]string)
+	ok, err := h.deps.RBAC.CanAccessRepo(c.Request.Context(), uid, roleList, repo, assetPath, "read")
+	return err == nil && ok
 }
 
 // mountSourceImages returns the image names inside repoName that a client's

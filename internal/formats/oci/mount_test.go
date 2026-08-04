@@ -12,12 +12,15 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/formats"
 	"github.com/nexspence-oss/nexspence/internal/formats/base"
 	"github.com/nexspence-oss/nexspence/internal/formats/oci"
+	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/requestctx"
+	"github.com/nexspence-oss/nexspence/internal/service"
 	"github.com/nexspence-oss/nexspence/internal/testutil"
 )
 
@@ -29,6 +32,13 @@ import (
 // repository name whose spelling depends on which of the two the client pushed
 // against, so both have to be exercised against the same stored state.
 func mountDeps(repos ...*domain.Repository) (long, short *gin.Engine, d formats.Deps, store *testutil.BlobStore) {
+	return mountDepsRBAC(nil, repos...)
+}
+
+// mountDepsRBAC is mountDeps with a privilege checker wired in, and with the
+// caller's identity put on the gin context the way OptionalAuth and
+// RBACMiddleware leave it for the handler chain.
+func mountDepsRBAC(rbac formats.RBACChecker, repos ...*domain.Repository) (long, short *gin.Engine, d formats.Deps, store *testutil.BlobStore) {
 	store = testutil.NewBlobStore()
 	d = formats.Deps{
 		Repos:      testutil.NewRepoRepo(repos...),
@@ -37,12 +47,17 @@ func mountDeps(repos ...*domain.Repository) (long, short *gin.Engine, d formats.
 		Assets:     testutil.NewAssetRepo(),
 		BlobStore:  store,
 		BaseURL:    "http://localhost:8080",
+		RBAC:       rbac,
 	}
 	h := oci.New(d)
 
 	auth := func(c *gin.Context) {
 		ctx := requestctx.WithUser(c.Request.Context(), "test-user-id", "testuser")
 		c.Request = c.Request.WithContext(ctx)
+		// Deliberately not "nx-admin": an admin short-circuits every check in
+		// CanAccessRepo, which would make the selector tests prove nothing.
+		c.Set("userID", "test-user-id")
+		c.Set("roles", []string{"nx-developer"})
 		c.Next()
 	}
 
@@ -271,6 +286,89 @@ func TestMount_FromAnotherNexspenceRepository_IsRefused(t *testing.T) {
 
 	_, err := d.Assets.GetByPath(context.Background(), "mnt8", "/blobs/library/ubuntu/"+dgst)
 	assert.Error(t, err, "nothing may be registered in the target repository from a source outside it")
+}
+
+// rbacRepoStub hands back one fixed privilege set, as the postgres RBACRepo
+// would for a user holding those grants. The real *service.RBACService is driven
+// on top of it so these tests exercise the actual selector evaluation and the
+// actual OCI path normalisation, not a stand-in for them.
+type rbacRepoStub struct {
+	privs []repository.PrivilegeWithSelector
+}
+
+func (s rbacRepoStub) GetUserPrivilegesWithSelectors(context.Context, string) ([]repository.PrivilegeWithSelector, error) {
+	return s.privs, nil
+}
+
+// publicOnlyRBAC grants the caller everything under /public/ in repoName, and
+// nothing anywhere else.
+func publicOnlyRBAC(repoName string) formats.RBACChecker {
+	return service.NewRBACService(rbacRepoStub{privs: []repository.PrivilegeWithSelector{{
+		Actions:    []string{"read", "browse", "write"},
+		Expression: `repository == "` + repoName + `" && path.startsWith("/public/")`,
+	}}}, nil, zap.NewNop().Sugar())
+}
+
+// The security case. A content selector that stops a pull but not a mount is not
+// a control at all: anyone holding the digest — and digests travel in manifests,
+// build logs and CI output — could copy the blob into a path they can read and
+// pull it from there.
+func TestMount_SourceOutsideTheCallersSelector_IsRefusedWithoutRegistering(t *testing.T) {
+	repo := testutil.SimpleRepo("mnt12", "docker")
+	r, _, d, _ := mountDepsRBAC(publicOnlyRBAC("mnt12"), repo)
+
+	const layer = "a layer only /private/ may read"
+	dgst := pushBlob(t, r, "mnt12", "private/secret-image", layer)
+
+	w := postMount(r, "/repository/mnt12/v2/public/app/blobs/uploads/", dgst, "private/secret-image")
+
+	// 202 rather than 403: the fallback is spec-legal, costs the client only the
+	// bandwidth it was going to spend, and — unlike a 403 — says nothing about
+	// whether that digest is in the registry at all.
+	assert.Equal(t, http.StatusAccepted, w.Code,
+		"an unreadable source falls back to a normal upload; a 403 would confirm the blob is here")
+
+	// The status alone proves nothing — a missing blob produces the same 202.
+	// What must be true is that nothing was registered.
+	_, err := d.Assets.GetByPath(context.Background(), "mnt12", "/blobs/public/app/"+dgst)
+	assert.Error(t, err, "no asset may be registered from a source the caller cannot read")
+}
+
+// The mirror: the same caller, the same registry, a source its selector allows.
+// Without this the test above would also pass on an implementation that simply
+// refuses every mount.
+func TestMount_SourceInsideTheCallersSelector_Mounts(t *testing.T) {
+	repo := testutil.SimpleRepo("mnt13", "docker")
+	r, _, d, _ := mountDepsRBAC(publicOnlyRBAC("mnt13"), repo)
+
+	const layer = "a layer the caller may read"
+	dgst := pushBlob(t, r, "mnt13", "public/base", layer)
+
+	w := postMount(r, "/repository/mnt13/v2/public/app/blobs/uploads/", dgst, "public/base")
+	require.Equal(t, http.StatusCreated, w.Code,
+		"the selector allows /public/, so this mount must still be served: %s", w.Body.String())
+
+	dst, err := d.Assets.GetByPath(context.Background(), "mnt13", "/blobs/public/app/"+dgst)
+	require.NoError(t, err)
+	src, err := d.Assets.GetByPath(context.Background(), "mnt13", "/blobs/public/base/"+dgst)
+	require.NoError(t, err)
+	assert.Equal(t, src.BlobKey, dst.BlobKey)
+}
+
+// The dependency is optional, like Webhooks and Downloads: a handler built
+// without it keeps working. This is what lets every other test in the package
+// construct formats.Deps by hand.
+func TestMount_NilRBAC_StillMounts(t *testing.T) {
+	repo := testutil.SimpleRepo("mnt14", "docker")
+	r, _, d, _ := mountDepsRBAC(nil, repo)
+	require.Nil(t, d.RBAC, "this test is only meaningful with no checker wired in")
+
+	const layer = "no checker configured"
+	dgst := pushBlob(t, r, "mnt14", "private/secret-image", layer)
+
+	w := postMount(r, "/repository/mnt14/v2/public/app/blobs/uploads/", dgst, "private/secret-image")
+	assert.Equal(t, http.StatusCreated, w.Code,
+		"a nil checker must mean 'not configured', not 'deny everything': %s", w.Body.String())
 }
 
 // A registry-wide GC or a manual blob deletion can leave an asset row whose
