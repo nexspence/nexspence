@@ -3,7 +3,8 @@
 // Conda channel layout:
 //
 //	GET /repository/<repo>/<platform>/repodata.json      → channel index
-//	GET /repository/<repo>/<platform>/repodata.json.bz2  → bz2-compressed index (returns 404)
+//	GET /repository/<repo>/<platform>/current_repodata.json → trimmed channel index (proxy)
+//	GET /repository/<repo>/<platform>/repodata.json.bz2  → compressed index (returns 404)
 //	GET /repository/<repo>/<platform>/<filename>          → download package
 //	PUT /repository/<repo>/<platform>/<filename>          → upload package
 //	DELETE /repository/<repo>/<platform>/<filename>       → delete package
@@ -194,17 +195,17 @@ func (h *Handler) serveProxy(c *gin.Context, repo *domain.Repository, repoName, 
 		return
 	}
 
-	if c.Request.Method == http.MethodGet && filename == "repodata.json" {
-		h.proxyRepodata(c, repo, repoName, platform)
+	if c.Request.Method == http.MethodGet && isIndexDocument(filename) {
+		h.proxyIndex(c, repo, repoName, platform, filename)
 		return
 	}
-	if filename == "repodata.json.bz2" {
-		c.JSON(http.StatusNotFound, gin.H{"error": "use repodata.json"})
+	if want, ok := refusedIndexVariant(filename); ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "use " + want})
 		return
 	}
 
 	// Package binary: cache via repoproxy. Conda packages are immutable
-	// (repodata.json — the mutable index — is handled by proxyRepodata above).
+	// (the index documents — which are not — are handled by proxyIndex above).
 	// A repodata.json entry may point below the subdir, so filename can carry a
 	// directory; the component is named after the package file alone.
 	coords := base.Coords{Name: path.Base(filename), Group: platform}
@@ -213,14 +214,68 @@ func (h *Handler) serveProxy(c *gin.Context, repo *domain.Repository, repoName, 
 	}
 }
 
-func (h *Handler) proxyRepodata(c *gin.Context, repo *domain.Repository, repoName, platform string) {
+// indexDocuments are the channel documents that carry package download URLs. All
+// three share repodata.json's schema and resolve their entries against the subdir
+// they were fetched from, so one rewriter serves them all, and none of them is
+// immutable — each is read from upstream on every request (#145).
+//
+// current_repodata.json is repodata.json trimmed to the newest build of each
+// package and is what a recent conda client asks for first. The third is the
+// unpatched index conda-index writes beside them, which a client reaches by naming
+// it in repodata_fns.
+var indexDocuments = []string{
+	"repodata.json",
+	"current_repodata.json",
+	"repodata_from_packages.json",
+}
+
+// isIndexDocument reports whether filename is an index document this proxy rewrites.
+func isIndexDocument(filename string) bool {
+	for _, name := range indexDocuments {
+		if filename == name {
+			return true
+		}
+	}
+	return false
+}
+
+// refusedIndexVariant reports whether filename is an alternate encoding of an index
+// document and, if so, names the document the client should ask for instead.
+//
+// Conda publishes each index in several encodings — .json.bz2, .json.zst, and the
+// .jlap patch stream — and every one of them carries the package URLs that have to
+// be rewritten onto this proxy. Serving one means decompressing it, rewriting it and
+// re-encoding it on every request (and, for zstd, carrying a codec this module does
+// not otherwise need), all for an index that runs to hundreds of megabytes on a
+// channel the size of conda-forge and that exists only as a transfer optimization: a
+// client denied the variant falls back to the plain document, which is served
+// rewritten and re-read from upstream. That is what repodata.json.bz2 has answered
+// since this handler was written, and the fallback is why it works.
+func refusedIndexVariant(filename string) (string, bool) {
+	for _, ext := range []string{".bz2", ".zst"} {
+		if base := strings.TrimSuffix(filename, ext); base != filename && isIndexDocument(base) {
+			return base, true
+		}
+	}
+	// The patch stream drops the ".json" instead of appending: "repodata.jlap".
+	if base := strings.TrimSuffix(filename, ".jlap"); base != filename && isIndexDocument(base+".json") {
+		return base + ".json", true
+	}
+	return "", false
+}
+
+// proxyIndex fetches one index document from upstream and serves it with its
+// package URLs rewritten onto this proxy. It deliberately does not go through
+// repoproxy's blob cache: the document is rebuilt whenever the channel changes, and
+// a cached copy of it would be served as though it were an immutable package.
+func (h *Handler) proxyIndex(c *gin.Context, repo *domain.Repository, repoName, platform, filename string) {
 	remoteBase, err := repoproxy.RemoteURL(repo)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	upstreamURL := remoteBase + "/" + platform + "/repodata.json"
+	upstreamURL := remoteBase + "/" + platform + "/" + filename
 	req, err := http.NewRequestWithContext(c.Request.Context(), http.MethodGet, upstreamURL, nil)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -241,7 +296,7 @@ func (h *Handler) proxyRepodata(c *gin.Context, repo *domain.Repository, repoNam
 
 	var doc map[string]any
 	if err := json.NewDecoder(resp.Body).Decode(&doc); err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": "parse upstream repodata.json: " + err.Error()})
+		c.JSON(http.StatusBadGateway, gin.H{"error": "parse upstream " + filename + ": " + err.Error()})
 		return
 	}
 

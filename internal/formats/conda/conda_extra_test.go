@@ -283,7 +283,7 @@ func TestParseMeta_Filename_TwoPartName(t *testing.T) {
 	assert.Equal(t, "pkg", meta.Name)
 }
 
-// ─── proxyRepodata error paths ───────────────────────────────────
+// ─── proxyIndex error paths ──────────────────────────────────────
 
 func TestConda_ProxyRepodata_NoRemoteURL(t *testing.T) {
 	repo := &domain.Repository{

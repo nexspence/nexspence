@@ -82,11 +82,18 @@ func subdirUpstream(t *testing.T, repodataPath, entryURL, pkgPath, body string) 
 // download URL a conda client would follow.
 func firstPackageURL(t *testing.T, r *gin.Engine, repoName, platform string) string {
 	t.Helper()
+	return indexPackageURL(t, r, repoName, platform, "repodata.json")
+}
+
+// indexPackageURL is firstPackageURL for any of the index documents conda may ask
+// for — they share repodata.json's schema, so the same extraction works on all.
+func indexPackageURL(t *testing.T, r *gin.Engine, repoName, platform, indexName string) string {
+	t.Helper()
 	req := httptest.NewRequest(http.MethodGet,
-		"/repository/"+repoName+"/"+platform+"/repodata.json", nil)
+		"/repository/"+repoName+"/"+platform+"/"+indexName, nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
-	require.Equal(t, http.StatusOK, w.Code, "repodata.json body: %s", w.Body.String())
+	require.Equal(t, http.StatusOK, w.Code, "%s body: %s", indexName, w.Body.String())
 
 	var doc struct {
 		Packages map[string]struct {
@@ -95,7 +102,7 @@ func firstPackageURL(t *testing.T, r *gin.Engine, repoName, platform string) str
 	}
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &doc))
 	entry, ok := doc.Packages[condaPkgFile]
-	require.True(t, ok, "package entry missing from rewritten repodata.json")
+	require.True(t, ok, "package entry missing from rewritten %s", indexName)
 	return entry.URL
 }
 
