@@ -145,6 +145,81 @@ func TestGC_StartCronScheduler_ValidScheduleStopsOnCancel(t *testing.T) {
 	svc.StartCronScheduler(ctx, "0 0 * * *", time.Hour)
 }
 
+// ── Usage accounting ──────────────────────────────────────────
+
+// gcWithStores builds the service over a blob store repo the test can read back,
+// so the effect of a collection on used_bytes is visible.
+func gcWithStores(assets *testutil.AssetRepo, bs *testutil.BlobStore,
+	stores *testutil.BlobStoreRepo) *service.BlobGCService {
+	return &service.BlobGCService{
+		Assets:   assets,
+		Stores:   stores,
+		Resolver: testutil.NewFakeResolver(bs),
+	}
+}
+
+// Collecting an orphan takes bytes off the disk, so it has to take them off the
+// counter that says how full the store is — otherwise a garbage-collected store
+// stays permanently overstated and walks into a quota rejection (#146).
+func TestGC_OrphanCollected_DecrementsTheStoreUsage(t *testing.T) {
+	assets := testutil.NewAssetRepo()
+	bs := testutil.NewBlobStore()
+	ctx := context.Background()
+	require.NoError(t, bs.Put(ctx, "orphan-usage", bytes.NewReader([]byte("garbage")), 7))
+
+	stores := testutil.NewBlobStoreRepo()
+	require.NoError(t, stores.UpdateUsedBytes(ctx, "default", 30)) // 7 orphaned, 23 still referenced
+
+	result, err := gcWithStores(assets, bs, stores).CompactStore(ctx, "default", service.GCOptions{})
+	require.NoError(t, err)
+	require.Equal(t, int64(7), result.FreedBytes)
+
+	got, err := stores.Get(ctx, "default")
+	require.NoError(t, err)
+	assert.Equal(t, int64(23), got.UsedBytes, "the freed bytes come off the store")
+}
+
+// A dry run reports what it would free and frees nothing, so the counter must
+// not move either.
+func TestGC_DryRun_LeavesTheStoreUsageAlone(t *testing.T) {
+	assets := testutil.NewAssetRepo()
+	bs := testutil.NewBlobStore()
+	ctx := context.Background()
+	require.NoError(t, bs.Put(ctx, "orphan-dry", bytes.NewReader([]byte("dry")), 3))
+
+	stores := testutil.NewBlobStoreRepo()
+	require.NoError(t, stores.UpdateUsedBytes(ctx, "default", 10))
+
+	_, err := gcWithStores(assets, bs, stores).CompactStore(ctx, "default", service.GCOptions{DryRun: true})
+	require.NoError(t, err)
+
+	got, err := stores.Get(ctx, "default")
+	require.NoError(t, err)
+	assert.Equal(t, int64(10), got.UsedBytes)
+}
+
+// A blob that is still referenced is neither deleted nor discounted.
+func TestGC_ReferencedBlob_LeavesTheStoreUsageAlone(t *testing.T) {
+	assets := testutil.NewAssetRepo()
+	bs := testutil.NewBlobStore()
+	ctx := context.Background()
+	require.NoError(t, bs.Put(ctx, "kept", bytes.NewReader([]byte("data")), 4))
+	require.NoError(t, assets.Create(ctx, &domain.Asset{
+		ComponentID: "c1", RepositoryID: "r1", Repository: "repo",
+		Path: "/file.txt", BlobKey: "kept", BlobStoreID: "bs1", SizeBytes: 4,
+	}))
+
+	stores := testutil.NewBlobStoreRepo()
+	require.NoError(t, stores.UpdateUsedBytes(ctx, "default", 4))
+
+	_, err := gcWithStores(assets, bs, stores).CompactStore(ctx, "default", service.GCOptions{})
+	require.NoError(t, err)
+
+	got, err := stores.Get(ctx, "default")
+	require.NoError(t, err)
+	assert.Equal(t, int64(4), got.UsedBytes)
+}
+
 func TestGC_CompactAllSkipsWhenLockHeld(t *testing.T) {
 	assets := testutil.NewAssetRepo()
 	bs := testutil.NewBlobStore()
