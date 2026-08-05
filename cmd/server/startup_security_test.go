@@ -46,6 +46,39 @@ func TestCheckStartupSecurity_ShippedDefaults_Refuse(t *testing.T) {
 	assert.Contains(t, err.Error(), "default secrets")
 }
 
+// The shipped OIDC cookie key seals the state cookie that protects the login
+// flow from CSRF. Knowing it lets an attacker forge a state cookie matching
+// their own state parameter, so it belongs in the same fail-closed check as the
+// JWT secret and admin password.
+func TestCheckStartupSecurity_ShippedOIDCCookieKey_Refuses(t *testing.T) {
+	cfg := secureCfg()
+	cfg.OIDC.Enabled = true
+	cfg.OIDC.CookieKey = config.DevDefaultOIDCCookieKey
+
+	err := checkStartupSecurity(cfg, zap.NewNop().Sugar())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "default secrets")
+}
+
+func TestCheckStartupSecurity_ShippedOIDCCookieKey_AllowedWhenOptedIn(t *testing.T) {
+	cfg := secureCfg()
+	cfg.OIDC.Enabled = true
+	cfg.OIDC.CookieKey = config.DevDefaultOIDCCookieKey
+	cfg.Auth.AllowInsecureDefaults = true
+
+	require.NoError(t, checkStartupSecurity(cfg, zap.NewNop().Sugar()))
+}
+
+// A disabled provider cannot be attacked through its cookie, so the shipped key
+// sitting unused in a config file must not stop the server booting.
+func TestCheckStartupSecurity_ShippedOIDCCookieKey_IgnoredWhenOIDCDisabled(t *testing.T) {
+	cfg := secureCfg()
+	cfg.OIDC.Enabled = false
+	cfg.OIDC.CookieKey = config.DevDefaultOIDCCookieKey
+
+	require.NoError(t, checkStartupSecurity(cfg, zap.NewNop().Sugar()))
+}
+
 func TestCheckStartupSecurity_ShippedDefaults_AllowedWhenOptedIn(t *testing.T) {
 	cfg := secureCfg()
 	cfg.Auth.JWTSecret = config.DevDefaultJWTSecret

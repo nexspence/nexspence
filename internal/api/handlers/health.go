@@ -12,6 +12,12 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/redisclient"
 )
 
+// readinessTTL is how long a healthy probe result is reused. /readyz is
+// unauthenticated, so without this every hit is a Postgres round trip and the
+// probe becomes a cheap way to load the database. A second is short enough that
+// an orchestrator still sees an outage promptly.
+const readinessTTL = time.Second
+
 // LivenessHandler returns 200 {"status":"ok"} — process is alive.
 func LivenessHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -19,66 +25,101 @@ func LivenessHandler() gin.HandlerFunc {
 	}
 }
 
+// pinger is the one thing readiness needs from a dependency. Both
+// *pgxpool.Pool and *redisclient.Client satisfy it.
+type pinger interface {
+	Ping(ctx context.Context) error
+}
+
 // ReadinessHandler checks DB and Redis connectivity in parallel.
 // Either dep may be nil — it is skipped in that case.
 // Returns 503 if any check fails.
 func ReadinessHandler(pool *pgxpool.Pool, redis *redisclient.Client) gin.HandlerFunc {
-	return func(c *gin.Context) {
+	// Typed nils would satisfy the interface while being nil underneath, so
+	// convert explicitly.
+	var db, rd pinger
+	if pool != nil {
+		db = pool
+	}
+	if redis != nil {
+		rd = redis
+	}
+	return readinessHandler(db, rd, readinessTTL)
+}
+
+// readinessResult is the memoized outcome of one probe round.
+type readinessResult struct {
+	checks map[string]string
+	failed bool
+	at     time.Time
+}
+
+func readinessHandler(db, redis pinger, ttl time.Duration) gin.HandlerFunc {
+	var (
+		mu     sync.Mutex
+		cached *readinessResult
+	)
+
+	probe := func(ctx context.Context) *readinessResult {
 		checks := map[string]string{}
-		var mu sync.Mutex
+		var cmu sync.Mutex
 		var wg sync.WaitGroup
 		failed := false
 
-		if pool != nil {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				ctx, cancel := context.WithTimeout(c.Request.Context(), 3*time.Second)
-				defer cancel()
-				status := "ok"
-				if err := pool.Ping(ctx); err != nil {
-					status = "error"
-				}
-				mu.Lock()
-				checks["db"] = status
-				if status != "ok" {
-					failed = true
-				}
-				mu.Unlock()
-			}()
+		check := func(name string, p pinger) {
+			defer wg.Done()
+			pctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+			defer cancel()
+			status := "ok"
+			if err := p.Ping(pctx); err != nil {
+				status = "error"
+			}
+			cmu.Lock()
+			checks[name] = status
+			if status != "ok" {
+				failed = true
+			}
+			cmu.Unlock()
 		}
 
+		if db != nil {
+			wg.Add(1)
+			go check("db", db)
+		}
 		if redis != nil {
 			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				ctx, cancel := context.WithTimeout(c.Request.Context(), 3*time.Second)
-				defer cancel()
-				status := "ok"
-				if err := redis.Ping(ctx); err != nil {
-					status = "error"
-				}
-				mu.Lock()
-				checks["redis"] = status
-				if status != "ok" {
-					failed = true
-				}
-				mu.Unlock()
-			}()
+			go check("redis", redis)
 		}
-
 		wg.Wait()
+
+		return &readinessResult{checks: checks, failed: failed, at: time.Now()}
+	}
+
+	return func(c *gin.Context) {
+		mu.Lock()
+		// Only healthy results are reused: caching a failure would keep
+		// reporting an outage that has already been fixed.
+		res := cached
+		fresh := res != nil && !res.failed && time.Since(res.at) < ttl
+		mu.Unlock()
+
+		if !fresh {
+			res = probe(c.Request.Context())
+			mu.Lock()
+			cached = res
+			mu.Unlock()
+		}
 
 		statusStr := "ok"
 		code := http.StatusOK
-		if failed {
+		if res.failed {
 			statusStr = "degraded"
 			code = http.StatusServiceUnavailable
 		}
 
 		resp := gin.H{"status": statusStr}
-		if len(checks) > 0 {
-			resp["checks"] = checks
+		if len(res.checks) > 0 {
+			resp["checks"] = res.checks
 		}
 		c.JSON(code, resp)
 	}

@@ -73,7 +73,7 @@ jobs:
             docker run -d \
               --name nexspence-website \
               --restart unless-stopped \
-              -p 127.0.0.1:8080:80 \
+              -p 127.0.0.1:8080:8080 \
               "$IMAGE"
 
             # Don't leave the GHCR token in ~/.docker/config.json

@@ -18,6 +18,48 @@ func capturePathHandler() (http.Handler, *string) {
 	}), captured
 }
 
+// The subdomain is spliced into the URL path, so it has to look like a
+// repository name. RBAC still runs on whatever name comes out, so a strange
+// value is not a bypass — but a host header should not be able to put
+// arbitrary characters, path separators or encoded segments into the path.
+func TestSubdomainRewriter_RejectsNonRepoNameSubdomains(t *testing.T) {
+	for _, host := range []string{
+		"my%2frepo.nexspence.example.com",
+		"my_repo.nexspence.example.com",
+		"my repo.nexspence.example.com",
+		"-leading.nexspence.example.com",
+		"trailing-.nexspence.example.com",
+	} {
+		h, captured := capturePathHandler()
+		rw := api.NewSubdomainRewriter(h, "nexspence.example.com")
+
+		req := httptest.NewRequest(http.MethodGet, "/v2/alpine/manifests/latest", nil)
+		req.Host = host
+		rw.ServeHTTP(httptest.NewRecorder(), req)
+
+		assert.Equal(t, "/v2/alpine/manifests/latest", *captured,
+			"host %q must not be spliced into the path", host)
+	}
+}
+
+func TestSubdomainRewriter_AcceptsRepoNameSubdomains(t *testing.T) {
+	for _, host := range []string{
+		"myrepo.nexspence.example.com",
+		"my-repo-2.nexspence.example.com",
+		"MyRepo.nexspence.example.com", // host matching is case-insensitive
+	} {
+		h, captured := capturePathHandler()
+		rw := api.NewSubdomainRewriter(h, "nexspence.example.com")
+
+		req := httptest.NewRequest(http.MethodGet, "/v2/alpine/manifests/latest", nil)
+		req.Host = host
+		rw.ServeHTTP(httptest.NewRecorder(), req)
+
+		assert.NotEqual(t, "/v2/alpine/manifests/latest", *captured,
+			"host %q is a valid repository name and should be rewritten", host)
+	}
+}
+
 func TestSubdomainRewriter_NonDockerPath_Passthrough(t *testing.T) {
 	h, captured := capturePathHandler()
 	rw := api.NewSubdomainRewriter(h, "nexspence.example.com")

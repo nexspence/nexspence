@@ -57,5 +57,29 @@ func (s *SubdomainRewriter) extractRepo(host string) string {
 	if sub == "" || strings.Contains(sub, ".") {
 		return ""
 	}
+	// The value is spliced into the URL path, so accept only what a repository
+	// name can look like. RBAC still runs on the result, so this is not the
+	// boundary that stops a bypass — it stops a host header from injecting
+	// separators or encoded segments into a path we build.
+	if !isRepoNameLabel(sub) {
+		return ""
+	}
 	return sub
+}
+
+// isRepoNameLabel reports whether s is a lower-case DNS-style label:
+// [a-z0-9] separated by single hyphens, no leading or trailing hyphen.
+func isRepoNameLabel(s string) bool {
+	if s == "" || s[0] == '-' || s[len(s)-1] == '-' {
+		return false
+	}
+	for i := range len(s) {
+		c := s[i]
+		switch {
+		case c >= 'a' && c <= 'z', c >= '0' && c <= '9', c == '-':
+		default:
+			return false
+		}
+	}
+	return true
 }

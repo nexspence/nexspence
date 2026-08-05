@@ -216,6 +216,17 @@ const DevDefaultJWTSecret = "nexspence-dev-default-secret-change-me-in-productio
 // IsDevDefaultJWTSecret reports whether s is the shipped development default.
 func IsDevDefaultJWTSecret(s string) bool { return s == DevDefaultJWTSecret }
 
+// DevDefaultOIDCCookieKey is the OIDC state-cookie key hard-coded in the
+// docker-compose files and config.yaml.example (base64 of
+// "abcdefghijklmnopqrstuvwxyz123456"). It seals the state cookie that protects
+// the login flow from CSRF, so an attacker who knows it can forge a state
+// cookie matching their own state parameter — cmd/server refuses to start with
+// it once OIDC is enabled.
+const DevDefaultOIDCCookieKey = "YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY=" //nolint:gosec // G101: this is the recognizable dev default we refuse to boot with, not a production credential
+
+// IsDevDefaultOIDCCookieKey reports whether s is the shipped development default.
+func IsDevDefaultOIDCCookieKey(s string) bool { return s == DevDefaultOIDCCookieKey }
+
 // EncryptionKeyBytes returns the decoded dedicated encryption key, or nil when
 // unset. Load() has already validated the encoding and length.
 func (a AuthConfig) EncryptionKeyBytes() []byte {

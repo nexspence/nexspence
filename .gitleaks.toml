@@ -1,0 +1,56 @@
+# gitleaks configuration for nexspence.
+#
+# A scan of the full history finds no real secret — every hit is a documentation
+# example, a test fixture, or one of the deliberately recognizable development
+# defaults the server refuses to boot with (see cmd/server/startup_security.go).
+# Left unconfigured that is ~215 hits of noise, which is exactly how a real leak
+# goes unnoticed.
+#
+# The allowlist below is deliberately narrow: it names the specific placeholder
+# values and the fixture paths, rather than muting whole directories. A genuine
+# credential committed to docs/ would still be reported.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Documentation examples, test fixtures and shipped dev defaults"
+
+# Match against the whole matched line rather than just the extracted secret:
+# several of the placeholders below are only recognizable in context
+# (`curl -u <user>:<password>`), not from the captured value alone.
+regexTarget = "match"
+
+regexes = [
+  # `curl -u admin:admin123` and friends throughout the docs and README.
+  '''admin:admin123''',
+  '''admin:\$\{?[A-Z_]+\}?''',
+  # The quick-start admin password, warned about at startup.
+  '''admin123''',
+  # The shipped dev JWT secret — cmd/server refuses to boot with it unless
+  # auth.allow_insecure_defaults=true.
+  '''nexspence-dev-default-secret-change-me-in-production''',
+  # The shipped OIDC state-cookie key (base64 "abcdefghijklmnopqrstuvwxyz123456"),
+  # likewise refused at startup once OIDC is enabled.
+  '''YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY=''',
+  # Seed users from docs/seed-testing-guide.md — created by the local seed
+  # script against a throwaway database, documented so the guide is runnable.
+  '''(dev|stage|test|prod)-user:User2026!''',
+  # Compose/dev database and MinIO credentials, all localhost-only.
+  '''nexspence:nexspence@''',
+  '''minioadmin''',
+  '''miniosecret''',
+  # Placeholder tokens in docs and fixtures: nxs_ is the API-token prefix.
+  '''nxs_(example|xxx|your|test|abc)[A-Za-z0-9_-]*''',
+  '''(?i)(your|example|changeme|placeholder|dummy|fake)[-_]?(token|secret|password|key)''',
+]
+
+paths = [
+  # Frontend test fixtures and MSW handlers carry fake tokens by design.
+  '''frontend/src/test/.*''',
+  '''.*\.test\.(ts|tsx)$''',
+  # Blob-storage tests: the "keys" here are content hashes, not credentials.
+  '''internal/storage/local(_internal)?_test\.go$''',
+  # Local planning notes, not shipped (they are gitignored going forward).
+  '''docs/superpowers/.*''',
+]

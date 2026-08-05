@@ -305,9 +305,6 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 			log.Error("failed to reset trusted proxies", "err", err)
 		}
 	}
-	// Health probes — no auth, no middleware.
-	r.GET("/healthz", handlers.LivenessHandler())
-	r.GET("/readyz", handlers.ReadinessHandler(pool, rdb))
 	r.Use(gin.Recovery())
 	r.Use(requestLogger(log))
 	r.Use(corsMiddleware(cfg.HTTP.CORSOrigins))
@@ -318,6 +315,11 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 	if cfg.Auth.RateLimitEnabled {
 		r.Use(RateLimitMiddleware(cfg.Auth.RateLimitRPS, cfg.Auth.RateLimitBurst))
 	}
+
+	// Health probes: no auth, but inside the middleware chain — registering them
+	// earlier meant gin snapshotted an empty chain for them, leaving the
+	// readiness path without Recovery.
+	registerHealthRoutes(r, handlers.LivenessHandler(), handlers.ReadinessHandler(pool, rdb))
 
 	authMW := handlers.AuthMiddleware(userSvc, tokenSvc, loginGuard, log)
 	adminMW := handlers.AdminRequired()
