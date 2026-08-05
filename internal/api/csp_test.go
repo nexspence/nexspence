@@ -3,6 +3,9 @@ package api
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -92,4 +95,34 @@ func TestDefaultCSP_AllowsTheBundledUI(t *testing.T) {
 	// component libraries commonly inject <style> at runtime.
 	assert.True(t, strings.Contains(DefaultCSP, "style-src 'self' 'unsafe-inline'"),
 		"style-src needs unsafe-inline for runtime-injected styles: %s", DefaultCSP)
+}
+
+// The bundled UI loads its webfonts from Google. A policy that forgets them
+// does not fail loudly — the page renders in a fallback font and nobody
+// notices until someone reads the console. This test pins the two origins the
+// UI actually references.
+func TestDefaultCSP_AllowsTheFontsTheUIRequests(t *testing.T) {
+	assert.Contains(t, DefaultCSP, "https://fonts.googleapis.com",
+		"style-src must admit the Google Fonts stylesheet")
+	assert.Contains(t, DefaultCSP, "https://fonts.gstatic.com",
+		"font-src must admit the font files themselves")
+}
+
+// Guards against the UI gaining a new external dependency that the policy does
+// not know about. Skipped when the frontend has not been built.
+func TestDefaultCSP_CoversEveryExternalOriginInIndexHTML(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "frontend", "index.html"))
+	if err != nil {
+		t.Skip("frontend/index.html not available")
+	}
+	origins := regexp.MustCompile(`https://[a-zA-Z0-9.-]+`).FindAllString(string(raw), -1)
+	seen := map[string]bool{}
+	for _, o := range origins {
+		if seen[o] {
+			continue
+		}
+		seen[o] = true
+		assert.Contains(t, DefaultCSP, o,
+			"index.html references %s but the CSP does not allow it", o)
+	}
 }
