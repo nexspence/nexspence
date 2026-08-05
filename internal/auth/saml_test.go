@@ -91,7 +91,7 @@ func TestSAMLService_MetadataXML_ContainsEntityID(t *testing.T) {
 func TestSAMLService_AuthnRequestURL_ContainsSAMLRequest(t *testing.T) {
 	svc := newTestSAMLService(t)
 	rs := svc.SignRelayState("/")
-	redirectURL, err := svc.AuthnRequestURL(rs)
+	redirectURL, _, err := svc.AuthnRequest(rs)
 	require.NoError(t, err)
 	assert.Contains(t, redirectURL, "SAMLRequest=")
 	assert.Contains(t, redirectURL, "idp.example.com/sso")
@@ -138,6 +138,6 @@ func TestSAMLService_ParseResponse_MissingBody_ReturnsError(t *testing.T) {
 	r, _ := http.NewRequest(http.MethodPost, "/acs", strings.NewReader("SAMLResponse=invalid"))
 	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	_ = r.ParseForm()
-	_, err := svc.ParseResponse(r)
+	_, err := svc.ParseResponse(r, []string{"id-anything"})
 	require.Error(t, err)
 }

@@ -30,16 +30,27 @@ type mockSAMLAuthenticator struct {
 	parseErr  error
 	returnTo  string
 	verifyErr error
+
+	requestIDErr  error
+	gotRequestIDs []string
 }
 
 func (m *mockSAMLAuthenticator) MetadataXML() ([]byte, error) {
 	return m.metaXML, m.metaErr
 }
-func (m *mockSAMLAuthenticator) AuthnRequestURL(rs string) (string, error) {
-	return m.authnURL, m.authnErr
+func (m *mockSAMLAuthenticator) AuthnRequest(rs string) (string, string, error) {
+	return m.authnURL, "id-mock-request", m.authnErr
 }
-func (m *mockSAMLAuthenticator) ParseResponse(r *http.Request) (*auth.SAMLClaims, error) {
+func (m *mockSAMLAuthenticator) ParseResponse(r *http.Request, ids []string) (*auth.SAMLClaims, error) {
+	m.gotRequestIDs = ids
 	return m.claims, m.parseErr
+}
+func (m *mockSAMLAuthenticator) SignRequestID(id string) string { return "signed:" + id }
+func (m *mockSAMLAuthenticator) VerifyRequestID(v string) (string, error) {
+	if m.requestIDErr != nil {
+		return "", m.requestIDErr
+	}
+	return strings.TrimPrefix(v, "signed:"), nil
 }
 func (m *mockSAMLAuthenticator) SignRelayState(returnTo string) string {
 	return returnTo
@@ -139,6 +150,7 @@ func TestSAMLHandler_ACS_ValidAssertion_RedirectsWithToken(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/saml/acs",
 		strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: "saml_request_id", Value: "signed:id-mock-request"})
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
@@ -157,6 +169,7 @@ func TestSAMLHandler_ACS_InvalidAssertion_RedirectsToLoginWithError(t *testing.T
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/saml/acs",
 		strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: "saml_request_id", Value: "signed:id-mock-request"})
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
@@ -194,4 +207,113 @@ func TestSAMLHandler_ACS_ProvisioningRejected_RedirectsWithError(t *testing.T) {
 
 	require.Equal(t, http.StatusFound, w.Code)
 	assert.Contains(t, w.Header().Get("Location"), "saml_error=")
+}
+
+// ── request-ID binding (M-5) ──────────────────────────────────
+
+// The login redirect has to leave something behind that ties the coming
+// assertion to this browser's request.
+func TestSAMLHandler_Login_SetsRequestIDCookie(t *testing.T) {
+	mock := &mockSAMLAuthenticator{authnURL: "https://idp.example.com/sso?SAMLRequest=x"}
+	r := newSAMLRig(t, mock)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/auth/saml/login", nil))
+
+	var found *http.Cookie
+	for _, ck := range w.Result().Cookies() {
+		if ck.Name == "saml_request_id" {
+			found = ck
+		}
+	}
+	require.NotNil(t, found, "no binding cookie was set")
+	assert.Equal(t, "signed:id-mock-request", found.Value)
+	assert.True(t, found.HttpOnly, "the browser's scripts have no business reading it")
+}
+
+// The classic SAML login-CSRF: a validly-signed assertion the attacker obtained
+// elsewhere, POSTed into a victim's browser. With no pending request there is
+// nothing for it to answer.
+func TestSAMLHandler_ACS_WithoutPendingRequest_IsRefused(t *testing.T) {
+	mock := &mockSAMLAuthenticator{
+		claims:   &auth.SAMLClaims{Subject: "attacker@idp", Username: "attacker"},
+		returnTo: "/",
+	}
+	r := newSAMLRig(t, mock)
+
+	form := url.Values{}
+	form.Set("SAMLResponse", "a-perfectly-valid-assertion")
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/saml/acs", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusFound, w.Code)
+	assert.Contains(t, w.Header().Get("Location"), "/login?saml_error=")
+	assert.NotContains(t, w.Header().Get("Location"), "token=")
+	assert.Nil(t, mock.gotRequestIDs, "the assertion must not even be parsed")
+}
+
+func TestSAMLHandler_ACS_ForgedCookie_IsRefused(t *testing.T) {
+	mock := &mockSAMLAuthenticator{
+		claims:       &auth.SAMLClaims{Subject: "attacker@idp", Username: "attacker"},
+		requestIDErr: assert.AnError,
+	}
+	r := newSAMLRig(t, mock)
+
+	form := url.Values{}
+	form.Set("SAMLResponse", "assertion")
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/saml/acs", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: "saml_request_id", Value: "i-made-this-up"})
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Contains(t, w.Header().Get("Location"), "/login?saml_error=")
+	assert.Nil(t, mock.gotRequestIDs)
+}
+
+// The verified ID must actually reach the library — that is the check doing the
+// work; everything above it is just plumbing.
+func TestSAMLHandler_ACS_PassesRequestIDToParser(t *testing.T) {
+	mock := &mockSAMLAuthenticator{
+		claims:   &auth.SAMLClaims{Subject: "alice@idp", Username: "alice", Groups: []string{}},
+		returnTo: "/",
+	}
+	r := newSAMLRig(t, mock)
+
+	form := url.Values{}
+	form.Set("SAMLResponse", "assertion")
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/saml/acs", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: "saml_request_id", Value: "signed:id-mock-request"})
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, []string{"id-mock-request"}, mock.gotRequestIDs)
+}
+
+// One assertion per login: the cookie is spent whether or not it worked.
+func TestSAMLHandler_ACS_ClearsTheCookie(t *testing.T) {
+	mock := &mockSAMLAuthenticator{
+		claims:   &auth.SAMLClaims{Subject: "alice@idp", Username: "alice", Groups: []string{}},
+		returnTo: "/",
+	}
+	r := newSAMLRig(t, mock)
+
+	form := url.Values{}
+	form.Set("SAMLResponse", "assertion")
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/saml/acs", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: "saml_request_id", Value: "signed:id-mock-request"})
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	for _, ck := range w.Result().Cookies() {
+		if ck.Name == "saml_request_id" {
+			assert.Less(t, ck.MaxAge, 0, "cookie should be expired")
+			return
+		}
+	}
+	t.Fatal("expected the binding cookie to be cleared")
 }

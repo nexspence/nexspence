@@ -156,16 +156,36 @@ func (h *AuthHandler) Me(c *gin.Context) {
 // Must be placed after AuthMiddleware which populates the "roles" context key.
 func AdminRequired() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		roles, _ := c.Get("roles")
-		list, _ := roles.([]string)
-		for _, r := range list {
-			if r == "nx-admin" {
-				c.Next()
-				return
-			}
+		if !IsAdmin(c) {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "admin role required"})
+			return
 		}
-		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "admin role required"})
+		c.Next()
 	}
+}
+
+// IsAdmin reports whether the authenticated caller holds nx-admin. Handlers
+// that are dangerous regardless of where they are mounted check this themselves
+// instead of relying on the route being wired under AdminRequired.
+func IsAdmin(c *gin.Context) bool {
+	roles, _ := c.Get("roles")
+	list, _ := roles.([]string)
+	for _, r := range list {
+		if r == "nx-admin" {
+			return true
+		}
+	}
+	return false
+}
+
+// requireAdmin aborts with 403 unless the caller is an admin, reporting whether
+// the request may continue.
+func requireAdmin(c *gin.Context) bool {
+	if IsAdmin(c) {
+		return true
+	}
+	c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "admin role required"})
+	return false
 }
 
 // authenticateBearer tries the JWT service first, then falls back to an API

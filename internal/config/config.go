@@ -29,6 +29,20 @@ type Config struct {
 	Docker    DockerConfig    `mapstructure:"docker"`
 	Redis     RedisConfig     `mapstructure:"redis"`
 	Proxy     ProxyConfig     `mapstructure:"proxy"`
+	Outbound  OutboundConfig  `mapstructure:"outbound"`
+}
+
+// OutboundConfig governs where the server is allowed to make requests when the
+// target URL comes from configuration: proxy upstreams, webhook endpoints and
+// replication targets.
+type OutboundConfig struct {
+	// AllowedInternalCIDRs lists internal ranges that may be reached anyway.
+	// By default every loopback, private, link-local, CGNAT, multicast and
+	// broadcast address is refused, which is what stops a proxy repository
+	// pointed at a cloud metadata endpoint from turning repo-admin into
+	// credential theft. On-prem deployments that genuinely proxy an internal
+	// registry name that range here.
+	AllowedInternalCIDRs []string `mapstructure:"allowed_internal_cidrs"`
 }
 
 // ProxyConfig configures the server-wide outbound proxy used when fetching from
@@ -67,6 +81,10 @@ type HTTPConfig struct {
 	// hop, which is only safe when the server is unreachable except through a
 	// proxy you control.
 	TrustedProxies []string `mapstructure:"trusted_proxies"`
+	// CSP overrides the Content-Security-Policy served with the UI. Empty uses
+	// the built-in policy; the literal "off" omits the header, for deployments
+	// whose reverse proxy sets its own.
+	CSP string `mapstructure:"csp"`
 }
 
 // TLSConfig holds the optional server certificate and key for HTTPS.
@@ -215,6 +233,17 @@ const DevDefaultJWTSecret = "nexspence-dev-default-secret-change-me-in-productio
 
 // IsDevDefaultJWTSecret reports whether s is the shipped development default.
 func IsDevDefaultJWTSecret(s string) bool { return s == DevDefaultJWTSecret }
+
+// DevDefaultOIDCCookieKey is the OIDC state-cookie key hard-coded in the
+// docker-compose files and config.yaml.example (base64 of
+// "abcdefghijklmnopqrstuvwxyz123456"). It seals the state cookie that protects
+// the login flow from CSRF, so an attacker who knows it can forge a state
+// cookie matching their own state parameter — cmd/server refuses to start with
+// it once OIDC is enabled.
+const DevDefaultOIDCCookieKey = "YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY=" //nolint:gosec // G101: this is the recognizable dev default we refuse to boot with, not a production credential
+
+// IsDevDefaultOIDCCookieKey reports whether s is the shipped development default.
+func IsDevDefaultOIDCCookieKey(s string) bool { return s == DevDefaultOIDCCookieKey }
 
 // EncryptionKeyBytes returns the decoded dedicated encryption key, or nil when
 // unset. Load() has already validated the encoding and length.
@@ -390,6 +419,8 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("http.max_body_mb", 1024)
 	v.SetDefault("http.cors_origins", []string{})
 	v.SetDefault("http.trusted_proxies", []string{})
+	v.SetDefault("outbound.allowed_internal_cidrs", []string{})
+	v.SetDefault("http.csp", "")
 	v.SetDefault("http.base_url", "http://localhost:8081")
 	// Viper bug: AutomaticEnv + Unmarshal silently skips keys that have no
 	// default/config-file value (not in AllKeys). Empty-string defaults ensure

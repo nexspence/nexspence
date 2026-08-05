@@ -278,6 +278,11 @@ func (h *BlobStoreHandler) Delete(c *gin.Context) {
 // Query params: key=<blobKey>, ttl=<seconds> (default 3600).
 // Returns a presigned download URL (S3 stores only).
 func (h *BlobStoreHandler) PresignGet(c *gin.Context) {
+	// The key is caller-supplied and repository RBAC never sees it, so this is
+	// an admin operation wherever it ends up mounted.
+	if !requireAdmin(c) {
+		return
+	}
 	ps, ok := h.blobStore.(storage.PresignableStore)
 	if !ok {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "presigned URLs are only supported for S3 blob stores"})
@@ -309,6 +314,9 @@ func (h *BlobStoreHandler) PresignGet(c *gin.Context) {
 // Body JSON: {"key": "<blobKey>", "ttl": <seconds>}
 // Returns a presigned upload URL (S3 stores only).
 func (h *BlobStoreHandler) PresignPut(c *gin.Context) {
+	if !requireAdmin(c) {
+		return
+	}
 	ps, ok := h.blobStore.(storage.PresignableStore)
 	if !ok {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "presigned URLs are only supported for S3 blob stores"})
@@ -342,6 +350,9 @@ func (h *BlobStoreHandler) PresignPut(c *gin.Context) {
 // Body JSON: {"expiration_days": 30}  (0 = remove all rules)
 // S3 stores only.
 func (h *BlobStoreHandler) ConfigureLifecycle(c *gin.Context) {
+	if !requireAdmin(c) {
+		return
+	}
 	ps, ok := h.blobStore.(storage.PresignableStore)
 	if !ok {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "lifecycle configuration is only supported for S3 blob stores"})

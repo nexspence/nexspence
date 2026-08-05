@@ -38,6 +38,9 @@ func mountBlobStores(t *testing.T, stores ...*domain.BlobStore) (*gin.Engine, *t
 		WithGC(gc)
 
 	r := gin.New()
+	// The presign and lifecycle handlers check for nx-admin themselves — see
+	// presign_admin_test.go — so these tests authenticate as one.
+	r.Use(func(c *gin.Context) { c.Set("roles", []string{"nx-admin"}); c.Next() })
 	r.GET("/service/rest/v1/blobstores", h.List)
 	r.GET("/service/rest/v1/blobstores/:name", h.Get)
 	r.POST("/service/rest/v1/blobstores/:type", h.Create)

@@ -17,10 +17,26 @@ http:
   # every request looks like it comes from the proxy. "*" trusts every hop —
   # only safe when the server cannot be reached except through that proxy.
   trusted_proxies: []         # e.g. ["10.0.0.0/8"] or ["*"]
+  # Content-Security-Policy for the bundled UI and the API. Empty uses the
+  # built-in policy (same-origin scripts, no inline script, no framing);
+  # "off" omits the header when a reverse proxy sets its own. Artifact paths
+  # (/repository/, /v2/) are never covered — raw repositories are used to host
+  # documentation sites that carry their own scripts.
+  csp: ""
   tls:
     enabled: false
     cert_file: ""
     key_file: ""
+
+# Outbound requests to URLs that come from configuration: proxy upstreams,
+# webhook endpoints, replication targets.
+outbound:
+  # Every loopback, private, link-local, CGNAT, multicast and broadcast address
+  # is refused by default. That is what stops a proxy repository pointed at
+  # http://169.254.169.254/… from turning repository-admin into cloud
+  # credential theft. Name a range here when you genuinely proxy an on-prem
+  # registry — it is the one way to reach an internal address.
+  allowed_internal_cidrs: []   # e.g. ["10.20.0.0/16", "registry.internal.example.com is resolved, so use its range"]
 
 database:
   dsn: "postgres://nexspence:nexspence@localhost:5432/nexspence?sslmode=disable"

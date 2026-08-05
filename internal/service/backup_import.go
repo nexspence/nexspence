@@ -2,28 +2,41 @@ package service
 
 import (
 	"archive/tar"
-	"bytes"
 	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
 )
 
-// backupArchive holds a backup tar.gz decoded in one pass: JSON sections by
-// entry name, blob payloads by blob key.
+// backupArchive holds a backup tar.gz decoded in one pass. JSON sections stay
+// in memory — they are small and are unmarshalled immediately — while blob
+// payloads are spooled to a temporary directory. Holding those in memory meant
+// an 8 GiB archive cost 8 GiB of process heap.
+//
+// The caller owns the spool: Close removes it, and every path that builds an
+// archive must call it.
 type backupArchive struct {
-	entries map[string][]byte
-	blobs   map[string][]byte
+	entries  map[string][]byte
+	blobDir  string
+	blobFile map[string]string // blob key → spooled file name
+	blobSize map[string]int64
 }
 
 // defaultMaxImportBytes caps total decompressed bytes read from a backup
-// archive, guarding against gzip bombs that would otherwise OOM the process.
+// archive, guarding against gzip bombs that would otherwise fill the disk.
 const defaultMaxImportBytes = 8 << 30 // 8 GiB
+
+// maxImportEntries caps how many members an archive may contain. The byte limit
+// alone does not bound work: millions of one-byte entries cost CPU and
+// allocation without ever approaching it.
+const maxImportEntries = 5_000_000
 
 func readBackupArchive(r io.Reader) (*backupArchive, error) {
 	return readBackupArchiveLimited(r, defaultMaxImportBytes)
@@ -31,43 +44,140 @@ func readBackupArchive(r io.Reader) (*backupArchive, error) {
 
 // readBackupArchiveLimited decodes a backup tar.gz, returning an error once the
 // cumulative decompressed size of all entries exceeds maxBytes.
-func readBackupArchiveLimited(r io.Reader, maxBytes int64) (*backupArchive, error) {
-	gr, err := gzip.NewReader(r)
-	if err != nil {
-		return nil, fmt.Errorf("not a gzip archive: %w", err)
+func readBackupArchiveLimited(r io.Reader, maxBytes int64) (a *backupArchive, err error) {
+	return readBackupArchiveWithLimits(r, maxBytes, maxImportEntries)
+}
+
+// readBackupArchiveWithLimits is readBackupArchiveLimited with the entry cap
+// exposed, so tests can exercise it without building a five-million-entry tar.
+func readBackupArchiveWithLimits(r io.Reader, maxBytes int64, maxEntries int) (a *backupArchive, err error) {
+	gr, gerr := gzip.NewReader(r)
+	if gerr != nil {
+		return nil, fmt.Errorf("not a gzip archive: %w", gerr)
 	}
 	defer func() { _ = gr.Close() }()
+
+	dir, derr := os.MkdirTemp("", "nexspence-import-*")
+	if derr != nil {
+		return nil, fmt.Errorf("create import spool: %w", derr)
+	}
+	a = &backupArchive{
+		entries:  map[string][]byte{},
+		blobDir:  dir,
+		blobFile: map[string]string{},
+		blobSize: map[string]int64{},
+	}
+	// Any failure below leaves nothing on disk.
+	defer func() {
+		if err != nil {
+			_ = a.Close()
+			a = nil
+		}
+	}()
+
 	tr := tar.NewReader(gr)
-	a := &backupArchive{entries: map[string][]byte{}, blobs: map[string][]byte{}}
 	var total int64
+	var count int
 	for {
-		hdr, err := tr.Next()
-		if errors.Is(err, io.EOF) {
+		hdr, nerr := tr.Next()
+		if errors.Is(nerr, io.EOF) {
 			break
 		}
-		if err != nil {
-			return nil, fmt.Errorf("read archive: %w", err)
+		if nerr != nil {
+			return a, fmt.Errorf("read archive: %w", nerr)
+		}
+		count++
+		if count > maxEntries {
+			return a, fmt.Errorf("backup archive exceeds %d entries", maxEntries)
 		}
 		remaining := maxBytes - total
 		if remaining <= 0 {
-			return nil, fmt.Errorf("backup archive exceeds %d byte decompression limit", maxBytes)
+			return a, fmt.Errorf("backup archive exceeds %d byte decompression limit", maxBytes)
 		}
+
+		if key, ok := strings.CutPrefix(hdr.Name, "blobs/"); ok {
+			n, werr := a.spoolBlob(key, tr, remaining)
+			if werr != nil {
+				return a, werr
+			}
+			total += n
+			continue
+		}
+
 		// Read one extra byte: if the entry fills remaining+1, it overflowed the cap.
-		data, err := io.ReadAll(io.LimitReader(tr, remaining+1))
-		if err != nil {
-			return nil, fmt.Errorf("read entry %s: %w", hdr.Name, err)
+		data, rerr := io.ReadAll(io.LimitReader(tr, remaining+1))
+		if rerr != nil {
+			return a, fmt.Errorf("read entry %s: %w", hdr.Name, rerr)
 		}
 		if int64(len(data)) > remaining {
-			return nil, fmt.Errorf("backup archive exceeds %d byte decompression limit", maxBytes)
+			return a, fmt.Errorf("backup archive exceeds %d byte decompression limit", maxBytes)
 		}
 		total += int64(len(data))
-		if strings.HasPrefix(hdr.Name, "blobs/") {
-			a.blobs[strings.TrimPrefix(hdr.Name, "blobs/")] = data
-		} else {
-			a.entries[hdr.Name] = data
-		}
+		a.entries[hdr.Name] = data
 	}
 	return a, nil
+}
+
+// spoolBlob copies one blob payload to the spool directory, refusing to write
+// more than remaining bytes. Returns how much was written.
+func (a *backupArchive) spoolBlob(key string, r io.Reader, remaining int64) (int64, error) {
+	name := fmt.Sprintf("blob-%d", len(a.blobFile))
+	f, err := os.Create(filepath.Join(a.blobDir, name)) //nolint:gosec // name is generated, not caller-controlled
+	if err != nil {
+		return 0, fmt.Errorf("spool blob %s: %w", key, err)
+	}
+	defer func() { _ = f.Close() }()
+
+	// One byte past the budget tells us it overflowed rather than exactly fit.
+	n, err := io.Copy(f, io.LimitReader(r, remaining+1))
+	if err != nil {
+		return 0, fmt.Errorf("spool blob %s: %w", key, err)
+	}
+	if n > remaining {
+		return 0, fmt.Errorf("backup archive exceeds decompression limit")
+	}
+	a.blobFile[key] = name
+	a.blobSize[key] = n
+	return n, nil
+}
+
+// Close removes the spool directory. Safe to call more than once.
+func (a *backupArchive) Close() error {
+	if a == nil || a.blobDir == "" {
+		return nil
+	}
+	dir := a.blobDir
+	a.blobDir = ""
+	return os.RemoveAll(dir)
+}
+
+// hasBlob reports whether the archive carried a payload for key.
+func (a *backupArchive) hasBlob(key string) bool {
+	_, ok := a.blobFile[key]
+	return ok
+}
+
+// blobPath returns the spooled file for key.
+func (a *backupArchive) blobPath(key string) (string, bool) {
+	name, ok := a.blobFile[key]
+	if !ok {
+		return "", false
+	}
+	return filepath.Join(a.blobDir, name), true
+}
+
+// openBlob returns a reader over the spooled payload and its size. The caller
+// closes the reader.
+func (a *backupArchive) openBlob(key string) (io.ReadCloser, int64, bool) {
+	path, ok := a.blobPath(key)
+	if !ok {
+		return nil, 0, false
+	}
+	f, err := os.Open(path) //nolint:gosec // path is inside our own spool directory
+	if err != nil {
+		return nil, 0, false
+	}
+	return f, a.blobSize[key], true
 }
 
 // unmarshal decodes the named JSON section into v; absent sections are a no-op
@@ -107,13 +217,15 @@ func (s *BackupService) ImportRepo(ctx context.Context, r io.Reader, targetName,
 	if err != nil {
 		return nil, err
 	}
+	// The spool holds every blob payload in the archive; release it as soon as
+	// the import is done, however it ends.
+	defer func() { _ = arc.Close() }()
 	var archivedRepo domain.Repository
 	var components []domain.Component
 	var assets []domain.Asset
 	arc.unmarshal("repository.json", &archivedRepo)
 	arc.unmarshal("components.json", &components)
 	arc.unmarshal("assets.json", &assets)
-	blobs := arc.blobs
 
 	if archivedRepo.Name == "" {
 		return nil, fmt.Errorf("invalid archive: missing or empty repository.json")
@@ -157,7 +269,7 @@ func (s *BackupService) ImportRepo(ctx context.Context, r io.Reader, targetName,
 	}
 
 	compIDMap := s.importRepoComponents(ctx, components, destRepo, finalName, conflictMode, stats)
-	s.importRepoAssets(ctx, assets, blobs, destRepo, finalName, conflictMode, blobStoreID, compIDMap, stats)
+	s.importRepoAssets(ctx, assets, arc, destRepo, finalName, conflictMode, blobStoreID, compIDMap, stats)
 
 	return stats, nil
 }
@@ -210,7 +322,7 @@ func (s *BackupService) importRepoComponents(ctx context.Context, components []d
 
 // importRepoAssets imports archived assets (and their blob bytes) into the
 // destination repository, deduplicating by path for skip/merge modes.
-func (s *BackupService) importRepoAssets(ctx context.Context, assets []domain.Asset, blobs map[string][]byte, destRepo *domain.Repository, finalName, conflictMode, blobStoreID string, compIDMap map[string]string, stats *ImportRepoStats) {
+func (s *BackupService) importRepoAssets(ctx context.Context, assets []domain.Asset, arc *backupArchive, destRepo *domain.Repository, finalName, conflictMode, blobStoreID string, compIDMap map[string]string, stats *ImportRepoStats) {
 	for i := range assets {
 		a := &assets[i]
 
@@ -226,10 +338,11 @@ func (s *BackupService) importRepoAssets(ctx context.Context, assets []domain.As
 			}
 		}
 
-		// Restore blob bytes.
+		// Restore blob bytes, streamed from the spool rather than held in memory.
 		if a.BlobKey != "" {
-			if data, ok := blobs[a.BlobKey]; ok {
-				_ = s.BlobStore.Put(ctx, a.BlobKey, bytes.NewReader(data), int64(len(data)))
+			if rc, size, ok := arc.openBlob(a.BlobKey); ok {
+				_ = s.BlobStore.Put(ctx, a.BlobKey, rc, size)
+				_ = rc.Close()
 			}
 		}
 
@@ -245,7 +358,7 @@ func (s *BackupService) importRepoAssets(ctx context.Context, assets []domain.As
 		}
 		stats.Assets++
 		if a.BlobKey != "" {
-			if _, hadBlob := blobs[a.BlobKey]; hadBlob {
+			if arc.hasBlob(a.BlobKey) {
 				stats.Blobs++
 			}
 		}
@@ -260,6 +373,9 @@ func (s *BackupService) Restore(ctx context.Context, r io.Reader) (*RestoreStats
 	if err != nil {
 		return nil, err
 	}
+	// The spool holds every blob payload in the archive; release it as soon as
+	// the import is done, however it ends.
+	defer func() { _ = arc.Close() }()
 	var (
 		blobStores []domain.BlobStore
 		repos      []domain.Repository
@@ -276,7 +392,6 @@ func (s *BackupService) Restore(ctx context.Context, r io.Reader) (*RestoreStats
 	arc.unmarshal("cleanup_policies.json", &policies)
 	arc.unmarshal("components.json", &components)
 	arc.unmarshal("assets.json", &assets)
-	blobs := arc.blobs
 
 	stats := &RestoreStats{}
 
@@ -286,7 +401,7 @@ func (s *BackupService) Restore(ctx context.Context, r io.Reader) (*RestoreStats
 	s.restoreRoles(ctx, roles, stats)
 	s.restorePolicies(ctx, policies, stats)
 	compIDMap := s.restoreComponents(ctx, components, repoNameToID, stats)
-	s.restoreAssets(ctx, assets, blobs, repoNameToID, compIDMap, bsNameToID, oldBSIDToName, stats)
+	s.restoreAssets(ctx, assets, arc, repoNameToID, compIDMap, bsNameToID, oldBSIDToName, stats)
 
 	return stats, nil
 }
@@ -423,7 +538,7 @@ func (s *BackupService) restoreComponents(ctx context.Context, components []doma
 
 // restoreAssets re-creates assets and their blob bytes, remapping component,
 // repository, and blob store references.
-func (s *BackupService) restoreAssets(ctx context.Context, assets []domain.Asset, blobs map[string][]byte, repoNameToID, compIDMap, bsNameToID, oldBSIDToName map[string]string, stats *RestoreStats) {
+func (s *BackupService) restoreAssets(ctx context.Context, assets []domain.Asset, arc *backupArchive, repoNameToID, compIDMap, bsNameToID, oldBSIDToName map[string]string, stats *RestoreStats) {
 	for i := range assets {
 		a := &assets[i]
 
@@ -450,10 +565,11 @@ func (s *BackupService) restoreAssets(ctx context.Context, assets []domain.Asset
 			}
 		}
 
-		// Restore blob bytes.
+		// Restore blob bytes, streamed from the spool rather than held in memory.
 		if a.BlobKey != "" {
-			if data, ok := blobs[a.BlobKey]; ok {
-				_ = s.BlobStore.Put(ctx, a.BlobKey, bytes.NewReader(data), int64(len(data)))
+			if rc, size, ok := arc.openBlob(a.BlobKey); ok {
+				_ = s.BlobStore.Put(ctx, a.BlobKey, rc, size)
+				_ = rc.Close()
 				stats.Blobs++
 			}
 		}
