@@ -193,6 +193,20 @@ func TestLoad_GCDefaults(t *testing.T) {
 	assert.Equal(t, 24*time.Hour, cfg.GC.MinAge)
 }
 
+func TestLoad_RateLimit_DefaultsEnabled(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := "" +
+		"database:\n  dsn: \"postgres://u:p@localhost:5432/db?sslmode=disable\"\n" +
+		"auth:\n  jwt_secret: \"a-unique-production-secret-at-least-32b\"\n"
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.True(t, cfg.Auth.RateLimitEnabled,
+		"auth.rate_limit_enabled must default to true: /api/v1/login is otherwise an unmetered bcrypt-cost-12 surface")
+}
+
 func TestLoad_TrustedProxies_DefaultsEmpty(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")

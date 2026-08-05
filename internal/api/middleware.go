@@ -24,15 +24,24 @@ func requestLogger(log logger.Logger) gin.HandlerFunc {
 	}
 }
 
-// corsMiddleware reflects an Origin only when it is present in allowed. When
-// allowed is empty, it falls back to a permissive wildcard (development default).
+// corsMiddleware reflects an Origin only when it is present in allowed.
+//
+// An empty list sends no Access-Control-Allow-Origin at all. It used to mean
+// "wildcard", which was exploitable: this API authenticates by Authorization
+// header and serves anonymous repositories, so a page the user visits could
+// fetch an internal artifact from inside their network and read the response.
+// A wildcard now has to be written out as cors_origins: ["*"].
 func corsMiddleware(allowed []string) gin.HandlerFunc {
+	wildcard := false
 	set := make(map[string]struct{}, len(allowed))
 	for _, o := range allowed {
+		if o == "*" {
+			wildcard = true
+		}
 		set[o] = struct{}{}
 	}
 	return func(c *gin.Context) {
-		if len(set) == 0 {
+		if wildcard {
 			c.Header("Access-Control-Allow-Origin", "*")
 		} else if origin := c.GetHeader("Origin"); origin != "" {
 			if _, ok := set[origin]; ok {

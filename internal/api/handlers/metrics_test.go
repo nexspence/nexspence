@@ -23,7 +23,7 @@ func TestPrometheusHandler_NoToken_Returns401(t *testing.T) {
 	authSvc := auth.NewService(testSecret, 24, bcryptCostTest)
 	uSvc := service.NewUserService(testutil.NewUserRepo(), testutil.NewRoleRepo(), authSvc, zap.NewNop().Sugar())
 	tSvc := service.NewTokenService(testutil.NewUserTokenRepo(), testutil.NewUserRepo())
-	r.GET("/metrics", handlers.AuthMiddleware(uSvc, tSvc),
+	r.GET("/metrics", handlers.AuthMiddleware(uSvc, tSvc, nil, nil),
 		gin.WrapH(promhttp.HandlerFor(metrics.Registry, promhttp.HandlerOpts{})))
 
 	w := httptest.NewRecorder()
@@ -37,7 +37,7 @@ func TestPrometheusHandler_ValidToken_Returns200(t *testing.T) {
 	uSvc := service.NewUserService(testutil.NewUserRepo(user), testutil.NewRoleRepo(), authSvc, zap.NewNop().Sugar())
 	tSvc := service.NewTokenService(testutil.NewUserTokenRepo(), testutil.NewUserRepo(user))
 	r := gin.New()
-	r.GET("/metrics", handlers.AuthMiddleware(uSvc, tSvc),
+	r.GET("/metrics", handlers.AuthMiddleware(uSvc, tSvc, nil, nil),
 		gin.WrapH(promhttp.HandlerFor(metrics.Registry, promhttp.HandlerOpts{})))
 
 	tok := bearerToken(newUserSvc(user), "admin")

@@ -54,7 +54,7 @@ func bearerToken(svc *service.UserService, username string) string {
 
 func buildAuthRouter(svc *service.UserService) *gin.Engine {
 	r := gin.New()
-	r.Use(handlers.AuthMiddleware(svc, nil))
+	r.Use(handlers.AuthMiddleware(svc, nil, nil, nil))
 	r.GET("/protected", func(c *gin.Context) {
 		username, _ := c.Get("username")
 		c.JSON(http.StatusOK, gin.H{"user": username})
@@ -200,7 +200,7 @@ func TestAuthMiddleware_AfterRoleChange_RejectsOldToken(t *testing.T) {
 
 func buildOptionalAuthRouter(svc *service.UserService) *gin.Engine {
 	r := gin.New()
-	r.Use(handlers.OptionalAuth(svc, nil))
+	r.Use(handlers.OptionalAuth(svc, nil, nil, nil))
 	r.GET("/open", func(c *gin.Context) {
 		username, _ := c.Get("username")
 		c.JSON(http.StatusOK, gin.H{"user": username})
@@ -324,7 +324,7 @@ func buildDockerV2AuthRouter(svc *service.UserService, repos ...*domain.Reposito
 
 func buildDockerV2AuthRouterAnon(svc *service.UserService, anonymousEnabled bool, repos ...*domain.Repository) *gin.Engine {
 	r := gin.New()
-	h := handlers.DockerV2Auth(svc, nil, testutil.NewRepoRepo(repos...), nil, anonymousEnabled)
+	h := handlers.DockerV2Auth(svc, nil, testutil.NewRepoRepo(repos...), nil, anonymousEnabled, nil, nil)
 	r.GET("/v2/", h)
 	r.HEAD("/v2/", h)
 	return r

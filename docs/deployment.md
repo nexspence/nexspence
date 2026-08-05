@@ -138,6 +138,7 @@ Five networking options (nginx, Traefik, Cilium ingress, Istio Gateway, Cilium G
 | `http.addr` | `:8081` | Listen address |
 | `http.base_url` | `http://localhost:8081` | Public URL used in download links |
 | `http.trusted_proxies` | `[]` | Peers (IPs/CIDRs) whose `X-Forwarded-For` is believed. Empty trusts nobody, so the audit log and rate limiter see the real peer. Set it to your reverse proxy when you run behind one; `["*"]` trusts every hop. |
+| `http.cors_origins` | `[]` | Origins allowed to read API responses from a browser. Empty sends no CORS header — correct when the bundled UI shares this origin. `["*"]` lets any site read responses; opt in only for a public instance. |
 | `database.dsn` | `postgres://nexspence:nexspence@localhost:5437/nexspence` | PostgreSQL connection string |
 | `storage.default_type` | `local` | `local` or `s3` |
 | `storage.local.base_path` | `./data/blobs` | Filesystem path for local blob store |
@@ -149,6 +150,8 @@ Five networking options (nginx, Traefik, Cilium ingress, Istio Gateway, Cilium G
 | `auth.jwt_expiry_hours` | `24` | JWT token lifetime |
 | `auth.anonymous_enabled` | `true` | Instance-wide switch for unauthenticated reads. `false` refuses them everywhere, overriding any repository's `allow_anonymous`. |
 | `auth.token_max_days` | `180` | Maximum lifetime for user API tokens (`nxs_*`) |
+| `auth.rate_limit_enabled` | `true` | Token-bucket throttle per user (per client address when anonymous). Turning it off leaves `/api/v1/login` unmetered. |
+| `auth.rate_limit_rps` / `auth.rate_limit_burst` | `50` / `100` | Sustained rate and burst for the above |
 | `bootstrap.admin_password` | `admin123` | Auto-created admin password — **change this** |
 | `cleanup.default_schedule` | `0 2 * * *` | Default cron for cleanup policies |
 | `audit.retention_days` | `90` | Audit log partition retention |
