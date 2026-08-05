@@ -37,11 +37,22 @@ type SAMLClaims struct {
 // SAMLAuthenticator is the interface for SAML SP operations (enables mocking).
 type SAMLAuthenticator interface {
 	MetadataXML() ([]byte, error)
-	AuthnRequestURL(relayState string) (string, error)
-	ParseResponse(r *http.Request) (*SAMLClaims, error)
+	// AuthnRequest returns the IdP redirect URL and the ID of the request it
+	// encodes. The caller must remember that ID and hand it back to
+	// ParseResponse, which is what binds an assertion to the login that asked
+	// for it.
+	AuthnRequest(relayState string) (redirectURL, requestID string, err error)
+	ParseResponse(r *http.Request, possibleRequestIDs []string) (*SAMLClaims, error)
 	SignRelayState(returnTo string) string
 	VerifyRelayState(rs string) (string, error)
+	SignRequestID(id string) string
+	VerifyRequestID(v string) (string, error)
 }
+
+// SAMLRequestIDTTL bounds how long a started login may take to come back. It
+// covers a real user typing a password and an MFA prompt, without leaving the
+// binding cookie replayable for hours.
+const SAMLRequestIDTTL = 10 * time.Minute
 
 // SAMLService implements SAMLAuthenticator using crewjam/saml.
 type SAMLService struct {
@@ -95,22 +106,87 @@ func (s *SAMLService) MetadataXML() ([]byte, error) {
 	return xml.MarshalIndent(meta, "", "  ")
 }
 
-// AuthnRequestURL builds a redirect-binding AuthnRequest and returns the IdP redirect URL.
-func (s *SAMLService) AuthnRequestURL(relayState string) (string, error) {
-	u, err := s.sp.MakeRedirectAuthenticationRequest(relayState)
+// AuthnRequest builds a redirect-binding AuthnRequest and returns both the IdP
+// redirect URL and the generated request ID.
+func (s *SAMLService) AuthnRequest(relayState string) (string, string, error) {
+	req, err := s.sp.MakeAuthenticationRequest(
+		s.sp.GetSSOBindingLocation(saml.HTTPRedirectBinding),
+		saml.HTTPRedirectBinding,
+		saml.HTTPPostBinding,
+	)
 	if err != nil {
-		return "", fmt.Errorf("saml authn request: %w", err)
+		return "", "", fmt.Errorf("saml authn request: %w", err)
 	}
-	return u.String(), nil
+	u, err := req.Redirect(relayState, &s.sp)
+	if err != nil {
+		return "", "", fmt.Errorf("saml authn redirect: %w", err)
+	}
+	return u.String(), req.ID, nil
 }
 
 // ParseResponse validates the POST-binding SAMLResponse from the IdP.
-func (s *SAMLService) ParseResponse(r *http.Request) (*SAMLClaims, error) {
-	assertion, err := s.sp.ParseResponse(r, nil)
+//
+// possibleRequestIDs must contain the ID of the AuthnRequest this response
+// answers. Passing none means no assertion can be accepted: without that
+// binding, a validly-signed assertion the attacker obtained elsewhere could be
+// replayed into a victim's browser to log them in as the attacker.
+func (s *SAMLService) ParseResponse(r *http.Request, possibleRequestIDs []string) (*SAMLClaims, error) {
+	assertion, err := s.sp.ParseResponse(r, possibleRequestIDs)
 	if err != nil {
 		return nil, fmt.Errorf("saml parse response: %w", err)
 	}
 	return s.extractClaims(assertion), nil
+}
+
+// SignRequestID returns the value for the binding cookie: the request ID and an
+// issue time, HMAC-signed so the browser cannot choose either.
+func (s *SAMLService) SignRequestID(id string) string {
+	return s.SignRequestIDAt(id, time.Now())
+}
+
+// SignRequestIDAt is SignRequestID with an explicit issue time (tests).
+func (s *SAMLService) SignRequestIDAt(id string, issuedAt time.Time) string {
+	data, _ := json.Marshal(map[string]any{"id": id, "t": issuedAt.Unix()})
+	mac := hmac.New(sha256.New, s.hmacKey)
+	mac.Write(data)
+	return base64.RawURLEncoding.EncodeToString(data) + "." +
+		base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+}
+
+// VerifyRequestID checks the signature and age of a binding cookie and returns
+// the request ID it carries.
+func (s *SAMLService) VerifyRequestID(v string) (string, error) {
+	parts := strings.SplitN(v, ".", 2)
+	if len(parts) != 2 {
+		return "", fmt.Errorf("saml: invalid request id format")
+	}
+	data, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil {
+		return "", fmt.Errorf("saml: request id data decode: %w", err)
+	}
+	sig, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return "", fmt.Errorf("saml: request id sig decode: %w", err)
+	}
+	mac := hmac.New(sha256.New, s.hmacKey)
+	mac.Write(data)
+	if !hmac.Equal(sig, mac.Sum(nil)) {
+		return "", fmt.Errorf("saml: request id signature invalid")
+	}
+	var payload struct {
+		ID string `json:"id"`
+		T  int64  `json:"t"`
+	}
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return "", fmt.Errorf("saml: request id payload decode: %w", err)
+	}
+	if payload.ID == "" {
+		return "", fmt.Errorf("saml: request id missing")
+	}
+	if time.Since(time.Unix(payload.T, 0)) > SAMLRequestIDTTL {
+		return "", fmt.Errorf("saml: request id expired")
+	}
+	return payload.ID, nil
 }
 
 // SignRelayState encodes returnTo as base64url(json)."."base64url(HMAC-SHA256).

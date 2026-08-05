@@ -29,6 +29,20 @@ type Config struct {
 	Docker    DockerConfig    `mapstructure:"docker"`
 	Redis     RedisConfig     `mapstructure:"redis"`
 	Proxy     ProxyConfig     `mapstructure:"proxy"`
+	Outbound  OutboundConfig  `mapstructure:"outbound"`
+}
+
+// OutboundConfig governs where the server is allowed to make requests when the
+// target URL comes from configuration: proxy upstreams, webhook endpoints and
+// replication targets.
+type OutboundConfig struct {
+	// AllowedInternalCIDRs lists internal ranges that may be reached anyway.
+	// By default every loopback, private, link-local, CGNAT, multicast and
+	// broadcast address is refused, which is what stops a proxy repository
+	// pointed at a cloud metadata endpoint from turning repo-admin into
+	// credential theft. On-prem deployments that genuinely proxy an internal
+	// registry name that range here.
+	AllowedInternalCIDRs []string `mapstructure:"allowed_internal_cidrs"`
 }
 
 // ProxyConfig configures the server-wide outbound proxy used when fetching from
@@ -401,6 +415,7 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("http.max_body_mb", 1024)
 	v.SetDefault("http.cors_origins", []string{})
 	v.SetDefault("http.trusted_proxies", []string{})
+	v.SetDefault("outbound.allowed_internal_cidrs", []string{})
 	v.SetDefault("http.base_url", "http://localhost:8081")
 	// Viper bug: AutomaticEnv + Unmarshal silently skips keys that have no
 	// default/config-file value (not in AllKeys). Empty-string defaults ensure

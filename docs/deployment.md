@@ -150,6 +150,7 @@ Five networking options (nginx, Traefik, Cilium ingress, Istio Gateway, Cilium G
 | `auth.jwt_expiry_hours` | `24` | JWT token lifetime |
 | `auth.anonymous_enabled` | `true` | Instance-wide switch for unauthenticated reads. `false` refuses them everywhere, overriding any repository's `allow_anonymous`. |
 | `auth.token_max_days` | `180` | Maximum lifetime for user API tokens (`nxs_*`) |
+| `outbound.allowed_internal_cidrs` | `[]` | Internal ranges the SSRF guard may reach for proxy, webhook and replication targets. Empty refuses every loopback/private/link-local/CGNAT address. |
 | `auth.rate_limit_enabled` | `true` | Token-bucket throttle per user (per client address when anonymous). Turning it off leaves `/api/v1/login` unmetered. |
 | `auth.rate_limit_rps` / `auth.rate_limit_burst` | `50` / `100` | Sustained rate and burst for the above |
 | `bootstrap.admin_password` | `admin123` | Auto-created admin password — **change this** |

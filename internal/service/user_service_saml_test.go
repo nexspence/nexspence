@@ -19,11 +19,17 @@ import (
 // mockSAML satisfies auth.SAMLAuthenticator. LoginSAML never calls back into it.
 type mockSAML struct{}
 
-func (m *mockSAML) MetadataXML() ([]byte, error)                            { return nil, nil }
-func (m *mockSAML) AuthnRequestURL(rs string) (string, error)               { return "https://idp/sso", nil }
-func (m *mockSAML) ParseResponse(r *http.Request) (*auth.SAMLClaims, error) { return nil, nil }
-func (m *mockSAML) SignRelayState(returnTo string) string                   { return returnTo }
-func (m *mockSAML) VerifyRelayState(rs string) (string, error)              { return rs, nil }
+func (m *mockSAML) MetadataXML() ([]byte, error) { return nil, nil }
+func (m *mockSAML) AuthnRequest(rs string) (string, string, error) {
+	return "https://idp/sso", "id-test", nil
+}
+func (m *mockSAML) ParseResponse(r *http.Request, _ []string) (*auth.SAMLClaims, error) {
+	return nil, nil
+}
+func (m *mockSAML) SignRelayState(returnTo string) string      { return returnTo }
+func (m *mockSAML) VerifyRelayState(rs string) (string, error) { return rs, nil }
+func (m *mockSAML) SignRequestID(id string) string             { return id }
+func (m *mockSAML) VerifyRequestID(v string) (string, error)   { return v, nil }
 
 func newUserSvcSAML(t *testing.T, cfg config.SAMLConfig, seed ...*domain.User) *UserService {
 	t.Helper()

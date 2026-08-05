@@ -22,6 +22,16 @@ http:
     cert_file: ""
     key_file: ""
 
+# Outbound requests to URLs that come from configuration: proxy upstreams,
+# webhook endpoints, replication targets.
+outbound:
+  # Every loopback, private, link-local, CGNAT, multicast and broadcast address
+  # is refused by default. That is what stops a proxy repository pointed at
+  # http://169.254.169.254/… from turning repository-admin into cloud
+  # credential theft. Name a range here when you genuinely proxy an on-prem
+  # registry — it is the one way to reach an internal address.
+  allowed_internal_cidrs: []   # e.g. ["10.20.0.0/16", "registry.internal.example.com is resolved, so use its range"]
+
 database:
   dsn: "postgres://nexspence:nexspence@localhost:5432/nexspence?sslmode=disable"
   max_conns: 100

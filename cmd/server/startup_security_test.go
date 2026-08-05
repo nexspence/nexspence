@@ -2,12 +2,14 @@ package main
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
 	"github.com/nexspence-oss/nexspence/internal/config"
+	"github.com/nexspence-oss/nexspence/internal/netguard"
 )
 
 func secureCfg() *config.Config {
@@ -44,6 +46,32 @@ func TestCheckStartupSecurity_ShippedDefaults_Refuse(t *testing.T) {
 	err := checkStartupSecurity(cfg, zap.NewNop().Sugar())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "default secrets")
+}
+
+func TestCheckStartupSecurity_InvalidOutboundAllowlist_Refuses(t *testing.T) {
+	cfg := secureCfg()
+	cfg.Outbound.AllowedInternalCIDRs = []string{"10.0.0.0/8", "nonsense"}
+
+	err := checkStartupSecurity(cfg, zap.NewNop().Sugar())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "allowed_internal_cidrs")
+}
+
+func TestCheckStartupSecurity_ValidOutboundAllowlist_IsApplied(t *testing.T) {
+	cfg := secureCfg()
+	cfg.Outbound.AllowedInternalCIDRs = []string{"10.10.0.0/16"}
+	t.Cleanup(func() { _ = netguard.SetAllowedInternalCIDRs(nil) })
+
+	require.NoError(t, checkStartupSecurity(cfg, zap.NewNop().Sugar()))
+
+	// Applied, not merely validated: the guard must actually let the range
+	// through afterwards.
+	c := netguard.Client(time.Second)
+	resp, err := c.Get("http://10.10.0.1:9/") //nolint:bodyclose // the request always fails; there is no body
+	require.Error(t, err, "the address is unroutable in tests")
+	require.Nil(t, resp)
+	assert.NotContains(t, err.Error(), "blocked",
+		"an allowlisted range must fail to connect, not be refused by the guard")
 }
 
 // The shipped OIDC cookie key seals the state cookie that protects the login

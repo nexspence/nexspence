@@ -43,13 +43,17 @@ type fakeSAML struct {
 	err error
 }
 
-func (f fakeSAML) MetadataXML() ([]byte, error)             { return f.xml, f.err }
-func (f fakeSAML) AuthnRequestURL(_ string) (string, error) { return "", nil }
-func (f fakeSAML) ParseResponse(_ *http.Request) (*auth.SAMLClaims, error) {
+func (f fakeSAML) MetadataXML() ([]byte, error) { return f.xml, f.err }
+func (f fakeSAML) AuthnRequest(_ string) (string, string, error) {
+	return "", "id-test", nil
+}
+func (f fakeSAML) ParseResponse(_ *http.Request, _ []string) (*auth.SAMLClaims, error) {
 	return nil, nil
 }
 func (f fakeSAML) SignRelayState(returnTo string) string      { return returnTo }
 func (f fakeSAML) VerifyRelayState(rs string) (string, error) { return rs, nil }
+func (f fakeSAML) SignRequestID(id string) string             { return id }
+func (f fakeSAML) VerifyRequestID(v string) (string, error)   { return v, nil }
 
 // newUnreachablePool returns a lazily-initialized pgxpool pointing at an address
 // that is never reachable. pgxpool.New does not dial until first use, so this

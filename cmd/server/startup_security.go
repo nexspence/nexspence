@@ -6,6 +6,7 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/api"
 	"github.com/nexspence-oss/nexspence/internal/config"
 	"github.com/nexspence-oss/nexspence/internal/logger"
+	"github.com/nexspence-oss/nexspence/internal/netguard"
 )
 
 // checkStartupSecurity refuses to boot on a configuration that would leave a
@@ -24,6 +25,18 @@ func checkStartupSecurity(cfg *config.Config, log logger.Logger) error {
 	}
 	if len(cfg.HTTP.TrustedProxies) == 0 {
 		log.Info("http.trusted_proxies is empty — X-Forwarded-For is ignored; set it when running behind a reverse proxy")
+	}
+
+	// Outbound targets come from configuration (proxy upstreams, webhooks,
+	// replication), so the SSRF guard's opt-out has to be right or an operator
+	// either cannot reach their on-prem registry or has quietly opened a path
+	// to the metadata service.
+	if err := netguard.SetAllowedInternalCIDRs(cfg.Outbound.AllowedInternalCIDRs); err != nil {
+		return fmt.Errorf("invalid outbound.allowed_internal_cidrs: %w", err)
+	}
+	if len(cfg.Outbound.AllowedInternalCIDRs) > 0 {
+		log.Warn("outbound.allowed_internal_cidrs is set — the SSRF guard will permit these internal ranges for proxy, webhook and replication targets",
+			"cidrs", cfg.Outbound.AllowedInternalCIDRs)
 	}
 
 	// Fail closed on shipped insecure defaults unless explicitly allowed
