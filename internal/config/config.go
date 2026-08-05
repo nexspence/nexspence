@@ -81,6 +81,10 @@ type HTTPConfig struct {
 	// hop, which is only safe when the server is unreachable except through a
 	// proxy you control.
 	TrustedProxies []string `mapstructure:"trusted_proxies"`
+	// CSP overrides the Content-Security-Policy served with the UI. Empty uses
+	// the built-in policy; the literal "off" omits the header, for deployments
+	// whose reverse proxy sets its own.
+	CSP string `mapstructure:"csp"`
 }
 
 // TLSConfig holds the optional server certificate and key for HTTPS.
@@ -416,6 +420,7 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("http.cors_origins", []string{})
 	v.SetDefault("http.trusted_proxies", []string{})
 	v.SetDefault("outbound.allowed_internal_cidrs", []string{})
+	v.SetDefault("http.csp", "")
 	v.SetDefault("http.base_url", "http://localhost:8081")
 	// Viper bug: AutomaticEnv + Unmarshal silently skips keys that have no
 	// default/config-file value (not in AllKeys). Empty-string defaults ensure

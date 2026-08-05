@@ -138,6 +138,7 @@ Five networking options (nginx, Traefik, Cilium ingress, Istio Gateway, Cilium G
 | `http.addr` | `:8081` | Listen address |
 | `http.base_url` | `http://localhost:8081` | Public URL used in download links |
 | `http.trusted_proxies` | `[]` | Peers (IPs/CIDRs) whose `X-Forwarded-For` is believed. Empty trusts nobody, so the audit log and rate limiter see the real peer. Set it to your reverse proxy when you run behind one; `["*"]` trusts every hop. |
+| `http.csp` | `""` | Content-Security-Policy for UI/API responses. Empty uses the built-in policy; `"off"` omits the header. Artifact paths are exempt. |
 | `http.cors_origins` | `[]` | Origins allowed to read API responses from a browser. Empty sends no CORS header — correct when the bundled UI shares this origin. `["*"]` lets any site read responses; opt in only for a public instance. |
 | `database.dsn` | `postgres://nexspence:nexspence@localhost:5437/nexspence` | PostgreSQL connection string |
 | `storage.default_type` | `local` | `local` or `s3` |

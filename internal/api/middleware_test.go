@@ -118,7 +118,7 @@ func TestCORS_PreflightWithoutAllowlistSendsNoACAO(t *testing.T) {
 func TestSecurityHeaders(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	r.Use(securityHeaders())
+	r.Use(securityHeaders(DefaultCSP))
 	r.GET("/", func(c *gin.Context) { c.Status(http.StatusOK) })
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
