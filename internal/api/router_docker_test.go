@@ -39,7 +39,7 @@ func buildDockerRouter(repos ...*domain.Repository) *gin.Engine {
 
 	repoRepo := testutil.NewRepoRepo(repos...)
 	rbacRepo := &allowAllRBACRepo{}
-	rbacSvc := service.NewRBACService(rbacRepo, repoRepo, zap.NewNop().Sugar())
+	rbacSvc := service.NewRBACService(rbacRepo, repoRepo, zap.NewNop().Sugar(), true)
 
 	stub := &stubDockerHandler{}
 	fmtRegistry := map[string]formats.FormatHandler{"docker": stub, "oci": stub}

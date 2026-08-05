@@ -66,24 +66,8 @@ func cmdServe() *cobra.Command {
 				log.Info("outbound proxy configured for upstream fetches",
 					"http", p.HTTPProxy != "", "https", p.HTTPSProxy != "", "socks5", p.SOCKS5Proxy != "")
 			}
-			if cfg.Auth.AnonymousEnabled {
-				log.Warn("auth.anonymous_enabled is true — unauthenticated artifact access is allowed; set false to require authentication")
-			}
-
-			// Fail closed on shipped insecure defaults unless explicitly allowed
-			// (local dev / quick-start sets auth.allow_insecure_defaults=true).
-			insecureJWT := config.IsDevDefaultJWTSecret(cfg.Auth.JWTSecret)
-			insecureAdmin := cfg.Bootstrap.AdminPassword == "admin123"
-			if insecureJWT || insecureAdmin {
-				if !cfg.Auth.AllowInsecureDefaults {
-					return fmt.Errorf("refusing to start with shipped default secrets (jwt_default=%v, admin123=%v); set unique secrets or auth.allow_insecure_defaults=true for local dev", insecureJWT, insecureAdmin)
-				}
-				if insecureJWT {
-					log.Warn("auth.jwt_secret is the shipped development default — set a unique secret (NEXSPENCE_AUTH_JWT_SECRET) before production use")
-				}
-				if insecureAdmin {
-					log.Warn("bootstrap.admin_password is the shipped development default (admin123) — set a unique password (NEXSPENCE_BOOTSTRAP_ADMIN_PASSWORD) before production use")
-				}
+			if err := checkStartupSecurity(cfg, log); err != nil {
+				return err
 			}
 
 			// Auto-migrate on every startup so the schema is always up-to-date.

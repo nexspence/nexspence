@@ -5,6 +5,12 @@ http:
   max_body_mb: 1024            # max request body size (MB); requests above this get 413 (artifact/upload routes exempt)
   cors_origins: []            # allowed CORS origins, e.g. ["https://ui.example.com"]; empty = wildcard (dev only)
   base_url: "http://localhost:8081"
+  # Peers allowed to set X-Forwarded-For, as IPs or CIDRs. Empty (the default)
+  # trusts nobody, so the audit log and the rate limiter use the real peer
+  # address. Set this to your reverse proxy when you run behind one, otherwise
+  # every request looks like it comes from the proxy. "*" trusts every hop —
+  # only safe when the server cannot be reached except through that proxy.
+  trusted_proxies: []         # e.g. ["10.0.0.0/8"] or ["*"]
   tls:
     enabled: false
     cert_file: ""
@@ -39,6 +45,8 @@ auth:
   # Leave false in production — the server refuses to start with shipped defaults
   # unless this is true (intended for local dev / quick-start only).
   allow_insecure_defaults: false
+  # Instance-wide switch above the per-repository allow_anonymous opt-in.
+  # false refuses every unauthenticated request, whatever the repositories say.
   anonymous_enabled: true
   password_min_length: 8
   bcrypt_cost: 12

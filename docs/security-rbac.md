@@ -345,6 +345,23 @@ When a request is made for an artifact:
 
 ---
 
+## Anonymous Access
+
+Two switches must agree before an unauthenticated request is served:
+
+| Switch | Scope | Default |
+|---|---|---|
+| `auth.anonymous_enabled` | whole instance | `true` |
+| repository `allow_anonymous` | one repository | `false` |
+
+Setting `auth.anonymous_enabled: false` refuses every unauthenticated read
+regardless of how individual repositories are configured — repository listings,
+browse trees, component and asset listings, artifact downloads, and the Docker
+`/v2/` handshake, which then answers `401` with a `Basic` challenge so `docker
+login` is invoked. Anonymous writes are never allowed by either switch.
+
+---
+
 ## LDAP External Role Mapping
 
 On every LDAP login, Nexspence automatically syncs the user's roles from their LDAP group memberships (REPLACE semantics — existing roles are fully replaced each time).

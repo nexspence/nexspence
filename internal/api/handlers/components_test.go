@@ -46,7 +46,7 @@ func mountComponentsRBAC(t *testing.T) (*gin.Engine, *testutil.ComponentRepo, *t
 	comps := testutil.NewComponentRepo()
 	assets := testutil.NewAssetRepo()
 	repos := testutil.NewRepoRepo()
-	rbacSvc := service.NewRBACService(emptyRBACRepo{}, repos, zap.NewNop().Sugar())
+	rbacSvc := service.NewRBACService(emptyRBACRepo{}, repos, zap.NewNop().Sugar(), true)
 	h := handlers.NewComponentHandler(comps, assets, repos, "http://localhost").WithRBAC(rbacSvc)
 
 	r := gin.New()
@@ -579,7 +579,7 @@ func TestComponentHandler_SearchAssetsDownload_RBAC_AdminPassthrough_302(t *test
 	comps := testutil.NewComponentRepo()
 	assets := testutil.NewAssetRepo()
 	repos := testutil.NewRepoRepo()
-	rbacSvc := service.NewRBACService(emptyRBACRepo{}, repos, zap.NewNop().Sugar())
+	rbacSvc := service.NewRBACService(emptyRBACRepo{}, repos, zap.NewNop().Sugar(), true)
 	h := handlers.NewComponentHandler(comps, assets, repos, "http://localhost").WithRBAC(rbacSvc)
 	r := gin.New()
 	r.Use(func(c *gin.Context) {

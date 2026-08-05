@@ -28,7 +28,7 @@ func mountBrowse(t *testing.T) (*gin.Engine, *testutil.RepoRepo, *testutil.Compo
 	assets := testutil.NewAssetRepo()
 	blobs := testutil.NewBlobStoreRepo()
 	store := testutil.NewBlobStore()
-	rbacSvc := service.NewRBACService(emptyRBACRepo{}, repos, zap.NewNop().Sugar())
+	rbacSvc := service.NewRBACService(emptyRBACRepo{}, repos, zap.NewNop().Sugar(), true)
 	h := handlers.NewBrowseHandler(formats.Deps{
 		Repos:      repos,
 		Components: comps,

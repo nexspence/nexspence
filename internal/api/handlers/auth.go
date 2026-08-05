@@ -272,6 +272,7 @@ func DockerV2Auth(
 	tokens *service.TokenService,
 	repos repository.RepositoryRepo,
 	rdb *redisclient.Client, // nil = use in-process cache
+	anonymousEnabled bool, // global auth.anonymous_enabled switch
 ) gin.HandlerFunc {
 	const redisKey = "nexspence:docker:anon_allowed"
 	var (
@@ -280,6 +281,12 @@ func DockerV2Auth(
 	)
 
 	anyAnonDocker := func(ctx context.Context) bool {
+		// The instance-wide switch wins over every per-repository opt-in, and
+		// short-circuits before the lookup: with anonymous access off there is
+		// nothing to cache.
+		if !anonymousEnabled {
+			return false
+		}
 		if repos == nil {
 			return false
 		}

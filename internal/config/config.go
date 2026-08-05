@@ -61,6 +61,12 @@ type HTTPConfig struct {
 	CORSOrigins     []string  `mapstructure:"cors_origins"`
 	TLS             TLSConfig `mapstructure:"tls"`
 	BaseURL         string    `mapstructure:"base_url"`
+	// TrustedProxies lists the peers (IPs or CIDRs) allowed to set
+	// X-Forwarded-For. Empty — the default — trusts nobody, so the audit log
+	// and the rate limiter see the real peer address. Use "*" to trust every
+	// hop, which is only safe when the server is unreachable except through a
+	// proxy you control.
+	TrustedProxies []string `mapstructure:"trusted_proxies"`
 }
 
 // TLSConfig holds the optional server certificate and key for HTTPS.
@@ -383,6 +389,7 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("http.write_timeout_sec", 1800)
 	v.SetDefault("http.max_body_mb", 1024)
 	v.SetDefault("http.cors_origins", []string{})
+	v.SetDefault("http.trusted_proxies", []string{})
 	v.SetDefault("http.base_url", "http://localhost:8081")
 	// Viper bug: AutomaticEnv + Unmarshal silently skips keys that have no
 	// default/config-file value (not in AllKeys). Empty-string defaults ensure
