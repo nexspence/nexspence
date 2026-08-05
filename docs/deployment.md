@@ -137,6 +137,7 @@ Five networking options (nginx, Traefik, Cilium ingress, Istio Gateway, Cilium G
 |-----|---------|-------------|
 | `http.addr` | `:8081` | Listen address |
 | `http.base_url` | `http://localhost:8081` | Public URL used in download links |
+| `http.trusted_proxies` | `[]` | Peers (IPs/CIDRs) whose `X-Forwarded-For` is believed. Empty trusts nobody, so the audit log and rate limiter see the real peer. Set it to your reverse proxy when you run behind one; `["*"]` trusts every hop. |
 | `database.dsn` | `postgres://nexspence:nexspence@localhost:5437/nexspence` | PostgreSQL connection string |
 | `storage.default_type` | `local` | `local` or `s3` |
 | `storage.local.base_path` | `./data/blobs` | Filesystem path for local blob store |
@@ -146,7 +147,7 @@ Five networking options (nginx, Traefik, Cilium ingress, Istio Gateway, Cilium G
 | `auth.jwt_secret` | — | JWT signing key. **From source / native install: set this (min 32 chars) before production.** The Docker image and Helm chart auto-generate a unique secret when it is unset. |
 | `auth.encryption_key` | — | Optional base64 32-byte key for replication credentials (decouples them from `jwt_secret`; existing rows are re-encrypted automatically at startup). Generate: `openssl rand -base64 32` |
 | `auth.jwt_expiry_hours` | `24` | JWT token lifetime |
-| `auth.anonymous_enabled` | `true` | Allow unauthenticated read on public repos |
+| `auth.anonymous_enabled` | `true` | Instance-wide switch for unauthenticated reads. `false` refuses them everywhere, overriding any repository's `allow_anonymous`. |
 | `auth.token_max_days` | `180` | Maximum lifetime for user API tokens (`nxs_*`) |
 | `bootstrap.admin_password` | `admin123` | Auto-created admin password — **change this** |
 | `cleanup.default_schedule` | `0 2 * * *` | Default cron for cleanup policies |

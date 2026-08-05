@@ -319,11 +319,38 @@ var _ = stringReader // used in Login tests above
 // ── DockerV2Auth ──────────────────────────────────────────────
 
 func buildDockerV2AuthRouter(svc *service.UserService, repos ...*domain.Repository) *gin.Engine {
+	return buildDockerV2AuthRouterAnon(svc, true, repos...)
+}
+
+func buildDockerV2AuthRouterAnon(svc *service.UserService, anonymousEnabled bool, repos ...*domain.Repository) *gin.Engine {
 	r := gin.New()
-	h := handlers.DockerV2Auth(svc, nil, testutil.NewRepoRepo(repos...), nil)
+	h := handlers.DockerV2Auth(svc, nil, testutil.NewRepoRepo(repos...), nil, anonymousEnabled)
 	r.GET("/v2/", h)
 	r.HEAD("/v2/", h)
 	return r
+}
+
+// With the instance-wide switch off, a public repository must not open the
+// anonymous door — otherwise Docker is told it may pull without credentials and
+// only discovers otherwise on the next request.
+func TestDockerV2Auth_NoAuth_AnonymousDisabledGlobally_Returns401(t *testing.T) {
+	svc := newUserSvc()
+	publicRepo := &domain.Repository{
+		ID:             "r-pub",
+		Name:           "public-docker",
+		Format:         domain.FormatDocker,
+		Type:           domain.TypeProxy,
+		Online:         true,
+		AllowAnonymous: true,
+	}
+	r := buildDockerV2AuthRouterAnon(svc, false, publicRepo)
+
+	req := httptest.NewRequest(http.MethodGet, "/v2/", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+	assert.Contains(t, w.Header().Get("WWW-Authenticate"), "Basic")
 }
 
 func TestDockerV2Auth_NoAuth_NoAnonymousRepo_Returns401(t *testing.T) {

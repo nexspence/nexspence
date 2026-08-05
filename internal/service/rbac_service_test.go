@@ -29,17 +29,23 @@ func (m *mockRBACRepo) GetUserPrivilegesWithSelectors(_ context.Context, _ strin
 // ── constructor helper ────────────────────────────────────────
 
 func newRBACTestSvc(privs []repository.PrivilegeWithSelector, repos ...*domain.Repository) *service.RBACService {
+	return newRBACTestSvcAnon(true, privs, repos...)
+}
+
+// newRBACTestSvcAnon builds a service with the global anonymous switch set
+// explicitly; see rbac_anonymous_gate_test.go.
+func newRBACTestSvcAnon(anonymousEnabled bool, privs []repository.PrivilegeWithSelector, repos ...*domain.Repository) *service.RBACService {
 	rbacRepo := &mockRBACRepo{privs: privs}
 	repoRepo := testutil.NewRepoRepo(repos...)
 	log := zap.NewNop().Sugar()
-	return service.NewRBACService(rbacRepo, repoRepo, log)
+	return service.NewRBACService(rbacRepo, repoRepo, log, anonymousEnabled)
 }
 
 func newRBACTestSvcWithErr(repoErr error) *service.RBACService {
 	rbacRepo := &mockRBACRepo{err: repoErr}
 	repoRepo := testutil.NewRepoRepo()
 	log := zap.NewNop().Sugar()
-	return service.NewRBACService(rbacRepo, repoRepo, log)
+	return service.NewRBACService(rbacRepo, repoRepo, log, true)
 }
 
 // ── CanAccessRepo ─────────────────────────────────────────────

@@ -14,11 +14,17 @@ type RBACService struct {
 	rbac  repository.RBACRepo
 	repos repository.RepositoryRepo
 	log   logger.Logger
+	// anonymousEnabled mirrors auth.anonymous_enabled. It is the instance-wide
+	// switch above every per-repository AllowAnonymous opt-in: when false, no
+	// unauthenticated request is served regardless of how a repository is
+	// configured.
+	anonymousEnabled bool
 }
 
 // NewRBACService constructs a service that evaluates repository access decisions.
-func NewRBACService(rbac repository.RBACRepo, repos repository.RepositoryRepo, log logger.Logger) *RBACService {
-	return &RBACService{rbac: rbac, repos: repos, log: log}
+// anonymousEnabled is the global auth.anonymous_enabled switch.
+func NewRBACService(rbac repository.RBACRepo, repos repository.RepositoryRepo, log logger.Logger, anonymousEnabled bool) *RBACService {
+	return &RBACService{rbac: rbac, repos: repos, log: log, anonymousEnabled: anonymousEnabled}
 }
 
 // CanAccessRepo checks whether the user (identified by userID + roles) may perform action
@@ -28,7 +34,7 @@ func (s *RBACService) CanAccessRepo(ctx context.Context, userID string, roles []
 	if isAdmin(roles) {
 		return true, nil
 	}
-	if repo.AllowAnonymous && isReadAction(action) {
+	if s.anonymousAllowed(repo.AllowAnonymous) && isReadAction(action) {
 		return true, nil
 	}
 	if userID == "" {
@@ -66,7 +72,7 @@ func (s *RBACService) FilterRepos(ctx context.Context, userID string, roles []st
 	for _, repo := range repos {
 		// For repo listing: check repo-level access only, ignoring path restrictions.
 		// Path restrictions are enforced at artifact download time via CanAccessRepo.
-		if repo.AllowAnonymous || matchPrivilegesRepoOnly(privs, repo.Name) {
+		if s.anonymousAllowed(repo.AllowAnonymous) || matchPrivilegesRepoOnly(privs, repo.Name) {
 			result = append(result, repo)
 		}
 	}
@@ -74,6 +80,13 @@ func (s *RBACService) FilterRepos(ctx context.Context, userID string, roles []st
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────
+
+// anonymousAllowed reports whether an unauthenticated request may be served for
+// a repository whose AllowAnonymous flag is repoAllows. Both the instance-wide
+// switch and the per-repository opt-in must agree.
+func (s *RBACService) anonymousAllowed(repoAllows bool) bool {
+	return s.anonymousEnabled && repoAllows
+}
 
 func isAdmin(roles []string) bool {
 	for _, r := range roles {
@@ -150,7 +163,7 @@ func evalPathClause(expr, path string) bool {
 // FilterPaths returns only the paths accessible to the user in the given repo.
 // Used by PathTree browse endpoint to hide assets the user cannot read.
 func (s *RBACService) FilterPaths(ctx context.Context, userID string, roles []string, repoName string, allowAnonymous bool, paths []string) []string {
-	if isAdmin(roles) || allowAnonymous {
+	if isAdmin(roles) || s.anonymousAllowed(allowAnonymous) {
 		return paths
 	}
 	var privs []repository.PrivilegeWithSelector
@@ -175,7 +188,7 @@ func (s *RBACService) FilterPaths(ctx context.Context, userID string, roles []st
 // image (e.g. a blob), all rows for that image (Blobs, Manifests, Tags) are returned.
 // This matches Docker semantics where access is granted per image, not per layer type.
 func (s *RBACService) FilterDockerRows(ctx context.Context, userID string, roles []string, repoName string, allowAnonymous bool, rows []domain.DockerBrowseRow) []domain.DockerBrowseRow {
-	if isAdmin(roles) || allowAnonymous {
+	if isAdmin(roles) || s.anonymousAllowed(allowAnonymous) {
 		return rows
 	}
 	var privs []repository.PrivilegeWithSelector
@@ -234,7 +247,7 @@ func (s *RBACService) FilterComponents(
 	}
 	result := make([]domain.Component, 0, len(items))
 	for _, comp := range items {
-		if allowAnonByRepo[comp.Repository] {
+		if s.anonymousAllowed(allowAnonByRepo[comp.Repository]) {
 			result = append(result, comp)
 			continue
 		}
@@ -271,7 +284,7 @@ func (s *RBACService) FilterAssets(
 	}
 	result := make([]domain.Asset, 0, len(items))
 	for _, a := range items {
-		if allowAnonByRepo[a.Repository] {
+		if s.anonymousAllowed(allowAnonByRepo[a.Repository]) {
 			result = append(result, a)
 			continue
 		}

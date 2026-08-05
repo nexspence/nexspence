@@ -37,7 +37,7 @@ func mountRepos(t *testing.T) (*gin.Engine, *testutil.RepoRepo, *testutil.BlobSt
 	store := testutil.NewBlobStore()
 
 	repoSvc := service.NewRepositoryService(repos, blobs, store, policies)
-	rbacSvc := service.NewRBACService(emptyRBACRepo{}, repos, zap.NewNop().Sugar())
+	rbacSvc := service.NewRBACService(emptyRBACRepo{}, repos, zap.NewNop().Sugar(), true)
 	h := handlers.NewRepositoryHandler(repoSvc, rbacSvc)
 
 	r := gin.New()

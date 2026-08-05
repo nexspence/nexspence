@@ -39,7 +39,7 @@ func TestRBACMiddleware_UnauthenticatedPrivateDocker_OCIErrorBody(t *testing.T) 
 		AllowAnonymous: false,
 	}
 	repoRepo := testutil.NewRepoRepo(privateRepo)
-	rbacSvc := service.NewRBACService(&noPrivilegesRBACRepo{}, repoRepo, zap.NewNop().Sugar())
+	rbacSvc := service.NewRBACService(&noPrivilegesRBACRepo{}, repoRepo, zap.NewNop().Sugar(), true)
 
 	r := gin.New()
 	v2 := r.Group("/v2", handlers.RBACMiddleware(rbacSvc, repoRepo))
@@ -81,7 +81,7 @@ func TestRBACMiddleware_UnauthenticatedNonDocker_UsesGenericBody(t *testing.T) {
 		AllowAnonymous: false,
 	}
 	repoRepo := testutil.NewRepoRepo(privateRepo)
-	rbacSvc := service.NewRBACService(&noPrivilegesRBACRepo{}, repoRepo, zap.NewNop().Sugar())
+	rbacSvc := service.NewRBACService(&noPrivilegesRBACRepo{}, repoRepo, zap.NewNop().Sugar(), true)
 
 	r := gin.New()
 	rg := r.Group("/repository", handlers.RBACMiddleware(rbacSvc, repoRepo))

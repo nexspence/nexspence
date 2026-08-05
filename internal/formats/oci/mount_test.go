@@ -306,7 +306,7 @@ func publicOnlyRBAC(repoName string) formats.RBACChecker {
 	return service.NewRBACService(rbacRepoStub{privs: []repository.PrivilegeWithSelector{{
 		Actions:    []string{"read", "browse", "write"},
 		Expression: `repository == "` + repoName + `" && path.startsWith("/public/")`,
-	}}}, nil, zap.NewNop().Sugar())
+	}}}, nil, zap.NewNop().Sugar(), true)
 }
 
 // The security case. A content selector that stops a pull but not a mount is not

@@ -67,7 +67,7 @@ func mountBrowseOnSecondaryStore(t *testing.T) (
 
 	defaultStore := testutil.NewBlobStore()
 	hooks := &captureDispatcher{}
-	rbacSvc := service.NewRBACService(emptyRBACRepo{}, repos, zap.NewNop().Sugar())
+	rbacSvc := service.NewRBACService(emptyRBACRepo{}, repos, zap.NewNop().Sugar(), true)
 	h := handlers.NewBrowseHandler(formats.Deps{
 		Repos:      repos,
 		Components: comps,

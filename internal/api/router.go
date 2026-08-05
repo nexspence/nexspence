@@ -196,7 +196,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 	// ── Format handlers ───────────────────────────────────────
 	// Built before the format handlers because they take Deps by value: a
 	// handler constructed without the checker would keep a nil copy of it.
-	rbacSvc := service.NewRBACService(rbacRepo, repoRepo, log)
+	rbacSvc := service.NewRBACService(rbacRepo, repoRepo, log, cfg.Auth.AnonymousEnabled)
 	formatDeps := formats.Deps{
 		Repos:        repoRepo,
 		Components:   componentRepo,
@@ -284,6 +284,16 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 
 	// ── Gin engine ────────────────────────────────────────────
 	r := gin.New()
+	// Decide whose X-Forwarded-For we believe before any middleware reads
+	// ClientIP. main validates the same list at startup, so an error here means
+	// the config changed underneath us: keep the fail-closed engine default of
+	// trusting nobody rather than silently trusting everyone.
+	if err := applyTrustedProxies(r, cfg.HTTP.TrustedProxies); err != nil {
+		log.Error("invalid http.trusted_proxies, trusting no proxy", "err", err)
+		if err := applyTrustedProxies(r, nil); err != nil {
+			log.Error("failed to reset trusted proxies", "err", err)
+		}
+	}
 	// Health probes — no auth, no middleware.
 	r.GET("/healthz", handlers.LivenessHandler())
 	r.GET("/readyz", handlers.ReadinessHandler(pool, rdb))
@@ -649,7 +659,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 	// `repoRepo` lets DockerV2Auth fall through to 200 when at least one
 	// Docker repository has allow_anonymous=true — restoring anonymous
 	// `docker pull` against public proxies (see Phase 26).
-	dockerV2Root := handlers.DockerV2Auth(userSvc, tokenSvc, repoRepo, rdb)
+	dockerV2Root := handlers.DockerV2Auth(userSvc, tokenSvc, repoRepo, rdb, cfg.Auth.AnonymousEnabled)
 	r.GET("/v2/", dockerV2Root)
 	r.HEAD("/v2/", dockerV2Root)
 

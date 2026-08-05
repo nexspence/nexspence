@@ -193,6 +193,36 @@ func TestLoad_GCDefaults(t *testing.T) {
 	assert.Equal(t, 24*time.Hour, cfg.GC.MinAge)
 }
 
+func TestLoad_TrustedProxies_DefaultsEmpty(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := "" +
+		"database:\n  dsn: \"postgres://u:p@localhost:5432/db?sslmode=disable\"\n" +
+		"auth:\n  jwt_secret: \"a-unique-production-secret-at-least-32b\"\n"
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.Empty(t, cfg.HTTP.TrustedProxies,
+		"http.trusted_proxies must default to empty so X-Forwarded-For is not believed")
+}
+
+func TestLoad_TrustedProxies_EnvOverride(t *testing.T) {
+	// Viper skips keys with no default when unmarshalling with AutomaticEnv,
+	// so this also guards the SetDefault that makes the env var resolvable.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := "" +
+		"database:\n  dsn: \"postgres://u:p@localhost:5432/db?sslmode=disable\"\n" +
+		"auth:\n  jwt_secret: \"a-unique-production-secret-at-least-32b\"\n"
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+
+	t.Setenv("NEXSPENCE_HTTP_TRUSTED_PROXIES", "10.0.0.0/8,192.168.1.1")
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"10.0.0.0/8", "192.168.1.1"}, cfg.HTTP.TrustedProxies)
+}
+
 func TestLoad_AllowInsecureDefaults_EnvOverride(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
