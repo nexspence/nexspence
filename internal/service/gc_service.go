@@ -152,6 +152,7 @@ func (s *BlobGCService) compact(ctx context.Context, name string, store storage.
 	}
 	result.ScannedBlobs = len(entries)
 
+	var removed int64
 	for _, e := range entries {
 		if _, ok := referenced[e.Key]; ok {
 			continue // still referenced
@@ -166,7 +167,19 @@ func (s *BlobGCService) compact(ctx context.Context, name string, store storage.
 		if !opts.DryRun {
 			if derr := store.Delete(ctx, e.Key); derr != nil {
 				result.Errors = append(result.Errors, fmt.Sprintf("delete %s: %v", e.Key, derr))
+				continue
 			}
+			removed += e.Size
+		}
+	}
+	// used_bytes is how full the store is, and it just got emptier. A collected
+	// store that keeps its old number reports space it does not use and starts
+	// refusing writes that fit (issue #146). Only what was really deleted is
+	// given back: a blob whose delete failed is still on the disk.
+	if removed > 0 {
+		if err := s.Stores.UpdateUsedBytes(ctx, name, -removed); err != nil {
+			s.log().Error("blob gc: usage decrement failed", "store", name, "bytes", removed, "err", err)
+			result.Errors = append(result.Errors, fmt.Sprintf("update used_bytes: %v", err))
 		}
 	}
 	return result

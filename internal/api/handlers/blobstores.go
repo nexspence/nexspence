@@ -525,6 +525,29 @@ func (h *BlobStoreHandler) TestConnection(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
+// RecomputeUsage handles POST /api/v1/blobstores/recompute-usage
+// It restates every store's used_bytes from the assets that reference it — one
+// size per stored object, however many assets name it — and answers with the
+// repaired stores. Deployments upgraded past the per-asset accounting are
+// repaired once by migration 024; this is the way back for drift found later: a
+// store emptied out of band, a restored backup, a write that raced a recompute.
+func (h *BlobStoreHandler) RecomputeUsage(c *gin.Context) {
+	ctx := c.Request.Context()
+	if err := h.repo.RecomputeUsedBytes(ctx); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	stores, err := h.repo.List(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if stores == nil {
+		stores = []domain.BlobStore{}
+	}
+	c.JSON(http.StatusOK, domain.RedactedBlobStores(stores))
+}
+
 // Compact handles POST /api/v1/blobstores/:name/compact
 // Query params: ?dry_run=true reports orphans without deleting;
 // ?min_age=24h overrides the configured grace period (0/absent → server default).

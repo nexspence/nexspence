@@ -276,6 +276,10 @@ type BlobStoreRepo interface {
 	Update(ctx context.Context, b *domain.BlobStore) error
 	Delete(ctx context.Context, name string) error
 	UpdateUsedBytes(ctx context.Context, name string, delta int64) error
+	// RecomputeUsedBytes restates every store's used_bytes as the bytes it holds:
+	// one size per distinct blob key, since several assets can name one stored
+	// object. Repairs a counter that drifted from what is on the disk.
+	RecomputeUsedBytes(ctx context.Context) error
 }
 
 // BlobStoreMigrationRepo persists blob store migration job records.

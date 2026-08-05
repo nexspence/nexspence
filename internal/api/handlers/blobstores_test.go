@@ -22,9 +22,9 @@ import (
 // exercises the "S3 only" guard branches in the presign/lifecycle endpoints.
 func mountBlobStores(t *testing.T, stores ...*domain.BlobStore) (*gin.Engine, *testutil.BlobStoreRepo, *testutil.RepoRepo, *testutil.AssetRepo, *testutil.BlobStore) {
 	t.Helper()
-	blobRepo := testutil.NewBlobStoreRepo(stores...)
 	repoRepo := testutil.NewRepoRepo()
 	assetRepo := testutil.NewAssetRepo()
+	blobRepo := testutil.NewBlobStoreRepo(stores...).WithAssets(assetRepo)
 	blobStore := testutil.NewBlobStore()
 	gc := &service.BlobGCService{
 		Assets:   assetRepo,
@@ -49,6 +49,7 @@ func mountBlobStores(t *testing.T, stores ...*domain.BlobStore) (*gin.Engine, *t
 	r.GET("/api/v1/blob-stores/:name/usage", h.Usage)
 	r.POST("/api/v1/blobstores/test", h.TestConnection)
 	r.POST("/api/v1/blobstores/:name/compact", h.Compact)
+	r.POST("/api/v1/blobstores/recompute-usage", h.RecomputeUsage)
 	return r, blobRepo, repoRepo, assetRepo, blobStore
 }
 
@@ -456,4 +457,53 @@ func TestBlobStoreHandler_Update_DropsSecretKeySetMarker(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotContains(t, stored.Config, domain.SecretKeySetKey)
 	assert.Equal(t, "sup3rs3cret", stored.Config["secret_key"])
+}
+
+// ── Usage recompute ──────────────────────────────────────────────────────────
+
+// Counters inflated by the old per-asset accounting (#146) are repaired on
+// upgrade by a migration, but drift found later — a store emptied out of band,
+// a restored backup — needs a repair an operator can run. The honest figure is
+// one size per stored object, however many assets name it.
+func TestBlobStore_RecomputeUsage_SharedBlobKeyCountedOnce(t *testing.T) {
+	inflated := &domain.BlobStore{
+		ID: "bs-recompute", Name: "default", Type: "local",
+		UsedBytes: 1000, Config: map[string]any{},
+	}
+	r, blobRepo, _, assets, _ := mountBlobStores(t, inflated)
+
+	ctx := testContext()
+	require.NoError(t, assets.Create(ctx, &domain.Asset{
+		ComponentID: "c1", RepositoryID: "r1", Repository: "repo",
+		Path: "/manifests/app/1.0", BlobKey: "shared", SizeBytes: 500,
+		BlobStoreID: "bs-recompute",
+	}))
+	require.NoError(t, assets.Create(ctx, &domain.Asset{
+		ComponentID: "c1", RepositoryID: "r1", Repository: "repo",
+		Path: "/manifests/app/sha256:abc", BlobKey: "shared", SizeBytes: 500,
+		BlobStoreID: "bs-recompute",
+	}))
+
+	rec := do(t, r, http.MethodPost, "/api/v1/blobstores/recompute-usage", nil)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	stored, err := blobRepo.Get(ctx, "default")
+	require.NoError(t, err)
+	assert.Equal(t, int64(500), stored.UsedBytes,
+		"two assets, one stored object, one size")
+
+	var resp []domain.BlobStore
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Len(t, resp, 1)
+	assert.Equal(t, int64(500), resp[0].UsedBytes, "the response shows the repaired figure")
+}
+
+// The recompute answers with the stores, and a store's credentials are no more
+// readable here than through the list endpoint.
+func TestBlobStore_RecomputeUsage_RedactsSecrets(t *testing.T) {
+	r, _, _, _, _ := mountBlobStores(t, s3Store("s3-recompute", "super-secret"))
+
+	rec := do(t, r, http.MethodPost, "/api/v1/blobstores/recompute-usage", nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.NotContains(t, rec.Body.String(), "super-secret")
 }
