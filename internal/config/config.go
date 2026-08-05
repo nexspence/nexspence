@@ -413,7 +413,7 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("auth.password_min_length", 8)
 	v.SetDefault("auth.bcrypt_cost", 12)
 	v.SetDefault("auth.token_max_days", 90)
-	v.SetDefault("auth.rate_limit_enabled", false)
+	v.SetDefault("auth.rate_limit_enabled", true)
 	v.SetDefault("auth.rate_limit_rps", 50.0)
 	v.SetDefault("auth.rate_limit_burst", 100.0)
 	v.SetDefault("auth.allow_insecure_defaults", false)

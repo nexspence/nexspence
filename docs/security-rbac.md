@@ -345,6 +345,35 @@ When a request is made for an artifact:
 
 ---
 
+## Brute-force Protection
+
+Two independent throttles sit in front of every password check.
+
+**Per-account failed-login backoff.** Five consecutive failures for an account
+are free, so a mistyped password never costs anything. After that each further
+failure doubles the wait — 1s, 2s, 4s … capped at 15 minutes — and the account's
+next attempt is refused with `429` and a `Retry-After` header *before* the
+password is hashed, so the attack stops paying for bcrypt. A successful login
+clears the count, and a quiet account forgets it after 30 minutes.
+
+The budget is keyed on the account name rather than the client address,
+deliberately: an address is only as trustworthy as `http.trusted_proxies`, and
+an attacker rotating addresses still spends the same budget. It applies at every
+place credentials are accepted — `/api/v1/login`, Basic auth on `/repository/…`
+and `/v2/…`, and the API middleware — so moving the guessing to another endpoint
+does not buy a fresh allowance. When Redis is enabled the count is shared across
+HA nodes, so spreading attempts over servers does not multiply it.
+
+Failed credentials are logged wherever they occur, including on the paths that
+fall through to anonymous access; previously those left no trace at all.
+
+**Request rate limit.** `auth.rate_limit_enabled` (on by default) additionally
+buckets requests per authenticated user, or per client address for anonymous
+calls. It is coarser and complements, rather than replaces, the per-account
+backoff above.
+
+---
+
 ## Anonymous Access
 
 Two switches must agree before an unauthenticated request is served:

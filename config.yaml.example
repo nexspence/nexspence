@@ -3,7 +3,13 @@ http:
   read_timeout_sec: 1800
   write_timeout_sec: 1800
   max_body_mb: 1024            # max request body size (MB); requests above this get 413 (artifact/upload routes exempt)
-  cors_origins: []            # allowed CORS origins, e.g. ["https://ui.example.com"]; empty = wildcard (dev only)
+  # Origins allowed to read API responses from a browser. Empty (the default)
+  # sends no Access-Control-Allow-Origin at all, which is what you want when the
+  # bundled UI is served from this same origin. List the origins that need it
+  # when the UI is hosted separately; ["*"] lets any website read responses —
+  # including internal artifacts from anonymous repositories — so opt in only
+  # for a deliberately public instance.
+  cors_origins: []            # e.g. ["https://ui.example.com"] or ["*"]
   base_url: "http://localhost:8081"
   # Peers allowed to set X-Forwarded-For, as IPs or CIDRs. Empty (the default)
   # trusts nobody, so the audit log and the rate limiter use the real peer
@@ -51,7 +57,12 @@ auth:
   password_min_length: 8
   bcrypt_cost: 12
   token_max_days: 180
-  rate_limit_enabled: false   # per-user/IP token-bucket throttling
+  # Token-bucket throttle per authenticated user, or per client address for
+  # anonymous calls. On by default: without it /api/v1/login is an unmetered
+  # guessing surface that also burns a bcrypt (cost 12) per attempt. Independent
+  # of this, repeated failed logins are throttled per account — see
+  # docs/security-rbac.md.
+  rate_limit_enabled: true
   rate_limit_rps: 50          # sustained requests/sec
   rate_limit_burst: 100       # burst capacity
 

@@ -19,6 +19,7 @@ import (
 	uiembed "github.com/nexspence-oss/nexspence"
 	"github.com/nexspence-oss/nexspence/internal/api/handlers"
 	"github.com/nexspence-oss/nexspence/internal/auth"
+	"github.com/nexspence-oss/nexspence/internal/auth/loginguard"
 	"github.com/nexspence-oss/nexspence/internal/config"
 	"github.com/nexspence-oss/nexspence/internal/distlock"
 	"github.com/nexspence-oss/nexspence/internal/domain"
@@ -73,6 +74,16 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 	if rdb != nil {
 		locker = distlock.NewRedisLocker(rdb)
 	}
+
+	// ── Failed-login throttle ─────────────────────────────────
+	// Keyed on the account, not the address: the IP bucket in the rate limiter
+	// is only as trustworthy as http.trusted_proxies. Backed by Redis when it is
+	// available so attempts cannot be spread across HA nodes for a bigger budget.
+	var guardStore loginguard.Store
+	if rdb != nil {
+		guardStore = loginguard.NewRedisStore(rdb)
+	}
+	loginGuard := loginguard.New(guardStore, loginguard.DefaultPolicy())
 
 	// ── Repositories / services ───────────────────────────────
 	repoRepo := postgres.NewRepositoryRepo(pool)
@@ -233,7 +244,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 	groupHandler := group.New(formatDeps, formatRegistry)
 
 	// ── Handlers ──────────────────────────────────────────────
-	authH := handlers.NewAuthHandler(userSvc, log).WithConfig(*cfg)
+	authH := handlers.NewAuthHandler(userSvc, log).WithConfig(*cfg).WithLoginGuard(loginGuard)
 	repoH := handlers.NewRepositoryHandler(repoSvc, rbacSvc)
 	userH := handlers.NewUserHandler(userSvc)
 	blobH := handlers.NewBlobStoreHandler(blobRepo).WithUsageDeps(repoRepo, assetRepo).WithRegistry(blobRegistry).WithGC(gcSvc)
@@ -308,7 +319,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 		r.Use(RateLimitMiddleware(cfg.Auth.RateLimitRPS, cfg.Auth.RateLimitBurst))
 	}
 
-	authMW := handlers.AuthMiddleware(userSvc, tokenSvc)
+	authMW := handlers.AuthMiddleware(userSvc, tokenSvc, loginGuard, log)
 	adminMW := handlers.AdminRequired()
 
 	// ── Public endpoints ──────────────────────────────────────
@@ -598,7 +609,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 	// ── Artifact protocol endpoints ───────────────────────────
 	// Route /repository/:repoName/* to the appropriate format handler.
 	// The format is looked up from the repository record in the DB.
-	repo := r.Group("/repository/:repoName", handlers.OptionalAuth(userSvc, tokenSvc), rbacMW)
+	repo := r.Group("/repository/:repoName", handlers.OptionalAuth(userSvc, tokenSvc, loginGuard, log), rbacMW)
 	{
 		repo.Any("/*path", func(c *gin.Context) {
 			repoName := c.Param("repoName")
@@ -659,18 +670,18 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 	// `repoRepo` lets DockerV2Auth fall through to 200 when at least one
 	// Docker repository has allow_anonymous=true — restoring anonymous
 	// `docker pull` against public proxies (see Phase 26).
-	dockerV2Root := handlers.DockerV2Auth(userSvc, tokenSvc, repoRepo, rdb, cfg.Auth.AnonymousEnabled)
+	dockerV2Root := handlers.DockerV2Auth(userSvc, tokenSvc, repoRepo, rdb, cfg.Auth.AnonymousEnabled, loginGuard, log)
 	r.GET("/v2/", dockerV2Root)
 	r.HEAD("/v2/", dockerV2Root)
 
 	dockerV2H := serveDockerV2(repoRepo, groupHandler, formatRegistry)
-	v2docker := r.Group("/v2/repository", handlers.OptionalAuth(userSvc, tokenSvc), handlers.RBACMiddleware(rbacSvc, repoRepo))
+	v2docker := r.Group("/v2/repository", handlers.OptionalAuth(userSvc, tokenSvc, loginGuard, log), handlers.RBACMiddleware(rbacSvc, repoRepo))
 	v2docker.Any("/:repoName/*dockerpath", dockerV2H)
 
 	// Short-path Docker: /v2/:repoName/* — no "repository/" segment required.
 	// Gin static segments take priority, so /v2/repository/:repoName/... still
 	// matches v2docker above; this group catches everything else under /v2/.
-	v2short := r.Group("/v2", handlers.OptionalAuth(userSvc, tokenSvc), handlers.RBACMiddleware(rbacSvc, repoRepo))
+	v2short := r.Group("/v2", handlers.OptionalAuth(userSvc, tokenSvc, loginGuard, log), handlers.RBACMiddleware(rbacSvc, repoRepo))
 	v2short.Any("/:repoName/*dockerpath", dockerV2H)
 
 	// ── Frontend static (production build) ────────────────────

@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/nexspence-oss/nexspence/internal/auth"
+	"github.com/nexspence-oss/nexspence/internal/auth/loginguard"
 	"github.com/nexspence-oss/nexspence/internal/config"
 	"github.com/nexspence-oss/nexspence/internal/logger"
 	"github.com/nexspence-oss/nexspence/internal/redisclient"
@@ -22,11 +24,19 @@ type AuthHandler struct {
 	users *service.UserService
 	cfg   config.Config
 	log   logger.Logger
+	guard *loginguard.Guard
 }
 
 // NewAuthHandler constructs an AuthHandler backed by the given user service and logger.
 func NewAuthHandler(users *service.UserService, log logger.Logger) *AuthHandler {
 	return &AuthHandler{users: users, log: log}
+}
+
+// WithLoginGuard attaches the per-account failed-login throttle. A nil guard
+// disables throttling. Returns the same handler for chaining.
+func (h *AuthHandler) WithLoginGuard(g *loginguard.Guard) *AuthHandler {
+	h.guard = g
+	return h
 }
 
 // WithConfig enables the /api/v1/auth/config feature-detection endpoint.
@@ -75,12 +85,25 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	// Set username in context early so the audit middleware records who attempted the login.
 	c.Set("username", req.Username)
 
-	token, user, err := h.users.Login(c.Request.Context(), req.Username, req.Password)
+	ctx := c.Request.Context()
+	// Refuse before hashing: the bcrypt is the expensive half of an attempt, and
+	// the answer is identical whether or not the account exists, so a throttled
+	// response tells an attacker nothing beyond "keep waiting".
+	if wait := h.guard.RetryAfter(ctx, req.Username); wait > 0 {
+		h.log.Infow("login throttled", "username", req.Username, "ip", c.ClientIP(), "retryAfter", wait)
+		c.Header("Retry-After", strconv.Itoa(retryAfterSeconds(wait)))
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": "too many failed attempts"})
+		return
+	}
+
+	token, user, err := h.users.Login(ctx, req.Username, req.Password)
 	if err != nil {
+		h.guard.RecordFailure(ctx, req.Username)
 		h.log.Infow("login failed", "username", req.Username, "ip", c.ClientIP(), "err", err)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
 		return
 	}
+	h.guard.RecordSuccess(ctx, req.Username)
 
 	c.Set("userID", user.ID)
 	h.log.Infow("login success", "username", user.Username, "ip", c.ClientIP(), "roles", user.Roles)
@@ -194,7 +217,8 @@ func jwtNotRevoked(c *gin.Context, users *service.UserService, claims *auth.Clai
 
 // AuthMiddleware validates Bearer JWT, Bearer API-token, or Basic auth.
 // Tokens may be nil when API tokens are disabled; Bearer then only accepts JWT.
-func AuthMiddleware(users *service.UserService, tokens *service.TokenService) gin.HandlerFunc {
+// guard and log may be nil, which disables throttling and logging respectively.
+func AuthMiddleware(users *service.UserService, tokens *service.TokenService, guard *loginguard.Guard, log logger.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var raw string
 
@@ -217,11 +241,21 @@ func AuthMiddleware(users *service.UserService, tokens *service.TokenService) gi
 						return
 					}
 				}
-				_, user, err := users.Login(c.Request.Context(), username, password)
+				ctx := c.Request.Context()
+				if wait := guard.RetryAfter(ctx, username); wait > 0 {
+					logAuthEvent(log, "authentication throttled", c, username, "retryAfter", wait)
+					c.Header("Retry-After", strconv.Itoa(retryAfterSeconds(wait)))
+					c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"error": "too many failed attempts"})
+					return
+				}
+				_, user, err := users.Login(ctx, username, password)
 				if err != nil {
+					guard.RecordFailure(ctx, username)
+					logAuthEvent(log, "authentication failed", c, username, "err", err)
 					c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
 					return
 				}
+				guard.RecordSuccess(ctx, username)
 				c.Set("username", user.Username)
 				c.Set("userID", user.ID)
 				c.Set("roles", user.Roles)
@@ -273,6 +307,8 @@ func DockerV2Auth(
 	repos repository.RepositoryRepo,
 	rdb *redisclient.Client, // nil = use in-process cache
 	anonymousEnabled bool, // global auth.anonymous_enabled switch
+	guard *loginguard.Guard, // nil = no per-account throttling
+	log logger.Logger, // nil = no auth logging
 ) gin.HandlerFunc {
 	const redisKey = "nexspence:docker:anon_allowed"
 	var (
@@ -361,12 +397,23 @@ func DockerV2Auth(
 						return
 					}
 				}
-				if _, user, err := users.Login(c.Request.Context(), username, password); err == nil {
+				ctx := c.Request.Context()
+				if wait := guard.RetryAfter(ctx, username); wait > 0 {
+					logAuthEvent(log, "authentication throttled", c, username, "retryAfter", wait)
+					c.Header("Retry-After", strconv.Itoa(retryAfterSeconds(wait)))
+					c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"error": "too many failed attempts"})
+					return
+				}
+				_, user, err := users.Login(ctx, username, password)
+				if err == nil {
+					guard.RecordSuccess(ctx, username)
 					c.Set("username", user.Username)
 					c.Set("userID", user.ID)
 					c.Status(http.StatusOK)
 					return
 				}
+				guard.RecordFailure(ctx, username)
+				logAuthEvent(log, "authentication failed", c, username, "err", err)
 			}
 		}
 
@@ -379,8 +426,8 @@ func DockerV2Auth(
 // set the Authorization header. It accepts a JWT or API token in `?token=...`.
 // Falls back to AuthMiddleware behavior (Bearer/Basic) when the query param
 // is absent.
-func QueryTokenAuth(users *service.UserService, tokens *service.TokenService) gin.HandlerFunc {
-	mw := AuthMiddleware(users, tokens)
+func QueryTokenAuth(users *service.UserService, tokens *service.TokenService, guard *loginguard.Guard, log logger.Logger) gin.HandlerFunc {
+	mw := AuthMiddleware(users, tokens, guard, log)
 	return func(c *gin.Context) {
 		if c.GetHeader("Authorization") == "" {
 			if t := c.Query("token"); t != "" {
@@ -395,7 +442,13 @@ func QueryTokenAuth(users *service.UserService, tokens *service.TokenService) gi
 // Basic auth is present, but does not block unauthenticated requests. Basic
 // auth is required for Docker clients (`docker login`) so that pushes/cached
 // pulls are attributed to a real user instead of "anonymous".
-func OptionalAuth(users *service.UserService, tokens *service.TokenService) gin.HandlerFunc {
+//
+// A wrong password here degrades to anonymous rather than returning 401 — that
+// is the point of the middleware — but it is still a failed credential, so it
+// is logged and charged to the same per-account budget as /api/v1/login.
+// Otherwise guessing against /repository/… is invisible to the audit trail
+// while costing a bcrypt per try.
+func OptionalAuth(users *service.UserService, tokens *service.TokenService, guard *loginguard.Guard, log logger.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 
@@ -409,8 +462,9 @@ func OptionalAuth(users *service.UserService, tokens *service.TokenService) gin.
 
 		// Basic auth (Docker registry clients, Maven, curl, etc.)
 		if username, password, ok := c.Request.BasicAuth(); ok && username != "" {
+			ctx := c.Request.Context()
 			if tokens != nil && strings.HasPrefix(password, service.TokenPrefix) {
-				if u, err := tokens.Authenticate(c.Request.Context(), password); err == nil && u != nil {
+				if u, err := tokens.Authenticate(ctx, password); err == nil && u != nil {
 					c.Set("username", u.Username)
 					c.Set("userID", u.ID)
 					c.Set("roles", u.Roles)
@@ -418,12 +472,42 @@ func OptionalAuth(users *service.UserService, tokens *service.TokenService) gin.
 					return
 				}
 			}
-			if _, user, err := users.Login(c.Request.Context(), username, password); err == nil {
+			// Throttled accounts skip the password check entirely: the request
+			// continues as anonymous and RBAC decides, without spending a bcrypt.
+			if wait := guard.RetryAfter(ctx, username); wait > 0 {
+				logAuthEvent(log, "authentication throttled", c, username, "retryAfter", wait)
+				c.Next()
+				return
+			}
+			if _, user, err := users.Login(ctx, username, password); err == nil {
+				guard.RecordSuccess(ctx, username)
 				c.Set("username", user.Username)
 				c.Set("userID", user.ID)
 				c.Set("roles", user.Roles)
+			} else {
+				guard.RecordFailure(ctx, username)
+				logAuthEvent(log, "authentication failed", c, username, "err", err)
 			}
 		}
 		c.Next()
 	}
+}
+
+// logAuthEvent records an authentication outcome when a logger is wired up.
+func logAuthEvent(log logger.Logger, msg string, c *gin.Context, username string, kv ...any) {
+	if log == nil {
+		return
+	}
+	args := append([]any{"username", username, "ip", c.ClientIP(), "path", c.Request.URL.Path}, kv...)
+	log.Infow(msg, args...)
+}
+
+// retryAfterSeconds renders a wait as the whole seconds a Retry-After header
+// needs, never below 1 so clients do not treat it as "retry immediately".
+func retryAfterSeconds(d time.Duration) int {
+	s := int(d.Round(time.Second) / time.Second)
+	if s < 1 {
+		return 1
+	}
+	return s
 }
