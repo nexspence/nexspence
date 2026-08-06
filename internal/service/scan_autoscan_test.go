@@ -144,21 +144,31 @@ func TestScanService_StartScheduler_StopsOnContextCancel(t *testing.T) {
 // an error: the queue skips it without noise.
 func TestScanService_TriggerAsync_UnsupportedFormatIsHarmless(t *testing.T) {
 	comp := &domain.Component{Repository: "rawhosted", Format: "raw", Name: "notes.txt", Version: ""}
+	// Queued behind it: once this one has been scanned the raw component has
+	// demonstrably had its turn, which beats sleeping and hoping.
+	marker := &domain.Component{Repository: "npmhosted", Format: "npm", Name: "lodash", Version: "4.17.20"}
 	comps := testutil.NewComponentRepo()
 	comps.Create(context.Background(), comp)
+	comps.Create(context.Background(), marker)
 
 	scanRepo := testutil.NewScanResultRepo()
 	svc := service.NewScanService(comps, "").WithScanResults(scanRepo)
+	svc.OSVClient.BaseURL = osvServerWithOneVuln(t).URL
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go svc.StartScheduler(ctx, "")
 
 	svc.TriggerAsync(comp.ID)
+	svc.TriggerAsync(marker.ID)
 
-	// Nothing to assert but the absence of a crash and of a persisted row.
-	time.Sleep(150 * time.Millisecond)
-	if n := len(scanRepo.Rows()); n != 0 {
-		t.Errorf("expected no scan row for an unscannable format, got %d", n)
+	waitFor(t, "the queue to reach the scannable component", func() bool {
+		return len(scanRepo.Rows()) > 0
+	})
+
+	for _, row := range scanRepo.Rows() {
+		if row.ComponentID == comp.ID {
+			t.Error("an unscannable format must not produce a scan row")
+		}
 	}
 }

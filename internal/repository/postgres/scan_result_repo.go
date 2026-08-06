@@ -56,9 +56,7 @@ func (r *scanResultRepo) GetLatestByComponent(ctx context.Context, componentID s
 		return nil, err
 	}
 	row.Status = domain.ScanStatus(st)
-	if raw != nil {
-		_ = json.Unmarshal(raw, &row.Raw)
-	}
+	unmarshalJSONB(raw, &row.Raw, "scan_results", row.ID, "raw")
 	return &row, nil
 }
 

@@ -2185,6 +2185,7 @@ func (r *ScanResultRepo) Aggregate(_ context.Context) (*domain.SecuritySummary, 
 	}
 	s := &domain.SecuritySummary{ScannedTotal: len(latest)}
 	for _, row := range latest {
+		s.Malicious += row.Malicious
 		s.Critical += row.Critical
 		s.High += row.High
 		s.Medium += row.Medium

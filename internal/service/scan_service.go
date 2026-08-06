@@ -130,11 +130,6 @@ type ScanService struct {
 // keep succeeding and the overflow waits for the next bulk scan.
 const autoScanQueueSize = 256
 
-// defaultScanSchedule re-scans everything nightly, so components uploaded before
-// auto-scan existed — or dropped by a full queue — are still checked, and
-// already-scanned ones are re-checked against newly published CVEs.
-const defaultScanSchedule = "0 3 * * *"
-
 // NewScanService constructs a vulnerability scanning service backed by Trivy and OSV.dev.
 func NewScanService(components repository.ComponentRepo, httpBaseURL string) *ScanService {
 	return &ScanService{
@@ -181,7 +176,11 @@ func (s *ScanService) StartScheduler(ctx context.Context, schedule string) {
 		return
 	}
 
-	c := cron.New()
+	// SkipIfStillRunning, unlike the other schedulers: a full re-scan re-queries
+	// OSV.dev per component and re-runs Trivy per image, so on a large registry
+	// it can outlast its own interval. Overlapping runs would queue up behind
+	// trivyMu and never catch up.
+	c := cron.New(cron.WithChain(cron.SkipIfStillRunning(cron.DiscardLogger)))
 	if _, err := c.AddFunc(schedule, func() {
 		scanned, failed, err := s.BulkScan(ctx, "")
 		if err != nil {
