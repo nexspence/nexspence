@@ -28,6 +28,23 @@ type Deps struct {
 	// request itself; this is for the paths a handler reaches that the request
 	// URL does not name, such as a blob mount's client-supplied source.
 	RBAC RBACChecker
+	// Scanner is optional — nil disables automatic vulnerability scanning of
+	// uploads.
+	Scanner ScanTrigger
+}
+
+// ScanTrigger requests a background vulnerability scan of a stored component.
+//
+// It is the narrowest possible view of *service.ScanService, declared here for
+// the same reason RBACChecker is: internal/service already imports
+// internal/formats/base, so depending on it from this package would close a
+// cycle. Keeping it to one method also keeps the storage layer honest — it can
+// ask for a scan, and can do nothing else with the scanner.
+type ScanTrigger interface {
+	// TriggerAsync queues componentID for scanning and returns immediately. It
+	// is called on the upload path, so implementations must not block and must
+	// not report failure: a scan that cannot be queued is dropped, not raised.
+	TriggerAsync(componentID string)
 }
 
 // RBACChecker answers whether a caller may act on a path in a repository.

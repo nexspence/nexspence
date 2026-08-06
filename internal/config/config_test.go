@@ -193,6 +193,37 @@ func TestLoad_GCDefaults(t *testing.T) {
 	assert.Equal(t, 24*time.Hour, cfg.GC.MinAge)
 }
 
+// Automatic scanning is on out of the box: an unscanned upload is the state
+// this feature exists to prevent, so opting in is the wrong default.
+func TestLoad_ScanDefaults(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := "" +
+		"database:\n  dsn: \"postgres://u:p@localhost:5432/db?sslmode=disable\"\n" +
+		"auth:\n  jwt_secret: \"a-unique-production-secret-at-least-32b\"\n"
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.True(t, cfg.Scan.Enabled, "scan.enabled default should be true")
+	assert.Equal(t, "0 3 * * *", cfg.Scan.Schedule)
+}
+
+func TestLoad_ScanCanBeDisabled(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := "" +
+		"database:\n  dsn: \"postgres://u:p@localhost:5432/db?sslmode=disable\"\n" +
+		"auth:\n  jwt_secret: \"a-unique-production-secret-at-least-32b\"\n" +
+		"scan:\n  enabled: false\n  schedule: \"0 4 * * *\"\n"
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.False(t, cfg.Scan.Enabled)
+	assert.Equal(t, "0 4 * * *", cfg.Scan.Schedule)
+}
+
 func TestLoad_RateLimit_DefaultsEnabled(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")

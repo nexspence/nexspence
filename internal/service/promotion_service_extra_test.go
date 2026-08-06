@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/service"
@@ -392,6 +393,49 @@ func TestPromotionService_DeleteRule(t *testing.T) {
 }
 
 // ── Promote scan-pass gate ─────────────────────────────────────────────────────
+
+// The scan gate is the one place a severity count is enforced rather than
+// displayed. A malicious-package report carries no CVE and no CVSS level, so a
+// gate that only reads Critical/High waves a compromised release straight
+// through to production — the exact failure the MALICIOUS tier exists to stop.
+func TestPromotionService_Promote_ScanGate_BlocksMaliciousWithoutCVEs(t *testing.T) {
+	svc, promoRepo, compRepo, _, _, repoRepo, _, scanRepo := newTestPromotionSvc(t)
+	ctx := context.Background()
+
+	fromRepo := testutil.SimpleRepo("mal-src", "raw")
+	toRepo := testutil.SimpleRepo("mal-dst", "raw")
+	repoRepo.Create(ctx, fromRepo)
+	repoRepo.Create(ctx, toRepo)
+
+	comp := &domain.Component{
+		ID: "comp-mal", Repository: fromRepo.Name, Format: "raw",
+		Group: "g", Name: "s", Version: "1",
+	}
+	compRepo.AddComponent(comp)
+
+	// Clean by every CVE measure, and malicious.
+	if err := scanRepo.Insert(ctx, &domain.ScanResultRow{
+		ComponentID: comp.ID, Scanner: "osv", Status: domain.ScanStatusOK,
+		Malicious: 1, Total: 1, ScannedAt: time.Now(),
+	}); err != nil {
+		t.Fatalf("Insert scan row: %v", err)
+	}
+
+	rule := &domain.PromotionRule{
+		Name: "mal-gate", FromRepo: fromRepo.Name, ToRepo: toRepo.Name, RequireScanPass: true,
+	}
+	if err := promoRepo.CreateRule(ctx, rule); err != nil {
+		t.Fatalf("CreateRule: %v", err)
+	}
+
+	_, err := svc.Promote(ctx, rule.ID, []string{comp.ID}, "user")
+	if err == nil {
+		t.Fatal("expected the promotion to be refused, got nil error")
+	}
+	if !strings.Contains(strings.ToLower(err.Error()), "malicious") {
+		t.Errorf("the refusal must name what blocked it, got %v", err)
+	}
+}
 
 func TestPromotionService_Promote_ScanRequired_NoScan(t *testing.T) {
 	svc, promoRepo, compRepo, _, _, repoRepo, _, _ := newTestPromotionSvc(t)

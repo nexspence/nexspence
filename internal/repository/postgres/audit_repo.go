@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -183,7 +184,7 @@ func scanAuditRow(rows interface {
 		return e, err
 	}
 	e.UserID = userID
-	_ = json.Unmarshal(ctxJSON, &e.Context)
+	unmarshalJSONB(ctxJSON, &e.Context, "audit_events", strconv.FormatInt(e.ID, 10), "context")
 	return e, nil
 }
 

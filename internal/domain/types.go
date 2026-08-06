@@ -219,13 +219,19 @@ type ScanResult struct {
 }
 
 // ScanSummary holds per-severity CVE counts.
+//
+// Malicious is not a CVSS level: it counts malicious-package reports (OSV.dev
+// `MAL-…`), which carry no score and would otherwise be indistinguishable from
+// a finding the scanner could not classify. It leads the order everywhere
+// severities are listed.
 type ScanSummary struct {
-	Critical int `json:"critical"`
-	High     int `json:"high"`
-	Medium   int `json:"medium"`
-	Low      int `json:"low"`
-	Unknown  int `json:"unknown"`
-	Total    int `json:"total"`
+	Malicious int `json:"malicious"`
+	Critical  int `json:"critical"`
+	High      int `json:"high"`
+	Medium    int `json:"medium"`
+	Low       int `json:"low"`
+	Unknown   int `json:"unknown"`
+	Total     int `json:"total"`
 }
 
 // CVEFinding is a single vulnerability entry from the scanner.
@@ -244,6 +250,7 @@ type ScanResultRow struct {
 	ComponentID string
 	Scanner     string // "trivy" | "osv"
 	Status      ScanStatus
+	Malicious   int
 	Critical    int
 	High        int
 	Medium      int
@@ -257,6 +264,7 @@ type ScanResultRow struct {
 
 // SecuritySummary is an aggregate across all scan_results rows.
 type SecuritySummary struct {
+	Malicious    int `json:"malicious"`
 	Critical     int `json:"critical"`
 	High         int `json:"high"`
 	Medium       int `json:"medium"`
@@ -272,6 +280,7 @@ type VulnRow struct {
 	ComponentID string    `json:"componentId"`
 	Name        string    `json:"name"`
 	Version     string    `json:"version"`
+	Malicious   int       `json:"malicious"`
 	Critical    int       `json:"critical"`
 	High        int       `json:"high"`
 	Medium      int       `json:"medium"`

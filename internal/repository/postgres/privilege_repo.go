@@ -143,9 +143,10 @@ func scanPrivilege(row scanner) (*domain.Privilege, error) {
 		return nil, err
 	}
 	p.Type = domain.PrivilegeType(ptype)
-	if len(attrsRaw) > 0 {
-		_ = json.Unmarshal(attrsRaw, &p.Attrs)
-	}
+	// Attrs carries the privilege's match criteria, so a silent decode failure
+	// here is the same class of problem as a corrupt rbac `actions` array: the
+	// privilege degrades to one that matches nothing, with no trace.
+	unmarshalJSONB(attrsRaw, &p.Attrs, "privileges", p.ID, "attrs")
 	if p.Attrs == nil {
 		p.Attrs = map[string]any{}
 	}

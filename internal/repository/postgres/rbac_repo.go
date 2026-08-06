@@ -2,7 +2,6 @@ package postgres
 
 import (
 	"context"
-	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -37,7 +36,10 @@ func (r *rbacRepo) GetUserPrivilegesWithSelectors(ctx context.Context, userID st
 		if err := rows.Scan(&actionsJSON, &ps.Expression); err != nil {
 			return nil, err
 		}
-		_ = json.Unmarshal([]byte(actionsJSON), &ps.Actions)
+		// A privilege whose actions fail to decode grants nothing — the one case
+		// here where silence is a security problem, so it is logged against the
+		// expression that identifies the row (the query selects no id).
+		unmarshalJSONB([]byte(actionsJSON), &ps.Actions, "privileges", ps.Expression, "actions")
 		result = append(result, ps)
 	}
 	return result, rows.Err()

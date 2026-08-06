@@ -25,6 +25,7 @@ type Config struct {
 	Search    SearchConfig    `mapstructure:"search"`
 	Cleanup   CleanupConfig   `mapstructure:"cleanup"`
 	GC        GCConfig        `mapstructure:"gc"`
+	Scan      ScanConfig      `mapstructure:"scan"`
 	Audit     AuditConfig     `mapstructure:"audit"`
 	Docker    DockerConfig    `mapstructure:"docker"`
 	Redis     RedisConfig     `mapstructure:"redis"`
@@ -380,6 +381,18 @@ type GCConfig struct {
 	MinAge   time.Duration `mapstructure:"min_age"`
 }
 
+// ScanConfig configures automatic vulnerability scanning of stored artifacts.
+type ScanConfig struct {
+	// Enabled queues every upload for a background scan and runs the periodic
+	// re-scan. Off, scanning stays entirely on-demand.
+	Enabled bool `mapstructure:"enabled"`
+	// Schedule is the cron expression for the full bulk re-scan, which covers
+	// artifacts uploaded before auto-scan was on and re-checks already-scanned
+	// ones against newly published CVEs. Empty disables the periodic run while
+	// leaving scan-on-upload in place.
+	Schedule string `mapstructure:"schedule"`
+}
+
 // AuditConfig controls audit-log retention, soft cap, and partition rotation.
 type AuditConfig struct {
 	RetentionDays    int           `mapstructure:"retention_days"`
@@ -455,6 +468,10 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("gc.enabled", true)
 	v.SetDefault("gc.schedule", "0 3 * * 0")
 	v.SetDefault("gc.min_age", "24h")
+	v.SetDefault("scan.enabled", true)
+	// Nightly, off-peak: a full re-scan re-queries OSV.dev per component and
+	// re-runs Trivy per image.
+	v.SetDefault("scan.schedule", "0 3 * * *")
 	v.SetDefault("audit.retention_days", 90)
 	v.SetDefault("audit.soft_cap", int64(1_000_000))
 	v.SetDefault("audit.rotation_interval", "24h")

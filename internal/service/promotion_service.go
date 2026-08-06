@@ -183,8 +183,13 @@ func (s *PromotionService) Promote(ctx context.Context, ruleID string, component
 			if serr != nil || scan == nil {
 				return nil, fmt.Errorf("component %s: scan required but not yet run", compID)
 			}
-			if scan.Critical > 0 || scan.High > 0 {
-				return nil, fmt.Errorf("component %s: scan has %d critical, %d high findings", compID, scan.Critical, scan.High)
+			// Malicious is checked alongside the CVE tiers, not folded into
+			// them: a malicious-package report has no CVSS level, so a gate
+			// reading only Critical/High would pass a compromised release with
+			// a spotless CVE record straight into production.
+			if scan.Malicious > 0 || scan.Critical > 0 || scan.High > 0 {
+				return nil, fmt.Errorf("component %s: scan has %d malicious, %d critical, %d high findings",
+					compID, scan.Malicious, scan.Critical, scan.High)
 			}
 		}
 

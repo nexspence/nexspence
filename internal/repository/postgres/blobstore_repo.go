@@ -139,6 +139,6 @@ func scanBlobStore(row scanner) (*domain.BlobStore, error) {
 	if err != nil {
 		return nil, err
 	}
-	_ = json.Unmarshal(cfgRaw, &bs.Config)
+	unmarshalJSONB(cfgRaw, &bs.Config, "blob_stores", bs.ID, "config")
 	return &bs, nil
 }

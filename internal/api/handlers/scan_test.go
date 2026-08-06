@@ -152,6 +152,44 @@ func TestScanHandler_Summary_OK(t *testing.T) {
 	assert.Equal(t, 1, s.ScannedTotal)
 }
 
+// The full chain for a malicious-package report, over the wire: OSV response →
+// service → persisted row → aggregate → JSON body. It is the one seam where a
+// wrong struct tag would go unnoticed by every other test.
+func TestScanHandler_Summary_ReportsMaliciousCount(t *testing.T) {
+	comps := testutil.NewComponentRepo()
+	scanRepo := testutil.NewScanResultRepo()
+
+	osvSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"vulns":[{"id":"MAL-2025-46974","summary":"Malicious code in debug"}]}`))
+	}))
+	t.Cleanup(osvSrv.Close)
+
+	svc := service.NewScanService(comps, "http://localhost").WithScanResults(scanRepo)
+	svc.OSVClient = &service.OSVClient{BaseURL: osvSrv.URL, HTTPClient: osvSrv.Client()}
+
+	h := handlers.NewScanHandler(svc)
+	r := gin.New()
+	r.POST("/api/v1/components/:id/scan", h.Scan)
+	r.GET("/api/v1/security/summary", h.Summary)
+
+	c := seedComponent(t, comps, "npm", "debug", "4.4.2")
+
+	rec := do(t, r, http.MethodPost, "/api/v1/components/"+c.ID+"/scan", nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	var res domain.ScanResult
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &res))
+	assert.Equal(t, 1, res.Summary.Malicious)
+	assert.Equal(t, 0, res.Summary.Unknown)
+
+	// And the field survives under the name the frontend reads it by.
+	rec = do(t, r, http.MethodGet, "/api/v1/security/summary", nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	assert.Equal(t, float64(1), body["malicious"])
+}
+
 func TestScanHandler_Summary_RepoError_500(t *testing.T) {
 	r, _, scanRepo, _ := mountScan(t)
 	scanRepo.Err = errors.New("agg down")

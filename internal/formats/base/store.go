@@ -229,7 +229,35 @@ func RegisterStoredBlob(ctx context.Context, d formats.Deps, repo *domain.Reposi
 	if delta := usageDelta(ctx, d, asset, prev); delta != 0 {
 		_ = d.Blobs.UpdateUsedBytes(ctx, blobStoreName, delta)
 	}
+
+	queueForScanning(d, comp)
 	return asset, nil
+}
+
+// queueForScanning asks for a background scan of a component that has just been
+// registered.
+//
+// It sits here rather than in StoreArtifact because this is the narrower waist:
+// StoreArtifact goes through it, and so do the writes that skip StoreArtifact
+// entirely — a proxy repository caching an upstream artifact, an OCI blob
+// mount. Those are the ones most worth scanning, since their content comes from
+// somewhere nobody here controls.
+//
+// Digest-versioned components are not queued. An OCI push registers every layer
+// as one of these before it sends the manifest, so queuing them would fill a
+// bounded queue with entries the scanner discards anyway — and evict the
+// manifest, the only entry that describes a scannable image.
+//
+// The call returns immediately and cannot fail: no upload is ever held up or
+// refused on account of the scanner.
+func queueForScanning(d formats.Deps, comp *domain.Component) {
+	if d.Scanner == nil || comp == nil || comp.ID == "" {
+		return
+	}
+	if strings.HasPrefix(comp.Version, "sha256:") {
+		return
+	}
+	d.Scanner.TriggerAsync(comp.ID)
 }
 
 // usageDelta reports how much the blob store's used_bytes has to move for a

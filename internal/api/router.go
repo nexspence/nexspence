@@ -51,8 +51,13 @@ import (
 
 // NewRouter wires all routes and returns a ready http.Handler.
 //
+// ctx is the lifetime of the background work the router starts — the cleanup,
+// GC, replication, download-counter and scan schedulers. Canceling it is how
+// they are told to stop; they used to be launched with context.Background(),
+// which meant none of them ever stopped before the process did.
+//
 //nolint:gocyclo // large router wiring function; splitting would hurt readability
-func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, version string) http.Handler {
+func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, version string) http.Handler {
 	if cfg.Log.Level != "debug" {
 		gin.SetMode(gin.ReleaseMode)
 	}
@@ -175,7 +180,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 	cleanupSvc.WithComponents(componentRepo)
 
 	// Start per-policy cron scheduler in background (default: cfg.Cleanup.DefaultSchedule).
-	go cleanupSvc.StartCronScheduler(context.Background(), cfg.Cleanup.DefaultSchedule)
+	go cleanupSvc.StartCronScheduler(ctx, cfg.Cleanup.DefaultSchedule)
 
 	gcSvc := &service.BlobGCService{
 		Assets:        assetRepo,
@@ -186,11 +191,11 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 		DefaultMinAge: cfg.GC.MinAge,
 	}
 	if cfg.GC.Enabled {
-		go gcSvc.StartCronScheduler(context.Background(), cfg.GC.Schedule, cfg.GC.MinAge)
+		go gcSvc.StartCronScheduler(ctx, cfg.GC.Schedule, cfg.GC.MinAge)
 	}
 
 	replSvc := service.NewReplicationService(replRepo, assetRepo, localBlob, cfg.Auth.JWTSecret, cfg.Auth.EncryptionKeyBytes(), log)
-	go replSvc.StartCronScheduler(context.Background())
+	go replSvc.StartCronScheduler(ctx)
 
 	promotionSvc, err := service.NewPromotionService(
 		promotionRepo, componentRepo, assetRepo, repoRepo, blobRepo, scanRepo, localBlob, blobRegistry,
@@ -202,12 +207,28 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 
 	// Debounced download counter: in-memory aggregation, periodic batched flush.
 	dlCounter := service.NewDownloadCounter(assetRepo, log)
-	go dlCounter.Start(context.Background(), 10*time.Second)
+	go dlCounter.Start(ctx, 10*time.Second)
 
 	// ── Format handlers ───────────────────────────────────────
 	// Built before the format handlers because they take Deps by value: a
 	// handler constructed without the checker would keep a nil copy of it.
 	rbacSvc := service.NewRBACService(rbacRepo, repoRepo, log, cfg.Auth.AnonymousEnabled)
+
+	// Built here rather than with the other handlers below: the format handlers
+	// take Deps by value, so the scan trigger has to exist before Deps does or
+	// every handler keeps a nil copy of it.
+	scanSvc := service.NewScanService(componentRepo, cfg.HTTP.BaseURL).
+		WithScanResults(scanRepo).
+		WithCredentials(cfg.Bootstrap.AdminUsername, cfg.Bootstrap.AdminPassword)
+	// A nil trigger in Deps is what disables scan-on-upload, so the config
+	// switch is applied by not wiring the service rather than by a flag the
+	// storage layer would have to consult.
+	var scanTrigger formats.ScanTrigger
+	if cfg.Scan.Enabled {
+		scanTrigger = scanSvc
+		go scanSvc.StartScheduler(ctx, cfg.Scan.Schedule)
+	}
+
 	formatDeps := formats.Deps{
 		Repos:        repoRepo,
 		Components:   componentRepo,
@@ -220,6 +241,7 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 		Downloads:    dlCounter,
 		RoutingRules: rrRepo,
 		RBAC:         rbacSvc,
+		Scanner:      scanTrigger,
 	}
 	formatRegistry := map[string]formats.FormatHandler{
 		"raw":       raw.New(formatDeps),
@@ -255,9 +277,6 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 	browseH := handlers.NewBrowseHandler(formatDeps, rbacSvc)
 	cleanupH := handlers.NewCleanupHandler(cleanupRepo, repoRepo, cleanupSvc)
 	auditH := handlers.NewAuditHandler(auditRepo)
-	scanSvc := service.NewScanService(componentRepo, cfg.HTTP.BaseURL).
-		WithScanResults(scanRepo).
-		WithCredentials(cfg.Bootstrap.AdminUsername, cfg.Bootstrap.AdminPassword)
 	scanH := handlers.NewScanHandler(scanSvc)
 	tokenH := handlers.NewTokenHandler(tokenSvc, userSvc, cfg.Auth.TokenMaxDays)
 	webhookH := handlers.NewWebhookHandler(webhookSvc)
@@ -278,8 +297,10 @@ func NewRouter(cfg *config.Config, pool *pgxpool.Pool, log logger.Logger, versio
 	blobMigSvc.WithLocker(locker)
 	blobMigH := handlers.NewBlobStoreMigrationHandler(blobMigSvc)
 
-	// Resume any migrations that were interrupted by a server restart.
-	go func() { _ = blobMigSvc.ResumeAll(context.Background()) }()
+	// Resume any migrations that were interrupted by a server restart — on the
+	// background context, so a shutdown mid-resume interrupts it the same way
+	// the restart that left it unfinished did.
+	go func() { _ = blobMigSvc.ResumeAll(ctx) }()
 	backupSvc := &service.BackupService{
 		BlobStores: blobRepo,
 		Repos:      repoRepo,

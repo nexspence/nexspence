@@ -418,6 +418,34 @@ describe('BrowsePage — Docker tree', () => {
     expect(screen.getByText('openssl')).toBeInTheDocument()
   })
 
+  // A malicious-package report has no CVSS severity. Without a badge of its own
+  // it was counted as UNKNOWN — indistinguishable from "the scanner could not
+  // classify this".
+  it('shows a MALICIOUS badge and filter for a malicious-package finding', async () => {
+    const user = userEvent.setup()
+    seedDocker()
+    server.use(
+      http.get('/api/v1/components/:id/scan', () => new HttpResponse(null, { status: 204 })),
+      http.post('/api/v1/components/:id/scan', () =>
+        HttpResponse.json({
+          scannedAt: new Date().toISOString(), imageRef: 'debug:4.4.2', status: 'ok',
+          summary: { malicious: 1, critical: 0, high: 0, medium: 0, low: 0, unknown: 0, total: 1 },
+          findings: [{ id: 'MAL-2025-46974', severity: 'MALICIOUS', pkgName: 'debug', installedVersion: '4.4.2', title: 'Malicious code in debug' }],
+        }),
+      ),
+    )
+    renderBrowse('?repo=docker-hosted')
+    await user.click(await screen.findByText('myapp'))
+    await user.click(await screen.findByText('Tags'))
+    await user.click(await screen.findByText('latest'))
+    await screen.findByText('Vulnerability scan')
+    await user.click(screen.getByRole('button', { name: /Scan now/ }))
+
+    expect(await screen.findByText('MALICIOUS: 1')).toBeInTheDocument()
+    expect(screen.getByText('MAL-2025-46974')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'MALICIOUS (1)' })).toBeInTheDocument()
+  })
+
   it('opens Example Usage and Promote from docker panel', async () => {
     const user = userEvent.setup()
     seedDocker()

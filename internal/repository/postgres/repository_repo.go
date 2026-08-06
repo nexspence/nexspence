@@ -219,9 +219,9 @@ func scanRepository(row scanner) (*domain.Repository, error) {
 	repo.UpdatedAt = updatedAt
 	repo.CleanupPolicyIDs = cleanupIDs
 
-	_ = json.Unmarshal(fmtCfgRaw, &repo.FormatConfig)
-	_ = json.Unmarshal(httpCfgRaw, &repo.HTTPConfig)
-	_ = json.Unmarshal(proxyCfgRaw, &repo.ProxyConfig)
+	unmarshalJSONB(fmtCfgRaw, &repo.FormatConfig, "repositories", repo.ID, "format_config")
+	unmarshalJSONB(httpCfgRaw, &repo.HTTPConfig, "repositories", repo.ID, "http_config")
+	unmarshalJSONB(proxyCfgRaw, &repo.ProxyConfig, "repositories", repo.ID, "proxy_config")
 
 	return &repo, nil
 }

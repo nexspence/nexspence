@@ -12,11 +12,22 @@ import (
 
 const osvDefaultBaseURL = "https://api.osv.dev"
 
+// SeverityMalicious marks a package that a malicious-package report names — a
+// compromised release, not a package with a vulnerability in it.
+//
+// It is not a CVSS level and does not come from one. OSV.dev indexes OpenSSF's
+// malicious-packages dataset under `MAL-…` ids, and those reports never carry a
+// `database_specific.severity`, so without a tier of their own they landed in
+// "Unknown" next to packages the scanner simply could not classify.
+const SeverityMalicious = "MALICIOUS"
+
+const osvMaliciousIDPrefix = "MAL-"
+
 // OSVVuln is a single vulnerability from the OSV.dev API.
 type OSVVuln struct {
 	ID       string
 	Summary  string
-	Severity string // "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "UNKNOWN"
+	Severity string // "MALICIOUS" | "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "UNKNOWN"
 }
 
 // OSVClient queries the OSV.dev vulnerability database.
@@ -86,6 +97,16 @@ func (c *OSVClient) Query(ctx context.Context, name, version, ecosystem string) 
 
 	out := make([]OSVVuln, 0, len(result.Vulns))
 	for _, v := range result.Vulns {
+		// A malicious-package report outranks everything else the entry says.
+		// Its severity is forced — a MAL- report that happens to carry a CVSS
+		// score is still malware first — and its id is preferred over the CVE
+		// alias the display logic would otherwise pick, because a CVE number in
+		// place of a MAL- id hides exactly the fact worth seeing.
+		if malID := maliciousID(v.ID, v.Aliases); malID != "" {
+			out = append(out, OSVVuln{ID: malID, Summary: v.Summary, Severity: SeverityMalicious})
+			continue
+		}
+
 		id := v.ID
 		for _, alias := range v.Aliases {
 			if strings.HasPrefix(alias, "CVE-") {
@@ -100,6 +121,20 @@ func (c *OSVClient) Query(ctx context.Context, name, version, ecosystem string) 
 		out = append(out, OSVVuln{ID: id, Summary: v.Summary, Severity: sev})
 	}
 	return out, nil
+}
+
+// maliciousID returns the MAL- identifier of an OSV entry — its own id or the
+// first alias carrying one — or "" if the entry is not a malicious-package report.
+func maliciousID(id string, aliases []string) string {
+	if strings.HasPrefix(id, osvMaliciousIDPrefix) {
+		return id
+	}
+	for _, alias := range aliases {
+		if strings.HasPrefix(alias, osvMaliciousIDPrefix) {
+			return alias
+		}
+	}
+	return ""
 }
 
 // FormatToEcosystem maps Nexspence format names to OSV.dev ecosystem strings.
