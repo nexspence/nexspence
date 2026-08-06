@@ -2135,6 +2135,10 @@ type ScanResultRepo struct {
 	// VulnRows is returned by List (with len as total) when non-nil; lets tests assert
 	// the Vulnerabilities handler's success body without a live DB.
 	VulnRows []*domain.VulnRow
+	// LastFilter records the filter of the most recent List call, so a test can
+	// assert what the handler asked for — paging in particular, which the mock
+	// does not itself apply.
+	LastFilter domain.VulnFilter
 }
 
 func NewScanResultRepo() *ScanResultRepo { return &ScanResultRepo{} }
@@ -2195,9 +2199,10 @@ func (r *ScanResultRepo) Aggregate(_ context.Context) (*domain.SecuritySummary, 
 	return s, nil
 }
 
-func (r *ScanResultRepo) List(_ context.Context, _ domain.VulnFilter) ([]*domain.VulnRow, int, error) {
+func (r *ScanResultRepo) List(_ context.Context, f domain.VulnFilter) ([]*domain.VulnRow, int, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.LastFilter = f
 	if r.Err != nil {
 		return nil, 0, r.Err
 	}

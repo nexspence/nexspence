@@ -46,7 +46,14 @@ func (h *ScanHandler) Scan(c *gin.Context) {
 
 // GetScanResult returns the cached scan result for a component.
 // GET /api/v1/components/:id/scan
+// With ?export=csv|json it returns the finding list as a downloadable file.
 func (h *ScanHandler) GetScanResult(c *gin.Context) {
+	export, invalid := exportFormat(c)
+	if invalid {
+		c.JSON(http.StatusBadRequest, gin.H{"error": `export must be "csv" or "json"`})
+		return
+	}
+
 	id := c.Param("id")
 	result, err := h.svc.GetResult(c.Request.Context(), id)
 	if err != nil {
@@ -55,7 +62,13 @@ func (h *ScanHandler) GetScanResult(c *gin.Context) {
 	}
 	if result == nil {
 		// No cached scan yet — not an error (avoid 404 in logs / monitoring).
+		// Nothing to download either: an empty file would read as "scanned,
+		// nothing found", which is a different and much more reassuring claim.
 		c.Status(http.StatusNoContent)
+		return
+	}
+	if export != "" {
+		h.exportScanResult(c, export, result)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -74,7 +87,16 @@ func (h *ScanHandler) Summary(c *gin.Context) {
 
 // Vulnerabilities returns a paginated list of vulnerability rows.
 // GET /api/v1/security/vulnerabilities?repo=&severity=&format=&limit=&offset=
+//
+// With ?export=csv|json it returns the whole filtered set as a downloadable
+// file instead of a page.
 func (h *ScanHandler) Vulnerabilities(c *gin.Context) {
+	export, invalid := exportFormat(c)
+	if invalid {
+		c.JSON(http.StatusBadRequest, gin.H{"error": `export must be "csv" or "json"`})
+		return
+	}
+
 	limit := 50
 	offset := 0
 	if v := c.Query("limit"); v != "" {
@@ -93,6 +115,10 @@ func (h *ScanHandler) Vulnerabilities(c *gin.Context) {
 		Format:   c.Query("format"),
 		Limit:    limit,
 		Offset:   offset,
+	}
+	if export != "" {
+		h.exportVulnerabilities(c, export, f)
+		return
 	}
 	items, total, err := h.svc.ListVulnerabilities(c.Request.Context(), f)
 	if err != nil {

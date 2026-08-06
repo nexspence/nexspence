@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
-import { Shield, RefreshCw, Webhook, AlertTriangle, CheckCircle, Loader, Trash2, Plus, Bug, Zap, Pencil } from 'lucide-react'
+import { Shield, RefreshCw, Webhook, AlertTriangle, CheckCircle, Loader, Trash2, Plus, Bug, Zap, Pencil, Download } from 'lucide-react'
 import { nexusApi, nexspenceApi, apiClient, apiErrorMessage } from '@/api/client'
+import { saveBlob, exportFilename } from '@/api/download'
 import { UsersTab } from './UsersPage'
 import { useAuthStore } from '@/store/authStore'
 import { Select } from '../components/Select'
@@ -581,6 +582,19 @@ function ScanTab() {
     } finally { setScanning(false) }
   }
 
+  // Exports the component's full finding list, not the severity slice on
+  // screen: this is one artifact's record, and a partial one is a claim about
+  // the artifact that isn't true.
+  async function exportFindings(as: 'csv' | 'json') {
+    setError('')
+    try {
+      const res = await nexspenceApi.exportScanResult(componentId.trim(), as)
+      saveBlob(res.data as Blob, exportFilename(`scan-${componentId.trim()}`, as))
+    } catch (e: unknown) {
+      if (axios.isAxiosError(e)) setError(e.response?.data?.error ?? e.message)
+    }
+  }
+
   const findings = result?.findings ?? []
   const filtered = severityFilter === 'ALL' ? findings : findings.filter(f => f.severity === severityFilter)
 
@@ -633,6 +647,15 @@ function ScanTab() {
             <span>Scanned {new Date(result.scannedAt).toLocaleString()}</span>
             <span>·</span>
             <span>{result.summary.total} total CVEs</span>
+            <span style={{ flex: 1 }} />
+            <HoloButton onClick={() => exportFindings('csv')} title="Download these findings as CSV">
+              <Download size={14} />
+              Export CSV
+            </HoloButton>
+            <HoloButton onClick={() => exportFindings('json')} title="Download these findings as JSON">
+              <Download size={14} />
+              Export JSON
+            </HoloButton>
           </div>
 
           {/* Severity filter */}
@@ -731,6 +754,21 @@ function VulnDashTab() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [repoFilter, severityFilter])
 
+  // The export carries the filters that are on screen: a report that quietly
+  // covers something other than what the user is looking at is worse than none.
+  async function exportVulns(as: 'csv' | 'json') {
+    setError('')
+    try {
+      const res = await nexspenceApi.exportVulnerabilities(
+        { repo: repoFilter || undefined, severity: severityFilter || undefined },
+        as,
+      )
+      saveBlob(res.data as Blob, exportFilename('vulnerabilities', as))
+    } catch (e: unknown) {
+      if (axios.isAxiosError(e)) setError(e.response?.data?.error ?? e.message)
+    }
+  }
+
   async function rescanAll() {
     setScanning(true)
     setError('')
@@ -789,6 +827,14 @@ function VulnDashTab() {
             <option key={s} value={s}>{s}</option>
           ))}
         </select>
+        <HoloButton onClick={() => exportVulns('csv')} title="Download the filtered results as CSV">
+          <Download size={14} />
+          Export CSV
+        </HoloButton>
+        <HoloButton onClick={() => exportVulns('json')} title="Download the filtered results as JSON">
+          <Download size={14} />
+          Export JSON
+        </HoloButton>
         <HoloButton variant="primary" onClick={rescanAll} disabled={scanning}>
           {scanning ? <Loader size={14} className="spin" /> : <Shield size={14} />}
           {scanning ? 'Scanning…' : 'Rescan All'}

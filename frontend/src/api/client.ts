@@ -453,6 +453,22 @@ export const nexspenceApi = {
       body ?? {},
     ),
 
+  // Scan-result exports — same endpoints, ?export= switches them to a file
+  // download of the whole filtered set rather than a page.
+  exportVulnerabilities: (
+    filters: { repo?: string; severity?: string; format?: string },
+    as: 'csv' | 'json',
+  ) =>
+    apiClient.get(`/api/v1/security/vulnerabilities`, {
+      params: { ...filters, export: as },
+      responseType: 'blob',
+    }),
+  exportScanResult: (componentId: string, as: 'csv' | 'json') =>
+    apiClient.get(`/api/v1/components/${encodeURIComponent(componentId)}/scan`, {
+      params: { export: as },
+      responseType: 'blob',
+    }),
+
   // Replication rules
   listReplicationRules: () =>
     apiClient.get<ReplicationRule[]>('/api/v1/replication/rules'),
