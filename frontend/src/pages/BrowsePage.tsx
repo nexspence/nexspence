@@ -113,6 +113,7 @@ interface RawFileSelection {
 }
 
 interface ScanSummary {
+  malicious: number
   critical: number
   high: number
   medium: number
@@ -149,6 +150,9 @@ interface PromotionRule {
 }
 
 const SEV_COLOR = {
+  // Off the red→green CVSS ramp on purpose: a compromised package is a
+  // different class of alert, not a worse CVE.
+  malicious: '#d946ef',
   critical: '#ef4444',
   high: '#f97316',
   medium: '#f59e0b',
@@ -158,6 +162,7 @@ const SEV_COLOR = {
 
 function sevChipColor(sev: string) {
   const k = sev.toUpperCase()
+  if (k === 'MALICIOUS') return SEV_COLOR.malicious
   if (k === 'CRITICAL') return SEV_COLOR.critical
   if (k === 'HIGH') return SEV_COLOR.high
   if (k === 'MEDIUM') return SEV_COLOR.medium
@@ -185,7 +190,7 @@ function CveBadge({ label, count, color }: { label: string; count: number; color
   )
 }
 
-const SCAN_SEVERITY_FILTERS = ['ALL', 'CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'UNKNOWN'] as const
+const SCAN_SEVERITY_FILTERS = ['ALL', 'MALICIOUS', 'CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'UNKNOWN'] as const
 
 function fmtElapsed(s: number): string {
   const m = Math.floor(s / 60)
@@ -275,6 +280,7 @@ function ScanBadgeRow({ componentId }: { componentId: string }) {
       ) : !scanMutation.isPending && s ? (
         <>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
+            <CveBadge label="MALICIOUS" count={s.malicious} color={SEV_COLOR.malicious} />
             <CveBadge label="CRITICAL" count={s.critical} color={SEV_COLOR.critical} />
             <CveBadge label="HIGH" count={s.high} color={SEV_COLOR.high} />
             <CveBadge label="MEDIUM" count={s.medium} color={SEV_COLOR.medium} />

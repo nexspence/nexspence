@@ -329,6 +329,9 @@ type ComponentRepo struct {
 	components map[string]*domain.Component
 	nextID     int
 	Err        error // when non-nil, ListByRepoNames/Get/Search/Delete/SetTags return it (500-branch seam)
+	// UpdateExtraErr is returned by UpdateExtra when set — the seam for a write
+	// that fails after the work producing it already succeeded.
+	UpdateExtraErr error
 	// DockerRowsByRepo maps repoName→browse rows; ListDockerBrowseRows returns the
 	// union of rows for the requested repo names (mirrors the SQL WHERE rep.name IN (...)).
 	// A row's ArtifactType stands for the SQL's extra->>'oci_artifact_type': the
@@ -530,6 +533,9 @@ func (c *ComponentRepo) DeleteOrphans(_ context.Context, repoName string) error 
 func (c *ComponentRepo) UpdateExtra(_ context.Context, id string, extra map[string]any) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.UpdateExtraErr != nil {
+		return c.UpdateExtraErr
+	}
 	comp := c.components[id]
 	if comp == nil {
 		return nil
@@ -2123,6 +2129,9 @@ type ScanResultRepo struct {
 	mu   sync.Mutex
 	rows []*domain.ScanResultRow
 	Err  error // when set, Aggregate/List return it (500-branch seam)
+	// InsertErr is returned by Insert when set — the seam for a scan whose history
+	// row cannot be written.
+	InsertErr error
 	// VulnRows is returned by List (with len as total) when non-nil; lets tests assert
 	// the Vulnerabilities handler's success body without a live DB.
 	VulnRows []*domain.VulnRow
@@ -2133,6 +2142,9 @@ func NewScanResultRepo() *ScanResultRepo { return &ScanResultRepo{} }
 func (r *ScanResultRepo) Insert(_ context.Context, row *domain.ScanResultRow) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.InsertErr != nil {
+		return r.InsertErr
+	}
 	cp := *row
 	r.rows = append(r.rows, &cp)
 	return nil

@@ -11,10 +11,11 @@ import { HoloButton, HoloInput, HoloModal, HoloTabs, HoloPill, HoloCard, HoloTab
 /* ─── Types ─────────────────────────────────────────────── */
 interface Role { id: string; name: string; description: string; privileges: string[]; roles: string[]; readOnly: boolean; source?: string }
 interface CVEFinding { id: string; severity: string; pkgName: string; installedVersion: string; fixedVersion?: string; title?: string }
-interface ScanSummary { critical: number; high: number; medium: number; low: number; unknown: number; total: number }
+interface ScanSummary { malicious: number; critical: number; high: number; medium: number; low: number; unknown: number; total: number }
 interface ScanResult { scannedAt: string; imageRef: string; status: string; error?: string; summary: ScanSummary; findings: CVEFinding[] }
 
 interface SecuritySummary {
+  malicious: number
   critical: number
   high: number
   medium: number
@@ -29,6 +30,7 @@ interface VulnRow {
   componentId: string
   name: string
   version: string
+  malicious: number
   critical: number
   high: number
   medium: number
@@ -74,7 +76,10 @@ const PRIV_TYPE_COLOR: Record<string, string> = {
   'repository-content-selector': '#06b6d4',
 }
 
-const sevColor = (s: string) => s === 'CRITICAL' ? '#ef4444' : s === 'HIGH' ? '#f97316' : s === 'MEDIUM' ? '#f59e0b' : s === 'LOW' ? '#22c55e' : '#6b7280'
+// MALICIOUS is deliberately off the red→green CVSS ramp: a compromised package
+// is a different class of alert, not a worse CVE, and reading it as "extra red"
+// is exactly the confusion to avoid.
+const sevColor = (s: string) => s === 'MALICIOUS' ? '#d946ef' : s === 'CRITICAL' ? '#ef4444' : s === 'HIGH' ? '#f97316' : s === 'MEDIUM' ? '#f59e0b' : s === 'LOW' ? '#22c55e' : '#6b7280'
 const monoStyle = { fontFamily: 'monospace' as const, fontSize: 12 }
 const emptyStyle = { textAlign: 'center' as const, color: 'var(--holo-text-faint)', fontSize: 14, padding: 32 }
 
@@ -531,7 +536,7 @@ function RolesTab({ roles, loading, onRefresh, admin }: { roles: Role[]; loading
   )
 }
 
-const SEVERITY_ORDER = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'UNKNOWN']
+const SEVERITY_ORDER = ['MALICIOUS', 'CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'UNKNOWN']
 
 function fmtElapsedSec(s: number): string {
   const m = Math.floor(s / 60)
@@ -611,8 +616,8 @@ function ScanTab() {
       {result && result.status === 'ok' && (
         <>
           {/* Summary cards */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 }}>
-            {(['CRITICAL','HIGH','MEDIUM','LOW','UNKNOWN'] as const).map(sev => (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 8 }}>
+            {SEVERITY_ORDER.map(sev => (
               <HoloCard key={sev} style={{ padding: '12px 16px', textAlign: 'center' as const }}>
                 <div style={{ fontSize: 20, fontWeight: 700, color: sevColor(sev) }}>{result.summary[sev.toLowerCase() as keyof ScanSummary] as number}</div>
                 <div style={{ fontSize: 11, color: 'var(--holo-text-dim)', marginTop: 2 }}>{sev}</div>
@@ -744,8 +749,8 @@ function VulnDashTab() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {/* Summary cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 8 }}>
-        {(['critical','high','medium','low','unknown'] as const).map(sev => (
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 8 }}>
+        {(['malicious','critical','high','medium','low','unknown'] as const).map(sev => (
           <HoloCard key={sev} style={{ padding: '12px 16px', textAlign: 'center' as const }}>
             <div style={{ fontSize: 20, fontWeight: 700, color: sevColor(sev.toUpperCase()) }}>
               {summary ? summary[sev] : '—'}
@@ -778,7 +783,9 @@ function VulnDashTab() {
           }}
         >
           <option value="">All severities</option>
-          {['CRITICAL','HIGH','MEDIUM','LOW'].map(s => (
+          {/* MALICIOUS leads and stands alone: the CVE tiers below it are
+              minimums that also match malware, this one means malware only. */}
+          {['MALICIOUS','CRITICAL','HIGH','MEDIUM','LOW'].map(s => (
             <option key={s} value={s}>{s}</option>
           ))}
         </select>
@@ -811,6 +818,7 @@ function VulnDashTab() {
                 <th style={{ padding: '0 8px 10px 0', fontWeight: 600 }}>Format</th>
                 <th style={{ padding: '0 8px 10px 0', fontWeight: 600 }}>Component</th>
                 <th style={{ padding: '0 8px 10px 0', fontWeight: 600 }}>Version</th>
+                <th style={{ padding: '0 8px 10px 0', fontWeight: 600, color: sevColor('MALICIOUS') }}>MAL</th>
                 <th style={{ padding: '0 8px 10px 0', fontWeight: 600, color: sevColor('CRITICAL') }}>C</th>
                 <th style={{ padding: '0 8px 10px 0', fontWeight: 600, color: sevColor('HIGH') }}>H</th>
                 <th style={{ padding: '0 8px 10px 0', fontWeight: 600, color: sevColor('MEDIUM') }}>M</th>
@@ -825,6 +833,7 @@ function VulnDashTab() {
                   <td style={{ padding: '8px 8px 8px 0', color: 'var(--holo-text-dim)' }}>{row.format}</td>
                   <td style={{ padding: '8px 8px 8px 0', color: 'var(--holo-text)' }}>{row.name}</td>
                   <td style={{ padding: '8px 8px 8px 0', ...monoStyle, color: 'var(--holo-text-dim)' }}>{row.version}</td>
+                  <td style={{ padding: '8px 8px 8px 0', fontWeight: 700, color: row.malicious > 0 ? sevColor('MALICIOUS') : 'var(--holo-text-faint)' }}>{row.malicious}</td>
                   <td style={{ padding: '8px 8px 8px 0', fontWeight: 700, color: row.critical > 0 ? sevColor('CRITICAL') : 'var(--holo-text-faint)' }}>{row.critical}</td>
                   <td style={{ padding: '8px 8px 8px 0', fontWeight: row.high > 0 ? 700 : 400, color: row.high > 0 ? sevColor('HIGH') : 'var(--holo-text-faint)' }}>{row.high}</td>
                   <td style={{ padding: '8px 8px 8px 0', color: row.medium > 0 ? sevColor('MEDIUM') : 'var(--holo-text-faint)' }}>{row.medium}</td>

@@ -14,6 +14,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/robfig/cron/v3"
+
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/repository"
 )
@@ -116,7 +118,22 @@ type ScanService struct {
 	// trivyMu serializes Trivy CLI runs. Trivy's on-disk cache (BoltDB) is not safe for concurrent
 	// processes; parallel scans caused "cache may be in use by another process: timeout".
 	trivyMu sync.Mutex
+
+	// queue carries component ids awaiting an automatic scan. It is buffered and
+	// dropped-on-full: an upload must never wait on a scanner, and must never be
+	// refused because one is behind. What the queue drops, the daily bulk scan
+	// picks up.
+	queue chan string
 }
+
+// autoScanQueueSize bounds the outstanding automatic scans. Past this, uploads
+// keep succeeding and the overflow waits for the next bulk scan.
+const autoScanQueueSize = 256
+
+// defaultScanSchedule re-scans everything nightly, so components uploaded before
+// auto-scan existed — or dropped by a full queue — are still checked, and
+// already-scanned ones are re-checked against newly published CVEs.
+const defaultScanSchedule = "0 3 * * *"
 
 // NewScanService constructs a vulnerability scanning service backed by Trivy and OSV.dev.
 func NewScanService(components repository.ComponentRepo, httpBaseURL string) *ScanService {
@@ -126,6 +143,92 @@ func NewScanService(components repository.ComponentRepo, httpBaseURL string) *Sc
 		TrivyBin:     "trivy",
 		TrivyTimeout: 10 * time.Minute,
 		OSVClient:    NewOSVClient(),
+		queue:        make(chan string, autoScanQueueSize),
+	}
+}
+
+// TriggerAsync requests a background scan of componentID and returns immediately.
+//
+// It is the seam the storage layer uses after an artifact is stored, so it is on
+// the upload path and must behave like it: never block, never fail the caller.
+// A full queue drops the request rather than applying backpressure to an upload
+// — the nightly bulk scan covers what is dropped.
+func (s *ScanService) TriggerAsync(componentID string) {
+	if componentID == "" || s.queue == nil {
+		return
+	}
+	select {
+	case s.queue <- componentID:
+	default:
+		log.Printf("nexor: auto-scan queue full, skipping component=%s (next bulk scan will cover it)", componentID)
+	}
+}
+
+// StartScheduler drains the automatic-scan queue and runs a full bulk re-scan on
+// the given cron schedule, until ctx is done. Run it as a goroutine.
+//
+// A blank schedule keeps the queue worker but disables the periodic scan; an
+// invalid one disables the periodic scan with a log line rather than taking the
+// server down over a config typo.
+//
+// The queue is drained by this single goroutine, one component at a time. That
+// is not a throughput compromise: Trivy's on-disk cache tolerates only one
+// process at a time anyway (see trivyMu), so a wider pool would serialize on
+// the same lock while holding more scans in flight.
+func (s *ScanService) StartScheduler(ctx context.Context, schedule string) {
+	if strings.TrimSpace(schedule) == "" {
+		s.drainQueue(ctx)
+		return
+	}
+
+	c := cron.New()
+	if _, err := c.AddFunc(schedule, func() {
+		scanned, failed, err := s.BulkScan(ctx, "")
+		if err != nil {
+			log.Printf("nexor: scheduled bulk scan failed: %v", err)
+			return
+		}
+		log.Printf("nexor: scheduled bulk scan done scanned=%d failed=%d", scanned, failed)
+	}); err != nil {
+		log.Printf("nexor: scan scheduler disabled, invalid schedule %q: %v", schedule, err)
+		s.drainQueue(ctx)
+		return
+	}
+	c.Start()
+	defer c.Stop()
+
+	s.drainQueue(ctx)
+}
+
+// skipAutoScan reports whether a queued component is not worth a scanner run.
+//
+// A component that cannot be read is left to Scan to report — this only filters
+// what is knowably pointless.
+func (s *ScanService) skipAutoScan(ctx context.Context, componentID string) bool {
+	comp, err := s.Components.Get(ctx, componentID)
+	if err != nil || comp == nil {
+		return false
+	}
+	return isDigestAlias(comp.Version)
+}
+
+// drainQueue scans queued components sequentially until ctx is done.
+func (s *ScanService) drainQueue(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case componentID := <-s.queue:
+			if s.skipAutoScan(ctx, componentID) {
+				continue
+			}
+			// An unscannable format is a normal upload, not a failure: every
+			// artifact is queued because the storage layer does not know which
+			// formats have a scanner, and Scan is the thing that does.
+			if _, err := s.Scan(ctx, componentID, ""); err != nil {
+				log.Printf("nexor: auto-scan skipped component=%s: %v", componentID, err)
+			}
+		}
 	}
 }
 
@@ -235,8 +338,7 @@ func (s *ScanService) Scan(ctx context.Context, componentID, imageRef string) (*
 			log.Printf("nexor: trivy scan failed component=%s imageRef=%q: %s", componentID, ref, msg)
 			result.Status = domain.ScanStatusFailed
 			result.Error = truncateScanError(msg)
-			_ = s.persistResult(ctx, comp, result)
-			s.persistScanRow(ctx, comp, result, "trivy")
+			s.persist(ctx, comp, result, "trivy")
 			return result, nil
 		}
 	}
@@ -244,8 +346,7 @@ func (s *ScanService) Scan(ctx context.Context, componentID, imageRef string) (*
 	result.Findings, result.Summary = parseTrivyJSON(out)
 	result.Status = domain.ScanStatusOK
 
-	_ = s.persistResult(ctx, comp, result)
-	s.persistScanRow(ctx, comp, result, "trivy")
+	s.persist(ctx, comp, result, "trivy")
 	return result, nil
 }
 
@@ -280,6 +381,25 @@ func (s *ScanService) persistResult(ctx context.Context, comp *domain.Component,
 	return s.Components.UpdateExtra(ctx, comp.ID, map[string]any{"scan_result": raw})
 }
 
+// persist stores a finished scan in both places it lives: the component's cached
+// scan_result and the scan_results history row the dashboard aggregates.
+//
+// Both writes are best-effort — the result is already on its way back to the
+// caller, and a failed write must not turn a successful scan into an error. It
+// must not be invisible either: a dropped write leaves the dashboard showing
+// stale or missing data for that component, so each failure is logged with the
+// component and the scanner that produced the result.
+//
+// Deliberately no retry: Scan runs inside the request that asked for it, and
+// blocking that request to retry a cache write costs the caller more than the
+// stale row does. The daily bulk re-scan is what eventually repairs it.
+func (s *ScanService) persist(ctx context.Context, comp *domain.Component, result *domain.ScanResult, scanner string) {
+	if err := s.persistResult(ctx, comp, result); err != nil {
+		log.Printf("nexor: scan result not persisted to component component=%s scanner=%s: %v", comp.ID, scanner, err)
+	}
+	s.persistScanRow(ctx, comp, result, scanner)
+}
+
 func (s *ScanService) scanOSV(ctx context.Context, comp *domain.Component) (*domain.ScanResult, error) {
 	ecosystem := FormatToEcosystem(comp.Format)
 	if ecosystem == "" {
@@ -295,8 +415,7 @@ func (s *ScanService) scanOSV(ctx context.Context, comp *domain.Component) (*dom
 	if err != nil {
 		result.Status = domain.ScanStatusFailed
 		result.Error = err.Error()
-		_ = s.persistResult(ctx, comp, result)
-		s.persistScanRow(ctx, comp, result, "osv")
+		s.persist(ctx, comp, result, "osv")
 		return result, nil //nolint:nilerr // best-effort scan: OSV query failure is recorded in result.Error and returned as a failed-status result; propagating the error would break the UI scan response
 	}
 
@@ -309,6 +428,8 @@ func (s *ScanService) scanOSV(ctx context.Context, comp *domain.Component) (*dom
 			Title:    v.Summary,
 		})
 		switch v.Severity {
+		case SeverityMalicious:
+			summary.Malicious++
 		case "CRITICAL":
 			summary.Critical++
 		case "HIGH":
@@ -325,8 +446,7 @@ func (s *ScanService) scanOSV(ctx context.Context, comp *domain.Component) (*dom
 	result.Findings = findings
 	result.Summary = summary
 
-	_ = s.persistResult(ctx, comp, result)
-	s.persistScanRow(ctx, comp, result, "osv")
+	s.persist(ctx, comp, result, "osv")
 	return result, nil
 }
 
@@ -338,6 +458,7 @@ func (s *ScanService) persistScanRow(ctx context.Context, comp *domain.Component
 		ComponentID: comp.ID,
 		Scanner:     scanner,
 		Status:      result.Status,
+		Malicious:   result.Summary.Malicious,
 		Critical:    result.Summary.Critical,
 		High:        result.Summary.High,
 		Medium:      result.Summary.Medium,
@@ -347,7 +468,21 @@ func (s *ScanService) persistScanRow(ctx context.Context, comp *domain.Component
 		ScannedAt:   result.ScannedAt,
 		Error:       result.Error,
 	}
-	_ = s.ScanResults.Insert(ctx, row)
+	if err := s.ScanResults.Insert(ctx, row); err != nil {
+		log.Printf("nexor: scan result row not inserted component=%s scanner=%s: %v", comp.ID, scanner, err)
+	}
+}
+
+// isDigestAlias reports whether a component version is a content digest rather
+// than a release.
+//
+// An OCI push registers every layer and the manifest's digest alias as their own
+// components, versioned by digest. They duplicate the tagged image: scanning
+// them means one scanner run per layer against a reference that is not an image,
+// and — on the bounded auto-scan queue — that wasted work would crowd out the
+// manifest scan that actually says something.
+func isDigestAlias(version string) bool {
+	return strings.HasPrefix(version, "sha256:")
 }
 
 // BulkScan scans every component in a repository (skipping SHA digest aliases),
@@ -358,8 +493,7 @@ func (s *ScanService) BulkScan(ctx context.Context, repoName string) (scanned in
 		return 0, 0, err
 	}
 	for _, comp := range page.Items {
-		// Skip SHA digest aliases — they duplicate the tagged image and clutter the dashboard.
-		if strings.HasPrefix(comp.Version, "sha256:") {
+		if isDigestAlias(comp.Version) {
 			continue
 		}
 		_, scanErr := s.Scan(ctx, comp.ID, "")

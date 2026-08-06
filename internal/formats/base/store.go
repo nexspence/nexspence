@@ -122,6 +122,15 @@ func StoreArtifact(ctx context.Context, d formats.Deps,
 		return nil, err
 	}
 
+	// Queue the stored component for a vulnerability scan. This is the common
+	// path every format handler writes through, so hooking it here is what makes
+	// auto-scan apply to all of them rather than to whichever ones remembered.
+	// The call returns immediately and cannot fail — an upload is never held up
+	// or refused on account of the scanner.
+	if d.Scanner != nil && asset.ComponentID != "" {
+		d.Scanner.TriggerAsync(asset.ComponentID)
+	}
+
 	if d.Webhooks != nil {
 		d.Webhooks.Dispatch(domain.WebhookPayload{
 			Event:      domain.EventArtifactPublished,

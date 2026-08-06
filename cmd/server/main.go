@@ -168,7 +168,13 @@ func cmdServe() *cobra.Command {
 			defer cancelSampler()
 			metrics.StartSampler(samplerCtx, pool)
 
-			router := api.NewRouter(cfg, pool, log, Version)
+			// Lifetime of everything the router runs in the background. Kept
+			// separate from the HTTP server's shutdown context so the two can be
+			// wound down at the same time rather than one after the other.
+			bgCtx, cancelBg := context.WithCancel(cmd.Context())
+			defer cancelBg()
+
+			router := api.NewRouter(bgCtx, cfg, pool, log, Version)
 
 			srv := &http.Server{
 				Addr:              cfg.HTTP.Addr,
@@ -203,6 +209,10 @@ func cmdServe() *cobra.Command {
 			<-quit
 
 			log.Info("shutting down...")
+			// Before Shutdown, not after it: the background jobs then wind down
+			// while the server drains its in-flight requests, instead of being
+			// left running until the deferred cancel fires on the way out.
+			cancelBg()
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			return srv.Shutdown(ctx)

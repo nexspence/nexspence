@@ -24,10 +24,10 @@ func (r *scanResultRepo) Insert(ctx context.Context, row *domain.ScanResultRow) 
 	raw, _ := json.Marshal(row.Raw)
 	_, err := r.pool.Exec(ctx, `
 		INSERT INTO scan_results
-		  (component_id, scanner, status, critical, high, medium, low, unknown, total, scanned_at, raw, error)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+		  (component_id, scanner, status, malicious, critical, high, medium, low, unknown, total, scanned_at, raw, error)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
 		row.ComponentID, row.Scanner, string(row.Status),
-		row.Critical, row.High, row.Medium, row.Low, row.Unknown, row.Total,
+		row.Malicious, row.Critical, row.High, row.Medium, row.Low, row.Unknown, row.Total,
 		row.ScannedAt, raw, row.Error,
 	)
 	return err
@@ -40,13 +40,13 @@ func (r *scanResultRepo) GetLatestByComponent(ctx context.Context, componentID s
 		st  string
 	)
 	err := r.pool.QueryRow(ctx, `
-		SELECT id, component_id, scanner, status, critical, high, medium, low, unknown, total, scanned_at, raw, COALESCE(error,'')
+		SELECT id, component_id, scanner, status, malicious, critical, high, medium, low, unknown, total, scanned_at, raw, COALESCE(error,'')
 		FROM scan_results
 		WHERE component_id = $1
 		ORDER BY scanned_at DESC
 		LIMIT 1`, componentID).Scan(
 		&row.ID, &row.ComponentID, &row.Scanner, &st,
-		&row.Critical, &row.High, &row.Medium, &row.Low, &row.Unknown, &row.Total,
+		&row.Malicious, &row.Critical, &row.High, &row.Medium, &row.Low, &row.Unknown, &row.Total,
 		&row.ScannedAt, &raw, &row.Error,
 	)
 	if err != nil {
@@ -67,11 +67,12 @@ func (r *scanResultRepo) Aggregate(ctx context.Context) (*domain.SecuritySummary
 	err := r.pool.QueryRow(ctx, `
 		WITH latest AS (
 			SELECT DISTINCT ON (component_id)
-				component_id, critical, high, medium, low, unknown
+				component_id, malicious, critical, high, medium, low, unknown
 			FROM scan_results
 			ORDER BY component_id, scanned_at DESC
 		)
 		SELECT
+			COALESCE(SUM(malicious),0),
 			COALESCE(SUM(critical),0),
 			COALESCE(SUM(high),0),
 			COALESCE(SUM(medium),0),
@@ -79,7 +80,7 @@ func (r *scanResultRepo) Aggregate(ctx context.Context) (*domain.SecuritySummary
 			COALESCE(SUM(unknown),0),
 			COUNT(*)
 		FROM latest`).Scan(
-		&s.Critical, &s.High, &s.Medium, &s.Low, &s.Unknown, &s.ScannedTotal,
+		&s.Malicious, &s.Critical, &s.High, &s.Medium, &s.Low, &s.Unknown, &s.ScannedTotal,
 	)
 	return &s, err
 }
@@ -89,17 +90,25 @@ func (r *scanResultRepo) List(ctx context.Context, f domain.VulnFilter) ([]*doma
 		f.Limit = 50
 	}
 
-	// severity → minimum column filter
+	// severity → minimum column filter.
+	//
+	// A malicious-package report has no CVSS level, so it cannot be ordered
+	// against the CVE tiers on its own terms — but it is never less urgent than
+	// one, so every minimum-severity tier matches it. Asking for MALICIOUS
+	// specifically is the one filter that does not widen: it means malware, not
+	// "malware and everything above LOW".
 	sevFilter := ""
 	switch f.Severity {
+	case "MALICIOUS":
+		sevFilter = "AND sr.malicious > 0"
 	case "CRITICAL":
-		sevFilter = "AND sr.critical > 0"
+		sevFilter = "AND (sr.malicious > 0 OR sr.critical > 0)"
 	case "HIGH":
-		sevFilter = "AND (sr.critical > 0 OR sr.high > 0)"
+		sevFilter = "AND (sr.malicious > 0 OR sr.critical > 0 OR sr.high > 0)"
 	case "MEDIUM":
-		sevFilter = "AND (sr.critical > 0 OR sr.high > 0 OR sr.medium > 0)"
+		sevFilter = "AND (sr.malicious > 0 OR sr.critical > 0 OR sr.high > 0 OR sr.medium > 0)"
 	case "LOW":
-		sevFilter = "AND (sr.critical > 0 OR sr.high > 0 OR sr.medium > 0 OR sr.low > 0)"
+		sevFilter = "AND (sr.malicious > 0 OR sr.critical > 0 OR sr.high > 0 OR sr.medium > 0 OR sr.low > 0)"
 	}
 
 	base := `
@@ -107,7 +116,7 @@ func (r *scanResultRepo) List(ctx context.Context, f domain.VulnFilter) ([]*doma
 			SELECT DISTINCT ON (sr.component_id)
 				r.name AS repo_name, r.format,
 				c.id AS component_id, c.name, c.version,
-				sr.critical, sr.high, sr.medium, sr.low, sr.unknown, sr.scanned_at
+				sr.malicious, sr.critical, sr.high, sr.medium, sr.low, sr.unknown, sr.scanned_at
 			FROM scan_results sr
 			JOIN components c ON c.id = sr.component_id
 			JOIN repositories r ON r.id = c.repository_id
@@ -123,8 +132,8 @@ func (r *scanResultRepo) List(ctx context.Context, f domain.VulnFilter) ([]*doma
 	}
 
 	rows, err := r.pool.Query(ctx,
-		"SELECT repo_name, format, component_id, name, version, critical, high, medium, low, unknown, scanned_at"+
-			base+" ORDER BY critical DESC, high DESC, scanned_at DESC LIMIT $3 OFFSET $4",
+		"SELECT repo_name, format, component_id, name, version, malicious, critical, high, medium, low, unknown, scanned_at"+
+			base+" ORDER BY malicious DESC, critical DESC, high DESC, scanned_at DESC LIMIT $3 OFFSET $4",
 		f.Repo, f.Format, f.Limit, f.Offset,
 	)
 	if err != nil {
@@ -137,7 +146,7 @@ func (r *scanResultRepo) List(ctx context.Context, f domain.VulnFilter) ([]*doma
 		var vr domain.VulnRow
 		var scannedAt time.Time
 		if err := rows.Scan(&vr.RepoName, &vr.Format, &vr.ComponentID, &vr.Name, &vr.Version,
-			&vr.Critical, &vr.High, &vr.Medium, &vr.Low, &vr.Unknown, &scannedAt); err != nil {
+			&vr.Malicious, &vr.Critical, &vr.High, &vr.Medium, &vr.Low, &vr.Unknown, &scannedAt); err != nil {
 			return nil, 0, err
 		}
 		vr.ScannedAt = scannedAt

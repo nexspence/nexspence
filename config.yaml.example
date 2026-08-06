@@ -107,6 +107,16 @@ gc:
   schedule: "0 3 * * 0"      # cron: weekly, Sunday 03:00
   min_age: "24h"             # only collect orphans older than this (grace period)
 
+# Automatic vulnerability scanning (Trivy for docker/oci, OSV.dev for
+# npm/maven/pypi/cargo).
+# Every upload is queued for a background scan; the queue is bounded and drops
+# rather than delaying an upload, so the periodic full re-scan below is also the
+# safety net for what a burst skips. It re-checks already-scanned components
+# against newly published CVEs, which nothing else does.
+scan:
+  enabled: true              # false leaves scanning entirely on-demand (API only)
+  schedule: "0 3 * * *"      # cron: daily 03:00; empty disables only the bulk re-scan
+
 # Audit log retention.
 # Events live in monthly PostgreSQL partitions.
 # Rotator pre-creates partitions for the next `lookahead_months` ahead and
