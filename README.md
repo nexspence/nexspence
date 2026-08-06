@@ -32,27 +32,11 @@ Nexspence is a self-hosted artifact repository manager that supports **15 packag
 
 ## Architecture
 
-```
-                         ┌─────────────────────┐
-                         │   Load Balancer     │  (nginx / k8s Ingress / ALB)
-                         └──────────┬──────────┘
-                    ┌───────────────┴───────────────┐
-                    ▼                               ▼
-┌────────────┐  JWT/Basic  ┌──────────────────┐   ┌──────────────────┐
-│  Client    │ ──────────▶ │  Nexspence node 1 │  │  Nexspence node 2│  (HA)
-│ (curl/mvn/ │             │  Gin + Auth +     │  │  identical       │
-│  pip/npm…) │ ◀────────── │  Audit + RBAC     │  └────────┬─────────┘
-└────────────┘             └────────┬──────────┘           │
-                                    │                      │
-                    ┌───────────────▼──────────────────────▼──────┐
-                    │           Shared State                      │
-                    │  ┌──────────────┐  ┌─────────┐  ┌──────────┐│
-                    │  │  PostgreSQL  │  │  Redis  │  │  S3/MinIO││
-                    │  │  (all data)  │  │  (locks │  │  (blobs) ││
-                    │  └──────────────┘  │  cache) │  └──────────┘│
-                    │                    └─────────┘              │
-                    └─────────────────────────────────────────────┘
-```
+<p align="center">
+  <img src="docs/assets/architecture.png" alt="Nexspence architecture: clients and load balancer above stateless Nexspence nodes (HTTP layer, auth and RBAC, format handlers, services, background schedulers), over shared PostgreSQL, optional Redis and blob storage" width="900">
+</p>
+
+One Go binary — Gin HTTP layer, embedded React UI, pluggable artifact formats. Every node is stateless; all state lives in PostgreSQL, blob storage, and (for HA) Redis, so scaling out is a matter of running more nodes behind the load balancer.
 
 View the full site with interactive architecture diagram, install guide, and comparison: **[nexspence.com](https://nexspence.com)** →
 
