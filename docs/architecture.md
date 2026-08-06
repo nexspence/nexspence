@@ -16,10 +16,11 @@ Nexspence follows a clean layered architecture. Each layer depends only on the l
 │  /repository/:name/*     /service/rest/v1/*     /api/v1/*             │
 │       Format Router        Nexus-compat API       Native API           │
 │                                                                        │
-│  Middleware stack (in order):                                          │
-│    Recovery → RequestLogger → CORS → MetricsMiddleware                │
-│    → AuditMiddleware → AuthMiddleware / OptionalAuth                   │
-│    → [future: RateLimitMiddleware, OTelTraceMiddleware]               │
+│  Global middleware (in order, internal/api/router.go):                 │
+│    Recovery → requestLogger → CORS → securityHeaders → bodyLimit      │
+│    → MetricsMiddleware → AuditMiddleware → RateLimitMiddleware        │
+│  Auth is per route group, not global:                                  │
+│    AuthMiddleware / AdminRequired / RBACMiddleware                     │
 └──────────────┬──────────────────────────────┬──────────────────────────┘
                │                              │
 ┌──────────────▼───────────┐   ┌──────────────▼──────────────────────────┐
@@ -28,27 +29,30 @@ Nexspence follows a clean layered architecture. Each layer depends only on the l
 │  │ MavenHandler        │ │   │  RepositoryService   CleanupService      │
 │  │ NpmHandler          │ │   │  UserService         BackupService       │
 │  │ PypiHandler         │ │   │  TokenService        WebhookService      │
-│  │ DockerHandler       │ │   │  ContentSelectorSvc  ScanService (Trivy) │
-│  │ GoModHandler        │ │   │  RoutingRuleService                      │
-│  │ NugetHandler        │ │   │                                          │
-│  │ HelmHandler         │ │   │  [Phase 8+]                              │
-│  │ CargoHandler        │ │   │  OIDCService         LDAPService         │
-│  │ AptHandler          │ │   │  SBOMService         AnalyticsService    │
-│  │ YumHandler          │ │   │  BlobGCService       ReplicationService  │
+│  │ OCIHandler          │ │   │  ContentSelectorSvc  ScanService         │
+│  │  (docker + oci)     │ │   │  RoutingRuleService  RBACService         │
+│  │ GoModHandler        │ │   │  PromotionService    ReplicationService  │
+│  │ NugetHandler        │ │   │  BlobGCService       DownloadCounter     │
+│  │ HelmHandler         │ │   │  BlobStoreMigrationService               │
+│  │ CargoHandler        │ │   │                                          │
+│  │ AptHandler          │ │   │  Authenticators (internal/auth):         │
+│  │ YumHandler          │ │   │  LDAP · OIDC · SAML                      │
 │  │ ConanHandler        │ │   │                                          │
 │  │ CondaHandler        │ │   │                                          │
 │  │ TerraformHandler    │ │   │                                          │
 │  │ RawHandler          │ │   └────────────────┬─────────────────────────┘
 │  │ GroupHandler        │ │                    │
-│  │ ReproxyHandler      │ │   ┌────────────────▼─────────────────────────┐
-│  └─────────────────────┘ │   │          Repository Layer                │
-└──────────────────────────┘   │                                          │
-          │                    │  RepositoryRepo   ComponentRepo           │
-          │                    │  AssetRepo        UserRepo                │
-          │                    │  BlobStoreRepo    RoleRepo                │
-          │                    │  AuditRepo        CleanupPolicyRepo       │
+│  └─────────────────────┘ │   ┌────────────────▼─────────────────────────┐
+│                          │   │          Repository Layer                │
+│  repoproxy is a shared   │   │                                          │
+│  proxy layer the handlers│   │  RepositoryRepo   ComponentRepo           │
+│  call — not an entry in  │   │  AssetRepo        UserRepo                │
+│  the registry            │   │  BlobStoreRepo    RoleRepo                │
+└──────────────────────────┘   │  AuditRepo        CleanupPolicyRepo       │
           │                    │  UserTokenRepo    ContentSelectorRepo     │
           │                    │  WebhookRepo      RoutingRuleRepo         │
+          │                    │  ScanResultRepo   PromotionRepo           │
+          │                    │  ReplicationRepo  PrivilegeRepo           │
           │                    │                                          │
           │                    │  All interfaces in repository/interfaces.go│
           │                    │  Implementations in repository/postgres/  │
@@ -57,17 +61,17 @@ Nexspence follows a clean layered architecture. Each layer depends only on the l
               ┌─────────────────────────────────▼──────────────────────┐
               │                    Data Tier                            │
               │                                                        │
-              │  ┌───────────────┐   ┌────────────────┐               │
-              │  │  PostgreSQL   │   │   BlobStore     │               │
-              │  │               │   │                 │               │
-              │  │  Metadata     │   │  LocalBlobStore │               │
-              │  │  Users/Roles  │   │  S3BlobStore    │               │
-              │  │  Audit log    │   │  (MinIO/AWS/    │               │
-              │  │  (partitioned)│   │   Ceph/B2/GCS)  │               │
-              │  │  Full-text    │   │                 │               │
-              │  │  tsvector     │   │  [Phase 10+]    │               │
-              │  │  search       │   │  AzureBlob      │               │
-              │  └───────────────┘   └────────────────┘               │
+              │  ┌───────────────┐  ┌──────────────┐  ┌─────────────┐ │
+              │  │  PostgreSQL   │  │  BlobStore   │  │   Redis     │ │
+              │  │               │  │              │  │  (optional) │ │
+              │  │  Metadata     │  │  local       │  │             │ │
+              │  │  Users/Roles  │  │  s3 (MinIO / │  │  dist locks │ │
+              │  │  Audit log    │  │  AWS / Ceph /│  │  proxy cache│ │
+              │  │  (partitioned)│  │  B2 / GCS)   │  │  login      │ │
+              │  │  Scan results │  │  group (fan  │  │  throttle   │ │
+              │  │  Full-text    │  │  out over    │  │             │ │
+              │  │  tsvector     │  │  members)    │  │  Enables HA │ │
+              │  └───────────────┘  └──────────────┘  └─────────────┘ │
               └────────────────────────────────────────────────────────┘
 ```
 
@@ -86,7 +90,9 @@ Nexspence follows a clean layered architecture. Each layer depends only on the l
   - `OptionalAuth` variant for artifact endpoints — anonymous reads allowed per repo config
 - **Audit middleware** — goroutine write after POST/PUT/DELETE/PATCH on key paths; login events use `action=LOGIN`, `entityName=username` (set by Login handler via `c.Set("username", ...)` before returning)
 - **Metrics middleware** — atomic counter increments (requests, errors); cumulative counters (`ArtifactsStored`, `BytesStored`, `DownloadsTotal`) seeded from DB on startup
-- **[Phase 8]** Rate limiting — token bucket per `userID`; 429 with `Retry-After`
+- **Security headers** — CSP built from config (`cspPolicy`), plus the usual frame/content-type/referrer set
+- **Body limit** — `http.max_body_mb`, skipped for the artifact upload paths that stream
+- **Rate limiting** — token bucket; enabled by `auth.rate_limit_enabled` (`auth.rate_limit_rps` / `_burst`)
 - **[Phase 9]** OTel trace middleware — span per request with format/repo labels
 
 ### Format Handlers
@@ -175,13 +181,17 @@ Pure business logic; no HTTP concerns; depend only on repository interfaces.
 | `BackupService` | Full tar.gz export (metadata + blobs); non-destructive restore with UUID remapping |
 | `ContentSelectorService` | CEL program compilation + cache; Variant B gate evaluation |
 | `WebhookService` | Async delivery with HMAC-SHA256; retry; inactive hook skip |
-| `ScanService` | Trivy invocation; result cache in `components.extra`; Phase 8 wiring |
-| **[Phase 8]** `OIDCService` | Exchange OIDC id_token for Nexspence JWT; group → role mapping |
-| **[Phase 8]** `LDAPService` | Bind + search; group sync → Nexspence roles |
-| **[Phase 8]** `SBOMService` | Generate SPDX / CycloneDX from component + asset metadata |
-| **[Phase 9]** `AnalyticsService` | Daily download buckets (PostgreSQL date_trunc); top-N packages; bandwidth |
-| **[Phase 9]** `ReplicationService` | Push-on-publish to secondary instance via webhook + streaming blob copy |
-| **[Phase 10]** `BlobGCService` | `ListAllBlobKeys` vs `BlobStore.ListKeys` → delete orphan blobs; dry-run |
+| `ScanService` | Trivy for `docker`/`oci`, OSV.dev for `maven`/`npm`/`pypi`/`cargo`; auto-scan queued on upload plus a nightly bulk re-scan; results cached in `components.extra` and persisted to `scan_results`; CSV/JSON export |
+| `RBACService` | Role → privilege → content-selector evaluation for a caller, path and action |
+| `RoutingRuleService` | Path allow/block rules applied to group-repository fan-out |
+| `PromotionService` | Staging → production promotion with a scan-pass gate and optional manual approval |
+| `ReplicationService` | Push-on-publish to a secondary instance via streaming blob copy; per-rule cron |
+| `BlobGCService` | `ListAllBlobKeys` vs `BlobStore.ListKeys` → delete orphan blobs; dry-run |
+| `BlobStoreMigrationService` | Move a repository's blobs between stores, resumable after a restart |
+| `DownloadCounter` | In-memory download aggregation, flushed to the DB every 10s |
+| Authenticators (`internal/auth`) | `LDAPService` bind + group sync · `OIDCService` id_token exchange + PKCE · `SAMLService` |
+| **[Phase 8]** `SBOMService` | Not built. Would generate SPDX / CycloneDX from component + asset metadata |
+| **[Phase 9]** `AnalyticsService` | Not built. Would give daily download buckets, top-N packages, bandwidth |
 
 ### Repository Layer
 
@@ -258,24 +268,20 @@ API routes:
 
 ### Phase 8 — Security & Compliance
 
-```
-                    ┌───────────────────────────────────┐
-                    │         Auth Extensions            │
-                    │                                    │
-                    │  OIDCService  ←→  Keycloak/GitHub  │
-                    │  LDAPService  ←→  AD / OpenLDAP    │
-                    │  K8s SA Token ←→  kube-apiserver   │
-                    │  RateLimiter  ←  token bucket      │
-                    └───────────────────────────────────┘
+Shipped: OIDC (with PKCE), SAML, LDAP bind + group sync, rate limiting, and
+vulnerability scanning — Trivy for `docker`/`oci` images and OSV.dev for
+`maven`/`npm`/`pypi`/`cargo`, queued automatically on upload with a nightly bulk
+re-scan, results in `components.extra` and the `scan_results` table.
 
+Still outstanding:
+
+```
                     ┌───────────────────────────────────┐
                     │       Supply Chain Security        │
                     │                                    │
-                    │  ScanService   →  Trivy (sidecar)  │
+                    │  K8s SA Token ←→  kube-apiserver   │
                     │  SBOMService   →  SPDX / CycloneDX │
-                    │  CosignVerify  →  Sigstore PKI      │
-                    │                                    │
-                    │  Stored in components.extra        │
+                    │  CosignVerify  →  Sigstore PKI     │
                     └───────────────────────────────────┘
 ```
 

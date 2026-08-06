@@ -185,11 +185,13 @@ type ContentSelector struct {
 
 // ── Blob Store ───────────────────────────────────────────────
 
-// BlobStore is a named storage backend (local filesystem or S3) with an optional quota.
+// BlobStore is a named storage backend with an optional quota: a local
+// filesystem, an S3-compatible bucket, or a group that fans writes out over
+// other stores.
 type BlobStore struct {
 	ID         string         `json:"id"`
 	Name       string         `json:"name"`
-	Type       string         `json:"type"` // "local" | "s3"
+	Type       string         `json:"type"` // "local" | "s3" | "group"
 	Config     map[string]any `json:"config,omitempty"`
 	QuotaBytes *int64         `json:"quotaBytes,omitempty"`
 	UsedBytes  int64          `json:"usedBytes"`

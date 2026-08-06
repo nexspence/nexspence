@@ -707,10 +707,11 @@ resource <span style="color:#7dd3fc">"nexspence_repository"</span> <span style="
       </div>
       <div class="card rev-r" style="padding:24px">
         <div style="font-size:.9rem;font-weight:700;margin-bottom:8px">CVE Scanning + Audit Logs</div>
-        <div style="font-size:.8rem;color:var(--dim);margin-bottom:14px;line-height:1.6">Trivy-based Docker image scanning. 90-day audit trail with NDJSON export.</div>
+        <div style="font-size:.8rem;color:var(--dim);margin-bottom:14px;line-height:1.6">Trivy for Docker/OCI images, OSV.dev for Maven/npm/PyPI/Cargo. 90-day audit trail with NDJSON export.</div>
         <ul class="cl">
-          <li>Scan on-demand via <code style="font-family:'JetBrains Mono',monospace;font-size:.7rem;background:var(--glasm);padding:1px 5px;border-radius:4px">GET /api/v1/components/:id/scan</code></li>
-          <li>Results cached in component.extra JSON</li>
+          <li>Scanned automatically on upload, plus a nightly re-scan against newly published CVEs</li>
+          <li>Malicious-package reports (OSV <code style="font-family:'JetBrains Mono',monospace;font-size:.7rem;background:var(--glasm);padding:1px 5px;border-radius:4px">MAL-*</code>) get their own severity tier, above Critical</li>
+          <li>On-demand via <code style="font-family:'JetBrains Mono',monospace;font-size:.7rem;background:var(--glasm);padding:1px 5px;border-radius:4px">GET /api/v1/components/:id/scan</code>; export the dashboard as CSV or JSON</li>
           <li>Audit log: date/user filters, NDJSON streaming export</li>
           <li>90-day retention via monthly partition rotation</li>
         </ul>
@@ -1064,7 +1065,7 @@ resource <span style="color:#7dd3fc">"nexspence_repository"</span> <span style="
           <tr><td>LDAP Authentication</td><td class="y">Built-in</td><td class="y">Built-in</td></tr>
           <tr><td>Docker OCI v2</td><td class="y">Full spec</td><td class="y">Full spec</td></tr>
           <tr><td>S3 Blob Store</td><td class="y">Any S3-compatible</td><td class="n">Paid tier only</td></tr>
-          <tr><td>Vulnerability Scanning</td><td class="y">Trivy (built-in)</td><td class="n">Paid add-on</td></tr>
+          <tr><td>Vulnerability Scanning</td><td class="y">Trivy + OSV.dev (built-in)</td><td class="n">Paid add-on</td></tr>
           <tr><td>Webhooks</td><td class="y">Built-in async</td><td class="n">Paid tier only</td></tr>
           <tr><td>Per-repo Export / Import</td><td class="y">Streaming tar.gz</td><td>Admin UI</td></tr>
           <tr><td>Go Modules (GOPROXY)</td><td class="y">Native</td><td class="n">Community plugin</td></tr>
