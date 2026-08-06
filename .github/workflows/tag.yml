@@ -3,8 +3,12 @@ name: Tag Release
 on:
   workflow_dispatch:
     inputs:
+      version:
+        description: "Explicit version, e.g. v1.31.1. Leave empty to derive it from the commits since the last tag."
+        type: string
+        default: ""
       dry_run:
-        description: "Show the next version without creating a tag"
+        description: "Show the version without creating a tag"
         type: boolean
         default: false
 
@@ -29,23 +33,56 @@ jobs:
       - name: Install svu
         run: go install github.com/caarlos0/svu/v2@v2.2.0   # pinned: svu drives release versioning
 
+      # svu derives the bump from conventional-commit types, and only feat/fix
+      # move it. That is the right default, but it makes a release impossible for
+      # a batch of docs/style/refactor work — and the only way out was to
+      # mislabel a commit as a fix, which corrupts the history the versioning
+      # itself depends on. The explicit input is the honest escape hatch.
       - name: Compute next version
         id: ver
+        env:
+          EXPLICIT: ${{ inputs.version }}
         run: |
-          NEXT="$(svu next)"
+          set -euo pipefail
+          if [ -n "$EXPLICIT" ]; then
+            NEXT="$EXPLICIT"
+            SOURCE="explicit input"
+            if ! printf '%s' "$NEXT" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'; then
+              echo "::error::\"$NEXT\" is not a version like v1.31.1"
+              exit 1
+            fi
+            # A typo that goes backwards would publish a release older than one
+            # already out there, which no downstream tool expects.
+            LATEST="$(git tag --sort=-v:refname | head -n1)"
+            if [ -n "$LATEST" ] && [ "$NEXT" = "$(printf '%s\n%s\n' "$NEXT" "$LATEST" | sort -V | head -n1)" ]; then
+              echo "::error::$NEXT is not newer than the latest tag $LATEST"
+              exit 1
+            fi
+          else
+            NEXT="$(svu next)"
+            SOURCE="derived from commits"
+          fi
           echo "next=$NEXT" >> "$GITHUB_OUTPUT"
-          echo "Next version: $NEXT"
-          echo "### Next version: \`$NEXT\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "source=$SOURCE" >> "$GITHUB_OUTPUT"
+          echo "Next version: $NEXT ($SOURCE)"
+          echo "### Next version: \`$NEXT\` — $SOURCE" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Create and push tag
         if: ${{ !inputs.dry_run }}
+        env:
+          NEXT: ${{ steps.ver.outputs.next }}
+          SOURCE: ${{ steps.ver.outputs.source }}
         run: |
-          NEXT="${{ steps.ver.outputs.next }}"
-          # svu returns the current tag when there are no feat/fix commits since the
-          # last release — there is nothing new to release, so fail with a clear message
-          # instead of a raw "tag already exists" git error.
+          set -euo pipefail
           if git rev-parse -q --verify "refs/tags/$NEXT" >/dev/null; then
-            echo "::error::svu computed $NEXT, which already exists — no feat/fix commits since the last release. Merge a feat/fix PR before tagging."
+            if [ "$SOURCE" = "explicit input" ]; then
+              echo "::error::$NEXT already exists — pick a version that has not been released."
+            else
+              # svu returns the current tag when nothing since the last release
+              # bumps it. Say so, rather than letting git fail with a bare
+              # "tag already exists".
+              echo "::error::svu computed $NEXT, which already exists — no feat/fix commits since the last release. Merge a feat/fix PR, or re-run with an explicit version."
+            fi
             exit 1
           fi
           git config user.name  "github-actions[bot]"
