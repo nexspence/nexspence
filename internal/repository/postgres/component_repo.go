@@ -357,6 +357,6 @@ func scanComponent(row scanner) (*domain.Component, error) {
 	if c.Tags == nil {
 		c.Tags = []string{}
 	}
-	_ = json.Unmarshal(extraRaw, &c.Extra)
+	unmarshalJSONB(extraRaw, &c.Extra, "components", c.ID, "extra")
 	return &c, nil
 }

@@ -44,8 +44,8 @@ func (r *CleanupPolicyRepo) List(ctx context.Context) ([]domain.CleanupPolicy, e
 		); err != nil {
 			return nil, err
 		}
-		_ = json.Unmarshal(criteriaJSON, &p.Criteria)
-		_ = json.Unmarshal(scopeJSON, &p.Scope)
+		unmarshalJSONB(criteriaJSON, &p.Criteria, "cleanup_policies", p.ID, "criteria")
+		unmarshalJSONB(scopeJSON, &p.Scope, "cleanup_policies", p.ID, "scope")
 		out = append(out, p)
 	}
 	return out, rows.Err()
@@ -69,8 +69,8 @@ func (r *CleanupPolicyRepo) Get(ctx context.Context, id string) (*domain.Cleanup
 	if err != nil {
 		return nil, err
 	}
-	_ = json.Unmarshal(criteriaJSON, &p.Criteria)
-	_ = json.Unmarshal(scopeJSON, &p.Scope)
+	unmarshalJSONB(criteriaJSON, &p.Criteria, "cleanup_policies", p.ID, "criteria")
+	unmarshalJSONB(scopeJSON, &p.Scope, "cleanup_policies", p.ID, "scope")
 	return &p, nil
 }
 
