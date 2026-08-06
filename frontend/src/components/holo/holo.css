@@ -32,9 +32,17 @@
   --holo-radius-pill:   999px;
 
   --holo-ring: 0 0 0 3px rgba(124,92,255,0.30);
-  --holo-shadow-glow: 0 8px 30px rgba(124,92,255,0.35);
 
   --holo-gradient: linear-gradient(110deg, #7c5cff 0%, #22d3ee 35%, #ff5cf0 70%, #7c5cff 100%);
+
+  /* Primary action fill.
+     Deliberately not --holo-gradient: that one runs through cyan and magenta,
+     which puts white label text at roughly 2:1 and, animated on every primary
+     button at once, makes the page restless. These two stops stay in the brand
+     purple and hold >=4.6:1 across the whole face of the button. If you lighten
+     them, re-check that first. */
+  --holo-primary:       linear-gradient(180deg, #7554f0, #5a37d6);
+  --holo-primary-hover: linear-gradient(180deg, #7a5af2, #6440dd);
 }
 
 @keyframes holoShift {
@@ -168,19 +176,32 @@
 .holo-btn:focus-visible { outline: none; box-shadow: var(--holo-ring); }
 .holo-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
+/* Solid brand fill. The holographic gradient stays where it reads as identity —
+   headings, the active tab rule, card hairlines — rather than on every action
+   button, where an always-animating fill and a permanent 30px glow competed
+   with the content for attention. */
 .holo-btn--primary {
   color: #fff;
-  background: var(--holo-gradient);
-  background-size: 200% 200%;
-  animation: holoShift 5s ease infinite;
-  border-color: rgba(124,92,255,0.5);
-  box-shadow: var(--holo-shadow-glow);
+  background: var(--holo-primary);
+  border-color: rgba(160,140,255,0.55);
+  box-shadow: 0 2px 10px rgba(124,92,255,0.20);
 }
 @media (hover: hover) and (pointer: fine) {
   .holo-btn--primary:not(:disabled):hover {
+    background: var(--holo-primary-hover);
+    border-color: rgba(180,165,255,0.75);
     transform: translateY(-1px);
-    box-shadow: 0 12px 40px rgba(124,92,255,0.6), 0 4px 14px rgba(0,0,0,0.2);
+    box-shadow: 0 6px 20px rgba(124,92,255,0.30), 0 4px 14px rgba(0,0,0,0.2);
   }
+}
+/* A gradient under opacity:0.45 turns to mud — the button stopped looking
+   disabled and started looking broken. Disabled drops the fill entirely. */
+.holo-btn--primary:disabled {
+  background: var(--holo-bg-3);
+  color: var(--holo-text-dim);
+  border-color: rgba(255,255,255,0.10);
+  box-shadow: none;
+  opacity: 1;
 }
 .holo-btn--danger {
   color: var(--holo-red);
