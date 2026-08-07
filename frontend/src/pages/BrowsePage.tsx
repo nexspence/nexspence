@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { HoloButton, HoloInput, HoloModal } from '@/components/holo'
+import { Truncated } from '@/components/Truncated'
 import {
   BookOpen,
   ChevronDown,
@@ -364,19 +365,11 @@ function ScanBadgeRow({ componentId }: { componentId: string }) {
                           {row.installedVersion}
                         </td>
                         <td style={{ padding: '6px 6px', fontFamily: 'monospace', color: '#86efac' }}>{row.fixedVersion || '—'}</td>
-                        <td
-                          style={{
-                            padding: '6px 6px',
-                            color: 'var(--holo-text-dim)',
-                            maxWidth: 200,
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap' as const,
-                          }}
-                          title={row.title || undefined}
-                        >
-                          {row.title || '—'}
-                        </td>
+                        <Truncated
+                          as="td"
+                          text={row.title || '—'}
+                          style={{ padding: '6px 6px', color: 'var(--holo-text-dim)', maxWidth: 200 }}
+                        />
                       </tr>
                     ))}
                   </tbody>
@@ -922,9 +915,7 @@ function RawTreeRows({
         }}
       >
         <FileText size={13} style={{ color: '#4ade80', flexShrink: 0 }} />
-        <span style={{ fontFamily: 'monospace', fontSize: 12, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>
-          {node.label}
-        </span>
+        <Truncated as="span" text={node.label} style={{ fontFamily: 'monospace', fontSize: 12, flex: 1 }} />
         {node.size != null && (
           <span style={{ fontSize: 11, color: 'var(--holo-text-faint)', flexShrink: 0 }}>
             {formatBytes(node.size)}

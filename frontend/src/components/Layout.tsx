@@ -13,6 +13,7 @@ import { apiClient } from '@/api/client'
 import logo from '@/assets/logo.png'
 import miniLogo from '@/assets/mini_logo.png'
 import { HoloApp, HoloModal, HoloButton, HoloInput } from '@/components/holo'
+import { Truncated } from '@/components/Truncated'
 
 const navItems = [
   { to: '/repositories', icon: Home,       label: 'Repositories' },
@@ -94,7 +95,7 @@ function ProfileModal({ onClose }: { onClose: () => void }) {
     tokenList: { maxHeight: 240, overflowY: 'auto' as const, display: 'flex', flexDirection: 'column' as const },
     row:       { display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.06)', minWidth: 0 },
     rowMeta:   { flex: 1, minWidth: 0 },
-    rowName:   { fontWeight: 600, fontSize: 13, color: 'var(--holo-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const },
+    rowName:   { fontWeight: 600, fontSize: 13, color: 'var(--holo-text)' },
     rowDates:  { fontSize: 11, color: 'var(--holo-text-dim)', marginTop: 2, lineHeight: 1.4 },
     empty:     { color: 'var(--holo-text-dim)', fontSize: 13, padding: '12px 0' },
     mono:      { fontFamily: 'ui-monospace,monospace' },
@@ -196,7 +197,7 @@ function ProfileModal({ onClose }: { onClose: () => void }) {
                     <div key={t.id} style={S.row}>
                       <Key size={13} style={{ color: 'var(--holo-a)', flexShrink: 0, marginTop: 2 }} />
                       <div style={S.rowMeta}>
-                        <div style={S.rowName}>{t.name}</div>
+                        <Truncated text={t.name} style={S.rowName} />
                         <div style={S.rowDates}>
                           Created {new Date(t.createdAt).toLocaleDateString()}
                           {t.lastUsedAt && ` · Last used ${new Date(t.lastUsedAt).toLocaleDateString()}`}
@@ -319,9 +320,7 @@ export default function Layout() {
               {(user.firstName || user.username || '?')[0].toUpperCase()}
             </button>
             <div className={styles.commandBarUser}>
-              <span className={styles.commandBarUserName}>
-                {user.firstName || user.username}
-              </span>
+              <Truncated as="span" className={styles.commandBarUserName} text={user.firstName || user.username} />
             </div>
             <button
               className={styles.commandBarAction}

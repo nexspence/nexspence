@@ -5,6 +5,7 @@ import { Activity, Archive, ArrowRightLeft, ArrowUpCircle, CheckCircle, Database
 import { nexusApi, nexspenceApi, apiClient, apiErrorMessage, ImportRepoStats, ServiceStatus, RoutingRule, RoutingRuleInput, ReplicationRule, ReplicationHistory, ReplicationRuleInput, AuthConfig } from '@/api/client'
 const MonitoringView = lazy(() => import('@/pages/MonitoringPage').then(m => ({ default: m.MonitoringView })))
 import { Select } from '@/components/Select'
+import { Truncated } from '@/components/Truncated'
 import { HoloButton, HoloInput, HoloModal, HoloTabs, HoloCard, HoloTabItem, Wizard } from '@/components/holo'
 
 interface BlobStore {
@@ -528,7 +529,7 @@ function ReplicationTab() {
                         <td style={{ padding: '4px 8px' }}>{h.skipped_count}</td>
                         <td style={{ padding: '4px 8px', color: h.failed_count > 0 ? '#ef4444' : '#94a3b8' }}>{h.failed_count}</td>
                         <td style={{ padding: '4px 8px' }}>{fmtBytes(h.transferred_bytes)}</td>
-                        <td style={{ padding: '4px 8px', color: '#ef4444', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{h.error || '—'}</td>
+                        <Truncated as="td" text={h.error || '—'} style={{ padding: '4px 8px', color: '#ef4444', maxWidth: 200 }} />
                       </tr>
                     ))}
                   </tbody>
@@ -1228,7 +1229,7 @@ export default function AdminPage() {
                           <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, background: 'rgba(245,158,11,0.15)', color: '#f59e0b', fontWeight: 700 }}>S3</span>
                         )}
                       </div>
-                      <div style={{ fontSize: 11, color: 'var(--holo-text-faint)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>{svc.detail}</div>
+                      <Truncated text={svc.detail} style={{ fontSize: 11, color: 'var(--holo-text-faint)', marginTop: 2 }} />
                     </div>
                     <div style={{ textAlign: 'right' as const, fontSize: 11, color: 'var(--holo-text-faint)', whiteSpace: 'nowrap' as const }}>
                       {svc.latency_ms != null && <span style={{ color: svc.latency_ms < 50 ? 'var(--holo-green)' : svc.latency_ms < 200 ? 'var(--holo-amber)' : 'var(--holo-red)' }}>{svc.latency_ms}ms</span>}
@@ -1354,7 +1355,7 @@ export default function AdminPage() {
                 {importFile ? (
                   <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--holo-text-faint)', maxWidth: 320, overflow: 'hidden' }}>
                     <Archive size={12} style={{ flexShrink: 0 }} />
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>{importFile.name}</span>
+                    <Truncated as="span" text={importFile.name} />
                     <button
                       onClick={() => { setImportFile(null); if (importFileRef.current) importFileRef.current.value = '' }}
                       style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--holo-text-dim)', padding: '0 2px', lineHeight: 1, fontSize: 16, flexShrink: 0 }}
@@ -2208,7 +2209,7 @@ function MigrationTab() {
                   return (
                     <div key={job.id} style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr 1fr', padding: '11px 16px', borderBottom: '1px solid rgba(255,255,255,0.04)', fontSize: 13, color: 'var(--holo-text)', alignItems: 'center' }}>
                       <div>
-                        <div style={{ fontFamily: 'monospace', fontSize: 12, fontWeight: 600, color: 'var(--holo-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{job.sourceUrl}</div>
+                        <Truncated text={job.sourceUrl} style={{ fontFamily: 'monospace', fontSize: 12, fontWeight: 600, color: 'var(--holo-text)' }} />
                         {job.sourceUser && <div style={{ fontSize: 11, color: 'var(--holo-text-faint)', marginTop: 2 }}>{job.sourceUser}</div>}
                       </div>
                       <div>
