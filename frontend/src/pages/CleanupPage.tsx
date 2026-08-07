@@ -5,6 +5,7 @@ import { nexusApi, apiErrorMessage } from '@/api/client'
 import type { CleanupPreviewResponse } from '@/api/client'
 import { Select } from '../components/Select'
 import { HoloButton, HoloInput, HoloModal, HoloPill, Wizard } from '@/components/holo'
+import { Truncated } from '@/components/Truncated'
 
 interface CleanupScope {
   repositoryName?: string
@@ -232,9 +233,7 @@ function PreviewModal({ policyId, policyName, onClose, onRun }: {
               <tbody>
                 {data.assets.map((a, i) => (
                   <tr key={i}>
-                    <td style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--holo-b)', maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {a.path}
-                    </td>
+                    <Truncated as="td" text={a.path} style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--holo-b)', maxWidth: 240 }} />
                     <td style={{ fontSize: 12, color: 'var(--holo-text-dim)' }}>{a.repository}</td>
                     <td style={{ fontSize: 12, color: 'var(--holo-amber)', whiteSpace: 'nowrap' }}>{fmtBytes(a.sizeBytes)}</td>
                     <td>
@@ -836,9 +835,7 @@ export default function CleanupPage() {
 
                 {/* Name + meta */}
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--holo-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {p.name}
-                  </div>
+                  <Truncated text={p.name} style={{ fontWeight: 600, fontSize: 13, color: 'var(--holo-text)' }} />
                   <div style={{ display: 'flex', gap: 6, marginTop: 3, flexWrap: 'wrap', alignItems: 'center' }}>
                     {criteria.length > 0 ? criteria.map(c => (
                       <span key={c} style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, background: 'rgba(124,92,255,0.1)', color: 'var(--holo-a)', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{c}</span>
@@ -856,7 +853,7 @@ export default function CleanupPage() {
                       </span>
                     )}
                     {p.description && criteria.length > 0 && (
-                      <span style={{ fontSize: 11, color: 'var(--holo-text-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.description}</span>
+                      <Truncated as="span" text={p.description} style={{ fontSize: 11, color: 'var(--holo-text-faint)' }} />
                     )}
                   </div>
                 </div>

@@ -8,6 +8,7 @@ import { UsersTab } from './UsersPage'
 import { useAuthStore } from '@/store/authStore'
 import { Select } from '../components/Select'
 import { HoloButton, HoloInput, HoloModal, HoloTabs, HoloPill, HoloCard, HoloTabItem } from '@/components/holo'
+import { Truncated } from '@/components/Truncated'
 
 /* ─── Types ─────────────────────────────────────────────── */
 interface Role { id: string; name: string; description: string; privileges: string[]; roles: string[]; readOnly: boolean; source?: string }
@@ -693,7 +694,7 @@ function ScanTab() {
                       <td style={{ padding: '8px 8px 8px 0', color: 'var(--holo-text)' }}>{f.pkgName}</td>
                       <td style={{ padding: '8px 8px 8px 0', ...monoStyle, color: 'var(--holo-text-dim)' }}>{f.installedVersion}</td>
                       <td style={{ padding: '8px 8px 8px 0', ...monoStyle, color: '#22c55e' }}>{f.fixedVersion || '—'}</td>
-                      <td style={{ padding: '8px 0', color: 'var(--holo-text-dim)', maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>{f.title || '—'}</td>
+                      <Truncated as="td" text={f.title || '—'} style={{ padding: '8px 0', color: 'var(--holo-text-dim)', maxWidth: 280 }} />
                     </tr>
                   ))}
                 </tbody>

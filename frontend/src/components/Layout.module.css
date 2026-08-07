@@ -235,9 +235,8 @@
   font-size: 11.5px;
   font-weight: 600;
   color: var(--holo-text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  /* Clipping comes from <Truncated>, which also decides whether the value is
+     worth a tooltip. Re-adding it here would clip without ever revealing. */
   display: block;
 }
 

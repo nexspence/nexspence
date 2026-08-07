@@ -8,6 +8,7 @@ import { useAuthStore } from '@/store/authStore'
 import styles from './RepositoriesPage.module.css'
 import { Select } from '../components/Select'
 import { HoloButton, HoloInput, HoloPill, HoloModal, Wizard } from '@/components/holo'
+import { Truncated } from '@/components/Truncated'
 
 interface Repository {
   id: string
@@ -313,22 +314,21 @@ function RepoRow({
         {repo.format}
       </span>
       <div style={{ minWidth: 0 }}>
-        <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--holo-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>
-          {repo.name}
-        </div>
+        <Truncated text={repo.name} style={{ fontWeight: 600, fontSize: 13, color: 'var(--holo-text)' }} />
         {(repo.description || storeName) && (
-          <div style={{ fontSize: 11, color: 'var(--holo-text-faint)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>
-            {repo.description || (storeName ? `on ${storeName}` : '')}
-          </div>
+          <Truncated
+            text={repo.description || (storeName ? `on ${storeName}` : '')}
+            style={{ fontSize: 11, color: 'var(--holo-text-faint)', marginTop: 2 }}
+          />
         )}
         {repo.type === 'proxy' && cfgString(repo.proxyConfig, 'remote_url') && (
-          <div
-            title={cfgString(repo.proxyConfig, 'remote_url')}
-            style={{ fontSize: 11, color: 'var(--holo-text-faint)', fontFamily: 'ui-monospace,monospace', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}
+          <Truncated
+            text={cfgString(repo.proxyConfig, 'remote_url')}
+            style={{ fontSize: 11, color: 'var(--holo-text-faint)', fontFamily: 'ui-monospace,monospace', marginTop: 2 }}
           >
             <span aria-hidden="true">↗ </span>
             <span>{cfgString(repo.proxyConfig, 'remote_url')}</span>
-          </div>
+          </Truncated>
         )}
       </div>
       <HoloPill tone={repo.type === 'hosted' ? 'success' : repo.type === 'proxy' ? 'default' : 'warn'}>

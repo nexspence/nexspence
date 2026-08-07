@@ -4,6 +4,7 @@ import { FileText, RefreshCw, ChevronLeft, ChevronRight, Download } from 'lucide
 import { nexusApi } from '@/api/client'
 import { Select } from '../components/Select'
 import { HoloButton, HoloInput, HoloCard, HoloPill } from '@/components/holo'
+import { Truncated } from '@/components/Truncated'
 
 interface AuditEvent {
   id: number
@@ -208,7 +209,7 @@ export default function AuditPage() {
                     </td>
                     <td style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--holo-text-dim)', maxWidth: 320 }}>
                       {e.context?.path
-                        ? <span title={String(e.context.path)} style={{ display: 'inline-block', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{String(e.context.path)}</span>
+                        ? <Truncated as="span" text={String(e.context.path)} style={{ display: 'inline-block', maxWidth: '100%' }} />
                         : '—'}
                     </td>
                     <td style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--holo-text-dim)' }}>{e.remoteIp || '—'}</td>
