@@ -24,3 +24,4 @@ dependencies:
 # Links the OCI package (ghcr.io/nexspence/charts/nexspence) back to the repo on GitHub.
 annotations:
   org.opencontainers.image.source: https://github.com/nexspence/nexspence
+  org.opencontainers.image.licenses: AGPL-3.0-or-later

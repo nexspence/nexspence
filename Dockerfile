@@ -37,6 +37,10 @@ FROM alpine:3.24
 
 RUN apk add --no-cache ca-certificates tzdata wget
 
+# Re-declared: ARGs do not cross stage boundaries, and the OCI version label
+# below would otherwise be empty.
+ARG VERSION=dev
+
 # Trivy (optional CVE scans from Security UI / ScanService)
 ARG TRIVY_VERSION=0.70.0
 ARG TARGETARCH=amd64
@@ -56,6 +60,22 @@ COPY --from=builder /nexspence /app/nexspence
 COPY --from=builder /src/config.yaml.example /app/config.yaml
 COPY --from=builder /src/deploy/docker-entrypoint.sh /app/entrypoint.sh
 COPY --from=frontend-builder /frontend/dist /app/frontend/dist
+
+# AGPL-3.0 §4 requires a copy of the license to travel with the program, and an
+# image is a way the program is conveyed. Shipping it only in the git repository
+# does not cover someone who only ever pulls the image.
+COPY --from=builder /src/LICENSE /app/LICENSE
+COPY --from=builder /src/NOTICE /app/NOTICE
+
+# Standard OCI annotations: registries, `docker scout`, SBOM tooling and
+# corporate policy scanners read the licence from here, not from the repository.
+LABEL org.opencontainers.image.title="Nexspence" \
+      org.opencontainers.image.description="Universal artifact repository manager" \
+      org.opencontainers.image.licenses="AGPL-3.0-or-later" \
+      org.opencontainers.image.source="https://github.com/nexspence/nexspence" \
+      org.opencontainers.image.url="https://nexspence.com" \
+      org.opencontainers.image.documentation="https://github.com/nexspence/nexspence#readme" \
+      org.opencontainers.image.version="${VERSION}"
 
 # Run as a non-root user (uid/gid 1000). Pre-create the dirs the app and the
 # bundled trivy write to (default blob path /app/data/blobs, trivy cache) and

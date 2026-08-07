@@ -35,7 +35,13 @@ archives:
     format_overrides:
       - goos: windows
         formats: [zip]
+    # Setting `files` replaces goreleaser's defaults, which is how LICENSE and
+    # README silently stopped shipping in the binary archives. AGPL-3.0 §4 wants
+    # the licence to travel with the program, so both are listed explicitly.
     files:
+      - LICENSE
+      - NOTICE
+      - README.md
       - config.yaml.example
       - packaging/INSTALL.md
       - packaging/systemd/nexspence.service
@@ -52,12 +58,19 @@ nfpms:
     homepage: https://nexspence.com
     maintainer: Nexspence <noreply@nexspence.com>
     description: Free, open-source universal artifact repository manager.
-    license: AGPL-3.0
+    license: AGPL-3.0-or-later
     formats:
       - deb
       - rpm
     bindir: /usr/bin
     contents:
+      # Debian policy expects the licence at /usr/share/doc/<pkg>/copyright, and
+      # rpm lint looks in the same place. Without it the package declares a
+      # licence in its metadata that it does not actually carry.
+      - src: LICENSE
+        dst: /usr/share/doc/nexspence/copyright
+      - src: NOTICE
+        dst: /usr/share/doc/nexspence/NOTICE
       - src: config.yaml.example
         dst: /etc/nexspence/config.yaml
         type: "config|noreplace"

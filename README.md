@@ -10,7 +10,7 @@
   ![TypeScript](https://img.shields.io/badge/TypeScript-6-3178C6?style=flat-square&logo=typescript&logoColor=white)
   ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16+-4169E1?style=flat-square&logo=postgresql&logoColor=white)
   ![Docker](https://img.shields.io/badge/Docker-ready-2496ED?style=flat-square&logo=docker&logoColor=white)
-  ![License](https://img.shields.io/badge/License-AGPLv3-22c55e?style=flat-square)
+  [![License: AGPL v3 or later](https://img.shields.io/badge/License-AGPL--3.0--or--later-22c55e?style=flat-square)](LICENSE)
   ![Lint](https://img.shields.io/badge/lint-golangci--lint%20v2-22c55e?style=flat-square&logo=go&logoColor=white)
   ![Tests](https://img.shields.io/badge/tests-2209%20passing-22c55e?style=flat-square)
 
@@ -353,7 +353,21 @@ cd frontend && npm run lint
 
 ## License
 
-AGPLv3 — see [LICENSE](LICENSE)
+`AGPL-3.0-or-later` — the full text is in [LICENSE](LICENSE), the copyright and
+third-party notices in [NOTICE](NOTICE).
+
+AGPL rather than a permissive licence for one reason: Nexspence is a network
+service, and §13 is what keeps a hosted fork from being closed off. Running it
+inside your company, however you like, needs nothing from you — the obligation
+only starts if you offer a modified Nexspence to others over a network, and then
+it is to publish those modifications.
+
+Contributions are accepted under the same licence, with a DCO sign-off and no
+CLA — see [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Contact
+
+Telegram: [@skensel](https://t.me/skensel)
 
 ---
 
