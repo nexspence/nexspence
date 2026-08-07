@@ -24,7 +24,7 @@
     "pretty-bytes": "^7.1.1",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "react-router-dom": "^7.18.1",
+    "react-router-dom": "^7.18.2",
     "zustand": "^5.0.12"
   },
   "devDependencies": {
