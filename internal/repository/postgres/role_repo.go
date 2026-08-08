@@ -60,6 +60,17 @@ func (r *roleRepo) Get(ctx context.Context, id string) (*domain.Role, error) {
 	return ro, err
 }
 
+func (r *roleRepo) GetByName(ctx context.Context, name string) (*domain.Role, error) {
+	row := r.db.QueryRow(ctx, `
+		SELECT id, name, description, source, builtin, created_at, updated_at
+		FROM roles WHERE name = $1`, name)
+	ro, err := scanRole(row)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, repository.ErrNotFound
+	}
+	return ro, err
+}
+
 func (r *roleRepo) Create(ctx context.Context, ro *domain.Role) error {
 	return r.db.QueryRow(ctx, `
 		INSERT INTO roles (name, description, source, builtin)

@@ -22,7 +22,8 @@ func NewUserRepo(db *pgxpool.Pool) *userRepo {
 
 const userSelect = `
 	SELECT id, username, COALESCE(email,''), COALESCE(password_hash,''), first_name, last_name,
-	       status, source, COALESCE(external_id,''), last_login, tokens_valid_after, created_at, updated_at
+	       status, source, COALESCE(external_id,''), must_reset_password,
+	       last_login, tokens_valid_after, created_at, updated_at
 	FROM users`
 
 func (r *userRepo) List(ctx context.Context, source string) ([]domain.User, error) {
@@ -83,11 +84,12 @@ func (r *userRepo) GetByID(ctx context.Context, id string) (*domain.User, error)
 
 func (r *userRepo) Create(ctx context.Context, u *domain.User) error {
 	return r.db.QueryRow(ctx, `
-		INSERT INTO users (username, email, password_hash, first_name, last_name, status, source)
-		VALUES ($1,$2,$3,$4,$5,$6,$7)
+		INSERT INTO users (username, email, password_hash, first_name, last_name, status, source,
+		                   must_reset_password)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
 		RETURNING id, created_at, updated_at`,
 		u.Username, nilIfEmpty(u.Email), nilIfEmpty(u.PasswordHash),
-		u.FirstName, u.LastName, u.Status, u.Source,
+		u.FirstName, u.LastName, u.Status, u.Source, u.MustResetPassword,
 	).Scan(&u.ID, &u.CreatedAt, &u.UpdatedAt)
 }
 
@@ -100,8 +102,12 @@ func (r *userRepo) Update(ctx context.Context, u *domain.User) error {
 	return err
 }
 
+// UpdatePassword sets a new hash and clears must_reset_password: choosing a
+// password is what the flag was asking for, so the prompt retires with it.
 func (r *userRepo) UpdatePassword(ctx context.Context, username, hash string) error {
-	_, err := r.db.Exec(ctx, `UPDATE users SET password_hash=$1, updated_at=NOW() WHERE username=$2`, hash, username)
+	_, err := r.db.Exec(ctx, `
+		UPDATE users SET password_hash=$1, must_reset_password=FALSE, updated_at=NOW()
+		WHERE username=$2`, hash, username)
 	return err
 }
 
@@ -152,7 +158,7 @@ func scanUser(row scanner) (*domain.User, error) {
 	err := row.Scan(
 		&u.ID, &u.Username, &u.Email, &u.PasswordHash,
 		&u.FirstName, &u.LastName, &u.Status, &u.Source,
-		&u.ExternalID, &u.LastLogin, &u.TokensValidAfter,
+		&u.ExternalID, &u.MustResetPassword, &u.LastLogin, &u.TokensValidAfter,
 		&u.CreatedAt, &u.UpdatedAt,
 	)
 	if err != nil {
