@@ -8,6 +8,16 @@ on:
       - '.github/workflows/deploy-website.yml'
   workflow_dispatch: {}
 
+# The deploy is not atomic: it removes the running container and then starts a
+# new one under the same name. Two pushes landing close together raced through
+# that gap and the second one died with "container name already in use", leaving
+# the site on whichever image won — not on the newer commit. Serialising the
+# workflow closes the gap. The queue is not cancelled: every push should reach
+# the droplet, and the last one to arrive is the one that stays.
+concurrency:
+  group: deploy-website
+  cancel-in-progress: false
+
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: nexspence/nexspence-website
