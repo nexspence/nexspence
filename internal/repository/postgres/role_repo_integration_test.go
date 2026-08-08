@@ -660,3 +660,43 @@ func TestRoleRepo_Delete_CascadesRolePrivileges(t *testing.T) {
 		t.Errorf("role_privileges not cascade-deleted: %v", ids)
 	}
 }
+
+// ── GetByName ─────────────────────────────────────────────────────────────────
+
+func TestRoleRepo_GetByName_HappyPath(t *testing.T) {
+	pool := pgtest.Pool(t)
+	pgtest.Truncate(t, pool, "roles", "privileges", "content_selectors")
+	ctx := context.Background()
+	repo := NewRoleRepo(pool)
+
+	created := makeRole("getbyname_dev", "migrated")
+	if err := repo.Create(ctx, created); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	got, err := repo.GetByName(ctx, "getbyname_dev")
+	if err != nil {
+		t.Fatalf("GetByName: %v", err)
+	}
+	if got.ID != created.ID || got.Name != "getbyname_dev" {
+		t.Fatalf("GetByName mismatch: %+v", got)
+	}
+	if got.Description != created.Description {
+		t.Fatalf("description not round-tripped: %q", got.Description)
+	}
+}
+
+func TestRoleRepo_GetByName_NotFound_ReturnsErrNotFound(t *testing.T) {
+	pool := pgtest.Pool(t)
+	pgtest.Truncate(t, pool, "roles", "privileges", "content_selectors")
+	ctx := context.Background()
+	repo := NewRoleRepo(pool)
+
+	got, err := repo.GetByName(ctx, "no_such_role")
+	if !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("GetByName(missing): want ErrNotFound, got %v", err)
+	}
+	if got != nil {
+		t.Fatalf("GetByName(missing): expected nil, got %+v", got)
+	}
+}

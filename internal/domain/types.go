@@ -377,7 +377,11 @@ type User struct {
 	Source       UserSource `json:"source"`
 	ExternalID   string     `json:"-"`
 	Roles        []string   `json:"roles"` // role names
-	LastLogin    *time.Time `json:"lastLogin,omitempty"`
+	// MustResetPassword marks an account whose password was set for it rather
+	// than by it — a migrated Nexus user given a random temporary password.
+	// The account logs in normally; the flag drives the prompt to change it.
+	MustResetPassword bool       `json:"mustResetPassword,omitempty"`
+	LastLogin         *time.Time `json:"lastLogin,omitempty"`
 	// TokensValidAfter is the cutoff for JWT validity: a token whose `iat` is
 	// before this instant is rejected. Bumped on disable, password change, and
 	// role change so previously-issued JWTs are revoked. Zero value (distant

@@ -221,20 +221,31 @@ components:
 
     MigrationJob:
       type: object
+      description: |
+        A Nexus → Nexspence migration. The source password is stored sealed and
+        is never part of this response.
       properties:
-        id:             { type: string }
-        sourceUrl:      { type: string }
-        status:         { type: string, enum: [pending, running, paused, done, error] }
-        totalRepos:     { type: integer }
-        doneRepos:      { type: integer }
-        totalAssets:    { type: integer }
-        doneAssets:     { type: integer }
-        totalBytes:     { type: integer }
-        doneBytes:      { type: integer }
-        errorCount:     { type: integer }
-        lastError:      { type: string, nullable: true }
-        startedAt:      { type: string, format: date-time, nullable: true }
-        finishedAt:     { type: string, format: date-time, nullable: true }
+        id:                  { type: string }
+        sourceUrl:           { type: string }
+        sourceUser:          { type: string }
+        status:              { type: string, enum: [pending, running, paused, done, error] }
+        migrateRepos:        { type: boolean }
+        migrateUsers:        { type: boolean }
+        migrateBlobs:        { type: boolean }
+        migratePolicies:     { type: boolean, description: "Legacy umbrella; the default the three security scopes fall back to." }
+        migratePrivileges:   { type: boolean }
+        migrateRoles:        { type: boolean }
+        migrateRoutingRules: { type: boolean }
+        repositoriesTotal:   { type: integer }
+        repositoriesDone:    { type: integer }
+        assetsTotal:         { type: integer }
+        assetsDone:          { type: integer }
+        errorCount:          { type: integer, description: "Per-item failures; a run continues past them." }
+        lastError:           { type: string, nullable: true }
+        startedAt:           { type: string, format: date-time, nullable: true }
+        finishedAt:          { type: string, format: date-time, nullable: true }
+        createdAt:           { type: string, format: date-time }
+        updatedAt:           { type: string, format: date-time }
 
 security:
   - basicAuth: []
@@ -1077,37 +1088,73 @@ paths:
                 items: { $ref: '#/components/schemas/MigrationJob' }
     post:
       tags: [Migration]
-      summary: Start a new migration from Nexus source
+      summary: Create a migration from a Nexus source and start it
       operationId: createMigrationJob
       description: |
-        Connects to a live Nexus/Pro instance and pulls:
-        - Repository definitions
-        - User accounts and roles
-        - Cleanup policies
-        - Artifact metadata and blobs (streamed)
+        Creates the job and starts running it immediately. Each stage is gated
+        by its own scope flag and runs in this order:
+
+        1. Repositories — hosted, then proxy, then group, so a group's members
+           exist before the group naming them.
+        2. Artifacts — hosted repositories only; a proxy re-fetches from its own
+           upstream, so its cache is not copied. For a registry repository
+           (docker/oci) the blobs are read out of each manifest rather than out
+           of the component listing, which reports only the manifest and names
+           blobs under a placeholder image; blobs are stored before the manifest
+           that references them, and a tagged manifest also gets its digest
+           alias, so a migrated image is pullable.
+        3. Privileges, then roles (nested roles are flattened into the parent),
+           then users, then routing rules.
+
+        Anything already present is skipped, which is what makes a resumed or
+        repeated job cheap rather than destructive. A per-item failure is counted
+        in `errorCount` and named in `lastError`; the run continues.
+
+        Migrated local users get a random temporary password and
+        `mustResetPassword`; externally-authenticated users get no local
+        credential.
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [sourceUrl, sourceUsername, sourcePassword]
+              required: [sourceUrl]
               properties:
-                sourceUrl:        { type: string, example: "https://nexus.example.com" }
-                sourceUsername:   { type: string }
-                sourcePassword:   { type: string }
-                migrateRepos:     { type: boolean, default: true }
-                migrateUsers:     { type: boolean, default: true }
-                migrateBlobs:     { type: boolean, default: true }
-                migratePolicies:  { type: boolean, default: true }
-                repoFilter:       { type: array, items: { type: string }, description: "Only migrate these repos. Empty = all." }
-                concurrency:      { type: integer, default: 4, description: "Parallel blob download workers" }
+                sourceUrl:
+                  type: string
+                  example: "https://nexus.example.com"
+                  description: Absolute http(s) URL of the source Nexus.
+                credentials:
+                  type: object
+                  properties:
+                    username: { type: string }
+                    password: { type: string, description: "Stored sealed; never returned." }
+                options:
+                  type: object
+                  properties:
+                    concurrency: { type: integer, default: 4 }
+                scope:
+                  type: object
+                  description: |
+                    Every flag defaults to true. `migratePolicies` is the older,
+                    coarser switch and is the default the three security scopes
+                    fall back to when a request does not name them.
+                  properties:
+                    migrateRepos:        { type: boolean, default: true }
+                    migrateBlobs:        { type: boolean, default: true }
+                    migrateUsers:        { type: boolean, default: true }
+                    migratePolicies:     { type: boolean, default: true }
+                    migratePrivileges:   { type: boolean }
+                    migrateRoles:        { type: boolean }
+                    migrateRoutingRules: { type: boolean }
       responses:
         '201':
-          description: Job created
+          description: Job created and started
           content:
             application/json:
               schema: { $ref: '#/components/schemas/MigrationJob' }
+        '400': { description: Malformed body, or a sourceUrl that is not an absolute http(s) URL }
 
   /api/v1/migration/jobs/{id}:
     get:
@@ -1117,97 +1164,90 @@ paths:
       parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
       responses:
         '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/MigrationJob' } } } }
+        '404': { description: No such job }
+    delete:
+      tags: [Migration]
+      summary: Delete a migration job
+      operationId: deleteMigrationJob
+      description: Stops the run if one is in flight, then removes the job record.
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        '204': { description: Deleted }
+        '404': { description: No such job }
 
   /api/v1/migration/jobs/{id}/pause:
     post:
       tags: [Migration]
-      summary: Pause migration (resumes from last cursor)
+      summary: Pause a migration
       operationId: pauseMigrationJob
+      description: |
+        Stops the run and parks the job where it stands. Progress already
+        recorded is kept, and resuming picks up only the work that is left.
       parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
       responses:
         '204': { description: Paused }
+        '400': { description: The job has already finished }
+        '404': { description: No such job }
 
   /api/v1/migration/jobs/{id}/resume:
     post:
       tags: [Migration]
-      summary: Resume paused migration
+      summary: Resume a paused migration
       operationId: resumeMigrationJob
+      description: Starts a fresh pass that skips everything already migrated.
       parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
       responses:
         '204': { description: Resumed }
-
-  /api/v1/migration/jobs/{id}/cancel:
-    post:
-      tags: [Migration]
-      summary: Cancel migration job
-      operationId: cancelMigrationJob
-      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
-      responses:
-        '204': { description: Cancelled }
-
-  /api/v1/migration/jobs/{id}/errors:
-    get:
-      tags: [Migration]
-      summary: Get migration errors log
-      operationId: getMigrationErrors
-      parameters:
-        - { name: id, in: path, required: true, schema: { type: string } }
-        - { name: limit, in: query, schema: { type: integer, default: 100 } }
-      responses:
-        '200':
-          description: Error list
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  type: object
-                  properties:
-                    time:       { type: string, format: date-time }
-                    repository: { type: string }
-                    path:       { type: string }
-                    error:      { type: string }
+        '404': { description: No such job }
 
   /api/v1/migration/preview:
     post:
       tags: [Migration]
-      summary: Preview what would be migrated (dry-run)
+      summary: Test the connection to a Nexus source
       operationId: previewMigration
+      description: |
+        Reads the repository list from the source instance. Creates nothing, so
+        it is safe to call as often as an operator edits the form.
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [sourceUrl, sourceUsername, sourcePassword]
+              required: [sourceUrl]
               properties:
-                sourceUrl:      { type: string }
-                sourceUsername: { type: string }
-                sourcePassword: { type: string }
+                sourceUrl: { type: string }
+                username:  { type: string }
+                password:  { type: string }
       responses:
         '200':
-          description: Migration preview
+          description: The source answered
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  repositories:  { type: array, items: { $ref: '#/components/schemas/Repository' } }
-                  userCount:     { type: integer }
-                  roleCount:     { type: integer }
-                  totalAssets:   { type: integer }
-                  totalBytes:    { type: integer }
-                  formatBreakdown:
-                    type: object
-                    additionalProperties: { type: integer }
-                  conflicts:
+                  reachable: { type: boolean }
+                  repoCount: { type: integer }
+                  repos:
                     type: array
                     items:
                       type: object
                       properties:
-                        type:    { type: string }
-                        name:    { type: string }
-                        message: { type: string }
+                        name:   { type: string }
+                        format: { type: string }
+                        type:   { type: string }
+        '400': { description: Malformed body }
+        '422': { description: sourceUrl missing, or not an absolute http(s) URL }
+        '502':
+          description: The source could not be reached or returned an error; `error` carries the reason.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  reachable: { type: boolean, example: false }
+                  error:     { type: string }
 
   # ── System info ──────────────────────────────────────────────
 

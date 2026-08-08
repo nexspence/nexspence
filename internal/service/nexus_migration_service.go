@@ -1,0 +1,1235 @@
+package service
+
+import (
+	"bytes"
+	"context"
+	"crypto/rand"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"net/url"
+	"regexp"
+	"sort"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/nexspence-oss/nexspence/internal/domain"
+	"github.com/nexspence-oss/nexspence/internal/formats"
+	"github.com/nexspence-oss/nexspence/internal/formats/base"
+	"github.com/nexspence-oss/nexspence/internal/logger"
+	"github.com/nexspence-oss/nexspence/internal/netguard"
+	"github.com/nexspence-oss/nexspence/internal/nexusclient"
+	"github.com/nexspence-oss/nexspence/internal/repository"
+)
+
+// errMigrationPaused unwinds a run that an operator parked. It is not a
+// failure: the job keeps its progress and can be resumed.
+var errMigrationPaused = errors.New("migration paused")
+
+const (
+	// migrationHTTPTimeout bounds a single request to the source Nexus. Asset
+	// downloads share it, so it is generous rather than snappy.
+	migrationHTTPTimeout = 5 * time.Minute
+	// previewTimeout bounds the read-only reachability check, which runs inside
+	// an operator's request and must answer quickly either way.
+	previewTimeout = 10 * time.Second
+)
+
+// nexusFormats maps a Nexus repository format onto the Nexspence format that
+// speaks the same protocol. A format absent from this map has no handler here,
+// so its repository is reported and skipped rather than created half-working.
+var nexusFormats = map[string]domain.RepoFormat{
+	"maven2":    domain.FormatMaven2,
+	"npm":       domain.FormatNPM,
+	"docker":    domain.FormatDocker,
+	"pypi":      domain.FormatPyPI,
+	"go":        domain.FormatGo,
+	"nuget":     domain.FormatNuGet,
+	"helm":      domain.FormatHelm,
+	"raw":       domain.FormatRaw,
+	"apt":       domain.FormatApt,
+	"yum":       domain.FormatYum,
+	"cargo":     "cargo",
+	"conan":     "conan",
+	"conda":     "conda",
+	"terraform": "terraform",
+}
+
+// nexusPrivilegeTypes maps Nexus privilege types onto the Nexspence ones. The
+// two products share the model, so this is a rename rather than a translation.
+var nexusPrivilegeTypes = map[string]domain.PrivilegeType{
+	"wildcard":                    domain.PrivilegeTypeWildcard,
+	"repository-view":             domain.PrivilegeTypeRepositoryView,
+	"repository-admin":            domain.PrivilegeTypeRepositoryAdmin,
+	"application":                 domain.PrivilegeTypeApplication,
+	"script":                      domain.PrivilegeTypeScript,
+	"repository-content-selector": domain.PrivilegeTypeRepositoryContentSelector,
+}
+
+// MigrationUserStore is the slice of user management a migration needs:
+// look an account up, and create one with a password. *UserService satisfies it.
+type MigrationUserStore interface {
+	Get(ctx context.Context, username string) (*domain.User, error)
+	Create(ctx context.Context, u *domain.User, plainPassword string) error
+}
+
+// NexusMigrationConfig holds the collaborators of a NexusMigrationService.
+type NexusMigrationConfig struct {
+	Jobs         repository.MigrationRepo
+	Repos        *RepositoryService
+	Users        MigrationUserStore
+	Roles        repository.RoleRepo
+	Privileges   repository.PrivilegeRepo
+	RoutingRules repository.RoutingRuleRepo
+	// Deps is the storage waist every format handler writes through; the
+	// migration ingests assets the same way an upload does.
+	Deps formats.Deps
+	// JWTSecret and EncryptionKey seal the stored source credential, exactly as
+	// they do for replication targets.
+	JWTSecret     string
+	EncryptionKey []byte
+	Log           logger.Logger
+	// HTTPClientFor builds the client used to reach the source Nexus. Defaults
+	// to the SSRF-guarded netguard client; tests override it for loopback.
+	HTTPClientFor func(timeout time.Duration) *http.Client
+}
+
+// NexusMigrationService runs Nexus → Nexspence migration jobs: it reads a
+// source instance over its REST API and re-creates its repositories, artifacts,
+// security model and routing rules here.
+//
+// One job runs in one goroutine. Pausing cancels it; resuming starts a fresh
+// pass that skips whatever is already present, which is also what makes a job
+// survive a process restart — ResumeAll re-attaches to jobs left running.
+type NexusMigrationService struct {
+	jobs         repository.MigrationRepo
+	repos        *RepositoryService
+	users        MigrationUserStore
+	roles        repository.RoleRepo
+	privileges   repository.PrivilegeRepo
+	routingRules repository.RoutingRuleRepo
+	deps         formats.Deps
+	log          logger.Logger
+
+	primaryKey []byte
+	legacyKey  []byte
+
+	newClient func(timeout time.Duration) *http.Client
+
+	mu      sync.Mutex
+	cancels map[string]context.CancelFunc
+}
+
+// NewNexusMigrationService constructs the migration runner.
+func NewNexusMigrationService(cfg NexusMigrationConfig) *NexusMigrationService {
+	s := &NexusMigrationService{
+		jobs:         cfg.Jobs,
+		repos:        cfg.Repos,
+		users:        cfg.Users,
+		roles:        cfg.Roles,
+		privileges:   cfg.Privileges,
+		routingRules: cfg.RoutingRules,
+		deps:         cfg.Deps,
+		log:          cfg.Log,
+		newClient:    cfg.HTTPClientFor,
+		cancels:      make(map[string]context.CancelFunc),
+	}
+	if s.newClient == nil {
+		s.newClient = netguard.Client
+	}
+	legacy := deriveKey(cfg.JWTSecret)
+	if len(cfg.EncryptionKey) == 32 {
+		s.primaryKey = cfg.EncryptionKey
+		s.legacyKey = legacy
+	} else {
+		s.primaryKey = legacy
+	}
+	return s
+}
+
+// SealPassword encrypts a Nexus password for storage on the job row.
+func (s *NexusMigrationService) SealPassword(plain string) string {
+	if plain == "" {
+		return ""
+	}
+	sealed, err := sealWithKey(s.primaryKey, plain)
+	if err != nil {
+		return ""
+	}
+	return sealed
+}
+
+// OpenPassword decrypts a stored source credential, falling back to the legacy
+// jwt-derived key for rows sealed before a dedicated key was configured.
+func (s *NexusMigrationService) OpenPassword(sealed string) (string, error) {
+	if sealed == "" {
+		return "", nil
+	}
+	plain, err := openWithKey(s.primaryKey, sealed)
+	if err == nil {
+		return plain, nil
+	}
+	if s.legacyKey != nil {
+		if lp, lerr := openWithKey(s.legacyKey, sealed); lerr == nil {
+			return lp, nil
+		}
+	}
+	return "", err
+}
+
+// ── lifecycle ───────────────────────────────────────────────────────────────
+
+// Create validates the job, seals its credential, persists it and starts the
+// run. The job row exists before the run begins, so a source that turns out to
+// be unreachable is reported on the job rather than swallowed by the request.
+func (s *NexusMigrationService) Create(ctx context.Context, job *domain.MigrationJob, password string) error {
+	if err := validateNexusURL(job.SourceURL); err != nil {
+		return err
+	}
+	job.SourceURL = strings.TrimRight(strings.TrimSpace(job.SourceURL), "/")
+	job.Status = domain.MigrationPending
+	job.SourcePassword = s.SealPassword(password)
+
+	if err := s.jobs.Create(ctx, job); err != nil {
+		return err
+	}
+	s.launch(job.ID)
+	return nil
+}
+
+// Pause stops the run and parks the job. A job that is not running is parked
+// where it stands, so an operator can stop one before it ever starts.
+func (s *NexusMigrationService) Pause(ctx context.Context, id string) error {
+	job, err := s.jobs.Get(ctx, id)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	cancel, running := s.cancels[id]
+	s.mu.Unlock()
+	if running {
+		// The runner writes the paused status when it unwinds, so progress
+		// recorded between here and there is not lost.
+		cancel()
+		return nil
+	}
+	if !job.IsActive() {
+		return fmt.Errorf("%w: migration job is already %s", ErrInvalidInput, job.Status)
+	}
+	return s.jobs.UpdateStatus(ctx, id, domain.MigrationPaused)
+}
+
+// Resume starts a fresh pass over the job. Everything already migrated is
+// skipped, so resuming costs only the work that is left.
+func (s *NexusMigrationService) Resume(ctx context.Context, id string) error {
+	if _, err := s.jobs.Get(ctx, id); err != nil {
+		return err
+	}
+	s.launch(id)
+	return nil
+}
+
+// ResumeAll re-attaches to every job that was still active when the process
+// stopped. Called once on startup: without it a migration interrupted by a
+// restart would sit in "running" forever with nothing behind it.
+func (s *NexusMigrationService) ResumeAll(ctx context.Context) error {
+	active, err := s.jobs.ListActive(ctx)
+	if err != nil {
+		return err
+	}
+	for _, job := range active {
+		s.launch(job.ID)
+	}
+	return nil
+}
+
+// launch starts the runner unless this process is already running the job.
+func (s *NexusMigrationService) launch(id string) {
+	s.mu.Lock()
+	if _, busy := s.cancels[id]; busy {
+		s.mu.Unlock()
+		return
+	}
+	//nolint:gosec // the run must outlive the request; cancel is stored below and always invoked in run's defer
+	ctx, cancel := context.WithCancel(context.Background())
+	s.cancels[id] = cancel
+	s.mu.Unlock()
+
+	go s.run(ctx, id)
+}
+
+// ── preview ─────────────────────────────────────────────────────────────────
+
+// NexusPreviewRepo is one repository as reported by a preflight check.
+type NexusPreviewRepo struct {
+	Name   string `json:"name"`
+	Format string `json:"format"`
+	Type   string `json:"type"`
+}
+
+// NexusPreview is the result of a preflight "can we reach this Nexus" check.
+type NexusPreview struct {
+	Reachable bool               `json:"reachable"`
+	RepoCount int                `json:"repoCount"`
+	Repos     []NexusPreviewRepo `json:"repos"`
+}
+
+// Preview reads the repository list from a Nexus instance without creating
+// anything. It is the "Test connection" path: pure read, safe to repeat.
+func (s *NexusMigrationService) Preview(ctx context.Context, sourceURL, username, password string) (*NexusPreview, error) {
+	if err := validateNexusURL(sourceURL); err != nil {
+		return nil, err
+	}
+	client := s.clientFor(sourceURL, username, password, previewTimeout)
+	repos, err := client.ListRepositories(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := &NexusPreview{Reachable: true, RepoCount: len(repos), Repos: make([]NexusPreviewRepo, 0, len(repos))}
+	for _, r := range repos {
+		out.Repos = append(out.Repos, NexusPreviewRepo{Name: r.Name, Format: r.Format, Type: r.Type})
+	}
+	return out, nil
+}
+
+func (s *NexusMigrationService) clientFor(sourceURL, username, password string, timeout time.Duration) *nexusclient.Client {
+	return nexusclient.New(sourceURL, username, password, timeout).
+		WithHTTPClient(s.newClient(timeout))
+}
+
+func validateNexusURL(raw string) error {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return fmt.Errorf("%w: sourceUrl is required", ErrInvalidInput)
+	}
+	u, err := url.Parse(trimmed)
+	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+		return fmt.Errorf("%w: sourceUrl must be an absolute http(s) URL", ErrInvalidInput)
+	}
+	return nil
+}
+
+// ── the run ─────────────────────────────────────────────────────────────────
+
+// progress accumulates what a run has done and writes it through to the job row.
+// Every counter update goes through here, so the numbers an operator watches and
+// the numbers the runner acts on are the same numbers.
+type progress struct {
+	jobs  repository.MigrationRepo
+	jobID string
+
+	totalRepos  int
+	doneRepos   int
+	totalAssets int64
+	doneAssets  int64
+	errorCount  int
+	lastError   *string
+}
+
+func (p *progress) setTotals(ctx context.Context, totalRepos int, totalAssets int64) {
+	p.totalRepos, p.totalAssets = totalRepos, totalAssets
+	_ = p.jobs.SetTotals(ctx, p.jobID, totalRepos, totalAssets)
+}
+
+func (p *progress) flush(ctx context.Context) {
+	_ = p.jobs.UpdateProgress(ctx, p.jobID, p.doneRepos, p.doneAssets, p.errorCount, p.lastError)
+}
+
+// fail records one non-fatal problem. A migration copies thousands of
+// independent things; one that will not come across is counted and named, and
+// the rest of the run continues.
+func (p *progress) fail(ctx context.Context, format string, args ...any) {
+	msg := fmt.Sprintf(format, args...)
+	p.errorCount++
+	p.lastError = &msg
+	p.flush(ctx)
+}
+
+func (s *NexusMigrationService) run(ctx context.Context, jobID string) {
+	defer func() {
+		s.mu.Lock()
+		if cancel, ok := s.cancels[jobID]; ok {
+			cancel()
+			delete(s.cancels, jobID)
+		}
+		s.mu.Unlock()
+	}()
+
+	// Progress and status are written on a background context: a paused or
+	// canceled run still has to record where it stopped.
+	bg := context.Background()
+
+	job, err := s.jobs.Get(bg, jobID)
+	if err != nil {
+		s.logf("migration: cannot load job %s: %v", jobID, err)
+		return
+	}
+	password, err := s.OpenPassword(job.SourcePassword)
+	if err != nil {
+		s.finish(bg, jobID, domain.MigrationError,
+			fmt.Sprintf("cannot decrypt the stored Nexus credential: %v", err))
+		return
+	}
+	if err := s.jobs.SetStarted(bg, jobID, time.Now().UTC()); err != nil {
+		s.logf("migration: cannot mark job %s started: %v", jobID, err)
+		return
+	}
+
+	client := s.clientFor(job.SourceURL, job.SourceUser, password, migrationHTTPTimeout)
+	p := &progress{jobs: s.jobs, jobID: jobID}
+
+	runErr := s.runStages(ctx, client, job, p)
+	switch {
+	case errors.Is(runErr, errMigrationPaused):
+		_ = s.jobs.UpdateStatus(bg, jobID, domain.MigrationPaused)
+	case runErr != nil:
+		s.finish(bg, jobID, domain.MigrationError, runErr.Error())
+	default:
+		_ = s.jobs.FinishJob(bg, jobID, domain.MigrationDone, nil)
+	}
+}
+
+func (s *NexusMigrationService) finish(ctx context.Context, jobID string, status domain.MigrationJobStatus, msg string) {
+	_ = s.jobs.FinishJob(ctx, jobID, status, &msg)
+}
+
+// runStages walks the fixed sequence. Each stage is gated by its own scope
+// flag, and each returns an error only when it cannot proceed at all —
+// per-item problems are counted on the job instead.
+func (s *NexusMigrationService) runStages(ctx context.Context, client *nexusclient.Client,
+	job *domain.MigrationJob, p *progress,
+) error {
+	bg := context.Background()
+
+	if job.MigrateRepos {
+		hosted, err := s.migrateRepositories(ctx, client, p)
+		if err != nil {
+			return err
+		}
+		if job.MigrateBlobs {
+			if err := s.migrateAssets(ctx, client, hosted, p); err != nil {
+				return err
+			}
+		}
+	}
+
+	// Privileges first: a role references them by name, so they must exist
+	// before the roles that name them are wired up.
+	if job.MigratePrivileges {
+		if err := s.migratePrivileges(ctx, client, p); err != nil {
+			return err
+		}
+	}
+	if job.MigrateRoles {
+		if err := s.migrateRoles(ctx, client, p); err != nil {
+			return err
+		}
+	}
+	if job.MigrateUsers {
+		if err := s.migrateUsers(ctx, client, p); err != nil {
+			return err
+		}
+	}
+	if job.MigrateRoutingRules {
+		if err := s.migrateRoutingRules(ctx, client, p); err != nil {
+			return err
+		}
+	}
+	p.flush(bg)
+	return checkPaused(ctx)
+}
+
+func checkPaused(ctx context.Context) error {
+	if ctx.Err() != nil {
+		return errMigrationPaused
+	}
+	return nil
+}
+
+// ── repositories ────────────────────────────────────────────────────────────
+
+// migrateRepositories re-creates the source repositories here and returns the
+// hosted ones, which are the only ones holding artifacts worth transferring.
+func (s *NexusMigrationService) migrateRepositories(ctx context.Context, client *nexusclient.Client,
+	p *progress,
+) ([]nexusclient.Repository, error) {
+	bg := context.Background()
+
+	source, err := client.ListRepositoriesWithConfig(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list repositories on the source Nexus: %w", err)
+	}
+	p.setTotals(bg, len(source), p.totalAssets)
+
+	// hosted → proxy → group, so a group's members already exist when the
+	// group naming them is created.
+	ordered := make([]nexusclient.Repository, 0, len(source))
+	for _, want := range []string{"hosted", "proxy", "group"} {
+		for _, r := range source {
+			if r.Type == want {
+				ordered = append(ordered, r)
+			}
+		}
+	}
+
+	var hosted []nexusclient.Repository
+	for _, src := range ordered {
+		if err := checkPaused(ctx); err != nil {
+			return nil, err
+		}
+		format, ok := nexusFormats[src.Format]
+		if !ok {
+			p.fail(bg, "repository %q: format %q has no Nexspence equivalent", src.Name, src.Format)
+			continue
+		}
+		if err := s.ensureRepository(ctx, src, format, p); err != nil {
+			p.fail(bg, "repository %q: %v", src.Name, err)
+			continue
+		}
+		p.doneRepos++
+		p.flush(bg)
+		if src.Type == "hosted" {
+			hosted = append(hosted, src)
+		}
+	}
+	return hosted, nil
+}
+
+// ensureRepository creates the repository unless one of that name is already
+// here. An existing repository is left exactly as it is: a re-run must not
+// rewrite configuration an operator has since changed.
+func (s *NexusMigrationService) ensureRepository(ctx context.Context, src nexusclient.Repository,
+	format domain.RepoFormat, p *progress,
+) error {
+	existing, err := s.deps.Repos.Get(ctx, src.Name)
+	if err != nil && !errors.Is(err, repository.ErrNotFound) {
+		return err
+	}
+	if existing != nil {
+		return nil
+	}
+
+	repo := &domain.Repository{
+		Name:        src.Name,
+		Format:      format,
+		Type:        domain.RepoType(src.Type),
+		Online:      true,
+		Description: "Migrated from Nexus",
+	}
+	switch src.Type {
+	case "proxy":
+		if src.RemoteURL == "" {
+			return fmt.Errorf("proxy repository has no remote URL on the source")
+		}
+		repo.ProxyConfig = map[string]any{"remote_url": src.RemoteURL}
+	case "group":
+		members := make([]string, 0, len(src.MemberNames))
+		for _, name := range src.MemberNames {
+			if _, err := s.deps.Repos.Get(ctx, name); err == nil {
+				members = append(members, name)
+				continue
+			}
+			p.fail(context.Background(),
+				"group %q: member %q was not migrated and is left out", src.Name, name)
+		}
+		repo.FormatConfig = map[string]any{"member_names": members}
+	}
+	return s.repos.Create(ctx, repo)
+}
+
+// ── assets ──────────────────────────────────────────────────────────────────
+
+// plannedAsset is one unit to transfer.
+//
+// For an ordinary format that is one file. For an OCI registry it is one
+// manifest, which brings the blobs it names along with it — see
+// transferOCIManifest for why those cannot be planned from the listing.
+type plannedAsset struct {
+	repo        string
+	path        string // Nexspence asset path, leading slash
+	downloadURL string
+	contentType string
+	size        int64
+	coords      base.Coords
+	// isOCIManifest marks a registry manifest: image is coords.Name and the tag
+	// or digest is coords.Version.
+	isOCIManifest bool
+}
+
+func (s *NexusMigrationService) migrateAssets(ctx context.Context, client *nexusclient.Client,
+	hosted []nexusclient.Repository, p *progress,
+) error {
+	bg := context.Background()
+
+	for _, src := range hosted {
+		if err := checkPaused(ctx); err != nil {
+			return err
+		}
+		planned, err := s.planAssets(ctx, client, src, p)
+		if err != nil {
+			p.fail(bg, "repository %q: listing components: %v", src.Name, err)
+			continue
+		}
+		p.setTotals(bg, p.totalRepos, p.totalAssets+int64(len(planned)))
+
+		for _, a := range planned {
+			if err := checkPaused(ctx); err != nil {
+				return err
+			}
+			if err := s.transferAsset(ctx, client, a); err != nil {
+				p.fail(bg, "asset %s%s: %v", a.repo, a.path, err)
+				continue
+			}
+			p.doneAssets++
+			p.flush(bg)
+		}
+	}
+	return nil
+}
+
+// planAssets lists every component in the repository and turns it into the set
+// of files to transfer, ordered so a manifest never lands before its blobs.
+func (s *NexusMigrationService) planAssets(ctx context.Context, client *nexusclient.Client,
+	src nexusclient.Repository, _ *progress,
+) ([]plannedAsset, error) {
+	isOCI := nexusFormats[src.Format].IsOCIRegistry()
+
+	var planned []plannedAsset
+	token := ""
+	for {
+		if err := checkPaused(ctx); err != nil {
+			return nil, err
+		}
+		components, next, err := client.ListComponents(ctx, src.Name, token)
+		if err != nil {
+			return nil, err
+		}
+		for _, comp := range components {
+			for _, a := range comp.Assets {
+				pa := plannedAsset{
+					repo:        src.Name,
+					downloadURL: a.DownloadURL,
+					contentType: a.ContentType,
+					size:        a.SizeBytes,
+					coords:      base.Coords{Group: comp.Group, Name: comp.Name, Version: comp.Version},
+				}
+				if isOCI {
+					translated, ok := ociManifestPath(a.Path)
+					if !ok {
+						// Every other registry path is a blob, and Nexus lists
+						// those under a placeholder image name that no client
+						// could pull them from. They come across with the
+						// manifest that names them instead.
+						continue
+					}
+					pa.path = translated.path
+					pa.isOCIManifest = true
+					pa.coords = base.Coords{Name: translated.image, Version: translated.reference}
+				} else {
+					pa.path = normalizeAssetPath(a.Path)
+				}
+				if pa.contentType == "" {
+					pa.contentType = "application/octet-stream"
+				}
+				planned = append(planned, pa)
+			}
+		}
+		if next == "" {
+			break
+		}
+		token = next
+	}
+
+	return planned, nil
+}
+
+// transferAsset brings one planned unit across, skipping whatever is already
+// here — which is what makes a resumed or repeated job cheap instead of
+// destructive.
+func (s *NexusMigrationService) transferAsset(ctx context.Context, client *nexusclient.Client, a plannedAsset) error {
+	if a.isOCIManifest {
+		return s.transferOCIManifest(ctx, client, a.repo, a.coords.Name, a.coords.Version, 0)
+	}
+
+	existing, err := s.deps.Assets.GetByPath(ctx, a.repo, a.path)
+	if err != nil && !errors.Is(err, repository.ErrNotFound) {
+		return err
+	}
+	if existing != nil {
+		return nil
+	}
+
+	body, err := client.DownloadAsset(ctx, a.downloadURL)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = body.Close() }()
+
+	_, err = base.StoreArtifact(ctx, s.deps, a.repo, a.path, a.contentType, a.coords, body, a.size)
+	return err
+}
+
+// maxManifestDepth bounds index → manifest recursion. One level is what the
+// spec describes; the bound is there so a source that points an index at
+// itself cannot spin this forever.
+const maxManifestDepth = 4
+
+// ociManifest is the slice of a manifest document the migration reads: what it
+// references, and what kind of document it is.
+type ociManifestDoc struct {
+	MediaType string `json:"mediaType"`
+	Config    struct {
+		Digest string `json:"digest"`
+	} `json:"config"`
+	Layers []struct {
+		Digest string `json:"digest"`
+	} `json:"layers"`
+	// Manifests is non-empty on an index (a multi-platform image), whose
+	// children are manifests rather than blobs.
+	Manifests []struct {
+		Digest string `json:"digest"`
+	} `json:"manifests"`
+}
+
+// transferOCIManifest brings one image manifest across along with everything it
+// names, in that order: blobs first, then the manifest, so the registry never
+// serves a manifest whose layers are still missing.
+//
+// The blobs cannot be taken from the component listing. Nexus stores registry
+// blobs content-addressed and lists them under a placeholder image name
+// ("/v2/-/blobs/<digest>"), which is not a path any client can pull from — and
+// its component listing reports only the manifest in the first place. The
+// manifest is therefore read, parsed, and used as the index of what to fetch.
+func (s *NexusMigrationService) transferOCIManifest(ctx context.Context, client *nexusclient.Client,
+	repoName, image, reference string, depth int,
+) error {
+	if depth > maxManifestDepth {
+		return fmt.Errorf("manifest %s/%s nests deeper than %d levels", image, reference, maxManifestDepth)
+	}
+
+	body, contentType, err := client.DownloadManifest(ctx, repoName, image, reference)
+	if err != nil {
+		return err
+	}
+
+	var doc ociManifestDoc
+	if err := json.Unmarshal(body, &doc); err != nil {
+		return fmt.Errorf("parse manifest %s:%s: %w", image, reference, err)
+	}
+	if contentType == "" {
+		contentType = doc.MediaType
+	}
+	if contentType == "" {
+		contentType = "application/vnd.docker.distribution.manifest.v2+json"
+	}
+
+	// An index names manifests; a manifest names blobs. Either way the things
+	// it points at are stored before it is.
+	for _, child := range doc.Manifests {
+		if child.Digest == "" {
+			continue
+		}
+		if err := s.transferOCIManifest(ctx, client, repoName, image, child.Digest, depth+1); err != nil {
+			return err
+		}
+	}
+	digests := make([]string, 0, len(doc.Layers)+1)
+	if doc.Config.Digest != "" {
+		digests = append(digests, doc.Config.Digest)
+	}
+	for _, l := range doc.Layers {
+		if l.Digest != "" {
+			digests = append(digests, l.Digest)
+		}
+	}
+	for _, digest := range digests {
+		if err := s.ensureOCIBlob(ctx, client, repoName, image, digest); err != nil {
+			return err
+		}
+	}
+
+	manifestPath := "/manifests/" + image + "/" + reference
+	existing, err := s.deps.Assets.GetByPath(ctx, repoName, manifestPath)
+	if err != nil && !errors.Is(err, repository.ErrNotFound) {
+		return err
+	}
+	if existing != nil {
+		return nil
+	}
+
+	coords := base.Coords{Name: image, Version: reference}
+	res, err := base.StoreArtifact(ctx, s.deps, repoName, manifestPath, contentType, coords,
+		bytes.NewReader(body), int64(len(body)))
+	if err != nil {
+		return err
+	}
+	s.registerManifestDigestAlias(ctx, plannedAsset{
+		repo: repoName, contentType: contentType, coords: coords,
+	}, res)
+	return nil
+}
+
+// ensureOCIBlob copies one blob unless the image already has it. Layers are
+// shared between images, so this check is what keeps a repository-wide
+// migration from re-transferring the same base layer for every tag.
+func (s *NexusMigrationService) ensureOCIBlob(ctx context.Context, client *nexusclient.Client,
+	repoName, image, digest string,
+) error {
+	blobPath := "/blobs/" + image + "/" + digest
+	existing, err := s.deps.Assets.GetByPath(ctx, repoName, blobPath)
+	if err != nil && !errors.Is(err, repository.ErrNotFound) {
+		return err
+	}
+	if existing != nil {
+		return nil
+	}
+
+	body, err := client.DownloadBlob(ctx, repoName, image, digest)
+	if err != nil {
+		return fmt.Errorf("blob %s: %w", digest, err)
+	}
+	defer func() { _ = body.Close() }()
+
+	_, err = base.StoreArtifact(ctx, s.deps, repoName, blobPath, "application/octet-stream",
+		base.Coords{Name: image, Version: digest}, body, 0)
+	return err
+}
+
+// registerManifestDigestAlias points the manifest's content digest at the same
+// stored bytes, the way a registry push does: a client that pulls by tag
+// immediately re-fetches the manifest by digest, and gets a 404 without this.
+func (s *NexusMigrationService) registerManifestDigestAlias(ctx context.Context, a plannedAsset, res *base.StoreResult) {
+	digestRef := "sha256:" + res.SHA256
+	if a.coords.Version == digestRef {
+		return // already stored under its digest
+	}
+	repo, err := s.deps.Repos.Get(ctx, a.repo)
+	if err != nil || repo == nil {
+		return
+	}
+	aliasPath := "/manifests/" + a.coords.Name + "/" + digestRef
+	if _, err := base.RegisterStoredBlob(ctx, s.deps, repo,
+		aliasPath, a.contentType,
+		base.Coords{Name: a.coords.Name, Version: digestRef},
+		res.Asset.BlobKey,
+		res.SHA256, res.SHA1, res.MD5, res.Size,
+		res.Asset.BlobStoreID, "",
+	); err != nil {
+		s.logf("migration: cannot register digest alias %s%s: %v", a.repo, aliasPath, err)
+	}
+}
+
+// normalizeAssetPath gives a Nexus asset path the leading slash every path
+// stored here carries.
+func normalizeAssetPath(p string) string {
+	p = strings.TrimSpace(p)
+	if !strings.HasPrefix(p, "/") {
+		return "/" + p
+	}
+	return p
+}
+
+type ociPath struct {
+	path      string
+	image     string
+	reference string
+}
+
+// ociManifestPath rewrites a Nexus registry manifest path —
+// "/v2/<image>/manifests/<tag-or-digest>" — into the layout the OCI handler
+// here reads. Anything else, including a blob path, is not a manifest and is
+// reported as such.
+func ociManifestPath(raw string) (ociPath, bool) {
+	p := strings.TrimPrefix(normalizeAssetPath(raw), "/")
+	p = strings.TrimPrefix(p, "v2/")
+
+	i := strings.LastIndex(p, "/manifests/")
+	if i <= 0 {
+		return ociPath{}, false
+	}
+	image, reference := p[:i], p[i+len("/manifests/"):]
+	if image == "" || reference == "" {
+		return ociPath{}, false
+	}
+	return ociPath{
+		path:      "/manifests/" + image + "/" + reference,
+		image:     image,
+		reference: reference,
+	}, true
+}
+
+// ── privileges ──────────────────────────────────────────────────────────────
+
+func (s *NexusMigrationService) migratePrivileges(ctx context.Context, client *nexusclient.Client, p *progress) error {
+	bg := context.Background()
+
+	source, err := client.ListPrivileges(ctx)
+	if err != nil {
+		return fmt.Errorf("list privileges on the source Nexus: %w", err)
+	}
+	for _, src := range source {
+		if err := checkPaused(ctx); err != nil {
+			return err
+		}
+		if src.ReadOnly {
+			continue // a Nexus built-in; this instance ships its own
+		}
+		if existing, _ := s.privileges.GetByName(ctx, src.Name); existing != nil {
+			continue
+		}
+		privType, ok := nexusPrivilegeTypes[src.Type]
+		if !ok {
+			p.fail(bg, "privilege %q: unknown type %q", src.Name, src.Type)
+			continue
+		}
+		priv := &domain.Privilege{
+			Name:        src.Name,
+			Description: src.Description,
+			Type:        privType,
+			Attrs:       normalizePrivilegeAttrs(src.Attrs),
+		}
+		if err := s.privileges.Create(ctx, priv); err != nil {
+			p.fail(bg, "privilege %q: %v", src.Name, err)
+		}
+	}
+	return nil
+}
+
+// normalizePrivilegeAttrs lowercases the action names. Nexus reports them
+// uppercase ("READ"); every check here compares against lowercase.
+func normalizePrivilegeAttrs(attrs map[string]any) map[string]any {
+	out := make(map[string]any, len(attrs))
+	for k, v := range attrs {
+		if k != "actions" {
+			out[k] = v
+			continue
+		}
+		raw, ok := v.([]any)
+		if !ok {
+			out[k] = v
+			continue
+		}
+		actions := make([]string, 0, len(raw))
+		for _, item := range raw {
+			if s, ok := item.(string); ok {
+				actions = append(actions, strings.ToLower(s))
+			}
+		}
+		out[k] = actions
+	}
+	return out
+}
+
+// ── roles ───────────────────────────────────────────────────────────────────
+
+func (s *NexusMigrationService) migrateRoles(ctx context.Context, client *nexusclient.Client, p *progress) error {
+	bg := context.Background()
+
+	source, err := client.ListRoles(ctx)
+	if err != nil {
+		return fmt.Errorf("list roles on the source Nexus: %w", err)
+	}
+
+	byName := make(map[string]nexusclient.Role, len(source))
+	for _, r := range source {
+		if r.ReadOnly {
+			continue // a Nexus built-in; this instance ships its own
+		}
+		byName[roleKey(r)] = r
+	}
+
+	ordered, cyclic := topoSortRoles(byName)
+	if len(cyclic) > 0 {
+		p.fail(bg, "roles %s reference each other in a cycle; each keeps only its own privileges",
+			strings.Join(cyclic, ", "))
+	}
+
+	// Nexspence has no nested-role table, so a nested role is flattened: the
+	// parent takes the union of its own privileges and everything it inherits.
+	// Dependency order is what makes one pass enough.
+	effective := make(map[string]map[string]bool, len(ordered))
+	for _, name := range ordered {
+		src := byName[name]
+		own := make(map[string]bool, len(src.Privileges))
+		for _, priv := range src.Privileges {
+			own[priv] = true
+		}
+		for _, nested := range src.Roles {
+			for priv := range effective[nested] {
+				own[priv] = true
+			}
+		}
+		effective[name] = own
+
+		if err := checkPaused(ctx); err != nil {
+			return err
+		}
+		if err := s.ensureRole(ctx, src, own); err != nil {
+			p.fail(bg, "role %q: %v", src.Name, err)
+		}
+	}
+	return nil
+}
+
+// roleKey is the name a nested reference resolves against. Nexus nests roles by
+// id, and for every role it creates the id and the name are the same string;
+// the id is what a reference carries, so it is the key.
+func roleKey(r nexusclient.Role) string {
+	if r.ID != "" {
+		return r.ID
+	}
+	return r.Name
+}
+
+// ensureRole creates the role unless one of that name is already here, then
+// attaches the privileges it resolves to.
+func (s *NexusMigrationService) ensureRole(ctx context.Context, src nexusclient.Role, privilegeNames map[string]bool) error {
+	role, err := s.roles.GetByName(ctx, src.Name)
+	if err != nil && !errors.Is(err, repository.ErrNotFound) {
+		return err
+	}
+	if role == nil {
+		role = &domain.Role{
+			Name:        src.Name,
+			Description: src.Description,
+			Source:      "migrated",
+		}
+		if err := s.roles.Create(ctx, role); err != nil {
+			return err
+		}
+	}
+
+	ids := make([]string, 0, len(privilegeNames))
+	for name := range privilegeNames {
+		priv, err := s.privileges.GetByName(ctx, name)
+		if err != nil || priv == nil {
+			continue // a built-in this instance does not carry, or one that failed to migrate
+		}
+		ids = append(ids, priv.ID)
+	}
+	sort.Strings(ids)
+	if len(ids) == 0 {
+		return nil
+	}
+	return s.roles.SetPrivileges(ctx, role.ID, ids)
+}
+
+// topoSortRoles orders roles so every role follows the roles it nests, and
+// reports the ones caught in a cycle. Cyclic roles are still returned — last,
+// and without their inherited privileges — because dropping a role silently is
+// worse than migrating a flatter version of it.
+func topoSortRoles(byName map[string]nexusclient.Role) (ordered []string, cyclic []string) {
+	const (
+		unvisited = 0
+		active    = 1
+		done      = 2
+	)
+	state := make(map[string]int, len(byName))
+	inCycle := map[string]bool{}
+
+	var visit func(name string)
+	visit = func(name string) {
+		switch state[name] {
+		case done:
+			return
+		case active:
+			inCycle[name] = true
+			return
+		}
+		state[name] = active
+		for _, nested := range byName[name].Roles {
+			if _, known := byName[nested]; known {
+				visit(nested)
+			}
+		}
+		state[name] = done
+		ordered = append(ordered, name)
+	}
+
+	for _, name := range sortedKeys(byName) {
+		visit(name)
+	}
+	for _, name := range sortedKeys(byName) {
+		if inCycle[name] {
+			cyclic = append(cyclic, name)
+		}
+	}
+	return ordered, cyclic
+}
+
+func sortedKeys(m map[string]nexusclient.Role) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// ── users ───────────────────────────────────────────────────────────────────
+
+func (s *NexusMigrationService) migrateUsers(ctx context.Context, client *nexusclient.Client, p *progress) error {
+	bg := context.Background()
+
+	source, err := client.ListUsers(ctx)
+	if err != nil {
+		return fmt.Errorf("list users on the source Nexus: %w", err)
+	}
+	for _, src := range source {
+		if err := checkPaused(ctx); err != nil {
+			return err
+		}
+		if src.UserID == "" {
+			continue
+		}
+		existing, err := s.users.Get(ctx, src.UserID)
+		if err != nil && !isNotFound(err) {
+			p.fail(bg, "user %q: %v", src.UserID, err)
+			continue
+		}
+		if existing != nil {
+			continue // an account of that name is already here; it is not overwritten
+		}
+		if err := s.createMigratedUser(ctx, src); err != nil {
+			p.fail(bg, "user %q: %v", src.UserID, err)
+		}
+	}
+	return nil
+}
+
+func (s *NexusMigrationService) createMigratedUser(ctx context.Context, src nexusclient.User) error {
+	source := mapUserSource(src.Source)
+	status := domain.UserStatusDisabled
+	if strings.EqualFold(src.Status, "active") {
+		status = domain.UserStatusActive
+	}
+
+	user := &domain.User{
+		Username:  src.UserID,
+		Email:     src.Email,
+		FirstName: src.FirstName,
+		LastName:  src.LastName,
+		Status:    status,
+		Source:    source,
+	}
+
+	// A Nexus password hash cannot come across, so a local account gets a random
+	// one it cannot know and is asked to change it. Externally-authenticated
+	// accounts get no local credential at all — their identity provider still
+	// owns them.
+	password := ""
+	if source == domain.UserSourceLocal {
+		generated, err := randomPassword()
+		if err != nil {
+			return err
+		}
+		password = generated
+		user.MustResetPassword = true
+	}
+
+	if err := s.users.Create(ctx, user, password); err != nil {
+		return err
+	}
+
+	roleIDs := make([]string, 0, len(src.Roles))
+	for _, name := range src.Roles {
+		role, err := s.roles.GetByName(ctx, name)
+		if err != nil || role == nil {
+			continue // a role that was not migrated cannot be granted
+		}
+		roleIDs = append(roleIDs, role.ID)
+	}
+	if len(roleIDs) == 0 {
+		return nil
+	}
+	return s.roles.SetUserRoles(ctx, user.ID, roleIDs)
+}
+
+// mapUserSource translates a Nexus realm name. An unrecognized realm becomes a
+// local account: it keeps the person able to sign in, which is the point of
+// migrating them at all.
+func mapUserSource(source string) domain.UserSource {
+	switch strings.ToLower(strings.TrimSpace(source)) {
+	case "ldap":
+		return domain.UserSourceLDAP
+	case "oidc", "openid", "openid connect":
+		return domain.UserSourceOIDC
+	case "saml":
+		return domain.UserSourceSAML
+	default:
+		return domain.UserSourceLocal
+	}
+}
+
+func randomPassword() (string, error) {
+	buf := make([]byte, 24)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(buf), nil
+}
+
+// ── routing rules ───────────────────────────────────────────────────────────
+
+func (s *NexusMigrationService) migrateRoutingRules(ctx context.Context, client *nexusclient.Client, p *progress) error {
+	bg := context.Background()
+
+	source, err := client.ListRoutingRules(ctx)
+	if err != nil {
+		return fmt.Errorf("list routing rules on the source Nexus: %w", err)
+	}
+	for _, src := range source {
+		if err := checkPaused(ctx); err != nil {
+			return err
+		}
+		if existing, _ := s.routingRules.GetByName(ctx, src.Name); existing != nil {
+			continue
+		}
+		mode := strings.ToUpper(strings.TrimSpace(src.Mode))
+		if mode != "ALLOW" && mode != "BLOCK" {
+			p.fail(bg, "routing rule %q: unknown mode %q", src.Name, src.Mode)
+			continue
+		}
+		if bad, err := firstInvalidMatcher(src.Matchers); err != nil {
+			p.fail(bg, "routing rule %q: matcher %q does not compile: %v", src.Name, bad, err)
+			continue
+		}
+		rule := &domain.RoutingRule{
+			Name:        src.Name,
+			Description: src.Description,
+			Mode:        mode,
+			Matchers:    src.Matchers,
+		}
+		if err := s.routingRules.Create(ctx, rule); err != nil {
+			p.fail(bg, "routing rule %q: %v", src.Name, err)
+		}
+	}
+	return nil
+}
+
+// firstInvalidMatcher reports the first pattern that will not compile. A rule
+// is stored whole or not at all: a half-applied ALLOW rule would quietly widen
+// or narrow what the source instance permitted.
+func firstInvalidMatcher(matchers []string) (string, error) {
+	for _, m := range matchers {
+		if _, err := regexp.Compile(m); err != nil {
+			return m, err
+		}
+	}
+	return "", nil
+}
+
+// ── helpers ─────────────────────────────────────────────────────────────────
+
+func isNotFound(err error) bool {
+	return errors.Is(err, repository.ErrNotFound) || errors.Is(err, ErrNotFound)
+}
+
+func (s *NexusMigrationService) logf(format string, args ...any) {
+	if s.log != nil {
+		s.log.Warnf(format, args...)
+	}
+}

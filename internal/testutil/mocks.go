@@ -38,6 +38,7 @@ var (
 	_ repository.ScanResultRepo         = (*ScanResultRepo)(nil)
 	_ repository.ReplicationRepo        = (*ReplicationRepo)(nil)
 	_ repository.PromotionRepo          = (*PromotionRepo)(nil)
+	_ repository.MigrationRepo          = (*MigrationRepo)(nil)
 	_ storage.BlobStore                 = (*BlobStore)(nil)
 )
 
@@ -602,6 +603,8 @@ type AssetRepo struct {
 	GetByPathErr error
 	// DownloadIncrements records aggregated counts passed to IncrementDownloads.
 	DownloadIncrements map[string]int64
+	// createdPaths records the order Create was called in; read via CreatedPaths.
+	createdPaths []string
 }
 
 func NewAssetRepo() *AssetRepo {
@@ -731,7 +734,17 @@ func (a *AssetRepo) Create(_ context.Context, asset *domain.Asset) error {
 	// Index by repo name (for GetByPath) — matches what postgres impl does via JOIN
 	a.assets[key] = asset
 	a.byID[asset.ID] = asset
+	a.createdPaths = append(a.createdPaths, asset.Path)
 	return nil
+}
+
+// CreatedPaths returns the asset paths passed to Create, in call order. Tests
+// that care about write ordering — a manifest must not be registered before the
+// blobs it names — read it.
+func (a *AssetRepo) CreatedPaths() []string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return append([]string(nil), a.createdPaths...)
 }
 
 // TouchLastModified sets the asset's LastModified to now (mirrors the postgres
@@ -1467,6 +1480,7 @@ type RoleRepo struct {
 	mu               sync.Mutex
 	roles            map[string]*domain.Role
 	userRoles        map[string][]string // userID → roleIDs
+	rolePrivileges   map[string][]string // roleID → privilegeIDs
 	nextID           int
 	Err              error // when non-nil, mutating/listing methods return this error
 	SetPrivilegesErr error // when non-nil, SetPrivileges returns this error (independent of Err)
@@ -1474,8 +1488,9 @@ type RoleRepo struct {
 
 func NewRoleRepo(roles ...*domain.Role) *RoleRepo {
 	r := &RoleRepo{
-		roles:     make(map[string]*domain.Role),
-		userRoles: make(map[string][]string),
+		roles:          make(map[string]*domain.Role),
+		userRoles:      make(map[string][]string),
+		rolePrivileges: make(map[string][]string),
 	}
 	for _, role := range roles {
 		r.roles[role.ID] = role
@@ -1503,6 +1518,16 @@ func (r *RoleRepo) Get(_ context.Context, id string) (*domain.Role, error) {
 		return nil, repository.ErrNotFound
 	}
 	return v, nil
+}
+func (r *RoleRepo) GetByName(_ context.Context, name string) (*domain.Role, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, v := range r.roles {
+		if v.Name == name {
+			return v, nil
+		}
+	}
+	return nil, repository.ErrNotFound
 }
 func (r *RoleRepo) Create(_ context.Context, role *domain.Role) error {
 	r.mu.Lock()
@@ -1559,18 +1584,37 @@ func (r *RoleRepo) SetUserRoles(_ context.Context, userID string, roleIDs []stri
 	return nil
 }
 
-func (r *RoleRepo) SetPrivileges(_ context.Context, _ string, _ []string) error {
+func (r *RoleRepo) SetPrivileges(_ context.Context, roleID string, privilegeIDs []string) error {
 	if r.SetPrivilegesErr != nil {
 		return r.SetPrivilegesErr
 	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if r.Err != nil {
 		return r.Err
 	}
+	r.rolePrivileges[roleID] = append([]string(nil), privilegeIDs...)
 	return nil
 }
 
-func (r *RoleRepo) ListPrivilegeIDsByRole(_ context.Context, _ string) ([]string, error) {
-	return []string{}, nil
+func (r *RoleRepo) ListPrivilegeIDsByRole(_ context.Context, roleID string) ([]string, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]string{}, r.rolePrivileges[roleID]...), nil
+}
+
+// PrivilegesOf returns the privilege IDs last assigned to the role.
+func (r *RoleRepo) PrivilegesOf(roleID string) []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]string(nil), r.rolePrivileges[roleID]...)
+}
+
+// UserRoleIDs returns the role IDs last assigned to the user.
+func (r *RoleRepo) UserRoleIDs(userID string) []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]string(nil), r.userRoles[userID]...)
 }
 
 // ── ContentSelectorRepo ───────────────────────────────────────
@@ -2448,4 +2492,175 @@ func (r *PromotionRepo) UpdateRequestStatus(_ context.Context, id string, status
 // PutBytes is a test helper that stores raw bytes under key in the BlobStore mock.
 func (b *BlobStore) PutBytes(ctx context.Context, key string, data []byte) error {
 	return b.Put(ctx, key, bytes.NewReader(data), int64(len(data)))
+}
+
+// ── MigrationRepo ─────────────────────────────────────────────
+
+// MigrationRepo is an in-memory repository.MigrationRepo. Every job is stored
+// by value and handed back as a copy, so a test reading progress never races
+// with the runner goroutine writing it.
+type MigrationRepo struct {
+	mu     sync.Mutex
+	jobs   map[string]*domain.MigrationJob
+	order  []string
+	nextID int
+
+	ListErr   error
+	GetErr    error
+	CreateErr error
+	UpdateErr error
+	DeleteErr error
+}
+
+func NewMigrationRepo(jobs ...*domain.MigrationJob) *MigrationRepo {
+	m := &MigrationRepo{jobs: make(map[string]*domain.MigrationJob)}
+	for _, j := range jobs {
+		m.jobs[j.ID] = j
+		m.order = append(m.order, j.ID)
+	}
+	return m
+}
+
+func (m *MigrationRepo) List(_ context.Context) ([]domain.MigrationJob, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.ListErr != nil {
+		return nil, m.ListErr
+	}
+	out := make([]domain.MigrationJob, 0, len(m.order))
+	for _, id := range m.order {
+		if j, ok := m.jobs[id]; ok {
+			out = append(out, *j)
+		}
+	}
+	return out, nil
+}
+
+func (m *MigrationRepo) Get(_ context.Context, id string) (*domain.MigrationJob, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.GetErr != nil {
+		return nil, m.GetErr
+	}
+	j, ok := m.jobs[id]
+	if !ok {
+		return nil, fmt.Errorf("migration job not found: %s", id)
+	}
+	cp := *j
+	return &cp, nil
+}
+
+func (m *MigrationRepo) Create(_ context.Context, job *domain.MigrationJob) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.CreateErr != nil {
+		return m.CreateErr
+	}
+	if job.ID == "" {
+		m.nextID++
+		job.ID = fmt.Sprintf("mig-%d", m.nextID)
+	}
+	if job.Status == "" {
+		job.Status = domain.MigrationPending
+	}
+	now := time.Now()
+	job.CreatedAt, job.UpdatedAt = now, now
+	stored := *job
+	m.jobs[job.ID] = &stored
+	m.order = append(m.order, job.ID)
+	return nil
+}
+
+func (m *MigrationRepo) UpdateStatus(_ context.Context, id string, status domain.MigrationJobStatus) error {
+	return m.mutate(id, m.UpdateErr, func(j *domain.MigrationJob) { j.Status = status })
+}
+
+func (m *MigrationRepo) Delete(_ context.Context, id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.DeleteErr != nil {
+		return m.DeleteErr
+	}
+	if _, ok := m.jobs[id]; !ok {
+		return fmt.Errorf("migration job not found: %s", id)
+	}
+	delete(m.jobs, id)
+	return nil
+}
+
+func (m *MigrationRepo) ListActive(_ context.Context) ([]domain.MigrationJob, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.ListErr != nil {
+		return nil, m.ListErr
+	}
+	var out []domain.MigrationJob
+	for _, id := range m.order {
+		if j, ok := m.jobs[id]; ok && j.IsActive() {
+			out = append(out, *j)
+		}
+	}
+	return out, nil
+}
+
+func (m *MigrationRepo) SetSourcePassword(_ context.Context, id, sealed string) error {
+	return m.mutate(id, m.UpdateErr, func(j *domain.MigrationJob) { j.SourcePassword = sealed })
+}
+
+func (m *MigrationRepo) SetStarted(_ context.Context, id string, at time.Time) error {
+	return m.mutate(id, m.UpdateErr, func(j *domain.MigrationJob) {
+		j.Status = domain.MigrationRunning
+		if j.StartedAt == nil {
+			stamp := at
+			j.StartedAt = &stamp
+		}
+		j.FinishedAt = nil
+	})
+}
+
+func (m *MigrationRepo) SetTotals(_ context.Context, id string, totalRepos int, totalAssets int64) error {
+	return m.mutate(id, m.UpdateErr, func(j *domain.MigrationJob) {
+		j.TotalRepos, j.TotalAssets = totalRepos, totalAssets
+	})
+}
+
+func (m *MigrationRepo) UpdateProgress(_ context.Context, id string, doneRepos int, doneAssets int64,
+	errorCount int, lastError *string,
+) error {
+	return m.mutate(id, m.UpdateErr, func(j *domain.MigrationJob) {
+		j.DoneRepos, j.DoneAssets, j.ErrorCount = doneRepos, doneAssets, errorCount
+		if lastError != nil {
+			msg := *lastError
+			j.LastError = &msg
+		}
+	})
+}
+
+func (m *MigrationRepo) FinishJob(_ context.Context, id string,
+	status domain.MigrationJobStatus, errMsg *string,
+) error {
+	return m.mutate(id, m.UpdateErr, func(j *domain.MigrationJob) {
+		j.Status = status
+		now := time.Now()
+		j.FinishedAt = &now
+		if errMsg != nil {
+			msg := *errMsg
+			j.LastError = &msg
+		}
+	})
+}
+
+func (m *MigrationRepo) mutate(id string, forced error, fn func(*domain.MigrationJob)) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if forced != nil {
+		return forced
+	}
+	j, ok := m.jobs[id]
+	if !ok {
+		return fmt.Errorf("migration job not found: %s", id)
+	}
+	fn(j)
+	j.UpdatedAt = time.Now()
+	return nil
 }

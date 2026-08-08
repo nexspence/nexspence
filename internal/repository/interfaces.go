@@ -198,6 +198,8 @@ type UserRepo interface {
 type RoleRepo interface {
 	List(ctx context.Context) ([]domain.Role, error)
 	Get(ctx context.Context, id string) (*domain.Role, error)
+	// GetByName resolves a role by its unique name.
+	GetByName(ctx context.Context, name string) (*domain.Role, error)
 	Create(ctx context.Context, r *domain.Role) error
 	Update(ctx context.Context, r *domain.Role) error
 	Delete(ctx context.Context, id string) error
@@ -265,6 +267,22 @@ type MigrationRepo interface {
 	Create(ctx context.Context, job *domain.MigrationJob) error
 	UpdateStatus(ctx context.Context, id string, status domain.MigrationJobStatus) error
 	Delete(ctx context.Context, id string) error
+	// ListActive returns pending|running jobs — the ones the runner re-attaches
+	// to on startup after a process restart.
+	ListActive(ctx context.Context) ([]domain.MigrationJob, error)
+	// SetSourcePassword stores the sealed Nexus credential for the job.
+	SetSourcePassword(ctx context.Context, id, sealed string) error
+	// SetStarted marks the job running and stamps started_at (once — a resumed
+	// job keeps the timestamp of its first run).
+	SetStarted(ctx context.Context, id string, at time.Time) error
+	// SetTotals records how much work the run discovered.
+	SetTotals(ctx context.Context, id string, totalRepos int, totalAssets int64) error
+	// UpdateProgress records how much of that work is done, along with the
+	// running error tally and the most recent per-item failure.
+	UpdateProgress(ctx context.Context, id string, doneRepos int, doneAssets int64,
+		errorCount int, lastError *string) error
+	// FinishJob stamps finished_at and sets the terminal status.
+	FinishJob(ctx context.Context, id string, status domain.MigrationJobStatus, errMsg *string) error
 }
 
 // BlobStoreRepo manages blob store configuration.

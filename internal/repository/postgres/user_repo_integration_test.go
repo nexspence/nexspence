@@ -887,3 +887,67 @@ func TestUserRepo_Delete_CascadesUserRoles(t *testing.T) {
 		t.Errorf("GetUserRoles after Delete: got %v, want empty", userRoles)
 	}
 }
+
+// ── must_reset_password ───────────────────────────────────────────────────────
+
+func TestUserRepo_MustResetPassword_RoundTrips(t *testing.T) {
+	pool := pgtest.Pool(t)
+	pgtest.Truncate(t, pool, "users", "roles")
+	ctx := context.Background()
+	repo := NewUserRepo(pool)
+
+	u := makeUser("migrated_user", "migrated@test.com")
+	u.MustResetPassword = true
+	if err := repo.Create(ctx, u); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	got, err := repo.Get(ctx, "migrated_user")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if !got.MustResetPassword {
+		t.Fatal("must_reset_password did not survive the round trip")
+	}
+}
+
+func TestUserRepo_MustResetPassword_DefaultsFalse(t *testing.T) {
+	pool := pgtest.Pool(t)
+	pgtest.Truncate(t, pool, "users", "roles")
+	ctx := context.Background()
+	repo := NewUserRepo(pool)
+
+	u := makeUser("ordinary_user", "ordinary@test.com")
+	if err := repo.Create(ctx, u); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	got, _ := repo.Get(ctx, "ordinary_user")
+	if got.MustResetPassword {
+		t.Fatal("an ordinary account should not be asked to reset its password")
+	}
+}
+
+// Setting a password is what the flag was asking for, so it retires with it.
+func TestUserRepo_UpdatePassword_ClearsMustReset(t *testing.T) {
+	pool := pgtest.Pool(t)
+	pgtest.Truncate(t, pool, "users", "roles")
+	ctx := context.Background()
+	repo := NewUserRepo(pool)
+
+	u := makeUser("reset_user", "reset@test.com")
+	u.MustResetPassword = true
+	if err := repo.Create(ctx, u); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := repo.UpdatePassword(ctx, "reset_user", "new_hash"); err != nil {
+		t.Fatalf("UpdatePassword: %v", err)
+	}
+
+	got, _ := repo.Get(ctx, "reset_user")
+	if got.MustResetPassword {
+		t.Fatal("must_reset_password should be cleared once a password is set")
+	}
+	if got.PasswordHash != "new_hash" {
+		t.Fatalf("password hash not updated: %q", got.PasswordHash)
+	}
+}

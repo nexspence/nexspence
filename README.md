@@ -274,7 +274,7 @@ Published on the [Terraform Registry](https://registry.terraform.io/providers/ne
 - High Availability — stateless nodes, Redis distributed locks, `/healthz` + `/readyz`
 - Cleanup policies — by age, last-downloaded, retain-N-versions; cron scheduler; dry-run
 - Per-repository export / import (streaming `.tar.gz`); full system backup / restore
-- Live migration from a running Nexus OSS/Pro instance
+- Live migration from a running Nexus instance — repositories, artifacts, container images, privileges/roles/users, routing rules; pausable, resumable, restart-safe ([guide](docs/nexus-migration.md))
 - Vulnerability scanning — Trivy (Docker) + OSV.dev (Maven/npm/PyPI/Cargo)
 - Audit log — every action logged; NDJSON streaming export; 90-day partition rotation
 - Webhooks — HMAC-SHA256 signed; `artifact.published`, `artifact.deleted`, repo events

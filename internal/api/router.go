@@ -289,7 +289,23 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 	rrSvc := service.NewRoutingRuleService(rrRepo)
 	rrH := handlers.NewRoutingRuleHandler(rrSvc)
 	systemH := handlers.NewSystemHandler(cfg, pool, ldapSvc, oidcSvc).WithBlobStores(blobRepo).WithSAML(samlSvc)
-	migrationH := handlers.NewMigrationHandler(migrationRepo)
+	nexusMigSvc := service.NewNexusMigrationService(service.NexusMigrationConfig{
+		Jobs:          migrationRepo,
+		Repos:         repoSvc,
+		Users:         userSvc,
+		Roles:         roleRepo,
+		Privileges:    privilegeRepo,
+		RoutingRules:  rrRepo,
+		Deps:          formatDeps,
+		JWTSecret:     cfg.Auth.JWTSecret,
+		EncryptionKey: cfg.Auth.EncryptionKeyBytes(),
+		Log:           log,
+	})
+	// Re-attach to migrations interrupted by a restart. Without this a job left
+	// running when the process stopped sits in "running" with nothing behind it —
+	// which is exactly how a migration used to look even on a healthy server.
+	go func() { _ = nexusMigSvc.ResumeAll(ctx) }()
+	migrationH := handlers.NewMigrationHandler(migrationRepo, nexusMigSvc)
 	ldapH := handlers.NewLDAPHandler(cfg.LDAP, ldapSvc)
 	tasksH := handlers.NewTasksHandler(cleanupTaskAdapter{repo: cleanupRepo, svc: cleanupSvc}, replSvc)
 	blobMigrationRepo := postgres.NewBlobStoreMigrationRepo(pool)
@@ -599,6 +615,7 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 		admin.DELETE("/service/rest/v1/routing-rules/:id", rrH.Delete)
 
 		// Migration
+		admin.POST("/api/v1/migration/preview", migrationH.Preview)
 		admin.GET("/api/v1/migration/jobs", migrationH.ListJobs)
 		admin.POST("/api/v1/migration/jobs", migrationH.CreateJob)
 		admin.GET("/api/v1/migration/jobs/:id", migrationH.GetJob)

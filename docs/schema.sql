@@ -179,6 +179,10 @@ CREATE TABLE users (
                         CHECK (source IN ('local', 'ldap', 'saml')),
     -- External identity (LDAP DN, SAML NameID)
     external_id     TEXT,
+    -- Set for an account whose password was chosen for it rather than by it —
+    -- a migrated Nexus user given a random temporary one. Cleared on the next
+    -- password change.
+    must_reset_password BOOLEAN NOT NULL DEFAULT FALSE,
     last_login      TIMESTAMPTZ,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -440,13 +444,21 @@ CREATE TABLE migration_jobs (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     source_url      TEXT NOT NULL,
     source_user     TEXT NOT NULL,
+    -- Sealed with the instance encryption key. Kept because a migration must
+    -- survive a restart: the runner re-attaches to jobs left running, long
+    -- after the request that supplied the credential is gone.
+    source_password TEXT NOT NULL DEFAULT '',
     status          TEXT NOT NULL DEFAULT 'pending'
                         CHECK (status IN ('pending','running','paused','done','error')),
-    -- Which parts to migrate
+    -- Which parts to migrate. migrate_policies is the older, coarser switch and
+    -- is the default the three security scopes fall back to.
     migrate_repos   BOOLEAN NOT NULL DEFAULT TRUE,
     migrate_users   BOOLEAN NOT NULL DEFAULT TRUE,
     migrate_blobs   BOOLEAN NOT NULL DEFAULT TRUE,
     migrate_policies BOOLEAN NOT NULL DEFAULT TRUE,
+    migrate_privileges    BOOLEAN NOT NULL DEFAULT TRUE,
+    migrate_roles         BOOLEAN NOT NULL DEFAULT TRUE,
+    migrate_routing_rules BOOLEAN NOT NULL DEFAULT TRUE,
     -- Progress tracking
     total_repos     INT NOT NULL DEFAULT 0,
     done_repos      INT NOT NULL DEFAULT 0,
@@ -463,6 +475,9 @@ CREATE TABLE migration_jobs (
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Read on every startup, to re-attach to jobs a restart interrupted.
+CREATE INDEX idx_migration_jobs_status ON migration_jobs(status);
 
 -- ============================================================
 -- SEED DATA — built-in roles and privileges

@@ -1230,24 +1230,34 @@ def verify(secret: str, body: bytes, header: str) -&gt; bool:
       </section>
       <section id="sec-migration" class="doc-section" hidden>
   <div class="doc-section-title" data-i18n="mig.title">Migration from Nexus</div>
-  <div class="doc-section-sub" data-i18n="mig.sub">Migrate repositories, users, roles, and artifacts from a live Nexus OSS or Pro instance without downtime.</div>
+  <div class="doc-section-sub" data-i18n="mig.sub">Import a live Nexus Repository 3 instance over its REST API — repositories, artifacts, container images and the security model. The source keeps serving traffic; nothing is written back to it.</div>
 
   <div class="inst-sep" data-i18n="mig.what.sep">What Gets Migrated</div>
   <table class="doc-table">
     <thead><tr><th data-i18n="mig.th.item">Item</th><th data-i18n="mig.th.detail">Detail</th></tr></thead>
     <tbody>
-      <tr><td data-i18n="mig.repos.label">Repositories</td><td data-i18n="mig.repos.desc">Hosted, proxy, and group repo definitions (format, type, configuration)</td></tr>
-      <tr><td data-i18n="mig.users.label">Users &amp; Roles</td><td data-i18n="mig.users.desc">Local Nexus users, roles, and privileges</td></tr>
-      <tr><td data-i18n="mig.blobs.label">Artifacts</td><td data-i18n="mig.blobs.desc">All components streamed via Nexus REST API — large repos pause/resume</td></tr>
-      <tr><td data-i18n="mig.cleanup.label">Cleanup policies</td><td data-i18n="mig.cleanup.desc">Imported and attached to the corresponding repositories</td></tr>
+      <tr><td data-i18n="mig.repos.label">Repositories</td><td data-i18n="mig.repos.desc">Hosted, proxy and group definitions — format, type, group membership, proxy remote URL</td></tr>
+      <tr><td data-i18n="mig.blobs.label">Artifacts</td><td data-i18n="mig.blobs.desc">Every component in each hosted repository, streamed through the same storage path an upload takes</td></tr>
+      <tr><td data-i18n="mig.docker.label">Container images</td><td data-i18n="mig.docker.desc">Manifests, image indexes and the blobs they reference — re-created so the image is pullable byte-for-byte</td></tr>
+      <tr><td data-i18n="mig.users.label">Privileges, roles, users</td><td data-i18n="mig.users.desc">Nexus built-ins skipped; nested roles flattened; local users get a temporary password, external ones no credential</td></tr>
+      <tr><td data-i18n="mig.rules.label">Routing rules</td><td data-i18n="mig.rules.desc">ALLOW / BLOCK rules with their regex matchers, stored whole or not at all</td></tr>
     </tbody>
   </table>
+  <div class="alert-info" data-i18n="mig.notmig"><strong>Not migrated:</strong> cleanup policies and task schedules — Nexus OSS exposes neither through its REST API. Proxy caches are skipped too: a proxy re-fetches from its own upstream.</div>
+
   <div class="step-list">
-    <div class="step-item"><div class="step-num">01</div><div><div class="step-title" data-i18n="mig.s1.title">Open the Migration tab</div><div class="step-desc" data-i18n="mig.s1.desc">Go to <strong>Admin → System → Migration</strong>. Enter the source Nexus URL, admin username, and password.</div></div></div>
-    <div class="step-item"><div class="step-num">02</div><div><div class="step-title" data-i18n="mig.s2.title">Select scope</div><div class="step-desc" data-i18n="mig.s2.desc">Choose what to migrate: Repositories, Users, Cleanup Policies, Artifacts (blobs). You can run each separately.</div></div></div>
-    <div class="step-item"><div class="step-num">03</div><div><div class="step-title" data-i18n="mig.s3.title">Start and monitor</div><div class="step-desc" data-i18n="mig.s3.desc">Click <strong>Start Migration</strong>. Progress is shown in the job history table. Large artifact migrations can be paused and resumed.</div></div></div>
+    <div class="step-item"><div class="step-num">01</div><div><div class="step-title" data-i18n="mig.s1.title">Test the connection</div><div class="step-desc" data-i18n="mig.s1.desc">Go to <strong>Admin &rarr; Migration &rarr; New Migration</strong>, enter the Nexus URL and admin credentials, then press <strong>Test connection</strong>. It is a pure read — no job is created — and it lists the repositories it can see, or the exact reason the source refused.</div></div></div>
+    <div class="step-item"><div class="step-num">02</div><div><div class="step-title" data-i18n="mig.s2.title">Choose the scope</div><div class="step-desc" data-i18n="mig.s2.desc">Every stage is an independent flag: repositories, artifacts, privileges, roles, users, routing rules. A repositories-only run touches nothing else. All are on by default.</div></div></div>
+    <div class="step-item"><div class="step-num">03</div><div><div class="step-title" data-i18n="mig.s3.title">Start and watch</div><div class="step-desc" data-i18n="mig.s3.desc">The job runs in the background and reports repositories done, assets done and an error count. One artifact that will not come across is counted and named; the run continues.</div></div></div>
   </div>
-  <div class="alert-info" data-i18n="mig.note"><strong>No downtime:</strong> Migration reads from a live Nexus instance via its REST API. Your existing Nexus continues serving traffic during migration. Switch DNS/clients to Nexspence when ready.</div>
+
+  <div class="inst-sep" data-i18n="mig.order.sep">Order of Operations</div>
+  <div class="doc-section-sub" data-i18n="mig.order.sub">Repositories are created hosted &rarr; proxy &rarr; group, so a group&rsquo;s members exist before the group naming them. Then artifacts, then privileges &rarr; roles &rarr; users — each references the previous one by name — and finally routing rules.</div>
+
+  <div class="inst-sep" data-i18n="mig.resume.sep">Pause, Resume, Restart</div>
+  <div class="doc-section-sub" data-i18n="mig.resume.sub">Everything is matched by its logical name — repository, privilege, role, username, asset path — and anything already present is skipped rather than overwritten. That is what makes re-running cheap: <strong>Pause</strong> stops the run and keeps its progress, <strong>Resume</strong> starts a fresh pass over what is left, and a restart of Nexspence re-attaches to jobs that were still running. The source credential is persisted for that, sealed with the instance encryption key and never returned by the API.</div>
+
+  <div class="alert-info" data-i18n="mig.note"><strong>No downtime.</strong> Migration only reads from the source. Requires Nexus admin credentials for the security endpoints; a Nexus on an internal address needs that range in <code>outbound.allowed_internal_cidrs</code>.</div>
       </section>
       <section id="sec-monitoring" class="doc-section" hidden>
   <div class="doc-section-title" data-i18n="mon.title">Monitoring</div>
@@ -1706,16 +1716,22 @@ const TRANSLATIONS={
     'wh.s2.title':'Test delivery','wh.s2.desc':'Click the ⚡ button on the webhook card to send a test event.',
     'wh.s3.title':'Verify the signature','wh.s3.desc':'If a secret is set, each request carries an <code>X-Nexspence-Signature</code> header (HMAC-SHA256 of body).',
     'wh.retry.note':'<strong>Delivery:</strong> Webhooks are fired asynchronously. Events are not retried if your endpoint is unavailable.',
-    'mig.title':'Migration from Nexus','mig.sub':'Migrate repositories, users, roles, and artifacts from a live Nexus OSS or Pro instance without downtime.',
+    'mig.title':'Migration from Nexus','mig.sub':'Import a live Nexus Repository 3 instance over its REST API — repositories, artifacts, container images and the security model. The source keeps serving traffic; nothing is written back to it.',
     'mig.what.sep':'What Gets Migrated','mig.th.item':'Item','mig.th.detail':'Detail',
-    'mig.repos.label':'Repositories','mig.repos.desc':'Hosted, proxy, and group repo definitions',
-    'mig.users.label':'Users & Roles','mig.users.desc':'Local Nexus users, roles, and privileges',
-    'mig.blobs.label':'Artifacts','mig.blobs.desc':'All components streamed via Nexus REST API — large repos pause/resume',
-    'mig.cleanup.label':'Cleanup policies','mig.cleanup.desc':'Imported and attached to corresponding repositories',
-    'mig.s1.title':'Open the Migration tab','mig.s1.desc':'Go to <strong>Admin → System → Migration</strong>. Enter the source Nexus URL, admin username, and password.',
-    'mig.s2.title':'Select scope','mig.s2.desc':'Choose what to migrate: Repositories, Users, Cleanup Policies, Artifacts. Run each separately.',
-    'mig.s3.title':'Start and monitor','mig.s3.desc':'Click <strong>Start Migration</strong>. Large artifact migrations can be paused and resumed.',
-    'mig.note':'<strong>No downtime:</strong> Migration reads from a live Nexus via its REST API. Switch clients to Nexspence when ready.',
+    'mig.repos.label':'Repositories','mig.repos.desc':'Hosted, proxy and group definitions — format, type, group membership, proxy remote URL',
+    'mig.blobs.label':'Artifacts','mig.blobs.desc':'Every component in each hosted repository, streamed through the same storage path an upload takes',
+    'mig.docker.label':'Container images','mig.docker.desc':'Manifests, image indexes and the blobs they reference — re-created so the image is pullable byte-for-byte',
+    'mig.users.label':'Privileges, roles, users','mig.users.desc':'Nexus built-ins skipped; nested roles flattened; local users get a temporary password, external ones no credential',
+    'mig.rules.label':'Routing rules','mig.rules.desc':'ALLOW / BLOCK rules with their regex matchers, stored whole or not at all',
+    'mig.notmig':'<strong>Not migrated:</strong> cleanup policies and task schedules — Nexus OSS exposes neither through its REST API. Proxy caches are skipped too: a proxy re-fetches from its own upstream.',
+    'mig.s1.title':'Test the connection','mig.s1.desc':'Go to <strong>Admin &rarr; Migration &rarr; New Migration</strong>, enter the Nexus URL and admin credentials, then press <strong>Test connection</strong>. It is a pure read — no job is created — and it lists the repositories it can see, or the exact reason the source refused.',
+    'mig.s2.title':'Choose the scope','mig.s2.desc':'Every stage is an independent flag: repositories, artifacts, privileges, roles, users, routing rules. A repositories-only run touches nothing else. All are on by default.',
+    'mig.s3.title':'Start and watch','mig.s3.desc':'The job runs in the background and reports repositories done, assets done and an error count. One artifact that will not come across is counted and named; the run continues.',
+    'mig.order.sep':'Order of Operations',
+    'mig.order.sub':'Repositories are created hosted &rarr; proxy &rarr; group, so a group&rsquo;s members exist before the group naming them. Then artifacts, then privileges &rarr; roles &rarr; users — each references the previous one by name — and finally routing rules.',
+    'mig.resume.sep':'Pause, Resume, Restart',
+    'mig.resume.sub':'Everything is matched by its logical name — repository, privilege, role, username, asset path — and anything already present is skipped rather than overwritten. That is what makes re-running cheap: <strong>Pause</strong> stops the run and keeps its progress, <strong>Resume</strong> starts a fresh pass over what is left, and a restart of Nexspence re-attaches to jobs that were still running. The source credential is persisted for that, sealed with the instance encryption key and never returned by the API.',
+    'mig.note':'<strong>No downtime.</strong> Migration only reads from the source. Requires Nexus admin credentials for the security endpoints; a Nexus on an internal address needs that range in <code>outbound.allowed_internal_cidrs</code>.',
     'mon.title':'Monitoring','mon.sub':'Nexspence exposes a Prometheus metrics endpoint and ships a pre-built Grafana dashboard with 8 panels.',
     'mon.metrics.sep':'Available Metrics','mon.th.metric':'Metric','mon.th.desc':'Description',
     'mon.m.requests':'Total HTTP requests (by method, path, status)',
@@ -2019,16 +2035,22 @@ const TRANSLATIONS={
     'wh.s2.title':'Тест доставки','wh.s2.desc':'Нажмите кнопку ⚡ на карточке вебхука для отправки тестового события.',
     'wh.s3.title':'Проверка подписи','wh.s3.desc':'При наличии секрета каждый запрос содержит заголовок <code>X-Nexspence-Signature</code> (HMAC-SHA256 тела).',
     'wh.retry.note':'<strong>Доставка:</strong> Вебхуки отправляются асинхронно. При недоступности endpoint событие не повторяется.',
-    'mig.title':'Миграция из Nexus','mig.sub':'Перенесите репозитории, пользователей, роли и артефакты из работающего Nexus OSS или Pro без остановки сервиса.',
+    'mig.title':'Миграция из Nexus','mig.sub':'Импорт работающего Nexus Repository 3 через его REST API — репозитории, артефакты, образы контейнеров и модель доступа. Источник продолжает обслуживать трафик; в него ничего не записывается.',
     'mig.what.sep':'Что переносится','mig.th.item':'Элемент','mig.th.detail':'Описание',
-    'mig.repos.label':'Репозитории','mig.repos.desc':'Определения hosted, proxy и group репозиториев',
-    'mig.users.label':'Пользователи и роли','mig.users.desc':'Локальные пользователи, роли и привилегии Nexus',
-    'mig.blobs.label':'Артефакты','mig.blobs.desc':'Все компоненты через REST API Nexus — большие репозитории с паузой/продолжением',
-    'mig.cleanup.label':'Политики очистки','mig.cleanup.desc':'Импортируются и привязываются к соответствующим репозиториям',
-    'mig.s1.title':'Откройте вкладку Migration','mig.s1.desc':'Перейдите в <strong>Admin → System → Migration</strong>. Введите URL источника Nexus, логин и пароль.',
-    'mig.s2.title':'Выберите область','mig.s2.desc':'Выберите что переносить: Repositories, Users, Cleanup Policies, Artifacts. Можно запускать раздельно.',
-    'mig.s3.title':'Запустите и следите','mig.s3.desc':'Нажмите <strong>Start Migration</strong>. Миграцию больших репозиториев можно ставить на паузу и продолжать.',
-    'mig.note':'<strong>Без простоя:</strong> Миграция читает из работающего Nexus через его REST API. Переключите клиентов на Nexspence когда будете готовы.',
+    'mig.repos.label':'Репозитории','mig.repos.desc':'Определения hosted, proxy и group — формат, тип, состав группы, remote URL прокси',
+    'mig.blobs.label':'Артефакты','mig.blobs.desc':'Все компоненты каждого hosted-репозитория, через тот же путь хранения, что и обычная загрузка',
+    'mig.docker.label':'Образы контейнеров','mig.docker.desc':'Манифесты, индексы образов и блобы, на которые они ссылаются — образ воссоздаётся побайтово и остаётся pullable',
+    'mig.users.label':'Привилегии, роли, пользователи','mig.users.desc':'Встроенные объекты Nexus пропускаются; вложенные роли расплющиваются; локальные пользователи получают временный пароль, внешние — никаких учётных данных',
+    'mig.rules.label':'Правила маршрутизации','mig.rules.desc':'Правила ALLOW / BLOCK с их regex-матчерами, целиком или никак',
+    'mig.notmig':'<strong>Не переносится:</strong> политики очистки и расписания задач — Nexus OSS не отдаёт ни то, ни другое через REST API. Кэш прокси тоже пропускается: прокси заново забирает данные со своего upstream.',
+    'mig.s1.title':'Проверьте подключение','mig.s1.desc':'Перейдите в <strong>Admin &rarr; Migration &rarr; New Migration</strong>, введите URL Nexus и учётные данные администратора, затем нажмите <strong>Test connection</strong>. Это чистое чтение — задача не создаётся — и в ответ вы получите список видимых репозиториев либо точную причину отказа источника.',
+    'mig.s2.title':'Выберите объём','mig.s2.desc':'Каждый этап — независимый флаг: репозитории, артефакты, привилегии, роли, пользователи, правила маршрутизации. Запуск только с репозиториями не тронет ничего другого. По умолчанию включено всё.',
+    'mig.s3.title':'Запустите и следите','mig.s3.desc':'Задача выполняется в фоне и показывает обработанные репозитории, артефакты и число ошибок. Один артефакт, который не удалось перенести, будет посчитан и назван, а выполнение продолжится.',
+    'mig.order.sep':'Порядок выполнения',
+    'mig.order.sub':'Репозитории создаются в порядке hosted &rarr; proxy &rarr; group, чтобы участники группы существовали раньше самой группы. Затем артефакты, затем привилегии &rarr; роли &rarr; пользователи — каждый ссылается на предыдущего по имени — и в конце правила маршрутизации.',
+    'mig.resume.sep':'Пауза, продолжение, перезапуск',
+    'mig.resume.sub':'Всё сопоставляется по логическому имени — репозиторий, привилегия, роль, имя пользователя, путь артефакта — и всё уже существующее пропускается, а не перезаписывается. Именно поэтому повторный запуск дёшев: <strong>Pause</strong> останавливает выполнение, сохраняя прогресс, <strong>Resume</strong> запускает новый проход по остатку, а перезапуск Nexspence подхватывает задачи, которые оставались в работе. Ради этого пароль источника сохраняется — зашифрованным ключом инстанса, и API его никогда не возвращает.',
+    'mig.note':'<strong>Без простоя.</strong> Миграция только читает из источника. Нужны учётные данные администратора Nexus для эндпоинтов безопасности; для Nexus во внутренней сети добавьте её диапазон в <code>outbound.allowed_internal_cidrs</code>.',
     'mon.title':'Мониторинг','mon.sub':'Nexspence предоставляет endpoint Prometheus и поставляется с готовым дашбордом Grafana из 8 панелей.',
     'mon.metrics.sep':'Доступные метрики','mon.th.metric':'Метрика','mon.th.desc':'Описание',
     'mon.m.requests':'Всего HTTP-запросов (по методу, пути, статусу)',
@@ -2245,6 +2267,7 @@ let FEATURE_BADGE={
   'replication':'v1.3.0',
   'promotion':'v1.8.1',
   'monitoring':'v1.9.0',
+  'migration':'v1.33.0',
   'security':'v1.18.0',
   'upgrade':'v1.18.0',
 };

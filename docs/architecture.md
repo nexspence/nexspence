@@ -188,6 +188,7 @@ Pure business logic; no HTTP concerns; depend only on repository interfaces.
 | `ReplicationService` | Push-on-publish to a secondary instance via streaming blob copy; per-rule cron |
 | `BlobGCService` | `ListAllBlobKeys` vs `BlobStore.ListKeys` → delete orphan blobs; dry-run |
 | `BlobStoreMigrationService` | Move a repository's blobs between stores, resumable after a restart |
+| `NexusMigrationService` | Import a live Nexus OSS instance over its REST API — repositories, artifacts, privileges, roles, users, routing rules — one goroutine per job, pausable, and re-attached on startup |
 | `DownloadCounter` | In-memory download aggregation, flushed to the DB every 10s |
 | Authenticators (`internal/auth`) | `LDAPService` bind + group sync · `OIDCService` id_token exchange + PKCE · `SAMLService` |
 | **[Phase 8]** `SBOMService` | Not built. Would generate SPDX / CycloneDX from component + asset metadata |
@@ -442,7 +443,7 @@ user_roles          — user_id, role_id
 blob_stores         — name, type (local|s3), config JSONB, used_bytes, quota_bytes
 cleanup_policies    — name, format, criteria JSONB (age_days, last_downloaded_days), schedule_cron
 audit_events        — partitioned by month; user_id, domain, action, entity_type, entity_name, result
-migration_jobs      — source_url, status, progress JSONB
+migration_jobs      — source_url, source_user, sealed source_password, status, per-scope flags, repo/asset progress, error_count
 routing_rules       — name, mode (ALLOW|BLOCK), matchers[]
 content_selectors   — name, expression (CEL)
 webhooks            — name, url, events[], secret, active

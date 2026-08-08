@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
@@ -8,57 +9,70 @@ import (
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/repository"
+	"github.com/nexspence-oss/nexspence/internal/service"
 )
 
-// MigrationHandler serves the Nexus-migration job REST endpoints.
+// MigrationHandler serves the Nexus-migration job REST endpoints. Reads come
+// straight from the job repository; anything that starts, stops or inspects a
+// live migration goes through the runner.
 type MigrationHandler struct {
 	repo repository.MigrationRepo
+	svc  *service.NexusMigrationService
 }
 
-// NewMigrationHandler constructs a MigrationHandler backed by the given migration repository.
-func NewMigrationHandler(repo repository.MigrationRepo) *MigrationHandler {
-	return &MigrationHandler{repo: repo}
+// NewMigrationHandler constructs a MigrationHandler over the job repository and
+// the migration runner.
+func NewMigrationHandler(repo repository.MigrationRepo, svc *service.NexusMigrationService) *MigrationHandler {
+	return &MigrationHandler{repo: repo, svc: svc}
 }
 
 type migrationJobResp struct {
-	ID                string  `json:"id"`
-	SourceURL         string  `json:"sourceUrl"`
-	SourceUser        string  `json:"sourceUser"`
-	Status            string  `json:"status"`
-	MigrateRepos      bool    `json:"migrateRepos"`
-	MigrateUsers      bool    `json:"migrateUsers"`
-	MigrateBlobs      bool    `json:"migrateBlobs"`
-	MigratePolicies   bool    `json:"migratePolicies"`
-	RepositoriesTotal int     `json:"repositoriesTotal"`
-	RepositoriesDone  int     `json:"repositoriesDone"`
-	AssetsTotal       int64   `json:"assetsTotal"`
-	AssetsDone        int64   `json:"assetsDone"`
-	ErrorCount        int     `json:"errorCount"`
-	LastError         *string `json:"lastError,omitempty"`
-	StartedAt         *string `json:"startedAt,omitempty"`
-	FinishedAt        *string `json:"finishedAt,omitempty"`
-	CreatedAt         string  `json:"createdAt"`
-	UpdatedAt         string  `json:"updatedAt"`
+	ID                  string  `json:"id"`
+	SourceURL           string  `json:"sourceUrl"`
+	SourceUser          string  `json:"sourceUser"`
+	Status              string  `json:"status"`
+	MigrateRepos        bool    `json:"migrateRepos"`
+	MigrateUsers        bool    `json:"migrateUsers"`
+	MigrateBlobs        bool    `json:"migrateBlobs"`
+	MigratePolicies     bool    `json:"migratePolicies"`
+	MigratePrivileges   bool    `json:"migratePrivileges"`
+	MigrateRoles        bool    `json:"migrateRoles"`
+	MigrateRoutingRules bool    `json:"migrateRoutingRules"`
+	RepositoriesTotal   int     `json:"repositoriesTotal"`
+	RepositoriesDone    int     `json:"repositoriesDone"`
+	AssetsTotal         int64   `json:"assetsTotal"`
+	AssetsDone          int64   `json:"assetsDone"`
+	ErrorCount          int     `json:"errorCount"`
+	LastError           *string `json:"lastError,omitempty"`
+	StartedAt           *string `json:"startedAt,omitempty"`
+	FinishedAt          *string `json:"finishedAt,omitempty"`
+	CreatedAt           string  `json:"createdAt"`
+	UpdatedAt           string  `json:"updatedAt"`
 }
 
+// toJobResp maps a job onto its API shape. SourcePassword is deliberately
+// absent: it is stored sealed and never leaves the process.
 func toJobResp(j domain.MigrationJob) migrationJobResp {
 	r := migrationJobResp{
-		ID:                j.ID,
-		SourceURL:         j.SourceURL,
-		SourceUser:        j.SourceUser,
-		Status:            string(j.Status),
-		MigrateRepos:      j.MigrateRepos,
-		MigrateUsers:      j.MigrateUsers,
-		MigrateBlobs:      j.MigrateBlobs,
-		MigratePolicies:   j.MigratePolicies,
-		RepositoriesTotal: j.TotalRepos,
-		RepositoriesDone:  j.DoneRepos,
-		AssetsTotal:       j.TotalAssets,
-		AssetsDone:        j.DoneAssets,
-		ErrorCount:        j.ErrorCount,
-		LastError:         j.LastError,
-		CreatedAt:         j.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
-		UpdatedAt:         j.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		ID:                  j.ID,
+		SourceURL:           j.SourceURL,
+		SourceUser:          j.SourceUser,
+		Status:              string(j.Status),
+		MigrateRepos:        j.MigrateRepos,
+		MigrateUsers:        j.MigrateUsers,
+		MigrateBlobs:        j.MigrateBlobs,
+		MigratePolicies:     j.MigratePolicies,
+		MigratePrivileges:   j.MigratePrivileges,
+		MigrateRoles:        j.MigrateRoles,
+		MigrateRoutingRules: j.MigrateRoutingRules,
+		RepositoriesTotal:   j.TotalRepos,
+		RepositoriesDone:    j.DoneRepos,
+		AssetsTotal:         j.TotalAssets,
+		AssetsDone:          j.DoneAssets,
+		ErrorCount:          j.ErrorCount,
+		LastError:           j.LastError,
+		CreatedAt:           j.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		UpdatedAt:           j.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	}
 	if j.StartedAt != nil {
 		s := j.StartedAt.Format("2006-01-02T15:04:05Z07:00")
@@ -89,11 +103,7 @@ func (h *MigrationHandler) ListJobs(c *gin.Context) {
 func (h *MigrationHandler) GetJob(c *gin.Context) {
 	job, err := h.repo.Get(c.Request.Context(), c.Param("id"))
 	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
-			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondMigrationErr(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, toJobResp(*job))
@@ -109,10 +119,13 @@ type createJobReq struct {
 		Concurrency int `json:"concurrency"`
 	} `json:"options"`
 	Scope struct {
-		MigrateRepos    *bool `json:"migrateRepos"`
-		MigrateUsers    *bool `json:"migrateUsers"`
-		MigrateBlobs    *bool `json:"migrateBlobs"`
-		MigratePolicies *bool `json:"migratePolicies"`
+		MigrateRepos        *bool `json:"migrateRepos"`
+		MigrateUsers        *bool `json:"migrateUsers"`
+		MigrateBlobs        *bool `json:"migrateBlobs"`
+		MigratePolicies     *bool `json:"migratePolicies"`
+		MigratePrivileges   *bool `json:"migratePrivileges"`
+		MigrateRoles        *bool `json:"migrateRoles"`
+		MigrateRoutingRules *bool `json:"migrateRoutingRules"`
 	} `json:"scope"`
 }
 
@@ -123,7 +136,7 @@ func boolDefault(b *bool, def bool) bool {
 	return *b
 }
 
-// CreateJob handles POST /api/v1/migration/jobs — creates a pending migration job.
+// CreateJob handles POST /api/v1/migration/jobs — creates the job and starts it.
 func (h *MigrationHandler) CreateJob(c *gin.Context) {
 	var req createJobReq
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -131,54 +144,102 @@ func (h *MigrationHandler) CreateJob(c *gin.Context) {
 		return
 	}
 
+	// migratePolicies used to be the single switch for the security model. It
+	// stays the default the finer-grained scopes fall back to, so a client
+	// written against the older shape still gets what it asked for.
+	policies := boolDefault(req.Scope.MigratePolicies, true)
+
 	job := &domain.MigrationJob{
-		SourceURL:       req.SourceURL,
-		SourceUser:      req.Credentials.Username,
-		Status:          domain.MigrationPending,
-		MigrateRepos:    boolDefault(req.Scope.MigrateRepos, true),
-		MigrateUsers:    boolDefault(req.Scope.MigrateUsers, true),
-		MigrateBlobs:    boolDefault(req.Scope.MigrateBlobs, true),
-		MigratePolicies: boolDefault(req.Scope.MigratePolicies, true),
+		SourceURL:           req.SourceURL,
+		SourceUser:          req.Credentials.Username,
+		MigrateRepos:        boolDefault(req.Scope.MigrateRepos, true),
+		MigrateUsers:        boolDefault(req.Scope.MigrateUsers, true),
+		MigrateBlobs:        boolDefault(req.Scope.MigrateBlobs, true),
+		MigratePolicies:     policies,
+		MigratePrivileges:   boolDefault(req.Scope.MigratePrivileges, policies),
+		MigrateRoles:        boolDefault(req.Scope.MigrateRoles, policies),
+		MigrateRoutingRules: boolDefault(req.Scope.MigrateRoutingRules, policies),
 	}
 
-	if err := h.repo.Create(c.Request.Context(), job); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if err := h.svc.Create(c.Request.Context(), job, req.Credentials.Password); err != nil {
+		respondMigrationErr(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, toJobResp(*job))
 }
 
-// PauseJob handles the pause action, setting the job status to paused.
+// PauseJob handles POST /api/v1/migration/jobs/:id/pause — stops the run and
+// parks the job where it stands.
 func (h *MigrationHandler) PauseJob(c *gin.Context) {
-	h.setStatus(c, domain.MigrationPaused)
+	if err := h.svc.Pause(c.Request.Context(), c.Param("id")); err != nil {
+		respondMigrationErr(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
 }
 
-// ResumeJob handles the resume action, setting the job status back to running.
+// ResumeJob handles POST /api/v1/migration/jobs/:id/resume — starts a fresh
+// pass that skips everything already migrated.
 func (h *MigrationHandler) ResumeJob(c *gin.Context) {
-	h.setStatus(c, domain.MigrationRunning)
+	if err := h.svc.Resume(c.Request.Context(), c.Param("id")); err != nil {
+		respondMigrationErr(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
 }
 
 // DeleteJob handles DELETE /api/v1/migration/jobs/:id — removes a migration job.
 func (h *MigrationHandler) DeleteJob(c *gin.Context) {
-	if err := h.repo.Delete(c.Request.Context(), c.Param("id")); err != nil {
-		if strings.Contains(err.Error(), "not found") {
-			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	id := c.Param("id")
+	// Stop the runner first: deleting the row under a live goroutine would
+	// leave it writing progress to a job that no longer exists.
+	_ = h.svc.Pause(c.Request.Context(), id)
+	if err := h.repo.Delete(c.Request.Context(), id); err != nil {
+		respondMigrationErr(c, err)
 		return
 	}
 	c.Status(http.StatusNoContent)
 }
 
-func (h *MigrationHandler) setStatus(c *gin.Context, status domain.MigrationJobStatus) {
-	if err := h.repo.UpdateStatus(c.Request.Context(), c.Param("id"), status); err != nil {
-		if strings.Contains(err.Error(), "not found") {
-			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+type previewReq struct {
+	SourceURL string `json:"sourceUrl"`
+	Username  string `json:"username"`
+	Password  string `json:"password"`
+}
+
+// Preview handles POST /api/v1/migration/preview — a read-only reachability
+// check against a Nexus instance. It creates nothing, so it is safe to call as
+// often as an operator edits the form.
+func (h *MigrationHandler) Preview(c *gin.Context) {
+	var req previewReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.Status(http.StatusNoContent)
+
+	res, err := h.svc.Preview(c.Request.Context(), req.SourceURL, req.Username, req.Password)
+	if errors.Is(err, service.ErrInvalidInput) {
+		// The request was understood and rejected on its content, not its shape.
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error(), "reachable": false})
+		return
+	}
+	if err != nil {
+		// The failure is upstream: the operator needs the underlying reason,
+		// not a generic 500 that reads like a bug here.
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error(), "reachable": false})
+		return
+	}
+	c.JSON(http.StatusOK, res)
+}
+
+// respondMigrationErr maps a service or repository error onto a status code.
+func respondMigrationErr(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, service.ErrInvalidInput):
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	case errors.Is(err, repository.ErrNotFound), strings.Contains(err.Error(), "not found"):
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+	default:
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	}
 }

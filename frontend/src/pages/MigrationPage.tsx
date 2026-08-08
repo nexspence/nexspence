@@ -1,26 +1,17 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowRightLeft, Play, Pause, RefreshCw, Plus } from 'lucide-react'
+import { ArrowRightLeft, Play, Pause, RefreshCw, Plus, PlugZap } from 'lucide-react'
 import { nexspenceApi, apiErrorMessage } from '@/api/client'
 import { HoloCard, HoloButton, HoloPill, HoloInput, HoloModal } from '@/components/holo'
-
-interface MigrationJob {
-  id: string
-  status: 'pending' | 'running' | 'paused' | 'completed' | 'failed'
-  sourceUrl: string
-  repositoriesTotal: number
-  repositoriesDone: number
-  assetsTotal: number
-  assetsDone: number
-  errorCount: number
-  createdAt: string
-  updatedAt: string
-}
+import { type MigrationJob, shouldPollJobs } from './migrationJobs'
 
 const STATUS_STYLE: Record<string, { bg: string; color: string }> = {
   pending:   { bg: 'rgba(245,158,11,0.15)',  color: '#f59e0b' },
   running:   { bg: 'rgba(59,130,246,0.15)',  color: '#3b82f6' },
   paused:    { bg: 'rgba(107,114,128,0.15)', color: '#9ca3af' },
+  done:      { bg: 'rgba(34,197,94,0.15)',   color: '#22c55e' },
+  error:     { bg: 'rgba(239,68,68,0.15)',   color: '#ef4444' },
+  // Kept for jobs recorded by older builds, which used these two labels.
   completed: { bg: 'rgba(34,197,94,0.15)',   color: '#22c55e' },
   failed:    { bg: 'rgba(239,68,68,0.15)',   color: '#ef4444' },
 }
@@ -32,10 +23,7 @@ export default function MigrationPage() {
   const { data: jobs = [], isLoading, refetch } = useQuery<MigrationJob[]>({
     queryKey: ['migrationJobs'],
     queryFn: () => nexspenceApi.listMigrationJobs().then(r => r.data),
-    refetchInterval: (q) => {
-      const list = q.state.data as MigrationJob[] | undefined
-      return list?.some(j => j.status === 'running') ? 3000 : false
-    },
+    refetchInterval: (q) => shouldPollJobs(q.state.data as MigrationJob[] | undefined),
   })
 
   const pauseMut = useMutation({
@@ -115,6 +103,12 @@ export default function MigrationPage() {
                   </div>
                 </div>
 
+                {job.lastError && (
+                  <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 8, padding: '8px 12px', fontSize: 12, color: '#fca5a5', wordBreak: 'break-word' }}>
+                    {job.lastError}
+                  </div>
+                )}
+
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <span style={{ fontSize: 12, color: 'var(--holo-text-faint)' }}>Started {new Date(job.createdAt).toLocaleString()}</span>
                   <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
@@ -145,13 +139,59 @@ export default function MigrationPage() {
   )
 }
 
+interface PreviewRepo { name: string; format: string; type: string }
+interface PreviewResult { reachable: boolean; repoCount: number; repos: PreviewRepo[] }
+
+/** The stages a job can run, in the order the engine runs them. */
+const SCOPES = [
+  { key: 'migrateRepos',        label: 'Repositories' },
+  { key: 'migrateBlobs',        label: 'Artifacts' },
+  { key: 'migratePrivileges',   label: 'Privileges' },
+  { key: 'migrateRoles',        label: 'Roles' },
+  { key: 'migrateUsers',        label: 'Users' },
+  { key: 'migrateRoutingRules', label: 'Routing rules' },
+] as const
+
+type ScopeKey = (typeof SCOPES)[number]['key']
+
 function CreateMigrationModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
   const [form, setForm] = useState({ sourceUrl: '', username: 'admin', password: '', concurrency: '4' })
+  const [scope, setScope] = useState<Record<ScopeKey, boolean>>(
+    () => Object.fromEntries(SCOPES.map(s => [s.key, true])) as Record<ScopeKey, boolean>,
+  )
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [testing, setTesting] = useState(false)
+  const [preview, setPreview] = useState<PreviewResult | null>(null)
+  const [previewError, setPreviewError] = useState('')
 
-  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
+  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => {
+    // A connection result belongs to the details it was tested with. Once any
+    // of them changes it is stale, and a stale green banner is worse than none.
+    setPreview(null)
+    setPreviewError('')
     setForm(f => ({ ...f, [k]: e.target.value }))
+  }
+
+  const toggleScope = (k: ScopeKey) => () => setScope(s => ({ ...s, [k]: !s[k] }))
+
+  const handleTest = async () => {
+    setPreview(null)
+    setPreviewError('')
+    setTesting(true)
+    try {
+      const { data } = await nexspenceApi.previewMigration({
+        sourceUrl: form.sourceUrl,
+        username: form.username,
+        password: form.password,
+      })
+      setPreview(data as PreviewResult)
+    } catch (err) {
+      setPreviewError(apiErrorMessage(err, 'Could not reach that Nexus'))
+    } finally {
+      setTesting(false)
+    }
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -162,6 +202,7 @@ function CreateMigrationModal({ onClose, onCreated }: { onClose: () => void; onC
         sourceUrl: form.sourceUrl,
         credentials: { username: form.username, password: form.password },
         options: { concurrency: parseInt(form.concurrency) || 4 },
+        scope,
       })
       onCreated()
     } catch (err) {
@@ -177,8 +218,33 @@ function CreateMigrationModal({ onClose, onCreated }: { onClose: () => void; onC
       <form style={{ display: 'flex', flexDirection: 'column', gap: 14 }} onSubmit={handleSubmit}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
           <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--holo-text-dim)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Nexus URL *</label>
-          <HoloInput placeholder="https://nexus.example.com" value={form.sourceUrl} onChange={set('sourceUrl')} required />
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <HoloInput style={{ flex: 1 }} placeholder="https://nexus.example.com" value={form.sourceUrl} onChange={set('sourceUrl')} required />
+            <HoloButton type="button" onClick={handleTest} disabled={testing || !form.sourceUrl}>
+              <PlugZap size={14} /> {testing ? 'Testing…' : 'Test connection'}
+            </HoloButton>
+          </div>
         </div>
+
+        {preview && (
+          <div style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.25)', borderRadius: 8, padding: '10px 12px', color: '#86efac', fontSize: 13 }}>
+            <div style={{ fontWeight: 600 }}>
+              Connected — {preview.repoCount} {preview.repoCount === 1 ? 'repository' : 'repositories'} found
+            </div>
+            {preview.repos.length > 0 && (
+              <div style={{ marginTop: 6, fontFamily: 'monospace', fontSize: 12, maxHeight: 120, overflowY: 'auto', lineHeight: 1.6 }}>
+                {preview.repos.map(r => (
+                  <div key={r.name}>{r.name} <span style={{ opacity: 0.7 }}>({r.format}/{r.type})</span></div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+        {previewError && (
+          <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 8, padding: '10px 12px', color: '#fca5a5', fontSize: 13, wordBreak: 'break-word' }}>
+            {previewError}
+          </div>
+        )}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
             <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--holo-text-dim)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Username</label>
@@ -192,6 +258,17 @@ function CreateMigrationModal({ onClose, onCreated }: { onClose: () => void; onC
         <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
           <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--holo-text-dim)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Concurrency</label>
           <HoloInput type="number" min={1} max={16} value={form.concurrency} onChange={set('concurrency')} />
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--holo-text-dim)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>What to migrate</label>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 12px' }}>
+            {SCOPES.map(s => (
+              <label key={s.key} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--holo-text)', cursor: 'pointer' }}>
+                <input type="checkbox" checked={scope[s.key]} onChange={toggleScope(s.key)} />
+                {s.label}
+              </label>
+            ))}
+          </div>
         </div>
         {error && <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 8, padding: '10px 12px', color: '#fca5a5', fontSize: 13 }}>{error}</div>}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 8 }}>
