@@ -17,6 +17,13 @@ updates:
           - "react-dom"
           - "@types/react"
           - "@types/react-dom"
+      # The typescript-eslint packages peer-depend on each other at an exact
+      # version. Bumping the plugin on its own leaves the parser behind and
+      # `npm ci` fails to resolve the tree, so they move as one.
+      typescript-eslint:
+        patterns:
+          - "typescript-eslint"
+          - "@typescript-eslint/*"
   - package-ecosystem: docker
     directory: "/"
     schedule:
