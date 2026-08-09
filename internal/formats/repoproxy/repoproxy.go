@@ -498,6 +498,18 @@ func storeAndServeResponse(c *gin.Context, d formats.Deps, repo *domain.Reposito
 	c.Header("Content-Type", ct)
 	c.Status(resp.StatusCode)
 
+	// Quota gate (#189): when caching this artifact would exceed the repository
+	// or blob-store quota, serve it straight from upstream and skip the cache —
+	// clients keep working, the cache stops growing.
+	if resp.ContentLength > 0 {
+		if qErr := base.CheckQuota(ctx, d, repo, resp.ContentLength); errors.Is(qErr, base.ErrQuotaExceeded) {
+			if c.Request.Method != http.MethodHead {
+				_, _ = io.Copy(c.Writer, resp.Body)
+			}
+			return nil
+		}
+	}
+
 	blobKey := base.BlobKey(repo.Name, repoRelativePath)
 	sha256h := sha256.New()
 	sha1h := sha1.New() //nolint:gosec // protocol checksum, not security
@@ -540,6 +552,15 @@ func storeAndServeResponse(c *gin.Context, d formats.Deps, repo *domain.Reposito
 		}
 	}
 
+	// Post-write quota gate for upstreams that don't declare Content-Length: the
+	// client already has the bytes, so just drop the over-quota blob unregistered.
+	if resp.ContentLength <= 0 && size > 0 {
+		if qErr := base.CheckQuota(ctx, d, repo, size); errors.Is(qErr, base.ErrQuotaExceeded) {
+			_ = physStore.Delete(ctx, blobKey)
+			return nil
+		}
+	}
+
 	// Use context.Background so DB registration survives request context cancellation
 	// after streaming (client closes connection once all bytes are received).
 	regAsset, regErr := base.RegisterStoredBlob(context.Background(), d, repo, repoRelativePath, ct, coords, blobKey, sha256sum, sha1sum, md5sum, size, resolvedID, resolvedName)
@@ -560,6 +581,11 @@ func storeAndServeResponse(c *gin.Context, d formats.Deps, repo *domain.Reposito
 func storeOriginal(ctx context.Context, c *gin.Context, d formats.Deps, repo *domain.Repository,
 	repoRelativePath, ct string, coords base.Coords, body []byte,
 ) error {
+	// Quota gate (#189): over-quota metadata is served (rewritten) but not cached.
+	if qErr := base.CheckQuota(ctx, d, repo, int64(len(body))); errors.Is(qErr, base.ErrQuotaExceeded) {
+		return nil
+	}
+
 	blobKey := base.BlobKey(repo.Name, repoRelativePath)
 	resolvedID, resolvedName, physStore := base.ResolveBlobStore(ctx, d, repo)
 	if err := physStore.Put(ctx, blobKey, bytes.NewReader(body), int64(len(body))); err != nil {
