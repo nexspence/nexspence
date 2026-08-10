@@ -416,6 +416,13 @@ type Coords struct {
 	Version string // semantic version
 }
 
+// CheckQuota verifies that writing `size` bytes for repo won't exceed the repository or
+// blob-store quota. Exported for callers that write blobs outside StoreArtifact —
+// the proxy cache-fill path — so every write path shares one quota gate.
+func CheckQuota(ctx context.Context, d formats.Deps, repo *domain.Repository, size int64) error {
+	return checkQuota(ctx, d, repo, size)
+}
+
 // checkQuota verifies that writing `size` bytes won't exceed either the blob store quota or the
 // repository-level quota. Returns ErrQuotaExceeded if either is breached.
 // For group stores, the blob-store quota check is deferred to resolveBlobStoreRef:
