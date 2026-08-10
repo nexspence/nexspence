@@ -51,6 +51,7 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 	// Package simple index: GET /simple/ (path.Clean strips trailing slash → "/simple")
 	case c.Request.Method == http.MethodGet && (p == "/simple" || p == "/simple/"):
 		if repo != nil && repo.Type == domain.TypeProxy {
+			forceHTMLSimplePage(c)
 			coords := base.Coords{Name: "_simple", Version: "index"}
 			// The simple index is mutable metadata — revalidate on a TTL.
 			if err := repoproxy.ServeGET(c, h.deps, repo, p, "", coords, "text/html; charset=utf-8", repoproxy.MetadataMaxAge(repo)); err != nil {
@@ -64,6 +65,7 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 	case c.Request.Method == http.MethodGet && strings.HasPrefix(p, "/simple/"):
 		pkgName := strings.TrimSuffix(strings.TrimPrefix(p, "/simple/"), "/")
 		if repo != nil && repo.Type == domain.TypeProxy {
+			forceHTMLSimplePage(c)
 			normalized := normalizePackageName(pkgName)
 			coords := base.Coords{Name: normalized, Version: "simple-page"}
 			// A per-package simple page is mutable metadata (new releases appear).
@@ -228,6 +230,18 @@ func (h *Handler) serveFile(c *gin.Context, repoName, filePath string) {
 		return
 	}
 	c.DataFromReader(http.StatusOK, asset.SizeBytes, asset.ContentType, rc, nil)
+}
+
+// forceHTMLSimplePage pins the upstream Accept for proxied simple pages to
+// PEP 503 HTML (#191). Modern pip asks for the PEP 691 JSON page; forwarding
+// that upstream breaks everything downstream that assumes HTML — href
+// rewriting (#98), anchor-based group merging (#99), and the one-representation
+// -per-path cache. pip accepts an HTML answer via content negotiation, so
+// always fetching HTML keeps the cache correct by construction. The request
+// here is the handler's own (groups fan out on a clone), so the mutation never
+// leaks back to the client's request.
+func forceHTMLSimplePage(c *gin.Context) {
+	c.Request.Header.Set("Accept", "text/html")
 }
 
 func normalizePackageName(name string) string {
