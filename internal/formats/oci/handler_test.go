@@ -264,6 +264,153 @@ func TestDocker_TagsList_AfterPush(t *testing.T) {
 	assert.Contains(t, body, "latest")
 }
 
+// ── Digest verification (issue #194) ──────────────────────────
+
+func TestDocker_BlobPush_DigestMismatch_Rejected(t *testing.T) {
+	repo := testutil.SimpleRepo("regd1", "docker")
+	r := setup(repo)
+
+	content := "actual layer bytes"
+	claimed := digest("something else entirely")
+
+	req := httptest.NewRequest(http.MethodPost,
+		"/repository/regd1/v2/app/blobs/uploads/", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusAccepted, w.Code)
+	loc := w.Header().Get("Location")
+
+	req2 := httptest.NewRequest(http.MethodPatch, loc, strings.NewReader(content))
+	req2.ContentLength = int64(len(content))
+	w2 := httptest.NewRecorder()
+	r.ServeHTTP(w2, req2)
+	require.Equal(t, http.StatusAccepted, w2.Code)
+
+	// Finalize claiming a digest that does not match the uploaded bytes.
+	req3 := httptest.NewRequest(http.MethodPut, loc+"?digest="+claimed, nil)
+	w3 := httptest.NewRecorder()
+	r.ServeHTTP(w3, req3)
+	assert.Equal(t, http.StatusBadRequest, w3.Code)
+	assert.Contains(t, w3.Body.String(), "DIGEST_INVALID")
+
+	// Nothing must be registered under the claimed digest.
+	req4 := httptest.NewRequest(http.MethodGet,
+		"/repository/regd1/v2/app/blobs/"+claimed, nil)
+	w4 := httptest.NewRecorder()
+	r.ServeHTTP(w4, req4)
+	assert.Equal(t, http.StatusNotFound, w4.Code)
+}
+
+func TestDocker_BlobPush_UnsupportedDigestAlgorithm_Rejected(t *testing.T) {
+	repo := testutil.SimpleRepo("regd2", "docker")
+	r := setup(repo)
+
+	content := "layer bytes"
+	req := httptest.NewRequest(http.MethodPost,
+		"/repository/regd2/v2/app/blobs/uploads/", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusAccepted, w.Code)
+	loc := w.Header().Get("Location")
+
+	req2 := httptest.NewRequest(http.MethodPatch, loc, strings.NewReader(content))
+	req2.ContentLength = int64(len(content))
+	w2 := httptest.NewRecorder()
+	r.ServeHTTP(w2, req2)
+	require.Equal(t, http.StatusAccepted, w2.Code)
+
+	// The registry only computes sha256; an unverifiable algorithm must be rejected,
+	// not trusted blindly.
+	sha512Digest := "sha512:" + strings.Repeat("ab", 64)
+	req3 := httptest.NewRequest(http.MethodPut, loc+"?digest="+sha512Digest, nil)
+	w3 := httptest.NewRecorder()
+	r.ServeHTTP(w3, req3)
+	assert.Equal(t, http.StatusBadRequest, w3.Code)
+	assert.Contains(t, w3.Body.String(), "DIGEST_INVALID")
+}
+
+func TestDocker_BlobPush_MalformedDigest_Rejected(t *testing.T) {
+	repo := testutil.SimpleRepo("regd3", "docker")
+	r := setup(repo)
+
+	req := httptest.NewRequest(http.MethodPost,
+		"/repository/regd3/v2/app/blobs/uploads/", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusAccepted, w.Code)
+	loc := w.Header().Get("Location")
+
+	req2 := httptest.NewRequest(http.MethodPatch, loc, strings.NewReader("data"))
+	req2.ContentLength = 4
+	w2 := httptest.NewRecorder()
+	r.ServeHTTP(w2, req2)
+	require.Equal(t, http.StatusAccepted, w2.Code)
+
+	req3 := httptest.NewRequest(http.MethodPut, loc+"?digest=sha256:nothex", nil)
+	w3 := httptest.NewRecorder()
+	r.ServeHTTP(w3, req3)
+	assert.Equal(t, http.StatusBadRequest, w3.Code)
+	assert.Contains(t, w3.Body.String(), "DIGEST_INVALID")
+}
+
+func TestDocker_ManifestPushByDigest_Mismatch_Rejected(t *testing.T) {
+	repo := testutil.SimpleRepo("regd4", "docker")
+	r := setup(repo)
+
+	manifest := `{"schemaVersion":2}`
+	claimed := digest("a different manifest")
+
+	req := httptest.NewRequest(http.MethodPut,
+		"/repository/regd4/v2/app/manifests/"+claimed,
+		strings.NewReader(manifest))
+	req.ContentLength = int64(len(manifest))
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "DIGEST_INVALID")
+
+	// Nothing must resolve under the claimed digest.
+	req2 := httptest.NewRequest(http.MethodGet,
+		"/repository/regd4/v2/app/manifests/"+claimed, nil)
+	w2 := httptest.NewRecorder()
+	r.ServeHTTP(w2, req2)
+	assert.Equal(t, http.StatusNotFound, w2.Code)
+}
+
+func TestDocker_ManifestPushByDigest_Match_Accepted(t *testing.T) {
+	repo := testutil.SimpleRepo("regd5", "docker")
+	r := setup(repo)
+
+	manifest := `{"schemaVersion":2}`
+	dgst := digest(manifest)
+
+	req := httptest.NewRequest(http.MethodPut,
+		"/repository/regd5/v2/app/manifests/"+dgst,
+		strings.NewReader(manifest))
+	req.ContentLength = int64(len(manifest))
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusCreated, w.Code)
+	assert.Equal(t, dgst, w.Header().Get("Docker-Content-Digest"))
+}
+
+func TestDocker_ManifestPushByDigest_UnsupportedAlgorithm_Rejected(t *testing.T) {
+	repo := testutil.SimpleRepo("regd6", "docker")
+	r := setup(repo)
+
+	manifest := `{"schemaVersion":2}`
+	ref := "sha512:" + strings.Repeat("cd", 64)
+
+	req := httptest.NewRequest(http.MethodPut,
+		"/repository/regd6/v2/app/manifests/"+ref,
+		strings.NewReader(manifest))
+	req.ContentLength = int64(len(manifest))
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "DIGEST_INVALID")
+}
+
 // ── Auth gate ─────────────────────────────────────────────────
 
 func TestDocker_BlobUpload_NoAuth_Returns401(t *testing.T) {

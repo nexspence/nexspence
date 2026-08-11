@@ -21,6 +21,8 @@ package oci
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
@@ -297,6 +299,16 @@ func (h *Handler) pushManifest(c *gin.Context, repoName, imageName, reference st
 		dockerError(c, http.StatusRequestEntityTooLarge, "MANIFEST_INVALID",
 			"manifest exceeds the 4MiB limit")
 		return
+	}
+
+	// A reference that names a digest is a claim about the bytes; verify it
+	// before anything is written, or a pusher could register arbitrary content
+	// under a digest another consumer already pins (issue #194).
+	if strings.Contains(reference, ":") {
+		if msg := digestMismatch(reference, body); msg != "" {
+			dockerError(c, http.StatusBadRequest, "DIGEST_INVALID", msg)
+			return
+		}
 	}
 
 	res, err := base.StoreArtifact(c.Request.Context(), h.deps,
@@ -774,6 +786,14 @@ func (h *Handler) finalizeUpload(c *gin.Context, repoName, imageName, uuid strin
 		return
 	}
 
+	// The blob is stored and served under the client-claimed digest, so the
+	// claim must match the bytes before anything is written (issue #194). The
+	// session is kept: the client may retry the PUT with the correct digest.
+	if msg := digestMismatch(digest, data); msg != "" {
+		dockerError(c, http.StatusBadRequest, "DIGEST_INVALID", msg)
+		return
+	}
+
 	fp := blobPath(imageName, digest)
 	coords := base.Coords{Name: imageName, Version: digest}
 	if _, err := base.StoreArtifact(c.Request.Context(), h.deps,
@@ -805,6 +825,27 @@ func requireDockerAuth(c *gin.Context) bool {
 	c.Header("WWW-Authenticate", `Basic realm="Nexspence"`)
 	dockerError(c, http.StatusUnauthorized, "UNAUTHORIZED", "authentication required")
 	return false
+}
+
+// digestMismatch verifies a client-claimed digest against the content it
+// claims to describe. It returns "" when the claim holds, otherwise a message
+// for a 400 DIGEST_INVALID response. Only sha256 is accepted: an algorithm
+// the registry cannot compute itself cannot be verified, and storing content
+// under an unverified digest would let any pusher publish arbitrary bytes
+// under a digest a consumer already pins (issue #194).
+func digestMismatch(claimed string, content []byte) string {
+	algo, hexDigest, ok := strings.Cut(claimed, ":")
+	if !ok {
+		return fmt.Sprintf("digest %q must have the form <algorithm>:<hex>", claimed)
+	}
+	if algo != "sha256" {
+		return fmt.Sprintf("unsupported digest algorithm %q: only sha256 can be verified", algo)
+	}
+	sum := sha256.Sum256(content)
+	if actual := hex.EncodeToString(sum[:]); actual != hexDigest {
+		return fmt.Sprintf("digest %s does not match content sha256:%s", claimed, actual)
+	}
+	return ""
 }
 
 func dockerError(c *gin.Context, status int, code, message string) {
