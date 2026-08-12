@@ -268,6 +268,51 @@ func TestLoad_TrustedProxies_EnvOverride(t *testing.T) {
 	assert.Equal(t, []string{"10.0.0.0/8", "192.168.1.1"}, cfg.HTTP.TrustedProxies)
 }
 
+// The Prometheus scrape endpoint stays behind Bearer auth unless an operator
+// opts out: it is served on the same public listener as the rest of the API,
+// so an anonymous /metrics would publish install size and Go runtime details.
+func TestLoad_MetricsPublic_DefaultsFalse(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := "" +
+		"database:\n  dsn: \"postgres://u:p@localhost:5432/db?sslmode=disable\"\n" +
+		"auth:\n  jwt_secret: \"a-unique-production-secret-at-least-32b\"\n"
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.False(t, cfg.Metrics.Public,
+		"metrics.public must default to false so /metrics keeps requiring a Bearer token")
+}
+
+func TestLoad_MetricsPublic_FromFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := "" +
+		"database:\n  dsn: \"postgres://u:p@localhost:5432/db?sslmode=disable\"\n" +
+		"auth:\n  jwt_secret: \"a-unique-production-secret-at-least-32b\"\n" +
+		"metrics:\n  public: true\n"
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.True(t, cfg.Metrics.Public)
+}
+
+func TestLoad_MetricsPublic_EnvOverride(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := "" +
+		"database:\n  dsn: \"postgres://u:p@localhost:5432/db?sslmode=disable\"\n" +
+		"auth:\n  jwt_secret: \"a-unique-production-secret-at-least-32b\"\n"
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+
+	t.Setenv("NEXSPENCE_METRICS_PUBLIC", "true")
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.True(t, cfg.Metrics.Public)
+}
+
 func TestLoad_AllowInsecureDefaults_EnvOverride(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")

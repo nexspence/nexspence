@@ -165,6 +165,41 @@ For multi-replica deployments, use S3 storage (see above).
 
 ---
 
+## Monitoring (Prometheus)
+
+The pod serves `GET /metrics` on the same port as the API, so it requires a
+Bearer token by default. Inside a cluster the Service is usually only reachable
+by Prometheus anyway, and then the token is one more secret to rotate:
+
+```bash
+helm upgrade nexspence deploy/helm/nexspence \
+  --set config.metricsPublic=true \
+  --namespace nexspence
+```
+
+A matching `ServiceMonitor` (the chart does not ship one — port name is `http`):
+
+```yaml
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: nexspence
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: nexspence
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+```
+
+Leaving `config.metricsPublic=false` keeps the token requirement — add an
+`authorization:` block pointing at a Secret holding an `nxs_*` token. See
+[docs/deployment.md](../../../docs/deployment.md#prometheus).
+
+---
+
 ## Upgrading
 
 ```bash

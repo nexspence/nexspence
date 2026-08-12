@@ -59,6 +59,11 @@ config:
   adminPassword: "admin123"
   adminEmail: "admin@example.com"
   adminFirstName: "Admin"
+  # -- Serve GET /metrics without authentication. It shares the listener with
+  # the API, so the default requires a Bearer token; set this to true when only
+  # the cluster network reaches the Service and a scrape token would just be one
+  # more secret to rotate.
+  metricsPublic: false
 
 # -- Blob storage: "local" or "s3"
 storage:

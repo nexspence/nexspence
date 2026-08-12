@@ -301,14 +301,30 @@ paths:
         '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/User' } } } }
         '401': { description: Unauthorized }
 
-  # ── Metrics (Nexspence-native, public) ───────────────────────────
+  # ── Metrics (Nexspence-native) ───────────────────────────────────
+
+  /metrics:
+    get:
+      tags: [System]
+      summary: Prometheus scrape endpoint (text exposition format)
+      description: >
+        Requires a Bearer token (JWT or nxs_*) unless the server sets
+        `metrics.public: true`, which serves it anonymously for deployments
+        whose listener is only reachable from a trusted network.
+      operationId: getPrometheusMetrics
+      responses:
+        '200':
+          description: Prometheus text exposition
+          content:
+            text/plain:
+              schema: { type: string }
+        '401': { description: Unauthorized (metrics.public is false and no token was sent) }
 
   /api/v1/metrics:
     get:
       tags: [System]
-      summary: In-process metrics snapshot (no auth required)
+      summary: In-process metrics snapshot (JSON, for the UI)
       operationId: getMetrics
-      security: []
       responses:
         '200':
           description: Metrics snapshot

@@ -15,6 +15,7 @@ data:
   NEXSPENCE_BOOTSTRAP_ADMIN_USERNAME: {{ .Values.config.adminUsername | quote }}
   NEXSPENCE_BOOTSTRAP_ADMIN_EMAIL: {{ .Values.config.adminEmail | quote }}
   NEXSPENCE_BOOTSTRAP_ADMIN_FIRST_NAME: {{ .Values.config.adminFirstName | quote }}
+  NEXSPENCE_METRICS_PUBLIC: {{ .Values.config.metricsPublic | quote }}
   {{- if eq .Values.storage.type "local" }}
   NEXSPENCE_STORAGE_LOCAL_BASE_PATH: {{ .Values.storage.local.mountPath | quote }}
   {{- else if eq .Values.storage.type "s3" }}

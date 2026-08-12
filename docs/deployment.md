@@ -157,5 +157,59 @@ Five networking options (nginx, Traefik, Cilium ingress, Istio Gateway, Cilium G
 | `bootstrap.admin_password` | `admin123` | Auto-created admin password — **change this** |
 | `cleanup.default_schedule` | `0 2 * * *` | Default cron for cleanup policies |
 | `audit.retention_days` | `90` | Audit log partition retention |
+| `metrics.public` | `false` | Serve `GET /metrics` without authentication. Default requires a Bearer token; see [Prometheus](#prometheus). |
 | `redis.enabled` | `false` | Enable Redis (required for HA) |
 | `redis.addr` | `localhost:6379` | Redis address |
+
+---
+
+## Prometheus
+
+Nexspence exposes the Prometheus text format at `GET /metrics`, on the same listener as the API.
+
+That shared listener is why the endpoint requires a Bearer token by default: an anonymous scrape publishes install size, artifact and download counts and the Go runtime fingerprint to anyone who can reach the instance.
+
+**Authenticated scrape (default).** Create a user token in the UI (Profile → Tokens) and hand it to Prometheus:
+
+```yaml
+scrape_configs:
+  - job_name: nexspence
+    authorization:
+      type: Bearer
+      credentials: nxs_...
+    static_configs:
+      - targets: ["nexspence:8081"]
+```
+
+With a `ServiceMonitor`, put the token in a Secret instead:
+
+```yaml
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: nexspence
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: nexspence
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+      authorization:
+        type: Bearer
+        credentials:
+          name: nexspence-metrics-token   # Secret with key `token` = nxs_...
+          key: token
+```
+
+**Anonymous scrape.** When the listener is only reachable from a trusted network — a cluster-internal `Service`, a localhost bind, or a reverse proxy that blocks `/metrics` from outside — a scrape token is just one more secret to rotate. Turn it off:
+
+```yaml
+metrics:
+  public: true
+```
+
+or `NEXSPENCE_METRICS_PUBLIC=true`, or `--set config.metricsPublic=true` for the Helm chart. The `authorization:` block then drops out of the scrape config.
+
+The endpoint serves `nexspence_requests_total`, `nexspence_request_duration_seconds`, `nexspence_artifacts_total`, `nexspence_bytes_stored_bytes`, `nexspence_downloads_total`, `nexspence_goroutines` and `nexspence_memory_alloc_bytes`, plus the standard Go and process collectors. `/healthz` and `/readyz` are always unauthenticated and are the right targets for probes.
