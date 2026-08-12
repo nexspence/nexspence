@@ -44,8 +44,29 @@ func TestLocalBlobStore_Put_SyncsBlobBeforeRename(t *testing.T) {
 
 	require.NotEmpty(t, *calls, "Put must fsync the blob contents before renaming it into place")
 	first := (*calls)[0]
-	assert.Equal(t, dst+".tmp", first.name, "the staged temp file must be the first thing fsynced")
+	assert.True(t, strings.HasPrefix(first.name, dst+".tmp."),
+		"the staged temp file must be the first thing fsynced, got %q", first.name)
 	assert.False(t, first.dstExists, "the fsync must happen before the rename, not after")
+}
+
+// Every Put must stage under its own temp path. Sharing one fixed temp name
+// lets two concurrent writers for the same key write into the same inode, so
+// the loser corrupts the blob the winner already published (issue #196).
+func TestLocalBlobStore_Put_StagesAtUniqueTempPath(t *testing.T) {
+	base := t.TempDir()
+	s, err := NewLocalBlobStore(base)
+	require.NoError(t, err)
+
+	const key = "abcdef1234567890"
+	dst := filepath.Join(base, "ab", "cd", key)
+	calls := recordSyncs(s, dst)
+
+	require.NoError(t, s.Put(context.Background(), key, strings.NewReader("first"), 5))
+	require.NoError(t, s.Put(context.Background(), key, strings.NewReader("second"), 6))
+
+	require.Len(t, *calls, 4, "each Put must fsync the blob and then its parent directory")
+	assert.NotEqual(t, (*calls)[0].name, (*calls)[2].name,
+		"two Puts for the same key must not stage at the same temp path")
 }
 
 func TestLocalBlobStore_Put_SyncsParentDirAfterRename(t *testing.T) {
@@ -74,7 +95,7 @@ func TestLocalBlobStore_Put_SyncFailure_LeavesNoBlob(t *testing.T) {
 	dst := filepath.Join(base, "ab", "cd", key)
 	syncErr := errors.New("fsync failed")
 	s.syncFile = func(f *os.File) error {
-		if f.Name() == dst+".tmp" {
+		if strings.HasPrefix(f.Name(), dst+".tmp.") {
 			return syncErr
 		}
 		return f.Sync()
@@ -84,7 +105,9 @@ func TestLocalBlobStore_Put_SyncFailure_LeavesNoBlob(t *testing.T) {
 
 	require.ErrorIs(t, err, syncErr, "a failed fsync must fail the Put")
 	assert.NoFileExists(t, dst, "no blob may be published when its contents were not flushed to disk")
-	assert.NoFileExists(t, dst+".tmp", "the temp file must be cleaned up")
+	leftovers, globErr := filepath.Glob(dst + ".tmp.*")
+	require.NoError(t, globErr)
+	assert.Empty(t, leftovers, "the temp file must be cleaned up")
 }
 
 func TestLocalBlobStore_Put_DirSyncFailure_IsNotFatal(t *testing.T) {
