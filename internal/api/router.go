@@ -420,6 +420,7 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 
 		// ── Browse ────────────────────────────────────────────
 		authed.GET("/api/v1/browse/repositories/:name/docker-tree", browseH.DockerTree)
+		authed.GET("/api/v1/browse/repositories/:name/oci-referrers", browseH.OCIReferrers)
 		authed.GET("/api/v1/browse/repositories/:name/raw-tree", browseH.RawTree)
 		authed.GET("/api/v1/browse/repositories/:name/path-tree", browseH.PathTree)
 		authed.DELETE("/api/v1/browse/repositories/:name/path", browseH.DeleteByPath)

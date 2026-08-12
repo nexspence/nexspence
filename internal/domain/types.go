@@ -545,6 +545,12 @@ type DockerBrowseRow struct {
 	// its manifest was stored, or empty for anything pushed before that metadata
 	// existed. It is carried verbatim; naming it is the browse handler's job.
 	ArtifactType string `json:"artifactType,omitempty"`
+	// PredicateType is the in-toto predicate recorded in the manifest's
+	// dev.sigstore.bundle.predicateType annotation, or empty when there is none.
+	// A cosign attestation types its manifest after the DSSE envelope that wraps
+	// the payload, so the envelope's type says "signed statement" and only the
+	// predicate says what was stated — an SBOM, a provenance record.
+	PredicateType string `json:"predicateType,omitempty"`
 }
 
 // RawBrowseAsset is a flat asset record used to build the raw browse tree.

@@ -385,6 +385,83 @@ describe('BrowsePage — Docker tree', () => {
     expect(await screen.findByText(/No Docker metadata cached yet/)).toBeInTheDocument()
   })
 
+  // A signature or SBOM only points at the image it describes, so the panel is
+  // the only place they can be shown grouped under it (#199).
+  it('lists referrers of the selected tag with their friendly labels', async () => {
+    const user = userEvent.setup()
+    seedDocker()
+    server.use(
+      http.get('/api/v1/components/:id/scan', () => new HttpResponse(null, { status: 204 })),
+      http.get('/api/v1/browse/repositories/:name/oci-referrers', () =>
+        HttpResponse.json({
+          repository: 'docker-hosted', image: 'myapp', subject: 'sha256:abc', source: 'local',
+          referrers: [
+            { componentId: 'r1', reference: 'sha256:sig', digest: 'sha256:sig', artifactType: 'signature', size: 512 },
+            { componentId: 'r2', reference: 'sha256:sbom', digest: 'sha256:sbom', artifactType: 'sbom', size: 2048 },
+          ],
+        })),
+    )
+    renderBrowse('?repo=docker-hosted')
+    await user.click(await screen.findByText('myapp'))
+    await user.click(await screen.findByText('Tags'))
+    await user.click(await screen.findByText('latest'))
+
+    expect(await screen.findByText('Referrers')).toBeInTheDocument()
+    expect(await screen.findAllByTestId('referrer-row')).toHaveLength(2)
+    expect(screen.getByText('sbom')).toBeInTheDocument()
+    expect(screen.getByText('signature')).toBeInTheDocument()
+    expect(screen.getByText('sha256:sbom')).toBeInTheDocument()
+  })
+
+  it('says an image has nothing attached rather than showing an empty list', async () => {
+    const user = userEvent.setup()
+    seedDocker()
+    server.use(http.get('/api/v1/components/:id/scan', () => new HttpResponse(null, { status: 204 })))
+    renderBrowse('?repo=docker-hosted')
+    await user.click(await screen.findByText('myapp'))
+    await user.click(await screen.findByText('Tags'))
+    await user.click(await screen.findByText('latest'))
+
+    expect(await screen.findByText(/No signatures, SBOMs or attestations attached/)).toBeInTheDocument()
+  })
+
+  // A proxy lists only what its cache holds; presenting that as the whole set
+  // would read as "unsigned" when the truth is "not fetched".
+  it('marks a proxy referrers list as cached', async () => {
+    const user = userEvent.setup()
+    seedDocker()
+    server.use(
+      http.get('/api/v1/components/:id/scan', () => new HttpResponse(null, { status: 204 })),
+      http.get('/api/v1/browse/repositories/:name/oci-referrers', () =>
+        HttpResponse.json({
+          repository: 'docker-hosted', image: 'myapp', subject: 'sha256:abc', source: 'cache',
+          referrers: [],
+        })),
+    )
+    renderBrowse('?repo=docker-hosted')
+    await user.click(await screen.findByText('myapp'))
+    await user.click(await screen.findByText('Tags'))
+    await user.click(await screen.findByText('latest'))
+
+    expect(await screen.findByText('cached copies only')).toBeInTheDocument()
+  })
+
+  it('reports a failed referrers lookup instead of showing none attached', async () => {
+    const user = userEvent.setup()
+    seedDocker()
+    server.use(
+      http.get('/api/v1/components/:id/scan', () => new HttpResponse(null, { status: 204 })),
+      http.get('/api/v1/browse/repositories/:name/oci-referrers', () =>
+        new HttpResponse(null, { status: 500 })),
+    )
+    renderBrowse('?repo=docker-hosted')
+    await user.click(await screen.findByText('myapp'))
+    await user.click(await screen.findByText('Tags'))
+    await user.click(await screen.findByText('latest'))
+
+    expect(await screen.findByTestId('referrers-error')).toBeInTheDocument()
+  })
+
   it('expands tree, selects a tag and shows component details', async () => {
     const user = userEvent.setup()
     seedDocker()

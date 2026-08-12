@@ -170,6 +170,9 @@ export const handlers = [
   http.get('/api/v1/browse/repositories/:name/raw-tree', () =>
     HttpResponse.json({ rows: [] })
   ),
+  http.get('/api/v1/browse/repositories/:name/oci-referrers', () =>
+    HttpResponse.json({ repository: '', image: '', subject: '', source: 'local', referrers: [] })
+  ),
   http.get('/api/v1/browse/repositories/:name/path-tree', () =>
     HttpResponse.json({ paths: [] })
   ),
