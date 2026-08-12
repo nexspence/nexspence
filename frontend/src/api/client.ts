@@ -157,6 +157,29 @@ export interface ReplicationHistory {
   error: string
 }
 
+// One artifact that names an image manifest as its subject: a signature, an
+// SBOM, an attestation. `artifactType` is the friendly label the browse tree
+// uses, `rawType` the media type it was derived from.
+export interface OCIReferrer {
+  componentId: string
+  reference: string
+  digest?: string
+  artifactType?: string
+  rawType?: string
+  mediaType?: string
+  size?: number
+}
+
+export interface OCIReferrersResponse {
+  repository: string
+  image: string
+  subject: string
+  // 'cache' for a proxy repository, whose list is only what was pulled through
+  // it — an empty list there means "not fetched", never "not signed".
+  source: 'local' | 'cache'
+  referrers: OCIReferrer[]
+}
+
 export interface ReplicationRuleInput {
   name: string
   source_repo: string
@@ -410,6 +433,15 @@ export const nexspenceApi = {
   // Browse — Nexus-style Docker tree (image / Tags | Manifests | Blobs)
   getDockerBrowseTree: (repository: string) =>
     apiClient.get(`/api/v1/browse/repositories/${encodeURIComponent(repository)}/docker-tree`),
+
+  // Browse — what refers to an image manifest (signatures, SBOMs, attestations).
+  // A referrer only points at its subject, never the other way round, so this is
+  // the only way the UI can show them grouped under the image they describe.
+  getOCIReferrers: (repository: string, image: string, digest: string) =>
+    apiClient.get<OCIReferrersResponse>(
+      `/api/v1/browse/repositories/${encodeURIComponent(repository)}/oci-referrers`,
+      { params: { image, digest } },
+    ),
 
   // Browse — Raw file tree (path hierarchy from assets)
   getRawBrowseTree: (repository: string) =>

@@ -168,3 +168,41 @@ func TestDockerTree_ArtifactType_ParametersAndCaseIgnored(t *testing.T) {
 	})
 	assert.Equal(t, "sbom", leaf.ArtifactType)
 }
+
+// A cosign attestation carries the DSSE envelope's own type as its
+// artifactType, so what the artifact actually holds — the predicate — is only
+// named in an annotation. Labeling a signed SBOM "signature" hides it from
+// anyone scanning the tree for one (#199, gotcha 1).
+func TestDockerTree_SigstoreBundle_LabeledByPredicateType(t *testing.T) {
+	cases := []struct{ predicate, want string }{
+		{"https://cyclonedx.org/bom", "sbom"},
+		{"https://spdx.dev/Document", "sbom"},
+		{"https://slsa.dev/provenance/v1", "attestation"},
+		// No predicate recorded: a bundle is all we know it to be.
+		{"", "signature"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.predicate, func(t *testing.T) {
+			leaf := ociLeaf(t, domain.DockerBrowseRow{
+				ComponentID: "c1", ImageName: "art", Version: "1.0",
+				SamplePath:    "/manifests/art/1.0",
+				ArtifactType:  "application/vnd.dev.sigstore.bundle.v0.3+json",
+				PredicateType: tc.predicate,
+			})
+			assert.Equal(t, tc.want, leaf.ArtifactType)
+		})
+	}
+}
+
+// The predicate only decides the label for the envelope types that hide it.
+// A plain SBOM push that happens to carry a predicate annotation is already
+// named by its own artifactType, and must not be re-labeled by it.
+func TestDockerTree_PredicateType_IgnoredForSelfDescribingArtifacts(t *testing.T) {
+	leaf := ociLeaf(t, domain.DockerBrowseRow{
+		ComponentID: "c1", ImageName: "art", Version: "1.0",
+		SamplePath:    "/manifests/art/1.0",
+		ArtifactType:  "application/vnd.oci.image.config.v1+json",
+		PredicateType: "https://cyclonedx.org/bom",
+	})
+	assert.Equal(t, "image", leaf.ArtifactType)
+}

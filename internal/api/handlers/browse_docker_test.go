@@ -44,6 +44,7 @@ func mountBrowse(t *testing.T) (*gin.Engine, *testutil.RepoRepo, *testutil.Compo
 		c.Next()
 	})
 	r.GET("/api/v1/browse/repositories/:name/docker-tree", h.DockerTree)
+	r.GET("/api/v1/browse/repositories/:name/oci-referrers", h.OCIReferrers)
 	r.GET("/api/v1/browse/repositories/:name/path-tree", h.PathTree)
 	r.DELETE("/api/v1/browse/repositories/:name/path", h.DeleteByPath)
 	r.DELETE("/api/v1/browse/repositories/:name/docker-tag", h.DeleteDockerTag)

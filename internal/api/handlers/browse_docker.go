@@ -261,7 +261,7 @@ func insertDockerBrowseRow(root *dockerBrowseNode, row domain.DockerBrowseRow) {
 		ImageRef:     image,
 		Version:      row.Version,
 		ComponentID:  row.ComponentID,
-		ArtifactType: ociArtifactLabel(row.ArtifactType),
+		ArtifactType: ociArtifactLabel(row.ArtifactType, row.PredicateType),
 	}
 	catNode.Children = append(catNode.Children, leaf)
 }

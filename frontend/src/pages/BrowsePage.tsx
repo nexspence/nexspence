@@ -653,6 +653,72 @@ const ARTIFACT_TYPE_COLORS: Record<string, string> = {
   attestation: '#f97316',
 }
 
+// What is attached to the selected manifest: signatures, SBOMs, attestations.
+// Each of those points at its subject and nothing points back, so without this
+// they sit in the tree as unrelated siblings of the image they describe (#199).
+function ReferrersSection({
+  repository,
+  imageRef,
+  reference,
+}: {
+  repository: string
+  imageRef: string
+  reference: string
+}) {
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['ociReferrers', repository, imageRef, reference],
+    queryFn: () =>
+      nexspenceApi.getOCIReferrers(repository, imageRef, reference).then((r) => r.data),
+    retry: false,
+  })
+
+  const referrers = data?.referrers ?? []
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '10px 0 0' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <Link size={14} style={{ color: '#60a5fa', flexShrink: 0 }} />
+        <span style={{ fontSize: 12, color: 'var(--holo-text-dim)' }}>Referrers</span>
+        {data?.source === 'cache' && (
+          // A proxy knows only what was pulled through it, so an empty list here
+          // means "not fetched", never "not signed".
+          <span style={{ fontSize: 11, color: 'var(--holo-text-faint)' }}>
+            cached copies only
+          </span>
+        )}
+      </div>
+      {isLoading && <div style={S.muted}>Loading…</div>}
+      {!isLoading && error != null && (
+        <div style={{ fontSize: 12, color: '#f87171' }} data-testid="referrers-error">
+          Could not list referrers
+        </div>
+      )}
+      {!isLoading && error == null && referrers.length === 0 && (
+        <div style={S.muted}>No signatures, SBOMs or attestations attached</div>
+      )}
+      {referrers.map((ref) => (
+        <div
+          key={ref.componentId}
+          data-testid="referrer-row"
+          style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}
+        >
+          {ref.artifactType && (
+            <span style={S.badge(ARTIFACT_TYPE_COLORS[ref.artifactType] ?? '#94a3b8')}>
+              {ref.artifactType}
+            </span>
+          )}
+          <span style={{ ...S.path, fontSize: 11 }}>{ref.digest || ref.reference}</span>
+          {ref.size != null && ref.size > 0 && (
+            <span style={{ fontSize: 11, color: 'var(--holo-text-faint)' }}>
+              {formatBytes(ref.size)}
+            </span>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function DockerBrowseDetailBody({
   comp,
   sel,
@@ -706,6 +772,15 @@ function DockerBrowseDetailBody({
       <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', marginTop: 8 }}>
         <ScanBadgeRow componentId={sel.componentId} />
       </div>
+      {(sel.kind === 'tag' || sel.kind === 'manifest') && sel.imageRef && sel.version && (
+        <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', marginTop: 8 }}>
+          <ReferrersSection
+            repository={comp.repository}
+            imageRef={sel.imageRef}
+            reference={sel.version}
+          />
+        </div>
+      )}
     </div>
   )
 }

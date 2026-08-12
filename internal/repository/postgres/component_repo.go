@@ -257,7 +257,8 @@ func (r *componentRepo) ListDockerBrowseRows(ctx context.Context, repoNames []st
 	// existed have no such key and COALESCE reports them as carrying no type.
 	q := fmt.Sprintf(`
 		SELECT c.id, c.name, c.version, COALESCE(MIN(a.path), '') AS sample_path,
-		       COALESCE(c.extra->>'oci_artifact_type', '') AS artifact_type
+		       COALESCE(c.extra->>'oci_artifact_type', '') AS artifact_type,
+		       COALESCE(c.extra->'oci_annotations'->>'dev.sigstore.bundle.predicateType', '') AS predicate_type
 		FROM components c
 		JOIN repositories rep ON rep.id = c.repository_id
 		LEFT JOIN assets a ON a.component_id = c.id
@@ -274,7 +275,8 @@ func (r *componentRepo) ListDockerBrowseRows(ctx context.Context, repoNames []st
 	var out []domain.DockerBrowseRow
 	for rows.Next() {
 		var row domain.DockerBrowseRow
-		if err := rows.Scan(&row.ComponentID, &row.ImageName, &row.Version, &row.SamplePath, &row.ArtifactType); err != nil {
+		if err := rows.Scan(&row.ComponentID, &row.ImageName, &row.Version, &row.SamplePath,
+			&row.ArtifactType, &row.PredicateType); err != nil {
 			return nil, err
 		}
 		out = append(out, row)
