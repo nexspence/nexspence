@@ -57,12 +57,18 @@ func (s *LocalBlobStore) Put(_ context.Context, key string, r io.Reader, _ int64
 	if err := os.MkdirAll(filepath.Dir(dst), 0o750); err != nil {
 		return err
 	}
-	// Write to a temp file first, then rename (atomic on same filesystem)
-	tmp := dst + ".tmp"
-	f, err := os.Create(tmp) //nolint:gosec // dst is validated by keyPath to stay within the blob store base dir
+	// Write to a temp file first, then rename (atomic on same filesystem).
+	// The temp name must be unique per attempt: a fixed dst+".tmp" gives two
+	// concurrent Puts for the same key two descriptors on the *same* inode, and
+	// the rename only republishes the directory entry — the loser keeps writing
+	// into the blob the winner already made live, corrupting it (issue #196).
+	// os.CreateTemp opens with O_EXCL and a random suffix, so every writer owns
+	// its own file and cleans up only its own file.
+	f, err := os.CreateTemp(filepath.Dir(dst), filepath.Base(dst)+".tmp.*")
 	if err != nil {
 		return err
 	}
+	tmp := f.Name()
 	if _, err := io.Copy(f, r); err != nil {
 		_ = f.Close()
 		_ = os.Remove(tmp)

@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -46,6 +47,53 @@ func TestLocalBlobStore_PutGet_Roundtrip(t *testing.T) {
 	assert.EqualValues(t, len(data), size)
 	got, _ := io.ReadAll(rc)
 	assert.Equal(t, data, got)
+}
+
+// Two clients racing to store the same blob key (a proxy cache-fill stampede,
+// or two pushes of the same artifact) must never mix their bytes: whichever
+// writer publishes last, the blob on disk must be exactly one writer's payload,
+// and no writer may fail because another one was staging at the same time.
+func TestLocalBlobStore_Put_ConcurrentSameKey_NoCorruption(t *testing.T) {
+	store := newLocal(t)
+	ctx := context.Background()
+	const (
+		key     = "abcdef1234567890"
+		writers = 20
+		// Bigger than io.Copy's 32 KiB buffer so the writes interleave instead of
+		// completing in a single syscall.
+		payloadSize = 256 * 1024
+	)
+
+	payloads := make([][]byte, writers)
+	for i := range payloads {
+		payloads[i] = bytes.Repeat([]byte{byte('a' + i)}, payloadSize)
+	}
+
+	var wg sync.WaitGroup
+	errs := make([]error, writers)
+	start := make(chan struct{})
+	for i := range writers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			errs[i] = store.Put(ctx, key, bytes.NewReader(payloads[i]), payloadSize)
+		}()
+	}
+	close(start)
+	wg.Wait()
+
+	for i, err := range errs {
+		require.NoErrorf(t, err, "writer %d must not fail because of a concurrent writer", i)
+	}
+
+	rc, size, err := store.Get(ctx, key)
+	require.NoError(t, err)
+	defer rc.Close()
+	got, err := io.ReadAll(rc)
+	require.NoError(t, err)
+	assert.EqualValues(t, payloadSize, size, "the published blob must have exactly one payload's size")
+	assert.Contains(t, payloads, got, "the published blob must be one writer's payload, not a mix of several")
 }
 
 func TestLocalBlobStore_Put_ShortKey(t *testing.T) {
