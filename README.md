@@ -14,6 +14,10 @@
   ![Lint](https://img.shields.io/badge/lint-golangci--lint%20v2-22c55e?style=flat-square&logo=go&logoColor=white)
   ![Tests](https://img.shields.io/badge/tests-2209%20passing-22c55e?style=flat-square)
 
+  <br>
+
+  [![Telegram community](https://img.shields.io/badge/Telegram-@nexspence__community-26A5E4?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/nexspence_community)
+
 </div>
 
 ---
@@ -365,9 +369,13 @@ it is to publish those modifications.
 Contributions are accepted under the same licence, with a DCO sign-off and no
 CLA — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## Contact
+## Community & contact
 
-Telegram: [@skensel](https://t.me/skensel)
+| Where | What for |
+|-------|----------|
+| 💬 **[@nexspence_community](https://t.me/nexspence_community)** | Telegram channel — release announcements, setup questions, roadmap talk |
+| 🐞 **[GitHub Issues](https://github.com/nexspence/nexspence/issues)** | Bug reports and feature requests, tracked to a release |
+| ✉️ **[@skensel](https://t.me/skensel)** | Direct line to the maintainer — security reports, sponsorship, anything private |
 
 ---
 
