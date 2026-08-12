@@ -537,7 +537,13 @@ func storeAndServeResponse(c *gin.Context, d formats.Deps, repo *domain.Reposito
 	putErr := <-putErrCh
 
 	if copyErr != nil || putErr != nil {
-		_ = physStore.Delete(ctx, blobKey)
+		// No cleanup by blob key here (#198). A failed Put publishes nothing —
+		// it stages under its own temp path and removes it on error (#196) — and
+		// a copy error always fails the Put too, since the pipe is closed with
+		// that error. So the only thing at blobKey is someone else's data: the
+		// copy already cached at this path, or one a concurrent fill just
+		// published and registered. Deleting it leaves an asset row with no
+		// bytes behind it; leaving it costs nothing.
 		return fmt.Errorf("proxy cache write: %w", errors.Join(copyErr, putErr))
 	}
 
@@ -556,7 +562,7 @@ func storeAndServeResponse(c *gin.Context, d formats.Deps, repo *domain.Reposito
 	// client already has the bytes, so just drop the over-quota blob unregistered.
 	if resp.ContentLength <= 0 && size > 0 {
 		if qErr := base.CheckQuota(ctx, d, repo, size); errors.Is(qErr, base.ErrQuotaExceeded) {
-			_ = physStore.Delete(ctx, blobKey)
+			dropUnreferencedBlob(ctx, d, repo, repoRelativePath, physStore, blobKey)
 			return nil
 		}
 	}
@@ -573,6 +579,25 @@ func storeAndServeResponse(c *gin.Context, d formats.Deps, repo *domain.Reposito
 		d.Downloads.Add(regAsset.ID)
 	}
 	return nil
+}
+
+// dropUnreferencedBlob removes a blob this request wrote but will not register,
+// but only while no asset row points at that path. The blob key is shared by
+// every request caching the same artifact, so an existing row means the bytes
+// belong to a cache entry — either the one that was already there or one a
+// concurrent fill just registered — and deleting them would leave that row
+// pointing at nothing (#198). The check narrows the window to the gap between
+// the lookup and the delete; it cannot close it without store-level ownership.
+func dropUnreferencedBlob(ctx context.Context, d formats.Deps, repo *domain.Repository,
+	repoRelativePath string, physStore storage.BlobStore, blobKey string,
+) {
+	if d.Assets != nil {
+		existing, err := d.Assets.GetByPath(ctx, repo.Name, repoRelativePath)
+		if err == nil && existing != nil {
+			return
+		}
+	}
+	_ = physStore.Delete(ctx, blobKey)
 }
 
 // storeOriginal persists an already-buffered upstream body to the blob store
