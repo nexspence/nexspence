@@ -364,6 +364,10 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
     <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 1 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
     <span>Sponsor</span>
   </button>
+  <button class="npill" data-target="community" aria-label="Go to Community and contact">
+    <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+    <span>Community</span>
+  </button>
   <a href="/docs/" class="npill" aria-label="Go to Docs" style="color:#a78bfa">
     <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
     <span>Docs</span>
@@ -1165,6 +1169,39 @@ resource <span style="color:#7dd3fc">"nexspence_repository"</span> <span style="
   </div>
 </section>
 
+<!-- ══════════════════════════════ -->
+<!-- ⑧  COMMUNITY & CONTACT       -->
+<!-- ══════════════════════════════ -->
+<section id="community" class="sect" aria-label="Community and contact">
+  <div class="sect-wrap">
+    <div class="rev" style="text-align:center;margin-bottom:36px">
+      <div class="stag" style="justify-content:center">Community</div>
+      <h2 class="stitle">Questions, bugs, ideas — talk to us</h2>
+      <p class="ssub" style="margin:0 auto">The Telegram channel is where releases are announced and where you get the fastest answer. Anything private goes straight to the maintainer.</p>
+    </div>
+    <div class="g3">
+      <div class="card rev" style="padding:24px;display:flex;flex-direction:column">
+        <div style="font-size:.95rem;font-weight:800;margin-bottom:9px"><span style="margin-right:7px">💬</span>Telegram community</div>
+        <div style="font-size:.8rem;color:var(--dim);line-height:1.6;margin-bottom:14px">Release announcements, setup questions, roadmap talk. Open to everyone, no invite needed.</div>
+        <a href="https://t.me/nexspence_community" target="_blank" rel="noopener" class="btn btn-primary" style="width:100%;justify-content:center;margin-top:auto">
+          <svg fill="currentColor" viewBox="0 0 24 24" aria-hidden="true" width="16" height="16"><path d="M11.944 0A12 12 0 000 12a12 12 0 0012 12 12 12 0 0012-12A12 12 0 0012 0a12 12 0 00-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 01.171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>
+          @nexspence_community
+        </a>
+      </div>
+      <div class="card rev" style="padding:24px;border-color:var(--borhi);display:flex;flex-direction:column">
+        <div style="font-size:.95rem;font-weight:800;margin-bottom:9px"><span style="margin-right:7px">✉️</span>Direct contact</div>
+        <div style="font-size:.8rem;color:var(--dim);line-height:1.6;margin-bottom:14px">Security reports, sponsorship, deployment questions you would rather not discuss in public.</div>
+        <a href="https://t.me/skensel" target="_blank" rel="noopener" class="btn btn-ghost" style="width:100%;justify-content:center;margin-top:auto">@skensel on Telegram</a>
+      </div>
+      <div class="card rev" style="padding:24px;display:flex;flex-direction:column">
+        <div style="font-size:.95rem;font-weight:800;margin-bottom:9px"><span style="margin-right:7px">🐞</span>Issues &amp; feature requests</div>
+        <div style="font-size:.8rem;color:var(--dim);line-height:1.6;margin-bottom:14px">Bug reports and feature requests belong on GitHub, where they get tracked to a release.</div>
+        <a href="https://github.com/nexspence/nexspence/issues" target="_blank" rel="noopener" class="btn btn-ghost" style="width:100%;justify-content:center;margin-top:auto">Open an issue</a>
+      </div>
+    </div>
+  </div>
+</section>
+
 <!-- ════ FOOTER ════ -->
 <footer class="footer">
   <div class="footer-logo">
@@ -1180,6 +1217,7 @@ resource <span style="color:#7dd3fc">"nexspence_repository"</span> <span style="
     <a href="#deploy">Install</a>
     <a href="#compare">Compare</a>
     <a href="#sponsors">Sponsor</a>
+    <a href="#community">Community</a>
     <a href="/docs/">Docs</a>
     <a href="https://github.com/nexspence/nexspence" target="_blank" rel="noopener">GitHub</a>
     <a href="https://github.com/nexspence/nexspence/releases" target="_blank" rel="noopener">Releases</a>
@@ -1272,7 +1310,7 @@ function copyBlock(btn) {
 
 // ── Floating nav highlight on scroll ─────────────────────────
 (function(){
-  const sections = ['overview','formats','architecture','security','deploy','compare','sponsors'];
+  const sections = ['overview','formats','architecture','security','deploy','compare','sponsors','community'];
   const pills = {};
   sections.forEach(id=>{ pills[id] = document.querySelector(`.npill[data-target="${id}"]`); });
   const io = new IntersectionObserver((entries)=>{
