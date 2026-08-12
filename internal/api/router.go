@@ -14,7 +14,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	uiembed "github.com/nexspence-oss/nexspence"
 	"github.com/nexspence-oss/nexspence/internal/api/handlers"
@@ -40,7 +39,6 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/formats/terraform"
 	"github.com/nexspence-oss/nexspence/internal/formats/yum"
 	"github.com/nexspence-oss/nexspence/internal/logger"
-	"github.com/nexspence-oss/nexspence/internal/metrics"
 	"github.com/nexspence-oss/nexspence/internal/redisclient"
 	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/repository/postgres"
@@ -394,8 +392,8 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 		r.POST("/api/v1/auth/saml/acs", samlH.ACS)
 	}
 
-	// Prometheus scrape endpoint — requires Bearer auth (JWT or nxs_* token)
-	r.GET("/metrics", authMW, gin.WrapH(promhttp.HandlerFor(metrics.Registry, promhttp.HandlerOpts{})))
+	// Prometheus scrape endpoint — Bearer auth unless metrics.public is set.
+	registerMetricsRoute(r, cfg.Metrics.Public, authMW)
 
 	// ── Authenticated endpoints (all valid users) ────────────
 	authed := r.Group("", authMW)

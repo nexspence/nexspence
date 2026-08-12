@@ -31,6 +31,19 @@ type Config struct {
 	Redis     RedisConfig     `mapstructure:"redis"`
 	Proxy     ProxyConfig     `mapstructure:"proxy"`
 	Outbound  OutboundConfig  `mapstructure:"outbound"`
+	Metrics   MetricsConfig   `mapstructure:"metrics"`
+}
+
+// MetricsConfig governs the Prometheus scrape endpoint at /metrics.
+type MetricsConfig struct {
+	// Public serves /metrics without authentication. It defaults to false
+	// because the endpoint shares the public listener with the API, so an
+	// anonymous scrape hands out install size, artifact and download counts
+	// and the Go runtime fingerprint. Turn it on when the listener is only
+	// reachable from a trusted network — a cluster-internal Service, a
+	// localhost bind, a reverse proxy that blocks /metrics from outside —
+	// and a scrape token would just be one more secret to rotate.
+	Public bool `mapstructure:"public"`
 }
 
 // OutboundConfig governs where the server is allowed to make requests when the
@@ -511,6 +524,7 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("bootstrap.admin_password", "admin123")
 	v.SetDefault("bootstrap.admin_email", "admin@example.com")
 	v.SetDefault("bootstrap.admin_first_name", "Admin")
+	v.SetDefault("metrics.public", false)
 	v.SetDefault("redis.enabled", false)
 	v.SetDefault("redis.addr", "localhost:6379")
 	v.SetDefault("redis.db", 0)

@@ -283,7 +283,7 @@ Published on the [Terraform Registry](https://registry.terraform.io/providers/ne
 - Audit log — every action logged; NDJSON streaming export; 90-day partition rotation
 - Webhooks — HMAC-SHA256 signed; `artifact.published`, `artifact.deleted`, repo events
 - Content Replication — push to remote instance on cron schedule
-- **Monitoring** — Prometheus `/metrics` endpoint (Bearer-auth); pre-built Grafana dashboard; ring-buffer history API; UI Charts + Repositories tabs
+- **Monitoring** — Prometheus `/metrics` endpoint (Bearer-auth by default, anonymous with `metrics.public`); pre-built Grafana dashboard; ring-buffer history API; UI Charts + Repositories tabs
 
 ---
 
