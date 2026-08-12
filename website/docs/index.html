@@ -1285,6 +1285,7 @@ def verify(secret: str, body: bytes, header: str) -&gt; bool:
   <div class="cb"><div class="cb-bar"><span>curl — metrics endpoint</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
   <div class="cb-body">curl -H "Authorization: Bearer nxs_your_token" \
   http://localhost:8081/metrics</div></div>
+  <div class="alert-info" data-i18n="mon.public"><strong>Note:</strong> <code>/metrics</code> shares the listener with the API, so it requires a Bearer token by default — an anonymous scrape publishes install size, artifact and download counts and the Go runtime fingerprint. Since v1.35.0 you can set <code>metrics.public: true</code> (or <code>NEXSPENCE_METRICS_PUBLIC</code>, or <code>--set config.metricsPublic=true</code> in the Helm chart) to serve it without authentication, for deployments whose listener is only reachable from a trusted network. A Prometheus <code>ServiceMonitor</code> then needs no token Secret.</div>
       </section>
       <section id="sec-promotion" class="doc-section" hidden>
   <div class="doc-section-title" data-i18n="promo.title">Build Promotion</div>
@@ -1744,7 +1745,7 @@ const TRANSLATIONS={
     'mon.m.memory':'Heap memory in use',
     'mon.s1.title':'Create an API token for Prometheus','mon.s1.desc':'Profile → <strong>API Tokens → Generate Token</strong>. Paste the token into <code>deploy/monitoring/prometheus-token</code>.',
     'mon.s2.title':'Start the monitoring stack','mon.s2.desc':'Run <code>docker compose --profile monitoring up -d</code>. Prometheus scrapes <code>/metrics</code> every 10 seconds.',
-    'mon.s3.title':'Open the UI Charts tab','mon.s3.desc':'In the UI go to <strong>Admin → Monitoring → Charts</strong> for request rate, error rate, and storage growth.',
+    'mon.s3.title':'Open the UI Charts tab','mon.s3.desc':'In the UI go to <strong>Admin → Monitoring → Charts</strong> for request rate, error rate, and storage growth.','mon.public':'<strong>Note:</strong> <code>/metrics</code> shares the listener with the API, so it requires a Bearer token by default — an anonymous scrape publishes install size, artifact and download counts and the Go runtime fingerprint. Since v1.35.0 you can set <code>metrics.public: true</code> (or <code>NEXSPENCE_METRICS_PUBLIC</code>, or <code>--set config.metricsPublic=true</code> in the Helm chart) to serve it without authentication, for deployments whose listener is only reachable from a trusted network. A Prometheus <code>ServiceMonitor</code> then needs no token Secret.',
     'promo.title':'Build Promotion','promo.sub':'Promote artifacts through environments with optional vulnerability scan gates and approval workflows.',
     'promo.how.sep':'How It Works',
     'promo.s1.title':'Create a Promotion Rule','promo.s1.desc':'<strong>Admin → Promotion → + Create Rule</strong>. Set source, target, optional CEL path filter, and scan requirement.',
@@ -2063,7 +2064,7 @@ const TRANSLATIONS={
     'mon.m.memory':'Используемая heap-память',
     'mon.s1.title':'Создайте API-токен для Prometheus','mon.s1.desc':'Профиль → <strong>API Tokens → Generate Token</strong>. Вставьте токен в <code>deploy/monitoring/prometheus-token</code>.',
     'mon.s2.title':'Запустите стек мониторинга','mon.s2.desc':'Выполните <code>docker compose --profile monitoring up -d</code>. Prometheus опрашивает <code>/metrics</code> каждые 10 секунд.',
-    'mon.s3.title':'Откройте вкладку Charts','mon.s3.desc':'В UI перейдите в <strong>Admin → Monitoring → Charts</strong> для просмотра запросов, ошибок и роста хранилища.',
+    'mon.s3.title':'Откройте вкладку Charts','mon.s3.desc':'В UI перейдите в <strong>Admin → Monitoring → Charts</strong> для просмотра запросов, ошибок и роста хранилища.','mon.public':'<strong>Примечание:</strong> <code>/metrics</code> отдаётся на том же слушателе, что и API, поэтому по умолчанию требует Bearer-токен — анонимный скрейп публикует размер инсталляции, число артефактов и загрузок и отпечаток Go-рантайма. С v1.35.0 можно задать <code>metrics.public: true</code> (или <code>NEXSPENCE_METRICS_PUBLIC</code>, или <code>--set config.metricsPublic=true</code> в Helm-чарте) и отдавать его без авторизации — для установок, чей слушатель доступен только из доверенной сети. Тогда <code>ServiceMonitor</code> обходится без секрета с токеном.',
     'promo.title':'Продвижение сборок','promo.sub':'Продвигайте артефакты через среды (staging → production) с проверкой уязвимостей и согласованием.',
     'promo.how.sep':'Как это работает',
     'promo.s1.title':'Создайте правило продвижения','promo.s1.desc':'<strong>Admin → Promotion → + Create Rule</strong>. Задайте источник, цель, CEL-фильтр и требование сканирования.',
