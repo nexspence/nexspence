@@ -834,7 +834,7 @@ server {
       </section>
       <section id="sec-upgrade" class="doc-section" hidden>
   <div class="doc-section-title" data-i18n="upg.title">Upgrading</div>
-  <div class="doc-section-sub" data-i18n="upg.sub">Moving an existing deployment to a newer Nexspence release — one section per install method.</div>
+  <div class="doc-section-sub" data-i18n="upg.sub">Moving an existing deployment to a newer Nexspence release — pick your install method below.</div>
 
   <div class="inst-sep" data-i18n="upg.before.sep">Before You Upgrade</div>
   <div class="alert-info" data-i18n="upg.before.info"><strong>Migrations run automatically, and only forward.</strong> Every start applies pending schema migrations before the server accepts traffic. There is no automatic downgrade, so take a database dump first — that dump is what a rollback to an older release depends on.</div>
@@ -843,18 +843,32 @@ server {
   --format=custom --file nexspence-$(date +%Y%m%d).dump</div></div>
   <p style="font-size:.8rem;color:var(--dim);margin-top:14px;line-height:1.6" data-i18n="upg.before.note">Artifact storage is never rewritten by an upgrade: local blob directories and S3 buckets are read and written in the same layout across releases. Skipping versions is supported — migrations from every intermediate release run in order. Read the release notes for each version you skip; anything needing a manual step is called out there.</p>
 
-  <div class="inst-sep" data-i18n="upg.compose.sep">Docker Compose</div>
-  <p style="font-size:.85rem;color:var(--dim);margin:0 0 12px;line-height:1.7" data-i18n="upg.compose.desc">If the compose file pins a tag, edit it to the new version first. With <code>:latest</code> or a <code>NEXSPENCE_VERSION</code> variable, pulling is enough.</p>
-  <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
-  <div class="cb-body">docker compose pull nexspence
+  <div class="inst-sep" data-i18n="upg.method.sep">Upgrade by Install Method</div>
+  <div class="inst-platform">
+    <div class="inst-platform-row">
+      <button type="button" class="inst-ptab active" onclick="installPlatform('upg-compose',this)"><span class="ptab-icon">🐳</span> <span data-i18n="upg.tab.compose">Docker Compose</span></button>
+      <button type="button" class="inst-ptab" onclick="installPlatform('upg-docker',this)"><span class="ptab-icon">🐋</span> <span data-i18n="upg.tab.docker">Docker</span></button>
+      <button type="button" class="inst-ptab" onclick="installPlatform('upg-k8s',this)"><span class="ptab-icon">☸️</span> <span data-i18n="upg.tab.k8s">Kubernetes / Helm</span></button>
+      <button type="button" class="inst-ptab" onclick="installPlatform('upg-linux',this)"><span class="ptab-icon">🐧</span> <span data-i18n="upg.tab.linux">Linux</span></button>
+      <button type="button" class="inst-ptab" onclick="installPlatform('upg-macos',this)"><span class="ptab-icon">🍎</span> <span data-i18n="upg.tab.macos">macOS</span></button>
+      <button type="button" class="inst-ptab" onclick="installPlatform('upg-windows',this)"><span class="ptab-icon">🪟</span> <span data-i18n="upg.tab.windows">Windows</span></button>
+    </div>
+
+    <!-- ══ DOCKER COMPOSE ══ -->
+    <div class="inst-pnl active" data-pnl="upg-compose">
+      <p style="font-size:.85rem;color:var(--dim);margin:0 0 12px;line-height:1.7" data-i18n="upg.compose.desc">If the compose file pins a tag, edit it to the new version first. With <code>:latest</code> or a <code>NEXSPENCE_VERSION</code> variable, pulling is enough.</p>
+      <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+      <div class="cb-body">docker compose pull nexspence
 docker compose up -d nexspence
 docker compose logs -f nexspence     # wait for: migrations OK</div></div>
-  <p style="font-size:.8rem;color:var(--dim);margin-top:14px;line-height:1.6" data-i18n="upg.compose.note">Named volumes carry the blob store and the generated JWT secret across the replacement, so no data or session state is lost. PostgreSQL in the same compose file is untouched by the pull.</p>
+      <p style="font-size:.8rem;color:var(--dim);margin-top:14px;line-height:1.6" data-i18n="upg.compose.note">Named volumes carry the blob store and the generated JWT secret across the replacement, so no data or session state is lost. PostgreSQL in the same compose file is untouched by the pull.</p>
+    </div>
 
-  <div class="inst-sep" data-i18n="upg.docker.sep">Docker (single container)</div>
-  <p style="font-size:.85rem;color:var(--dim);margin:0 0 12px;line-height:1.7" data-i18n="upg.docker.desc">Recreate the container from the new image with the same volumes, environment and database. Keeping the volume mounts identical is the whole trick — the container is disposable, its volumes are not.</p>
-  <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
-  <div class="cb-body">docker pull ghcr.io/nexspence/nexspence:v1.35.3
+    <!-- ══ DOCKER ══ -->
+    <div class="inst-pnl" data-pnl="upg-docker">
+      <p style="font-size:.85rem;color:var(--dim);margin:0 0 12px;line-height:1.7" data-i18n="upg.docker.desc">Recreate the container from the new image with the same volumes, environment and database. Keeping the volume mounts identical is the whole trick — the container is disposable, its volumes are not.</p>
+      <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+      <div class="cb-body">docker pull ghcr.io/nexspence/nexspence:v1.35.3
 
 docker stop nexspence &amp;&amp; docker rm nexspence
 
@@ -864,20 +878,30 @@ docker run -d --name nexspence \
   -v nexspence_blobs:/app/data/blobs \
   -v nexspence_secrets:/app/secrets \
   ghcr.io/nexspence/nexspence:v1.35.3</div></div>
+    </div>
 
-  <div class="inst-sep" data-i18n="upg.helm.sep">Kubernetes (Helm)</div>
-  <p style="font-size:.85rem;color:var(--dim);margin:0 0 12px;line-height:1.7" data-i18n="upg.helm.desc">Each release publishes a chart version matching the app version. <code>--reuse-values</code> keeps your existing overrides; drop it and pass your values file if you prefer an explicit upgrade.</p>
-  <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
-  <div class="cb-body">helm upgrade nexspence oci://ghcr.io/nexspence/charts/nexspence \
+    <!-- ══ KUBERNETES ══ -->
+    <div class="inst-pnl" data-pnl="upg-k8s">
+      <p style="font-size:.85rem;color:var(--dim);margin:0 0 12px;line-height:1.7" data-i18n="upg.helm.desc">Each release publishes a chart version matching the app version. <code>--reuse-values</code> keeps your existing overrides; drop it and pass your values file if you prefer an explicit upgrade.</p>
+      <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+      <div class="cb-body">helm upgrade nexspence oci://ghcr.io/nexspence/charts/nexspence \
   --version 1.35.3 \
   --namespace nexspence --reuse-values
 
 kubectl -n nexspence rollout status deploy/nexspence</div></div>
-  <p style="font-size:.8rem;color:var(--dim);margin-top:14px;line-height:1.6" data-i18n="upg.helm.note">With more than one replica, the first new pod to become ready runs the migrations while old pods still serve traffic. Additive migrations tolerate that overlap; when release notes flag a schema change as breaking, scale to one replica for the upgrade. <code>helm rollback nexspence -n nexspence</code> reverts the workload — but see Rolling Back below, because the schema does not revert with it.</p>
+      <p style="font-size:.8rem;color:var(--dim);margin-top:14px;line-height:1.6" data-i18n="upg.helm.note">With more than one replica, the first new pod to become ready runs the migrations while old pods still serve traffic. Additive migrations tolerate that overlap; when release notes flag a schema change as breaking, scale to one replica for the upgrade. <code>helm rollback nexspence -n nexspence</code> reverts the workload — but see Rolling Back below, because the schema does not revert with it.</p>
+    </div>
 
-  <div class="inst-sep" data-i18n="upg.linux.sep">Linux — .deb / .rpm</div>
-  <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
-  <div class="cb-body"># Debian / Ubuntu
+    <!-- ══ LINUX ══ -->
+    <div class="inst-pnl" data-pnl="upg-linux">
+      <div class="inst-variant-row">
+        <button type="button" class="inst-vchip active" onclick="installVariant('upg-linux','pkg',this)" data-i18n="upg.linux.v.pkg">.deb / .rpm</button>
+        <button type="button" class="inst-vchip" onclick="installVariant('upg-linux','tar',this)" data-i18n="upg.linux.v.tar">Tarball</button>
+      </div>
+
+      <div class="inst-vpnl active" data-vpnl="upg-linux-pkg">
+        <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+        <div class="cb-body"># Debian / Ubuntu
 sudo dpkg -i nexspence_1.35.3_linux_amd64.deb
 
 # RHEL / Fedora / SUSE
@@ -885,37 +909,45 @@ sudo dnf upgrade ./nexspence-1.35.3.x86_64.rpm
 
 sudo systemctl restart nexspence
 journalctl -u nexspence -f</div></div>
-  <p style="font-size:.8rem;color:var(--dim);margin-top:14px;line-height:1.6" data-i18n="upg.linux.note">Package upgrades replace the binary and leave <code>/etc/nexspence/config.yaml</code>, the <code>nexspence</code> system user and <code>/var/lib/nexspence</code> as they are. New configuration keys always ship with defaults, so an untouched config keeps working.</p>
+        <p style="font-size:.8rem;color:var(--dim);margin-top:14px;line-height:1.6" data-i18n="upg.linux.note">Package upgrades replace the binary and leave <code>/etc/nexspence/config.yaml</code>, the <code>nexspence</code> system user and <code>/var/lib/nexspence</code> as they are. New configuration keys always ship with defaults, so an untouched config keeps working.</p>
+      </div>
 
-  <div class="inst-sep" data-i18n="upg.tarball.sep">Linux — tarball</div>
-  <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
-  <div class="cb-body">curl -fsSLO https://github.com/nexspence/nexspence/releases/download/v1.35.3/nexspence_1.35.3_linux_amd64.tar.gz
+      <div class="inst-vpnl" data-vpnl="upg-linux-tar">
+        <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+        <div class="cb-body">curl -fsSLO https://github.com/nexspence/nexspence/releases/download/v1.35.3/nexspence_1.35.3_linux_amd64.tar.gz
 tar xzf nexspence_1.35.3_linux_amd64.tar.gz
 
 sudo systemctl stop nexspence
 sudo install -m 0755 nexspence /usr/bin/nexspence
 sudo systemctl start nexspence</div></div>
+      </div>
+    </div>
 
-  <div class="inst-sep" data-i18n="upg.macos.sep">macOS</div>
-  <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
-  <div class="cb-body">tar xzf nexspence_1.35.3_darwin_arm64.tar.gz     # or darwin_amd64 on Intel
+    <!-- ══ MACOS ══ -->
+    <div class="inst-pnl" data-pnl="upg-macos">
+      <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+      <div class="cb-body">tar xzf nexspence_1.35.3_darwin_arm64.tar.gz     # or darwin_amd64 on Intel
 
 sudo launchctl unload -w /Library/LaunchDaemons/com.nexspence.server.plist
 sudo install -m 0755 nexspence /usr/local/bin/nexspence
 sudo launchctl load -w /Library/LaunchDaemons/com.nexspence.server.plist
 
 tail -f /usr/local/var/log/nexspence.err.log</div></div>
+    </div>
 
-  <div class="inst-sep" data-i18n="upg.windows.sep">Windows</div>
-  <div class="cb"><div class="cb-bar"><span data-i18n="upg.windows.bar">PowerShell — as Administrator</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
-  <div class="cb-body">Stop-Service nexspence
+    <!-- ══ WINDOWS ══ -->
+    <div class="inst-pnl" data-pnl="upg-windows">
+      <div class="cb"><div class="cb-bar"><span data-i18n="upg.windows.bar">PowerShell — as Administrator</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+      <div class="cb-body">Stop-Service nexspence
 
 Expand-Archive .\nexspence_1.35.3_windows_amd64.zip -DestinationPath $env:TEMP\nexspence-new -Force
 Copy-Item $env:TEMP\nexspence-new\nexspence.exe 'C:\Program Files\Nexspence\nexspence.exe' -Force
 
 Start-Service nexspence
 Get-Content C:\ProgramData\Nexspence\logs\nexspence.log -Tail 40 -Wait</div></div>
-  <p style="font-size:.8rem;color:var(--dim);margin-top:14px;line-height:1.6" data-i18n="upg.windows.note">The service registration and <code>C:\ProgramData\Nexspence\config.yaml</code> survive the replacement — only the executable changes. Re-run <code>install-service.ps1</code> only if the service itself is missing.</p>
+      <p style="font-size:.8rem;color:var(--dim);margin-top:14px;line-height:1.6" data-i18n="upg.windows.note">The service registration and <code>C:\ProgramData\Nexspence\config.yaml</code> survive the replacement — only the executable changes. Re-run <code>install-service.ps1</code> only if the service itself is missing.</p>
+    </div>
+  </div>
 
   <div class="inst-sep" data-i18n="upg.verify.sep">Verifying the Upgrade</div>
   <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
@@ -1881,24 +1913,26 @@ const TRANSLATIONS={
     'sec.selfservice.sep':'Self-Service Password Change',
     'sec.selfservice.desc':'Any non-admin user can rotate their own password without an administrator. Changing the password bumps the JWT cutoff, so existing sessions are invalidated.',
     'upg.title':'Upgrading',
-    'upg.sub':'Moving an existing deployment to a newer Nexspence release — one section per install method.',
+    'upg.sub':'Moving an existing deployment to a newer Nexspence release — pick your install method below.',
+'upg.method.sep':'Upgrade by Install Method',
+'upg.tab.compose':'Docker Compose',
+'upg.tab.docker':'Docker',
+'upg.tab.k8s':'Kubernetes / Helm',
+'upg.tab.linux':'Linux',
+'upg.tab.macos':'macOS',
+'upg.tab.windows':'Windows',
+'upg.linux.v.pkg':'.deb / .rpm',
+'upg.linux.v.tar':'Tarball',
 'upg.before.sep':'Before You Upgrade',
 'upg.before.info':'<strong>Migrations run automatically, and only forward.</strong> Every start applies pending schema migrations before the server accepts traffic. There is no automatic downgrade, so take a database dump first — that dump is what a rollback to an older release depends on.',
 'upg.before.dump.bar':'shell — back up PostgreSQL first',
 'upg.before.note':'Artifact storage is never rewritten by an upgrade: local blob directories and S3 buckets are read and written in the same layout across releases. Skipping versions is supported — migrations from every intermediate release run in order. Read the release notes for each version you skip; anything needing a manual step is called out there.',
-'upg.compose.sep':'Docker Compose',
 'upg.compose.desc':'If the compose file pins a tag, edit it to the new version first. With <code>:latest</code> or a <code>NEXSPENCE_VERSION</code> variable, pulling is enough.',
 'upg.compose.note':'Named volumes carry the blob store and the generated JWT secret across the replacement, so no data or session state is lost. PostgreSQL in the same compose file is untouched by the pull.',
-'upg.docker.sep':'Docker (single container)',
 'upg.docker.desc':'Recreate the container from the new image with the same volumes, environment and database. Keeping the volume mounts identical is the whole trick — the container is disposable, its volumes are not.',
-'upg.helm.sep':'Kubernetes (Helm)',
 'upg.helm.desc':'Each release publishes a chart version matching the app version. <code>--reuse-values</code> keeps your existing overrides; drop it and pass your values file if you prefer an explicit upgrade.',
 'upg.helm.note':'With more than one replica, the first new pod to become ready runs the migrations while old pods still serve traffic. Additive migrations tolerate that overlap; when release notes flag a schema change as breaking, scale to one replica for the upgrade. <code>helm rollback nexspence -n nexspence</code> reverts the workload — but see Rolling Back below, because the schema does not revert with it.',
-'upg.linux.sep':'Linux — .deb / .rpm',
 'upg.linux.note':'Package upgrades replace the binary and leave <code>/etc/nexspence/config.yaml</code>, the <code>nexspence</code> system user and <code>/var/lib/nexspence</code> as they are. New configuration keys always ship with defaults, so an untouched config keeps working.',
-'upg.tarball.sep':'Linux — tarball',
-'upg.macos.sep':'macOS',
-'upg.windows.sep':'Windows',
 'upg.windows.bar':'PowerShell — as Administrator',
 'upg.windows.note':'The service registration and <code>C:\ProgramData\Nexspence\config.yaml</code> survive the replacement — only the executable changes. Re-run <code>install-service.ps1</code> only if the service itself is missing.',
 'upg.verify.sep':'Verifying the Upgrade',
@@ -2223,24 +2257,26 @@ const TRANSLATIONS={
     'sec.selfservice.sep':'Самостоятельная смена пароля',
     'sec.selfservice.desc':'Любой пользователь без прав администратора может сменить свой пароль без участия администратора. Смена пароля обновляет отметку JWT, поэтому существующие сессии становятся недействительными.',
     'upg.title':'Обновление',
-    'upg.sub':'Перевод существующего развёртывания на новую версию Nexspence — по разделу на каждый способ установки.',
+    'upg.sub':'Перевод существующего развёртывания на новую версию Nexspence — выберите свой способ установки.',
+'upg.method.sep':'Обновление по способу установки',
+'upg.tab.compose':'Docker Compose',
+'upg.tab.docker':'Docker',
+'upg.tab.k8s':'Kubernetes / Helm',
+'upg.tab.linux':'Linux',
+'upg.tab.macos':'macOS',
+'upg.tab.windows':'Windows',
+'upg.linux.v.pkg':'.deb / .rpm',
+'upg.linux.v.tar':'tar-архив',
 'upg.before.sep':'Перед обновлением',
 'upg.before.info':'<strong>Миграции выполняются автоматически и только вперёд.</strong> При каждом старте применяются накопившиеся миграции схемы, и только после этого сервер начинает принимать запросы. Автоматического отката нет, поэтому сначала снимите дамп базы — именно он понадобится, если придётся вернуться на прежнюю версию.',
 'upg.before.dump.bar':'shell — сначала бэкап PostgreSQL',
 'upg.before.note':'Хранилище артефактов при обновлении не переписывается: локальные каталоги блобов и S3-бакеты во всех версиях читаются и пишутся в одном и том же формате. Перепрыгивать через версии можно — миграции всех промежуточных релизов выполнятся по порядку. Прочитайте release notes каждой пропущенной версии: всё, что требует ручного шага, отмечено там.',
-'upg.compose.sep':'Docker Compose',
 'upg.compose.desc':'Если в compose-файле тег зафиксирован, сначала поменяйте его на новую версию. Если используется <code>:latest</code> или переменная <code>NEXSPENCE_VERSION</code>, достаточно pull.',
 'upg.compose.note':'Именованные тома переносят blob-хранилище и сгенерированный JWT-секрет в новый контейнер, поэтому ни данные, ни сессии не теряются. PostgreSQL из того же compose-файла pull не затрагивает.',
-'upg.docker.sep':'Docker (одиночный контейнер)',
 'upg.docker.desc':'Пересоздайте контейнер из нового образа с теми же томами, переменными окружения и базой. Весь фокус в том, чтобы монтирование томов осталось прежним: контейнер одноразовый, тома — нет.',
-'upg.helm.sep':'Kubernetes (Helm)',
 'upg.helm.desc':'Каждый релиз публикует версию чарта, совпадающую с версией приложения. <code>--reuse-values</code> сохраняет ваши текущие переопределения; уберите флаг и передайте свой values-файл, если предпочитаете явное обновление.',
 'upg.helm.note':'Если реплик больше одной, миграции выполнит первый новый под, дошедший до ready, пока старые поды ещё обслуживают трафик. Аддитивные миграции такое пересечение переживают; если в release notes изменение схемы помечено как несовместимое — на время обновления оставьте одну реплику. <code>helm rollback nexspence -n nexspence</code> вернёт рабочую нагрузку, но схема вместе с ней не откатится — см. раздел «Откат».',
-'upg.linux.sep':'Linux — .deb / .rpm',
 'upg.linux.note':'Обновление пакета заменяет бинарник и не трогает <code>/etc/nexspence/config.yaml</code>, системного пользователя <code>nexspence</code> и <code>/var/lib/nexspence</code>. Новые ключи конфигурации всегда приходят со значениями по умолчанию, поэтому нетронутый конфиг продолжает работать.',
-'upg.tarball.sep':'Linux — tar-архив',
-'upg.macos.sep':'macOS',
-'upg.windows.sep':'Windows',
 'upg.windows.bar':'PowerShell — от имени администратора',
 'upg.windows.note':'Регистрация службы и <code>C:\ProgramData\Nexspence\config.yaml</code> замену переживают — меняется только исполняемый файл. Повторно запускать <code>install-service.ps1</code> нужно, только если сама служба отсутствует.',
 'upg.verify.sep':'Проверка обновления',
