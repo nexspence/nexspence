@@ -1,0 +1,86 @@
+<!doctype html>
+<meta charset="utf-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    width: 1200px; height: 630px; overflow: hidden;
+    background: #060911;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    color: #e6edf3;
+    position: relative;
+  }
+  .glow-a { position: absolute; width: 900px; height: 900px; left: -260px; top: -420px;
+    background: radial-gradient(circle, rgba(59,130,246,.16) 0%, rgba(59,130,246,0) 62%); }
+  .glow-b { position: absolute; width: 900px; height: 900px; right: -300px; bottom: -430px;
+    background: radial-gradient(circle, rgba(124,92,255,.18) 0%, rgba(124,92,255,0) 62%); }
+  .grid { position: absolute; inset: 0; opacity: .35;
+    background-image:
+      linear-gradient(rgba(148,163,184,.045) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(148,163,184,.045) 1px, transparent 1px);
+    background-size: 48px 48px; }
+  .wrap { position: relative; padding: 74px 72px; height: 100%; }
+
+  .badge { display: inline-flex; align-items: center; gap: 10px;
+    padding: 11px 22px; border-radius: 999px;
+    border: 1px solid rgba(59,130,246,.34); background: rgba(59,130,246,.09);
+    font-size: 19px; font-weight: 600; color: #7dd3fc; letter-spacing: .1px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: #22c55e;
+    box-shadow: 0 0 10px rgba(34,197,94,.85); }
+
+  h1 { margin-top: 34px; font-size: 66px; line-height: 1.04; font-weight: 800; letter-spacing: -1.4px; }
+  h1 .grad { background: linear-gradient(96deg, #3b82f6 0%, #22d3ee 42%, #a78bfa 100%);
+    -webkit-background-clip: text; background-clip: text; color: transparent; }
+
+  p.sub { margin-top: 26px; font-size: 25px; line-height: 1.45; color: #9fb0c7; max-width: 660px; }
+
+  .chips { margin-top: 38px; display: flex; gap: 12px; }
+  .chip { display: flex; align-items: center; gap: 9px;
+    padding: 11px 19px; border-radius: 12px;
+    border: 1px solid rgba(148,163,184,.17); background: rgba(148,163,184,.06);
+    font-size: 19px; font-weight: 600; color: #cbd5e1; }
+  .chip i { width: 9px; height: 9px; border-radius: 50%; display: block; }
+
+  .foot { position: absolute; left: 72px; bottom: 56px; display: flex; align-items: center; gap: 13px;
+    font-size: 24px; font-weight: 700; color: #dbe6f4; }
+  .diamond { width: 17px; height: 17px; background: #3b82f6; transform: rotate(45deg); border-radius: 3px; }
+
+  .mark { position: absolute; right: 92px; top: 176px; }
+</style>
+<div class="glow-a"></div>
+<div class="glow-b"></div>
+<div class="grid"></div>
+
+<div class="wrap">
+  <div class="badge"><span class="dot"></span>Free &amp; Open Source — No License Fees</div>
+
+  <h1>Universal Artifact<br><span class="grad">Repository Manager</span></h1>
+
+  <p class="sub">Drop-in alternative to Sonatype Nexus.<br>15 formats — one self-hosted registry, forever free.</p>
+
+  <div class="chips">
+    <div class="chip"><i style="background:#e05574"></i>Maven</div>
+    <div class="chip"><i style="background:#2496ed"></i>Docker</div>
+    <div class="chip"><i style="background:#cb3837"></i>npm</div>
+    <div class="chip"><i style="background:#3b82f6"></i>PyPI</div>
+    <div class="chip"><i style="background:#0f1689"></i>Helm</div>
+    <div class="chip"><i style="background:#8899ab"></i>+10 more</div>
+  </div>
+
+  <div class="foot"><span class="diamond"></span>nexspence.com</div>
+
+  <svg class="mark" width="290" height="290" viewBox="0 0 290 290" fill="none">
+    <defs>
+      <linearGradient id="hex" x1="30" y1="10" x2="260" y2="280" gradientUnits="userSpaceOnUse">
+        <stop stop-color="#a78bfa"/><stop offset="0.55" stop-color="#6366f1"/><stop offset="1" stop-color="#3b82f6"/>
+      </linearGradient>
+      <linearGradient id="ltr" x1="112" y1="96" x2="184" y2="196" gradientUnits="userSpaceOnUse">
+        <stop stop-color="#a78bfa"/><stop offset="1" stop-color="#60a5fa"/>
+      </linearGradient>
+    </defs>
+    <path d="M145 8 L263 76 L263 214 L145 282 L27 214 L27 76 Z"
+          stroke="url(#hex)" stroke-width="4" fill="rgba(99,102,241,.05)"/>
+    <circle cx="145" cy="145" r="78" stroke="rgba(167,139,250,.42)" stroke-width="3" fill="none"/>
+    <text x="145" y="182" text-anchor="middle" font-family="-apple-system, Helvetica, Arial"
+          font-size="108" font-weight="600" fill="url(#ltr)">N</text>
+  </svg>
+</div>
