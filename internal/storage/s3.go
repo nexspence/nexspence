@@ -127,6 +127,11 @@ func (s *S3BlobStore) Get(ctx context.Context, key string) (io.ReadCloser, int64
 
 // Delete removes the object for key; a missing object is not an error.
 func (s *S3BlobStore) Delete(ctx context.Context, key string) error {
+	// An unfinished append holds multipart parts that no listing shows and no
+	// object delete reclaims, so dropping the key without aborting first would
+	// leak them permanently — including when GC collects an abandoned upload
+	// session. Best effort: a failed abort must not block the delete.
+	_ = s.AbortAppend(ctx, key)
 	_, err := s.client.DeleteObject(ctx, &s3.DeleteObjectInput{
 		Bucket: aws.String(s.bucket),
 		Key:    aws.String(s.objectKey(key)),
@@ -182,7 +187,7 @@ func (s *S3BlobStore) ListKeys(ctx context.Context) ([]string, error) {
 			return keys, fmt.Errorf("s3 list keys: %w", err)
 		}
 		for _, obj := range page.Contents {
-			if obj.Key == nil {
+			if obj.Key == nil || isAppendMetaObject(*obj.Key) {
 				continue
 			}
 			// Object key = "ab/cd/abcdef..." → blob key = "abcdef..."
@@ -209,7 +214,7 @@ func (s *S3BlobStore) ListEntries(ctx context.Context) ([]BlobEntry, error) {
 			return entries, fmt.Errorf("s3 list entries: %w", err)
 		}
 		for _, obj := range page.Contents {
-			if obj.Key == nil {
+			if obj.Key == nil || isAppendMetaObject(*obj.Key) {
 				continue
 			}
 			parts := strings.SplitN(*obj.Key, "/", 3)
@@ -245,6 +250,9 @@ func (s *S3BlobStore) UsedBytes(ctx context.Context) (int64, error) {
 			return total, fmt.Errorf("s3 list: %w", err)
 		}
 		for _, obj := range page.Contents {
+			if obj.Key != nil && isAppendMetaObject(*obj.Key) {
+				continue // bookkeeping, not stored blob content
+			}
 			if obj.Size != nil {
 				total += *obj.Size
 			}
