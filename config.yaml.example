@@ -117,6 +117,15 @@ gc:
   schedule: "0 3 * * 0"      # cron: weekly, Sunday 03:00
   min_age: "24h"             # only collect orphans older than this (grace period)
 
+# Docker / OCI registry settings.
+# The /v2/ blob-upload paths are exempt from http.max_body_mb so large image
+# layers are not truncated, which makes max_upload_bytes the only bound on a
+# staged upload: a chunk that would push a session past it is rejected with
+# 413 before the session is buffered. Raise it if you push layers larger than
+# the default; 0 removes the cap entirely (not recommended on a shared instance).
+docker:
+  max_upload_bytes: 10737418240   # 10 GiB per blob upload session
+
 # Automatic vulnerability scanning (Trivy for docker/oci, OSV.dev for
 # npm/maven/pypi/cargo).
 # Every upload is queued for a background scan; the queue is bounded and drops

@@ -326,3 +326,33 @@ func TestLoad_AllowInsecureDefaults_EnvOverride(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, cfg.Auth.AllowInsecureDefaults)
 }
+
+// The /v2/ upload paths are exempt from http.max_body_mb so large image layers
+// are not truncated, so this cap is the only thing bounding a staged upload —
+// it ships on by default rather than as an opt-in hardening step.
+func TestLoad_DockerMaxUploadBytes_Default(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := "" +
+		"database:\n  dsn: \"postgres://u:p@localhost:5432/db?sslmode=disable\"\n" +
+		"auth:\n  jwt_secret: \"a-unique-production-secret-at-least-32b\"\n"
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.Equal(t, int64(10<<30), cfg.Docker.MaxUploadBytes)
+}
+
+func TestLoad_DockerMaxUploadBytes_Configurable(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := "" +
+		"database:\n  dsn: \"postgres://u:p@localhost:5432/db?sslmode=disable\"\n" +
+		"auth:\n  jwt_secret: \"a-unique-production-secret-at-least-32b\"\n" +
+		"docker:\n  max_upload_bytes: 1048576\n"
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1048576), cfg.Docker.MaxUploadBytes)
+}

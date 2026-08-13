@@ -91,7 +91,7 @@ Nexspence follows a clean layered architecture. Each layer depends only on the l
 - **Audit middleware** — goroutine write after POST/PUT/DELETE/PATCH on key paths; login events use `action=LOGIN`, `entityName=username` (set by Login handler via `c.Set("username", ...)` before returning)
 - **Metrics middleware** — atomic counter increments (requests, errors); cumulative counters (`ArtifactsStored`, `BytesStored`, `DownloadsTotal`) seeded from DB on startup
 - **Security headers** — CSP built from config (`cspPolicy`), plus the usual frame/content-type/referrer set
-- **Body limit** — `http.max_body_mb`, skipped for the artifact upload paths that stream
+- **Body limit** — `http.max_body_mb`, skipped for the artifact upload paths that stream; the exempted `/v2/` blob uploads are instead bounded per session by `docker.max_upload_bytes`
 - **Rate limiting** — token bucket; enabled by `auth.rate_limit_enabled` (`auth.rate_limit_rps` / `_burst`)
 - **[Phase 9]** OTel trace middleware — span per request with format/repo labels
 
