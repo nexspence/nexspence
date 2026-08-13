@@ -16,6 +16,11 @@
 //	PATCH /v2/:name/blobs/uploads/:uuid         → stream blob chunks
 //	PUT  /v2/:name/blobs/uploads/:uuid?digest=  → finalize blob upload
 //	DELETE /v2/:name/blobs/:digest              → delete blob
+//
+// The generic /repository/:repoName/*path mount hands over the path an asset is
+// stored under rather than a /v2/ request — /blobs/:name/:digest and
+// /manifests/:name/:reference — which is also the shape every asset's advertised
+// downloadUrl carries, so those two shapes are served as well (#205).
 package oci
 
 import (
@@ -69,8 +74,12 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 	// Trim leading /v2/
 	rest := strings.TrimPrefix(p, "/v2/")
 	if rest == p { // no /v2/ prefix
-		c.Status(http.StatusNotFound)
-		return
+		converted, ok := restFromAssetPath(p)
+		if !ok {
+			c.Status(http.StatusNotFound)
+			return
+		}
+		rest = converted
 	}
 
 	// The catalog is the one endpoint with no image name in front of it, so it is
@@ -134,6 +143,29 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 	default:
 		c.Status(http.StatusNotFound)
 	}
+}
+
+// restFromAssetPath converts the repository-relative path an OCI asset is stored
+// under — the shape the generic /repository/:repoName/*path mount hands over,
+// and the shape every asset's advertised downloadUrl is built from — into the
+// /v2/-relative form the dispatch above expects. The two shapes cannot be
+// confused: the stored path leads with the endpoint keyword, while a /v2/
+// request always has the image name in front of it.
+func restFromAssetPath(p string) (string, bool) {
+	for _, kind := range []string{"blobs", "manifests"} {
+		tail, ok := strings.CutPrefix(p, "/"+kind+"/")
+		if !ok {
+			continue
+		}
+		// <image>/<reference>, where the image name may itself have several
+		// components.
+		idx := strings.LastIndex(tail, "/")
+		if idx <= 0 {
+			return "", false
+		}
+		return tail[:idx] + "/" + kind + "/" + tail[idx+1:], true
+	}
+	return "", false
 }
 
 // ─── Tags ──────────────────────────────────────────────────────────────────
