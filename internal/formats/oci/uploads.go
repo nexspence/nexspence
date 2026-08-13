@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 
@@ -89,19 +90,50 @@ func (s uploadStore) read(ctx context.Context, id string) (data []byte, ok bool,
 	return data, true, err
 }
 
+// errUploadTooLarge reports a session that would grow past deps.MaxUploadBytes.
+// Handlers map it to 413 rather than a generic 500.
+var errUploadTooLarge = errors.New("upload exceeds the configured maximum size")
+
 // append adds a chunk and returns the new total size. ok is false when the
 // session is unknown. The blob store API is whole-object, so the chunk is
 // concatenated onto what is already staged.
+//
+// With a cap configured, the session size is checked with a stat-only size()
+// call and the chunk is read through a LimitReader before anything already
+// staged is loaded — so an over-cap push never re-buffers the session's bytes,
+// which is what made the read-modify-write cycle a memory-exhaustion vector.
 func (s uploadStore) append(ctx context.Context, id string, r io.Reader) (total int64, ok bool, err error) {
+	stored, ok := s.size(ctx, id)
+	if !ok {
+		return 0, false, nil
+	}
+
+	limit := s.deps.MaxUploadBytes
+	if limit > 0 {
+		if stored >= limit {
+			return 0, true, errUploadTooLarge
+		}
+		// One byte past the remaining budget is enough to detect the overflow
+		// without buffering more than the cap allows.
+		r = io.LimitReader(r, limit-stored+1)
+	}
+
+	var chunk bytes.Buffer
+	if _, err := io.Copy(&chunk, r); err != nil {
+		return 0, true, err
+	}
+	if limit > 0 && stored+int64(chunk.Len()) > limit {
+		return 0, true, errUploadTooLarge
+	}
+
 	existing, ok, err := s.read(ctx, id)
 	if err != nil || !ok {
 		return 0, ok, err
 	}
 	var buf bytes.Buffer
+	buf.Grow(len(existing) + chunk.Len())
 	buf.Write(existing)
-	if _, err := io.Copy(&buf, r); err != nil {
-		return 0, true, err
-	}
+	buf.Write(chunk.Bytes())
 	if err := s.deps.BlobStore.Put(ctx, s.key(id), bytes.NewReader(buf.Bytes()), int64(buf.Len())); err != nil {
 		return 0, true, err
 	}

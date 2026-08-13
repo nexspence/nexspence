@@ -28,6 +28,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -776,6 +777,10 @@ func (h *Handler) patchUpload(c *gin.Context, _, _, uuid string) {
 		dockerError(c, http.StatusNotFound, "BLOB_UPLOAD_UNKNOWN", "upload unknown")
 		return
 	}
+	if errors.Is(err, errUploadTooLarge) {
+		dockerError(c, http.StatusRequestEntityTooLarge, "BLOB_UPLOAD_INVALID", err.Error())
+		return
+	}
 	if err != nil {
 		dockerError(c, http.StatusInternalServerError, "UNKNOWN", err.Error())
 		return
@@ -801,6 +806,9 @@ func (h *Handler) finalizeUpload(c *gin.Context, repoName, imageName, uuid strin
 	if c.Request.ContentLength > 0 {
 		if _, ok, err := h.uploads.append(ctx, uuid, c.Request.Body); !ok {
 			dockerError(c, http.StatusNotFound, "BLOB_UPLOAD_UNKNOWN", "upload unknown")
+			return
+		} else if errors.Is(err, errUploadTooLarge) {
+			dockerError(c, http.StatusRequestEntityTooLarge, "BLOB_UPLOAD_INVALID", err.Error())
 			return
 		} else if err != nil {
 			dockerError(c, http.StatusInternalServerError, "UNKNOWN", err.Error())

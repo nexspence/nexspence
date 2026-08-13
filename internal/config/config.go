@@ -417,6 +417,10 @@ type AuditConfig struct {
 // DockerConfig holds Docker-specific settings such as the subdomain connector.
 type DockerConfig struct {
 	SubdomainConnector SubdomainConnectorConfig `mapstructure:"subdomain_connector"`
+	// MaxUploadBytes caps a single staged blob upload. The /v2/ upload paths
+	// are exempt from http.max_body_mb so large image layers survive intact,
+	// which leaves this as their only bound. 0 disables the cap.
+	MaxUploadBytes int64 `mapstructure:"max_upload_bytes"`
 }
 
 // SubdomainConnectorConfig configures per-repository Docker subdomain routing.
@@ -491,6 +495,7 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("audit.lookahead_months", 2)
 	v.SetDefault("docker.subdomain_connector.enabled", false)
 	v.SetDefault("docker.subdomain_connector.base_domain", "")
+	v.SetDefault("docker.max_upload_bytes", int64(10<<30)) // 10 GiB
 	v.SetDefault("oidc.enabled", false)
 	v.SetDefault("oidc.display_name", "SSO")
 	v.SetDefault("oidc.public_issuer_url", "")

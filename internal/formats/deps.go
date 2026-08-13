@@ -31,6 +31,11 @@ type Deps struct {
 	// Scanner is optional — nil disables automatic vulnerability scanning of
 	// uploads.
 	Scanner ScanTrigger
+	// MaxUploadBytes caps the total size of a single staged blob upload. The
+	// /v2/ upload paths are exempt from the global request-body cap so large
+	// image layers are not truncated, which leaves this as their only bound.
+	// 0 disables the cap.
+	MaxUploadBytes int64
 }
 
 // ScanTrigger requests a background vulnerability scan of a stored component.
