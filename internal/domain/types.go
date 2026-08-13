@@ -21,19 +21,44 @@ const (
 	FormatDocker RepoFormat = "docker"
 	// FormatOCI is the same OCI Distribution protocol as FormatDocker, labeled
 	// for charts, ORAS artifacts and signatures rather than container images.
-	FormatOCI   RepoFormat = "oci"
-	FormatPyPI  RepoFormat = "pypi"
-	FormatGo    RepoFormat = "go"
-	FormatNuGet RepoFormat = "nuget"
-	FormatHelm  RepoFormat = "helm"
-	FormatRaw   RepoFormat = "raw"
-	FormatApt   RepoFormat = "apt"
-	FormatYum   RepoFormat = "yum"
+	FormatOCI       RepoFormat = "oci"
+	FormatPyPI      RepoFormat = "pypi"
+	FormatGo        RepoFormat = "go"
+	FormatNuGet     RepoFormat = "nuget"
+	FormatHelm      RepoFormat = "helm"
+	FormatRaw       RepoFormat = "raw"
+	FormatApt       RepoFormat = "apt"
+	FormatYum       RepoFormat = "yum"
+	FormatCargo     RepoFormat = "cargo"
+	FormatConan     RepoFormat = "conan"
+	FormatConda     RepoFormat = "conda"
+	FormatTerraform RepoFormat = "terraform"
 
 	TypeHosted RepoType = "hosted"
 	TypeProxy  RepoType = "proxy"
 	TypeGroup  RepoType = "group"
 )
+
+// AllFormats is every repository format the server serves, in the order the
+// documentation lists them. It is the one place to update when a format is
+// added — the docs site is checked against it.
+var AllFormats = []RepoFormat{
+	FormatMaven2,
+	FormatNPM,
+	FormatPyPI,
+	FormatDocker,
+	FormatOCI,
+	FormatGo,
+	FormatNuGet,
+	FormatHelm,
+	FormatCargo,
+	FormatApt,
+	FormatYum,
+	FormatConan,
+	FormatRaw,
+	FormatConda,
+	FormatTerraform,
+}
 
 // IsOCIRegistry reports whether a repository of this format speaks the OCI
 // Distribution protocol — the /v2/ surface with /manifests/... and /blobs/...
