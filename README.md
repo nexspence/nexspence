@@ -52,8 +52,8 @@ View the full site with interactive architecture diagram, install guide, and com
 
 <table>
   <tr>
-    <td><img src="https://nexspence.com/assets/screenshots/repositories.PNG" alt="Repositories page" width="480"></td>
-    <td><img src="https://nexspence.com/assets/screenshots/browse.PNG" alt="Browse" width="480"></td>
+    <td><img src="website/assets/screenshots/repositories.PNG" alt="Repositories page" width="480"></td>
+    <td><img src="website/assets/screenshots/browse.PNG" alt="Browse" width="480"></td>
   </tr>
   <tr>
     <td align="center"><em>Repositories list</em></td>
@@ -65,8 +65,8 @@ View the full site with interactive architecture diagram, install guide, and com
 
 <table>
   <tr>
-    <td><img src="https://nexspence.com/assets/screenshots/admin_blobstores.PNG" alt="Blob Stores" width="480"></td>
-    <td><img src="https://nexspence.com/assets/screenshots/security_roles.PNG" alt="Roles & RBAC" width="480"></td>
+    <td><img src="website/assets/screenshots/admin_blobstores.PNG" alt="Blob Stores" width="480"></td>
+    <td><img src="website/assets/screenshots/security_roles.PNG" alt="Roles & RBAC" width="480"></td>
   </tr>
   <tr>
     <td align="center"><em>Blob stores — S3 + local with connection test</em></td>
@@ -78,8 +78,8 @@ View the full site with interactive architecture diagram, install guide, and com
 
 <table>
   <tr>
-    <td><img src="https://nexspence.com/assets/screenshots/cleanup.PNG" alt="Cleanup policies" width="480"></td>
-    <td><img src="https://nexspence.com/assets/screenshots/search.PNG" alt="Search" width="480"></td>
+    <td><img src="website/assets/screenshots/cleanup.PNG" alt="Cleanup policies" width="480"></td>
+    <td><img src="website/assets/screenshots/search.PNG" alt="Search" width="480"></td>
   </tr>
   <tr>
     <td align="center"><em>Cleanup policies — criteria, schedule and scope</em></td>
@@ -91,16 +91,16 @@ View the full site with interactive architecture diagram, install guide, and com
 
 <table>
   <tr>
-    <td><img src="https://nexspence.com/assets/screenshots/browse_oci.PNG" alt="OCI repository" width="480"></td>
-    <td><img src="https://nexspence.com/assets/screenshots/security_vulnerabilities.PNG" alt="Vulnerability dashboard" width="480"></td>
+    <td><img src="website/assets/screenshots/browse_oci.PNG" alt="OCI repository" width="480"></td>
+    <td><img src="website/assets/screenshots/security_vulnerabilities.PNG" alt="Vulnerability dashboard" width="480"></td>
   </tr>
   <tr>
     <td align="center"><em>Helm charts pushed with <code>helm push oci://</code></em></td>
     <td align="center"><em>Vulnerability dashboard — Trivy + OSV findings</em></td>
   </tr>
   <tr>
-    <td><img src="https://nexspence.com/assets/screenshots/monitoring_charts.PNG" alt="Monitoring charts" width="480"></td>
-    <td><img src="https://nexspence.com/assets/screenshots/audit.PNG" alt="Audit log" width="480"></td>
+    <td><img src="website/assets/screenshots/monitoring_charts.PNG" alt="Monitoring charts" width="480"></td>
+    <td><img src="website/assets/screenshots/audit.PNG" alt="Audit log" width="480"></td>
   </tr>
   <tr>
     <td align="center"><em>Requests/sec, error rate and storage over time</em></td>
