@@ -629,32 +629,32 @@ type SearchParams struct {
 
 // ReplicationRule defines a push-replication job from a local repo to a remote Nexspence instance.
 type ReplicationRule struct {
-	ID                string
-	Name              string
-	SourceRepo        string
-	TargetURL         string
-	TargetRepo        string
-	TargetUsername    string
-	TargetPasswordEnc string // AES-256-GCM encrypted, base64url; never returned in API responses
-	CronExpr          string
-	Enabled           bool
-	LastRunAt         *time.Time
-	LastRunStatus     string // "ok", "error", "running", ""
-	CreatedAt         time.Time
+	ID                string     `json:"id"`
+	Name              string     `json:"name"`
+	SourceRepo        string     `json:"source_repo"`
+	TargetURL         string     `json:"target_url"`
+	TargetRepo        string     `json:"target_repo"`
+	TargetUsername    string     `json:"target_username"`
+	TargetPasswordEnc string     `json:"-"` // AES-256-GCM encrypted, base64url; never returned in API responses
+	CronExpr          string     `json:"cron_expr"`
+	Enabled           bool       `json:"enabled"`
+	LastRunAt         *time.Time `json:"last_run_at"`
+	LastRunStatus     string     `json:"last_run_status"` // "ok", "error", "running", ""
+	CreatedAt         time.Time  `json:"created_at"`
 }
 
 // ReplicationHistory records the outcome of a single replication run.
 type ReplicationHistory struct {
-	ID               string
-	RuleID           string
-	StartedAt        time.Time
-	FinishedAt       *time.Time
-	DurationMs       int64
-	PushedCount      int
-	SkippedCount     int
-	FailedCount      int
-	TransferredBytes int64
-	Error            string
+	ID               string     `json:"id"`
+	RuleID           string     `json:"rule_id"`
+	StartedAt        time.Time  `json:"started_at"`
+	FinishedAt       *time.Time `json:"finished_at"`
+	DurationMs       int64      `json:"duration_ms"`
+	PushedCount      int        `json:"pushed_count"`
+	SkippedCount     int        `json:"skipped_count"`
+	FailedCount      int        `json:"failed_count"`
+	TransferredBytes int64      `json:"transferred_bytes"`
+	Error            string     `json:"error"`
 }
 
 // ── Promotion ────────────────────────────────────────────────
