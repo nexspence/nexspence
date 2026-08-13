@@ -60,6 +60,46 @@ type PresignableStore interface {
 	ConfigureLifecycle(ctx context.Context, expirationDays int32) error
 }
 
+// AppendableBlobStore is an optional extension of BlobStore for backends that
+// can grow a blob in place, without reading back what is already stored.
+// Check with a type assertion: as, ok := store.(storage.AppendableBlobStore)
+//
+// It exists for chunked uploads (the OCI blob PATCH sequence): with Put/Get
+// alone, every chunk has to re-read and rewrite the whole staged blob, so an
+// N-chunk push moves O(N²) bytes. Callers must keep a fallback path for stores
+// that do not implement it.
+//
+// Every method is keyed exactly like Put/Get — no in-process handle, channel or
+// goroutine — so a staged upload survives being continued by another instance,
+// or by a fresh process after a restart.
+type AppendableBlobStore interface {
+	// AppendBlob appends everything r yields to the blob at key, creating it if
+	// absent, and returns the blob's new total size. Cost is O(len(chunk)), not
+	// O(current size).
+	AppendBlob(ctx context.Context, key string, r io.Reader) (total int64, err error)
+
+	// TruncateBlob shrinks the blob at key back to size. A streaming append
+	// cannot measure an incoming chunk before committing it — that is the
+	// buffering being avoided — so a caller enforcing a size cap appends first
+	// and rolls back here.
+	TruncateBlob(ctx context.Context, key string, size int64) error
+
+	// AppendedSize returns the bytes staged so far, including any an in-progress
+	// append has not published at key yet; ok is false when nothing is staged.
+	// Plain Size cannot answer this for backends where append progress is
+	// invisible until FinalizeAppend runs (S3 multipart).
+	AppendedSize(ctx context.Context, key string) (size int64, ok bool, err error)
+
+	// FinalizeAppend publishes everything appended so far as the blob at key, so
+	// Get/Size see it. Idempotent, and a no-op when no append is in progress.
+	FinalizeAppend(ctx context.Context, key string) error
+
+	// AbortAppend discards an unfinished append and releases whatever the
+	// backend holds for it (S3 multipart parts, which nothing else reclaims).
+	// Idempotent, and a no-op when no append is in progress.
+	AbortAppend(ctx context.Context, key string) error
+}
+
 // Meta holds blob content metadata returned alongside the data stream.
 type Meta struct {
 	Key         string

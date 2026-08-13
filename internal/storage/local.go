@@ -93,6 +93,75 @@ func (s *LocalBlobStore) Put(_ context.Context, key string, r io.Reader, _ int64
 	return nil
 }
 
+// AppendBlob appends r to the blob for key and returns its new total size,
+// creating the blob when it does not exist yet.
+//
+// It opens the blob's own path with O_APPEND rather than staging a temp file:
+// the point of the whole extension is to never read back — nor rewrite — what is
+// already stored, which a copy-then-rename would do on every call.
+//
+// Deliberately not fsynced. The caller is upload staging, never a finished
+// artifact — that still goes through Put, which does fsync — and syncing every
+// chunk costs far more than the guarantee is worth here: a crash loses at most
+// the tail of an upload that was never complete anyway, and the client resumes
+// from the size the next progress GET reports.
+func (s *LocalBlobStore) AppendBlob(_ context.Context, key string, r io.Reader) (int64, error) {
+	dst, err := s.keyPath(key)
+	if err != nil {
+		return 0, err
+	}
+	if err := os.MkdirAll(filepath.Dir(dst), 0o750); err != nil {
+		return 0, err
+	}
+	f, err := os.OpenFile(dst, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600) //nolint:gosec // dst is validated by keyPath to stay within the blob store base dir
+	if err != nil {
+		return 0, err
+	}
+	if _, err := io.Copy(f, r); err != nil {
+		_ = f.Close()
+		return 0, classifyWriteErr(err)
+	}
+	info, err := f.Stat()
+	if err != nil {
+		_ = f.Close()
+		return 0, err
+	}
+	if err := f.Close(); err != nil {
+		return 0, err
+	}
+	return info.Size(), nil
+}
+
+// TruncateBlob shrinks the blob for key to size.
+func (s *LocalBlobStore) TruncateBlob(_ context.Context, key string, size int64) error {
+	p, err := s.keyPath(key)
+	if err != nil {
+		return err
+	}
+	return os.Truncate(p, size)
+}
+
+// AppendedSize reports the bytes staged for key. An appended file is the live
+// blob from the first byte on, so this is just Exists plus Size.
+func (s *LocalBlobStore) AppendedSize(ctx context.Context, key string) (int64, bool, error) {
+	exists, err := s.Exists(ctx, key)
+	if err != nil || !exists {
+		return 0, false, err
+	}
+	n, err := s.Size(ctx, key)
+	if err != nil {
+		return 0, false, err
+	}
+	return n, true, nil
+}
+
+// FinalizeAppend is a no-op: appended bytes are already readable at key.
+func (s *LocalBlobStore) FinalizeAppend(_ context.Context, _ string) error { return nil }
+
+// AbortAppend is a no-op: a local append holds no backend resource beyond the
+// file itself, which the caller deletes with Delete.
+func (s *LocalBlobStore) AbortAppend(_ context.Context, _ string) error { return nil }
+
 // classifyWriteErr tags a full-disk failure with ErrNoSpace so handlers can
 // answer 507 Insufficient Storage; any other error is returned unchanged.
 func classifyWriteErr(err error) error {
