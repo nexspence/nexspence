@@ -39,6 +39,18 @@ func New(deps formats.Deps, formatRegistry map[string]formats.FormatHandler) *Ha
 func (h *Handler) Name() string { return "group" }
 
 func (h *Handler) ServeHTTP(c *gin.Context) {
+	// A routing rule — the only path-level policy a group has, since RBAC grants
+	// a repository rather than a path inside it — is matched against the path as
+	// requested, while the member that finally serves it normalizes the path
+	// first. A path that names the same artifact a second way would therefore be
+	// checked as one string and served as another. Refused rather than quietly
+	// rewritten, so no legitimate path changes meaning on the way through: an
+	// artifact path never contains a ".." segment.
+	if hasTraversalSegment(c.Param("path")) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": `path must not contain a ".." segment`})
+		return
+	}
+
 	switch c.Request.Method {
 	case http.MethodGet, http.MethodHead:
 		h.serveGet(c)
@@ -49,6 +61,17 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 			"error": "group repository is read-only — publish to a member hosted repository",
 		})
 	}
+}
+
+// hasTraversalSegment reports whether p has a ".." path segment. A name that
+// merely contains dots ("we..ird.txt") is an ordinary artifact name and passes.
+func hasTraversalSegment(p string) bool {
+	for _, seg := range strings.Split(p, "/") {
+		if seg == ".." {
+			return true
+		}
+	}
+	return false
 }
 
 func (h *Handler) serveGet(c *gin.Context) {
@@ -304,6 +327,12 @@ func (h *Handler) subIndexFetcher(c *gin.Context, repoDef *domain.Repository, me
 ) formats.GroupIndexFetcher {
 	cache := map[string][]formats.GroupIndexPart{}
 	return func(p string) ([]byte, error) {
+		// The path a merger asks for is built from its members' documents, which
+		// for a proxy member is whatever the upstream serves. It gets the same
+		// answer a client would: a traversal segment is not a path here either.
+		if hasTraversalSegment(p) {
+			return nil, fmt.Errorf("index path %q must not contain a \"..\" segment", p)
+		}
 		source, ok := merger.GroupIndexSourcePath(p)
 		if !ok {
 			source = p

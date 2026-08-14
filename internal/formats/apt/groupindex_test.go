@@ -203,3 +203,54 @@ func TestApt_MergeRelease_NoMemberDate_FallsBackToNow(t *testing.T) {
 	assert.NotContains(t, string(body), "Date: Mon, 01 Jan 0001")
 	assert.Contains(t, string(body), "Date: "+time.Now().UTC().Format("Mon, 02 Jan 2006"))
 }
+
+// A member's Release is untrusted input — for a proxy member it is whatever the
+// upstream serves. Its architecture and component names end up in the paths the
+// group asks itself for, so anything that is not a plain name is dropped rather
+// than turned into a path.
+func TestApt_MergeRelease_RejectsHostileFieldValues(t *testing.T) {
+	h := apt.New(formats.Deps{})
+	var asked []string
+	fetch := func(p string) ([]byte, error) {
+		asked = append(asked, p)
+		return []byte("x"), nil
+	}
+
+	body := "Date: Mon, 04 Aug 2026 10:00:00 UTC\n" +
+		"Architectures: amd64 ../../../pool ..\n" +
+		"Components: main ..%2f.. ../etc\n"
+	out, _, err := h.MergeGroupIndexWithFetch("g", "/dists/stable/Release",
+		[]formats.GroupIndexPart{{Member: "m1", Body: []byte(body)}}, fetch)
+	require.NoError(t, err)
+
+	for _, p := range asked {
+		assert.NotContains(t, p, "..", "the group must not ask itself for a traversal path: %s", p)
+	}
+	assert.Contains(t, string(out), "Architectures: amd64 all", "the sound values still survive")
+	assert.Contains(t, string(out), "Components: main")
+	assert.NotContains(t, string(out), "..")
+}
+
+// One member declaring a huge matrix must not turn a single Release request into
+// an unbounded fan-out across every member.
+func TestApt_MergeRelease_CapsTheIndexMatrix(t *testing.T) {
+	h := apt.New(formats.Deps{})
+	archs := make([]string, 500)
+	for i := range archs {
+		archs[i] = fmt.Sprintf("arch%d", i)
+	}
+	components := make([]string, 200)
+	for i := range components {
+		components[i] = fmt.Sprintf("comp%d", i)
+	}
+	body := "Date: Mon, 04 Aug 2026 10:00:00 UTC\nArchitectures: " + strings.Join(archs, " ") +
+		"\nComponents: " + strings.Join(components, " ") + "\n"
+
+	calls := 0
+	fetch := func(string) ([]byte, error) { calls++; return []byte("x"), nil }
+	_, _, err := h.MergeGroupIndexWithFetch("g", "/dists/stable/Release",
+		[]formats.GroupIndexPart{{Member: "m1", Body: []byte(body)}}, fetch)
+	require.NoError(t, err)
+
+	assert.LessOrEqual(t, calls, 2*64*32, "the fan-out is bounded regardless of what a member declares")
+}

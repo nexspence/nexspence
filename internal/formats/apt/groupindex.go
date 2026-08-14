@@ -16,6 +16,7 @@ package apt
 import (
 	"context"
 	"path"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -108,8 +109,8 @@ func (h *Handler) mergeRelease(groupName, p string, inline bool, parts []formats
 	const contentType = "text/plain; charset=utf-8"
 
 	dist := releaseDist(p)
-	archs := unionReleaseField(parts, "Architectures", func(v string) bool { return v != "all" })
-	components := unionReleaseField(parts, "Components", func(string) bool { return true })
+	archs := unionReleaseField(parts, "Architectures", maxReleaseArchs, func(v string) bool { return v != "all" })
+	components := unionReleaseField(parts, "Components", maxReleaseComponents, func(string) bool { return true })
 	if len(components) == 0 {
 		components = []string{"main"}
 	}
@@ -152,14 +153,31 @@ func (h *Handler) mergeRelease(groupName, p string, inline bool, parts []formats
 	return signed, contentType, nil
 }
 
+// releaseName is what an architecture or component may be called. A member's
+// Release is untrusted input — for a proxy member it is whatever the upstream
+// chose to serve — and these values are spliced into the paths the group then
+// asks itself for, so anything that is not a plain name is dropped instead of
+// becoming a path.
+var releaseName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]*$`)
+
+// The index matrix a group will vouch for is bounded: one member declaring
+// thousands of architectures would otherwise turn a single Release request into
+// that many fan-outs across every member. Real distributions are far below
+// these limits (Debian ships ~10 architectures and 3 components).
+const (
+	maxReleaseArchs      = 64
+	maxReleaseComponents = 32
+)
+
 // unionReleaseField collects the values of a space-separated Release header
-// across members, keeping those keep reports, sorted so the document is stable.
-func unionReleaseField(parts []formats.GroupIndexPart, field string, keep func(string) bool) []string {
+// across members, keeping the well-formed ones that keep reports, sorted so the
+// document is stable and capped at limit.
+func unionReleaseField(parts []formats.GroupIndexPart, field string, limit int, keep func(string) bool) []string {
 	seen := map[string]bool{}
 	var out []string
 	for _, part := range parts {
 		for _, v := range strings.Fields(releaseHeader(string(part.Body), field)) {
-			if !keep(v) || seen[v] {
+			if !releaseName.MatchString(v) || !keep(v) || seen[v] {
 				continue
 			}
 			seen[v] = true
@@ -167,6 +185,9 @@ func unionReleaseField(parts []formats.GroupIndexPart, field string, keep func(s
 		}
 	}
 	sort.Strings(out)
+	if len(out) > limit {
+		out = out[:limit]
+	}
 	return out
 }
 
