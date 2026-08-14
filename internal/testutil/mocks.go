@@ -1250,6 +1250,8 @@ func (HeldLocker) Acquire(_ context.Context, _ string, _ time.Duration) (distloc
 	return nil, distlock.ErrLockHeld
 }
 
+func (HeldLocker) ForceRelease(_ context.Context, _ string) error { return nil }
+
 // ── Helpers ───────────────────────────────────────────────────
 
 // SimpleRepo returns a hosted repository ready for use in tests.
@@ -2060,6 +2062,10 @@ func (r *PrivilegeRepo) PrivilegeRoleMap(_ context.Context) (map[string][]string
 type BlobStoreMigrationRepo struct {
 	mu         sync.Mutex
 	migrations map[string]*domain.BlobStoreMigration
+
+	// CreateErr, when set, makes Create fail — for exercising what a caller
+	// leaves behind when the migration row cannot be written.
+	CreateErr error
 }
 
 func NewBlobStoreMigrationRepo(ms ...*domain.BlobStoreMigration) *BlobStoreMigrationRepo {
@@ -2073,6 +2079,9 @@ func NewBlobStoreMigrationRepo(ms ...*domain.BlobStoreMigration) *BlobStoreMigra
 func (r *BlobStoreMigrationRepo) Create(_ context.Context, m *domain.BlobStoreMigration) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.CreateErr != nil {
+		return r.CreateErr
+	}
 	if m.ID == "" {
 		m.ID = fmt.Sprintf("mig-%d", len(r.migrations)+1)
 	}

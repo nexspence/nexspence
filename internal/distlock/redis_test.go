@@ -124,3 +124,34 @@ func TestRedisLocker_ReleaseError(t *testing.T) {
 		t.Fatal("want error from Release, got nil")
 	}
 }
+
+// ForceRelease exists for cleaning up after a holder that can no longer release
+// its own lock, so it drops the key whoever wrote it.
+func TestRedisLocker_ForceReleaseDropsAnotherHoldersKey(t *testing.T) {
+	const key = "nexspence:lock:crashed"
+	stub := newStubRedis()
+	stub.keys[key] = "token-from-a-dead-node"
+	l := distlock.NewRedisLocker(stub)
+
+	if err := l.ForceRelease(context.Background(), key); err != nil {
+		t.Fatalf("ForceRelease: %v", err)
+	}
+	if _, exists := stub.keys[key]; exists {
+		t.Fatal("key still held after ForceRelease")
+	}
+
+	// The lock is free for the next node to take.
+	if _, err := l.Acquire(context.Background(), key, time.Minute); err != nil {
+		t.Fatalf("Acquire after ForceRelease: %v", err)
+	}
+}
+
+func TestRedisLocker_ForceReleaseError(t *testing.T) {
+	stub := newStubRedis()
+	stub.delf = func(string) error { return errors.New("redis down") }
+	l := distlock.NewRedisLocker(stub)
+
+	if err := l.ForceRelease(context.Background(), "nexspence:lock:x"); err == nil {
+		t.Fatal("want error from ForceRelease, got nil")
+	}
+}

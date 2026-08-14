@@ -14,6 +14,9 @@ func (NoopLocker) Acquire(_ context.Context, _ string, _ time.Duration) (Lock, e
 	return noopLock{}, nil
 }
 
+// ForceRelease is a no-op: without coordination there is nothing to clear.
+func (NoopLocker) ForceRelease(_ context.Context, _ string) error { return nil }
+
 type noopLock struct{}
 
 func (noopLock) Release(_ context.Context) error { return nil }

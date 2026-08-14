@@ -2,12 +2,17 @@ package service_test
 
 import (
 	"context"
+	"errors"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/nexspence-oss/nexspence/internal/distlock"
 	"github.com/nexspence-oss/nexspence/internal/domain"
+	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/service"
 	"github.com/nexspence-oss/nexspence/internal/storage"
 	"github.com/nexspence-oss/nexspence/internal/testutil"
@@ -99,4 +104,142 @@ func TestBlobStoreMigration_Start_TargetStoreNotFound(t *testing.T) {
 	require.NoError(t, repoRepo.Create(ctx, repoRec))
 	_, err := svc.Start(ctx, "repo-a", "nonexistent-store")
 	require.Error(t, err)
+}
+
+// ── Lock lifecycle ───────────────────────────────────────────
+
+// migLocker records the keys it was asked for and can fail every acquisition,
+// standing in for a lock held by another node.
+type migLocker struct {
+	mu       sync.Mutex
+	err      error
+	acquired []string
+	forced   []string
+	released int
+}
+
+func (lk *migLocker) Acquire(_ context.Context, key string, _ time.Duration) (distlock.Lock, error) {
+	lk.mu.Lock()
+	defer lk.mu.Unlock()
+	lk.acquired = append(lk.acquired, key)
+	if lk.err != nil {
+		return nil, lk.err
+	}
+	return &migLock{owner: lk}, nil
+}
+
+func (lk *migLocker) ForceRelease(_ context.Context, key string) error {
+	lk.mu.Lock()
+	defer lk.mu.Unlock()
+	lk.forced = append(lk.forced, key)
+	return nil
+}
+
+func (lk *migLocker) forcedKeys() []string {
+	lk.mu.Lock()
+	defer lk.mu.Unlock()
+	return append([]string(nil), lk.forced...)
+}
+
+func (lk *migLocker) releases() int {
+	lk.mu.Lock()
+	defer lk.mu.Unlock()
+	return lk.released
+}
+
+type migLock struct{ owner *migLocker }
+
+func (l *migLock) Release(context.Context) error {
+	l.owner.mu.Lock()
+	defer l.owner.mu.Unlock()
+	l.owner.released++
+	return nil
+}
+
+func seedMigrationRepo(t *testing.T, repoRepo *testutil.RepoRepo, blobStoreRepo *testutil.BlobStoreRepo, name string) string {
+	t.Helper()
+	ctx := context.Background()
+	src := &domain.BlobStore{ID: "bs-src-" + name, Name: "source-" + name}
+	dst := &domain.BlobStore{ID: "bs-dst-" + name, Name: "dest-" + name}
+	require.NoError(t, blobStoreRepo.Create(ctx, src))
+	require.NoError(t, blobStoreRepo.Create(ctx, dst))
+
+	repoRec := &domain.Repository{Name: name, Format: "raw", Type: "hosted"}
+	repoRec.BlobStoreID = &src.ID
+	require.NoError(t, repoRepo.Create(ctx, repoRec))
+	return dst.ID
+}
+
+// Losing the lock race must leave nothing behind: the migration row is only
+// created once this node actually owns the lock, or the repo is wedged as
+// "already active" for every later Start until the process restarts.
+func TestBlobStoreMigration_Start_LockHeld_LeavesNoMigrationRow(t *testing.T) {
+	svc, migRepo, repoRepo, blobStoreRepo := newMigSvc(t)
+	ctx := context.Background()
+	dstID := seedMigrationRepo(t, repoRepo, blobStoreRepo, "locked-repo")
+	svc.WithLocker(&migLocker{err: distlock.ErrLockHeld})
+
+	_, err := svc.Start(ctx, "locked-repo", dstID)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "another node")
+
+	_, err = migRepo.GetActiveByRepo(ctx, "locked-repo")
+	assert.ErrorIs(t, err, repository.ErrNotFound, "no migration row may be left behind by a lost lock race")
+
+	// And the repo is not wedged: once the lock frees up, Start works again.
+	svc.WithLocker(&migLocker{})
+	m, err := svc.Start(ctx, "locked-repo", dstID)
+	require.NoError(t, err)
+	require.NotNil(t, m)
+}
+
+// Same for a lock backend that is simply down.
+func TestBlobStoreMigration_Start_LockError_LeavesNoMigrationRow(t *testing.T) {
+	svc, migRepo, repoRepo, blobStoreRepo := newMigSvc(t)
+	ctx := context.Background()
+	dstID := seedMigrationRepo(t, repoRepo, blobStoreRepo, "errored-repo")
+	svc.WithLocker(&migLocker{err: errors.New("redis down")})
+
+	_, err := svc.Start(ctx, "errored-repo", dstID)
+	require.Error(t, err)
+
+	_, err = migRepo.GetActiveByRepo(ctx, "errored-repo")
+	assert.ErrorIs(t, err, repository.ErrNotFound, "no migration row may be left behind when the lock backend fails")
+}
+
+// A migration row that cannot be created must not leave its lock held for the
+// full 2h TTL either.
+func TestBlobStoreMigration_Start_CreateFails_ReleasesLock(t *testing.T) {
+	svc, migRepo, repoRepo, blobStoreRepo := newMigSvc(t)
+	ctx := context.Background()
+	dstID := seedMigrationRepo(t, repoRepo, blobStoreRepo, "create-fails")
+	migRepo.CreateErr = errors.New("db down")
+
+	lk := &migLocker{}
+	svc.WithLocker(lk)
+
+	_, err := svc.Start(ctx, "create-fails", dstID)
+	require.Error(t, err)
+	assert.Equal(t, 1, lk.releases(), "the lock taken for a migration that never started is given back")
+}
+
+// ResumeAll tells the operator an interrupted migration was canceled, so the
+// lock the crashed process left behind has to go with it — otherwise Start
+// keeps failing with "already running on another node" for up to 2 hours.
+func TestBlobStoreMigration_ResumeAll_ReleasesStaleLocks(t *testing.T) {
+	svc, migRepo, _, _ := newMigSvc(t)
+	ctx := context.Background()
+
+	require.NoError(t, migRepo.Create(ctx, &domain.BlobStoreMigration{RepositoryName: "repo1", Status: "running"}))
+	require.NoError(t, migRepo.Create(ctx, &domain.BlobStoreMigration{RepositoryName: "repo2", Status: "pending"}))
+
+	lk := &migLocker{}
+	svc.WithLocker(lk)
+
+	require.NoError(t, svc.ResumeAll(ctx))
+
+	assert.ElementsMatch(t,
+		[]string{"nexspence:lock:blobmig:repo1", "nexspence:lock:blobmig:repo2"},
+		lk.forcedKeys(),
+		"every migration ResumeAll gives up gives its lock back")
 }
