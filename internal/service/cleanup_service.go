@@ -153,7 +153,7 @@ func (s *CleanupService) addEntryLocked(p domain.CleanupPolicy) {
 	}
 
 	job := func() {
-		if _, err := s.runPolicy(context.Background(), p); err != nil {
+		if _, err := s.runPolicyLocked(context.Background(), p); err != nil {
 			s.log.Error("cleanup cron error", "policy", p.Name, "err", err)
 		}
 	}
@@ -167,23 +167,41 @@ func (s *CleanupService) addEntryLocked(p domain.CleanupPolicy) {
 	s.entryIDs[p.ID] = id
 }
 
-const cleanupLockKey = "nexspence:lock:cleanup:run"
+const cleanupPolicyLockPrefix = "nexspence:lock:cleanup:policy:"
 const cleanupLockTTL = 30 * time.Minute
+
+// errAcquireLock marks a failure to reach the lock backend, as opposed to a
+// policy that simply failed to run. Without the lock there is no exclusion, so
+// callers stop instead of running unprotected.
+var errAcquireLock = errors.New("cleanup: acquire lock")
+
+// runPolicyLocked runs p while holding its own distributed lock. Every path that
+// runs a policy — the cron schedule, a manual single-policy run, RunAll — goes
+// through here, so nodes in an HA deployment never run the same policy at once.
+// The lock is per policy, so unrelated policies still run in parallel.
+func (s *CleanupService) runPolicyLocked(ctx context.Context, p domain.CleanupPolicy) (*domain.CleanupRunResult, error) {
+	if s.locker == nil {
+		return s.runPolicy(ctx, p)
+	}
+
+	lock, err := s.locker.Acquire(ctx, cleanupPolicyLockPrefix+p.ID, cleanupLockTTL)
+	if errors.Is(err, distlock.ErrLockHeld) {
+		const reason = "another node is already running this policy"
+		s.log.Info("cleanup skipped: "+reason, "policy", p.Name)
+		return &domain.CleanupRunResult{
+			PolicyID: p.ID, DryRun: p.DryRun, Skipped: true, SkippedReason: reason,
+		}, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("%w for policy %q: %w", errAcquireLock, p.Name, err)
+	}
+	defer func() { _ = lock.Release(ctx) }()
+
+	return s.runPolicy(ctx, p)
+}
 
 // RunAll executes all enabled cleanup policies once and returns a summary.
 func (s *CleanupService) RunAll(ctx context.Context) error {
-	if s.locker != nil {
-		lock, err := s.locker.Acquire(ctx, cleanupLockKey, cleanupLockTTL)
-		if errors.Is(err, distlock.ErrLockHeld) {
-			s.log.Info("cleanup skipped: another node is running cleanup")
-			return nil
-		}
-		if err != nil {
-			return fmt.Errorf("cleanup: acquire lock: %w", err)
-		}
-		defer func() { _ = lock.Release(ctx) }()
-	}
-
 	policies, err := s.policies.List(ctx)
 	if err != nil {
 		return fmt.Errorf("cleanup: list policies: %w", err)
@@ -192,7 +210,10 @@ func (s *CleanupService) RunAll(ctx context.Context) error {
 		if !p.Enabled {
 			continue
 		}
-		if _, err := s.runPolicy(ctx, p); err != nil {
+		if _, err := s.runPolicyLocked(ctx, p); err != nil {
+			if errors.Is(err, errAcquireLock) {
+				return err
+			}
 			s.log.Error("cleanup policy failed", "policy", p.Name, "err", err)
 		}
 	}
@@ -217,7 +238,7 @@ func (s *CleanupService) RunPolicyResult(ctx context.Context, id string) (*domai
 	if p == nil {
 		return nil, fmt.Errorf("cleanup policy %q not found", id)
 	}
-	return s.runPolicy(ctx, *p)
+	return s.runPolicyLocked(ctx, *p)
 }
 
 func (s *CleanupService) runPolicy(ctx context.Context, p domain.CleanupPolicy) (*domain.CleanupRunResult, error) {

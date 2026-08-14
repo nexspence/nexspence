@@ -2,6 +2,7 @@ package service_test
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
+	"github.com/nexspence-oss/nexspence/internal/distlock"
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/service"
 	"github.com/nexspence-oss/nexspence/internal/testutil"
@@ -577,4 +579,145 @@ func TestRunPolicy_LastAssetOnBlob_FreesBytesAndUsage(t *testing.T) {
 	got, err := blobRepo.Get(ctx, "default")
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), got.UsedBytes)
+}
+
+// ── Distributed locking on the scheduled path ────────────────
+
+// The cron schedule is the path cleanup actually runs on in production. It must
+// take the same distributed lock the admin "run all now" path does, or every
+// node in an HA deployment runs every policy concurrently.
+func TestCronSchedule_TakesTheDistributedLock(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	assets := testutil.NewAssetRepo()
+	assets.Stale = []domain.Asset{{ID: "a1", BlobKey: "bk1", SizeBytes: 100, Path: "/foo.jar"}}
+
+	blobs := testutil.NewBlobStore()
+	require.NoError(t, blobs.Put(ctx, "bk1", testutil.MakeReader("data1"), 5))
+
+	policies := testutil.NewCleanupPolicyRepo(&domain.CleanupPolicy{
+		ID: "p-cron", Name: "cron-policy", Enabled: true, Format: "*",
+		ScheduleCron: "@every 50ms",
+		Criteria:     map[string]any{"artifactAgeDays": float64(1)},
+	})
+	repos := testutil.NewRepoRepo(&domain.Repository{
+		Name: "r", ID: "r1", Format: domain.FormatRaw, CleanupPolicyIDs: []string{"p-cron"},
+	})
+
+	lk := &lockRecorder{err: distlock.ErrLockHeld} // another node owns the lock
+	svc := service.NewCleanupService(policies, repos, assets, testutil.NewBlobStoreRepo(), blobs, nopLog())
+	svc.WithLocker(lk)
+
+	go svc.StartCronScheduler(ctx, "@every 50ms")
+
+	require.Eventually(t, func() bool { return len(lk.acquired()) > 0 }, 2*time.Second, 10*time.Millisecond,
+		"the scheduled run never went through the distributed lock")
+	cancel()
+
+	assert.Equal(t, "nexspence:lock:cleanup:policy:p-cron", lk.acquired()[0])
+	assert.Empty(t, blobs.Deleted, "nothing is deleted while another node holds the lock")
+	assert.Empty(t, policies.RunRecords, "and no run is recorded that never happened")
+}
+
+// The manual single-policy run takes the same lock.
+func TestRunPolicyResult_LockHeldByAnotherNode_SkipsWithReason(t *testing.T) {
+	ctx := context.Background()
+	assets := testutil.NewAssetRepo()
+	assets.Stale = []domain.Asset{{ID: "a1", BlobKey: "bk1", SizeBytes: 100, Path: "/foo.jar"}}
+
+	blobs := testutil.NewBlobStore()
+	require.NoError(t, blobs.Put(ctx, "bk1", testutil.MakeReader("data1"), 5))
+
+	policies := testutil.NewCleanupPolicyRepo(&domain.CleanupPolicy{
+		ID: "p-manual", Name: "manual-policy", Enabled: true, Format: "*",
+		Criteria: map[string]any{"artifactAgeDays": float64(1)},
+	})
+	repos := testutil.NewRepoRepo(&domain.Repository{
+		Name: "r", ID: "r1", Format: domain.FormatRaw, CleanupPolicyIDs: []string{"p-manual"},
+	})
+
+	svc := service.NewCleanupService(policies, repos, assets, testutil.NewBlobStoreRepo(), blobs, nopLog())
+	svc.WithLocker(testutil.NewHeldLocker())
+
+	res, err := svc.RunPolicyResult(ctx, "p-manual")
+	require.NoError(t, err)
+	require.NotNil(t, res)
+	assert.True(t, res.Skipped, "the caller is told the run was skipped, not that it succeeded")
+	assert.NotEmpty(t, res.SkippedReason)
+	assert.Empty(t, blobs.Deleted)
+}
+
+// Policies lock independently, so one policy running on another node does not
+// serialize unrelated policies here.
+func TestCleanupLock_IsScopedPerPolicy(t *testing.T) {
+	ctx := context.Background()
+	assets := testutil.NewAssetRepo()
+	blobs := testutil.NewBlobStore()
+
+	policies := testutil.NewCleanupPolicyRepo(
+		&domain.CleanupPolicy{
+			ID: "p-one", Name: "one", Enabled: true, Format: "*",
+			Criteria: map[string]any{"artifactAgeDays": float64(1)},
+		},
+		&domain.CleanupPolicy{
+			ID: "p-two", Name: "two", Enabled: true, Format: "*",
+			Criteria: map[string]any{"artifactAgeDays": float64(1)},
+		},
+	)
+	repos := testutil.NewRepoRepo(&domain.Repository{
+		Name: "r", ID: "r1", Format: domain.FormatRaw, CleanupPolicyIDs: []string{"p-one", "p-two"},
+	})
+
+	lk := &lockRecorder{}
+	svc := service.NewCleanupService(policies, repos, assets, testutil.NewBlobStoreRepo(), blobs, nopLog())
+	svc.WithLocker(lk)
+
+	require.NoError(t, svc.RunAll(ctx))
+
+	assert.Equal(t, []string{
+		"nexspence:lock:cleanup:policy:p-one",
+		"nexspence:lock:cleanup:policy:p-two",
+	}, lk.acquired())
+	assert.Equal(t, 2, lk.releases(), "each policy releases its own lock when it finishes")
+}
+
+// lockRecorder is a Locker that records the keys it was asked for. With err set
+// it fails every acquisition, standing in for a lock held elsewhere.
+type lockRecorder struct {
+	mu       sync.Mutex
+	err      error
+	keys     []string
+	released int
+}
+
+func (lk *lockRecorder) Acquire(_ context.Context, key string, _ time.Duration) (distlock.Lock, error) {
+	lk.mu.Lock()
+	defer lk.mu.Unlock()
+	lk.keys = append(lk.keys, key)
+	if lk.err != nil {
+		return nil, lk.err
+	}
+	return &recordedLock{owner: lk}, nil
+}
+
+func (lk *lockRecorder) acquired() []string {
+	lk.mu.Lock()
+	defer lk.mu.Unlock()
+	return append([]string(nil), lk.keys...)
+}
+
+func (lk *lockRecorder) releases() int {
+	lk.mu.Lock()
+	defer lk.mu.Unlock()
+	return lk.released
+}
+
+type recordedLock struct{ owner *lockRecorder }
+
+func (l *recordedLock) Release(context.Context) error {
+	l.owner.mu.Lock()
+	defer l.owner.mu.Unlock()
+	l.owner.released++
+	return nil
 }
