@@ -25,6 +25,32 @@ type GroupIndexMerger interface {
 	MergeGroupIndex(groupName, path string, parts []GroupIndexPart) (body []byte, contentType string, err error)
 }
 
+// GroupIndexFetcher returns the body the GROUP itself serves at path — the
+// merged document, not any single member's copy.
+type GroupIndexFetcher func(path string) ([]byte, error)
+
+// GroupIndexDependentMerger is optionally implemented alongside GroupIndexMerger
+// by formats whose index document describes OTHER index documents: apt's Release
+// carries a checksum of every Packages file, yum's repomd.xml one of primary.xml
+// and its siblings.
+//
+// Merging those from the members' own copies cannot work. Each member's document
+// describes that member's own indexes, while the group serves the union — so the
+// checksums never match the bytes the client then downloads, and apt/dnf reject
+// the repository outright. Such a merger is handed a fetcher instead, and builds
+// its document from what the group itself serves.
+//
+// The fetched path must not itself be dependent: the fetcher merges it without
+// one, so a format that pointed a document at itself would get an empty result
+// rather than a recursion through the group layer.
+type GroupIndexDependentMerger interface {
+	GroupIndexMerger
+	// MergeGroupIndexWithFetch merges like MergeGroupIndex, additionally able to
+	// ask for the group's own merged body at another index path.
+	MergeGroupIndexWithFetch(groupName, path string, parts []GroupIndexPart,
+		fetch GroupIndexFetcher) (body []byte, contentType string, err error)
+}
+
 // GroupIndexStrictMerger is optionally implemented alongside GroupIndexMerger by
 // formats whose merged index must never be served incomplete.
 //

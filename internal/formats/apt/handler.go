@@ -301,39 +301,62 @@ func (h *Handler) servePublicKey(c *gin.Context, repo *domain.Repository) {
 // Date would break verification. The date therefore tracks the content — the
 // newest package in the repository (#103).
 func (h *Handler) buildRelease(ctx context.Context, repoName, p string) ([]byte, error) {
-	// Parse distribution from path: /dists/:dist/Release
-	parts := strings.Split(strings.TrimPrefix(p, "/dists/"), "/")
-	dist := "stable"
-	if len(parts) > 0 && parts[0] != "" {
-		dist = parts[0]
-	}
-
+	dist := releaseDist(p)
 	archs := h.repoArchitectures(ctx, repoName)
-	archList := strings.Join(append(append([]string{}, archs...), "all"), " ")
 
 	// apt verifies the Packages indexes against these checksum sections —
 	// without them a default (verifying) client rejects the repo (#103).
-	type indexFile struct {
-		relPath string
-		body    []byte
-	}
-	var files []indexFile
+	var files []releaseIndexFile
 	for _, arch := range archs {
 		plain, err := h.buildPackagesIndex(ctx, repoName, arch)
 		if err != nil {
 			continue
 		}
-		var buf bytes.Buffer
-		gw := gzip.NewWriter(&buf)
-		_, _ = gw.Write(plain)
-		_ = gw.Close()
 		files = append(files,
-			indexFile{relPath: "main/binary-" + arch + "/Packages", body: plain},
-			indexFile{relPath: "main/binary-" + arch + "/Packages.gz", body: buf.Bytes()},
+			releaseIndexFile{relPath: "main/binary-" + arch + "/Packages", body: plain},
+			releaseIndexFile{relPath: "main/binary-" + arch + "/Packages.gz", body: gzipBytes(plain)},
 		)
 	}
 
-	date := h.releaseDate(ctx, repoName).UTC().Format("Mon, 02 Jan 2006 15:04:05 UTC")
+	date := h.releaseDate(ctx, repoName).UTC().Format(releaseDateLayout)
+	return renderRelease(dist, archs, []string{"main"}, date, files), nil
+}
+
+// releaseDateLayout is the Date format apt reads, and the one a group parses
+// back out of its members' documents.
+const releaseDateLayout = "Mon, 02 Jan 2006 15:04:05 UTC"
+
+// releaseIndexFile is one index document a Release vouches for: the path
+// relative to the distribution, and the exact bytes served at it.
+type releaseIndexFile struct {
+	relPath string
+	body    []byte
+}
+
+// releaseDist parses the distribution out of /dists/:dist/Release.
+func releaseDist(p string) string {
+	parts := strings.Split(strings.TrimPrefix(p, "/dists/"), "/")
+	if len(parts) > 0 && parts[0] != "" {
+		return parts[0]
+	}
+	return "stable"
+}
+
+func gzipBytes(plain []byte) []byte {
+	var buf bytes.Buffer
+	gw := gzip.NewWriter(&buf)
+	_, _ = gw.Write(plain)
+	_ = gw.Close()
+	return buf.Bytes()
+}
+
+// renderRelease writes the Release document. One repository and a group produce
+// it through this same code, differing only in where archs, components and the
+// index bodies come from — a group's are the union across its members, so the
+// checksums always describe the indexes that repository actually serves.
+func renderRelease(dist string, archs, components []string, date string, files []releaseIndexFile) []byte {
+	archList := strings.Join(append(append([]string{}, archs...), "all"), " ")
+
 	var sb strings.Builder
 	fmt.Fprintf(&sb, `Origin: Nexspence
 Label: Nexspence
@@ -341,9 +364,9 @@ Suite: %s
 Codename: %s
 Date: %s
 Architectures: %s
-Components: main
+Components: %s
 Description: Nexspence APT Repository
-`, dist, dist, date, archList)
+`, dist, dist, date, archList, strings.Join(components, " "))
 	sb.WriteString("MD5Sum:\n")
 	for _, f := range files {
 		fmt.Fprintf(&sb, " %x %d %s\n", md5.Sum(f.body), len(f.body), f.relPath) //nolint:gosec // apt protocol checksum
@@ -352,7 +375,7 @@ Description: Nexspence APT Repository
 	for _, f := range files {
 		fmt.Fprintf(&sb, " %x %d %s\n", sha256.Sum256(f.body), len(f.body), f.relPath)
 	}
-	return []byte(sb.String()), nil
+	return []byte(sb.String())
 }
 
 // releaseDate is the timestamp stamped into Release. It follows the newest

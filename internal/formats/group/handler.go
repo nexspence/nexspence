@@ -180,7 +180,6 @@ func (h *Handler) callMemberWithQuery(ctx context.Context, c *gin.Context, membe
 func (h *Handler) serveMergedIndex(c *gin.Context, repoDef *domain.Repository, members []string,
 	rule *domain.RoutingRule, merger formats.GroupIndexMerger, source, requestPath string,
 ) {
-	ctx := c.Request.Context()
 	strict, isStrict := merger.(formats.GroupIndexStrictMerger)
 	pager, isPager := merger.(formats.GroupIndexPaginator)
 
@@ -191,6 +190,63 @@ func (h *Handler) serveMergedIndex(c *gin.Context, repoDef *domain.Repository, m
 	if isPager {
 		memberQuery = pager.GroupIndexMemberQuery(source, memberQuery)
 	}
+
+	parts, contributing, failure := h.collectIndexParts(c, repoDef, members, rule, strict, source, memberQuery)
+	if failure != nil {
+		// Relayed verbatim: the member's handler already phrased the failure in
+		// its own protocol's error shape, and re-wrapping it would cost the
+		// client the reason.
+		h.relayMemberFailure(c, failure.member, failure.rec)
+		return
+	}
+
+	if len(parts) == 0 {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": fmt.Sprintf("index not found in any member of group %q", repoDef.Name),
+		})
+		return
+	}
+
+	c.Writer.Header().Set("X-Nexspence-Source", strings.Join(contributing, ","))
+	body, contentType, err := h.mergeIndexParts(c, repoDef, members, rule, merger, strict, requestPath, parts)
+	if err == nil && isPager {
+		// Paged after the merge, so the page and the cursor that walks it are
+		// both cut out of the order the client is being served.
+		body, err = pager.PageGroupIndex(c, requestPath, body)
+	}
+	if err != nil {
+		if isStrict {
+			// A member's document that could not be merged is a member whose
+			// contribution is missing from the result, which is the same fact a
+			// fatal member failure reports.
+			c.JSON(http.StatusBadGateway, gin.H{
+				"error": fmt.Sprintf("members of group %q could not be merged into one index, so the answer "+
+					"would be incomplete: %v", repoDef.Name, err),
+			})
+			return
+		}
+		// Degrade to the first member's document rather than failing the group.
+		c.Data(http.StatusOK, "application/octet-stream", parts[0].Body)
+		return
+	}
+	c.Data(http.StatusOK, contentType, body)
+}
+
+// memberFailure is a member answer the merger calls fatal — the member could not
+// be consulted, so the group must not present a result merged around it.
+type memberFailure struct {
+	member string
+	rec    *httptest.ResponseRecorder
+}
+
+// collectIndexParts fans source out to every eligible member and returns their
+// 2xx bodies in member order (member order = priority). A member that failed is
+// skipped so one down upstream cannot take the group with it, unless the merger
+// calls that failure fatal — then it comes back for the caller to relay.
+func (h *Handler) collectIndexParts(c *gin.Context, repoDef *domain.Repository, members []string,
+	rule *domain.RoutingRule, strict formats.GroupIndexStrictMerger, source, memberQuery string,
+) ([]formats.GroupIndexPart, []string, *memberFailure) {
+	ctx := c.Request.Context()
 
 	var parts []formats.GroupIndexPart
 	var contributing []string
@@ -213,49 +269,63 @@ func (h *Handler) serveMergedIndex(c *gin.Context, repoDef *domain.Repository, m
 			code = http.StatusOK
 		}
 		if code < 200 || code > 299 {
-			if isStrict && strict.GroupIndexMemberFailureIsFatal(source, code) {
-				// Relayed verbatim: the member's handler already phrased the
-				// failure in its own protocol's error shape, and re-wrapping it
-				// would cost the client the reason.
-				h.relayMemberFailure(c, memberName, rec)
-				return
+			if strict != nil && strict.GroupIndexMemberFailureIsFatal(source, code) {
+				return nil, nil, &memberFailure{member: memberName, rec: rec}
 			}
 			continue
 		}
 		parts = append(parts, formats.GroupIndexPart{Member: memberName, Body: rec.Body.Bytes()})
 		contributing = append(contributing, memberName)
 	}
+	return parts, contributing, nil
+}
 
-	if len(parts) == 0 {
-		c.JSON(http.StatusNotFound, gin.H{
-			"error": fmt.Sprintf("index not found in any member of group %q", repoDef.Name),
-		})
-		return
+// mergeIndexParts merges the collected member bodies. A format whose document
+// describes other index documents (apt Release, yum repomd.xml) is additionally
+// handed a fetcher for the group's own merged bodies at those paths, so the
+// checksums it writes describe what the group actually serves.
+func (h *Handler) mergeIndexParts(c *gin.Context, repoDef *domain.Repository, members []string,
+	rule *domain.RoutingRule, merger formats.GroupIndexMerger, strict formats.GroupIndexStrictMerger,
+	requestPath string, parts []formats.GroupIndexPart,
+) ([]byte, string, error) {
+	dependent, ok := merger.(formats.GroupIndexDependentMerger)
+	if !ok {
+		return merger.MergeGroupIndex(repoDef.Name, requestPath, parts)
 	}
+	return dependent.MergeGroupIndexWithFetch(repoDef.Name, requestPath, parts,
+		h.subIndexFetcher(c, repoDef, members, rule, merger, strict))
+}
 
-	c.Writer.Header().Set("X-Nexspence-Source", strings.Join(contributing, ","))
-	body, contentType, err := merger.MergeGroupIndex(repoDef.Name, requestPath, parts)
-	if err == nil && isPager {
-		// Paged after the merge, so the page and the cursor that walks it are
-		// both cut out of the order the client is being served.
-		body, err = pager.PageGroupIndex(c, requestPath, body)
-	}
-	if err != nil {
-		if isStrict {
-			// A member's document that could not be merged is a member whose
-			// contribution is missing from the result, which is the same fact a
-			// fatal member failure reports.
-			c.JSON(http.StatusBadGateway, gin.H{
-				"error": fmt.Sprintf("members of group %q could not be merged into one index, so the answer "+
-					"would be incomplete: %v", repoDef.Name, err),
-			})
-			return
+// subIndexFetcher returns the group's own merged body at another index path.
+// Member responses are collected once per source path and reused, so a document
+// covering both the plain and the gzipped flavor of an index costs one fan-out.
+func (h *Handler) subIndexFetcher(c *gin.Context, repoDef *domain.Repository, members []string,
+	rule *domain.RoutingRule, merger formats.GroupIndexMerger, strict formats.GroupIndexStrictMerger,
+) formats.GroupIndexFetcher {
+	cache := map[string][]formats.GroupIndexPart{}
+	return func(p string) ([]byte, error) {
+		source, ok := merger.GroupIndexSourcePath(p)
+		if !ok {
+			source = p
 		}
-		// Degrade to the first member's document rather than failing the group.
-		c.Data(http.StatusOK, "application/octet-stream", parts[0].Body)
-		return
+		parts, cached := cache[source]
+		if !cached {
+			var failure *memberFailure
+			parts, _, failure = h.collectIndexParts(c, repoDef, members, rule, strict, source, "")
+			if failure != nil {
+				return nil, fmt.Errorf("member %q could not serve %q", failure.member, source)
+			}
+			cache[source] = parts
+		}
+		if len(parts) == 0 {
+			return nil, fmt.Errorf("index %q not found in any member of group %q", p, repoDef.Name)
+		}
+		// Merged without a fetcher of its own: a sub-index describes artifacts,
+		// not other indexes, and letting one reach back through the group layer
+		// would be a cycle waiting to happen.
+		body, _, err := merger.MergeGroupIndex(repoDef.Name, p, parts)
+		return body, err
 	}
-	c.Data(http.StatusOK, contentType, body)
 }
 
 // relayMemberFailure passes a member's failed response through unchanged, so the
