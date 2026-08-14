@@ -200,8 +200,14 @@ func TestExtraCleanup_RunAll_LockerHeld_Skips(t *testing.T) {
 }
 
 func TestExtraCleanup_RunAll_LockerAcquireError_ReturnsError(t *testing.T) {
+	// A policy has to exist for RunAll to reach the lock at all: the lock is
+	// taken per policy, not once per batch.
+	p := &domain.CleanupPolicy{
+		ID: "p-lockerr", Name: "lockerr", Enabled: true, Format: "*",
+		Criteria: map[string]any{"artifactAgeDays": float64(1)},
+	}
 	svc := service.NewCleanupService(
-		testutil.NewCleanupPolicyRepo(),
+		testutil.NewCleanupPolicyRepo(p),
 		testutil.NewRepoRepo(),
 		testutil.NewAssetRepo(),
 		testutil.NewBlobStoreRepo(),

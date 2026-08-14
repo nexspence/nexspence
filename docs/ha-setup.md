@@ -74,7 +74,7 @@ readinessProbe:
 | Feature | Redis key | TTL |
 |---|---|---|
 | Docker anon-check cache | `nexspence:docker:anon_allowed` | 30s |
-| Cleanup lock | `nexspence:lock:cleanup:run` | 30 min |
+| Cleanup lock (per policy) | `nexspence:lock:cleanup:policy:<policy id>` | 30 min |
 | Blob migration lock | `nexspence:lock:blobmig:<repo>` | 2 hours |
 
 ## Docker Blob Uploads
