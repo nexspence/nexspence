@@ -52,6 +52,27 @@ func (c *Client) Del(ctx context.Context, key string) error {
 	return c.rdb.Del(ctx, key).Err()
 }
 
+// delIfMatchScript is the classic Redlock compare-and-delete: a lock holder may
+// only drop the key while it still carries that holder's own token.
+var delIfMatchScript = redis.NewScript(`
+if redis.call("GET", KEYS[1]) == ARGV[1] then
+	return redis.call("DEL", KEYS[1])
+else
+	return 0
+end
+`)
+
+// DelIfMatch atomically deletes key only if it currently holds value.
+// Returns true if the key was deleted, false if it was missing or held a
+// different value.
+func (c *Client) DelIfMatch(ctx context.Context, key, value string) (bool, error) {
+	n, err := delIfMatchScript.Run(ctx, c.rdb, []string{key}, value).Int64()
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}
+
 // Ping checks connectivity to Redis.
 func (c *Client) Ping(ctx context.Context) error {
 	return c.rdb.Ping(ctx).Err()

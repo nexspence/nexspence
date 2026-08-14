@@ -10,9 +10,10 @@ import (
 )
 
 type stubRedis struct {
-	keys   map[string]string
-	setNXf func(key string) (bool, error)
-	delf   func(key string) error
+	keys      map[string]string
+	setNXf    func(key string) (bool, error)
+	delf      func(key string) error
+	delMatchf func(key, value string) (bool, error)
 }
 
 func newStubRedis() *stubRedis {
@@ -36,6 +37,19 @@ func (s *stubRedis) Del(_ context.Context, key string) error {
 	}
 	delete(s.keys, key)
 	return nil
+}
+
+// DelIfMatch models the Redis-side compare-and-delete: the key is removed only
+// while it still holds the exact value the caller wrote.
+func (s *stubRedis) DelIfMatch(_ context.Context, key, value string) (bool, error) {
+	if s.delMatchf != nil {
+		return s.delMatchf(key, value)
+	}
+	if cur, exists := s.keys[key]; !exists || cur != value {
+		return false, nil
+	}
+	delete(s.keys, key)
+	return true, nil
 }
 
 func TestRedisLocker_AcquireRelease(t *testing.T) {
@@ -68,9 +82,38 @@ func TestRedisLocker_AlreadyLocked(t *testing.T) {
 	}
 }
 
+// A holder whose TTL expired must not delete the lock a second node has since
+// taken: Release is a compare-and-delete against the token Acquire wrote.
+func TestRedisLocker_ReleaseAfterExpiryKeepsNewHoldersLock(t *testing.T) {
+	const key = "nexspence:lock:expired"
+	stub := newStubRedis()
+	l := distlock.NewRedisLocker(stub)
+
+	stale, err := l.Acquire(context.Background(), key, time.Minute)
+	if err != nil {
+		t.Fatalf("first Acquire: %v", err)
+	}
+
+	// The TTL runs out while the first holder is still working; a second node
+	// legitimately takes the lock for its own run.
+	delete(stub.keys, key)
+	if _, err := l.Acquire(context.Background(), key, time.Minute); err != nil {
+		t.Fatalf("second Acquire: %v", err)
+	}
+	newToken := stub.keys[key]
+
+	if err := stale.Release(context.Background()); err != nil {
+		t.Fatalf("stale Release: %v", err)
+	}
+
+	if got := stub.keys[key]; got != newToken {
+		t.Fatalf("stale Release clobbered the new holder's lock: key = %q, want %q", got, newToken)
+	}
+}
+
 func TestRedisLocker_ReleaseError(t *testing.T) {
 	stub := newStubRedis()
-	stub.delf = func(key string) error { return errors.New("redis down") }
+	stub.delMatchf = func(string, string) (bool, error) { return false, errors.New("redis down") }
 	l := distlock.NewRedisLocker(stub)
 
 	lock, err := l.Acquire(context.Background(), "nexspence:lock:x", time.Minute)
