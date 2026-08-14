@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"path"
 	"strings"
 	"testing"
 
@@ -22,14 +23,24 @@ import (
 type mergeFmt struct {
 	deps     formats.Deps
 	failWith error // when non-nil, MergeGroupIndex fails
+	// fetchPath, when set, makes this a dependent merger that asks the group
+	// layer for that path and serves whatever comes back.
+	fetchPath string
 }
 
 func (m *mergeFmt) Name() string { return "mergefmt" }
 
 func (m *mergeFmt) ServeHTTP(c *gin.Context) {
 	repoName := c.Param("repoName")
-	p := c.Param("path")
+	// Real format handlers normalize before they look anything up — that gap
+	// between the path the group checked and the path a member resolves is what
+	// the traversal guard exists for, so the fake models it.
+	p := path.Clean("/" + strings.TrimPrefix(c.Param("path"), "/"))
 	repo, _ := m.deps.Repos.Get(c.Request.Context(), repoName)
+	if p == "/secret" {
+		c.String(http.StatusOK, "SECRET")
+		return
+	}
 	if p == "/index" && repo != nil {
 		body, _ := repo.FormatConfig["body"].(string)
 		if body == "FAIL" {
@@ -63,6 +74,23 @@ func (m *mergeFmt) MergeGroupIndex(groupName, path string, parts []formats.Group
 		return []byte("sha1(" + sb.String() + ")"), "text/plain", nil
 	}
 	return []byte(sb.String()), "text/merged", nil
+}
+
+// MergeGroupIndexWithFetch implements formats.GroupIndexDependentMerger for the
+// tests that need one. Only used when fetchPath is set.
+func (m *mergeFmt) MergeGroupIndexWithFetch(groupName, path string, parts []formats.GroupIndexPart,
+	fetch formats.GroupIndexFetcher,
+) ([]byte, string, error) {
+	if m.fetchPath == "" {
+		return m.MergeGroupIndex(groupName, path, parts)
+	}
+	body, err := fetch(m.fetchPath)
+	if err != nil {
+		// Surfaced as the document body so a test can read why the fetch was
+		// refused; a real merger would decide what a missing sub-index means.
+		return []byte("fetch refused: " + err.Error()), "text/plain", nil //nolint:nilerr // the refusal IS this fake's result
+	}
+	return append([]byte("fetched:"), body...), "text/plain", nil
 }
 
 func mergeMember(name, body string) *domain.Repository {
@@ -190,4 +218,32 @@ func TestGroupMerge_NonIndexPathKeepsFirstNon404(t *testing.T) {
 
 	w := get(r, "/repository/g7/some/artifact.bin")
 	assert.Equal(t, http.StatusNotFound, w.Code) // members 404 everything but /index
+}
+
+// A merger builds sub-index paths out of its members' documents — untrusted
+// content for a proxy member — so the group refuses a traversal path there too,
+// instead of trusting the merger to have validated it.
+func TestGroupMerge_SubIndexFetchRefusesTraversal(t *testing.T) {
+	repoRepo := testutil.NewRepoRepo(mergeGroup("gt", "m1"), mergeMember("m1", "aaa"))
+	d := formats.Deps{
+		Repos: repoRepo, Blobs: testutil.NewBlobStoreRepo(), Components: testutil.NewComponentRepo(),
+		Assets: testutil.NewAssetRepo(), BlobStore: testutil.NewBlobStore(), BaseURL: "http://localhost:8080",
+	}
+	mh := &mergeFmt{deps: d, fetchPath: "/index/../secret"}
+	groupH := group.New(d, map[string]formats.FormatHandler{"mergefmt": mh})
+
+	r := gin.New()
+	r.Any("/repository/:repoName/*path", func(c *gin.Context) {
+		repo, _ := repoRepo.Get(c.Request.Context(), c.Param("repoName"))
+		if repo != nil && repo.Type == domain.TypeGroup {
+			groupH.ServeHTTP(c)
+			return
+		}
+		mh.ServeHTTP(c)
+	})
+
+	w := get(r, "/repository/gt/index")
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), `must not contain a ".." segment`)
+	assert.NotContains(t, w.Body.String(), "SECRET", "the traversal path must not resolve to the member's artifact")
 }
