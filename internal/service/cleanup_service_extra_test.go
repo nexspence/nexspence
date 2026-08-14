@@ -37,6 +37,8 @@ func (lk *extraCleanupLocker) Acquire(_ context.Context, _ string, _ time.Durati
 	return lk.lock, nil
 }
 
+func (lk *extraCleanupLocker) ForceRelease(_ context.Context, _ string) error { return nil }
+
 // ── NewCleanupService constructor (line 56) ───────────────────
 
 func TestExtraCleanup_NewCleanupService_NotNil(t *testing.T) {

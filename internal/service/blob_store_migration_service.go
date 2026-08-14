@@ -90,25 +90,14 @@ func (s *BlobStoreMigrationService) Start(ctx context.Context, repoName, targetS
 		sourceStoreID = *repo.BlobStoreID
 	}
 
-	m := &domain.BlobStoreMigration{
-		RepositoryName: repoName,
-		SourceStoreID:  sourceStoreID,
-		TargetStoreID:  targetStoreID,
-		Status:         "pending",
-	}
-	if err := s.migrations.Create(ctx, m); err != nil {
-		return nil, fmt.Errorf("create migration record: %w", err)
-	}
-
-	migCtx, cancel := context.WithCancel(context.Background()) //nolint:gosec // cancel stored in s.cancels and invoked via Cancel() or runMigration's defer on every exit path (no leak)
-	s.mu.Lock()
-	s.cancels[m.ID] = cancel
-	s.mu.Unlock()
-
+	// Take the lock before anything is recorded. runMigration is the only path
+	// that clears the migration row and the cancel func, and it never runs if
+	// the lock is lost — so a row created first would stay "pending" forever and
+	// wedge every later Start for this repo as "already running".
 	var migLock distlock.Lock
 	if s.locker != nil {
 		var lockErr error
-		migLock, lockErr = s.locker.Acquire(ctx, "nexspence:lock:blobmig:"+repoName, 2*time.Hour)
+		migLock, lockErr = s.locker.Acquire(ctx, blobMigLockKey(repoName), blobMigLockTTL)
 		if errors.Is(lockErr, distlock.ErrLockHeld) {
 			return nil, fmt.Errorf("blob store migration for %q is already running on another node", repoName)
 		}
@@ -117,9 +106,33 @@ func (s *BlobStoreMigrationService) Start(ctx context.Context, repoName, targetS
 		}
 	}
 
+	m := &domain.BlobStoreMigration{
+		RepositoryName: repoName,
+		SourceStoreID:  sourceStoreID,
+		TargetStoreID:  targetStoreID,
+		Status:         "pending",
+	}
+	if err := s.migrations.Create(ctx, m); err != nil {
+		// Nothing will run, so hand the lock back now rather than leave the repo
+		// blocked for the rest of its TTL.
+		if migLock != nil {
+			_ = migLock.Release(ctx)
+		}
+		return nil, fmt.Errorf("create migration record: %w", err)
+	}
+
+	migCtx, cancel := context.WithCancel(context.Background()) //nolint:gosec // cancel stored in s.cancels and invoked via Cancel() or runMigration's defer on every exit path (no leak)
+	s.mu.Lock()
+	s.cancels[m.ID] = cancel
+	s.mu.Unlock()
+
 	go s.runMigration(migCtx, m, migLock) //nolint:gosec // detached context is intentional: background migration must outlive the request
 	return m, nil
 }
+
+const blobMigLockTTL = 2 * time.Hour
+
+func blobMigLockKey(repoName string) string { return "nexspence:lock:blobmig:" + repoName }
 
 // Cancel signals the running migration goroutine to stop.
 func (s *BlobStoreMigrationService) Cancel(_ context.Context, migrationID string) error {
@@ -147,6 +160,12 @@ func (s *BlobStoreMigrationService) ResumeAll(ctx context.Context) error {
 	interrupted := "interrupted by server restart"
 	for _, m := range active {
 		_ = s.migrations.FinishMigration(ctx, m.ID, "cancelled", &interrupted) //nolint:misspell // API/DB status value consumed by frontend (status === 'cancelled')
+		// The process that took this lock died without releasing it, and only
+		// runMigration's deferred Release ever would. Clearing it here is what
+		// makes the migration restartable now instead of two hours from now.
+		if s.locker != nil {
+			_ = s.locker.ForceRelease(ctx, blobMigLockKey(m.RepositoryName))
+		}
 	}
 	return nil
 }

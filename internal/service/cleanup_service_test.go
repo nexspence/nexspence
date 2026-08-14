@@ -701,6 +701,8 @@ func (lk *lockRecorder) Acquire(_ context.Context, key string, _ time.Duration) 
 	return &recordedLock{owner: lk}, nil
 }
 
+func (lk *lockRecorder) ForceRelease(_ context.Context, _ string) error { return nil }
+
 func (lk *lockRecorder) acquired() []string {
 	lk.mu.Lock()
 	defer lk.mu.Unlock()

@@ -32,3 +32,10 @@ func TestNoopLocker_MultipleAcquireSameKey(t *testing.T) {
 	_ = lock1.Release(context.Background())
 	_ = lock2.Release(context.Background())
 }
+
+func TestNoopLocker_ForceRelease(t *testing.T) {
+	var l distlock.Locker = distlock.NoopLocker{}
+	if err := l.ForceRelease(context.Background(), "any-key"); err != nil {
+		t.Fatalf("ForceRelease: unexpected error: %v", err)
+	}
+}

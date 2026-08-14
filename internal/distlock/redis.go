@@ -40,6 +40,15 @@ func (l *RedisLocker) Acquire(ctx context.Context, key string, ttl time.Duration
 	return &redisLock{rdb: l.rdb, key: key, token: token}, nil
 }
 
+// ForceRelease deletes the lock key regardless of who holds it, for cleaning up
+// after a holder that can no longer release it itself.
+func (l *RedisLocker) ForceRelease(ctx context.Context, key string) error {
+	if err := l.rdb.Del(ctx, key); err != nil {
+		return fmt.Errorf("distlock force release %q: %w", key, err)
+	}
+	return nil
+}
+
 type redisLock struct {
 	rdb   RedisBackend
 	key   string
