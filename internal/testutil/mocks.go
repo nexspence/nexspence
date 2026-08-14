@@ -626,11 +626,18 @@ func (a *AssetRepo) Snapshot() []domain.Asset {
 	return out
 }
 
-func (a *AssetRepo) List(_ context.Context, _ string, _, _ int) (*domain.Page[domain.Asset], error) {
+// List returns the repository's assets. An empty repoName lists everything,
+// so tests that never set Asset.Repository keep working; naming a repository
+// filters to it, which is what a group of several members needs to behave like
+// several members.
+func (a *AssetRepo) List(_ context.Context, repoName string, _, _ int) (*domain.Page[domain.Asset], error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	items := make([]domain.Asset, 0, len(a.byID))
 	for _, v := range a.byID {
+		if repoName != "" && v.Repository != "" && v.Repository != repoName {
+			continue
+		}
 		items = append(items, *v)
 	}
 	return &domain.Page[domain.Asset]{Items: items}, nil
