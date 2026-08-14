@@ -121,38 +121,46 @@ func (h *Handler) buildRepodata(ctx context.Context, repoName string) (*repodata
 	other.Count = len(other.Packages)
 
 	docs := &repodataDocs{}
-	marshal := func(v any) []byte {
-		out, _ := xml.Marshal(v)
-		return append([]byte(xml.Header), out...)
-	}
-	docs.Primary = marshal(primary)
+	docs.Primary = marshalXML(primary)
 	docs.PrimaryGz = gzipBytes(docs.Primary)
-	docs.Filelists = marshal(filelists)
+	docs.Filelists = marshalXML(filelists)
 	docs.FilelistsGz = gzipBytes(docs.Filelists)
-	docs.Other = marshal(other)
+	docs.Other = marshalXML(other)
 	docs.OtherGz = gzipBytes(docs.Other)
 
 	now := time.Now().Unix()
-	entry := func(typ string, gz, plain []byte) repomdEntry {
-		return repomdEntry{
-			Type:         typ,
-			Location:     repomdLoc{Href: "repodata/" + typ + ".xml.gz"},
-			Checksum:     repomdCksum{Type: "sha256", Value: fmt.Sprintf("%x", sha256.Sum256(gz))},
-			OpenChecksum: &repomdCksum{Type: "sha256", Value: fmt.Sprintf("%x", sha256.Sum256(plain))},
-			Size:         int64(len(gz)),
-			OpenSize:     int64(len(plain)),
-			Timestamp:    now,
-		}
-	}
-	repomd := repomdXML{
-		XMLNS:    "http://linux.duke.edu/metadata/repo",
-		Revision: now,
-		Data: []repomdEntry{
-			entry("primary", docs.PrimaryGz, docs.Primary),
-			entry("filelists", docs.FilelistsGz, docs.Filelists),
-			entry("other", docs.OtherGz, docs.Other),
-		},
-	}
-	docs.Repomd = marshal(repomd)
+	docs.Repomd = renderRepomd(now, []repomdEntry{
+		repomdEntryFor("primary", docs.PrimaryGz, docs.Primary, now),
+		repomdEntryFor("filelists", docs.FilelistsGz, docs.Filelists, now),
+		repomdEntryFor("other", docs.OtherGz, docs.Other, now),
+	})
 	return docs, nil
+}
+
+func marshalXML(v any) []byte {
+	out, _ := xml.Marshal(v)
+	return append([]byte(xml.Header), out...)
+}
+
+// repomdEntryFor describes one metadata document: dnf checks the compressed
+// bytes it downloads against Checksum and the decompressed ones against
+// OpenChecksum, so both must be taken over the documents actually served.
+func repomdEntryFor(typ string, gz, plain []byte, now int64) repomdEntry {
+	return repomdEntry{
+		Type:         typ,
+		Location:     repomdLoc{Href: "repodata/" + typ + ".xml.gz"},
+		Checksum:     repomdCksum{Type: "sha256", Value: fmt.Sprintf("%x", sha256.Sum256(gz))},
+		OpenChecksum: &repomdCksum{Type: "sha256", Value: fmt.Sprintf("%x", sha256.Sum256(plain))},
+		Size:         int64(len(gz)),
+		OpenSize:     int64(len(plain)),
+		Timestamp:    now,
+	}
+}
+
+func renderRepomd(revision int64, entries []repomdEntry) []byte {
+	return marshalXML(repomdXML{
+		XMLNS:    "http://linux.duke.edu/metadata/repo",
+		Revision: revision,
+		Data:     entries,
+	})
 }
