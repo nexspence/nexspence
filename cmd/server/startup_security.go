@@ -42,7 +42,11 @@ func checkStartupSecurity(cfg *config.Config, log logger.Logger) error {
 	// Fail closed on shipped insecure defaults unless explicitly allowed
 	// (local dev / quick-start sets auth.allow_insecure_defaults=true).
 	insecureJWT := config.IsDevDefaultJWTSecret(cfg.Auth.JWTSecret)
-	insecureAdmin := cfg.Bootstrap.AdminPassword == "admin123"
+	// Only while bootstrap will actually apply it: with bootstrap.enabled=false
+	// the shipped default is an inert leftover in the config, not a live
+	// credential, and refusing to boot over it would punish the operator who
+	// followed the advice to stop managing the admin password from a file.
+	insecureAdmin := cfg.Bootstrap.Enabled && cfg.Bootstrap.AdminPassword == "admin123"
 	// Only meaningful while OIDC is on: the key seals the state cookie of a
 	// login flow that is not running otherwise.
 	insecureOIDCKey := cfg.OIDC.Enabled && config.IsDevDefaultOIDCCookieKey(cfg.OIDC.CookieKey)

@@ -154,12 +154,37 @@ Five networking options (nginx, Traefik, Cilium ingress, Istio Gateway, Cilium G
 | `outbound.allowed_internal_cidrs` | `[]` | Internal ranges the SSRF guard may reach for proxy, webhook and replication targets. Empty refuses every loopback/private/link-local/CGNAT address. |
 | `auth.rate_limit_enabled` | `true` | Token-bucket throttle per user (per client address when anonymous). Turning it off leaves `/api/v1/login` unmetered. |
 | `auth.rate_limit_rps` / `auth.rate_limit_burst` | `50` / `100` | Sustained rate and burst for the above |
+| `bootstrap.enabled` | `true` | Create the admin account on start. Set to `false` once real accounts exist to stop keeping admin credentials in the config — see [Removing the bootstrap admin credentials](#removing-the-bootstrap-admin-credentials). |
 | `bootstrap.admin_password` | `admin123` | Auto-created admin password — **change this** |
 | `cleanup.default_schedule` | `0 2 * * *` | Default cron for cleanup policies |
 | `audit.retention_days` | `90` | Audit log partition retention |
 | `metrics.public` | `false` | Serve `GET /metrics` without authentication. Default requires a Bearer token; see [Prometheus](#prometheus). |
 | `redis.enabled` | `false` | Enable Redis (required for HA) |
 | `redis.addr` | `localhost:6379` | Redis address |
+
+---
+
+## Removing the bootstrap admin credentials
+
+On every start Nexspence creates the `bootstrap.admin_username` account if it is missing. That is what gives a fresh install someone to log in as — but it also means the admin username and password sit in the config file for the life of the deployment, long after real accounts exist.
+
+To take them out, turn the bootstrap off:
+
+```yaml
+bootstrap:
+  enabled: false
+```
+
+The four `admin_*` keys can then be deleted. Existing accounts — including the admin — are left exactly as they are; bootstrap never overwrites a password that has been set.
+
+Two things to know:
+
+- **Do this only after the admin password has been set** (first login, or any rotation in the UI / over the API). A freshly migrated database seeds the admin row with a placeholder hash that no password matches, so disabling bootstrap before that leaves nobody able to log in. The server logs a warning at startup when it detects exactly this.
+- **Deleting the `bootstrap` block on its own is not enough.** The shipped defaults (`admin` / `admin123`) apply to any key you omit, and the startup security check then refuses to boot on the default password. `enabled: false` is what makes omitting the rest safe.
+
+Under Kubernetes the same switch is `config.bootstrapEnabled: false` in the Helm values, which also lets you drop `adminPassword` from the chart's Secret. Setting it through the environment works too: `NEXSPENCE_BOOTSTRAP_ENABLED=false`.
+
+If you would rather keep the bootstrap on but stop storing the password in the file, leave `enabled: true` and pass it as `NEXSPENCE_BOOTSTRAP_ADMIN_PASSWORD` instead.
 
 ---
 

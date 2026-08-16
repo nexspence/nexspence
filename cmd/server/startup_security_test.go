@@ -115,3 +115,25 @@ func TestCheckStartupSecurity_ShippedDefaults_AllowedWhenOptedIn(t *testing.T) {
 
 	require.NoError(t, checkStartupSecurity(cfg, zap.NewNop().Sugar()))
 }
+
+// The shipped admin123 default is only a risk while bootstrap will actually
+// apply it. With bootstrap.enabled=false the value is inert, so it must not
+// keep the server from starting (#243).
+func TestCheckStartupSecurity_DisabledBootstrap_DefaultPasswordIgnored(t *testing.T) {
+	cfg := secureCfg()
+	cfg.Bootstrap.Enabled = false
+	cfg.Bootstrap.AdminPassword = "admin123"
+
+	require.NoError(t, checkStartupSecurity(cfg, zap.NewNop().Sugar()))
+}
+
+// With bootstrap on, admin123 still fails closed.
+func TestCheckStartupSecurity_EnabledBootstrap_DefaultPasswordRefused(t *testing.T) {
+	cfg := secureCfg()
+	cfg.Bootstrap.Enabled = true
+	cfg.Bootstrap.AdminPassword = "admin123"
+
+	err := checkStartupSecurity(cfg, zap.NewNop().Sugar())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "admin123=true")
+}

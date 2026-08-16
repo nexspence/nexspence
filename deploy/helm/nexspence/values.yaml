@@ -54,7 +54,11 @@ config:
   # longer a shipped default (it is auto-generated when jwtSecret is empty).
   allowInsecureDefaults: true
   jwtExpiryHours: 8
-  # -- Bootstrap admin credentials
+  # -- Create/repair the bootstrap admin on every start. Set to false once real
+  # accounts exist, so the admin credentials below can be dropped from values
+  # and the Secret; an existing admin is then never touched.
+  bootstrapEnabled: true
+  # -- Bootstrap admin credentials (ignored when bootstrapEnabled is false)
   adminUsername: "admin"
   adminPassword: "admin123"
   adminEmail: "admin@example.com"

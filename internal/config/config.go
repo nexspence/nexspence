@@ -74,6 +74,12 @@ type ProxyConfig struct {
 
 // BootstrapConfig holds the admin account that is created/synced on every startup.
 type BootstrapConfig struct {
+	// Enabled runs the startup admin bootstrap. It defaults to true so a fresh
+	// install has an account to log in as. Turn it off once real accounts exist
+	// and the admin credentials no longer belong in the config file: the whole
+	// bootstrap block can then be deleted without the shipped admin/admin123
+	// defaults quietly coming back (#243).
+	Enabled        bool   `mapstructure:"enabled"`
 	AdminUsername  string `mapstructure:"admin_username"`
 	AdminPassword  string `mapstructure:"admin_password"`
 	AdminEmail     string `mapstructure:"admin_email"`
@@ -525,6 +531,7 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("ldap.group_attribute", "cn")
 	v.SetDefault("ldap.auto_create_users", true)
 	v.SetDefault("ldap.timeout_sec", 10)
+	v.SetDefault("bootstrap.enabled", true)
 	v.SetDefault("bootstrap.admin_username", "admin")
 	v.SetDefault("bootstrap.admin_password", "admin123")
 	v.SetDefault("bootstrap.admin_email", "admin@example.com")

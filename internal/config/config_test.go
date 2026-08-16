@@ -356,3 +356,53 @@ func TestLoad_DockerMaxUploadBytes_Configurable(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, int64(1048576), cfg.Docker.MaxUploadBytes)
 }
+
+// The bootstrap admin exists so a fresh install has someone to log in as, so
+// it is on by default. Operators who have already created their own accounts
+// turn it off — see TestLoad_BootstrapCanBeDisabled.
+func TestLoad_Bootstrap_DefaultsEnabled(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := "" +
+		"database:\n  dsn: \"postgres://u:p@localhost:5432/db?sslmode=disable\"\n" +
+		"auth:\n  jwt_secret: \"a-unique-production-secret-at-least-32b\"\n"
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.True(t, cfg.Bootstrap.Enabled, "bootstrap.enabled must default to true")
+	assert.Equal(t, "admin", cfg.Bootstrap.AdminUsername)
+}
+
+// bootstrap.enabled=false is the supported way to drop the admin credentials
+// from the config file: the block can then be omitted entirely without the
+// shipped admin123 default coming back (#243).
+func TestLoad_BootstrapCanBeDisabled(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := "" +
+		"database:\n  dsn: \"postgres://u:p@localhost:5432/db?sslmode=disable\"\n" +
+		"auth:\n  jwt_secret: \"a-unique-production-secret-at-least-32b\"\n" +
+		"bootstrap:\n  enabled: false\n"
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.False(t, cfg.Bootstrap.Enabled)
+}
+
+// The Kubernetes path sets configuration through the environment, so the
+// disable switch has to work there too.
+func TestLoad_BootstrapDisabledViaEnv(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := "" +
+		"database:\n  dsn: \"postgres://u:p@localhost:5432/db?sslmode=disable\"\n" +
+		"auth:\n  jwt_secret: \"a-unique-production-secret-at-least-32b\"\n"
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+	t.Setenv("NEXSPENCE_BOOTSTRAP_ENABLED", "false")
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.False(t, cfg.Bootstrap.Enabled)
+}

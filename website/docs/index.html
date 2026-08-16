@@ -624,6 +624,7 @@ helm install nexspence deploy/helm/nexspence \
       <tr><td><code>auth.jwt_secret</code></td><td>—</td><td><strong style="color:var(--red)">Required.</strong> JWT signing key — min 32 chars</td></tr>
       <tr><td><code>auth.encryption_key</code></td><td>—</td><td>Optional base64 32-byte key for replication credentials — decouples them from <code>jwt_secret</code>; existing rows re-encrypt automatically at startup. Generate: <code>openssl rand -base64 32</code></td></tr>
       <tr><td><code>bootstrap.admin_password</code></td><td><code>admin123</code></td><td><strong style="color:var(--red)">Change before production.</strong> Auto-created admin password</td></tr>
+      <tr><td><code>bootstrap.enabled</code></td><td><code>true</code></td><td>Create the admin account on start. Set to <code>false</code> once real accounts exist — the <code>admin_*</code> keys can then be removed from the config entirely</td></tr>
       <tr><td><code>http.addr</code></td><td><code>:8081</code></td><td>Listen address</td></tr>
       <tr><td><code>http.base_url</code></td><td><code>http://localhost:8081</code></td><td>Public URL used in download links</td></tr>
       <tr><td><code>auth.jwt_expiry_hours</code></td><td><code>24</code></td><td>JWT token lifetime</td></tr>
