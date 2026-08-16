@@ -14,7 +14,9 @@
 //	GET  /files/:name/:version/:user/:channel/:revision/package/:pkgid/:prevision/:file → download package file
 //
 // The Conan v2 revisions API (Conan 2.x clients) is served under
-// /v2/conans/... — see v2.go for the route list.
+// /v2/conans/... — see v2.go for the route list — and the credential
+// handshake those clients perform before uploading under /v2/users/... — see
+// users.go.
 package conan
 
 import (
@@ -57,6 +59,12 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 			servePing(c)
 			return
 		}
+		// So is the credential handshake — it authenticates against this
+		// server, not against the upstream.
+		if isUsersPath(p) {
+			h.serveUsers(c, p)
+			return
+		}
 		// Conan revision files are content-addressed (immutable); the "/latest"
 		// endpoints resolve to a moving recipe/package revision, so revalidate those.
 		var maxAge time.Duration
@@ -94,6 +102,10 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 	// Recipe manifest: GET /v1/conans/:name/:ver/:user/:channel
 	case c.Request.Method == http.MethodGet && strings.HasPrefix(p, "/v1/conans/"):
 		h.handleManifest(c, repoName, p)
+
+	// Conan v2 credential handshake (Conan 2.x clients): /v2/users/... (#244)
+	case isUsersPath(p):
+		h.serveUsers(c, p)
 
 	// Conan v2 revisions API (Conan 2.x clients): /v2/conans/... (#95)
 	case strings.HasPrefix(p, "/v2/conans/"):

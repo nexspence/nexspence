@@ -31,11 +31,30 @@ type Deps struct {
 	// Scanner is optional — nil disables automatic vulnerability scanning of
 	// uploads.
 	Scanner ScanTrigger
+	// Tokens mints a bearer token for a caller the request has already
+	// authenticated. It is optional — nil makes the handshakes that need one
+	// answer 503 rather than hand out a token nothing can validate.
+	Tokens TokenIssuer
 	// MaxUploadBytes caps the total size of a single staged blob upload. The
 	// /v2/ upload paths are exempt from the global request-body cap so large
 	// image layers are not truncated, which leaves this as their only bound.
 	// 0 disables the cap.
 	MaxUploadBytes int64
+}
+
+// TokenIssuer mints a bearer token for an already-authenticated caller.
+//
+// Some package managers log in over a protocol endpoint of their own before
+// they will upload — Conan's GET /v2/users/authenticate hands the client a
+// token it then sends as Bearer on every later request. The handler cannot
+// mint that itself, and importing internal/auth here would drag the whole
+// authentication service into the format layer, so it asks for the one method
+// it needs. *auth.Service satisfies this.
+type TokenIssuer interface {
+	// GenerateToken signs a token for the given user. The caller is expected to
+	// have been authenticated already: this issues credentials, it does not
+	// check them.
+	GenerateToken(userID, username string, roles []string) (string, error)
 }
 
 // ScanTrigger requests a background vulnerability scan of a stored component.

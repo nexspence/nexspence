@@ -647,7 +647,7 @@ sudo rpm -ivh mypackage-1.0-1.x86_64.rpm` },
     name: 'Conan C/C++',
     icon: '🔧',
     iconUrl: 'https://cdn.simpleicons.org/conan/6699CB',
-    description: 'Conan package manager repository for C and C++ libraries. Conan 1.x is supported end to end. The v2 revisions protocol Conan 2.x speaks is implemented for recipes, packages and files, but the credential endpoints it needs to log in and upload are not, so Conan 2 clients cannot publish yet.',
+    description: 'Conan package manager repository for C and C++ libraries. Conan 2.x is supported over the v2 revisions protocol — login, upload and install — and Conan 1.x over the v1 API.',
     sections: (base) => [
       {
         title: 'Repository URL',
@@ -655,28 +655,32 @@ sudo rpm -ivh mypackage-1.0-1.x86_64.rpm` },
       },
       {
         title: 'Add Remote and Authenticate',
-        text: 'Conan 1.x:',
-        codes: [{ lang: 'bash', content: `conan remote add nexspence ${base}/repository/conan-hosted/
-conan user admin -p admin123 -r nexspence` }],
-        note: 'Conan 2.x replaced "conan user" with "conan remote login", which goes through the /v2/users/* credential endpoints. Those are not implemented yet, so on a Conan 2 client both "conan remote login" and "conan upload" fail with a 405.',
+        codes: [
+          { label: 'Conan 2.x:', lang: 'bash', content: `conan remote add nexspence ${base}/repository/conan-hosted/
+conan remote login nexspence admin -p admin123` },
+          { label: 'Conan 1.x:', lang: 'bash', content: `conan remote add nexspence ${base}/repository/conan-hosted/
+conan user admin -p admin123 -r nexspence` },
+        ],
       },
       {
         title: 'Publish a Package',
-        text: 'Conan 1.x:',
         codes: [
-          { label: 'Using conan upload:', lang: 'bash', content: `conan upload mylib/1.0@user/stable -r nexspence --all` },
-          { label: 'Get upload URLs with curl:', lang: 'bash', content: `curl -u admin:admin123 \\
+          { label: 'Conan 2.x:', lang: 'bash', content: `conan create .
+conan upload "mylib/1.0" -r=nexspence --confirm` },
+          { label: 'Conan 1.x:', lang: 'bash', content: `conan upload mylib/1.0@user/stable -r nexspence --all` },
+          { label: 'Get upload URLs with curl (v1 API):', lang: 'bash', content: `curl -u admin:admin123 \\
   "${base}/repository/conan-hosted/v1/conans/mylib/1.0/user/stable/upload_urls"` },
         ],
       },
       {
         title: 'Install a Package',
-        text: 'Conan 1.x:',
         codes: [
-          { label: 'Using conan install:', lang: 'bash', content: `conan install mylib/1.0@user/stable -r nexspence` },
-          { label: 'Get download URLs with curl:', lang: 'bash', content: `curl -u admin:admin123 \\
+          { label: 'Conan 2.x:', lang: 'bash', content: `conan install --requires="mylib/1.0" -r=nexspence` },
+          { label: 'Conan 1.x:', lang: 'bash', content: `conan install mylib/1.0@user/stable -r nexspence` },
+          { label: 'Get download URLs with curl (v1 API):', lang: 'bash', content: `curl -u admin:admin123 \\
   "${base}/repository/conan-hosted/v1/conans/mylib/1.0/user/stable/download_urls"` },
         ],
+        note: 'Searching and deleting over the remote (conan search / conan list / conan remove) are not implemented yet — resolve and download work, so upload and install round trips are unaffected.',
       },
     ],
   },

@@ -240,6 +240,9 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 		RoutingRules: rrRepo,
 		RBAC:         rbacSvc,
 		Scanner:      scanTrigger,
+		// Conan's login handshake hands the client a token it then sends as
+		// Bearer, so it has to be the same JWT OptionalAuth validates.
+		Tokens: authSvc,
 		// /v2/ upload paths are exempt from the global body cap, so this is the
 		// only bound on a staged blob upload (issue #208).
 		MaxUploadBytes: cfg.Docker.MaxUploadBytes,
