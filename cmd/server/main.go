@@ -379,6 +379,27 @@ func s3ConfigEqual(cur, desired map[string]any) bool {
 // bootstrap correction) this no longer matches and the password is left alone.
 const seedPlaceholderAdminHash = "$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj/VcSAg/ROS"
 
+// seedAdminUsername is the account migration 001 pre-creates.
+const seedAdminUsername = "admin"
+
+// warnIfAdminUnusable says so when bootstrap is off but the seeded admin still
+// carries the placeholder hash: no password matches it, so on a fresh database
+// that combination means nobody can log in. Turning bootstrap off is only safe
+// once a real account exists, and an operator who got the order wrong needs to
+// hear about it at startup rather than at the login form.
+func warnIfAdminUnusable(ctx context.Context, userRepo repository.UserRepo, b config.BootstrapConfig, log logger.Logger) {
+	name := b.AdminUsername
+	if name == "" {
+		name = seedAdminUsername
+	}
+	admin, err := userRepo.Get(ctx, name)
+	if err != nil || admin == nil || admin.PasswordHash != seedPlaceholderAdminHash {
+		return
+	}
+	log.Warn("bootstrap is disabled but the admin account still has the unusable seed password — no password will log in; enable bootstrap once to set one, or create an account another way",
+		"username", name)
+}
+
 // bootstrapAdmin ensures the admin user exists with the configured password.
 func bootstrapAdmin(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config, log logger.Logger) error {
 	authSvc := auth.NewService(cfg.Auth.JWTSecret, cfg.Auth.JWTExpiryHours, cfg.Auth.BcryptCost)
@@ -391,6 +412,9 @@ func bootstrapAdmin(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config,
 // password and the nx-admin role) and, on subsequent boots, applies the
 // configured password only if the stored hash is still the seed placeholder.
 // An admin whose password has genuinely been changed is never touched.
+//
+// bootstrap.enabled=false skips the whole thing, which is how an operator stops
+// keeping admin credentials in the config file (#243).
 func ensureBootstrapAdmin(
 	ctx context.Context,
 	userRepo repository.UserRepo,
@@ -399,7 +423,9 @@ func ensureBootstrapAdmin(
 	b config.BootstrapConfig,
 	log logger.Logger,
 ) error {
-	if b.AdminUsername == "" || b.AdminPassword == "" {
+	if !b.Enabled || b.AdminUsername == "" || b.AdminPassword == "" {
+		warnIfAdminUnusable(ctx, userRepo, b, log)
+		log.Info("bootstrap: disabled — the admin account is left as it is")
 		return nil
 	}
 

@@ -82,10 +82,18 @@ auth:
   rate_limit_rps: 50          # sustained requests/sec
   rate_limit_burst: 100       # burst capacity
 
-# Bootstrap: create / update the admin user on every server start.
-# Safe to run repeatedly — only acts if user is missing or password changed.
+# Bootstrap: create the admin user on server start.
+# Safe to run repeatedly — it creates the account when it is missing and
+# otherwise leaves it alone; a password you have already changed is never
+# overwritten from here (rotate it in the UI or over the API).
 # Override via env: NEXSPENCE_BOOTSTRAP_ADMIN_PASSWORD=secret
+#
+# Once real accounts exist you can set enabled: false and delete the four
+# admin_* lines — the credentials then no longer live in this file at all.
+# Do that only after the admin password has been set, otherwise the seeded
+# account has no usable password and nobody can log in.
 bootstrap:
+  enabled: true
   admin_username: "admin"
   admin_password: "admin123"   # change this!
   admin_email:    "admin@example.com"

@@ -13,6 +13,7 @@ import (
 
 func testBootstrapCfg() config.BootstrapConfig {
 	return config.BootstrapConfig{
+		Enabled:        true,
 		AdminUsername:  "admin",
 		AdminPassword:  "admin123",
 		AdminEmail:     "admin@example.com",
@@ -198,5 +199,52 @@ func TestEnsureBootstrapAdmin_Missing_Created(t *testing.T) {
 	}
 	if err := authSvc.CheckPassword(got.PasswordHash, "admin123"); err != nil {
 		t.Fatalf("created admin password does not verify: %v", err)
+	}
+}
+
+// bootstrap.enabled=false is how an operator drops the admin credentials from
+// the config file for good (#243): the account is left entirely alone, even
+// though the shipped admin/admin123 defaults are still what config resolves to.
+func TestEnsureBootstrapAdmin_Disabled_NoAdminCreated(t *testing.T) {
+	authSvc := testAuthSvc()
+	users := testutil.NewUserRepo()
+	roles := testutil.NewRoleRepo(&domain.Role{ID: "r-admin", Name: "nx-admin"})
+	log := logger.New("error", "json")
+
+	b := testBootstrapCfg()
+	b.Enabled = false
+
+	if err := ensureBootstrapAdmin(context.Background(), users, roles, authSvc, b, log); err != nil {
+		t.Fatalf("ensureBootstrapAdmin: %v", err)
+	}
+
+	if got, err := users.Get(context.Background(), "admin"); err == nil && got != nil {
+		t.Fatal("admin user created even though bootstrap is disabled")
+	}
+}
+
+// Disabled bootstrap must not touch an existing admin either — not the seed
+// placeholder it would otherwise correct, and not a rotated password.
+func TestEnsureBootstrapAdmin_Disabled_ExistingAdminUntouched(t *testing.T) {
+	authSvc := testAuthSvc()
+	users := testutil.NewUserRepo(&domain.User{
+		ID:           "u-admin",
+		Username:     "admin",
+		PasswordHash: seedPlaceholderAdminHash,
+		Status:       domain.UserStatusActive,
+		Source:       domain.UserSourceLocal,
+	})
+	log := logger.New("error", "json")
+
+	b := testBootstrapCfg()
+	b.Enabled = false
+
+	if err := ensureBootstrapAdmin(context.Background(), users, testutil.NewRoleRepo(), authSvc, b, log); err != nil {
+		t.Fatalf("ensureBootstrapAdmin: %v", err)
+	}
+
+	got, _ := users.Get(context.Background(), "admin")
+	if got.PasswordHash != seedPlaceholderAdminHash {
+		t.Fatal("disabled bootstrap modified the admin password")
 	}
 }
