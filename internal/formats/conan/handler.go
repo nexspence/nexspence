@@ -65,6 +65,19 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 			h.serveUsers(c, p)
 			return
 		}
+		// Search too (#247): the generic proxy GET below would drop the query
+		// string on the upstream fetch and cache the first answer forever, so
+		// forwarding it can only mislead. A proxy can serve what it has
+		// cached, and that is what its search reports.
+		if c.Request.Method == http.MethodGet && p == "/v2/conans/search" {
+			h.v2SearchRecipes(c, repoName)
+			return
+		}
+		if c.Request.Method == http.MethodGet &&
+			strings.HasPrefix(p, "/v2/conans/") && strings.HasSuffix(p, "/search") {
+			h.v2SearchPackages(c, repoName, p)
+			return
+		}
 		// Conan revision files are content-addressed (immutable); the "/latest"
 		// endpoints resolve to a moving recipe/package revision, so revalidate those.
 		var maxAge time.Duration

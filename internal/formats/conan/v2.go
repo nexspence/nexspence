@@ -7,6 +7,9 @@ package conan
 //	GET  /v2/conans/:name/:ver/:user/:channel/revisions/:rrev/files       → list recipe files
 //	GET  /v2/conans/:name/:ver/:user/:channel/latest                      → latest recipe revision
 //	GET  /v2/conans/:name/:ver/:user/:channel/revisions                   → list recipe revisions
+//	GET  /v2/conans/search?q=<pattern>                                    → recipe search (v2_search.go, #247)
+//	GET  /v2/conans/:name/:ver/:user/:channel[/revisions/:rrev]/search    → package search (v2_search.go, #247)
+//	DELETE /v2/conans/:name/:ver/:user/:channel[/revisions/:rrev]         → delete recipe / revision (v2_delete.go, #247)
 //
 // ...and the same shapes under /revisions/:rrev/packages/:pkgid/... for
 // package binaries. Files are stored verbatim under their full
@@ -44,6 +47,18 @@ func (h *Handler) serveV2(c *gin.Context, repoName, p string) {
 	case m == http.MethodGet && strings.HasSuffix(p, "/revisions"):
 		h.v2ListRevisions(c, repoName, p)
 
+	// Repository-wide recipe search: /v2/conans/search?q=<pattern> (#247)
+	case m == http.MethodGet && p == "/v2/conans/search":
+		h.v2SearchRecipes(c, repoName)
+
+	// Binary package search, ref- or revision-level: .../search (#247)
+	case m == http.MethodGet && strings.HasSuffix(p, "/search"):
+		h.v2SearchPackages(c, repoName, p)
+
+	// Recipe deletion, whole reference or one revision (#247)
+	case m == http.MethodDelete:
+		h.v2Delete(c, repoName, p)
+
 	default:
 		c.Status(http.StatusMethodNotAllowed)
 	}
@@ -52,17 +67,20 @@ func (h *Handler) serveV2(c *gin.Context, repoName, p string) {
 // pathsUnder returns stored asset paths (relative to prefix) and their
 // timestamps for every asset under the given path prefix. The second return
 // is false when listing failed and an error response was already written.
+//
+// The listing is exhaustive: ListByRepoAndPath is an unbounded prefix query,
+// unlike the paged Assets.List, whose first page is all a handler would see.
+// That distinction is live for DELETE (#247) — deleting from a truncated
+// listing would remove part of a revision and still answer 200.
 func (h *Handler) pathsUnder(c *gin.Context, repoName, prefix string) (map[string]time.Time, bool) {
-	page, err := h.deps.Assets.List(c.Request.Context(), repoName, 1000, 0)
+	assets, err := h.deps.Assets.ListByRepoAndPath(c.Request.Context(), repoName, prefix)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return nil, false
 	}
 	out := map[string]time.Time{}
-	for _, a := range page.Items {
-		if strings.HasPrefix(a.Path, prefix) {
-			out[strings.TrimPrefix(a.Path, prefix)] = a.LastModified
-		}
+	for _, a := range assets {
+		out[strings.TrimPrefix(a.Path, prefix)] = a.LastModified
 	}
 	return out, true
 }
