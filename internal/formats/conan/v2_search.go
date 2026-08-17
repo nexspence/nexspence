@@ -135,13 +135,18 @@ func fnmatchRegexp(pattern string, ignorecase bool) (*regexp.Regexp, error) {
 				b.WriteString(regexp.QuoteMeta("["))
 				continue
 			}
-			cls := pattern[i+1 : j]
-			if strings.HasPrefix(cls, "!") {
-				cls = "^" + cls[1:]
-			}
 			// A backslash is literal inside an fnmatch class; unescaped it
 			// would swallow the closing "]" in the regexp and fail to compile.
-			cls = strings.ReplaceAll(cls, `\`, `\\`)
+			cls := strings.ReplaceAll(pattern[i+1:j], `\`, `\\`)
+			switch {
+			case strings.HasPrefix(cls, "!"):
+				// fnmatch negation is "!", not "^"...
+				cls = "^" + cls[1:]
+			case strings.HasPrefix(cls, "^"):
+				// ...and a leading "^" is a literal caret, like in Python's
+				// fnmatch — escape it so the regexp does not negate.
+				cls = `\^` + cls[1:]
+			}
 			b.WriteString("[" + cls + "]")
 			i = j
 		default:

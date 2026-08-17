@@ -155,6 +155,11 @@ func TestConan_V2Search_ClassWithBackslashIsLiteral(t *testing.T) {
 
 	assert.Equal(t, []string{"boost/1.83.0"},
 		searchResults(t, r, "/repository/cv2-search-cls/v2/conans/search?q="+url.QueryEscape(`[ab\]oost*`)))
+
+	// A leading "^" is a literal caret in fnmatch (negation is "!"), so
+	// "[^b]" matches "b" — it must not negate.
+	assert.Equal(t, []string{"boost/1.83.0"},
+		searchResults(t, r, "/repository/cv2-search-cls/v2/conans/search?q="+url.QueryEscape(`[^b]oost*`)))
 }
 
 func TestConan_V2Search_ProxyRepoServesFromLocalCache(t *testing.T) {

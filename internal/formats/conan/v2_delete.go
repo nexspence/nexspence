@@ -24,7 +24,10 @@ import (
 //
 // Package-granular deletion (…/packages/:pkgID, …/packages/:pkgID/revisions/:prev)
 // is not part of #247 and keeps answering 405 rather than being half-guessed
-// here.
+// here. Content a Conan 1 client stored under /files/… is likewise out of
+// scope, the same way it is for search: these routes only ever see the
+// /v2/conans/… tree, so a retention job built on them expires v2 revisions
+// and leaves v1 files where they are.
 //
 // Write access is the caller's problem to have: RBACMiddleware maps the DELETE
 // method to the "delete" action before the format handler runs, and proxy
@@ -49,12 +52,20 @@ func (h *Handler) v2Delete(c *gin.Context, repoName, p string) {
 		return
 	}
 
+	// Attempt every asset and report the first failure at the end, instead of
+	// stopping on it: DeleteArtifact is idempotent, so a client retry after a
+	// mid-list error then converges on "gone" instead of chasing a
+	// half-deleted revision that revisions/latest still advertise.
 	ctx := c.Request.Context()
+	var firstErr error
 	for f := range rel {
-		if err := base.DeleteArtifact(ctx, h.deps, repoName, prefix+f); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
+		if err := base.DeleteArtifact(ctx, h.deps, repoName, prefix+f); err != nil && firstErr == nil {
+			firstErr = err
 		}
+	}
+	if firstErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": firstErr.Error()})
+		return
 	}
 	// Components whose last asset just went away must not keep showing up in
 	// browse and search.
