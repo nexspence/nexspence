@@ -265,10 +265,8 @@ WITH retained_comps AS (
 		i++
 	}
 	if pathPrefix != "" {
-		escaped := strings.ReplaceAll(strings.ReplaceAll(pathPrefix, `\`, `\\`), "%", `\%`)
-		escaped = strings.ReplaceAll(escaped, "_", `\_`)
 		where += fmt.Sprintf(` AND a.path LIKE $%d ESCAPE '\'`, i)
-		args = append(args, escaped+"%")
+		args = append(args, likePrefix(pathPrefix))
 		i++
 	}
 	if nameGlob != "" {
@@ -464,6 +462,19 @@ func globToLike(glob string) string {
 	return b.String()
 }
 
+// likePrefix turns a literal path prefix into a LIKE pattern that matches it
+// and nothing else. The metacharacters are not exotic here: "_" is the Conan
+// placeholder for an absent user/channel and a common character in package
+// names, and "%" reaches a prefix through a percent-encoded request segment.
+// Left unescaped, either one widens a prefix query into a wildcard scan over
+// the whole repository. Pair with `ESCAPE '\'` in the query.
+func likePrefix(prefix string) string {
+	escaped := strings.ReplaceAll(prefix, `\`, `\\`)
+	escaped = strings.ReplaceAll(escaped, "%", `\%`)
+	escaped = strings.ReplaceAll(escaped, "_", `\_`)
+	return escaped + "%"
+}
+
 func nullStr(s string) any {
 	if s == "" {
 		return nil
@@ -636,9 +647,9 @@ func (r *assetRepo) ListByRepoAndPath(ctx context.Context, repoName, pathPrefix 
 			assetSelectCols, assetFromJoin)
 		args = []any{repoName}
 	} else {
-		q = fmt.Sprintf(`SELECT %s %s WHERE rep.name = $1 AND a.path LIKE $2 ORDER BY a.path`,
+		q = fmt.Sprintf(`SELECT %s %s WHERE rep.name = $1 AND a.path LIKE $2 ESCAPE '\' ORDER BY a.path`,
 			assetSelectCols, assetFromJoin)
-		args = []any{repoName, pathPrefix + "%"}
+		args = []any{repoName, likePrefix(pathPrefix)}
 	}
 	rows, err := r.db.Query(ctx, q, args...)
 	if err != nil {
