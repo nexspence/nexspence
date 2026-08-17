@@ -15,25 +15,8 @@ none of it. The practical consequence, stated plainly rather than buried: becaus
 copyright stays spread across everyone who has contributed, the project cannot
 be relicensed later without asking each of you. That is deliberate.
 
-### Sign-off (DCO)
-
-Every commit must carry a `Signed-off-by` line certifying the
-[Developer Certificate of Origin](https://developercertificate.org/) — the same
-mechanism the Linux kernel, Docker and GitLab use. It is a statement that you
-wrote the change, or have the right to submit it.
-
-```bash
-git commit -s -m "fix(scan): ..."
-```
-
-That appends:
-
-```
-Signed-off-by: Your Name <your.email@example.com>
-```
-
-Forgot it? `git commit --amend -s` for the last commit, or
-`git rebase --signoff main` for a branch.
+There is no sign-off requirement either: opening the pull request is the
+statement, and nothing checks for a `Signed-off-by` line.
 
 ## Making a change
 
