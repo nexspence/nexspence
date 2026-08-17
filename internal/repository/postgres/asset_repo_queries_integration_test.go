@@ -1411,3 +1411,51 @@ func TestAssetRepoQueries_ListOCIImageNames_EmptyInputs(t *testing.T) {
 		t.Errorf("no repositories means no images, got %v", noRepos)
 	}
 }
+
+func TestAssetRepoQueries_ListByRepoAndPath_PrefixIsLiteral(t *testing.T) {
+	pool := pgtest.Pool(t)
+	pgtest.Truncate(t, pool, "blob_stores", "repositories", "components")
+	ctx := context.Background()
+
+	p := makeAssetParent(t, ctx, "lbrap_literal")
+	repo := NewAssetRepo(pool)
+
+	// "_" is the Conan placeholder for an absent user/channel, and package
+	// names routinely carry one; "%" can reach a path prefix through a
+	// percent-encoded request segment. Both are LIKE metacharacters.
+	paths := []string{
+		"/v2/conans/my_lib/1.0/_/_/revisions/r1/files/conanfile.py",
+		"/v2/conans/myXlib/1.0/a/b/revisions/r1/files/conanfile.py",
+	}
+	for _, path := range paths {
+		a := makeAsset(p, path)
+		a.BlobKey = "bk" + path
+		if err := repo.Create(ctx, a); err != nil {
+			t.Fatalf("Create %q: %v", path, err)
+		}
+	}
+
+	got, err := repo.ListByRepoAndPath(ctx, p.RepoName, "/v2/conans/my_lib/1.0/_/_/")
+	if err != nil {
+		t.Fatalf("ListByRepoAndPath: %v", err)
+	}
+	if len(got) != 1 {
+		t.Errorf("underscore prefix matched %d assets, want 1: %v", len(got), pathsOf(got))
+	}
+
+	got, err = repo.ListByRepoAndPath(ctx, p.RepoName, "/v2/conans/%/%/%/%/")
+	if err != nil {
+		t.Fatalf("ListByRepoAndPath: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("percent prefix matched %d assets, want 0: %v", len(got), pathsOf(got))
+	}
+}
+
+func pathsOf(assets []domain.Asset) []string {
+	out := make([]string, 0, len(assets))
+	for _, a := range assets {
+		out = append(out, a.Path)
+	}
+	return out
+}
