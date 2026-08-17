@@ -387,8 +387,8 @@ inside your company, however you like, needs nothing from you — the obligation
 only starts if you offer a modified Nexspence to others over a network, and then
 it is to publish those modifications.
 
-Contributions are accepted under the same licence, with a DCO sign-off and no
-CLA — see [CONTRIBUTING.md](CONTRIBUTING.md).
+Contributions are accepted under the same licence, with no CLA and no sign-off
+to remember — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Community & contact
 
