@@ -68,18 +68,28 @@ func (s *PromotionService) WithWebhooks(w domain.WebhookDispatcher) *PromotionSe
 }
 
 // matchesPathFilter returns true when the component matches the rule's path filter.
-// An empty PathFilter matches everything.
+// An empty PathFilter matches everything; a filter that fails to compile or
+// evaluate matches nothing (the enforcement path reports that distinctly).
 func (s *PromotionService) matchesPathFilter(rule domain.PromotionRule, comp *domain.Component) bool {
+	matched, err := s.evalPathFilter(rule, comp)
+	return err == nil && matched
+}
+
+// evalPathFilter evaluates the rule's path filter against the component,
+// separating "did not match" from "the filter itself is broken" — a rule
+// whose filter errors must fail closed, but with an error that sends the
+// operator to the filter, not the component.
+func (s *PromotionService) evalPathFilter(rule domain.PromotionRule, comp *domain.Component) (bool, error) {
 	if rule.PathFilter == "" {
-		return true
+		return true, nil
 	}
 	ast, issues := s.celEnv.Compile(rule.PathFilter)
 	if issues != nil && issues.Err() != nil {
-		return false
+		return false, fmt.Errorf("path filter does not compile: %w", issues.Err())
 	}
 	prg, err := s.celEnv.Program(ast)
 	if err != nil {
-		return false
+		return false, fmt.Errorf("path filter does not compile: %w", err)
 	}
 	path := "/" + comp.Group + "/" + comp.Name
 	vars := map[string]any{
@@ -89,10 +99,13 @@ func (s *PromotionService) matchesPathFilter(rule domain.PromotionRule, comp *do
 	}
 	out, _, err := prg.Eval(vars)
 	if err != nil {
-		return false
+		return false, fmt.Errorf("path filter failed to evaluate: %w", err)
 	}
-	matched, _ := out.Value().(bool)
-	return matched
+	matched, ok := out.Value().(bool)
+	if !ok {
+		return false, fmt.Errorf("path filter evaluates to %T, not a boolean", out.Value())
+	}
+	return matched, nil
 }
 
 // ruleAppliesTo reports whether the rule actually covers the component: the
@@ -108,7 +121,13 @@ func (s *PromotionService) ruleAppliesTo(rule *domain.PromotionRule, comp *domai
 		return fmt.Errorf("component %s lives in repository %q, which rule %q does not promote from (%q)",
 			comp.ID, comp.Repository, rule.Name, rule.FromRepo)
 	}
-	if !s.matchesPathFilter(*rule, comp) {
+	matched, err := s.evalPathFilter(*rule, comp)
+	if err != nil {
+		// Fail closed, but honestly: a broken filter is the rule's problem,
+		// and "does not match" would send the operator to the wrong place.
+		return fmt.Errorf("rule %q: %w", rule.Name, err)
+	}
+	if !matched {
 		return fmt.Errorf("component %s does not match rule %q's path filter", comp.ID, rule.Name)
 	}
 	return nil
@@ -136,8 +155,14 @@ func (s *PromotionService) CreateRule(ctx context.Context, rule *domain.Promotio
 		return fmt.Errorf("from_repo and to_repo must be different")
 	}
 	if rule.PathFilter != "" {
-		if _, issues := s.celEnv.Compile(rule.PathFilter); issues != nil && issues.Err() != nil {
+		ast, issues := s.celEnv.Compile(rule.PathFilter)
+		if issues != nil && issues.Err() != nil {
 			return fmt.Errorf("invalid path_filter CEL expression: %w", issues.Err())
+		}
+		// A filter that compiles to a non-bool (`path`, `"foo"`) would fail
+		// every applicability check downstream while looking valid here.
+		if ast.OutputType() != cel.BoolType {
+			return fmt.Errorf("invalid path_filter CEL expression: must evaluate to a boolean, not %s", ast.OutputType())
 		}
 	}
 	return s.promotionRepo.CreateRule(ctx, rule)
@@ -152,8 +177,12 @@ func (s *PromotionService) UpdateRule(ctx context.Context, rule *domain.Promotio
 		return fmt.Errorf("from_repo and to_repo must be different")
 	}
 	if rule.PathFilter != "" {
-		if _, issues := s.celEnv.Compile(rule.PathFilter); issues != nil && issues.Err() != nil {
+		ast, issues := s.celEnv.Compile(rule.PathFilter)
+		if issues != nil && issues.Err() != nil {
 			return fmt.Errorf("invalid path_filter CEL expression: %w", issues.Err())
+		}
+		if ast.OutputType() != cel.BoolType {
+			return fmt.Errorf("invalid path_filter CEL expression: must evaluate to a boolean, not %s", ast.OutputType())
 		}
 	}
 	return s.promotionRepo.UpdateRule(ctx, rule)
@@ -188,6 +217,26 @@ func (s *PromotionService) ListRequests(ctx context.Context, status string) ([]d
 	return s.promotionRepo.ListRequests(ctx, status)
 }
 
+// scanGate refuses promotion when the rule demands a clean scan and the
+// component's latest scan is missing or dirty. Malicious is checked alongside
+// the CVE tiers, not folded into them: a malicious-package report has no CVSS
+// level, so a gate reading only Critical/High would pass a compromised
+// release with a spotless CVE record straight into production.
+func (s *PromotionService) scanGate(ctx context.Context, rule *domain.PromotionRule, compID string) error {
+	if !rule.RequireScanPass {
+		return nil
+	}
+	scan, err := s.scanRepo.GetLatestByComponent(ctx, compID)
+	if err != nil || scan == nil {
+		return fmt.Errorf("component %s: scan required but not yet run", compID)
+	}
+	if scan.Malicious > 0 || scan.Critical > 0 || scan.High > 0 {
+		return fmt.Errorf("component %s: scan has %d malicious, %d critical, %d high findings",
+			compID, scan.Malicious, scan.Critical, scan.High)
+	}
+	return nil
+}
+
 // Promote creates promotion requests for each component. Auto-approves when require_manual_approval=false.
 func (s *PromotionService) Promote(ctx context.Context, ruleID string, componentIDs []string, requestedByID string) ([]domain.PromotionRequest, error) {
 	rule, err := s.promotionRepo.GetRule(ctx, ruleID)
@@ -195,10 +244,13 @@ func (s *PromotionService) Promote(ctx context.Context, ruleID string, component
 		return nil, fmt.Errorf("promotion rule not found: %s", ruleID)
 	}
 
-	var results []domain.PromotionRequest
+	// The whole batch is validated before anything is created or copied: with
+	// an auto-approve rule the loop below executes copies as it goes, so a
+	// mid-batch refusal would leave earlier components already promoted while
+	// the caller is told the batch failed. Refusing before any request row
+	// exists also spares reviewers pending requests nobody could legitimately
+	// approve.
 	for _, compID := range componentIDs {
-		// Refused before a request row exists: the caller gets a clean error
-		// instead of a pending request no reviewer could legitimately approve.
 		comp, cerr := s.componentRepo.Get(ctx, compID)
 		if cerr != nil || comp == nil {
 			return nil, fmt.Errorf("component not found: %s", compID)
@@ -206,22 +258,13 @@ func (s *PromotionService) Promote(ctx context.Context, ruleID string, component
 		if aerr := s.ruleAppliesTo(rule, comp); aerr != nil {
 			return nil, aerr
 		}
-
-		if rule.RequireScanPass {
-			scan, serr := s.scanRepo.GetLatestByComponent(ctx, compID)
-			if serr != nil || scan == nil {
-				return nil, fmt.Errorf("component %s: scan required but not yet run", compID)
-			}
-			// Malicious is checked alongside the CVE tiers, not folded into
-			// them: a malicious-package report has no CVSS level, so a gate
-			// reading only Critical/High would pass a compromised release with
-			// a spotless CVE record straight into production.
-			if scan.Malicious > 0 || scan.Critical > 0 || scan.High > 0 {
-				return nil, fmt.Errorf("component %s: scan has %d malicious, %d critical, %d high findings",
-					compID, scan.Malicious, scan.Critical, scan.High)
-			}
+		if serr := s.scanGate(ctx, rule, compID); serr != nil {
+			return nil, serr
 		}
+	}
 
+	var results []domain.PromotionRequest
+	for _, compID := range componentIDs {
 		req := &domain.PromotionRequest{
 			RuleID:      ruleID,
 			ComponentID: compID,
@@ -297,9 +340,13 @@ func (s *PromotionService) executeCopy(ctx context.Context, req *domain.Promotio
 		return fmt.Errorf("source component not found: %s", req.ComponentID)
 	}
 	// Re-checked at copy time, not just when the request was filed: Approve
-	// runs later, and the component may have moved (or the rule changed) in
-	// between — the invariant has to hold when the bytes actually move.
+	// runs later, and the component may have moved, the rule changed, or a
+	// scan found something while the request sat pending — the invariants
+	// have to hold when the bytes actually move.
 	if err := s.ruleAppliesTo(rule, comp); err != nil {
+		return err
+	}
+	if err := s.scanGate(ctx, rule, comp.ID); err != nil {
 		return err
 	}
 	toRepo, err := s.repoRepo.Get(ctx, rule.ToRepo)

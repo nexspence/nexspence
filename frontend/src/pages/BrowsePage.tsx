@@ -1360,6 +1360,10 @@ export default function BrowsePage() {
             setTreeCollapsed({})
             setDockerSelection(null)
             setRawSelection(null)
+            // Selection must not survive a repo switch: stale IDs from the
+            // previous repo would ride into "Promote selected", and the
+            // server now refuses such a mixed-repo batch (#255).
+            setSelectedComponentIDs(new Set())
             setUploadOpen(false)
           }}
           placeholder="— Select repository —"
