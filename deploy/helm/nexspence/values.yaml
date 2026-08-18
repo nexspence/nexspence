@@ -202,3 +202,25 @@ postgresql:
 # -- External PostgreSQL DSN (used when postgresql.enabled=false)
 externalDatabase:
   dsn: "postgres://nexspence:nexspence@external-postgres:5432/nexspence?sslmode=disable"
+
+# Image scanning (Trivy).
+#
+# Nexspence ships no scanner. Turning this on renders an initContainer that
+# copies the Trivy binary out of the image below into a shared volume, and
+# points nexspence at it. The image is pulled by your cluster from a third
+# party; you choose the version and you own updating it.
+#
+# Off means image scanning is unavailable and the UI says so. Scanning of
+# Maven, npm, PyPI and Cargo packages goes to OSV.dev over HTTPS and is
+# unaffected either way.
+scanning:
+  enabled: false
+  image:
+    repository: aquasec/trivy
+    # -- Pin to a digest for reproducible pulls, e.g. "0.70.0@sha256:...", same
+    # convention as the top-level image.tag.
+    tag: "0.70.0"
+    pullPolicy: IfNotPresent
+  # The binary is ~150 MB; the vulnerability database it downloads on first use
+  # lands in the existing cache volume.
+  volumeSize: 300Mi
