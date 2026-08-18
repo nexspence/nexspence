@@ -399,3 +399,61 @@ func TestScanExtra_ParseTrivyJSON_AllSeverities(t *testing.T) {
 		t.Errorf("expected Total=5, got %d", summary.Total)
 	}
 }
+
+// ── TrivyErrorMessage ────────────────────────────────────────────────────
+
+func TestScanExtra_TrivyErrorMessage_NamesTheDatabaseFailure(t *testing.T) {
+	svc := service.NewScanService(nil, "http://localhost:8081").
+		WithTrivy(service.TrivyOptions{
+			Enabled:      true,
+			DBRepository: []string{"nexspence.example.com/repository/ghcr/aquasecurity/trivy-db:2"},
+		})
+
+	stderr := `FATAL	init error: DB error: failed to download vulnerability DB: ` +
+		`oci download error: failed to fetch the layer: GET https://nexspence.example.com/v2/...: TOOMANYREQUESTS`
+
+	msg := svc.TrivyErrorMessage(errors.New("exit status 1"), stderr)
+
+	if !strings.Contains(msg, "vulnerability database") {
+		t.Errorf("msg = %q, want it to name the database as the thing that failed", msg)
+	}
+	if !strings.Contains(msg, "nexspence.example.com/repository/ghcr/aquasecurity/trivy-db:2") {
+		t.Errorf("msg = %q, want it to name the repository that was tried", msg)
+	}
+	if !strings.Contains(msg, "TOOMANYREQUESTS") {
+		t.Errorf("msg = %q, want the root cause from stderr to survive", msg)
+	}
+}
+
+func TestScanExtra_TrivyErrorMessage_DatabaseDefaultsAreNamedAsSuch(t *testing.T) {
+	svc := service.NewScanService(nil, "http://localhost:8081").
+		WithTrivy(service.TrivyOptions{Enabled: true})
+
+	msg := svc.TrivyErrorMessage(errors.New("exit status 1"), "FATAL	init error: DB error: failed to download vulnerability DB")
+
+	if !strings.Contains(msg, "Trivy defaults") {
+		t.Errorf("msg = %q, want it to say the default repositories were used", msg)
+	}
+}
+
+func TestScanExtra_TrivyErrorMessage_NamesTheJavaDBRepository(t *testing.T) {
+	svc := service.NewScanService(nil, "http://localhost:8081").
+		WithTrivy(service.TrivyOptions{
+			Enabled:          true,
+			JavaDBRepository: []string{"nexspence.example.com/repository/ghcr/aquasecurity/trivy-java-db:1"},
+		})
+
+	msg := svc.TrivyErrorMessage(errors.New("exit status 1"), "FATAL failed to download Java DB")
+
+	if !strings.Contains(msg, "nexspence.example.com/repository/ghcr/aquasecurity/trivy-java-db:1") {
+		t.Errorf("msg = %q, want it to name the Java DB repository that was tried", msg)
+	}
+}
+
+func TestScanExtra_TrivyErrorMessage_LeavesOtherFailuresAlone(t *testing.T) {
+	svc := service.NewScanService(nil, "http://localhost:8081")
+	msg := svc.TrivyErrorMessage(errors.New("exit status 1"), "MANIFEST_UNKNOWN")
+	if !strings.Contains(msg, "re-push the image") {
+		t.Errorf("msg = %q, want the existing manifest message untouched", msg)
+	}
+}

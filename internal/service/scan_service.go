@@ -43,6 +43,56 @@ func scanTrivyErrorMessage(runErr error, stderr string) string {
 	return msg
 }
 
+// TrivyErrorMessage turns a failed Trivy run into one sentence an operator can
+// act on. It is a method rather than a function because the database failure is
+// only actionable with the repositories that were actually tried.
+func (s *ScanService) TrivyErrorMessage(runErr error, stderr string) string {
+	if trivyDBFailure(stderr) {
+		msg := "could not fetch the vulnerability database from " + s.dbRepositoriesForMessage()
+		if cause := firstStderrLine(stderr); cause != "" {
+			msg += " (" + cause + ")"
+		}
+		return msg
+	}
+	return scanTrivyErrorMessage(runErr, stderr)
+}
+
+// trivyDBFailure recognises the database-download failure among Trivy's error
+// output. Matching on substrings is fragile by nature, so it is deliberately
+// broad: a false positive still says "database", which is where the operator
+// should look, and a false negative only loses the friendlier wording.
+func trivyDBFailure(stderr string) bool {
+	lower := strings.ToLower(stderr)
+	return strings.Contains(lower, "vulnerability db") ||
+		strings.Contains(lower, "vulnerability database") ||
+		strings.Contains(lower, "db error") ||
+		strings.Contains(lower, "failed to download db") ||
+		strings.Contains(lower, "java db")
+}
+
+// firstStderrLine returns the first non-empty, trimmed line of stderr — the
+// root cause Trivy reports before its usually-noisier detail lines.
+func firstStderrLine(stderr string) string {
+	for _, line := range strings.Split(stderr, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			return line
+		}
+	}
+	return ""
+}
+
+func (s *ScanService) dbRepositoriesForMessage() string {
+	msg := "the Trivy defaults"
+	if len(s.trivy.DBRepository) > 0 {
+		msg = strings.Join(s.trivy.DBRepository, ", ")
+	}
+	if len(s.trivy.JavaDBRepository) > 0 {
+		msg += "; Java DB from " + strings.Join(s.trivy.JavaDBRepository, ", ")
+	}
+	return msg
+}
+
 const scanErrorMaxLen = 8000
 
 func truncateScanError(s string) string {
@@ -326,7 +376,7 @@ func (s *ScanService) Scan(ctx context.Context, componentID, imageRef string) (*
 		// Trivy may exit non-zero when vulnerabilities are found — stdout is
 		// still parsed below when present. Empty stdout plus an error is a real
 		// failure, and the details are on stderr.
-		msg := scanTrivyErrorMessage(runErr, stderrBuf.String())
+		msg := s.TrivyErrorMessage(runErr, stderrBuf.String())
 		log.Printf("nexor: trivy scan failed component=%s imageRef=%q: %s", componentID, ref, msg)
 		result.Status = domain.ScanStatusFailed
 		result.Error = truncateScanError(msg)
