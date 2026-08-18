@@ -174,9 +174,10 @@ curl -s http://localhost:8080/repository/pypi-group/simple/ -w "%{http_code}"
 ## 6. Docker
 
 ```bash
-# Check /v2/ endpoint
+# Check /v2/ endpoint (the unauthenticated ping always challenges — the
+# WWW-Authenticate: Bearer header is what points docker at /v2/token)
 curl -s http://localhost:8080/v2/ -w "%{http_code}"
-# Expected: 200
+# Expected: 401
 
 # List images (admin)
 curl -s -u admin:admin123 http://localhost:8080/v2/_catalog

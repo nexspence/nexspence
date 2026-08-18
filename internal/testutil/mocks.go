@@ -147,20 +147,6 @@ func (r *RepoRepo) ListByBlobStoreID(_ context.Context, blobStoreID string) ([]d
 	return out, nil
 }
 
-// HasAnyAnonymousDocker mirrors the production SQL, which matches
-// format IN ('docker','oci') — both labels of the OCI Distribution protocol
-// share the /v2/ surface, so either can open the anonymous door.
-func (r *RepoRepo) HasAnyAnonymousDocker(_ context.Context) (bool, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	for _, v := range r.repos {
-		if v.Format.IsOCIRegistry() && v.AllowAnonymous {
-			return true, nil
-		}
-	}
-	return false, nil
-}
-
 func (r *RepoRepo) DetachCleanupPolicyID(_ context.Context, policyID string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()

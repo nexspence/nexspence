@@ -179,7 +179,6 @@ SHARED = [
     ("Redis", RED, "optional — this is what enables HA",
      ["distributed locks (cleanup / GC / migration)",
       "failed-login throttle",
-      "anonymous-pull cache for /v2/",
       "readiness-probe dependency"]),
     ("Blob storage", AMBER, "the artifact bytes themselves",
      ["local filesystem",

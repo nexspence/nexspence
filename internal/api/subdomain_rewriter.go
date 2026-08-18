@@ -28,7 +28,11 @@ func NewSubdomainRewriter(next http.Handler, baseDomain string) http.Handler {
 
 func (s *SubdomainRewriter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	repoName := s.extractRepo(r.Host)
-	if repoName != "" && strings.HasPrefix(r.URL.Path, "/v2/") && r.URL.Path != "/v2/" {
+	// "/v2/" (the ping) and "/v2/token" (the auth realm the ping's challenge
+	// points at) are registry-level endpoints: rewriting them into a repo
+	// dispatch would 404 the token fetch and break docker login/pull on
+	// subdomain hosts.
+	if repoName != "" && strings.HasPrefix(r.URL.Path, "/v2/") && r.URL.Path != "/v2/" && r.URL.Path != "/v2/token" {
 		// Rewrite /v2/<imagepath> → /v2/<repoName>/<imagepath>
 		suffix := strings.TrimPrefix(r.URL.Path, "/v2/")
 		r.URL.Path = "/v2/" + repoName + "/" + suffix

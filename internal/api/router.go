@@ -704,20 +704,24 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 	//          API at /v2/:repoName/*
 	// Gin static-segment priority ensures /v2/repository/... always matches the long-path
 	// group first; the short-path group catches everything else under /v2/.
-	// GET/HEAD /v2/ — OCI version check + Basic auth challenge.
-	// Returning 200 unconditionally makes Docker treat the registry as public and
-	// silently drop stored credentials on subsequent requests — which then fail RBAC
-	// as "anonymous" and surface to users as "pull access denied" even though
-	// `docker login` reported success. DockerV2Auth validates credentials when
-	// present and issues a 401 + `WWW-Authenticate: Basic` challenge otherwise,
-	// so `docker login` actually verifies the password and the CLI sends it on
-	// /v2/:repoName/* requests.
-	// `repoRepo` lets DockerV2Auth fall through to 200 when at least one
-	// Docker repository has allow_anonymous=true — restoring anonymous
-	// `docker pull` against public proxies (see Phase 26).
-	dockerV2Root := handlers.DockerV2Auth(userSvc, tokenSvc, repoRepo, rdb, cfg.Auth.AnonymousEnabled, loginGuard, log)
+	// GET/HEAD /v2/ — OCI version check. The unauthenticated ping always
+	// answers 401 with a Bearer challenge pointing at /v2/token (plus Basic
+	// for non-token clients): a 200 here makes docker treat the registry as
+	// public and silently drop stored credentials on subsequent requests
+	// (#260) — which then fail RBAC as "anonymous" and surface to users as
+	// push/pull failures even though `docker login` reported success. The
+	// token endpoint keeps anonymous `docker pull` working (see Phase 26):
+	// credential-less clients receive an anonymous token there, and per-repo
+	// RBAC decides their reads exactly as before. A side effect: "token" is a
+	// reserved name on the /v2/ surface, like "repository" already is.
+	dockerV2Root := handlers.DockerV2Auth(userSvc, tokenSvc, loginGuard, log)
 	r.GET("/v2/", dockerV2Root)
 	r.HEAD("/v2/", dockerV2Root)
+	dockerTokenH := handlers.DockerToken(
+		authSvc, userSvc, tokenSvc, cfg.Auth.AnonymousEnabled,
+		time.Duration(cfg.Auth.JWTExpiryHours)*time.Hour, loginGuard, log)
+	r.GET("/v2/token", dockerTokenH)
+	r.POST("/v2/token", dockerTokenH) // containerd/BuildKit try the OAuth2 POST first
 
 	dockerV2H := serveDockerV2(repoRepo, groupHandler, formatRegistry)
 	v2docker := r.Group("/v2/repository", handlers.OptionalAuth(userSvc, tokenSvc, loginGuard, log), handlers.RBACMiddleware(rbacSvc, repoRepo))
