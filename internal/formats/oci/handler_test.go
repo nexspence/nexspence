@@ -241,6 +241,21 @@ func TestDocker_TagsList_Empty(t *testing.T) {
 	assert.Contains(t, w.Body.String(), `"tags"`)
 }
 
+// /v2/<repoName>/tags/list names no image: answering 200 with {"name":""}
+// read as "an image with an empty name exists" (#261); the spec's answer for
+// an unknown name is NAME_UNKNOWN.
+func TestDocker_TagsList_NoImageNameIs404(t *testing.T) {
+	repo := testutil.SimpleRepo("reg6b", "docker")
+	r := setup(repo)
+
+	req := httptest.NewRequest(http.MethodGet,
+		"/repository/reg6b/v2/tags/list", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	assert.Contains(t, w.Body.String(), "NAME_UNKNOWN")
+}
+
 func TestDocker_TagsList_AfterPush(t *testing.T) {
 	repo := testutil.SimpleRepo("reg7", "docker")
 	r := setup(repo)

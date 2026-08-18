@@ -321,9 +321,9 @@ func (h *Handler) PageGroupIndex(c *gin.Context, p string, merged []byte) ([]byt
 // header for a truncated one, exactly as the single-repository endpoints do —
 // the page is a page of the same sorted list either way.
 func pageMergedList(c *gin.Context, entries []string) []string {
-	params := parsePageParams(c)
-	page, more := paginate(entries, params)
-	setNextLink(c, params, page, more)
+	params := ParsePageParams(c)
+	page, more := Paginate(entries, params)
+	SetNextLink(c, params, page, more)
 	if page == nil {
 		page = []string{}
 	}

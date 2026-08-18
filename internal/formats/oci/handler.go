@@ -109,6 +109,14 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 	switch {
 	case endsWithSegments(parts, "tags", "list"):
 		imageName := strings.Join(parts[:len(parts)-2], "/")
+		// /v2/<repoName>/tags/list names no image at all. Answering it with
+		// {"name":"","tags":[]} 200 (#261) reads as "an image with an empty
+		// name exists and has no tags"; the spec's answer for a name the
+		// registry does not serve is NAME_UNKNOWN.
+		if imageName == "" {
+			dockerError(c, http.StatusNotFound, "NAME_UNKNOWN", "repository name not known to registry")
+			return
+		}
 		h.handleTagsList(c, repoName, imageName)
 
 	// Before manifests and blobs: the shape is <name>/referrers/<digest>, and
@@ -194,9 +202,9 @@ func (h *Handler) handleTagsList(c *gin.Context, repoName, imageName string) {
 	// thing, and an unsorted list would make the ?last= cursor meaningless.
 	sort.Strings(tags)
 
-	params := parsePageParams(c)
-	page, more := paginate(tags, params)
-	setNextLink(c, params, page, more)
+	params := ParsePageParams(c)
+	page, more := Paginate(tags, params)
+	SetNextLink(c, params, page, more)
 	if page == nil {
 		page = []string{}
 	}
