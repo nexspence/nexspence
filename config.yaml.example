@@ -134,8 +134,7 @@ gc:
 docker:
   max_upload_bytes: 10737418240   # 10 GiB per blob upload session
 
-# Automatic vulnerability scanning (Trivy for docker/oci, OSV.dev for
-# npm/maven/pypi/cargo).
+# Automatic vulnerability scanning.
 # Every upload is queued for a background scan; the queue is bounded and drops
 # rather than delaying an upload, so the periodic full re-scan below is also the
 # safety net for what a burst skips. It re-checks already-scanned components
@@ -143,6 +142,26 @@ docker:
 scan:
   enabled: true              # false leaves scanning entirely on-demand (API only)
   schedule: "0 3 * * *"      # cron: daily 03:00; empty disables only the bulk re-scan
+
+  # Image scanning (Docker/OCI) runs Trivy, which nexspence does NOT ship:
+  # no binary in the image, no wrapper for one. You supply it — on the host, or
+  # copied into the container by an initContainer / one-shot service. See
+  # docs/scanning.md for a complete procedure per deployment type.
+  #
+  # Package scanning (Maven, npm, PyPI, Cargo) uses OSV.dev over HTTPS, needs
+  # nothing installed, and is unaffected by everything below.
+  trivy:
+    enabled: false           # true turns image scanning on; it stays unavailable until a binary is found
+    bin: "trivy"             # path to the binary, or a name resolved through PATH
+    # Where Trivy reads its vulnerability database. Empty means Trivy's own
+    # defaults (ghcr.io). A nexspence proxy repository in front of ghcr.io works
+    # here — trivy-db is an ordinary OCI artifact:
+    #   db_repository:
+    #     - nexspence.example.com/repository/ghcr-proxy/aquasecurity/trivy-db:2
+    db_repository: []
+    java_db_repository: []
+    skip_db_update: false    # true in an air-gapped deployment where the DB is seeded by hand
+    cache_dir: ""            # empty keeps TRIVY_CACHE_DIR / Trivy's default
 
 # Audit log retention.
 # Events live in monthly PostgreSQL partitions.
