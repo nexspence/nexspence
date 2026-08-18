@@ -20,7 +20,7 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/repository"
 )
 
-// ErrTrivyNotInstalled is returned when the trivy executable is missing (not found in PATH or at TrivyBin).
+// ErrTrivyNotInstalled is returned when the trivy executable is missing (not found in PATH or at the configured Trivy bin).
 var ErrTrivyNotInstalled = errors.New("trivy not installed; install trivy or use Docker image with trivy pre-bundled")
 
 func trivyExecMissing(err error) bool {
@@ -108,12 +108,15 @@ func httpBaseURLInsecure(baseURL string) bool {
 type ScanService struct {
 	Components   repository.ComponentRepo
 	HTTPBaseURL  string                    // e.g. http://localhost:8081 — used to build registry pull refs for hosted images
-	TrivyBin     string                    // path to trivy binary; defaults to "trivy"
 	TrivyTimeout time.Duration             // per-scan wall-clock limit (0 = no extra timeout); default 10m
 	ScanResults  repository.ScanResultRepo // may be nil; if set, each scan is persisted here
 	OSVClient    *OSVClient                // used for non-Docker formats
 	scanUsername string                    // registry credentials passed to trivy --username
 	scanPassword string
+
+	// trivy is the operator's scanner: nexspence ships none, so everything
+	// about it — whether it exists at all, where it is — comes from config.
+	trivy TrivyOptions
 
 	// trivyMu serializes Trivy CLI runs. Trivy's on-disk cache (BoltDB) is not safe for concurrent
 	// processes; parallel scans caused "cache may be in use by another process: timeout".
@@ -135,7 +138,7 @@ func NewScanService(components repository.ComponentRepo, httpBaseURL string) *Sc
 	return &ScanService{
 		Components:   components,
 		HTTPBaseURL:  strings.TrimSpace(httpBaseURL),
-		TrivyBin:     "trivy",
+		trivy:        TrivyOptions{Bin: "trivy"},
 		TrivyTimeout: 10 * time.Minute,
 		OSVClient:    NewOSVClient(),
 		queue:        make(chan string, autoScanQueueSize),
@@ -244,6 +247,15 @@ func (s *ScanService) WithCredentials(username, password string) *ScanService {
 	return s
 }
 
+// WithTrivy sets the operator-supplied scanner options and returns s.
+func (s *ScanService) WithTrivy(opts TrivyOptions) *ScanService {
+	s.trivy = opts
+	return s
+}
+
+// TrivyOptions returns the scanner options in force.
+func (s *ScanService) TrivyOptions() TrivyOptions { return s.trivy }
+
 // Scan runs trivy against imageRef, persists the result in component.Extra["scan_result"],
 // and returns it. Components of the two OCI Distribution formats (docker, oci) go to
 // Trivy, a few language formats go to OSV, and anything else gets a clear error.
@@ -285,10 +297,7 @@ func (s *ScanService) Scan(ctx context.Context, componentID, imageRef string) (*
 		ImageRef:  ref,
 	}
 
-	bin := s.TrivyBin
-	if bin == "" {
-		bin = "trivy"
-	}
+	bin := s.trivy.BinOrDefault()
 
 	// #nosec G204 — ref is built from DB / authenticated override; argv is not user-controlled shell.
 	args := []string{

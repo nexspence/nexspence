@@ -95,7 +95,7 @@ func TestScanService_TriggerAsync_SkipsDigestAliases(t *testing.T) {
 	svc.OSVClient.BaseURL = osvServerWithOneVuln(t).URL
 	// Point Trivy at a binary that does not exist: if the alias is scanned after
 	// all, it shells out and the assertion below catches it either way.
-	svc.TrivyBin = "nexspence-no-such-trivy"
+	svc = svc.WithTrivy(service.TrivyOptions{Enabled: true, Bin: "nexspence-no-such-trivy"})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

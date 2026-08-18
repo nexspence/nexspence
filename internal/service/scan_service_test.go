@@ -81,7 +81,7 @@ func TestScanService_TrivyNotInstalled(t *testing.T) {
 	comps.Create(context.Background(), comp)
 
 	svc := service.NewScanService(comps, "")
-	svc.TrivyBin = "/no/such/binary"
+	svc = svc.WithTrivy(service.TrivyOptions{Enabled: true, Bin: "/no/such/binary"})
 
 	_, err := svc.Scan(context.Background(), comp.ID, "alpine:latest")
 	if err == nil {
@@ -106,7 +106,7 @@ func TestScanService_OCIFormat_ReachesTrivy(t *testing.T) {
 	comps.Create(context.Background(), comp)
 
 	svc := service.NewScanService(comps, "")
-	svc.TrivyBin = "/no/such/binary"
+	svc = svc.WithTrivy(service.TrivyOptions{Enabled: true, Bin: "/no/such/binary"})
 
 	_, err := svc.Scan(context.Background(), comp.ID, "")
 	if err == nil {

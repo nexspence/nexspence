@@ -217,7 +217,15 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 	// every handler keeps a nil copy of it.
 	scanSvc := service.NewScanService(componentRepo, cfg.HTTP.BaseURL).
 		WithScanResults(scanRepo).
-		WithCredentials(cfg.Bootstrap.AdminUsername, cfg.Bootstrap.AdminPassword)
+		WithCredentials(cfg.Bootstrap.AdminUsername, cfg.Bootstrap.AdminPassword).
+		WithTrivy(service.TrivyOptions{
+			Enabled:          cfg.Scan.Trivy.Enabled,
+			Bin:              cfg.Scan.Trivy.Bin,
+			DBRepository:     cfg.Scan.Trivy.DBRepository,
+			JavaDBRepository: cfg.Scan.Trivy.JavaDBRepository,
+			SkipDBUpdate:     cfg.Scan.Trivy.SkipDBUpdate,
+			CacheDir:         cfg.Scan.Trivy.CacheDir,
+		})
 	// A nil trigger in Deps is what disables scan-on-upload, so the config
 	// switch is applied by not wiring the service rather than by a flag the
 	// storage layer would have to consult.

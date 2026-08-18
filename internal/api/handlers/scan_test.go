@@ -36,7 +36,7 @@ func mountScan(t *testing.T) (*gin.Engine, *testutil.ComponentRepo, *testutil.Sc
 
 	svc := service.NewScanService(comps, "http://localhost").WithScanResults(scanRepo)
 	svc.OSVClient = &service.OSVClient{BaseURL: osvSrv.URL, HTTPClient: osvSrv.Client()}
-	svc.TrivyBin = "/nonexistent/trivy-binary-xyz" // force ErrTrivyNotInstalled on Docker path
+	svc = svc.WithTrivy(service.TrivyOptions{Enabled: true, Bin: "/nonexistent/trivy-binary-xyz"}) // force ErrTrivyNotInstalled on Docker path
 	svc.TrivyTimeout = 5 * time.Second
 
 	h := handlers.NewScanHandler(svc)

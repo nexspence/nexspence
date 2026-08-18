@@ -56,7 +56,7 @@ func TestScanHandler_TrivyNotInstalled(t *testing.T) {
 	comps.Create(context.Background(), comp) // Create assigns comp.ID
 
 	svc := service.NewScanService(comps, "")
-	svc.TrivyBin = "/no/such/trivy-binary"
+	svc = svc.WithTrivy(service.TrivyOptions{Enabled: true, Bin: "/no/such/trivy-binary"})
 
 	r := buildScanRouter(svc)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/components/"+comp.ID+"/scan", strings.NewReader(`{}`))
@@ -79,7 +79,7 @@ func TestScanHandler_TrivyNotInstalled(t *testing.T) {
 // TestScanHandler_ComponentNotFound verifies 400 for a missing component.
 func TestScanHandler_ComponentNotFound(t *testing.T) {
 	svc := service.NewScanService(testutil.NewComponentRepo(), "")
-	svc.TrivyBin = "/no/such/binary"
+	svc = svc.WithTrivy(service.TrivyOptions{Enabled: true, Bin: "/no/such/binary"})
 
 	r := buildScanRouter(svc)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/components/no-such-id/scan", strings.NewReader(`{}`))
@@ -99,7 +99,7 @@ func TestScanHandler_NonDockerComponent(t *testing.T) {
 	comps.Create(context.Background(), comp)
 
 	svc := service.NewScanService(comps, "")
-	svc.TrivyBin = "/no/such/binary"
+	svc = svc.WithTrivy(service.TrivyOptions{Enabled: true, Bin: "/no/such/binary"})
 
 	r := buildScanRouter(svc)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/components/maven-1/scan", strings.NewReader(`{}`))
@@ -122,7 +122,7 @@ func TestScanHandler_SuccessfulScan(t *testing.T) {
 	comps.Create(context.Background(), comp)
 
 	svc := service.NewScanService(comps, "")
-	svc.TrivyBin = fakeTrivyBin(t, minimalTrivyJSON)
+	svc = svc.WithTrivy(service.TrivyOptions{Enabled: true, Bin: fakeTrivyBin(t, minimalTrivyJSON)})
 
 	r := buildScanRouter(svc)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/components/"+comp.ID+"/scan",

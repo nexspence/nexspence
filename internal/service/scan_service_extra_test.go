@@ -49,7 +49,7 @@ func TestScanExtra_TrivyErrorMessage_ViaFailedScan(t *testing.T) {
 	_ = comps.Create(context.Background(), comp)
 
 	svc := service.NewScanService(comps, "http://localhost:8081")
-	svc.TrivyBin = "/no/such/trivy"
+	svc = svc.WithTrivy(service.TrivyOptions{Enabled: true, Bin: "/no/such/trivy"})
 
 	_, err := svc.Scan(context.Background(), comp.ID, "myapp:1.0")
 	if err == nil {
