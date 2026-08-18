@@ -14,6 +14,7 @@ import (
 
 	"github.com/nexspence-oss/nexspence/internal/api/handlers"
 	"github.com/nexspence-oss/nexspence/internal/domain"
+	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/service"
 	"github.com/nexspence-oss/nexspence/internal/testutil"
 )
@@ -107,14 +108,78 @@ func TestDockerCatalog_Pagination(t *testing.T) {
 	assert.Empty(t, link2, "the final page carries no next link")
 }
 
-func TestDockerCatalog_EmptyIsAListNotNull(t *testing.T) {
+func TestDockerCatalog_AuthenticatedEmptyIsAListNotNull(t *testing.T) {
 	repoRepo := testutil.NewRepoRepo()
+	rbacSvc := service.NewRBACService(&noPrivilegesRBACRepo{}, repoRepo, zap.NewNop().Sugar(), true)
+	r := gin.New()
+	r.GET("/v2/_catalog", func(c *gin.Context) {
+		c.Set("userID", "u1")
+		c.Set("roles", []string{"nx-admin"})
+	}, handlers.DockerCatalog(repoRepo, rbacSvc, testutil.NewAssetRepo()))
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/v2/_catalog", nil))
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), `"repositories":[]`)
+}
+
+// A credential-less caller who can see nothing gets the challenge the sibling
+// /v2/ surfaces give — not a 200 that reads as "the registry is empty".
+func TestDockerCatalog_AnonymousWithNothingVisible_Challenges401(t *testing.T) {
+	repoRepo := testutil.NewRepoRepo(
+		&domain.Repository{ID: "r1", Name: "priv", Format: domain.FormatDocker, Type: domain.TypeHosted, Online: true},
+	)
 	rbacSvc := service.NewRBACService(&noPrivilegesRBACRepo{}, repoRepo, zap.NewNop().Sugar(), true)
 	r := gin.New()
 	r.GET("/v2/_catalog", handlers.DockerCatalog(repoRepo, rbacSvc, testutil.NewAssetRepo()))
 
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/v2/_catalog", nil))
-	require.Equal(t, http.StatusOK, w.Code)
-	assert.Contains(t, w.Body.String(), `"repositories":[]`)
+	require.Equal(t, http.StatusUnauthorized, w.Code)
+	assert.Contains(t, w.Header().Get("WWW-Authenticate"), "Basic")
+	assert.Contains(t, w.Body.String(), "UNAUTHORIZED")
+}
+
+// privsRBACRepo hands every user the same fixed privilege set.
+type privsRBACRepo struct {
+	privs []repository.PrivilegeWithSelector
+}
+
+func (p *privsRBACRepo) GetUserPrivilegesWithSelectors(_ context.Context, _ string) ([]repository.PrivilegeWithSelector, error) {
+	return p.privs, nil
+}
+
+// Repo-level filtering is not enough for a listing of image NAMES: a caller
+// path-scoped by a content selector must not see the names the selector
+// hides — neither in the repo the selector scopes, nor anywhere else via a
+// path-only selector matching every repository.
+func TestDockerCatalog_PathScopedSelectorHidesOtherImages(t *testing.T) {
+	repoRepo := testutil.NewRepoRepo(
+		&domain.Repository{ID: "r1", Name: "priv", Format: domain.FormatDocker, Type: domain.TypeHosted, Online: true},
+		&domain.Repository{ID: "r2", Name: "priv2", Format: domain.FormatOCI, Type: domain.TypeHosted, Online: true},
+	)
+	assets := testutil.NewAssetRepo()
+	ctx := context.Background()
+	for _, a := range []*domain.Asset{
+		{Repository: "priv", Path: "/manifests/team-a/app/latest"},
+		{Repository: "priv", Path: "/manifests/team-b/secret/latest"},
+		{Repository: "priv2", Path: "/manifests/other/img/latest"},
+	} {
+		require.NoError(t, assets.Create(ctx, a))
+	}
+	rbac := &privsRBACRepo{privs: []repository.PrivilegeWithSelector{
+		{Actions: []string{"browse", "read"}, Expression: `repository == "priv" && path.startsWith("/team-a/")`},
+	}}
+	rbacSvc := service.NewRBACService(rbac, repoRepo, zap.NewNop().Sugar(), true)
+
+	r := gin.New()
+	r.GET("/v2/_catalog", func(c *gin.Context) {
+		c.Set("userID", "u-scoped")
+		c.Set("roles", []string{"developer"})
+	}, handlers.DockerCatalog(repoRepo, rbacSvc, assets))
+
+	code, got, _ := catalogGet(t, r, "/v2/_catalog")
+	require.Equal(t, http.StatusOK, code)
+	assert.Equal(t, []string{"priv/team-a/app"}, got,
+		"team-b's and priv2's image names must stay hidden from a /team-a/-scoped caller")
 }

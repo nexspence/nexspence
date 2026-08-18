@@ -66,6 +66,12 @@ func groupIndexKind(p string) (kind ociIndexKind, imageName string) {
 	}
 	switch {
 	case endsWithSegments(parts, "tags", "list"):
+		// ServeHTTP refuses the imageless /v2/<repoName>/tags/list with
+		// NAME_UNKNOWN; mirroring it keeps this classifier's invariant — a
+		// path is mergeable only as the document a member would produce.
+		if len(parts) == 2 {
+			return indexNone, ""
+		}
 		return indexTags, strings.Join(parts[:len(parts)-2], "/")
 	case referrersIndex(parts) >= 0:
 		return indexReferrers, ""

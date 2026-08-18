@@ -34,13 +34,22 @@ func DockerCatalog(
 	rbac *service.RBACService,
 	assets repository.AssetRepo,
 ) gin.HandlerFunc {
+	internalError := func(c *gin.Context) {
+		// The registry error shape, and no internals: this route answers
+		// unauthenticated callers, and the request log already carries the
+		// real error via the 500 status.
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"errors": []gin.H{{"code": "UNKNOWN", "message": "internal error"}},
+		})
+	}
+
 	return func(c *gin.Context) {
 		c.Header("Docker-Distribution-API-Version", "registry/2.0")
 		ctx := c.Request.Context()
 
 		all, err := repos.List(ctx, "", "")
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			internalError(c)
 			return
 		}
 		registries := make([]domain.Repository, 0, len(all))
@@ -55,17 +64,32 @@ func DockerCatalog(
 		rolesSlice, _ := roles.([]string)
 		readable := rbac.FilterRepos(ctx, userID, rolesSlice, registries)
 
+		// A credential-less caller who can see nothing gets the challenge the
+		// sibling /v2/ surfaces give, not a 200 that reads as "the registry is
+		// empty" — a client holding credentials should be told to present them.
+		if userID == "" && len(readable) == 0 {
+			c.Header("WWW-Authenticate", `Basic realm="Nexspence"`)
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"errors": []gin.H{{"code": "UNAUTHORIZED", "message": "authentication required"}},
+			})
+			return
+		}
+
 		// One query per readable registry rather than one for the union:
 		// ListOCIImageNames does not say which repository a name came from,
-		// and the entries need the repository prefix to be pullable.
+		// and the entries need the repository prefix to be pullable. Each
+		// repository's names then pass the caller's content selectors —
+		// FilterRepos alone ignores path clauses, and image names are exactly
+		// what a path-scoped selector is configured to hide.
 		var entries []string
-		for _, r := range readable {
+		for i := range readable {
+			r := &readable[i]
 			names, err := assets.ListOCIImageNames(ctx, []string{r.Name})
 			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				internalError(c)
 				return
 			}
-			for _, n := range names {
+			for _, n := range rbac.FilterOCIImageNames(ctx, userID, rolesSlice, r, names) {
 				entries = append(entries, r.Name+"/"+n)
 			}
 		}
