@@ -245,6 +245,15 @@ func (s *ScanService) StartScheduler(ctx context.Context, schedule string) {
 	s.drainQueue(ctx)
 }
 
+// isImageFormat reports whether a component is scanned by Trivy rather than by OSV.
+func isImageFormat(format string) bool {
+	switch strings.ToLower(format) {
+	case "docker", "oci":
+		return true
+	}
+	return false
+}
+
 // skipAutoScan reports whether a queued component is not worth a scanner run.
 //
 // A component that cannot be read is left to Scan to report — this only filters
@@ -254,7 +263,12 @@ func (s *ScanService) skipAutoScan(ctx context.Context, componentID string) bool
 	if err != nil || comp == nil {
 		return false
 	}
-	return isDigestAlias(comp.Version)
+	if isDigestAlias(comp.Version) {
+		return true
+	}
+	// No scanner, no scan — and no error per artifact either. A capability the
+	// operator has not provided is not an upload failure.
+	return isImageFormat(comp.Format) && !s.Scanner(ctx).Ready()
 }
 
 // drainQueue scans queued components sequentially until ctx is done.
@@ -310,14 +324,15 @@ func (s *ScanService) Scan(ctx context.Context, componentID, imageRef string) (*
 	if comp == nil {
 		return nil, fmt.Errorf("component %s not found", componentID)
 	}
-	switch strings.ToLower(comp.Format) {
-	case "docker", "oci":
+	format := strings.ToLower(comp.Format)
+	switch {
+	case isImageFormat(format):
 		// Falls through to the Trivy path below. An oci repository holds the same
 		// content a docker one does — an ORAS artifact is an image by structure —
 		// so refusing it on its format label would be wrong. A non-image artifact
 		// (a chart, a signature) surfaces as a Trivy error instead of being
 		// refused up front, which is the more honest answer.
-	case "maven", "npm", "pypi", "cargo":
+	case format == "maven" || format == "npm" || format == "pypi" || format == "cargo":
 		return s.scanOSV(ctx, comp)
 	default:
 		return nil, fmt.Errorf("vulnerability scanning is not supported for format %q", comp.Format)
@@ -535,6 +550,9 @@ func (s *ScanService) BulkScan(ctx context.Context, repoName string) (scanned in
 	}
 	for _, comp := range page.Items {
 		if isDigestAlias(comp.Version) {
+			continue
+		}
+		if isImageFormat(comp.Format) && !s.Scanner(ctx).Ready() {
 			continue
 		}
 		_, scanErr := s.Scan(ctx, comp.ID, "")
