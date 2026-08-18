@@ -89,6 +89,9 @@ services:
         condition: service_healthy
       minio-init:
         condition: service_completed_successfully
+      trivy-init:
+        condition: service_completed_successfully
+        required: false
       keycloak:
         condition: service_healthy
         required: false
@@ -108,6 +111,9 @@ services:
       NEXSPENCE_STORAGE_LOCAL_BASE_PATH: "/app/data/blobs"
       NEXSPENCE_LOG_LEVEL: "info"
       NEXSPENCE_LOG_FORMAT: "json"
+      # Image scanning is off unless the `scanning` profile supplied a binary.
+      NEXSPENCE_SCAN_TRIVY_ENABLED: "${NEXSPENCE_SCAN_TRIVY_ENABLED:-false}"
+      NEXSPENCE_SCAN_TRIVY_BIN: "/opt/trivy/trivy"
       # ── OIDC (Keycloak dev IdP, active when OIDC_ENABLED=true) ──────
       NEXSPENCE_OIDC_ENABLED: "${OIDC_ENABLED:-false}"
       NEXSPENCE_OIDC_DISPLAY_NAME: "Keycloak"
@@ -141,6 +147,7 @@ services:
       - nexspence_blobs:/app/data/blobs
       - nexspence_secrets:/app/secrets
       - ${CONFIG_FILE:-./config.yaml}:/app/config.yaml:ro
+      - trivy_bin:/opt/trivy:ro
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8081/service/rest/v1/status/check"]
       interval: 10s
@@ -184,6 +191,16 @@ services:
         mc mb --ignore-existing local/nexspence-s3-2 &&
         echo 'all buckets ready'
       "
+    restart: "no"
+
+  # Nexspence ships no scanner. This copies Trivy into a shared volume so the
+  # application can exec it. Opt-in: `docker compose --profile scanning up`.
+  trivy-init:
+    profiles: ["scanning"]
+    image: aquasec/trivy:0.70.0
+    entrypoint: ["sh", "-c", "cp /usr/local/bin/trivy /opt/trivy/trivy && chmod 0755 /opt/trivy/trivy"]
+    volumes:
+      - trivy_bin:/opt/trivy
     restart: "no"
 
   # ── Frontend dev server (Vite) ────────────────────────────────
@@ -266,3 +283,4 @@ volumes:
   frontend_node_modules:
   prometheus_data:
   grafana_data:
+  trivy_bin:
