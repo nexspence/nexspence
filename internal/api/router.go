@@ -226,6 +226,10 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 			SkipDBUpdate:     cfg.Scan.Trivy.SkipDBUpdate,
 			CacheDir:         cfg.Scan.Trivy.CacheDir,
 		})
+	// Say once, at boot, what image scanning can do here. Without this the only
+	// way to learn that the binary is missing is to press a button in the UI.
+	st := scanSvc.Scanner(ctx)
+	log.Info("image scanner", "state", st.State, "message", st.Message)
 	// A nil trigger in Deps is what disables scan-on-upload, so the config
 	// switch is applied by not wiring the service rather than by a flag the
 	// storage layer would have to consult.
@@ -616,6 +620,7 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 		admin.GET("/api/v1/security/summary", scanH.Summary)
 		admin.GET("/api/v1/security/vulnerabilities", scanH.Vulnerabilities)
 		admin.POST("/api/v1/security/scan/bulk", scanH.BulkScanHandler)
+		admin.GET("/api/v1/security/scanner", scanH.ScannerStatus)
 
 		// ── System ────────────────────────────────────────────
 		admin.GET("/service/rest/v1/tasks", tasksH.List)

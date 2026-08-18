@@ -274,3 +274,56 @@ func TestScanHandler_BulkScan_RepoError_500(t *testing.T) {
 	rec := do(t, r, http.MethodPost, "/api/v1/security/scan/bulk", nil)
 	assert.Equal(t, http.StatusInternalServerError, rec.Code)
 }
+
+// ── ScannerStatus ──────────────────────────────────────────────────────────────
+
+func TestScannerStatus_ReportsDisabled(t *testing.T) {
+	svc := service.NewScanService(nil, "http://localhost:8081").WithTrivy(service.TrivyOptions{Enabled: false})
+	r := buildScanRouter(svc)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/security/scanner", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if body["state"] != "disabled" {
+		t.Errorf("state = %v, want disabled", body["state"])
+	}
+	if _, ok := body["path"]; ok {
+		t.Error("a disabled scanner must not report a filesystem path")
+	}
+	if msg, ok := body["message"].(string); !ok || msg == "" {
+		t.Error("message must be a complete sentence the UI can render as-is")
+	}
+}
+
+func TestScannerStatus_ReportsReadyWithVersionAndPath(t *testing.T) {
+	bin := fakeTrivyBin(t, "")
+	svc := service.NewScanService(nil, "http://localhost:8081").WithTrivy(service.TrivyOptions{Enabled: true, Bin: bin})
+	r := buildScanRouter(svc)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/security/scanner", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if body["state"] != "ready" {
+		t.Errorf("state = %v, want ready", body["state"])
+	}
+	if body["path"] != bin {
+		t.Errorf("path = %v, want %q", body["path"], bin)
+	}
+	if body["version"] != "0.70.0" {
+		t.Errorf("version = %v, want 0.70.0", body["version"])
+	}
+}

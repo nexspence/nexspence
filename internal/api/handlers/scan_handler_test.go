@@ -26,6 +26,7 @@ func buildScanRouter(svc *service.ScanService) *gin.Engine {
 	r.GET("/api/v1/security/summary", h.Summary)
 	r.GET("/api/v1/security/vulnerabilities", h.Vulnerabilities)
 	r.POST("/api/v1/security/scan/bulk", h.BulkScanHandler)
+	r.GET("/api/v1/security/scanner", h.ScannerStatus)
 	return r
 }
 
