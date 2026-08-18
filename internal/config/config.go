@@ -410,6 +410,29 @@ type ScanConfig struct {
 	// ones against newly published CVEs. Empty disables the periodic run while
 	// leaving scan-on-upload in place.
 	Schedule string `mapstructure:"schedule"`
+	// Trivy governs image scanning, which nexspence does not ship a scanner for.
+	Trivy TrivyConfig `mapstructure:"trivy"`
+}
+
+// TrivyConfig points nexspence at a Trivy binary the operator supplies, and at
+// the vulnerability database that binary should read.
+//
+// Nexspence ships no scanner: the image carries no Trivy and no wrapper for
+// one. Enabled=false is the default because a product must not offer what it
+// does not deliver — see docs/scanning.md for how an operator supplies it.
+//
+// Every database and cache field is empty by default and an empty value means
+// "do not pass the flag at all", so Trivy's own defaults apply. Restating them
+// here would freeze a copy that rots the first time upstream changes one.
+// Bin is the exception: it defaults to "trivy" resolved through PATH, since an
+// empty bin is not a flag omission but a missing executable to run.
+type TrivyConfig struct {
+	Enabled          bool     `mapstructure:"enabled"`
+	Bin              string   `mapstructure:"bin"`
+	DBRepository     []string `mapstructure:"db_repository"`
+	JavaDBRepository []string `mapstructure:"java_db_repository"`
+	SkipDBUpdate     bool     `mapstructure:"skip_db_update"`
+	CacheDir         string   `mapstructure:"cache_dir"`
 }
 
 // AuditConfig controls audit-log retention, soft cap, and partition rotation.
@@ -495,6 +518,17 @@ func Load(path string) (*Config, error) {
 	// Nightly, off-peak: a full re-scan re-queries OSV.dev per component and
 	// re-runs Trivy per image.
 	v.SetDefault("scan.schedule", "0 3 * * *")
+	// Every key gets a default even when the default is the zero value: viper's
+	// AutomaticEnv + Unmarshal silently skips keys that are absent from
+	// AllKeys, so a key with no default is unreachable from an environment
+	// variable when no config file is present. The same reason as the
+	// database.dsn / auth.jwt_secret block above.
+	v.SetDefault("scan.trivy.enabled", false)
+	v.SetDefault("scan.trivy.bin", "trivy")
+	v.SetDefault("scan.trivy.db_repository", []string{})
+	v.SetDefault("scan.trivy.java_db_repository", []string{})
+	v.SetDefault("scan.trivy.skip_db_update", false)
+	v.SetDefault("scan.trivy.cache_dir", "")
 	v.SetDefault("audit.retention_days", 90)
 	v.SetDefault("audit.soft_cap", int64(1_000_000))
 	v.SetDefault("audit.rotation_interval", "24h")

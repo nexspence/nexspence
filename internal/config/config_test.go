@@ -406,3 +406,57 @@ func TestLoad_BootstrapDisabledViaEnv(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, cfg.Bootstrap.Enabled)
 }
+
+// Nexspence ships no scanner binary, so a product must not claim to offer
+// what it does not deliver: scan.trivy.enabled defaults to false even though
+// scan.enabled itself defaults to true.
+func TestLoad_TrivyDefaults(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := "" +
+		"database:\n  dsn: \"postgres://u:p@localhost:5432/db?sslmode=disable\"\n" +
+		"auth:\n  jwt_secret: \"a-unique-production-secret-at-least-32b\"\n"
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.False(t, cfg.Scan.Trivy.Enabled,
+		"scan.trivy.enabled must default to false — the product must not promise a scanner it does not ship")
+	assert.Equal(t, "trivy", cfg.Scan.Trivy.Bin)
+	assert.Empty(t, cfg.Scan.Trivy.DBRepository,
+		"scan.trivy.db_repository must default to empty (means: do not pass the flag)")
+	assert.Empty(t, cfg.Scan.Trivy.JavaDBRepository, "scan.trivy.java_db_repository must default to empty")
+	assert.False(t, cfg.Scan.Trivy.SkipDBUpdate, "scan.trivy.skip_db_update must default to false")
+	assert.Empty(t, cfg.Scan.Trivy.CacheDir, "scan.trivy.cache_dir must default to empty")
+}
+
+func TestLoad_TrivyFromEnv(t *testing.T) {
+	// Viper skips keys with no default when unmarshalling with AutomaticEnv,
+	// so this also guards the SetDefault calls that make these env vars
+	// resolvable.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := "" +
+		"database:\n  dsn: \"postgres://u:p@localhost:5432/db?sslmode=disable\"\n" +
+		"auth:\n  jwt_secret: \"a-unique-production-secret-at-least-32b\"\n"
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+
+	t.Setenv("NEXSPENCE_SCAN_TRIVY_ENABLED", "true")
+	t.Setenv("NEXSPENCE_SCAN_TRIVY_BIN", "/opt/trivy/trivy")
+	t.Setenv("NEXSPENCE_SCAN_TRIVY_SKIP_DB_UPDATE", "true")
+	t.Setenv("NEXSPENCE_SCAN_TRIVY_CACHE_DIR", "/var/cache/trivy")
+	// Confirmed empirically (and consistent with TestLoad_TrustedProxies_EnvOverride
+	// above): viper's default Unmarshal decode hooks split a comma-separated env
+	// value into a []string via mapstructure.StringToSliceHookFunc(","). A single
+	// value with no comma yields a one-element slice.
+	t.Setenv("NEXSPENCE_SCAN_TRIVY_DB_REPOSITORY", "mirror1.example.com/trivy-db,mirror2.example.com/trivy-db")
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.True(t, cfg.Scan.Trivy.Enabled, "NEXSPENCE_SCAN_TRIVY_ENABLED was not applied")
+	assert.Equal(t, "/opt/trivy/trivy", cfg.Scan.Trivy.Bin)
+	assert.True(t, cfg.Scan.Trivy.SkipDBUpdate, "NEXSPENCE_SCAN_TRIVY_SKIP_DB_UPDATE was not applied")
+	assert.Equal(t, "/var/cache/trivy", cfg.Scan.Trivy.CacheDir)
+	assert.Equal(t, []string{"mirror1.example.com/trivy-db", "mirror2.example.com/trivy-db"}, cfg.Scan.Trivy.DBRepository,
+		"NEXSPENCE_SCAN_TRIVY_DB_REPOSITORY was not applied")
+}
