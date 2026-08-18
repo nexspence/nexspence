@@ -41,19 +41,6 @@ RUN apk add --no-cache ca-certificates tzdata wget
 # below would otherwise be empty.
 ARG VERSION=dev
 
-# Trivy (optional CVE scans from Security UI / ScanService)
-ARG TRIVY_VERSION=0.70.0
-ARG TARGETARCH=amd64
-RUN set -eu; \
-  case "$TARGETARCH" in \
-    amd64) TRIVY_ARCH=64bit ;; \
-    arm64) TRIVY_ARCH=ARM64 ;; \
-    *) echo "unsupported TARGETARCH=$TARGETARCH" >&2; exit 1 ;; \
-  esac; \
-  wget -qO- "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-${TRIVY_ARCH}.tar.gz" \
-    | tar -xzf - -C /usr/local/bin trivy; \
-  chmod +x /usr/local/bin/trivy
-
 WORKDIR /app
 
 COPY --from=builder /nexspence /app/nexspence
@@ -77,14 +64,16 @@ LABEL org.opencontainers.image.title="Nexspence" \
       org.opencontainers.image.documentation="https://github.com/nexspence/nexspence#readme" \
       org.opencontainers.image.version="${VERSION}"
 
-# Run as a non-root user (uid/gid 1000). Pre-create the dirs the app and the
-# bundled trivy write to (default blob path /app/data/blobs, trivy cache) and
-# hand /app to the unprivileged user. Creating /app/data/blobs in the image is
-# what lets a FRESH named volume mounted there inherit uid-1000 ownership
-# (Docker only copies the image dir's ownership into an empty named volume when
-# the mountpoint dir exists in the image). HOME=/app keeps trivy's fallback cache
-# under a writable path; TRIVY_CACHE_DIR pins it explicitly (correct env var
-# for modern trivy ≥0.x).
+# Run as a non-root user (uid/gid 1000). Pre-create the dirs the app writes to
+# (default blob path /app/data/blobs) and hand /app to the unprivileged user.
+# Creating /app/data/blobs in the image is what lets a FRESH named volume
+# mounted there inherit uid-1000 ownership (Docker only copies the image dir's
+# ownership into an empty named volume when the mountpoint dir exists in the
+# image).
+#
+# HOME and TRIVY_CACHE_DIR stay even though this image ships no Trivy: an
+# operator who supplies one (see docs/scanning.md) needs its cache on a
+# writable path, and pinning it here means they do not have to know that.
 RUN addgroup -g 1000 nexspence && adduser -D -u 1000 -G nexspence nexspence \
     && mkdir -p /app/data/blobs /app/.cache /app/secrets \
     && chmod +x /app/entrypoint.sh \
