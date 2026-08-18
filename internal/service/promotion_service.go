@@ -272,7 +272,10 @@ func (s *PromotionService) executeCopy(ctx context.Context, req *domain.Promotio
 		return fmt.Errorf("target repository not found: %s", rule.ToRepo)
 	}
 
-	toStore, toBlobStoreID := s.resolveStore(ctx, toRepo.BlobStoreID)
+	toStore, toBlobStoreID, err := s.resolveStore(ctx, toRepo.BlobStoreID)
+	if err != nil {
+		return fmt.Errorf("target %s: %w", toRepo.Name, err)
+	}
 
 	assets, err := s.assetRepo.ListByComponentID(ctx, req.ComponentID)
 	if err != nil {
@@ -295,7 +298,10 @@ func (s *PromotionService) executeCopy(ctx context.Context, req *domain.Promotio
 
 	for _, asset := range assets {
 		blobStoreID := asset.BlobStoreID
-		fromStore, _ := s.resolveStore(ctx, &blobStoreID)
+		fromStore, _, err := s.resolveStore(ctx, &blobStoreID)
+		if err != nil {
+			return fmt.Errorf("source asset %s: %w", asset.Path, err)
+		}
 
 		newBlobKey := base.BlobKey(toRepo.Name, asset.Path)
 
@@ -371,14 +377,35 @@ func promotedExtra(extra map[string]any) map[string]any {
 	return out
 }
 
-// resolveStore returns the physical BlobStore for a given blobStoreID pointer.
-func (s *PromotionService) resolveStore(ctx context.Context, blobStoreID *string) (storage.BlobStore, string) {
+// resolveStore returns the physical BlobStore for a given blobStoreID pointer,
+// and the id to record on the copied assets.
+//
+// The id is never empty: assets.blob_store_id is a NOT NULL foreign key, so
+// the "use the default store" case (a repository with no explicit
+// blobStoreID — the common one) must resolve to the real seeded row's UUID,
+// the same lookup resolveBlobStoreRef performs for ordinary uploads. The old
+// empty-string answer made every promotion touching a default-store
+// repository fail with a raw constraint error (#256).
+func (s *PromotionService) resolveStore(ctx context.Context, blobStoreID *string) (storage.BlobStore, string, error) {
 	if blobStoreID == nil || *blobStoreID == "" {
-		return s.blobStore, ""
+		// The physical store is the process's configured default (s.blobStore,
+		// exactly what the old code used); only the id must come from the
+		// seeded "default" row — migration 001 always creates it.
+		bsMeta, err := s.blobRepo.Get(ctx, "default")
+		if err != nil {
+			return nil, "", fmt.Errorf("blob store: %w", err)
+		}
+		if bsMeta == nil {
+			return nil, "", fmt.Errorf("default blob store not found (seed blob_stores or assign repository.blobStoreId)")
+		}
+		return s.blobStore, bsMeta.ID, nil
 	}
 	bsMeta, err := s.blobRepo.GetByID(ctx, *blobStoreID)
-	if err != nil || bsMeta == nil {
-		return s.blobStore, ""
+	if err != nil {
+		return nil, "", fmt.Errorf("blob store: %w", err)
+	}
+	if bsMeta == nil {
+		return nil, "", fmt.Errorf("blob store id %q not found", *blobStoreID)
 	}
 	bs, err := s.blobRegistry.Get(ctx, storage.BlobStoreDescriptor{
 		ID:     bsMeta.ID,
@@ -386,7 +413,7 @@ func (s *PromotionService) resolveStore(ctx context.Context, blobStoreID *string
 		Config: bsMeta.Config,
 	})
 	if err != nil {
-		return s.blobStore, ""
+		return nil, "", fmt.Errorf("blob store %q: %w", bsMeta.Name, err)
 	}
-	return bs, bsMeta.ID
+	return bs, bsMeta.ID, nil
 }
