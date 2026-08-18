@@ -28,3 +28,12 @@ func TestNewScanService_DefaultBinIsTrivyOnPath(t *testing.T) {
 		t.Error("scanning must be off until an operator turns it on")
 	}
 }
+
+func TestBinOrDefault(t *testing.T) {
+	if got := (service.TrivyOptions{}).BinOrDefault(); got != "trivy" {
+		t.Errorf("empty Bin: BinOrDefault() = %q, want \"trivy\"", got)
+	}
+	if got := (service.TrivyOptions{Bin: "/x"}).BinOrDefault(); got != "/x" {
+		t.Errorf("Bin=/x: BinOrDefault() = %q, want \"/x\"", got)
+	}
+}

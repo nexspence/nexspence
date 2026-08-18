@@ -118,6 +118,13 @@ type ScanService struct {
 	// about it — whether it exists at all, where it is — comes from config.
 	trivy TrivyOptions
 
+	// Probe cache. nowFn is a seam so tests can hold time still; it is
+	// nil-safe through the now() helper.
+	statusMu sync.Mutex
+	status   ScannerStatus
+	statusAt time.Time
+	nowFn    func() time.Time
+
 	// trivyMu serializes Trivy CLI runs. Trivy's on-disk cache (BoltDB) is not safe for concurrent
 	// processes; parallel scans caused "cache may be in use by another process: timeout".
 	trivyMu sync.Mutex
@@ -127,6 +134,13 @@ type ScanService struct {
 	// refused because one is behind. What the queue drops, the daily bulk scan
 	// picks up.
 	queue chan string
+}
+
+func (s *ScanService) now() time.Time {
+	if s.nowFn != nil {
+		return s.nowFn()
+	}
+	return time.Now()
 }
 
 // autoScanQueueSize bounds the outstanding automatic scans. Past this, uploads
