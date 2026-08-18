@@ -608,21 +608,27 @@ type MigrationAssetRow struct {
 }
 
 // BlobStoreMigration tracks progress of a background blob store migration for one repository.
+//
+// Serialized directly by the blob-store-migration handlers, so the tags ARE
+// the API contract (frontend/src/api/client.ts BlobStoreMigration). The
+// nullable pointers carry no omitempty — the frontend types them `| null`,
+// and a dropped key reads as undefined instead (#253, the same fix #210
+// made for the replication types).
 type BlobStoreMigration struct {
-	ID             string
-	RepositoryName string
-	SourceStoreID  string
-	TargetStoreID  string
-	Status         string
-	TotalAssets    int
-	DoneAssets     int
-	TotalBytes     int64
-	DoneBytes      int64
-	ErrorMessage   *string
-	StartedAt      *time.Time
-	FinishedAt     *time.Time
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	ID             string     `json:"id"`
+	RepositoryName string     `json:"repositoryName"`
+	SourceStoreID  string     `json:"sourceStoreId"`
+	TargetStoreID  string     `json:"targetStoreId"`
+	Status         string     `json:"status"`
+	TotalAssets    int        `json:"totalAssets"`
+	DoneAssets     int        `json:"doneAssets"`
+	TotalBytes     int64      `json:"totalBytes"`
+	DoneBytes      int64      `json:"doneBytes"`
+	ErrorMessage   *string    `json:"errorMessage"`
+	StartedAt      *time.Time `json:"startedAt"`
+	FinishedAt     *time.Time `json:"finishedAt"`
+	CreatedAt      time.Time  `json:"createdAt"`
+	UpdatedAt      time.Time  `json:"updatedAt"`
 }
 
 // ── Search params ────────────────────────────────────────────
