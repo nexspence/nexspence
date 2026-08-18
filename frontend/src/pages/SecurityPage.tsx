@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
 import { Shield, RefreshCw, Webhook, AlertTriangle, CheckCircle, Loader, Trash2, Plus, Bug, Zap, Pencil, Download } from 'lucide-react'
-import { nexusApi, nexspenceApi, apiClient, apiErrorMessage } from '@/api/client'
+import { nexusApi, nexspenceApi, apiClient, apiErrorMessage, type ScannerStatus } from '@/api/client'
 import { saveBlob, exportFilename } from '@/api/download'
 import { UsersTab } from './UsersPage'
 import { useAuthStore } from '@/store/authStore'
@@ -553,6 +553,13 @@ function ScanTab() {
   const [error, setError] = useState('')
   const [severityFilter, setSeverityFilter] = useState('ALL')
   const [elapsed, setElapsed] = useState(0)
+  const [scanner, setScanner] = useState<ScannerStatus | null>(null)
+
+  useEffect(() => {
+    nexspenceApi.getScannerStatus()
+      .then(r => setScanner(r.data))
+      .catch(() => setScanner(null))
+  }, [])
 
   useEffect(() => {
     if (!scanning) { setElapsed(0); return }
@@ -608,11 +615,19 @@ function ScanTab() {
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' as const }}>
           <HoloInput style={{ flex: '1 1 180px' }} placeholder="Component ID (UUID)" value={componentId} onChange={e => setComponentId(e.target.value)} />
           <HoloInput style={{ flex: '2 1 260px' }} placeholder="Image ref override (optional, e.g. alpine:3.18)" value={imageRef} onChange={e => setImageRef(e.target.value)} />
-          <HoloButton variant="primary" onClick={runScan} disabled={scanning}>
+          <HoloButton variant="primary" onClick={runScan} disabled={scanning || (scanner !== null && scanner.state !== 'ready')}>
             {scanning ? <Loader size={14} className="spin" /> : <Shield size={14} />}
             {scanning ? `Scanning… ${fmtElapsedSec(elapsed)}` : 'Scan'}
           </HoloButton>
         </div>
+        {scanner && (
+          <div style={{ marginTop: 8, fontSize: 12, lineHeight: 1.5, color: scanner.state === 'ready' ? 'var(--holo-text-dim)' : '#f59e0b' }}>
+            {scanner.message}
+            {(scanner.state === 'missing' || scanner.state === 'broken') && (
+              <> — see <a href="https://github.com/nexspence/nexspence/blob/main/docs/scanning.md" target="_blank" rel="noreferrer" style={{ color: 'inherit' }}>how to enable image scanning</a></>
+            )}
+          </div>
+        )}
         {scanning && (
           <div style={{ marginTop: 8, fontSize: 12, color: 'var(--holo-text-faint)', lineHeight: 1.5 }}>
             Running Trivy vulnerability scan{elapsed >= 20 ? ' — first run downloads the vulnerability DB, this may take 1–3 minutes' : ''}

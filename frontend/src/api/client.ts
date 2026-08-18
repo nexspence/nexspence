@@ -180,6 +180,13 @@ export interface OCIReferrersResponse {
   referrers: OCIReferrer[]
 }
 
+export interface ScannerStatus {
+  state: 'disabled' | 'missing' | 'broken' | 'ready'
+  version?: string
+  path?: string
+  message: string
+}
+
 export interface ReplicationRuleInput {
   name: string
   source_repo: string
@@ -484,6 +491,10 @@ export const nexspenceApi = {
       `/api/v1/components/${encodeURIComponent(componentId)}/scan`,
       body ?? {},
     ),
+
+  // Whether image scanning is available at all. Nexspence ships no scanner:
+  // the binary is supplied by the operator, so the UI has to ask.
+  getScannerStatus: () => apiClient.get<ScannerStatus>('/api/v1/security/scanner'),
 
   // Scan-result exports — same endpoints, ?export= switches them to a file
   // download of the whole filtered set rather than a page.

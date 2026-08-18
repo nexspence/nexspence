@@ -386,6 +386,75 @@ describe('SecurityPage', () => {
     expect(await screen.findByText('trivy unavailable')).toBeInTheDocument()
   })
 
+  it('disables the scan button and explains why when scanning is off', async () => {
+    const user = userEvent.setup()
+    server.use(
+      http.get('/api/v1/security/scanner', () =>
+        HttpResponse.json({ state: 'disabled', message: 'Image scanning is disabled by the administrator' }),
+      ),
+    )
+    renderWithProviders(<SecurityPage />)
+    await screen.findByText('nx-admin')
+    await user.click(screen.getByRole('button', { name: 'CVE Scan' }))
+    await screen.findByText('Trivy Vulnerability Scan')
+
+    expect(await screen.findByText('Image scanning is disabled by the administrator')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Scan' })).toBeDisabled()
+    expect(screen.queryByRole('link', { name: /how to enable image scanning/i })).toBeNull()
+  })
+
+  it('names the path it looked for when the binary is missing', async () => {
+    const user = userEvent.setup()
+    server.use(
+      http.get('/api/v1/security/scanner', () =>
+        HttpResponse.json({ state: 'missing', message: 'Trivy not found: looked for /opt/trivy/trivy' }),
+      ),
+    )
+    renderWithProviders(<SecurityPage />)
+    await screen.findByText('nx-admin')
+    await user.click(screen.getByRole('button', { name: 'CVE Scan' }))
+    await screen.findByText('Trivy Vulnerability Scan')
+
+    expect(await screen.findByText(/Trivy not found: looked for \/opt\/trivy\/trivy/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Scan' })).toBeDisabled()
+    const doc = screen.getByRole('link', { name: /how to enable image scanning/i })
+    expect(doc).toHaveAttribute('href', expect.stringContaining('docs/scanning.md'))
+  })
+
+  it('shows the version and path when the scanner is ready', async () => {
+    const user = userEvent.setup()
+    server.use(
+      http.get('/api/v1/security/scanner', () =>
+        HttpResponse.json({ state: 'ready', version: '0.70.0', path: '/opt/trivy/trivy', message: 'Trivy 0.70.0 \u2014 /opt/trivy/trivy' }),
+      ),
+    )
+    renderWithProviders(<SecurityPage />)
+    await screen.findByText('nx-admin')
+    await user.click(screen.getByRole('button', { name: 'CVE Scan' }))
+    await screen.findByText('Trivy Vulnerability Scan')
+
+    expect(await screen.findByText(/Trivy 0\.70\.0 \u2014 \/opt\/trivy\/trivy/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Scan' })).toBeEnabled()
+  })
+
+  it('leaves the scan button usable when the scanner status cannot be fetched', async () => {
+    const user = userEvent.setup()
+    let asked = false
+    server.use(
+      http.get('/api/v1/security/scanner', () => {
+        asked = true
+        return HttpResponse.json({ error: 'boom' }, { status: 500 })
+      }),
+    )
+    renderWithProviders(<SecurityPage />)
+    await screen.findByText('nx-admin')
+    await user.click(screen.getByRole('button', { name: 'CVE Scan' }))
+    await screen.findByText('Trivy Vulnerability Scan')
+
+    await waitFor(() => expect(asked).toBe(true))
+    expect(screen.getByRole('button', { name: 'Scan' })).toBeEnabled()
+  })
+
   /* ── Vulnerability Dashboard tab ── */
   it('switches to Vulnerability Dashboard and shows rows', async () => {
     const user = userEvent.setup()

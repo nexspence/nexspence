@@ -192,4 +192,7 @@ export const handlers = [
   http.get('/api/v1/components/:id/scan', () =>
     new HttpResponse(null, { status: 204 })
   ),
+  http.get('/api/v1/security/scanner', () =>
+    HttpResponse.json({ state: 'ready', version: '0.70.0', path: '/usr/local/bin/trivy', message: 'Trivy 0.70.0 \u2014 /usr/local/bin/trivy' })
+  ),
 ]
