@@ -89,6 +89,8 @@ func TestTrivyEnv_CarriesCredentialsOutOfArgv(t *testing.T) {
 		t.Error("the parent environment must be preserved — dropping PATH breaks the binary lookup")
 	}
 
+	// Regression guard: TrivyScanArgs takes no credentials today, so this can
+	// only fail if a future signature change routes them back into argv.
 	args := service.TrivyScanArgs(service.TrivyOptions{Enabled: true}, "reg/img:1", false)
 	for _, a := range args {
 		if strings.Contains(a, "s3cr3t") || a == "--password" {

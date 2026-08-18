@@ -94,7 +94,9 @@ func (s *ScanService) probeScanner(ctx context.Context) ScannerStatus {
 		}
 	}
 
-	probeCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	// The probe result is a shared cache, so one caller's cancellation must
+	// not poison it for everyone: probe on a caller-independent context.
+	probeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()
 	out, err := exec.CommandContext(probeCtx, resolved, "--version").CombinedOutput()
 	if err != nil {

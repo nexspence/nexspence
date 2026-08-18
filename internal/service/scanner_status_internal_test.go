@@ -40,3 +40,31 @@ func TestScanner_ReprobesAfterTTL(t *testing.T) {
 		t.Error("statusAt was not refreshed by the post-TTL probe")
 	}
 }
+
+// The probe result is a shared cache: a caller that hangs up while the probe
+// runs must not get its cancellation recorded as ScannerBroken for everyone
+// else in the TTL window.
+func TestProbeScanner_CallerCancellationDoesNotPoisonTheCache(t *testing.T) {
+	if os.Getenv("CI") != "" {
+		t.Skip("skip fake-trivy shell script test in CI (no /bin/sh guarantee)")
+	}
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "trivy")
+	script := "#!/bin/sh\necho 'Version: 0.70.0'\n"
+	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake trivy: %v", err)
+	}
+
+	s := &ScanService{trivy: TrivyOptions{Enabled: true, Bin: bin}}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // the caller is already gone when the probe starts
+
+	st := s.probeScanner(ctx)
+	if st.State != ScannerReady {
+		t.Fatalf("State = %q (message %q), want %q: one caller's cancellation poisoned the shared probe result", st.State, st.Message, ScannerReady)
+	}
+	if st.Version != "0.70.0" {
+		t.Errorf("Version = %q, want 0.70.0", st.Version)
+	}
+}

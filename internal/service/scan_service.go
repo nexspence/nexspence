@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"net/url"
@@ -19,26 +18,6 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/repository"
 )
-
-// ErrTrivyNotInstalled is returned when the trivy executable is missing (not found in PATH or at the configured Trivy bin).
-var ErrTrivyNotInstalled = errors.New("trivy not installed; install trivy or use Docker image with trivy pre-bundled")
-
-func trivyExecMissing(err error) bool {
-	if err == nil {
-		return false
-	}
-	if errors.Is(err, exec.ErrNotFound) {
-		return true
-	}
-	var pe *os.PathError
-	if errors.As(err, &pe) && errors.Is(pe.Err, os.ErrNotExist) {
-		return true
-	}
-	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "executable file not found") ||
-		strings.Contains(msg, "no such file or directory") ||
-		strings.Contains(msg, "cannot find the file")
-}
 
 // scanTrivyErrorMessage returns a concise error string from a failed Trivy run.
 // It detects well-known OCI registry errors and returns a human-readable message
@@ -111,7 +90,7 @@ type ScanService struct {
 	TrivyTimeout time.Duration             // per-scan wall-clock limit (0 = no extra timeout); default 10m
 	ScanResults  repository.ScanResultRepo // may be nil; if set, each scan is persisted here
 	OSVClient    *OSVClient                // used for non-Docker formats
-	scanUsername string                    // registry credentials passed to trivy --username
+	scanUsername string                    // registry credentials handed to Trivy via TRIVY_USERNAME/TRIVY_PASSWORD (see TrivyEnv)
 	scanPassword string
 
 	// trivy is the operator's scanner: nexspence ships none, so everything
@@ -294,6 +273,14 @@ func (s *ScanService) Scan(ctx context.Context, componentID, imageRef string) (*
 		return nil, fmt.Errorf("vulnerability scanning is not supported for format %q", comp.Format)
 	}
 
+	// The capability is checked before any work: a component that cannot be
+	// scanned should cost nothing and should say why. A binary that vanishes
+	// within the ready-cache TTL surfaces as a failed scan result rather than
+	// a refusal — deliberate, it self-heals at the next probe.
+	if st := s.Scanner(ctx); !st.Ready() {
+		return nil, &ScannerUnavailableError{Status: st}
+	}
+
 	ref := strings.TrimSpace(imageRef)
 	if ref == "" {
 		if full := DockerScanImageRef(s.HTTPBaseURL, comp.Repository, comp.Name, comp.Version); full != "" {
@@ -312,23 +299,7 @@ func (s *ScanService) Scan(ctx context.Context, componentID, imageRef string) (*
 	}
 
 	bin := s.trivy.BinOrDefault()
-
-	// #nosec G204 — ref is built from DB / authenticated override; argv is not user-controlled shell.
-	args := []string{
-		"image",
-		"--format", "json",
-		"--exit-code", "0", // do not use non-zero exit when CVEs exist; we rely on JSON
-		"--quiet",
-		"--no-progress",
-		"--image-src", "remote", // no Docker/containerd socket inside the container
-	}
-	if httpBaseURLInsecure(s.HTTPBaseURL) {
-		args = append(args, "--insecure")
-	}
-	if s.scanUsername != "" {
-		args = append(args, "--username", s.scanUsername, "--password", s.scanPassword)
-	}
-	args = append(args, ref)
+	args := TrivyScanArgs(s.trivy, ref, httpBaseURLInsecure(s.HTTPBaseURL))
 
 	// Apply per-scan timeout to guard against trivy hanging (e.g. on first DB download).
 	scanCtx := ctx
@@ -344,25 +315,23 @@ func (s *ScanService) Scan(ctx context.Context, componentID, imageRef string) (*
 	func() {
 		s.trivyMu.Lock()
 		defer s.trivyMu.Unlock()
+		// #nosec G204 — argv is built from config and DB state, never from a shell string.
 		cmd := exec.CommandContext(scanCtx, bin, args...)
+		cmd.Env = TrivyEnv(os.Environ(), s.scanUsername, s.scanPassword)
 		cmd.Stderr = &stderrBuf
 		out, runErr = cmd.Output()
 	}()
 
-	if runErr != nil {
-		if len(out) == 0 && trivyExecMissing(runErr) {
-			return nil, ErrTrivyNotInstalled
-		}
-		// Trivy may exit non-zero when vulnerabilities are found — still parse stdout if present.
-		// Empty stdout + error usually means a real failure; details are on stderr.
-		if len(out) == 0 {
-			msg := scanTrivyErrorMessage(runErr, stderrBuf.String())
-			log.Printf("nexor: trivy scan failed component=%s imageRef=%q: %s", componentID, ref, msg)
-			result.Status = domain.ScanStatusFailed
-			result.Error = truncateScanError(msg)
-			s.persist(ctx, comp, result, "trivy")
-			return result, nil
-		}
+	if runErr != nil && len(out) == 0 {
+		// Trivy may exit non-zero when vulnerabilities are found — stdout is
+		// still parsed below when present. Empty stdout plus an error is a real
+		// failure, and the details are on stderr.
+		msg := scanTrivyErrorMessage(runErr, stderrBuf.String())
+		log.Printf("nexor: trivy scan failed component=%s imageRef=%q: %s", componentID, ref, msg)
+		result.Status = domain.ScanStatusFailed
+		result.Error = truncateScanError(msg)
+		s.persist(ctx, comp, result, "trivy")
+		return result, nil
 	}
 
 	result.Findings, result.Summary = parseTrivyJSON(out)

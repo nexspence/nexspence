@@ -55,7 +55,7 @@ func TrivyScanArgs(o TrivyOptions, imageRef string, insecureRegistry bool) []str
 		args = append(args, "--java-db-repository", strings.Join(o.JavaDBRepository, ","))
 	}
 	if o.SkipDBUpdate {
-		// Both databases: an air-gapped contour that pre-seeds one and lets the
+		// Both databases: an air-gapped deployment that pre-seeds one and lets the
 		// other reach out would fail on the Java scan alone, which reads as a
 		// broken scanner rather than as a deliberate setting.
 		args = append(args, "--skip-db-update", "--skip-java-db-update")

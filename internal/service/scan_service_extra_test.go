@@ -3,6 +3,7 @@ package service_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -40,10 +41,8 @@ func TestScanExtra_TrivyErrorMessage_KnownPatterns(t *testing.T) {
 }
 
 func TestScanExtra_TrivyErrorMessage_ViaFailedScan(t *testing.T) {
-	// Use a script-based fake trivy: write a tiny shell that outputs a known
-	// stderr string and exits 1. We cannot rely on a real trivy binary here.
-	// Instead verify that a missing binary returns ErrTrivyNotInstalled and
-	// a non-zero exit with output still produces a result (not a hard error).
+	// A missing binary must be refused up front with the probe's status —
+	// the exec never happens, so no exec error can leak out of Scan.
 	comp := newDockerComp("docker-hosted", "myapp", "1.0")
 	comps := testutil.NewComponentRepo()
 	_ = comps.Create(context.Background(), comp)
@@ -52,11 +51,12 @@ func TestScanExtra_TrivyErrorMessage_ViaFailedScan(t *testing.T) {
 	svc = svc.WithTrivy(service.TrivyOptions{Enabled: true, Bin: "/no/such/trivy"})
 
 	_, err := svc.Scan(context.Background(), comp.ID, "myapp:1.0")
-	if err == nil {
-		t.Fatal("expected error for missing trivy binary")
+	var unavailable *service.ScannerUnavailableError
+	if !errors.As(err, &unavailable) {
+		t.Fatalf("expected *ScannerUnavailableError for missing trivy binary, got: %v", err)
 	}
-	if !strings.Contains(err.Error(), "trivy") {
-		t.Errorf("expected trivy-related error, got: %v", err)
+	if !strings.Contains(err.Error(), "Trivy not found") {
+		t.Errorf("expected the probe's message, got: %v", err)
 	}
 }
 

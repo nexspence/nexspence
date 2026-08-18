@@ -34,8 +34,12 @@ func (h *ScanHandler) Scan(c *gin.Context) {
 
 	result, err := h.svc.Scan(c.Request.Context(), id, body.ImageRef)
 	if err != nil {
-		if errors.Is(err, service.ErrTrivyNotInstalled) {
-			c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
+		var unavailable *service.ScannerUnavailableError
+		if errors.As(err, &unavailable) {
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"error":   unavailable.Status.Message,
+				"scanner": unavailable.Status,
+			})
 			return
 		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
