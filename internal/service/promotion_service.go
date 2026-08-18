@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -21,8 +22,7 @@ type PromotionService struct {
 	repoRepo      repository.RepositoryRepo
 	blobRepo      repository.BlobStoreRepo
 	scanRepo      repository.ScanResultRepo
-	blobStore     storage.BlobStore
-	blobRegistry  *storage.Registry
+	blobResolver  StoreResolver
 	webhooks      domain.WebhookDispatcher
 
 	celEnv *cel.Env
@@ -37,8 +37,7 @@ func NewPromotionService(
 	repoRepo repository.RepositoryRepo,
 	blobRepo repository.BlobStoreRepo,
 	scanRepo repository.ScanResultRepo,
-	blobStore storage.BlobStore,
-	blobRegistry *storage.Registry,
+	blobResolver StoreResolver,
 ) (*PromotionService, error) {
 	env, err := cel.NewEnv(
 		cel.Variable("format", cel.StringType),
@@ -55,8 +54,7 @@ func NewPromotionService(
 		repoRepo:      repoRepo,
 		blobRepo:      blobRepo,
 		scanRepo:      scanRepo,
-		blobStore:     blobStore,
-		blobRegistry:  blobRegistry,
+		blobResolver:  blobResolver,
 		celEnv:        env,
 	}, nil
 }
@@ -377,37 +375,36 @@ func promotedExtra(extra map[string]any) map[string]any {
 	return out
 }
 
-// resolveStore returns the physical BlobStore for a given blobStoreID pointer,
-// and the id to record on the copied assets.
+// resolveStore returns the physical BlobStore for a given blobStoreID
+// pointer, and the id to record on the copied assets.
 //
-// The id is never empty: assets.blob_store_id is a NOT NULL foreign key, so
-// the "use the default store" case (a repository with no explicit
-// blobStoreID — the common one) must resolve to the real seeded row's UUID,
-// the same lookup resolveBlobStoreRef performs for ordinary uploads. The old
-// empty-string answer made every promotion touching a default-store
-// repository fail with a raw constraint error (#256).
+// Both branches resolve the physical store from the DB row, the way every
+// other data path does: in a stock local deployment the seeded default row's
+// store lives under its own subdirectory, not at the process store's root, so
+// answering the implicit-default case with the injected default instance
+// would write the copied blobs where no download will ever look for them.
+// The id is never empty — assets.blob_store_id is a NOT NULL foreign key,
+// and the old empty-string answer made every promotion touching a
+// default-store repository fail with a raw constraint error (#256).
 func (s *PromotionService) resolveStore(ctx context.Context, blobStoreID *string) (storage.BlobStore, string, error) {
-	if blobStoreID == nil || *blobStoreID == "" {
-		// The physical store is the process's configured default (s.blobStore,
-		// exactly what the old code used); only the id must come from the
-		// seeded "default" row — migration 001 always creates it.
-		bsMeta, err := s.blobRepo.Get(ctx, "default")
-		if err != nil {
-			return nil, "", fmt.Errorf("blob store: %w", err)
-		}
-		if bsMeta == nil {
+	implicit := blobStoreID == nil || *blobStoreID == ""
+	var bsMeta *domain.BlobStore
+	var err error
+	if implicit {
+		bsMeta, err = s.blobRepo.Get(ctx, "default")
+	} else {
+		bsMeta, err = s.blobRepo.GetByID(ctx, *blobStoreID)
+	}
+	if errors.Is(err, repository.ErrNotFound) || (err == nil && bsMeta == nil) {
+		if implicit {
 			return nil, "", fmt.Errorf("default blob store not found (seed blob_stores or assign repository.blobStoreId)")
 		}
-		return s.blobStore, bsMeta.ID, nil
+		return nil, "", fmt.Errorf("blob store id %q not found", *blobStoreID)
 	}
-	bsMeta, err := s.blobRepo.GetByID(ctx, *blobStoreID)
 	if err != nil {
 		return nil, "", fmt.Errorf("blob store: %w", err)
 	}
-	if bsMeta == nil {
-		return nil, "", fmt.Errorf("blob store id %q not found", *blobStoreID)
-	}
-	bs, err := s.blobRegistry.Get(ctx, storage.BlobStoreDescriptor{
+	bs, err := s.blobResolver.Get(ctx, storage.BlobStoreDescriptor{
 		ID:     bsMeta.ID,
 		Type:   bsMeta.Type,
 		Config: bsMeta.Config,

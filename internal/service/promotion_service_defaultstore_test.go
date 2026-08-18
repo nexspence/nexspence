@@ -2,9 +2,11 @@ package service_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
+	"github.com/nexspence-oss/nexspence/internal/service"
 	"github.com/nexspence-oss/nexspence/internal/testutil"
 )
 
@@ -63,5 +65,47 @@ func TestPromotionService_DefaultStoreRepos_PromoteRecordsRealStoreID(t *testing
 		if a.BlobStoreID != "00000000-0000-0000-0000-000000000001" {
 			t.Fatalf("copied asset blob_store_id: got %q, want the seeded default store UUID", a.BlobStoreID)
 		}
+	}
+}
+
+// The "default blob store not found" diagnostic must actually be reachable:
+// the postgres repo reports a missing row as ErrNotFound, not (nil, nil), and
+// an err-first check would bury the actionable message under a bare
+// "not found" (the default row is deletable via the blobstore API when
+// nothing references it).
+func TestPromotionService_MissingDefaultStoreRow_NamesTheFix(t *testing.T) {
+	promoRepo := testutil.NewPromotionRepo()
+	compRepo := testutil.NewComponentRepo()
+	assetRepo := testutil.NewAssetRepo()
+	blobStore := testutil.NewBlobStore()
+	// Seeding a non-default row keeps the constructor from creating "default".
+	blobRepo := testutil.NewBlobStoreRepo(&domain.BlobStore{ID: "bs-other", Name: "other", Type: "local"})
+	repoRepo := testutil.NewRepoRepo()
+	svc, err := service.NewPromotionService(
+		promoRepo, compRepo, assetRepo, repoRepo, blobRepo, testutil.NewScanResultRepo(), testutil.NewFakeResolver(blobStore),
+	)
+	if err != nil {
+		t.Fatalf("NewPromotionService: %v", err)
+	}
+	ctx := context.Background()
+
+	repoRepo.Create(ctx, testutil.SimpleRepo("staging", "raw"))
+	repoRepo.Create(ctx, testutil.SimpleRepo("production", "raw"))
+	comp := &domain.Component{ID: "c1", Repository: "staging", Format: "raw", Group: "g", Name: "n", Version: "1"}
+	compRepo.AddComponent(comp)
+	rule := &domain.PromotionRule{Name: "auto", FromRepo: "staging", ToRepo: "production"}
+	if err := promoRepo.CreateRule(ctx, rule); err != nil {
+		t.Fatalf("CreateRule: %v", err)
+	}
+
+	reqs, err := svc.Promote(ctx, rule.ID, []string{comp.ID}, "user-1")
+	if err != nil || len(reqs) != 1 {
+		t.Fatalf("Promote: %v (%d requests)", err, len(reqs))
+	}
+	if reqs[0].Status != domain.PromotionFailed {
+		t.Fatalf("status: got %s, want failed", reqs[0].Status)
+	}
+	if !strings.Contains(reqs[0].Error, "default blob store not found") {
+		t.Fatalf("error %q does not carry the actionable diagnostic", reqs[0].Error)
 	}
 }

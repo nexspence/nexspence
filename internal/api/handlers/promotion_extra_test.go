@@ -12,7 +12,6 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/api/handlers"
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/service"
-	"github.com/nexspence-oss/nexspence/internal/storage"
 	"github.com/nexspence-oss/nexspence/internal/testutil"
 )
 
@@ -28,8 +27,7 @@ func mountPromotion2(t *testing.T) (*gin.Engine, *testutil.PromotionRepo, *testu
 	blobRepo := testutil.NewBlobStoreRepo()
 	scanRepo := testutil.NewScanResultRepo()
 	repoRepo := testutil.NewRepoRepo()
-	registry := storage.NewRegistry(blobStore)
-	svc, err := service.NewPromotionService(promoRepo, compRepo, assetRepo, repoRepo, blobRepo, scanRepo, blobStore, registry)
+	svc, err := service.NewPromotionService(promoRepo, compRepo, assetRepo, repoRepo, blobRepo, scanRepo, testutil.NewFakeResolver(blobStore))
 	require.NoError(t, err)
 	h := handlers.NewPromotionHandler(svc)
 

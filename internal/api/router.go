@@ -196,7 +196,7 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 	go replSvc.StartCronScheduler(ctx)
 
 	promotionSvc, err := service.NewPromotionService(
-		promotionRepo, componentRepo, assetRepo, repoRepo, blobRepo, scanRepo, localBlob, blobRegistry,
+		promotionRepo, componentRepo, assetRepo, repoRepo, blobRepo, scanRepo, blobRegistry,
 	)
 	if err != nil {
 		panic("promotion service init: " + err.Error())
