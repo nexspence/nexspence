@@ -95,6 +95,25 @@ func (s *PromotionService) matchesPathFilter(rule domain.PromotionRule, comp *do
 	return matched
 }
 
+// ruleAppliesTo reports whether the rule actually covers the component: the
+// component lives in the rule's from_repo and passes its path filter. This is
+// the same test ListRulesForComponent offers rules by — but offering is not
+// enforcing: Promote takes a caller-supplied (rule_id, component_id) pair, so
+// without this check any caller with promotion permission could promote an
+// arbitrary component with whichever rule has the laxest gates, bypassing a
+// stricter rule's require_scan_pass/require_manual_approval on the pair that
+// actually covers it (#255).
+func (s *PromotionService) ruleAppliesTo(rule *domain.PromotionRule, comp *domain.Component) error {
+	if comp.Repository != rule.FromRepo {
+		return fmt.Errorf("component %s lives in repository %q, which rule %q does not promote from (%q)",
+			comp.ID, comp.Repository, rule.Name, rule.FromRepo)
+	}
+	if !s.matchesPathFilter(*rule, comp) {
+		return fmt.Errorf("component %s does not match rule %q's path filter", comp.ID, rule.Name)
+	}
+	return nil
+}
+
 // ListRules returns all promotion rules.
 func (s *PromotionService) ListRules(ctx context.Context) ([]domain.PromotionRule, error) {
 	return s.promotionRepo.ListRules(ctx)
@@ -178,6 +197,16 @@ func (s *PromotionService) Promote(ctx context.Context, ruleID string, component
 
 	var results []domain.PromotionRequest
 	for _, compID := range componentIDs {
+		// Refused before a request row exists: the caller gets a clean error
+		// instead of a pending request no reviewer could legitimately approve.
+		comp, cerr := s.componentRepo.Get(ctx, compID)
+		if cerr != nil || comp == nil {
+			return nil, fmt.Errorf("component not found: %s", compID)
+		}
+		if aerr := s.ruleAppliesTo(rule, comp); aerr != nil {
+			return nil, aerr
+		}
+
 		if rule.RequireScanPass {
 			scan, serr := s.scanRepo.GetLatestByComponent(ctx, compID)
 			if serr != nil || scan == nil {
@@ -266,6 +295,12 @@ func (s *PromotionService) executeCopy(ctx context.Context, req *domain.Promotio
 	comp, err := s.componentRepo.Get(ctx, req.ComponentID)
 	if err != nil || comp == nil {
 		return fmt.Errorf("source component not found: %s", req.ComponentID)
+	}
+	// Re-checked at copy time, not just when the request was filed: Approve
+	// runs later, and the component may have moved (or the rule changed) in
+	// between — the invariant has to hold when the bytes actually move.
+	if err := s.ruleAppliesTo(rule, comp); err != nil {
+		return err
 	}
 	toRepo, err := s.repoRepo.Get(ctx, rule.ToRepo)
 	if err != nil || toRepo == nil {
