@@ -432,7 +432,8 @@ docker compose up -d
 open http://localhost:8081  <span class="cc"># default login: admin / admin123</span></div>
   </div>
   <div class="alert-info" data-i18n="qs.note"><strong>Note:</strong> Since v1.18.0 the server refuses to start with the shipped defaults (<code>admin123</code> / the example <code>jwt_secret</code>) unless <code>auth.allow_insecure_defaults: true</code> is set. The dev compose sets this so the quick-start boots; for production set a real <code>admin_password</code> and <code>jwt_secret</code> (e.g. via <code>NEXSPENCE_AUTH_JWT_SECRET</code>) instead.</div>
-      </section>
+        <div class="alert-info" data-i18n="qs.scanning.pointer"><strong>Scanning Docker/OCI images?</strong> That needs a Trivy binary you supply — nexspence does not ship one. It is one Helm value or one compose profile: see <a href="#sec-scanning">Image Scanning</a>. Package formats (Maven, npm, PyPI, Cargo) scan against OSV.dev with no setup at all.</div>
+</section>
       <section id="sec-install" class="doc-section" hidden>
   <div class="doc-section-title" data-i18n="inst.title">Installation</div>
   <div class="doc-section-sub" data-i18n="inst.sub">Docker image: <code>ghcr.io/nexspence/nexspence:latest</code> — linux/amd64 and linux/arm64. Download the release zip from <a href="https://github.com/nexspence/nexspence/releases/latest" target="_blank" rel="noopener" style="color:var(--blue)">GitHub Releases</a>.</div>
@@ -1516,6 +1517,7 @@ sudo systemctl restart nexspence</div></div>
     "rule_id": "rule-456",
     "note": "Approved for production"
   }'</div></div>
+  <div class="alert-info" data-i18n="promo.scan.needs"><strong>The scan gate needs a scanner.</strong> For Docker and OCI images that means a Trivy binary you supply — see <a href="#sec-scanning">Image Scanning</a>. Without one, a rule requiring a passing scan refuses every promotion of an image, because there is no scan to pass.</div>
   <div class="alert-info" data-i18n="promo.scan.note"><strong>Scan gate:</strong> If <em>Require scan pass</em> is enabled on the rule, components with HIGH or CRITICAL vulnerabilities are blocked from promotion until the issues are resolved.</div>
       </section>
       <section id="sec-replication" class="doc-section" hidden>
@@ -1651,6 +1653,7 @@ resource <span class="cs">"nexspence_blobstore"</span> <span class="cs">"s3"</sp
   <div class="doc-section-title" data-i18n="sec.title">Security &amp; Hardening</div>
   <div class="doc-section-sub" data-i18n="sec.sub">Nexspence ships secure by default. The server refuses to start with shipped dev secrets, blocks server-side request forgery, revokes JWTs on account changes, and runs as a non-root, capability-dropped container.</div>
 
+  <div class="alert-info" data-i18n="sec.scanning.pointer"><strong>Looking for vulnerability scanning?</strong> Maven, npm, PyPI and Cargo packages are scanned against OSV.dev with no setup. Docker and OCI <em>images</em> need a Trivy binary you supply — the whole procedure is on the <a href="#sec-scanning">Image Scanning</a> page.</div>
   <div class="inst-sep" data-i18n="sec.failclosed.sep">Fail-Closed Defaults</div>
   <div class="alert-info" style="background:rgba(239,68,68,.06);border-color:rgba(239,68,68,.2)" data-i18n="sec.failclosed.info"><strong style="color:var(--red)">The server will not start</strong> if <code>auth.jwt_secret</code> is the shipped dev default, or if <code>bootstrap.admin_password</code> is still <code>admin123</code>. Production must set a real 32+ character <code>jwt_secret</code> and a strong admin password. To boot anyway for local development only, set <code>auth.allow_insecure_defaults: true</code>.</div>
   <p style="font-size:.8rem;color:var(--dim);margin-bottom:14px;line-height:1.6" data-i18n="sec.failclosed.dev">The dev Docker Compose stack sets <code>NEXSPENCE_AUTH_ALLOW_INSECURE_DEFAULTS=true</code> so the quick-start still boots out of the box — never use that override in production.</p>
@@ -2150,6 +2153,9 @@ const TRANSLATIONS={
     'scan.db.desc':'By default Trivy pulls it from <code>ghcr.io</code> on first use, which is why the first scan takes a minute or two. In an air-gapped network, mirror it into a nexspence repository and point Trivy at the mirror. Mirror <em>both</em> databases: the Java one is fetched separately the first time an image containing Java artifacts is scanned, and an unmirrored one dials <code>ghcr.io</code> and fails.',
     'scan.trap':'<strong>Trap — a host binary in a container.</strong> Only Aqua Security\'s official static Linux build runs inside the nexspence container. Trivy from community distribution packages, Homebrew, or macOS is built for a different environment and lands in the <code>broken</code> state. When in doubt, copy the binary out of the <code>aquasec/trivy</code> image, which is known to run there as uid 1000. Full reference, including every configuration key: <a href="https://github.com/nexspence/nexspence/blob/main/docs/scanning.md" target="_blank" rel="noreferrer">docs/scanning.md</a>.',
     'upg.v2.alert':'<strong>Upgrading to v2.0.0 — image scanning needs a Trivy you supply.</strong> The v2.0.0 image no longer contains Trivy. Everything else upgrades as usual, but scanning of Docker and OCI images stops until you supply the binary — see <strong>Image Scanning</strong> under Advanced. Package scanning (Maven, npm, PyPI, Cargo) is unaffected: it uses OSV.dev and never needed Trivy. Existing scan results stay in the database and stay visible.',
+    'sec.scanning.pointer':'<strong>Looking for vulnerability scanning?</strong> Maven, npm, PyPI and Cargo packages are scanned against OSV.dev with no setup. Docker and OCI <em>images</em> need a Trivy binary you supply — the whole procedure is on the <a href="#sec-scanning">Image Scanning</a> page.',
+    'promo.scan.needs':'<strong>The scan gate needs a scanner.</strong> For Docker and OCI images that means a Trivy binary you supply — see <a href="#sec-scanning">Image Scanning</a>. Without one, a rule requiring a passing scan refuses every promotion of an image, because there is no scan to pass.',
+    'qs.scanning.pointer':'<strong>Scanning Docker/OCI images?</strong> That needs a Trivy binary you supply — nexspence does not ship one. It is one Helm value or one compose profile: see <a href="#sec-scanning">Image Scanning</a>. Package formats (Maven, npm, PyPI, Cargo) scan against OSV.dev with no setup at all.',
   },
   ru:{
     'page.stag':'Документация',
@@ -2525,6 +2531,9 @@ const TRANSLATIONS={
     'scan.db.desc':'По умолчанию Trivy тянет её с <code>ghcr.io</code> при первом использовании — поэтому первый скан идёт минуту-две. В изолированной сети зеркалируйте её в репозиторий nexspence и укажите Trivy на зеркало. Зеркалируйте <em>обе</em> базы: Java-база скачивается отдельно при первом сканировании образа с Java-артефактами, и без зеркала этот скан пойдёт на <code>ghcr.io</code> и упадёт.',
     'scan.trap':'<strong>Ловушка — хостовый бинарь в контейнере.</strong> Внутри контейнера nexspence работает только официальная статическая Linux-сборка Aqua Security. Trivy из community-пакетов дистрибутивов, Homebrew или macOS собран для другого окружения и попадёт в состояние <code>broken</code>. Если сомневаетесь — скопируйте бинарь из образа <code>aquasec/trivy</code>: он заведомо работает там под uid 1000. Полный справочник, включая все ключи конфигурации: <a href="https://github.com/nexspence/nexspence/blob/main/docs/scanning.md" target="_blank" rel="noreferrer">docs/scanning.md</a>.',
     'upg.v2.alert':'<strong>Обновление до v2.0.0 — сканированию образов нужен ваш Trivy.</strong> В образе v2.0.0 больше нет Trivy. Всё остальное обновляется как обычно, но сканирование Docker- и OCI-образов не работает, пока вы не предоставите бинарь — см. <strong>Сканирование образов</strong> в разделе Advanced. Сканирования пакетов (Maven, npm, PyPI, Cargo) это не касается: оно идёт через OSV.dev и никогда не требовало Trivy. Уже сохранённые результаты сканов остаются в базе и остаются видны.',
+    'sec.scanning.pointer':'<strong>Ищете сканирование уязвимостей?</strong> Пакеты Maven, npm, PyPI и Cargo сканируются через OSV.dev без какой-либо настройки. Для Docker- и OCI-<em>образов</em> нужен бинарь Trivy, который вы предоставляете сами — вся процедура на странице <a href="#sec-scanning">Сканирование образов</a>.',
+    'promo.scan.needs':'<strong>Проверке скана нужен сканер.</strong> Для Docker- и OCI-образов это бинарь Trivy, который вы предоставляете сами — см. <a href="#sec-scanning">Сканирование образов</a>. Без него правило с требованием успешного скана отклонит любое продвижение образа: проходить просто нечего.',
+    'qs.scanning.pointer':'<strong>Сканируете Docker/OCI-образы?</strong> Для этого нужен бинарь Trivy, который вы предоставляете сами — nexspence его не поставляет. Это одно значение в Helm или один профиль compose: см. <a href="#sec-scanning">Сканирование образов</a>. Пакетные форматы (Maven, npm, PyPI, Cargo) сканируются через OSV.dev вообще без настройки.',
   }
 };
 
@@ -2737,6 +2746,18 @@ function setTab(tabId){
   state.activeTab=tabId;
   setSection(firstSectionOfTab(tabId));
 }
+// One handler for every way the hash can change under us: Back/forward
+// (popstate), and an in-page <a href="#sec-…"> or a pasted hash (hashchange).
+// The latter is what makes cross-links between sections work at all — the
+// sections are rendered by script, so an anchor alone would move the address
+// bar and nothing else.
+function onHashNavigation(){
+  const raw=(location.hash||'').replace(/^#/,'').replace(/^sec-/,'');
+  const target=raw==='terraform'?'tf-overview':raw;
+  if(target&&target!==state.activeSection&&SECTIONS.some(x=>x.key===target))setSection(target,{fromHistory:true});
+}
+window.addEventListener('popstate',onHashNavigation);
+window.addEventListener('hashchange',onHashNavigation);
 function renderSubnav(activeTab,activeSection){
   const aside=document.querySelector('.docs-sidebar');
   const layout=document.querySelector('.docs-layout');
@@ -2832,9 +2853,21 @@ function renderStaticSection(key){
   if(bad){const span=document.createElement('span');span.className='vbadge-inline';span.textContent='in '+bad;title.appendChild(span);}
 }
 
-function setSection(key){
+// syncHash keeps the address bar on the section being read, so every page is
+// linkable and the browser's Back button walks the sections. `replace` is for
+// navigation the reader did not ask for — the initial render, and restoring a
+// section from history — which must not add an entry of its own.
+function syncHash(key,replace){
+  const want='#sec-'+key;
+  if(location.hash===want)return;
+  try{history[replace?'replaceState':'pushState'](null,'',want);}
+  catch(_){location.hash=want;}   // file:// and other opaque origins refuse the History API
+}
+function setSection(key,opts){
+  const o=opts||{};
   state.activeSection=key;
   state.activeTab=tabOfSection(key);
+  if(!o.fromHistory)syncHash(key,!!o.replace);
   document.getElementById('breadcrumb-current').textContent=t('crumb.'+key);
   document.getElementById('mob-active-page').textContent=(key==='changelog')?t('tab.changelog'):t('sb.'+key);
   renderTabs(state.activeTab);
@@ -2911,9 +2944,13 @@ document.addEventListener('click',function(e){
 
   // Deep-link: /docs/#<section-key> opens that section; legacy #terraform → Terraform Provider tab.
   const _hash=(location.hash||'').replace(/^#/,'').replace(/^sec-/,'');
-  if(_hash){
-    const _target=_hash==='terraform'?'tf-overview':_hash;
-    if(SECTIONS.some(s=>s.key===_target))setSection(_target);
+  const _target=_hash==='terraform'?'tf-overview':_hash;
+  if(_target&&SECTIONS.some(s=>s.key===_target)){
+    setSection(_target,{replace:true});
+  }else{
+    // No (or unknown) hash: still put the section in the address bar, so a
+    // copied URL reopens what the reader is looking at rather than the default.
+    syncHash('changelog',true);
   }
 
   // Releases load in the background for the version bar + changelog section.

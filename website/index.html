@@ -483,7 +483,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
       <div class="card fc rev d3">
         <div class="fic" style="background:rgba(239,68,68,.1)"><svg fill="none" stroke="#ef4444" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></div>
         <div class="fn">Audit Log &amp; CVE Scan</div>
-        <div class="fd">90-day audit trail with NDJSON streaming export. Docker image scanning with a Trivy you supply, OSV.dev for Maven/npm/PyPI/Cargo.</div>
+        <div class="fd">90-day audit trail with NDJSON streaming export. Docker image scanning with a Trivy you supply (<a href="/docs/#sec-scanning" style="color:#7dd3fc">setup</a>), OSV.dev for Maven/npm/PyPI/Cargo.</div>
       </div>
       <div class="card fc rev d1">
         <div class="fic" style="background:rgba(139,92,246,.12)"><svg fill="none" stroke="#8b5cf6" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg></div>
@@ -722,6 +722,7 @@ resource <span style="color:#7dd3fc">"nexspence_repository"</span> <span style="
           <li>On-demand via <code style="font-family:'JetBrains Mono',monospace;font-size:.7rem;background:var(--glasm);padding:1px 5px;border-radius:4px">GET /api/v1/components/:id/scan</code>; export the dashboard as CSV or JSON</li>
           <li>Audit log: date/user filters, NDJSON streaming export</li>
           <li>90-day retention via monthly partition rotation</li>
+          <li>Image scanning needs a Trivy you supply — <a href="/docs/#sec-scanning" style="color:#7dd3fc">how to set it up</a> (one Helm value or one compose profile)</li>
         </ul>
       </div>
       <div class="card rev-l" style="padding:24px">
@@ -1073,7 +1074,7 @@ resource <span style="color:#7dd3fc">"nexspence_repository"</span> <span style="
           <tr><td>LDAP Authentication</td><td class="y">Built-in</td><td class="y">Built-in</td></tr>
           <tr><td>Docker OCI v2</td><td class="y">Full spec</td><td class="y">Full spec</td></tr>
           <tr><td>S3 Blob Store</td><td class="y">Any S3-compatible</td><td class="n">Paid tier only</td></tr>
-          <tr><td>Vulnerability Scanning</td><td class="y">OSV.dev built in, Trivy you supply</td><td class="n">Paid add-on</td></tr>
+          <tr><td>Vulnerability Scanning</td><td class="y">OSV.dev built in, <a href="/docs/#sec-scanning" style="color:inherit;text-decoration:underline">Trivy you supply</a></td><td class="n">Paid add-on</td></tr>
           <tr><td>Webhooks</td><td class="y">Built-in async</td><td class="n">Paid tier only</td></tr>
           <tr><td>Per-repo Export / Import</td><td class="y">Streaming tar.gz</td><td>Admin UI</td></tr>
           <tr><td>Go Modules (GOPROXY)</td><td class="y">Native</td><td class="n">Community plugin</td></tr>
