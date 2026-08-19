@@ -52,7 +52,10 @@ func TestRBACMiddleware_UnauthenticatedPrivateDocker_OCIErrorBody(t *testing.T) 
 	r.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusUnauthorized, w.Code)
-	assert.Contains(t, w.Header().Get("WWW-Authenticate"), "Basic")
+	// Bearer, not Basic: containerd/BuildKit/oras discover auth from this very
+	// response and must be pointed at the token endpoint (see dockerChallenge).
+	assert.Contains(t, w.Header().Get("WWW-Authenticate"), "Bearer realm=")
+	assert.Contains(t, w.Header().Get("WWW-Authenticate"), "/v2/token")
 	assert.Equal(t, "registry/2.0", w.Header().Get("Docker-Distribution-API-Version"))
 
 	var body struct {

@@ -318,117 +318,58 @@ var _ = stringReader // used in Login tests above
 
 // ── DockerV2Auth ──────────────────────────────────────────────
 
-func buildDockerV2AuthRouter(svc *service.UserService, repos ...*domain.Repository) *gin.Engine {
-	return buildDockerV2AuthRouterAnon(svc, true, repos...)
-}
-
-func buildDockerV2AuthRouterAnon(svc *service.UserService, anonymousEnabled bool, repos ...*domain.Repository) *gin.Engine {
+func buildDockerV2AuthRouter(svc *service.UserService) *gin.Engine {
 	r := gin.New()
-	h := handlers.DockerV2Auth(svc, nil, testutil.NewRepoRepo(repos...), nil, anonymousEnabled, nil, nil)
+	h := handlers.DockerV2Auth(svc, nil, nil, nil)
 	r.GET("/v2/", h)
 	r.HEAD("/v2/", h)
 	return r
 }
 
-// With the instance-wide switch off, a public repository must not open the
-// anonymous door — otherwise Docker is told it may pull without credentials and
-// only discovers otherwise on the next request.
-func TestDockerV2Auth_NoAuth_AnonymousDisabledGlobally_Returns401(t *testing.T) {
+// The unauthenticated ping must always challenge (#260). The earlier
+// fall-through to 200 whenever any repository allowed anonymous access made
+// docker select the anonymous scheme for the whole session and drop its
+// stored credentials, so one public repository broke authenticated push
+// registry-wide.
+func TestDockerV2Auth_NoAuth_Returns401WithBearerAndBasicChallenge(t *testing.T) {
 	svc := newUserSvc()
-	publicRepo := &domain.Repository{
-		ID:             "r-pub",
-		Name:           "public-docker",
-		Format:         domain.FormatDocker,
-		Type:           domain.TypeProxy,
-		Online:         true,
-		AllowAnonymous: true,
-	}
-	r := buildDockerV2AuthRouterAnon(svc, false, publicRepo)
-
-	req := httptest.NewRequest(http.MethodGet, "/v2/", nil)
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusUnauthorized, w.Code)
-	assert.Contains(t, w.Header().Get("WWW-Authenticate"), "Basic")
-}
-
-func TestDockerV2Auth_NoAuth_NoAnonymousRepo_Returns401(t *testing.T) {
-	svc := newUserSvc()
-	// Repo list is empty, so no Docker repo allows anonymous access.
 	r := buildDockerV2AuthRouter(svc)
 
 	req := httptest.NewRequest(http.MethodGet, "/v2/", nil)
+	req.Host = "registry.example:8000"
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
-	assert.Contains(t, w.Header().Get("WWW-Authenticate"), "Basic")
 	assert.Equal(t, "registry/2.0", w.Header().Get("Docker-Distribution-API-Version"))
+	challenges := w.Header().Values("WWW-Authenticate")
+	// Bearer alone — a Basic challenge alongside makes the distribution
+	// client fail a credential-less request even when its token handler
+	// already succeeded (see dockerChallenge). The realm falls back to the
+	// request host when no base_url is configured.
+	require.Len(t, challenges, 1)
+	assert.Contains(t, challenges[0], `Bearer realm="http://registry.example:8000/v2/token"`)
+	assert.Contains(t, challenges[0], `service="nexspence-registry"`)
 }
 
-func TestDockerV2Auth_NoAuth_AnyAnonymousRepo_Returns200(t *testing.T) {
+func TestDockerV2Auth_BearerRealmHonorsForwardedProto(t *testing.T) {
 	svc := newUserSvc()
-	publicRepo := &domain.Repository{
-		ID:             "r-pub",
-		Name:           "public-docker",
-		Format:         domain.FormatDocker,
-		Type:           domain.TypeProxy,
-		Online:         true,
-		AllowAnonymous: true,
-	}
-	r := buildDockerV2AuthRouter(svc, publicRepo)
+	r := gin.New()
+	r.GET("/v2/", handlers.DockerV2Auth(svc, nil, nil, nil))
 
+	// Behind a TLS-terminating proxy the realm must not point docker at a
+	// plaintext URL — the proxy says https, the realm says https.
 	req := httptest.NewRequest(http.MethodGet, "/v2/", nil)
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Equal(t, "registry/2.0", w.Header().Get("Docker-Distribution-API-Version"))
-	// Response must not issue a Basic challenge, otherwise Docker will still prompt.
-	assert.Empty(t, w.Header().Get("WWW-Authenticate"))
-}
-
-// An oci repository serves the same /v2/ surface, so a public one must open the
-// anonymous door exactly like a public docker one.
-func TestDockerV2Auth_NoAuth_AnonymousOCIRepo_Returns200(t *testing.T) {
-	svc := newUserSvc()
-	publicRepo := &domain.Repository{
-		ID:             "r-pub-oci",
-		Name:           "public-oci",
-		Format:         domain.FormatOCI,
-		Type:           domain.TypeHosted,
-		Online:         true,
-		AllowAnonymous: true,
-	}
-	r := buildDockerV2AuthRouter(svc, publicRepo)
-
-	req := httptest.NewRequest(http.MethodGet, "/v2/", nil)
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Empty(t, w.Header().Get("WWW-Authenticate"))
-}
-
-func TestDockerV2Auth_NoAuth_OnlyPrivateDockerRepo_Returns401(t *testing.T) {
-	svc := newUserSvc()
-	privateRepo := &domain.Repository{
-		ID:             "r-priv",
-		Name:           "private-docker",
-		Format:         domain.FormatDocker,
-		Type:           domain.TypeHosted,
-		Online:         true,
-		AllowAnonymous: false,
-	}
-	r := buildDockerV2AuthRouter(svc, privateRepo)
-
-	req := httptest.NewRequest(http.MethodGet, "/v2/", nil)
+	req.Host = "nexspence.example"
+	req.Header.Set("X-Forwarded-Proto", "https")
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
-	assert.Contains(t, w.Header().Get("WWW-Authenticate"), "Basic")
+	assert.Contains(t, w.Header().Values("WWW-Authenticate")[0],
+		`Bearer realm="https://nexspence.example/v2/token"`)
+	// Per-client challenges must never be replayed across clients by a cache.
+	assert.Equal(t, "no-store", w.Header().Get("Cache-Control"))
 }
 
 func TestDockerV2Auth_ValidBasicAuth_Returns200(t *testing.T) {
@@ -458,5 +399,8 @@ func TestDockerV2Auth_WrongBasicPassword_Returns401(t *testing.T) {
 	r.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
-	assert.Contains(t, w.Header().Get("WWW-Authenticate"), "Basic")
+	// The challenge again: the client should re-prompt.
+	challenges := w.Header().Values("WWW-Authenticate")
+	require.Len(t, challenges, 1)
+	assert.Contains(t, challenges[0], "Bearer realm=")
 }

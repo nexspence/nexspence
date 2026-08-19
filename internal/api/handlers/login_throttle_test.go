@@ -17,7 +17,6 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/api/handlers"
 	"github.com/nexspence-oss/nexspence/internal/auth/loginguard"
 	"github.com/nexspence-oss/nexspence/internal/service"
-	"github.com/nexspence-oss/nexspence/internal/testutil"
 )
 
 func testGuard() *loginguard.Guard {
@@ -196,7 +195,7 @@ func TestDockerV2Auth_RepeatedBasicFailures_Get429(t *testing.T) {
 	svc := newUserSvc(activeUser("dave", "pw"))
 
 	r := gin.New()
-	h := handlers.DockerV2Auth(svc, nil, testutil.NewRepoRepo(), nil, true, guard, zap.NewNop().Sugar())
+	h := handlers.DockerV2Auth(svc, nil, guard, zap.NewNop().Sugar())
 	r.GET("/v2/", h)
 
 	dockerReq := func() *http.Request {
