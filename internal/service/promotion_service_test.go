@@ -8,7 +8,6 @@ import (
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/service"
-	"github.com/nexspence-oss/nexspence/internal/storage"
 	"github.com/nexspence-oss/nexspence/internal/testutil"
 )
 
@@ -30,10 +29,9 @@ func newTestPromotionSvc(t *testing.T) (
 	blobRepo := testutil.NewBlobStoreRepo()
 	scanRepo := testutil.NewScanResultRepo()
 	repoRepo := testutil.NewRepoRepo()
-	registry := storage.NewRegistry(blobStore)
 
 	svc, err := service.NewPromotionService(
-		promoRepo, compRepo, assetRepo, repoRepo, blobRepo, scanRepo, blobStore, registry,
+		promoRepo, compRepo, assetRepo, repoRepo, blobRepo, scanRepo, testutil.NewFakeResolver(blobStore),
 	)
 	if err != nil {
 		t.Fatalf("NewPromotionService: %v", err)

@@ -12,7 +12,6 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/api/handlers"
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/service"
-	"github.com/nexspence-oss/nexspence/internal/storage"
 	"github.com/nexspence-oss/nexspence/internal/testutil"
 )
 
@@ -25,8 +24,7 @@ func newTestPromotionHandler(t *testing.T) *handlers.PromotionHandler {
 	blobRepo := testutil.NewBlobStoreRepo()
 	scanRepo := testutil.NewScanResultRepo()
 	repoRepo := testutil.NewRepoRepo()
-	registry := storage.NewRegistry(blobStore)
-	svc, err := service.NewPromotionService(promoRepo, compRepo, assetRepo, repoRepo, blobRepo, scanRepo, blobStore, registry)
+	svc, err := service.NewPromotionService(promoRepo, compRepo, assetRepo, repoRepo, blobRepo, scanRepo, testutil.NewFakeResolver(blobStore))
 	if err != nil {
 		t.Fatalf("NewPromotionService: %v", err)
 	}

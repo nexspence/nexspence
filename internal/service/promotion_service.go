@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -21,8 +22,7 @@ type PromotionService struct {
 	repoRepo      repository.RepositoryRepo
 	blobRepo      repository.BlobStoreRepo
 	scanRepo      repository.ScanResultRepo
-	blobStore     storage.BlobStore
-	blobRegistry  *storage.Registry
+	blobResolver  StoreResolver
 	webhooks      domain.WebhookDispatcher
 
 	celEnv *cel.Env
@@ -37,8 +37,7 @@ func NewPromotionService(
 	repoRepo repository.RepositoryRepo,
 	blobRepo repository.BlobStoreRepo,
 	scanRepo repository.ScanResultRepo,
-	blobStore storage.BlobStore,
-	blobRegistry *storage.Registry,
+	blobResolver StoreResolver,
 ) (*PromotionService, error) {
 	env, err := cel.NewEnv(
 		cel.Variable("format", cel.StringType),
@@ -55,8 +54,7 @@ func NewPromotionService(
 		repoRepo:      repoRepo,
 		blobRepo:      blobRepo,
 		scanRepo:      scanRepo,
-		blobStore:     blobStore,
-		blobRegistry:  blobRegistry,
+		blobResolver:  blobResolver,
 		celEnv:        env,
 	}, nil
 }
@@ -354,7 +352,10 @@ func (s *PromotionService) executeCopy(ctx context.Context, req *domain.Promotio
 		return fmt.Errorf("target repository not found: %s", rule.ToRepo)
 	}
 
-	toStore, toBlobStoreID := s.resolveStore(ctx, toRepo.BlobStoreID)
+	toStore, toBlobStoreID, err := s.resolveStore(ctx, toRepo.BlobStoreID)
+	if err != nil {
+		return fmt.Errorf("target %s: %w", toRepo.Name, err)
+	}
 
 	assets, err := s.assetRepo.ListByComponentID(ctx, req.ComponentID)
 	if err != nil {
@@ -377,7 +378,10 @@ func (s *PromotionService) executeCopy(ctx context.Context, req *domain.Promotio
 
 	for _, asset := range assets {
 		blobStoreID := asset.BlobStoreID
-		fromStore, _ := s.resolveStore(ctx, &blobStoreID)
+		fromStore, _, err := s.resolveStore(ctx, &blobStoreID)
+		if err != nil {
+			return fmt.Errorf("source asset %s: %w", asset.Path, err)
+		}
 
 		newBlobKey := base.BlobKey(toRepo.Name, asset.Path)
 
@@ -453,22 +457,42 @@ func promotedExtra(extra map[string]any) map[string]any {
 	return out
 }
 
-// resolveStore returns the physical BlobStore for a given blobStoreID pointer.
-func (s *PromotionService) resolveStore(ctx context.Context, blobStoreID *string) (storage.BlobStore, string) {
-	if blobStoreID == nil || *blobStoreID == "" {
-		return s.blobStore, ""
+// resolveStore returns the physical BlobStore for a given blobStoreID
+// pointer, and the id to record on the copied assets.
+//
+// Both branches resolve the physical store from the DB row, the way every
+// other data path does: in a stock local deployment the seeded default row's
+// store lives under its own subdirectory, not at the process store's root, so
+// answering the implicit-default case with the injected default instance
+// would write the copied blobs where no download will ever look for them.
+// The id is never empty — assets.blob_store_id is a NOT NULL foreign key,
+// and the old empty-string answer made every promotion touching a
+// default-store repository fail with a raw constraint error (#256).
+func (s *PromotionService) resolveStore(ctx context.Context, blobStoreID *string) (storage.BlobStore, string, error) {
+	implicit := blobStoreID == nil || *blobStoreID == ""
+	var bsMeta *domain.BlobStore
+	var err error
+	if implicit {
+		bsMeta, err = s.blobRepo.Get(ctx, "default")
+	} else {
+		bsMeta, err = s.blobRepo.GetByID(ctx, *blobStoreID)
 	}
-	bsMeta, err := s.blobRepo.GetByID(ctx, *blobStoreID)
-	if err != nil || bsMeta == nil {
-		return s.blobStore, ""
+	if errors.Is(err, repository.ErrNotFound) || (err == nil && bsMeta == nil) {
+		if implicit {
+			return nil, "", fmt.Errorf("default blob store not found (seed blob_stores or assign repository.blobStoreId)")
+		}
+		return nil, "", fmt.Errorf("blob store id %q not found", *blobStoreID)
 	}
-	bs, err := s.blobRegistry.Get(ctx, storage.BlobStoreDescriptor{
+	if err != nil {
+		return nil, "", fmt.Errorf("blob store: %w", err)
+	}
+	bs, err := s.blobResolver.Get(ctx, storage.BlobStoreDescriptor{
 		ID:     bsMeta.ID,
 		Type:   bsMeta.Type,
 		Config: bsMeta.Config,
 	})
 	if err != nil {
-		return s.blobStore, ""
+		return nil, "", fmt.Errorf("blob store %q: %w", bsMeta.Name, err)
 	}
-	return bs, bsMeta.ID
+	return bs, bsMeta.ID, nil
 }
