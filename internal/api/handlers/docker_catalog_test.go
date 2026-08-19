@@ -136,7 +136,10 @@ func TestDockerCatalog_AnonymousWithNothingVisible_Challenges401(t *testing.T) {
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/v2/_catalog", nil))
 	require.Equal(t, http.StatusUnauthorized, w.Code)
-	assert.Contains(t, w.Header().Get("WWW-Authenticate"), "Basic")
+	// Bearer, like the ping and the data routes: a Basic challenge here would
+	// send a token-family client down a scheme it cannot satisfy.
+	assert.Contains(t, w.Header().Get("WWW-Authenticate"), "Bearer realm=")
+	assert.Contains(t, w.Header().Get("WWW-Authenticate"), "/v2/token")
 	assert.Contains(t, w.Body.String(), "UNAUTHORIZED")
 }
 
