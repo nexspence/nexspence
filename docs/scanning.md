@@ -62,7 +62,7 @@ kubectl -n nexspence get pods
 # the nexspence pod shows "Init:0/1" briefly, then Running
 
 kubectl -n nexspence logs deploy/nexspence | grep "image scanner"
-# expect: ... "image scanner" state=ready message="Trivy 0.70.0 — /opt/trivy/trivy"
+# expect one JSON log record at startup containing "image scanner" with state=ready
 ```
 
 Then do the UI check in [Checking that it worked](#checking-that-it-worked).
@@ -73,10 +73,10 @@ The shipped `docker-compose.yml` is already wired for this. You do exactly two
 things:
 
 1. Set `NEXSPENCE_SCAN_TRIVY_ENABLED=true` — either export it in your shell or
-   put the line in a `.env` file next to `docker-compose.yml`:
+   add this line to a `.env` file next to `docker-compose.yml`:
 
-   ```bash
-   echo "NEXSPENCE_SCAN_TRIVY_ENABLED=true" >> .env
+   ```
+   NEXSPENCE_SCAN_TRIVY_ENABLED=true
    ```
 
 2. Start with the `scanning` profile:
@@ -185,7 +185,9 @@ EOF
 sudo dnf install -y trivy
 ```
 
-Then turn image scanning on in `config.yaml`:
+Then turn image scanning on in the config file — `/etc/nexspence/config.yaml`
+for a `.deb`/`.rpm` install, or the `config.yaml` next to the binary when you
+run from source:
 
 ```yaml
 scan:
@@ -193,10 +195,19 @@ scan:
     enabled: true
 ```
 
-That is all: `scan.trivy.bin` defaults to `trivy`, which is resolved through
-`PATH`, so a package-manager install is found automatically. If you put the
-binary somewhere unusual, set `scan.trivy.bin` to its absolute path. Restart
-nexspence (or wait up to 60 seconds — the binary probe re-runs on its own).
+`scan.trivy.bin` defaults to `trivy`, which is resolved through `PATH`, so a
+package-manager install is found automatically. If you put the binary somewhere
+unusual, set `scan.trivy.bin` to its absolute path.
+
+The config file is read only at startup — there is no hot reload — so restart
+nexspence to apply the change:
+
+```bash
+sudo systemctl restart nexspence    # .deb / .rpm install
+# from source: stop and start your own nexspence process
+```
+
+Then continue with [Checking that it worked](#checking-that-it-worked).
 
 ## Checking that it worked
 
@@ -225,24 +236,27 @@ curl -s -H "Authorization: Bearer <admin token>" \
 # {"state":"ready","version":"0.70.0","path":"/opt/trivy/trivy","message":"Trivy 0.70.0 — /opt/trivy/trivy"}
 ```
 
-Nexspence also logs one `image scanner` line at startup with the same state and
-message, so `docker compose logs nexspence | grep "image scanner"` (or
+Nexspence also writes one log record at startup containing `image scanner`
+with the current state (`state=ready` when everything works), so
+`docker compose logs nexspence | grep "image scanner"` (or
 `journalctl -u nexspence | grep "image scanner"`) answers the question too.
 
-The status is re-probed at most once every 60 seconds, so a fix shows up within
-a minute without a restart.
+With scanning already enabled, the binary probe re-runs at most once every 60
+seconds, so supplying or replacing the binary shows up within a minute without
+a restart. Changing configuration — including `scan.trivy.enabled` itself — is
+picked up only at startup: restart nexspence after any config edit.
 
 ## Traps
 
-**A host-installed binary will not run inside the container.** The nexspence
-image is Alpine-based (musl libc). Trivy builds from Linux distribution
-packages, Homebrew, or macOS are linked against a different libc or a different
-OS entirely, and inside the container they fail with the
-`Trivy found at … but will not run` status. If you want to mount a binary from
-the host instead of copying it out of the `aquasec/trivy` image, it must be the
-official static tarball build from
+**A host binary works in the container only if it is the official static
+build.** Trivy binaries from community distribution packages, Homebrew, or
+macOS are built for a different environment than the nexspence container and
+fail there with the `Trivy found at … but will not run` status. If you want to
+mount a binary from the host instead of copying it out of the `aquasec/trivy`
+image, use Aqua Security's official static Linux build: the tarball from
 [Trivy's GitHub releases](https://github.com/aquasecurity/trivy/releases)
-(`trivy_<version>_Linux-64bit.tar.gz`). When in doubt, copy from the
+(`trivy_<version>_Linux-64bit.tar.gz`), or an install from Aqua's own apt/yum
+repositories, which ship the same static build. When in doubt, copy from the
 `aquasec/trivy` image — that binary is known to run in the container as uid 1000.
 
 **Budget ~150 MB for the binary.** The Trivy binary itself is around 150 MB;
@@ -289,10 +303,17 @@ or `skopeo`:
 ```bash
 # with oras
 oras cp ghcr.io/aquasecurity/trivy-db:2 nexspence.example.com/repository/trivy-mirror/trivy-db:2
+oras cp ghcr.io/aquasecurity/trivy-java-db:1 nexspence.example.com/repository/trivy-mirror/trivy-java-db:1
 
 # or with crane
 crane copy ghcr.io/aquasecurity/trivy-db:2 nexspence.example.com/repository/trivy-mirror/trivy-db:2
+crane copy ghcr.io/aquasecurity/trivy-java-db:1 nexspence.example.com/repository/trivy-mirror/trivy-java-db:1
 ```
+
+Mirror both: the main database covers OS and language packages, and the Java
+database is fetched separately the first time an image containing Java
+artifacts is scanned — without a mirror for it, that scan tries `ghcr.io` and
+fails in an air-gapped network.
 
 Then point at the mirror and stop Trivy from trying to update over the
 internet:
@@ -303,7 +324,9 @@ scan:
     enabled: true
     db_repository:
       - nexspence.example.com/repository/trivy-mirror/trivy-db:2
-    skip_db_update: false   # first scan pulls from the mirror above
+    java_db_repository:
+      - nexspence.example.com/repository/trivy-mirror/trivy-java-db:1
+    skip_db_update: false   # first scan pulls from the mirrors above
 ```
 
 Once the cache is populated (or if you seed the cache directory by hand), set
@@ -337,6 +360,10 @@ image: ghcr.io/nexspence/nexspence:v1.38.0
 # Helm
 helm upgrade nexspence deploy/helm/nexspence --set image.tag=v1.38.0 --namespace nexspence
 ```
+
+Note for compose users: the shipped `docker-compose.yml` builds the image from
+source with a `build:` block — to pin a version, replace that block on the
+`nexspence` service with the `image:` line above.
 
 No data is lost either way: scan results already in the database stay visible
 in the UI whether or not a scanner binary is currently available, and rolling
