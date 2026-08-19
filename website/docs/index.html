@@ -147,7 +147,9 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .doc-table tr:last-child td{border-bottom:none}
 .doc-table tr:hover td{background:rgba(255,255,255,.02)}
 .doc-table .y{color:var(--green);font-weight:600}.doc-table .n{color:var(--red)}.doc-table .p{color:var(--amber)}
+.alert-info a,.alert-warn a{color:#7dd3fc;text-decoration:underline}
 .alert-info{background:rgba(59,130,246,.06);border:1px solid rgba(59,130,246,.2);border-radius:8px;padding:12px 16px;font-size:.78rem;color:var(--dim);line-height:1.6;margin-bottom:14px}
+.alert-warn{background:rgba(245,158,11,.07);border:1px solid rgba(245,158,11,.28);border-radius:8px;padding:12px 16px;font-size:.78rem;color:var(--dim);line-height:1.6;margin-bottom:14px}
 .alert-info strong{color:var(--blue)}
 .doc-shot{margin:6px 0 22px}
 .doc-shot img{display:block;width:100%;max-width:960px;height:auto;border:1px solid var(--border);border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.35)}
@@ -364,6 +366,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
         <a class="dsb-link" href="#sec-migration">Migration from Nexus</a>
         <div class="dsb-label">Advanced</div>
         <a class="dsb-link" href="#sec-monitoring">Monitoring</a>
+        <a class="dsb-link" href="#sec-scanning">Image Scanning</a>
         <a class="dsb-link" href="#sec-promotion">Build Promotion</a>
         <a class="dsb-link" href="#sec-replication">Content Replication</a>
         <div class="dsb-label">Terraform Provider</div>
@@ -839,6 +842,7 @@ server {
 
   <div class="inst-sep" data-i18n="upg.before.sep">Before You Upgrade</div>
   <div class="alert-info" data-i18n="upg.before.info"><strong>Migrations run automatically, and only forward.</strong> Every start applies pending schema migrations before the server accepts traffic. There is no automatic downgrade, so take a database dump first — that dump is what a rollback to an older release depends on.</div>
+  <div class="alert-warn" data-i18n="upg.v2.alert"><strong>Upgrading to v2.0.0 — image scanning needs a Trivy you supply.</strong> The v2.0.0 image no longer contains Trivy. Everything else upgrades as usual, but scanning of Docker and OCI images stops until you supply the binary — see <strong>Image Scanning</strong> under Advanced. Package scanning (Maven, npm, PyPI, Cargo) is unaffected: it uses OSV.dev and never needed Trivy. Existing scan results stay in the database and stay visible.</div>
   <div class="cb"><div class="cb-bar"><span data-i18n="upg.before.dump.bar">shell — back up PostgreSQL first</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
   <div class="cb-body">pg_dump "postgres://nexspence:***@db.example.com:5432/nexspence" \
   --format=custom --file nexspence-$(date +%Y%m%d).dump</div></div>
@@ -869,7 +873,7 @@ docker compose logs -f nexspence     # wait for: migrations OK</div></div>
     <div class="inst-pnl" data-pnl="upg-docker">
       <p style="font-size:.85rem;color:var(--dim);margin:0 0 12px;line-height:1.7" data-i18n="upg.docker.desc">Recreate the container from the new image with the same volumes, environment and database. Keeping the volume mounts identical is the whole trick — the container is disposable, its volumes are not.</p>
       <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
-      <div class="cb-body">docker pull ghcr.io/nexspence/nexspence:v1.35.3
+      <div class="cb-body">docker pull ghcr.io/nexspence/nexspence:v2.0.0
 
 docker stop nexspence &amp;&amp; docker rm nexspence
 
@@ -878,7 +882,7 @@ docker run -d --name nexspence \
   -e NEXSPENCE_DATABASE_DSN="postgres://nexspence:***@db:5432/nexspence?sslmode=disable" \
   -v nexspence_blobs:/app/data/blobs \
   -v nexspence_secrets:/app/secrets \
-  ghcr.io/nexspence/nexspence:v1.35.3</div></div>
+  ghcr.io/nexspence/nexspence:v2.0.0</div></div>
     </div>
 
     <!-- ══ KUBERNETES ══ -->
@@ -886,7 +890,7 @@ docker run -d --name nexspence \
       <p style="font-size:.85rem;color:var(--dim);margin:0 0 12px;line-height:1.7" data-i18n="upg.helm.desc">Each release publishes a chart version matching the app version. <code>--reuse-values</code> keeps your existing overrides; drop it and pass your values file if you prefer an explicit upgrade.</p>
       <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
       <div class="cb-body">helm upgrade nexspence oci://ghcr.io/nexspence/charts/nexspence \
-  --version 1.35.3 \
+  --version 2.0.0 \
   --namespace nexspence --reuse-values
 
 kubectl -n nexspence rollout status deploy/nexspence</div></div>
@@ -903,10 +907,10 @@ kubectl -n nexspence rollout status deploy/nexspence</div></div>
       <div class="inst-vpnl active" data-vpnl="upg-linux-pkg">
         <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
         <div class="cb-body"># Debian / Ubuntu
-sudo dpkg -i nexspence_1.35.3_linux_amd64.deb
+sudo dpkg -i nexspence_2.0.0_linux_amd64.deb
 
 # RHEL / Fedora / SUSE
-sudo dnf upgrade ./nexspence-1.35.3.x86_64.rpm
+sudo dnf upgrade ./nexspence-2.0.0.x86_64.rpm
 
 sudo systemctl restart nexspence
 journalctl -u nexspence -f</div></div>
@@ -915,8 +919,8 @@ journalctl -u nexspence -f</div></div>
 
       <div class="inst-vpnl" data-vpnl="upg-linux-tar">
         <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
-        <div class="cb-body">curl -fsSLO https://github.com/nexspence/nexspence/releases/download/v1.35.3/nexspence_1.35.3_linux_amd64.tar.gz
-tar xzf nexspence_1.35.3_linux_amd64.tar.gz
+        <div class="cb-body">curl -fsSLO https://github.com/nexspence/nexspence/releases/download/v2.0.0/nexspence_2.0.0_linux_amd64.tar.gz
+tar xzf nexspence_2.0.0_linux_amd64.tar.gz
 
 sudo systemctl stop nexspence
 sudo install -m 0755 nexspence /usr/bin/nexspence
@@ -927,7 +931,7 @@ sudo systemctl start nexspence</div></div>
     <!-- ══ MACOS ══ -->
     <div class="inst-pnl" data-pnl="upg-macos">
       <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
-      <div class="cb-body">tar xzf nexspence_1.35.3_darwin_arm64.tar.gz     # or darwin_amd64 on Intel
+      <div class="cb-body">tar xzf nexspence_2.0.0_darwin_arm64.tar.gz     # or darwin_amd64 on Intel
 
 sudo launchctl unload -w /Library/LaunchDaemons/com.nexspence.server.plist
 sudo install -m 0755 nexspence /usr/local/bin/nexspence
@@ -941,7 +945,7 @@ tail -f /usr/local/var/log/nexspence.err.log</div></div>
       <div class="cb"><div class="cb-bar"><span data-i18n="upg.windows.bar">PowerShell — as Administrator</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
       <div class="cb-body">Stop-Service nexspence
 
-Expand-Archive .\nexspence_1.35.3_windows_amd64.zip -DestinationPath $env:TEMP\nexspence-new -Force
+Expand-Archive .\nexspence_2.0.0_windows_amd64.zip -DestinationPath $env:TEMP\nexspence-new -Force
 Copy-Item $env:TEMP\nexspence-new\nexspence.exe 'C:\Program Files\Nexspence\nexspence.exe' -Force
 
 Start-Service nexspence
@@ -953,7 +957,7 @@ Get-Content C:\ProgramData\Nexspence\logs\nexspence.log -Tail 40 -Wait</div></di
   <div class="inst-sep" data-i18n="upg.verify.sep">Verifying the Upgrade</div>
   <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
   <div class="cb-body">curl -s -u admin:$ADMIN_PASSWORD http://localhost:8081/api/v1/system/info
-# {"product":"Nexspence","version":"v1.35.3"}
+# {"product":"Nexspence","version":"v2.0.0"}
 
 curl -sf http://localhost:8081/service/rest/v1/status/check</div></div>
   <p style="font-size:.8rem;color:var(--dim);margin-top:14px;line-height:1.6" data-i18n="upg.verify.note">The running version also appears under System Admin → Info and at the bottom of the sidebar. The startup log line <code>migrations OK</code> confirms the schema is current; a failure there stops the server before it serves a single request, so a silent half-migrated state is not a state you can reach.</p>
@@ -1412,6 +1416,87 @@ def verify(secret: str, body: bytes, header: str) -&gt; bool:
   http://localhost:8081/metrics</div></div>
   <div class="alert-info" data-i18n="mon.public"><strong>Note:</strong> <code>/metrics</code> shares the listener with the API, so it requires a Bearer token by default — an anonymous scrape publishes install size, artifact and download counts and the Go runtime fingerprint. Since v1.35.0 you can set <code>metrics.public: true</code> (or <code>NEXSPENCE_METRICS_PUBLIC</code>, or <code>--set config.metricsPublic=true</code> in the Helm chart) to serve it without authentication, for deployments whose listener is only reachable from a trusted network. A Prometheus <code>ServiceMonitor</code> then needs no token Secret.</div>
       </section>
+      <section id="sec-scanning" class="doc-section" hidden>
+  <div class="doc-section-title" data-i18n="scan.title">Image Scanning</div>
+  <div class="doc-section-sub" data-i18n="scan.sub">Nexspence scans Maven, npm, PyPI and Cargo packages against OSV.dev out of the box. Scanning Docker and OCI <em>images</em> uses Trivy, which you supply — the nexspence image does not contain it.</div>
+
+  <div class="alert-info" data-i18n="scan.why"><strong>Why you supply it:</strong> Trivy is ~150 MB of third-party software that used to ride inside every nexspence image whether or not anyone scanned, pinned to a version nobody chose and unchangeable without a nexspence release. Supplying it yourself means you pick the version and update it on your own schedule.</div>
+
+  <div class="inst-sep" data-i18n="scan.states.sep">What Nexspence Reports</div>
+  <p style="font-size:.85rem;color:var(--dim);margin:0 0 12px;line-height:1.7" data-i18n="scan.states.desc">The scanner is probed with <code>&lt;bin&gt; --version</code>, which answers three questions at once: is the file there, will it run here, and which version is it. The answer is one of four states, visible in <strong>Admin → Security → CVE Scan</strong>, at <code>GET /api/v1/security/scanner</code>, and in one log record at startup.</p>
+  <table class="doc-table">
+    <thead><tr><th data-i18n="scan.th.state">State</th><th data-i18n="scan.th.meaning">What it means</th></tr></thead>
+    <tbody>
+      <tr><td><code>disabled</code></td><td data-i18n="scan.st.disabled"><code>scan.trivy.enabled</code> is <code>false</code> — nexspence has not even looked for a binary.</td></tr>
+      <tr><td><code>missing</code></td><td data-i18n="scan.st.missing">Enabled, but there is no file at the configured location and no <code>trivy</code> on <code>PATH</code>.</td></tr>
+      <tr><td><code>broken</code></td><td data-i18n="scan.st.broken">A file is there and will not execute: wrong architecture, truncated download, or no execute bit.</td></tr>
+      <tr><td><code>ready</code></td><td data-i18n="scan.st.ready">It runs and reported its version — scanning works.</td></tr>
+    </tbody>
+  </table>
+  <p style="font-size:.8rem;color:var(--dim);margin-top:14px;line-height:1.6" data-i18n="scan.states.note">A scan requested while the scanner is unavailable is refused with that sentence instead of failing obscurely, and automatic scan-on-upload skips image components rather than filling the history with errors. Once scanning is enabled the binary probe re-runs at most once a minute, so supplying or replacing the binary is picked up without a restart — configuration changes, including the switch itself, are read only at startup.</p>
+
+  <div class="inst-sep" data-i18n="scan.setup.sep">Supplying Trivy</div>
+  <div class="inst-platform">
+    <div class="inst-platform-row">
+      <button type="button" class="inst-ptab active" onclick="installPlatform('scan-k8s',this)"><span class="ptab-icon">☸️</span> <span data-i18n="scan.tab.k8s">Kubernetes / Helm</span></button>
+      <button type="button" class="inst-ptab" onclick="installPlatform('scan-compose',this)"><span class="ptab-icon">🐳</span> <span data-i18n="scan.tab.compose">Docker Compose</span></button>
+      <button type="button" class="inst-ptab" onclick="installPlatform('scan-native',this)"><span class="ptab-icon">🐧</span> <span data-i18n="scan.tab.native">Native install</span></button>
+    </div>
+
+    <div class="inst-pnl active" data-pnl="scan-k8s">
+      <p style="font-size:.85rem;color:var(--dim);margin:0 0 12px;line-height:1.7" data-i18n="scan.k8s.desc">One value switches it on. The chart then adds an initContainer named <code>trivy-copy</code> that copies the binary out of the <code>aquasec/trivy</code> image into a shared <code>emptyDir</code>, and points nexspence at it.</p>
+      <div class="cb"><div class="cb-bar"><span>values.yaml</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+      <div class="cb-body">scanning:
+  enabled: true
+  trivy:
+    image:
+      repository: aquasec/trivy
+      tag: "0.70.0"</div></div>
+      <p style="font-size:.8rem;color:var(--dim);margin-top:14px;line-height:1.6" data-i18n="scan.k8s.note">Budget ~150 MB for the shared volume — that is the binary alone. The vulnerability database lives in the cache volume, not this one.</p>
+    </div>
+
+    <div class="inst-pnl" data-pnl="scan-compose">
+      <p style="font-size:.85rem;color:var(--dim);margin:0 0 12px;line-height:1.7" data-i18n="scan.compose.desc">The shipped <code>docker-compose.yml</code> is already wired: a one-shot <code>trivy-init</code> service in the <code>scanning</code> profile fills a named volume that nexspence mounts read-only. You do two things.</p>
+      <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+      <div class="cb-body">echo "NEXSPENCE_SCAN_TRIVY_ENABLED=true" &gt;&gt; .env
+
+docker compose --profile scanning up -d</div></div>
+    </div>
+
+    <div class="inst-pnl" data-pnl="scan-native">
+      <p style="font-size:.85rem;color:var(--dim);margin:0 0 12px;line-height:1.7" data-i18n="scan.native.desc">Outside a container any normally installed Trivy works — <code>scan.trivy.bin</code> defaults to <code>trivy</code>, resolved through <code>PATH</code>, so a package-manager install is found on its own. Restart nexspence after the config edit.</p>
+      <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+      <div class="cb-body">sudo apt-get install -y trivy        # or: dnf install trivy, brew install trivy
+
+# /etc/nexspence/config.yaml
+scan:
+  trivy:
+    enabled: true
+
+sudo systemctl restart nexspence</div></div>
+    </div>
+  </div>
+
+  <div class="inst-sep" data-i18n="scan.check.sep">Checking That It Worked</div>
+  <div class="cb"><div class="cb-bar"><span>curl — scanner status</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body">curl -s -u admin:*** http://localhost:8081/api/v1/security/scanner
+
+# {"state":"ready","version":"0.70.0","path":"/opt/trivy/trivy",
+#  "message":"Trivy 0.70.0 — /opt/trivy/trivy"}</div></div>
+
+  <div class="inst-sep" data-i18n="scan.db.sep">Where the Vulnerability Database Comes From</div>
+  <p style="font-size:.85rem;color:var(--dim);margin:0 0 12px;line-height:1.7" data-i18n="scan.db.desc">By default Trivy pulls it from <code>ghcr.io</code> on first use, which is why the first scan takes a minute or two. In an air-gapped network, mirror it into a nexspence repository and point Trivy at the mirror. Mirror <em>both</em> databases: the Java one is fetched separately the first time an image containing Java artifacts is scanned, and an unmirrored one dials <code>ghcr.io</code> and fails.</p>
+  <div class="cb"><div class="cb-bar"><span>config.yaml</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
+  <div class="cb-body">scan:
+  trivy:
+    db_repository:
+      - nexspence.example.com/repository/trivy-mirror/trivy-db:2
+    java_db_repository:
+      - nexspence.example.com/repository/trivy-mirror/trivy-java-db:1
+    skip_db_update: false   # first scan pulls from the mirrors above</div></div>
+
+  <div class="alert-info" data-i18n="scan.trap"><strong>Trap — a host binary in a container.</strong> Only Aqua Security's official static Linux build runs inside the nexspence container. Trivy from community distribution packages, Homebrew, or macOS is built for a different environment and lands in the <code>broken</code> state. When in doubt, copy the binary out of the <code>aquasec/trivy</code> image, which is known to run there as uid 1000. Full reference, including every configuration key: <a href="https://github.com/nexspence/nexspence/blob/main/docs/scanning.md" target="_blank" rel="noreferrer">docs/scanning.md</a>.</div>
+      </section>
       <section id="sec-promotion" class="doc-section" hidden>
   <div class="doc-section-title" data-i18n="promo.title">Build Promotion</div>
   <div class="doc-section-sub" data-i18n="promo.sub">Promote artifacts through environments (e.g. staging → production) with optional vulnerability scan gates and approval workflows.</div>
@@ -1733,7 +1818,7 @@ const TRANSLATIONS={
     'crumb.formats':'formats','crumb.changelog':'changelog','crumb.api':'api reference',
     'crumb.repositories':'repositories','crumb.formats-guide':'format setup','crumb.browse-search':'browse & search',
     'crumb.users':'users & tokens','crumb.rbac':'roles & privileges','crumb.cleanup':'cleanup policies',
-    'crumb.webhooks':'webhooks','crumb.migration':'migration','crumb.monitoring':'monitoring',
+    'crumb.webhooks':'webhooks','crumb.migration':'migration','crumb.monitoring':'monitoring','crumb.scanning':'image scanning',
     'crumb.promotion':'build promotion','crumb.replication':'content replication','crumb.terraform':'terraform provider',
     'sb.tf-overview':'Overview','sb.tf-auth':'Authentication','sb.tf-resources':'Resources','sb.tf-data':'Data Sources','sb.tf-examples':'Examples',
     'crumb.tf-overview':'terraform overview','crumb.tf-auth':'terraform auth','crumb.tf-resources':'terraform resources','crumb.tf-data':'terraform data sources','crumb.tf-examples':'terraform examples',
@@ -2042,6 +2127,29 @@ const TRANSLATIONS={
     'api.auth.title':'Authentication',
     'api.auth.desc':'JWT Bearer token (from <code>POST /api/v1/auth/login</code>), API tokens (<code>nxs_*</code> prefix via Bearer or Basic password), or HTTP Basic with username + password.',
     'api.spec':'<strong>Full OpenAPI 3.1 spec</strong> is included in the release zip as <code>docs/api-spec.yaml</code>.',
+    'sb.scanning':'Image Scanning',
+    'scan.title':'Image Scanning',
+    'scan.sub':'Nexspence scans Maven, npm, PyPI and Cargo packages against OSV.dev out of the box. Scanning Docker and OCI <em>images</em> uses Trivy, which you supply — the nexspence image does not contain it.',
+    'scan.why':'<strong>Why you supply it:</strong> Trivy is ~150 MB of third-party software that used to ride inside every nexspence image whether or not anyone scanned, pinned to a version nobody chose and unchangeable without a nexspence release. Supplying it yourself means you pick the version and update it on your own schedule.',
+    'scan.states.sep':'What Nexspence Reports',
+    'scan.states.desc':'The scanner is probed with <code>&lt;bin&gt; --version</code>, which answers three questions at once: is the file there, will it run here, and which version is it. The answer is one of four states, visible in <strong>Admin → Security → CVE Scan</strong>, at <code>GET /api/v1/security/scanner</code>, and in one log record at startup.',
+    'scan.th.state':'State','scan.th.meaning':'What it means',
+    'scan.st.disabled':'<code>scan.trivy.enabled</code> is <code>false</code> — nexspence has not even looked for a binary.',
+    'scan.st.missing':'Enabled, but there is no file at the configured location and no <code>trivy</code> on <code>PATH</code>.',
+    'scan.st.broken':'A file is there and will not execute: wrong architecture, truncated download, or no execute bit.',
+    'scan.st.ready':'It runs and reported its version — scanning works.',
+    'scan.states.note':'A scan requested while the scanner is unavailable is refused with that sentence instead of failing obscurely, and automatic scan-on-upload skips image components rather than filling the history with errors. Once scanning is enabled the binary probe re-runs at most once a minute, so supplying or replacing the binary is picked up without a restart — configuration changes, including the switch itself, are read only at startup.',
+    'scan.setup.sep':'Supplying Trivy',
+    'scan.tab.k8s':'Kubernetes / Helm','scan.tab.compose':'Docker Compose','scan.tab.native':'Native install',
+    'scan.k8s.desc':'One value switches it on. The chart then adds an initContainer named <code>trivy-copy</code> that copies the binary out of the <code>aquasec/trivy</code> image into a shared <code>emptyDir</code>, and points nexspence at it.',
+    'scan.k8s.note':'Budget ~150 MB for the shared volume — that is the binary alone. The vulnerability database lives in the cache volume, not this one.',
+    'scan.compose.desc':'The shipped <code>docker-compose.yml</code> is already wired: a one-shot <code>trivy-init</code> service in the <code>scanning</code> profile fills a named volume that nexspence mounts read-only. You do two things.',
+    'scan.native.desc':'Outside a container any normally installed Trivy works — <code>scan.trivy.bin</code> defaults to <code>trivy</code>, resolved through <code>PATH</code>, so a package-manager install is found on its own. Restart nexspence after the config edit.',
+    'scan.check.sep':'Checking That It Worked',
+    'scan.db.sep':'Where the Vulnerability Database Comes From',
+    'scan.db.desc':'By default Trivy pulls it from <code>ghcr.io</code> on first use, which is why the first scan takes a minute or two. In an air-gapped network, mirror it into a nexspence repository and point Trivy at the mirror. Mirror <em>both</em> databases: the Java one is fetched separately the first time an image containing Java artifacts is scanned, and an unmirrored one dials <code>ghcr.io</code> and fails.',
+    'scan.trap':'<strong>Trap — a host binary in a container.</strong> Only Aqua Security\'s official static Linux build runs inside the nexspence container. Trivy from community distribution packages, Homebrew, or macOS is built for a different environment and lands in the <code>broken</code> state. When in doubt, copy the binary out of the <code>aquasec/trivy</code> image, which is known to run there as uid 1000. Full reference, including every configuration key: <a href="https://github.com/nexspence/nexspence/blob/main/docs/scanning.md" target="_blank" rel="noreferrer">docs/scanning.md</a>.',
+    'upg.v2.alert':'<strong>Upgrading to v2.0.0 — image scanning needs a Trivy you supply.</strong> The v2.0.0 image no longer contains Trivy. Everything else upgrades as usual, but scanning of Docker and OCI images stops until you supply the binary — see <strong>Image Scanning</strong> under Advanced. Package scanning (Maven, npm, PyPI, Cargo) is unaffected: it uses OSV.dev and never needed Trivy. Existing scan results stay in the database and stay visible.',
   },
   ru:{
     'page.stag':'Документация',
@@ -2062,7 +2170,7 @@ const TRANSLATIONS={
     'sb.promotion':'Продвижение сборок','sb.replication':'Репликация контента','sb.terraform':'Провайдер Terraform',
     'crumb.repositories':'репозитории','crumb.formats-guide':'настройка форматов','crumb.browse-search':'обзор и поиск',
     'crumb.users':'пользователи и токены','crumb.rbac':'роли и привилегии','crumb.cleanup':'политики очистки',
-    'crumb.webhooks':'вебхуки','crumb.migration':'миграция','crumb.monitoring':'мониторинг',
+    'crumb.webhooks':'вебхуки','crumb.migration':'миграция','crumb.monitoring':'мониторинг','crumb.scanning':'сканирование образов',
     'crumb.promotion':'продвижение сборок','crumb.replication':'репликация контента','crumb.terraform':'провайдер terraform',
     'tabg.releases':'Changelog','tabg.getting-started':'С чего начать','tabg.using':'Использование',
     'tabg.admin':'Администрирование','tabg.advanced':'Расширенные','tabg.terraform':'Terraform','tabg.reference':'Справочник',
@@ -2394,6 +2502,29 @@ const TRANSLATIONS={
     'api.auth.title':'Аутентификация',
     'api.auth.desc':'JWT Bearer-токен (из <code>POST /api/v1/auth/login</code>), API-токены (префикс <code>nxs_*</code> через Bearer или Basic-пароль) или HTTP Basic.',
     'api.spec':'<strong>Полная спецификация OpenAPI 3.1</strong> включена в архив релиза как <code>docs/api-spec.yaml</code>.',
+    'sb.scanning':'Сканирование образов',
+    'scan.title':'Сканирование образов',
+    'scan.sub':'Пакеты Maven, npm, PyPI и Cargo Nexspence сканирует через OSV.dev из коробки. Для Docker- и OCI-<em>образов</em> используется Trivy, который вы предоставляете сами — в образе nexspence его нет.',
+    'scan.why':'<strong>Почему вы предоставляете его сами:</strong> Trivy — это ~150 МБ стороннего софта, который раньше ехал внутри каждого образа nexspence независимо от того, сканирует кто-нибудь или нет, зафиксированный в версии, которую никто не выбирал, и необновляемый без релиза nexspence. Предоставляя его сами, вы выбираете версию и обновляете её по своему графику.',
+    'scan.states.sep':'Что сообщает Nexspence',
+    'scan.states.desc':'Сканер проверяется командой <code>&lt;bin&gt; --version</code>, которая сразу отвечает на три вопроса: есть ли файл, запустится ли он здесь и какая это версия. Ответ — одно из четырёх состояний, видное в <strong>Admin → Security → CVE Scan</strong>, в <code>GET /api/v1/security/scanner</code> и в одной записи лога при старте.',
+    'scan.th.state':'Состояние','scan.th.meaning':'Что означает',
+    'scan.st.disabled':'<code>scan.trivy.enabled</code> равно <code>false</code> — nexspence даже не искал бинарь.',
+    'scan.st.missing':'Включено, но по указанному пути файла нет и <code>trivy</code> нет в <code>PATH</code>.',
+    'scan.st.broken':'Файл есть, но не запускается: не та архитектура, оборванная закачка или нет бита исполнения.',
+    'scan.st.ready':'Запускается и сообщил версию — сканирование работает.',
+    'scan.states.note':'Запрос скана при недоступном сканере отклоняется с этой же фразой, а не падает непонятно почему; автоматическое сканирование при загрузке пропускает образы, вместо того чтобы забивать историю ошибками. Когда сканирование уже включено, проверка бинаря повторяется не чаще раза в минуту — появление или замена бинаря подхватываются без перезапуска. Изменения конфигурации, включая сам переключатель, читаются только при старте.',
+    'scan.setup.sep':'Как предоставить Trivy',
+    'scan.tab.k8s':'Kubernetes / Helm','scan.tab.compose':'Docker Compose','scan.tab.native':'Нативная установка',
+    'scan.k8s.desc':'Включается одним значением. Чарт добавляет initContainer <code>trivy-copy</code>, который копирует бинарь из образа <code>aquasec/trivy</code> в общий <code>emptyDir</code> и указывает на него nexspence.',
+    'scan.k8s.note':'Заложите ~150 МБ на общий том — это только сам бинарь. База уязвимостей живёт в томе кэша, а не здесь.',
+    'scan.compose.desc':'Поставляемый <code>docker-compose.yml</code> уже готов: одноразовый сервис <code>trivy-init</code> в профиле <code>scanning</code> наполняет именованный том, который nexspence монтирует только на чтение. От вас — два действия.',
+    'scan.native.desc':'Вне контейнера подойдёт любой обычно установленный Trivy — <code>scan.trivy.bin</code> по умолчанию равен <code>trivy</code> и разрешается через <code>PATH</code>, так что установка пакетным менеджером находится сама. После правки конфигурации перезапустите nexspence.',
+    'scan.check.sep':'Проверка, что всё заработало',
+    'scan.db.sep':'Откуда берётся база уязвимостей',
+    'scan.db.desc':'По умолчанию Trivy тянет её с <code>ghcr.io</code> при первом использовании — поэтому первый скан идёт минуту-две. В изолированной сети зеркалируйте её в репозиторий nexspence и укажите Trivy на зеркало. Зеркалируйте <em>обе</em> базы: Java-база скачивается отдельно при первом сканировании образа с Java-артефактами, и без зеркала этот скан пойдёт на <code>ghcr.io</code> и упадёт.',
+    'scan.trap':'<strong>Ловушка — хостовый бинарь в контейнере.</strong> Внутри контейнера nexspence работает только официальная статическая Linux-сборка Aqua Security. Trivy из community-пакетов дистрибутивов, Homebrew или macOS собран для другого окружения и попадёт в состояние <code>broken</code>. Если сомневаетесь — скопируйте бинарь из образа <code>aquasec/trivy</code>: он заведомо работает там под uid 1000. Полный справочник, включая все ключи конфигурации: <a href="https://github.com/nexspence/nexspence/blob/main/docs/scanning.md" target="_blank" rel="noreferrer">docs/scanning.md</a>.',
+    'upg.v2.alert':'<strong>Обновление до v2.0.0 — сканированию образов нужен ваш Trivy.</strong> В образе v2.0.0 больше нет Trivy. Всё остальное обновляется как обычно, но сканирование Docker- и OCI-образов не работает, пока вы не предоставите бинарь — см. <strong>Сканирование образов</strong> в разделе Advanced. Сканирования пакетов (Maven, npm, PyPI, Cargo) это не касается: оно идёт через OSV.dev и никогда не требовало Trivy. Уже сохранённые результаты сканов остаются в базе и остаются видны.',
   }
 };
 
@@ -2425,6 +2556,7 @@ const SECTIONS=[
   {key:'webhooks'},
   {key:'migration'},
   {key:'monitoring'},
+  {key:'scanning'},
   {key:'promotion'},
   {key:'replication'},
   {key:'tf-overview'},
@@ -2444,6 +2576,7 @@ let FEATURE_BADGE={
   'replication':'v1.3.0',
   'promotion':'v1.8.1',
   'monitoring':'v1.9.0',
+  'scanning':'v2.0.0',
   'migration':'v1.33.0',
   'security':'v1.18.0',
   'upgrade':'v1.18.0',
@@ -2469,6 +2602,7 @@ const SIDEBAR_GROUPS=[
   {id:'advanced',items:[
     {key:'migration',   icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/></svg>'},
     {key:'monitoring',  icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>'},
+    {key:'scanning',    icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><circle cx="12" cy="11" r="2.5"/><path d="M13.8 12.8L16 15"/></svg>'},
     {key:'promotion',   icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="17 11 21 7 17 3"/><line x1="21" y1="7" x2="9" y2="7"/><polyline points="7 21 3 17 7 13"/><line x1="15" y1="17" x2="3" y2="17"/></svg>'},
     {key:'replication', icon:'<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>'},
   ]},

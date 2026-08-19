@@ -129,6 +129,17 @@ Five networking options (nginx, Traefik, Cilium ingress, Istio Gateway, Cilium G
 
 ---
 
+## Image scanning (Trivy)
+
+Image scanning is not included. Nexspence ships no scanner binary; to scan
+Docker and OCI images you supply Trivy yourself — see [scanning.md](scanning.md)
+for the complete per-deployment procedure (Helm: `scanning.enabled: true`;
+compose: `docker compose --profile scanning up -d` with
+`NEXSPENCE_SCAN_TRIVY_ENABLED=true`). Scanning of Maven/npm/PyPI/Cargo packages
+uses OSV.dev and works with nothing installed.
+
+---
+
 ## Configuration Reference
 
 `config.yaml` is the primary configuration file. Every key can be overridden via an environment variable using the pattern `NEXSPENCE_<SECTION>_<KEY>` (uppercase, underscore-separated).
@@ -156,6 +167,8 @@ Five networking options (nginx, Traefik, Cilium ingress, Istio Gateway, Cilium G
 | `auth.rate_limit_rps` / `auth.rate_limit_burst` | `50` / `100` | Sustained rate and burst for the above |
 | `bootstrap.enabled` | `true` | Create the admin account on start. Set to `false` once real accounts exist to stop keeping admin credentials in the config — see [Removing the bootstrap admin credentials](#removing-the-bootstrap-admin-credentials). |
 | `bootstrap.admin_password` | `admin123` | Auto-created admin password — **change this** |
+| `scan.trivy.enabled` | `false` | Image scanning switch. Requires a Trivy binary you supply — see [scanning.md](scanning.md). |
+| `scan.trivy.bin` | `trivy` | Path to the Trivy binary, or a name resolved through `PATH` |
 | `cleanup.default_schedule` | `0 2 * * *` | Default cron for cleanup policies |
 | `audit.retention_days` | `90` | Audit log partition retention |
 | `metrics.public` | `false` | Serve `GET /metrics` without authentication. Default requires a Bearer token; see [Prometheus](#prometheus). |

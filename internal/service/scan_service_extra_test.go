@@ -3,6 +3,7 @@ package service_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -40,23 +41,22 @@ func TestScanExtra_TrivyErrorMessage_KnownPatterns(t *testing.T) {
 }
 
 func TestScanExtra_TrivyErrorMessage_ViaFailedScan(t *testing.T) {
-	// Use a script-based fake trivy: write a tiny shell that outputs a known
-	// stderr string and exits 1. We cannot rely on a real trivy binary here.
-	// Instead verify that a missing binary returns ErrTrivyNotInstalled and
-	// a non-zero exit with output still produces a result (not a hard error).
+	// A missing binary must be refused up front with the probe's status —
+	// the exec never happens, so no exec error can leak out of Scan.
 	comp := newDockerComp("docker-hosted", "myapp", "1.0")
 	comps := testutil.NewComponentRepo()
 	_ = comps.Create(context.Background(), comp)
 
 	svc := service.NewScanService(comps, "http://localhost:8081")
-	svc.TrivyBin = "/no/such/trivy"
+	svc = svc.WithTrivy(service.TrivyOptions{Enabled: true, Bin: "/no/such/trivy"})
 
 	_, err := svc.Scan(context.Background(), comp.ID, "myapp:1.0")
-	if err == nil {
-		t.Fatal("expected error for missing trivy binary")
+	var unavailable *service.ScannerUnavailableError
+	if !errors.As(err, &unavailable) {
+		t.Fatalf("expected *ScannerUnavailableError for missing trivy binary, got: %v", err)
 	}
-	if !strings.Contains(err.Error(), "trivy") {
-		t.Errorf("expected trivy-related error, got: %v", err)
+	if !strings.Contains(err.Error(), "Trivy not found") {
+		t.Errorf("expected the probe's message, got: %v", err)
 	}
 }
 
@@ -397,5 +397,63 @@ func TestScanExtra_ParseTrivyJSON_AllSeverities(t *testing.T) {
 	}
 	if summary.Total != 5 {
 		t.Errorf("expected Total=5, got %d", summary.Total)
+	}
+}
+
+// ── TrivyErrorMessage ────────────────────────────────────────────────────
+
+func TestScanExtra_TrivyErrorMessage_NamesTheDatabaseFailure(t *testing.T) {
+	svc := service.NewScanService(nil, "http://localhost:8081").
+		WithTrivy(service.TrivyOptions{
+			Enabled:      true,
+			DBRepository: []string{"nexspence.example.com/repository/ghcr/aquasecurity/trivy-db:2"},
+		})
+
+	stderr := `FATAL	init error: DB error: failed to download vulnerability DB: ` +
+		`oci download error: failed to fetch the layer: GET https://nexspence.example.com/v2/...: TOOMANYREQUESTS`
+
+	msg := svc.TrivyErrorMessage(errors.New("exit status 1"), stderr)
+
+	if !strings.Contains(msg, "vulnerability database") {
+		t.Errorf("msg = %q, want it to name the database as the thing that failed", msg)
+	}
+	if !strings.Contains(msg, "nexspence.example.com/repository/ghcr/aquasecurity/trivy-db:2") {
+		t.Errorf("msg = %q, want it to name the repository that was tried", msg)
+	}
+	if !strings.Contains(msg, "TOOMANYREQUESTS") {
+		t.Errorf("msg = %q, want the root cause from stderr to survive", msg)
+	}
+}
+
+func TestScanExtra_TrivyErrorMessage_DatabaseDefaultsAreNamedAsSuch(t *testing.T) {
+	svc := service.NewScanService(nil, "http://localhost:8081").
+		WithTrivy(service.TrivyOptions{Enabled: true})
+
+	msg := svc.TrivyErrorMessage(errors.New("exit status 1"), "FATAL	init error: DB error: failed to download vulnerability DB")
+
+	if !strings.Contains(msg, "Trivy defaults") {
+		t.Errorf("msg = %q, want it to say the default repositories were used", msg)
+	}
+}
+
+func TestScanExtra_TrivyErrorMessage_NamesTheJavaDBRepository(t *testing.T) {
+	svc := service.NewScanService(nil, "http://localhost:8081").
+		WithTrivy(service.TrivyOptions{
+			Enabled:          true,
+			JavaDBRepository: []string{"nexspence.example.com/repository/ghcr/aquasecurity/trivy-java-db:1"},
+		})
+
+	msg := svc.TrivyErrorMessage(errors.New("exit status 1"), "FATAL failed to download Java DB")
+
+	if !strings.Contains(msg, "nexspence.example.com/repository/ghcr/aquasecurity/trivy-java-db:1") {
+		t.Errorf("msg = %q, want it to name the Java DB repository that was tried", msg)
+	}
+}
+
+func TestScanExtra_TrivyErrorMessage_LeavesOtherFailuresAlone(t *testing.T) {
+	svc := service.NewScanService(nil, "http://localhost:8081")
+	msg := svc.TrivyErrorMessage(errors.New("exit status 1"), "MANIFEST_UNKNOWN")
+	if !strings.Contains(msg, "re-push the image") {
+		t.Errorf("msg = %q, want the existing manifest message untouched", msg)
 	}
 }

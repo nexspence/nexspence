@@ -26,6 +26,7 @@ func buildScanRouter(svc *service.ScanService) *gin.Engine {
 	r.GET("/api/v1/security/summary", h.Summary)
 	r.GET("/api/v1/security/vulnerabilities", h.Vulnerabilities)
 	r.POST("/api/v1/security/scan/bulk", h.BulkScanHandler)
+	r.GET("/api/v1/security/scanner", h.ScannerStatus)
 	return r
 }
 
@@ -33,12 +34,15 @@ func newDockerComponent(id string) *domain.Component {
 	return &domain.Component{ID: id, Format: "docker", Name: "nginx", Version: "latest", Repository: "docker-hosted"}
 }
 
-// fakeTrivyBin creates a shell script in a temp dir that outputs the given JSON and exits 0.
+// fakeTrivyBin creates a shell script in a temp dir that answers the probe's
+// --version call and otherwise outputs the given JSON, exiting 0 either way.
 func fakeTrivyBin(t *testing.T, stdout string) string {
 	t.Helper()
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "trivy")
-	script := "#!/bin/sh\nprintf '%s' '" + strings.ReplaceAll(stdout, "'", "'\\''") + "'\n"
+	script := "#!/bin/sh\n" +
+		"if [ \"$1\" = \"--version\" ]; then echo 'Version: 0.70.0'; exit 0; fi\n" +
+		"cat <<'NEXSPENCE_EOF'\n" + stdout + "\nNEXSPENCE_EOF\n"
 	if err := os.WriteFile(bin, []byte(script), 0755); err != nil {
 		t.Fatalf("fakeTrivyBin: %v", err)
 	}
@@ -49,14 +53,15 @@ const minimalTrivyJSON = `{"SchemaVersion":2,"Results":[{"Target":"nginx:latest"
 	`{"VulnerabilityID":"CVE-2022-1234","PkgName":"busybox","InstalledVersion":"1.34.0","FixedVersion":"1.34.1","Severity":"HIGH","Title":"rce in sh"}` +
 	`]}]}`
 
-// TestScanHandler_TrivyNotInstalled verifies 503 + error body when trivy binary is missing.
+// TestScanHandler_TrivyNotInstalled verifies 503 + the scanner status body when
+// the trivy binary is missing.
 func TestScanHandler_TrivyNotInstalled(t *testing.T) {
 	comps := testutil.NewComponentRepo()
 	comp := newDockerComponent("")
 	comps.Create(context.Background(), comp) // Create assigns comp.ID
 
 	svc := service.NewScanService(comps, "")
-	svc.TrivyBin = "/no/such/trivy-binary"
+	svc = svc.WithTrivy(service.TrivyOptions{Enabled: true, Bin: "/no/such/trivy-binary"})
 
 	r := buildScanRouter(svc)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/components/"+comp.ID+"/scan", strings.NewReader(`{}`))
@@ -67,19 +72,28 @@ func TestScanHandler_TrivyNotInstalled(t *testing.T) {
 	if w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("want 503 got %d body=%s", w.Code, w.Body.String())
 	}
-	var body map[string]string
+	var body struct {
+		Error   string `json:"error"`
+		Scanner struct {
+			State   string `json:"state"`
+			Message string `json:"message"`
+		} `json:"scanner"`
+	}
 	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode body: %v", err)
 	}
-	if !strings.Contains(body["error"], "trivy") {
-		t.Fatalf("want trivy error message, got %q", body["error"])
+	if !strings.Contains(body.Error, "Trivy not found") {
+		t.Fatalf("want the probe's message, got %q", body.Error)
+	}
+	if body.Scanner.State != string(service.ScannerMissing) {
+		t.Fatalf("want scanner state %q, got %q", service.ScannerMissing, body.Scanner.State)
 	}
 }
 
 // TestScanHandler_ComponentNotFound verifies 400 for a missing component.
 func TestScanHandler_ComponentNotFound(t *testing.T) {
 	svc := service.NewScanService(testutil.NewComponentRepo(), "")
-	svc.TrivyBin = "/no/such/binary"
+	svc = svc.WithTrivy(service.TrivyOptions{Enabled: true, Bin: "/no/such/binary"})
 
 	r := buildScanRouter(svc)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/components/no-such-id/scan", strings.NewReader(`{}`))
@@ -99,7 +113,7 @@ func TestScanHandler_NonDockerComponent(t *testing.T) {
 	comps.Create(context.Background(), comp)
 
 	svc := service.NewScanService(comps, "")
-	svc.TrivyBin = "/no/such/binary"
+	svc = svc.WithTrivy(service.TrivyOptions{Enabled: true, Bin: "/no/such/binary"})
 
 	r := buildScanRouter(svc)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/components/maven-1/scan", strings.NewReader(`{}`))
@@ -122,7 +136,7 @@ func TestScanHandler_SuccessfulScan(t *testing.T) {
 	comps.Create(context.Background(), comp)
 
 	svc := service.NewScanService(comps, "")
-	svc.TrivyBin = fakeTrivyBin(t, minimalTrivyJSON)
+	svc = svc.WithTrivy(service.TrivyOptions{Enabled: true, Bin: fakeTrivyBin(t, minimalTrivyJSON)})
 
 	r := buildScanRouter(svc)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/components/"+comp.ID+"/scan",

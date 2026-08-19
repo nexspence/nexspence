@@ -34,8 +34,12 @@ func (h *ScanHandler) Scan(c *gin.Context) {
 
 	result, err := h.svc.Scan(c.Request.Context(), id, body.ImageRef)
 	if err != nil {
-		if errors.Is(err, service.ErrTrivyNotInstalled) {
-			c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
+		var unavailable *service.ScannerUnavailableError
+		if errors.As(err, &unavailable) {
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"error":   unavailable.Status.Message,
+				"scanner": unavailable.Status,
+			})
 			return
 		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -129,6 +133,16 @@ func (h *ScanHandler) Vulnerabilities(c *gin.Context) {
 		items = []*domain.VulnRow{}
 	}
 	c.JSON(http.StatusOK, gin.H{"items": items, "total": total})
+}
+
+// ScannerStatus reports whether image scanning is available and, when it is,
+// which binary is providing it.
+// GET /api/v1/security/scanner
+//
+// Admin-only, the same gate as triggering a scan: whoever may scan may see what
+// they are scanning with, and the resolved path is not handed to everyone.
+func (h *ScanHandler) ScannerStatus(c *gin.Context) {
+	c.JSON(http.StatusOK, h.svc.Scanner(c.Request.Context()))
 }
 
 // BulkScanHandler triggers a synchronous bulk scan across all components (or one repo).

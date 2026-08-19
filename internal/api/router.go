@@ -217,7 +217,23 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 	// every handler keeps a nil copy of it.
 	scanSvc := service.NewScanService(componentRepo, cfg.HTTP.BaseURL).
 		WithScanResults(scanRepo).
-		WithCredentials(cfg.Bootstrap.AdminUsername, cfg.Bootstrap.AdminPassword)
+		WithCredentials(cfg.Bootstrap.AdminUsername, cfg.Bootstrap.AdminPassword).
+		WithTrivy(service.TrivyOptions{
+			Enabled:          cfg.Scan.Trivy.Enabled,
+			Bin:              cfg.Scan.Trivy.Bin,
+			DBRepository:     cfg.Scan.Trivy.DBRepository,
+			JavaDBRepository: cfg.Scan.Trivy.JavaDBRepository,
+			SkipDBUpdate:     cfg.Scan.Trivy.SkipDBUpdate,
+			CacheDir:         cfg.Scan.Trivy.CacheDir,
+		})
+	// Say once, at boot, what image scanning can do here. Without this the only
+	// way to learn that the binary is missing is to press a button in the UI.
+	st := scanSvc.Scanner(ctx)
+	// Infow, not Info: logger.Logger is a *zap.SugaredLogger, whose Info
+	// concatenates its arguments into the message — the keys and values only
+	// become fields through the …w form, and scanning.md tells operators to
+	// read `state` off this record.
+	log.Infow("image scanner", "state", st.State, "message", st.Message)
 	// A nil trigger in Deps is what disables scan-on-upload, so the config
 	// switch is applied by not wiring the service rather than by a flag the
 	// storage layer would have to consult.
@@ -608,6 +624,7 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 		admin.GET("/api/v1/security/summary", scanH.Summary)
 		admin.GET("/api/v1/security/vulnerabilities", scanH.Vulnerabilities)
 		admin.POST("/api/v1/security/scan/bulk", scanH.BulkScanHandler)
+		admin.GET("/api/v1/security/scanner", scanH.ScannerStatus)
 
 		// ── System ────────────────────────────────────────────
 		admin.GET("/service/rest/v1/tasks", tasksH.List)

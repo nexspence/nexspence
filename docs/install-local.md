@@ -5,6 +5,11 @@ the web UI embedded; it requires an **external PostgreSQL** database (13+).
 
 > Prefer Docker? See [deployment.md](deployment.md). For Kubernetes, see the Helm chart.
 
+> **Image scanning is not included.** Nexspence ships no scanner binary; to scan
+> Docker and OCI images you supply Trivy yourself — see [scanning.md](scanning.md)
+> (for a native install: package-manager install + `scan.trivy.enabled: true`).
+> Scanning of Maven/npm/PyPI/Cargo packages works out of the box via OSV.dev.
+
 ## 1. Prerequisites — PostgreSQL
 
 Provision PostgreSQL (any reachable host), then create a database and role:

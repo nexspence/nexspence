@@ -21,7 +21,7 @@ import (
 // mountScan wires the real ScanService (over mocks) as router.go does.
 // The OSV client is pointed at a local httptest server so the non-Docker scan path
 // is exercised without a live network call. The Trivy binary is forced to a
-// nonexistent path so the Docker path resolves to ErrTrivyNotInstalled (503).
+// nonexistent path so the Docker path resolves to ScannerMissing (503).
 func mountScan(t *testing.T) (*gin.Engine, *testutil.ComponentRepo, *testutil.ScanResultRepo, *httptest.Server) {
 	t.Helper()
 	comps := testutil.NewComponentRepo()
@@ -36,7 +36,7 @@ func mountScan(t *testing.T) (*gin.Engine, *testutil.ComponentRepo, *testutil.Sc
 
 	svc := service.NewScanService(comps, "http://localhost").WithScanResults(scanRepo)
 	svc.OSVClient = &service.OSVClient{BaseURL: osvSrv.URL, HTTPClient: osvSrv.Client()}
-	svc.TrivyBin = "/nonexistent/trivy-binary-xyz" // force ErrTrivyNotInstalled on Docker path
+	svc = svc.WithTrivy(service.TrivyOptions{Enabled: true, Bin: "/nonexistent/trivy-binary-xyz"}) // force ScannerMissing on Docker path
 	svc.TrivyTimeout = 5 * time.Second
 
 	h := handlers.NewScanHandler(svc)
@@ -273,4 +273,57 @@ func TestScanHandler_BulkScan_RepoError_500(t *testing.T) {
 	comps.Err = errors.New("search down")
 	rec := do(t, r, http.MethodPost, "/api/v1/security/scan/bulk", nil)
 	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+}
+
+// ── ScannerStatus ──────────────────────────────────────────────────────────────
+
+func TestScannerStatus_ReportsDisabled(t *testing.T) {
+	svc := service.NewScanService(nil, "http://localhost:8081").WithTrivy(service.TrivyOptions{Enabled: false})
+	r := buildScanRouter(svc)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/security/scanner", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if body["state"] != "disabled" {
+		t.Errorf("state = %v, want disabled", body["state"])
+	}
+	if _, ok := body["path"]; ok {
+		t.Error("a disabled scanner must not report a filesystem path")
+	}
+	if msg, ok := body["message"].(string); !ok || msg == "" {
+		t.Error("message must be a complete sentence the UI can render as-is")
+	}
+}
+
+func TestScannerStatus_ReportsReadyWithVersionAndPath(t *testing.T) {
+	bin := fakeTrivyBin(t, "")
+	svc := service.NewScanService(nil, "http://localhost:8081").WithTrivy(service.TrivyOptions{Enabled: true, Bin: bin})
+	r := buildScanRouter(svc)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/security/scanner", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if body["state"] != "ready" {
+		t.Errorf("state = %v, want ready", body["state"])
+	}
+	if body["path"] != bin {
+		t.Errorf("path = %v, want %q", body["path"], bin)
+	}
+	if body["version"] != "0.70.0" {
+		t.Errorf("version = %v, want 0.70.0", body["version"])
+	}
 }

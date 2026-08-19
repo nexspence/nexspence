@@ -6,6 +6,8 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -81,14 +83,15 @@ func TestScanService_TrivyNotInstalled(t *testing.T) {
 	comps.Create(context.Background(), comp)
 
 	svc := service.NewScanService(comps, "")
-	svc.TrivyBin = "/no/such/binary"
+	svc = svc.WithTrivy(service.TrivyOptions{Enabled: true, Bin: "/no/such/binary"})
 
 	_, err := svc.Scan(context.Background(), comp.ID, "alpine:latest")
-	if err == nil {
-		t.Fatal("expected ErrTrivyNotInstalled")
+	var unavailable *service.ScannerUnavailableError
+	if !errors.As(err, &unavailable) {
+		t.Fatalf("expected *ScannerUnavailableError, got %v", err)
 	}
-	if !errors.Is(err, service.ErrTrivyNotInstalled) {
-		t.Fatalf("expected ErrTrivyNotInstalled, got %v", err)
+	if unavailable.Status.State != service.ScannerMissing {
+		t.Fatalf("State = %q, want %q", unavailable.Status.State, service.ScannerMissing)
 	}
 }
 
@@ -106,14 +109,15 @@ func TestScanService_OCIFormat_ReachesTrivy(t *testing.T) {
 	comps.Create(context.Background(), comp)
 
 	svc := service.NewScanService(comps, "")
-	svc.TrivyBin = "/no/such/binary"
+	svc = svc.WithTrivy(service.TrivyOptions{Enabled: true, Bin: "/no/such/binary"})
 
 	_, err := svc.Scan(context.Background(), comp.ID, "")
-	if err == nil {
-		t.Fatal("expected ErrTrivyNotInstalled")
-	}
-	if !errors.Is(err, service.ErrTrivyNotInstalled) {
+	var unavailable *service.ScannerUnavailableError
+	if !errors.As(err, &unavailable) {
 		t.Fatalf("an oci component must reach the Trivy path, got %v", err)
+	}
+	if unavailable.Status.State != service.ScannerMissing {
+		t.Fatalf("State = %q, want %q", unavailable.Status.State, service.ScannerMissing)
 	}
 }
 
@@ -186,6 +190,110 @@ func TestScanService_GetResult_AfterPersist(t *testing.T) {
 // via the service package's test-visible wrapper.
 func exportParseTrivyJSON(data []byte) ([]domain.CVEFinding, domain.ScanSummary) {
 	return service.ParseTrivyJSONForTest(data)
+}
+
+// Scan must refuse before doing any work when the operator has not enabled
+// image scanning, and say so through the same status the probe reports.
+func TestScan_RefusesWhenDisabled(t *testing.T) {
+	comp := newDockerComp("docker-hosted", "alpine", "latest")
+	comps := testutil.NewComponentRepo()
+	comps.Create(context.Background(), comp)
+
+	svc := service.NewScanService(comps, "http://localhost:8081").
+		WithTrivy(service.TrivyOptions{Enabled: false})
+
+	_, err := svc.Scan(context.Background(), comp.ID, "")
+	var unavailable *service.ScannerUnavailableError
+	if !errors.As(err, &unavailable) {
+		t.Fatalf("err = %v, want *ScannerUnavailableError", err)
+	}
+	if unavailable.Status.State != service.ScannerDisabled {
+		t.Errorf("State = %q, want %q", unavailable.Status.State, service.ScannerDisabled)
+	}
+}
+
+func TestScan_RefusesWhenBinaryMissing(t *testing.T) {
+	comp := newDockerComp("docker-hosted", "alpine", "latest")
+	comps := testutil.NewComponentRepo()
+	comps.Create(context.Background(), comp)
+
+	svc := service.NewScanService(comps, "http://localhost:8081").
+		WithTrivy(service.TrivyOptions{Enabled: true, Bin: "/nonexistent/trivy"})
+
+	_, err := svc.Scan(context.Background(), comp.ID, "")
+	var unavailable *service.ScannerUnavailableError
+	if !errors.As(err, &unavailable) {
+		t.Fatalf("err = %v, want *ScannerUnavailableError", err)
+	}
+	if unavailable.Status.State != service.ScannerMissing {
+		t.Errorf("State = %q, want %q", unavailable.Status.State, service.ScannerMissing)
+	}
+}
+
+// A binary that probes fine but fails the scan itself must come back as a
+// failed scan result carrying the stderr-derived message — not a hard error.
+func TestScan_FailedRunRecordsTheStderrMessage(t *testing.T) {
+	if os.Getenv("CI") != "" {
+		t.Skip("skip fake-trivy shell script test in CI (no /bin/sh guarantee)")
+	}
+	comp := newDockerComp("docker-hosted", "alpine", "latest")
+	comps := testutil.NewComponentRepo()
+	comps.Create(context.Background(), comp)
+
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "trivy")
+	script := "#!/bin/sh\n" +
+		"if [ \"$1\" = \"--version\" ]; then echo 'Version: 0.70.0'; exit 0; fi\n" +
+		"echo 'MANIFEST_UNKNOWN: manifest unknown' >&2\n" +
+		"exit 1\n"
+	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake trivy: %v", err)
+	}
+
+	svc := service.NewScanService(comps, "http://localhost:8081").
+		WithTrivy(service.TrivyOptions{Enabled: true, Bin: bin})
+
+	result, err := svc.Scan(context.Background(), comp.ID, "")
+	if err != nil {
+		t.Fatalf("a failed run must be a result, not an error: %v", err)
+	}
+	if result.Status != domain.ScanStatusFailed {
+		t.Errorf("Status = %q, want %q", result.Status, domain.ScanStatusFailed)
+	}
+	if !strings.Contains(result.Error, "image manifest not found") {
+		t.Errorf("Error = %q, want the stderr-derived MANIFEST_UNKNOWN mapping", result.Error)
+	}
+}
+
+// The scanner switch governs image scanning only: OSV-backed formats must not
+// be refused when Trivy is disabled — they never needed it.
+func TestScan_OSVFormatsIgnoreTheScannerSwitch(t *testing.T) {
+	comp := &domain.Component{
+		ID: "comp-scan-npm", Repository: "npm-hosted", Format: "npm", Name: "lodash", Version: "4.17.21",
+	}
+	comps := testutil.NewComponentRepo()
+	comps.Create(context.Background(), comp)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{"vulns": []any{}})
+	}))
+	defer srv.Close()
+
+	svc := service.NewScanService(comps, "http://localhost:8081").
+		WithTrivy(service.TrivyOptions{Enabled: false})
+	svc.OSVClient.BaseURL = srv.URL
+
+	result, err := svc.Scan(context.Background(), comp.ID, "")
+	var unavailable *service.ScannerUnavailableError
+	if errors.As(err, &unavailable) {
+		t.Fatalf("an npm scan must not be refused by the image-scanner switch, got %v", err)
+	}
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Status != domain.ScanStatusOK {
+		t.Errorf("Status = %q, want %q", result.Status, domain.ScanStatusOK)
+	}
 }
 
 func TestScanService_WithScanResults_InsertsCalled(t *testing.T) {

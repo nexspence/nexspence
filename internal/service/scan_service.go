@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"net/url"
@@ -19,26 +18,6 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/repository"
 )
-
-// ErrTrivyNotInstalled is returned when the trivy executable is missing (not found in PATH or at TrivyBin).
-var ErrTrivyNotInstalled = errors.New("trivy not installed; install trivy or use Docker image with trivy pre-bundled")
-
-func trivyExecMissing(err error) bool {
-	if err == nil {
-		return false
-	}
-	if errors.Is(err, exec.ErrNotFound) {
-		return true
-	}
-	var pe *os.PathError
-	if errors.As(err, &pe) && errors.Is(pe.Err, os.ErrNotExist) {
-		return true
-	}
-	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "executable file not found") ||
-		strings.Contains(msg, "no such file or directory") ||
-		strings.Contains(msg, "cannot find the file")
-}
 
 // scanTrivyErrorMessage returns a concise error string from a failed Trivy run.
 // It detects well-known OCI registry errors and returns a human-readable message
@@ -60,6 +39,56 @@ func scanTrivyErrorMessage(runErr error, stderr string) string {
 		return "image not found in registry — re-push the image to make it scannable"
 	case strings.Contains(msg, "no such file or directory") && strings.Contains(msg, "docker.sock"):
 		return "Docker socket not available — ensure --image-src remote is set (internal error)"
+	}
+	return msg
+}
+
+// TrivyErrorMessage turns a failed Trivy run into one sentence an operator can
+// act on. It is a method rather than a function because the database failure is
+// only actionable with the repositories that were actually tried.
+func (s *ScanService) TrivyErrorMessage(runErr error, stderr string) string {
+	if trivyDBFailure(stderr) {
+		msg := "could not fetch the vulnerability database from " + s.dbRepositoriesForMessage()
+		if cause := firstStderrLine(stderr); cause != "" {
+			msg += " (" + cause + ")"
+		}
+		return msg
+	}
+	return scanTrivyErrorMessage(runErr, stderr)
+}
+
+// trivyDBFailure recognizes the database-download failure among Trivy's error
+// output. Matching on substrings is fragile by nature, so it is deliberately
+// broad: a false positive still says "database", which is where the operator
+// should look, and a false negative only loses the friendlier wording.
+func trivyDBFailure(stderr string) bool {
+	lower := strings.ToLower(stderr)
+	return strings.Contains(lower, "vulnerability db") ||
+		strings.Contains(lower, "vulnerability database") ||
+		strings.Contains(lower, "db error") ||
+		strings.Contains(lower, "failed to download db") ||
+		strings.Contains(lower, "java db")
+}
+
+// firstStderrLine returns the first non-empty, trimmed line of stderr — the
+// root cause Trivy reports before its usually-noisier detail lines.
+func firstStderrLine(stderr string) string {
+	for _, line := range strings.Split(stderr, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			return line
+		}
+	}
+	return ""
+}
+
+func (s *ScanService) dbRepositoriesForMessage() string {
+	msg := "the Trivy defaults"
+	if len(s.trivy.DBRepository) > 0 {
+		msg = strings.Join(s.trivy.DBRepository, ", ")
+	}
+	if len(s.trivy.JavaDBRepository) > 0 {
+		msg += "; Java DB from " + strings.Join(s.trivy.JavaDBRepository, ", ")
 	}
 	return msg
 }
@@ -108,12 +137,22 @@ func httpBaseURLInsecure(baseURL string) bool {
 type ScanService struct {
 	Components   repository.ComponentRepo
 	HTTPBaseURL  string                    // e.g. http://localhost:8081 — used to build registry pull refs for hosted images
-	TrivyBin     string                    // path to trivy binary; defaults to "trivy"
 	TrivyTimeout time.Duration             // per-scan wall-clock limit (0 = no extra timeout); default 10m
 	ScanResults  repository.ScanResultRepo // may be nil; if set, each scan is persisted here
 	OSVClient    *OSVClient                // used for non-Docker formats
-	scanUsername string                    // registry credentials passed to trivy --username
+	scanUsername string                    // registry credentials handed to Trivy via TRIVY_USERNAME/TRIVY_PASSWORD (see TrivyEnv)
 	scanPassword string
+
+	// trivy is the operator's scanner: nexspence ships none, so everything
+	// about it — whether it exists at all, where it is — comes from config.
+	trivy TrivyOptions
+
+	// Probe cache. nowFn is a seam so tests can hold time still; it is
+	// nil-safe through the now() helper.
+	statusMu sync.Mutex
+	status   ScannerStatus
+	statusAt time.Time
+	nowFn    func() time.Time
 
 	// trivyMu serializes Trivy CLI runs. Trivy's on-disk cache (BoltDB) is not safe for concurrent
 	// processes; parallel scans caused "cache may be in use by another process: timeout".
@@ -126,6 +165,13 @@ type ScanService struct {
 	queue chan string
 }
 
+func (s *ScanService) now() time.Time {
+	if s.nowFn != nil {
+		return s.nowFn()
+	}
+	return time.Now()
+}
+
 // autoScanQueueSize bounds the outstanding automatic scans. Past this, uploads
 // keep succeeding and the overflow waits for the next bulk scan.
 const autoScanQueueSize = 256
@@ -135,7 +181,7 @@ func NewScanService(components repository.ComponentRepo, httpBaseURL string) *Sc
 	return &ScanService{
 		Components:   components,
 		HTTPBaseURL:  strings.TrimSpace(httpBaseURL),
-		TrivyBin:     "trivy",
+		trivy:        TrivyOptions{Bin: "trivy"},
 		TrivyTimeout: 10 * time.Minute,
 		OSVClient:    NewOSVClient(),
 		queue:        make(chan string, autoScanQueueSize),
@@ -199,6 +245,15 @@ func (s *ScanService) StartScheduler(ctx context.Context, schedule string) {
 	s.drainQueue(ctx)
 }
 
+// isImageFormat reports whether a component is scanned by Trivy rather than by OSV.
+func isImageFormat(format string) bool {
+	switch strings.ToLower(format) {
+	case "docker", "oci":
+		return true
+	}
+	return false
+}
+
 // skipAutoScan reports whether a queued component is not worth a scanner run.
 //
 // A component that cannot be read is left to Scan to report — this only filters
@@ -208,7 +263,12 @@ func (s *ScanService) skipAutoScan(ctx context.Context, componentID string) bool
 	if err != nil || comp == nil {
 		return false
 	}
-	return isDigestAlias(comp.Version)
+	if isDigestAlias(comp.Version) {
+		return true
+	}
+	// No scanner, no scan — and no error per artifact either. A capability the
+	// operator has not provided is not an upload failure.
+	return isImageFormat(comp.Format) && !s.Scanner(ctx).Ready()
 }
 
 // drainQueue scans queued components sequentially until ctx is done.
@@ -244,6 +304,15 @@ func (s *ScanService) WithCredentials(username, password string) *ScanService {
 	return s
 }
 
+// WithTrivy sets the operator-supplied scanner options and returns s.
+func (s *ScanService) WithTrivy(opts TrivyOptions) *ScanService {
+	s.trivy = opts
+	return s
+}
+
+// TrivyOptions returns the scanner options in force.
+func (s *ScanService) TrivyOptions() TrivyOptions { return s.trivy }
+
 // Scan runs trivy against imageRef, persists the result in component.Extra["scan_result"],
 // and returns it. Components of the two OCI Distribution formats (docker, oci) go to
 // Trivy, a few language formats go to OSV, and anything else gets a clear error.
@@ -255,17 +324,26 @@ func (s *ScanService) Scan(ctx context.Context, componentID, imageRef string) (*
 	if comp == nil {
 		return nil, fmt.Errorf("component %s not found", componentID)
 	}
-	switch strings.ToLower(comp.Format) {
-	case "docker", "oci":
+	format := strings.ToLower(comp.Format)
+	switch {
+	case isImageFormat(format):
 		// Falls through to the Trivy path below. An oci repository holds the same
 		// content a docker one does — an ORAS artifact is an image by structure —
 		// so refusing it on its format label would be wrong. A non-image artifact
 		// (a chart, a signature) surfaces as a Trivy error instead of being
 		// refused up front, which is the more honest answer.
-	case "maven", "npm", "pypi", "cargo":
+	case format == "maven" || format == "npm" || format == "pypi" || format == "cargo":
 		return s.scanOSV(ctx, comp)
 	default:
 		return nil, fmt.Errorf("vulnerability scanning is not supported for format %q", comp.Format)
+	}
+
+	// The capability is checked before any work: a component that cannot be
+	// scanned should cost nothing and should say why. A binary that vanishes
+	// within the ready-cache TTL surfaces as a failed scan result rather than
+	// a refusal — deliberate, it self-heals at the next probe.
+	if st := s.Scanner(ctx); !st.Ready() {
+		return nil, &ScannerUnavailableError{Status: st}
 	}
 
 	ref := strings.TrimSpace(imageRef)
@@ -285,27 +363,8 @@ func (s *ScanService) Scan(ctx context.Context, componentID, imageRef string) (*
 		ImageRef:  ref,
 	}
 
-	bin := s.TrivyBin
-	if bin == "" {
-		bin = "trivy"
-	}
-
-	// #nosec G204 — ref is built from DB / authenticated override; argv is not user-controlled shell.
-	args := []string{
-		"image",
-		"--format", "json",
-		"--exit-code", "0", // do not use non-zero exit when CVEs exist; we rely on JSON
-		"--quiet",
-		"--no-progress",
-		"--image-src", "remote", // no Docker/containerd socket inside the container
-	}
-	if httpBaseURLInsecure(s.HTTPBaseURL) {
-		args = append(args, "--insecure")
-	}
-	if s.scanUsername != "" {
-		args = append(args, "--username", s.scanUsername, "--password", s.scanPassword)
-	}
-	args = append(args, ref)
+	bin := s.trivy.BinOrDefault()
+	args := TrivyScanArgs(s.trivy, ref, httpBaseURLInsecure(s.HTTPBaseURL))
 
 	// Apply per-scan timeout to guard against trivy hanging (e.g. on first DB download).
 	scanCtx := ctx
@@ -321,25 +380,23 @@ func (s *ScanService) Scan(ctx context.Context, componentID, imageRef string) (*
 	func() {
 		s.trivyMu.Lock()
 		defer s.trivyMu.Unlock()
+		// #nosec G204 — argv is built from config and DB state, never from a shell string.
 		cmd := exec.CommandContext(scanCtx, bin, args...)
+		cmd.Env = TrivyEnv(os.Environ(), s.scanUsername, s.scanPassword)
 		cmd.Stderr = &stderrBuf
 		out, runErr = cmd.Output()
 	}()
 
-	if runErr != nil {
-		if len(out) == 0 && trivyExecMissing(runErr) {
-			return nil, ErrTrivyNotInstalled
-		}
-		// Trivy may exit non-zero when vulnerabilities are found — still parse stdout if present.
-		// Empty stdout + error usually means a real failure; details are on stderr.
-		if len(out) == 0 {
-			msg := scanTrivyErrorMessage(runErr, stderrBuf.String())
-			log.Printf("nexor: trivy scan failed component=%s imageRef=%q: %s", componentID, ref, msg)
-			result.Status = domain.ScanStatusFailed
-			result.Error = truncateScanError(msg)
-			s.persist(ctx, comp, result, "trivy")
-			return result, nil
-		}
+	if runErr != nil && len(out) == 0 {
+		// Trivy may exit non-zero when vulnerabilities are found — stdout is
+		// still parsed below when present. Empty stdout plus an error is a real
+		// failure, and the details are on stderr.
+		msg := s.TrivyErrorMessage(runErr, stderrBuf.String())
+		log.Printf("nexor: trivy scan failed component=%s imageRef=%q: %s", componentID, ref, msg)
+		result.Status = domain.ScanStatusFailed
+		result.Error = truncateScanError(msg)
+		s.persist(ctx, comp, result, "trivy")
+		return result, nil
 	}
 
 	result.Findings, result.Summary = parseTrivyJSON(out)
@@ -493,6 +550,9 @@ func (s *ScanService) BulkScan(ctx context.Context, repoName string) (scanned in
 	}
 	for _, comp := range page.Items {
 		if isDigestAlias(comp.Version) {
+			continue
+		}
+		if isImageFormat(comp.Format) && !s.Scanner(ctx).Ready() {
 			continue
 		}
 		_, scanErr := s.Scan(ctx, comp.ID, "")

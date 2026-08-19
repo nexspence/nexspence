@@ -200,6 +200,29 @@ Leaving `config.metricsPublic=false` keeps the token requirement — add an
 
 ---
 
+## Image Scanning (Trivy)
+
+The nexspence image contains no scanner. Scanning of Docker and OCI *images*
+needs a Trivy binary you supply; package scanning (Maven, npm, PyPI, Cargo)
+uses OSV.dev and needs nothing.
+
+```yaml
+scanning:
+  enabled: true
+```
+
+That adds a `trivy-copy` initContainer which copies the binary out of
+`aquasec/trivy` into an `emptyDir` shared with the app, and sets
+`NEXSPENCE_SCAN_TRIVY_ENABLED` / `NEXSPENCE_SCAN_TRIVY_BIN` for you. Pin the
+Trivy version under `scanning.image.tag`, and size the shared volume with
+`scanning.volumeSize` (default 300Mi — the binary alone is ~150 MB; the
+vulnerability database lands in the existing cache volume).
+
+Check it afterwards: `GET /api/v1/security/scanner` answers `ready` with the
+version, or names what is wrong. Full reference: [docs/scanning.md](../../../docs/scanning.md).
+
+---
+
 ## Upgrading
 
 ```bash
@@ -210,6 +233,10 @@ helm upgrade nexspence \
 ```
 
 Database migrations run automatically on pod start — no manual step needed.
+
+**Upgrading to 2.0.0:** the image no longer bundles Trivy. Image scanning
+stops until you set `scanning.enabled: true` (see above); everything else
+upgrades unchanged, and scan results already in the database stay visible.
 
 ---
 

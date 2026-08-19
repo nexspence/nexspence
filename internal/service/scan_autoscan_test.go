@@ -2,6 +2,7 @@ package service_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -95,7 +96,7 @@ func TestScanService_TriggerAsync_SkipsDigestAliases(t *testing.T) {
 	svc.OSVClient.BaseURL = osvServerWithOneVuln(t).URL
 	// Point Trivy at a binary that does not exist: if the alias is scanned after
 	// all, it shells out and the assertion below catches it either way.
-	svc.TrivyBin = "nexspence-no-such-trivy"
+	svc = svc.WithTrivy(service.TrivyOptions{Enabled: true, Bin: "nexspence-no-such-trivy"})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -119,6 +120,85 @@ func TestScanService_TriggerAsync_SkipsDigestAliases(t *testing.T) {
 	}
 	if c.Extra["scan_result"] != nil {
 		t.Error("a digest-aliased component must not get a cached scan result")
+	}
+}
+
+// A capability the operator has not provided is not an upload failure: an
+// image component queued while the scanner is disabled must be skipped, not
+// counted as failed.
+func TestBulkScan_SkipsImagesWhenTheScannerIsNotReady(t *testing.T) {
+	dockerComp := &domain.Component{Repository: "dockerhosted", Format: "docker", Name: "alpine", Version: "latest"}
+	npmComp := &domain.Component{Repository: "npmhosted", Format: "npm", Name: "lodash", Version: "4.17.20"}
+	comps := testutil.NewComponentRepo()
+	comps.Create(context.Background(), dockerComp)
+	comps.Create(context.Background(), npmComp)
+
+	svc := service.NewScanService(comps, "http://localhost:8081").
+		WithTrivy(service.TrivyOptions{Enabled: false})
+	svc.OSVClient.BaseURL = osvServerWithOneVuln(t).URL
+
+	scanned, failed, err := svc.BulkScan(context.Background(), "")
+	if err != nil {
+		t.Fatalf("BulkScan: %v", err)
+	}
+	if failed != 0 {
+		t.Errorf("failed = %d, want 0 — an image with no scanner is skipped, not failed", failed)
+	}
+	if scanned != 1 {
+		t.Errorf("scanned = %d, want 1 — the npm component still scans via OSV", scanned)
+	}
+}
+
+// The same rule applies on the upload-triggered queue path: a docker component
+// queued while the scanner is disabled must not produce a Scan attempt (and
+// therefore no scan result row), the same way a digest alias or an
+// unsupported format does not.
+func TestScanService_TriggerAsync_SkipsImagesWhenTheScannerIsNotReady(t *testing.T) {
+	dockerComp := &domain.Component{Repository: "dockerhosted", Format: "docker", Name: "alpine", Version: "latest"}
+	// Queued behind it: once this one has been scanned the docker component
+	// has demonstrably had its turn in the queue.
+	marker := &domain.Component{Repository: "npmhosted", Format: "npm", Name: "lodash", Version: "4.17.20"}
+	comps := testutil.NewComponentRepo()
+	comps.Create(context.Background(), dockerComp)
+	comps.Create(context.Background(), marker)
+
+	scanRepo := testutil.NewScanResultRepo()
+	svc := service.NewScanService(comps, "http://localhost:8081").WithScanResults(scanRepo)
+	svc.OSVClient.BaseURL = osvServerWithOneVuln(t).URL
+	svc = svc.WithTrivy(service.TrivyOptions{Enabled: false})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Scan's own gate refuses a not-ready scanner before persisting anything,
+	// so an unchanged scanRepo can't tell a working skip from a plain refusal.
+	// The one thing that differs is drainQueue's "auto-scan skipped" log line,
+	// which only fires when skipAutoScan does NOT catch the component first.
+	out := captureLog(t, func() {
+		go svc.StartScheduler(ctx, "")
+
+		svc.TriggerAsync(dockerComp.ID)
+		svc.TriggerAsync(marker.ID)
+
+		waitFor(t, "the queue to reach the scannable component", func() bool {
+			return len(scanRepo.Rows()) > 0
+		})
+	})
+
+	if strings.Contains(out, "auto-scan skipped") {
+		t.Errorf("log %q must not report an auto-scan skip for a component with no scanner available — skipAutoScan should have caught it silently", out)
+	}
+	for _, row := range scanRepo.Rows() {
+		if row.ComponentID == dockerComp.ID {
+			t.Error("a docker component must not be scanned while the scanner is disabled")
+		}
+	}
+	c, err := comps.Get(context.Background(), dockerComp.ID)
+	if err != nil {
+		t.Fatalf("get docker component: %v", err)
+	}
+	if c.Extra["scan_result"] != nil {
+		t.Error("a docker component must not get a cached scan result while the scanner is disabled")
 	}
 }
 

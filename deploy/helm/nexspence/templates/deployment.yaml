@@ -33,6 +33,31 @@ spec:
       serviceAccountName: {{ include "nexspence.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- if .Values.scanning.enabled }}
+      initContainers:
+        # Nexspence ships no scanner. This copies the operator's chosen Trivy
+        # into a shared volume; the application execs it from there.
+        - name: trivy-copy
+          image: "{{ .Values.scanning.image.repository }}:{{ .Values.scanning.image.tag }}"
+          imagePullPolicy: {{ .Values.scanning.image.pullPolicy }}
+          command: ["sh", "-c", "cp /usr/local/bin/trivy /opt/trivy/trivy && chmod 0755 /opt/trivy/trivy"]
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          volumeMounts:
+            - name: trivy-bin
+              mountPath: /opt/trivy
+      {{- end }}
       containers:
         - name: nexspence
           securityContext:
@@ -53,6 +78,12 @@ spec:
               value: /app
             - name: TRIVY_CACHE_DIR
               value: /app/.cache/trivy
+            {{- if .Values.scanning.enabled }}
+            - name: NEXSPENCE_SCAN_TRIVY_ENABLED
+              value: "true"
+            - name: NEXSPENCE_SCAN_TRIVY_BIN
+              value: /opt/trivy/trivy
+            {{- end }}
           envFrom:
             - configMapRef:
                 name: {{ include "nexspence.fullname" . }}
@@ -66,7 +97,8 @@ spec:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
             # readOnlyRootFilesystem makes the container fs read-only, so every
-            # path the app / bundled trivy writes to needs a writable mount.
+            # path the app — or the Trivy the operator supplies — writes to
+            # needs a writable mount.
             - name: tmp
               mountPath: /tmp
             - name: cache
@@ -74,6 +106,11 @@ spec:
             {{- if eq .Values.storage.type "local" }}
             - name: blobs
               mountPath: {{ .Values.storage.local.mountPath }}
+            {{- end }}
+            {{- if .Values.scanning.enabled }}
+            - name: trivy-bin
+              mountPath: /opt/trivy
+              readOnly: true
             {{- end }}
       volumes:
         # Writable scratch dirs (rootfs is read-only). The trivy cache lives at
@@ -86,6 +123,11 @@ spec:
         - name: blobs
           persistentVolumeClaim:
             claimName: {{ include "nexspence.fullname" . }}-blobs
+        {{- end }}
+        {{- if .Values.scanning.enabled }}
+        - name: trivy-bin
+          emptyDir:
+            sizeLimit: {{ .Values.scanning.volumeSize }}
         {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
