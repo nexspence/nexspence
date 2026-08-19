@@ -350,15 +350,15 @@ Every `config.yaml` key maps to its environment variable as
 ## Rolling back
 
 If you need image scanning working right now and cannot supply a binary yet,
-pin the previous image tag: **v1.38.0** is the last release whose image still
+pin the previous image tag: **v1.39.0** is the last release whose image still
 bundles Trivy.
 
 ```bash
 # docker / compose
-image: ghcr.io/nexspence/nexspence:v1.38.0
+image: ghcr.io/nexspence/nexspence:v1.39.0
 
 # Helm
-helm upgrade nexspence deploy/helm/nexspence --set image.tag=v1.38.0 --namespace nexspence
+helm upgrade nexspence deploy/helm/nexspence --set image.tag=v1.39.0 --namespace nexspence
 ```
 
 Note for compose users: the shipped `docker-compose.yml` builds the image from

@@ -97,7 +97,8 @@ spec:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
             # readOnlyRootFilesystem makes the container fs read-only, so every
-            # path the app / bundled trivy writes to needs a writable mount.
+            # path the app — or the Trivy the operator supplies — writes to
+            # needs a writable mount.
             - name: tmp
               mountPath: /tmp
             - name: cache

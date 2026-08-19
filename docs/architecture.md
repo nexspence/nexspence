@@ -181,7 +181,7 @@ Pure business logic; no HTTP concerns; depend only on repository interfaces.
 | `BackupService` | Full tar.gz export (metadata + blobs); non-destructive restore with UUID remapping |
 | `ContentSelectorService` | CEL program compilation + cache; Variant B gate evaluation |
 | `WebhookService` | Async delivery with HMAC-SHA256; retry; inactive hook skip |
-| `ScanService` | Trivy for `docker`/`oci`, OSV.dev for `maven`/`npm`/`pypi`/`cargo`; auto-scan queued on upload plus a nightly bulk re-scan; results cached in `components.extra` and persisted to `scan_results`; CSV/JSON export |
+| `ScanService` | Trivy (operator-supplied, see [scanning.md](scanning.md)) for `docker`/`oci`, OSV.dev for `maven`/`npm`/`pypi`/`cargo`; auto-scan queued on upload plus a nightly bulk re-scan; results cached in `components.extra` and persisted to `scan_results`; CSV/JSON export |
 | `RBACService` | Role → privilege → content-selector evaluation for a caller, path and action |
 | `RoutingRuleService` | Path allow/block rules applied to group-repository fan-out |
 | `PromotionService` | Staging → production promotion with a scan-pass gate and optional manual approval |
@@ -270,7 +270,7 @@ API routes:
 ### Phase 8 — Security & Compliance
 
 Shipped: OIDC (with PKCE), SAML, LDAP bind + group sync, rate limiting, and
-vulnerability scanning — Trivy for `docker`/`oci` images and OSV.dev for
+vulnerability scanning — an operator-supplied Trivy for `docker`/`oci` images and OSV.dev for
 `maven`/`npm`/`pypi`/`cargo`, queued automatically on upload with a nightly bulk
 re-scan, results in `components.extra` and the `scan_results` table.
 
