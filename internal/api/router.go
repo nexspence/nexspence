@@ -229,7 +229,11 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 	// Say once, at boot, what image scanning can do here. Without this the only
 	// way to learn that the binary is missing is to press a button in the UI.
 	st := scanSvc.Scanner(ctx)
-	log.Info("image scanner", "state", st.State, "message", st.Message)
+	// Infow, not Info: logger.Logger is a *zap.SugaredLogger, whose Info
+	// concatenates its arguments into the message — the keys and values only
+	// become fields through the …w form, and scanning.md tells operators to
+	// read `state` off this record.
+	log.Infow("image scanner", "state", st.State, "message", st.Message)
 	// A nil trigger in Deps is what disables scan-on-upload, so the config
 	// switch is applied by not wiring the service rather than by a flag the
 	// storage layer would have to consult.
