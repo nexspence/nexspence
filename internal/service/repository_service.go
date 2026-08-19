@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -82,6 +83,9 @@ func (s *RepositoryService) Create(ctx context.Context, r *domain.Repository) er
 	}
 	if r.Type == "" {
 		return fmt.Errorf("%w: type is required", ErrInvalidInput)
+	}
+	if err := validateNameForFormat(r.Name, r.Format); err != nil {
+		return err
 	}
 
 	// Check duplicate
@@ -260,6 +264,32 @@ func mergeProxyConfig(stored, updates map[string]any) map[string]any {
 		merged[domain.ProxyPasswordKey] = pw
 	}
 	return merged
+}
+
+// dockerPathComponent is the distribution reference grammar for one path
+// component. Docker-family clients parse image references with it, so a
+// docker/oci repository whose name fails it exists but can never be pushed to
+// or pulled from — `docker tag host/<name>/img` is not even parseable. (#262
+// was found via a repository named "docker test", created without complaint
+// and then silently unusable.)
+var dockerPathComponent = regexp.MustCompile(`^[a-z0-9]+(?:(?:[._]|__|[-]+)[a-z0-9]+)*$`)
+
+// validateNameForFormat rejects repository names the format's own clients
+// cannot address. Only the OCI-registry formats are gated: their grammar is
+// strict and a violating repository is dead on arrival, while other formats
+// merely produce percent-encoded URLs. Existing repositories are untouched —
+// this runs on create, where the trap is sprung.
+func validateNameForFormat(name string, format domain.RepoFormat) error {
+	if !format.IsOCIRegistry() {
+		return nil
+	}
+	if !dockerPathComponent.MatchString(name) {
+		return fmt.Errorf(
+			"%w: %q cannot be addressed by docker clients — use lowercase letters and digits, "+
+				"joined by '.', '_' or '-' (e.g. \"docker-test\")",
+			ErrInvalidInput, name)
+	}
+	return nil
 }
 
 // validateRemoteURL rejects a proxy config whose remote_url is missing or blank.
