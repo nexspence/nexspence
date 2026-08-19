@@ -126,6 +126,13 @@ func (h *ReplicationHandler) ManualRun(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	// One run per rule: RunRule refuses an overlapping run, and that refusal
+	// is invisible from inside the goroutine below — answering 202 for a run
+	// that never starts is worse than saying so.
+	if h.svc.Running(id) {
+		c.JSON(http.StatusConflict, gin.H{"error": "replication rule is already running"})
+		return
+	}
 	// Detached: a run outlives its 202 by design, and the request context is
 	// canceled the moment the handler returns — the run would abort almost
 	// immediately with no visible error (#254).

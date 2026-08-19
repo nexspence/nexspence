@@ -675,7 +675,9 @@ func TestCleanupLock_IsScopedPerPolicy(t *testing.T) {
 
 	require.NoError(t, svc.RunAll(ctx))
 
-	assert.Equal(t, []string{
+	// ElementsMatch, not Equal: the policies are collected from a map, so the
+	// order they are locked in is not part of the contract — the scoping is.
+	assert.ElementsMatch(t, []string{
 		"nexspence:lock:cleanup:policy:p-one",
 		"nexspence:lock:cleanup:policy:p-two",
 	}, lk.acquired())

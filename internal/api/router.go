@@ -705,15 +705,16 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 	// Gin static-segment priority ensures /v2/repository/... always matches the long-path
 	// group first; the short-path group catches everything else under /v2/.
 	// GET/HEAD /v2/ — OCI version check. The unauthenticated ping always
-	// answers 401 with a Bearer challenge pointing at /v2/token (plus Basic
-	// for non-token clients): a 200 here makes docker treat the registry as
-	// public and silently drop stored credentials on subsequent requests
-	// (#260) — which then fail RBAC as "anonymous" and surface to users as
-	// push/pull failures even though `docker login` reported success. The
-	// token endpoint keeps anonymous `docker pull` working (see Phase 26):
-	// credential-less clients receive an anonymous token there, and per-repo
-	// RBAC decides their reads exactly as before. A side effect: "token" is a
-	// reserved name on the /v2/ surface, like "repository" already is.
+	// answers 401 with a Bearer challenge pointing at /v2/token — Bearer
+	// alone, never Basic alongside (see dockerChallenge for why). A 200 here
+	// makes docker treat the registry as public and silently drop stored
+	// credentials on subsequent requests (#260) — which then fail RBAC as
+	// "anonymous" and surface to users as push/pull failures even though
+	// `docker login` reported success. The token endpoint keeps anonymous
+	// `docker pull` working (see Phase 26): credential-less clients receive an
+	// anonymous token there, and per-repo RBAC decides their reads exactly as
+	// before. A side effect: "token" is a reserved name on the /v2/ surface,
+	// like "repository" already is — validateNameForFormat refuses both.
 	dockerV2Root := handlers.DockerV2Auth(userSvc, tokenSvc, loginGuard, log)
 	r.GET("/v2/", dockerV2Root)
 	r.HEAD("/v2/", dockerV2Root)

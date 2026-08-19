@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -254,4 +255,58 @@ func TestReplicationHandler_ManualRun_SurvivesRequestCancellation(t *testing.T) 
 	case <-time.After(2 * time.Second):
 		t.Fatal("RunRule goroutine never reached the repository")
 	}
+}
+
+// blockingReplRepo blocks the Nth GetRule call until the test releases it,
+// which parks an in-flight run inside RunRule with the guard held.
+type blockingReplRepo struct {
+	*testutil.ReplicationRepo
+	calls   atomic.Int32
+	blockOn int32
+	release chan struct{}
+}
+
+func (r *blockingReplRepo) GetRule(ctx context.Context, id string) (*domain.ReplicationRule, error) {
+	if r.calls.Add(1) == r.blockOn {
+		<-r.release
+	}
+	return r.ReplicationRepo.GetRule(ctx, id)
+}
+
+// A second manual run while the first is still going is refused visibly:
+// RunRule drops the overlapping run, and a 202 for a run that never starts
+// tells the operator the opposite of what happened.
+func TestReplicationHandler_ManualRun_ConcurrentRunIs409(t *testing.T) {
+	inner := testutil.NewReplicationRepo()
+	// Call 1 is the first POST's synchronous existence check, call 2 is its
+	// detached run — that is the one to park. Call 3 is the second POST's
+	// existence check and must not block.
+	repo := &blockingReplRepo{ReplicationRepo: inner, blockOn: 2, release: make(chan struct{})}
+	defer close(repo.release)
+	svc := service.NewReplicationService(repo, testutil.NewAssetRepo(), testutil.NewBlobStore(), "test-secret", nil, cleanupNopLog())
+	h := handlers.NewReplicationHandler(svc)
+	r := gin.New()
+	r.POST("/api/v1/replication/rules/:id/run", h.ManualRun)
+
+	rule := &domain.ReplicationRule{Name: "busy", SourceRepo: "src", TargetURL: "http://127.0.0.1:1/", TargetRepo: "dst"}
+	require.NoError(t, inner.CreateRule(context.Background(), rule))
+	path := "/api/v1/replication/rules/" + rule.ID + "/run"
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, path, nil))
+	require.Equal(t, http.StatusAccepted, w.Code)
+
+	// The detached run has to reach the guard before the second POST asks.
+	deadline := time.Now().Add(2 * time.Second)
+	for !svc.Running(rule.ID) {
+		if time.Now().After(deadline) {
+			t.Fatal("the detached run never took the guard")
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	w2 := httptest.NewRecorder()
+	r.ServeHTTP(w2, httptest.NewRequest(http.MethodPost, path, nil))
+	assert.Equal(t, http.StatusConflict, w2.Code)
+	assert.Contains(t, w2.Body.String(), "already running")
 }

@@ -67,8 +67,12 @@ func DockerCatalog(
 		// A credential-less caller who can see nothing gets the challenge the
 		// sibling /v2/ surfaces give, not a 200 that reads as "the registry is
 		// empty" — a client holding credentials should be told to present them.
+		// The same Bearer challenge the ping and the data routes emit: a Basic
+		// challenge here would send a token-family client down a scheme it
+		// cannot satisfy on a surface where every sibling points at /v2/token
+		// (see dockerChallenge).
 		if userID == "" && len(readable) == 0 {
-			c.Header("WWW-Authenticate", `Basic realm="Nexspence"`)
+			dockerChallenge(c)
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"errors": []gin.H{{"code": "UNAUTHORIZED", "message": "authentication required"}},
 			})

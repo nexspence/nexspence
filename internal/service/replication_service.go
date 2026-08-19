@@ -275,6 +275,14 @@ func (s *ReplicationService) addEntryLocked(rule domain.ReplicationRule) {
 	s.entryIDs[rule.ID] = id
 }
 
+// Running reports whether a run of the rule is in flight in this process.
+// The manual-run endpoint asks before answering so a second POST is refused
+// visibly instead of returning 202 for a run that RunRule then drops.
+func (s *ReplicationService) Running(ruleID string) bool {
+	_, busy := s.running.Load(ruleID)
+	return busy
+}
+
 // RunRule executes a single replication rule immediately (used by cron and manual trigger).
 //
 // One run per rule per process: now that manual runs are detached from the
