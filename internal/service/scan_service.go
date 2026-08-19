@@ -57,7 +57,7 @@ func (s *ScanService) TrivyErrorMessage(runErr error, stderr string) string {
 	return scanTrivyErrorMessage(runErr, stderr)
 }
 
-// trivyDBFailure recognises the database-download failure among Trivy's error
+// trivyDBFailure recognizes the database-download failure among Trivy's error
 // output. Matching on substrings is fragile by nature, so it is deliberately
 // broad: a false positive still says "database", which is where the operator
 // should look, and a false negative only loses the friendlier wording.

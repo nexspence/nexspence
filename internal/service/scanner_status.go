@@ -98,6 +98,8 @@ func (s *ScanService) probeScanner(ctx context.Context) ScannerStatus {
 	// not poison it for everyone: probe on a caller-independent context.
 	probeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()
+	// #nosec G204 — the binary is an operator-configured path resolved through
+	// LookPath, and the only argument is the literal "--version".
 	out, err := exec.CommandContext(probeCtx, resolved, "--version").CombinedOutput()
 	if err != nil {
 		detail := strings.TrimSpace(string(out))
