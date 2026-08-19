@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -21,8 +22,7 @@ type PromotionService struct {
 	repoRepo      repository.RepositoryRepo
 	blobRepo      repository.BlobStoreRepo
 	scanRepo      repository.ScanResultRepo
-	blobStore     storage.BlobStore
-	blobRegistry  *storage.Registry
+	blobResolver  StoreResolver
 	webhooks      domain.WebhookDispatcher
 
 	celEnv *cel.Env
@@ -37,8 +37,7 @@ func NewPromotionService(
 	repoRepo repository.RepositoryRepo,
 	blobRepo repository.BlobStoreRepo,
 	scanRepo repository.ScanResultRepo,
-	blobStore storage.BlobStore,
-	blobRegistry *storage.Registry,
+	blobResolver StoreResolver,
 ) (*PromotionService, error) {
 	env, err := cel.NewEnv(
 		cel.Variable("format", cel.StringType),
@@ -55,8 +54,7 @@ func NewPromotionService(
 		repoRepo:      repoRepo,
 		blobRepo:      blobRepo,
 		scanRepo:      scanRepo,
-		blobStore:     blobStore,
-		blobRegistry:  blobRegistry,
+		blobResolver:  blobResolver,
 		celEnv:        env,
 	}, nil
 }
@@ -68,18 +66,28 @@ func (s *PromotionService) WithWebhooks(w domain.WebhookDispatcher) *PromotionSe
 }
 
 // matchesPathFilter returns true when the component matches the rule's path filter.
-// An empty PathFilter matches everything.
+// An empty PathFilter matches everything; a filter that fails to compile or
+// evaluate matches nothing (the enforcement path reports that distinctly).
 func (s *PromotionService) matchesPathFilter(rule domain.PromotionRule, comp *domain.Component) bool {
+	matched, err := s.evalPathFilter(rule, comp)
+	return err == nil && matched
+}
+
+// evalPathFilter evaluates the rule's path filter against the component,
+// separating "did not match" from "the filter itself is broken" — a rule
+// whose filter errors must fail closed, but with an error that sends the
+// operator to the filter, not the component.
+func (s *PromotionService) evalPathFilter(rule domain.PromotionRule, comp *domain.Component) (bool, error) {
 	if rule.PathFilter == "" {
-		return true
+		return true, nil
 	}
 	ast, issues := s.celEnv.Compile(rule.PathFilter)
 	if issues != nil && issues.Err() != nil {
-		return false
+		return false, fmt.Errorf("path filter does not compile: %w", issues.Err())
 	}
 	prg, err := s.celEnv.Program(ast)
 	if err != nil {
-		return false
+		return false, fmt.Errorf("path filter does not compile: %w", err)
 	}
 	path := "/" + comp.Group + "/" + comp.Name
 	vars := map[string]any{
@@ -89,10 +97,38 @@ func (s *PromotionService) matchesPathFilter(rule domain.PromotionRule, comp *do
 	}
 	out, _, err := prg.Eval(vars)
 	if err != nil {
-		return false
+		return false, fmt.Errorf("path filter failed to evaluate: %w", err)
 	}
-	matched, _ := out.Value().(bool)
-	return matched
+	matched, ok := out.Value().(bool)
+	if !ok {
+		return false, fmt.Errorf("path filter evaluates to %T, not a boolean", out.Value())
+	}
+	return matched, nil
+}
+
+// ruleAppliesTo reports whether the rule actually covers the component: the
+// component lives in the rule's from_repo and passes its path filter. This is
+// the same test ListRulesForComponent offers rules by — but offering is not
+// enforcing: Promote takes a caller-supplied (rule_id, component_id) pair, so
+// without this check any caller with promotion permission could promote an
+// arbitrary component with whichever rule has the laxest gates, bypassing a
+// stricter rule's require_scan_pass/require_manual_approval on the pair that
+// actually covers it (#255).
+func (s *PromotionService) ruleAppliesTo(rule *domain.PromotionRule, comp *domain.Component) error {
+	if comp.Repository != rule.FromRepo {
+		return fmt.Errorf("component %s lives in repository %q, which rule %q does not promote from (%q)",
+			comp.ID, comp.Repository, rule.Name, rule.FromRepo)
+	}
+	matched, err := s.evalPathFilter(*rule, comp)
+	if err != nil {
+		// Fail closed, but honestly: a broken filter is the rule's problem,
+		// and "does not match" would send the operator to the wrong place.
+		return fmt.Errorf("rule %q: %w", rule.Name, err)
+	}
+	if !matched {
+		return fmt.Errorf("component %s does not match rule %q's path filter", comp.ID, rule.Name)
+	}
+	return nil
 }
 
 // ListRules returns all promotion rules.
@@ -117,8 +153,14 @@ func (s *PromotionService) CreateRule(ctx context.Context, rule *domain.Promotio
 		return fmt.Errorf("from_repo and to_repo must be different")
 	}
 	if rule.PathFilter != "" {
-		if _, issues := s.celEnv.Compile(rule.PathFilter); issues != nil && issues.Err() != nil {
+		ast, issues := s.celEnv.Compile(rule.PathFilter)
+		if issues != nil && issues.Err() != nil {
 			return fmt.Errorf("invalid path_filter CEL expression: %w", issues.Err())
+		}
+		// A filter that compiles to a non-bool (`path`, `"foo"`) would fail
+		// every applicability check downstream while looking valid here.
+		if ast.OutputType() != cel.BoolType {
+			return fmt.Errorf("invalid path_filter CEL expression: must evaluate to a boolean, not %s", ast.OutputType())
 		}
 	}
 	return s.promotionRepo.CreateRule(ctx, rule)
@@ -133,8 +175,12 @@ func (s *PromotionService) UpdateRule(ctx context.Context, rule *domain.Promotio
 		return fmt.Errorf("from_repo and to_repo must be different")
 	}
 	if rule.PathFilter != "" {
-		if _, issues := s.celEnv.Compile(rule.PathFilter); issues != nil && issues.Err() != nil {
+		ast, issues := s.celEnv.Compile(rule.PathFilter)
+		if issues != nil && issues.Err() != nil {
 			return fmt.Errorf("invalid path_filter CEL expression: %w", issues.Err())
+		}
+		if ast.OutputType() != cel.BoolType {
+			return fmt.Errorf("invalid path_filter CEL expression: must evaluate to a boolean, not %s", ast.OutputType())
 		}
 	}
 	return s.promotionRepo.UpdateRule(ctx, rule)
@@ -169,6 +215,26 @@ func (s *PromotionService) ListRequests(ctx context.Context, status string) ([]d
 	return s.promotionRepo.ListRequests(ctx, status)
 }
 
+// scanGate refuses promotion when the rule demands a clean scan and the
+// component's latest scan is missing or dirty. Malicious is checked alongside
+// the CVE tiers, not folded into them: a malicious-package report has no CVSS
+// level, so a gate reading only Critical/High would pass a compromised
+// release with a spotless CVE record straight into production.
+func (s *PromotionService) scanGate(ctx context.Context, rule *domain.PromotionRule, compID string) error {
+	if !rule.RequireScanPass {
+		return nil
+	}
+	scan, err := s.scanRepo.GetLatestByComponent(ctx, compID)
+	if err != nil || scan == nil {
+		return fmt.Errorf("component %s: scan required but not yet run", compID)
+	}
+	if scan.Malicious > 0 || scan.Critical > 0 || scan.High > 0 {
+		return fmt.Errorf("component %s: scan has %d malicious, %d critical, %d high findings",
+			compID, scan.Malicious, scan.Critical, scan.High)
+	}
+	return nil
+}
+
 // Promote creates promotion requests for each component. Auto-approves when require_manual_approval=false.
 func (s *PromotionService) Promote(ctx context.Context, ruleID string, componentIDs []string, requestedByID string) ([]domain.PromotionRequest, error) {
 	rule, err := s.promotionRepo.GetRule(ctx, ruleID)
@@ -176,23 +242,27 @@ func (s *PromotionService) Promote(ctx context.Context, ruleID string, component
 		return nil, fmt.Errorf("promotion rule not found: %s", ruleID)
 	}
 
+	// The whole batch is validated before anything is created or copied: with
+	// an auto-approve rule the loop below executes copies as it goes, so a
+	// mid-batch refusal would leave earlier components already promoted while
+	// the caller is told the batch failed. Refusing before any request row
+	// exists also spares reviewers pending requests nobody could legitimately
+	// approve.
+	for _, compID := range componentIDs {
+		comp, cerr := s.componentRepo.Get(ctx, compID)
+		if cerr != nil || comp == nil {
+			return nil, fmt.Errorf("component not found: %s", compID)
+		}
+		if aerr := s.ruleAppliesTo(rule, comp); aerr != nil {
+			return nil, aerr
+		}
+		if serr := s.scanGate(ctx, rule, compID); serr != nil {
+			return nil, serr
+		}
+	}
+
 	var results []domain.PromotionRequest
 	for _, compID := range componentIDs {
-		if rule.RequireScanPass {
-			scan, serr := s.scanRepo.GetLatestByComponent(ctx, compID)
-			if serr != nil || scan == nil {
-				return nil, fmt.Errorf("component %s: scan required but not yet run", compID)
-			}
-			// Malicious is checked alongside the CVE tiers, not folded into
-			// them: a malicious-package report has no CVSS level, so a gate
-			// reading only Critical/High would pass a compromised release with
-			// a spotless CVE record straight into production.
-			if scan.Malicious > 0 || scan.Critical > 0 || scan.High > 0 {
-				return nil, fmt.Errorf("component %s: scan has %d malicious, %d critical, %d high findings",
-					compID, scan.Malicious, scan.Critical, scan.High)
-			}
-		}
-
 		req := &domain.PromotionRequest{
 			RuleID:      ruleID,
 			ComponentID: compID,
@@ -267,12 +337,25 @@ func (s *PromotionService) executeCopy(ctx context.Context, req *domain.Promotio
 	if err != nil || comp == nil {
 		return fmt.Errorf("source component not found: %s", req.ComponentID)
 	}
+	// Re-checked at copy time, not just when the request was filed: Approve
+	// runs later, and the component may have moved, the rule changed, or a
+	// scan found something while the request sat pending — the invariants
+	// have to hold when the bytes actually move.
+	if err := s.ruleAppliesTo(rule, comp); err != nil {
+		return err
+	}
+	if err := s.scanGate(ctx, rule, comp.ID); err != nil {
+		return err
+	}
 	toRepo, err := s.repoRepo.Get(ctx, rule.ToRepo)
 	if err != nil || toRepo == nil {
 		return fmt.Errorf("target repository not found: %s", rule.ToRepo)
 	}
 
-	toStore, toBlobStoreID := s.resolveStore(ctx, toRepo.BlobStoreID)
+	toStore, toBlobStoreID, err := s.resolveStore(ctx, toRepo.BlobStoreID)
+	if err != nil {
+		return fmt.Errorf("target %s: %w", toRepo.Name, err)
+	}
 
 	assets, err := s.assetRepo.ListByComponentID(ctx, req.ComponentID)
 	if err != nil {
@@ -295,7 +378,10 @@ func (s *PromotionService) executeCopy(ctx context.Context, req *domain.Promotio
 
 	for _, asset := range assets {
 		blobStoreID := asset.BlobStoreID
-		fromStore, _ := s.resolveStore(ctx, &blobStoreID)
+		fromStore, _, err := s.resolveStore(ctx, &blobStoreID)
+		if err != nil {
+			return fmt.Errorf("source asset %s: %w", asset.Path, err)
+		}
 
 		newBlobKey := base.BlobKey(toRepo.Name, asset.Path)
 
@@ -371,22 +457,42 @@ func promotedExtra(extra map[string]any) map[string]any {
 	return out
 }
 
-// resolveStore returns the physical BlobStore for a given blobStoreID pointer.
-func (s *PromotionService) resolveStore(ctx context.Context, blobStoreID *string) (storage.BlobStore, string) {
-	if blobStoreID == nil || *blobStoreID == "" {
-		return s.blobStore, ""
+// resolveStore returns the physical BlobStore for a given blobStoreID
+// pointer, and the id to record on the copied assets.
+//
+// Both branches resolve the physical store from the DB row, the way every
+// other data path does: in a stock local deployment the seeded default row's
+// store lives under its own subdirectory, not at the process store's root, so
+// answering the implicit-default case with the injected default instance
+// would write the copied blobs where no download will ever look for them.
+// The id is never empty — assets.blob_store_id is a NOT NULL foreign key,
+// and the old empty-string answer made every promotion touching a
+// default-store repository fail with a raw constraint error (#256).
+func (s *PromotionService) resolveStore(ctx context.Context, blobStoreID *string) (storage.BlobStore, string, error) {
+	implicit := blobStoreID == nil || *blobStoreID == ""
+	var bsMeta *domain.BlobStore
+	var err error
+	if implicit {
+		bsMeta, err = s.blobRepo.Get(ctx, "default")
+	} else {
+		bsMeta, err = s.blobRepo.GetByID(ctx, *blobStoreID)
 	}
-	bsMeta, err := s.blobRepo.GetByID(ctx, *blobStoreID)
-	if err != nil || bsMeta == nil {
-		return s.blobStore, ""
+	if errors.Is(err, repository.ErrNotFound) || (err == nil && bsMeta == nil) {
+		if implicit {
+			return nil, "", fmt.Errorf("default blob store not found (seed blob_stores or assign repository.blobStoreId)")
+		}
+		return nil, "", fmt.Errorf("blob store id %q not found", *blobStoreID)
 	}
-	bs, err := s.blobRegistry.Get(ctx, storage.BlobStoreDescriptor{
+	if err != nil {
+		return nil, "", fmt.Errorf("blob store: %w", err)
+	}
+	bs, err := s.blobResolver.Get(ctx, storage.BlobStoreDescriptor{
 		ID:     bsMeta.ID,
 		Type:   bsMeta.Type,
 		Config: bsMeta.Config,
 	})
 	if err != nil {
-		return s.blobStore, ""
+		return nil, "", fmt.Errorf("blob store %q: %w", bsMeta.Name, err)
 	}
-	return bs, bsMeta.ID
+	return bs, bsMeta.ID, nil
 }

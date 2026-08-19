@@ -1,11 +1,9 @@
 package handlers
 
 import (
-	"context"
 	"net/http"
 	"strconv"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -14,8 +12,6 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/auth/loginguard"
 	"github.com/nexspence-oss/nexspence/internal/config"
 	"github.com/nexspence-oss/nexspence/internal/logger"
-	"github.com/nexspence-oss/nexspence/internal/redisclient"
-	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/service"
 )
 
@@ -196,6 +192,13 @@ func requireAdmin(c *gin.Context) bool {
 // revoked is false for every other failure (bad/expired JWT, bad API token).
 func authenticateBearer(c *gin.Context, users *service.UserService, tokens *service.TokenService, raw string) (ok, revoked bool) {
 	if claims, err := users.ValidateToken(raw); err == nil {
+		// An anonymous registry token (issued by /v2/token to credential-less
+		// docker clients) names no user: skip the revocation lookup — it would
+		// cost a DB query per anonymous blob fetch just to fail closed — and
+		// leave the request unauthenticated for per-repo RBAC to judge.
+		if claims.UserID == "" {
+			return false, false
+		}
 		// Enforce per-user token revocation: a JWT issued before the user's
 		// tokens_valid_after cutoff (set on disable, password, or role change)
 		// is rejected. Look up the user; on lookup failure, fail closed.
@@ -301,96 +304,72 @@ func AuthMiddleware(users *service.UserService, tokens *service.TokenService, gu
 	}
 }
 
-// dockerV2AnonTTL bounds the freshness of the "any Docker repo is anonymous?"
-// decision made by DockerV2Auth. A miss-hit delay of up to this duration is
-// acceptable — admins flipping allow_anonymous will see the effect within the
-// window, and a cheap `EXISTS(...)` query per /v2/ ping would otherwise hit
-// the DB on every Docker client poll.
-const dockerV2AnonTTL = 30 * time.Second
+// dockerChallenge writes the /v2/ ping's WWW-Authenticate header: a Bearer
+// challenge pointing at the token endpoint. The token-family clients (docker,
+// podman, skopeo, containerd) trade their credentials — or nothing — for a
+// token at the realm and retry.
+//
+// Deliberately Bearer ONLY, no Basic alongside: the distribution client
+// applies every challenge it has a handler for and fails the request when any
+// of them cannot be satisfied, so a Basic challenge next to Bearer makes a
+// credential-less client error with "no basic auth credentials" after it
+// already holds a perfectly good anonymous token — breaking anonymous pull.
+// (Observed against a live dockerd; it is also why Docker Hub and GHCR
+// challenge with Bearer alone.) Clients that only speak Basic are unaffected:
+// OptionalAuth accepts Basic on every data route, and the ping accepts it
+// too — they just never see a challenge advertising it.
+//
+// The challenge is marked no-store: it is per-client (the realm echoes the
+// client's own view of our address), and a shared cache replaying it across
+// clients is the one way that reflection could mislead anybody.
+func dockerChallenge(c *gin.Context) {
+	c.Header("WWW-Authenticate", `Bearer realm="`+dockerTokenRealm(c.Request)+`",service="nexspence-registry"`)
+	c.Header("Cache-Control", "no-store")
+}
+
+// dockerTokenRealm resolves the absolute URL of the token endpoint from the
+// request itself: the client dials the realm verbatim, so the one address
+// guaranteed to work is the one the client just reached us on. Deriving it
+// from http.base_url instead would break every remote client on a default
+// install — base_url ships as http://localhost:8081, which the docker CLI
+// would then resolve against its own machine. The scheme honors a
+// TLS-terminating proxy's X-Forwarded-Proto so credentials are never pointed
+// at a plaintext URL; a client spoofing that header only misdirects itself.
+func dockerTokenRealm(r *http.Request) string {
+	scheme := "http"
+	if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
+		scheme = "https"
+	}
+	return scheme + "://" + r.Host + "/v2/token"
+}
 
 // DockerV2Auth handles GET/HEAD /v2/ — the OCI Distribution Spec version check.
 //
-// Decision tree:
-//   - No Authorization header + at least one Docker repo has allow_anonymous=true
-//     → 200 (per-repo RBAC still enforced on subsequent /v2/:repo/... calls).
-//   - No Authorization header + all Docker repos are private
-//     → 401 + WWW-Authenticate: Basic challenge so `docker login` gets invoked
-//     and credentials are sent on subsequent requests.
-//   - Authorization header present → validated as before; 200 on success,
-//     401 + challenge on invalid credentials.
+// The unauthenticated ping always answers 401 with a Bearer challenge
+// (#260). Answering 200 here — which an earlier revision did whenever any
+// repository allowed anonymous access — makes every docker-family client
+// select the anonymous scheme for the whole session and silently drop its
+// stored credentials, so one public repository broke authenticated push
+// registry-wide. Anonymous pull no longer needs that 200: a credential-less
+// client follows the Bearer challenge to /v2/token, receives an anonymous
+// token, and per-repository RBAC decides its reads exactly as before.
 //
-// The allow_anonymous lookup is cached for dockerV2AnonTTL to keep Docker
-// clients that poll /v2/ off the hot DB path.
+//   - Authorization header present → validated; 200 on success, 401 +
+//     challenge on invalid credentials. An anonymous token from /v2/token is
+//     signature-valid and passes.
+//   - No Authorization header → 401 + challenge, unconditionally.
 func DockerV2Auth(
 	users *service.UserService,
 	tokens *service.TokenService,
-	repos repository.RepositoryRepo,
-	rdb *redisclient.Client, // nil = use in-process cache
-	anonymousEnabled bool, // global auth.anonymous_enabled switch
 	guard *loginguard.Guard, // nil = no per-account throttling
 	log logger.Logger, // nil = no auth logging
 ) gin.HandlerFunc {
-	const redisKey = "nexspence:docker:anon_allowed"
-	var (
-		cachedValue   atomic.Bool
-		cachedExpires atomic.Int64 // UnixNano
-	)
-
-	anyAnonDocker := func(ctx context.Context) bool {
-		// The instance-wide switch wins over every per-repository opt-in, and
-		// short-circuits before the lookup: with anonymous access off there is
-		// nothing to cache.
-		if !anonymousEnabled {
-			return false
-		}
-		if repos == nil {
-			return false
-		}
-
-		if rdb != nil {
-			val, err := rdb.Get(ctx, redisKey)
-			if err == nil {
-				return val == "1"
-			}
-			// Cache miss or Redis error — fall through to DB.
-		} else {
-			now := time.Now().UnixNano()
-			if now < cachedExpires.Load() {
-				return cachedValue.Load()
-			}
-		}
-
-		v, err := repos.HasAnyAnonymousDocker(ctx)
-		if err != nil {
-			// Fail closed: when the DB is unreachable, require auth rather than
-			// silently opening the registry.
-			return false
-		}
-
-		if rdb != nil {
-			val := "0"
-			if v {
-				val = "1"
-			}
-			_ = rdb.Set(ctx, redisKey, val, dockerV2AnonTTL)
-		} else {
-			cachedValue.Store(v)
-			cachedExpires.Store(time.Now().UnixNano() + dockerV2AnonTTL.Nanoseconds())
-		}
-
-		return v
-	}
-
 	return func(c *gin.Context) {
 		c.Header("Docker-Distribution-API-Version", "registry/2.0")
 
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
-			if anyAnonDocker(c.Request.Context()) {
-				c.Status(http.StatusOK)
-				return
-			}
-			c.Header("WWW-Authenticate", `Basic realm="Nexspence"`)
+			dockerChallenge(c)
 			c.Status(http.StatusUnauthorized)
 			return
 		}
@@ -437,7 +416,7 @@ func DockerV2Auth(
 			}
 		}
 
-		c.Header("WWW-Authenticate", `Basic realm="Nexspence"`)
+		dockerChallenge(c)
 		c.AbortWithStatus(http.StatusUnauthorized)
 	}
 }

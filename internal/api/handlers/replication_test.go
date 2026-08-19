@@ -1,9 +1,12 @@
 package handlers_test
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -202,4 +205,53 @@ func TestReplicationHandler_ListHistory_WithLimit_OK(t *testing.T) {
 	id := replicationCreate(t, r, "limit-history")
 	rec := do(t, r, http.MethodGet, "/api/v1/replication/rules/"+id+"/history?limit=5", nil)
 	require.Equal(t, http.StatusOK, rec.Code)
+}
+
+// ── Request-context detachment (#254) ───────────────────────────────────────
+
+// ctxCapturingReplRepo records the context each GetRule call arrives with.
+type ctxCapturingReplRepo struct {
+	*testutil.ReplicationRepo
+	got chan context.Context
+}
+
+func (r *ctxCapturingReplRepo) GetRule(ctx context.Context, id string) (*domain.ReplicationRule, error) {
+	select {
+	case r.got <- ctx:
+	default:
+	}
+	return r.ReplicationRepo.GetRule(ctx, id)
+}
+
+// A manual run answers 202 and keeps going; net/http cancels the request
+// context the moment the handler returns, so the fire-and-forget goroutine
+// must not inherit it — with the old wiring the run aborted almost
+// immediately with no visible error (#254).
+func TestReplicationHandler_ManualRun_SurvivesRequestCancellation(t *testing.T) {
+	inner := testutil.NewReplicationRepo()
+	repo := &ctxCapturingReplRepo{ReplicationRepo: inner, got: make(chan context.Context, 2)}
+	svc := service.NewReplicationService(repo, testutil.NewAssetRepo(), testutil.NewBlobStore(), "test-secret", nil, cleanupNopLog())
+	h := handlers.NewReplicationHandler(svc)
+	r := gin.New()
+	r.POST("/api/v1/replication/rules/:id/run", h.ManualRun)
+
+	rule := &domain.ReplicationRule{Name: "det", SourceRepo: "src", TargetURL: "http://127.0.0.1:1/", TargetRepo: "dst"}
+	require.NoError(t, inner.CreateRule(context.Background(), rule))
+
+	reqCtx, cancel := context.WithCancel(context.Background())
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/replication/rules/"+rule.ID+"/run", nil).WithContext(reqCtx)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusAccepted, w.Code)
+	cancel() // what a real net/http server does as soon as the handler returns
+
+	// The first GetRule is the handler's own synchronous existence check —
+	// request-scoped by design. The goroutine's is the one that must survive.
+	<-repo.got
+	select {
+	case got := <-repo.got:
+		assert.NoError(t, got.Err(), "the detached run's context must outlive the request")
+	case <-time.After(2 * time.Second):
+		t.Fatal("RunRule goroutine never reached the repository")
+	}
 }

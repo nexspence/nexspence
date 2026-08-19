@@ -82,6 +82,19 @@ func TestSubdomainRewriter_V2Root_Passthrough(t *testing.T) {
 	assert.Equal(t, "/v2/", *captured)
 }
 
+// The token endpoint is registry-level like the ping: rewritten into a repo
+// dispatch it would 404 and break docker login/pull on subdomain hosts.
+func TestSubdomainRewriter_V2Token_Passthrough(t *testing.T) {
+	h, captured := capturePathHandler()
+	rw := api.NewSubdomainRewriter(h, "nexspence.example.com")
+
+	req := httptest.NewRequest(http.MethodGet, "/v2/token", nil)
+	req.Host = "myrepo.nexspence.example.com"
+	rw.ServeHTTP(httptest.NewRecorder(), req)
+
+	assert.Equal(t, "/v2/token", *captured)
+}
+
 func TestSubdomainRewriter_V2ManifestPath_RepoInjected(t *testing.T) {
 	h, captured := capturePathHandler()
 	rw := api.NewSubdomainRewriter(h, "nexspence.example.com")

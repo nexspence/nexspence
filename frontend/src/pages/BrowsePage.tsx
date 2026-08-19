@@ -37,7 +37,7 @@ interface Component {
   group: string
   version: string
   format: string
-  assets?: { id: string; path: string; fileSize: number; contentType: string }[]
+  assets?: { id: string; path: string; fileSize: number; contentType: string; lastModified?: string }[]
 }
 
 interface DockerDetailAsset {
@@ -407,6 +407,14 @@ function formatDateTime(iso: string | undefined | null): string {
   return d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'medium' })
 }
 
+// A listing column, unlike the detail panels above, has no room for seconds.
+function formatPushDate(iso: string | undefined | null): string {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return '—'
+  return d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+}
+
 function nexusV2RegistryPath(
   imageRef: string | undefined,
   version: string | undefined,
@@ -454,11 +462,25 @@ const S = {
     fontSize: 14,
   },
   table: {
-    overflow: 'hidden' as const,
+    // Auto, not hidden: the fixed tracks alone need ~380px, and a clipped
+    // table would silently lose the Pushed and delete columns on a narrow
+    // (or deeply zoomed-in) viewport instead of scrolling.
+    overflowX: 'auto' as const,
   },
   thead: {
     display: 'grid',
-    gridTemplateColumns: '24px 2fr 1.5fr 1fr 1fr 2fr 32px',
+    // The header and every data row are independent grids kept in step only
+    // by sharing this template, so no fr-track cell may impose a min-content
+    // floor: a floor resolves in one grid but not the others, and the columns
+    // drift apart as the viewport (or zoom level) changes — #258. Truncated
+    // lifts the floor on every such cell (overflow:hidden zeroes the grid
+    // item's implicit minimum).
+    gridTemplateColumns: '24px 2fr 1.5fr 1fr 1fr 2fr 76px 150px 32px',
+    columnGap: 12,
+    // Shared with trow: below this the card scrolls horizontally instead of
+    // crushing the fr columns into nothing (the fixed tracks and gaps alone
+    // take ~410px).
+    minWidth: 640,
     padding: '10px 16px',
     background: 'rgba(255,255,255,0.03)',
     borderBottom: '1px solid rgba(255,255,255,0.07)',
@@ -470,7 +492,9 @@ const S = {
   },
   trow: {
     display: 'grid',
-    gridTemplateColumns: '24px 2fr 1.5fr 1fr 1fr 2fr 32px',
+    gridTemplateColumns: '24px 2fr 1.5fr 1fr 1fr 2fr 76px 150px 32px',
+    columnGap: 12,
+    minWidth: 640,
     padding: '11px 16px',
     borderBottom: '1px solid rgba(255,255,255,0.05)',
     fontSize: 13,
@@ -1360,6 +1384,10 @@ export default function BrowsePage() {
             setTreeCollapsed({})
             setDockerSelection(null)
             setRawSelection(null)
+            // Selection must not survive a repo switch: stale IDs from the
+            // previous repo would ride into "Promote selected", and the
+            // server now refuses such a mixed-repo batch (#255).
+            setSelectedComponentIDs(new Set())
             setUploadOpen(false)
           }}
           placeholder="— Select repository —"
@@ -1625,11 +1653,13 @@ export default function BrowsePage() {
           <div className="holo-card" style={S.table}>
             <div style={S.thead}>
               <div />
-              <div>Name</div>
-              <div>Group</div>
-              <div>Version</div>
-              <div>Format</div>
-              <div>Assets</div>
+              <Truncated text="Name" />
+              <Truncated text="Group" />
+              <Truncated text="Version" />
+              <Truncated text="Format" />
+              <Truncated text="Assets" />
+              <Truncated text="Size" />
+              <Truncated text="Pushed" />
               <div />
             </div>
             {items.map((c) => {
@@ -1639,6 +1669,21 @@ export default function BrowsePage() {
               // name produced a prefix that matched nothing (npm) or an empty
               // path the server rejected (apt proxy) — see #75/#76.
               const assetPaths = (c.assets ?? []).map((a) => a.path).filter(Boolean)
+              // A component is several files (a conan recipe + binaries, a jar
+              // + pom); the sum is what "artifact size" means to a reader, and
+              // the newest lastModified is when it was last pushed — #257.
+              const totalSize = (c.assets ?? []).reduce((sum, a) => sum + (a.fileSize || 0), 0)
+              // Unparseable timestamps are skipped, not carried: once an
+              // invalid string became "best", every later NaN comparison
+              // would keep it there and a valid date would never surface.
+              const pushedAt = (c.assets ?? []).reduce<string | undefined>((best, a) => {
+                const t = a.lastModified ? new Date(a.lastModified).getTime() : NaN
+                if (Number.isNaN(t)) return best
+                return !best || t > new Date(best).getTime() ? a.lastModified : best
+              }, undefined)
+              const pathLabel = firstAsset
+                ? `${firstAsset.path}${c.assets!.length > 1 ? ` +${c.assets!.length - 1}` : ''}`
+                : '—'
               const isHighlighted = (!!highlightComponentId && c.id === highlightComponentId) ||
                 (!!highlightAssetPath && !!c.assets?.some((a) => a.path === highlightAssetPath))
               return (
@@ -1665,17 +1710,19 @@ export default function BrowsePage() {
                       style={{ cursor: 'pointer', accentColor: '#3b82f6' }}
                     />
                   </div>
-                  <div style={{ fontWeight: 600, color: 'var(--holo-text)' }}>{c.name}</div>
-                  <div style={S.muted}>{c.group || '—'}</div>
-                  <div>{c.version}</div>
-                  <div>
-                    <span style={S.badge(color)}>{c.format}</span>
+                  <Truncated text={c.name} style={{ fontWeight: 600, color: 'var(--holo-text)' }} />
+                  <Truncated text={c.group || '—'} style={S.muted} />
+                  <Truncated text={c.version} />
+                  <div style={{ minWidth: 0 }}>
+                    <Truncated
+                      as="span"
+                      text={c.format}
+                      style={{ ...S.badge(color), display: 'inline-block', maxWidth: '100%', verticalAlign: 'top' }}
+                    />
                   </div>
-                  <div style={S.path}>
-                    {firstAsset
-                      ? `${firstAsset.path}${c.assets!.length > 1 ? ` +${c.assets!.length - 1}` : ''}`
-                      : '—'}
-                  </div>
+                  <Truncated text={pathLabel} style={S.path} />
+                  <div style={S.muted}>{c.assets?.length ? formatBytes(totalSize) : '—'}</div>
+                  <Truncated text={formatPushDate(pushedAt)} style={S.muted} />
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     {canDeleteRepo && (
                       <GhostBtn danger onClick={() => setDeleteTarget({

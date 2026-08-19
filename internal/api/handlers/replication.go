@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strconv"
@@ -70,7 +71,11 @@ func (h *ReplicationHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	go h.svc.ReloadRule(c.Request.Context(), rule.ID)
+	// Detached from the request context (like cleanup.go's RunAll): net/http
+	// cancels it the moment this handler returns, which silently killed the
+	// (re)scheduling this goroutine exists to perform — the API answered as if
+	// the rule was scheduled while its cron entry never materialized (#254).
+	go h.svc.ReloadRule(context.Background(), rule.ID)
 	c.JSON(http.StatusCreated, rule)
 }
 
@@ -95,7 +100,8 @@ func (h *ReplicationHandler) Update(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	go h.svc.ReloadRule(c.Request.Context(), rule.ID)
+	// Detached for the same reason as Create's — see the comment there (#254).
+	go h.svc.ReloadRule(context.Background(), rule.ID)
 	c.JSON(http.StatusOK, rule)
 }
 
@@ -120,8 +126,11 @@ func (h *ReplicationHandler) ManualRun(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	// Detached: a run outlives its 202 by design, and the request context is
+	// canceled the moment the handler returns — the run would abort almost
+	// immediately with no visible error (#254).
 	go func() {
-		_ = h.svc.RunRule(c.Request.Context(), id)
+		_ = h.svc.RunRule(context.Background(), id)
 	}()
 	c.JSON(http.StatusAccepted, gin.H{"message": "replication started"})
 }

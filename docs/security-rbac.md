@@ -385,9 +385,16 @@ Two switches must agree before an unauthenticated request is served:
 
 Setting `auth.anonymous_enabled: false` refuses every unauthenticated read
 regardless of how individual repositories are configured — repository listings,
-browse trees, component and asset listings, artifact downloads, and the Docker
-`/v2/` handshake, which then answers `401` with a `Basic` challenge so `docker
-login` is invoked. Anonymous writes are never allowed by either switch.
+browse trees, component and asset listings, artifact downloads, and anonymous
+tokens from the Docker token endpoint. Anonymous writes are never allowed by
+either switch.
+
+The Docker `/v2/` handshake itself is unconditional: an unauthenticated ping
+always answers `401` with a `Bearer` challenge pointing at `/v2/token`.
+Clients with credentials trade them there for a user token (this is the
+request `docker login` verifies); without credentials the endpoint issues an
+anonymous token — carrying no identity, so per-repository RBAC still decides
+every read — or refuses it entirely when `auth.anonymous_enabled` is off.
 
 ---
 

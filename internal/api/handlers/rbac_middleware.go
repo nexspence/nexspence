@@ -58,8 +58,12 @@ func RBACMiddleware(rbacSvc *service.RBACService, repoRepo repository.Repository
 // CLI prints the specific repo-level message instead of its generic "pull access denied".
 func denyAccess(c *gin.Context, userIDStr, repoName string) {
 	if userIDStr == "" {
-		c.Header("WWW-Authenticate", `Basic realm="Nexspence"`)
 		if strings.HasPrefix(c.Request.URL.Path, "/v2/") {
+			// The Bearer challenge, not Basic: containerd, BuildKit, and oras
+			// discover auth from the resource 401 itself (they never ping /v2/),
+			// so this header is their only signpost to the token endpoint. See
+			// dockerChallenge for why Basic must not ride along.
+			dockerChallenge(c)
 			c.Header("Docker-Distribution-API-Version", "registry/2.0")
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
 				"errors": []gin.H{{
@@ -70,6 +74,7 @@ func denyAccess(c *gin.Context, userIDStr, repoName string) {
 			})
 			return
 		}
+		c.Header("WWW-Authenticate", `Basic realm="Nexspence"`)
 		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
 		return
 	}
