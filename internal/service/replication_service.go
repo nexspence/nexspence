@@ -34,6 +34,9 @@ type ReplicationService struct {
 	legacyKey  []byte // sha256(jwt_secret) fallback; nil when no dedicated key is set
 	log        logger.Logger
 
+	// running holds the rule IDs with an in-flight run (see RunRule).
+	running sync.Map
+
 	// newClient builds an HTTP client for a given timeout. Defaults to the
 	// SSRF-guarded netguard.Client (target URLs are user-configured); tests
 	// override it to reach loopback servers.
@@ -232,7 +235,15 @@ func (s *ReplicationService) StartCronScheduler(ctx context.Context) {
 
 // ReloadRule updates the cron entry for a single rule (call after Create/Update/Delete).
 func (s *ReplicationService) ReloadRule(ctx context.Context, ruleID string) {
-	rule, _ := s.repo.GetRule(ctx, ruleID)
+	rule, err := s.repo.GetRule(ctx, ruleID)
+	if err != nil && !errors.Is(err, repository.ErrNotFound) {
+		// A transient lookup failure must not unschedule the rule: keeping a
+		// possibly-stale cron entry beats a rule that silently never runs
+		// again until the next restart (#254). ErrNotFound is different — the
+		// rule really is gone, and its entry goes with it below.
+		s.log.Warn("replication: reload lookup failed, keeping existing schedule", "rule", ruleID, "err", err)
+		return
+	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -265,7 +276,18 @@ func (s *ReplicationService) addEntryLocked(rule domain.ReplicationRule) {
 }
 
 // RunRule executes a single replication rule immediately (used by cron and manual trigger).
+//
+// One run per rule per process: now that manual runs are detached from the
+// request context they no longer die by accident, so repeated POSTs to
+// .../run would otherwise pile up concurrent runs of the same rule pushing
+// the same assets. (Per-process is the honest scope of this guard; the cron
+// path has the same property today.)
 func (s *ReplicationService) RunRule(ctx context.Context, ruleID string) error {
+	if _, busy := s.running.LoadOrStore(ruleID, struct{}{}); busy {
+		return fmt.Errorf("replication rule %s is already running", ruleID)
+	}
+	defer s.running.Delete(ruleID)
+
 	rule, err := s.repo.GetRule(ctx, ruleID)
 	if err != nil {
 		return err
