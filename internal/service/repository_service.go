@@ -274,6 +274,17 @@ func mergeProxyConfig(stored, updates map[string]any) map[string]any {
 // and then silently unusable.)
 var dockerPathComponent = regexp.MustCompile(`^[a-z0-9]+(?:(?:[._]|__|[-]+)[a-z0-9]+)*$`)
 
+// reservedV2Names are the static routes registered under /v2/ (see
+// internal/api/router.go). Gin matches a static segment before the
+// /v2/:repoName parameter, so a repository named after one is created
+// successfully and then shadowed on the short docker URL — the same silent
+// dead end #262 is about, one path segment up.
+var reservedV2Names = map[string]bool{
+	"repository": true, // the long-form /v2/repository/<repoName>/... dispatch
+	"token":      true, // the token endpoint the /v2/ ping challenges towards
+	"_catalog":   true, // the instance-level catalog (also fails the grammar above)
+}
+
 // validateNameForFormat rejects repository names the format's own clients
 // cannot address. Only the OCI-registry formats are gated: their grammar is
 // strict and a violating repository is dead on arrival, while other formats
@@ -287,6 +298,12 @@ func validateNameForFormat(name string, format domain.RepoFormat) error {
 		return fmt.Errorf(
 			"%w: %q cannot be addressed by docker clients — use lowercase letters and digits, "+
 				"joined by '.', '_' or '-' (e.g. \"docker-test\")",
+			ErrInvalidInput, name)
+	}
+	if reservedV2Names[name] {
+		return fmt.Errorf(
+			"%w: %q is a registry-level endpoint on the /v2/ surface, so a repository of that "+
+				"name could never be reached — pick another name",
 			ErrInvalidInput, name)
 	}
 	return nil

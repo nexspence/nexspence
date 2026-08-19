@@ -64,3 +64,28 @@ func TestRepositoryService_Create_OtherFormatsKeepLooseNames(t *testing.T) {
 		t.Fatalf("Create(conan \"Gemma3\"): unexpected error %v", err)
 	}
 }
+
+// The /v2/ surface has static routes (the long-form dispatch, the token
+// endpoint, the instance catalog): gin matches those before /v2/:repoName, so
+// a repository named after one is created successfully and then unreachable
+// on the short docker URL — the same dead end #262 is about.
+func TestRepositoryService_Create_RejectsReservedV2Names(t *testing.T) {
+	for _, name := range []string{"repository", "token", "_catalog"} {
+		svc := newRepoSvcFull(testutil.NewRepoRepo(), testutil.NewBlobStoreRepo(), testutil.NewCleanupPolicyRepo())
+		err := svc.Create(context.Background(), &domain.Repository{
+			Name: name, Format: domain.FormatDocker, Type: domain.TypeHosted,
+		})
+		if !errors.Is(err, service.ErrInvalidInput) {
+			t.Errorf("Create(%q): got %v, want ErrInvalidInput", name, err)
+		}
+	}
+
+	// Only the /v2/ surface is gated: an npm repository named "token" is
+	// addressed under /repository/<name>/ and works fine.
+	svc := newRepoSvcFull(testutil.NewRepoRepo(), testutil.NewBlobStoreRepo(), testutil.NewCleanupPolicyRepo())
+	if err := svc.Create(context.Background(), &domain.Repository{
+		Name: "token", Format: domain.FormatNPM, Type: domain.TypeHosted,
+	}); err != nil {
+		t.Fatalf("Create(npm \"token\"): unexpected error %v", err)
+	}
+}
