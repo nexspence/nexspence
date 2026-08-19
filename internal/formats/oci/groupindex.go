@@ -66,6 +66,12 @@ func groupIndexKind(p string) (kind ociIndexKind, imageName string) {
 	}
 	switch {
 	case endsWithSegments(parts, "tags", "list"):
+		// ServeHTTP refuses the imageless /v2/<repoName>/tags/list with
+		// NAME_UNKNOWN; mirroring it keeps this classifier's invariant — a
+		// path is mergeable only as the document a member would produce.
+		if len(parts) == 2 {
+			return indexNone, ""
+		}
 		return indexTags, strings.Join(parts[:len(parts)-2], "/")
 	case referrersIndex(parts) >= 0:
 		return indexReferrers, ""
@@ -321,9 +327,9 @@ func (h *Handler) PageGroupIndex(c *gin.Context, p string, merged []byte) ([]byt
 // header for a truncated one, exactly as the single-repository endpoints do —
 // the page is a page of the same sorted list either way.
 func pageMergedList(c *gin.Context, entries []string) []string {
-	params := parsePageParams(c)
-	page, more := paginate(entries, params)
-	setNextLink(c, params, page, more)
+	params := ParsePageParams(c)
+	page, more := Paginate(entries, params)
+	SetNextLink(c, params, page, more)
 	if page == nil {
 		page = []string{}
 	}

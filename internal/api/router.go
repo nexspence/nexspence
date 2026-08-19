@@ -722,6 +722,17 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 		time.Duration(cfg.Auth.JWTExpiryHours)*time.Hour, loginGuard, log)
 	r.GET("/v2/token", dockerTokenH)
 	r.POST("/v2/token", dockerTokenH) // containerd/BuildKit try the OAuth2 POST first
+	// Instance-level catalog (#261). A static route: without it the path fell
+	// into /v2/:repoName as a phantom repository named "_catalog", whose
+	// failed lookup denied even admins. On a subdomain host the rewriter still
+	// maps /v2/_catalog to that repository's own catalog, which is the right
+	// scope for a host that IS one repository.
+	dockerCatalogH := []gin.HandlerFunc{
+		handlers.OptionalAuth(userSvc, tokenSvc, loginGuard, log),
+		handlers.DockerCatalog(repoRepo, rbacSvc, assetRepo),
+	}
+	r.GET("/v2/_catalog", dockerCatalogH...)
+	r.HEAD("/v2/_catalog", dockerCatalogH...) // net/http drops the body for HEAD
 
 	dockerV2H := serveDockerV2(repoRepo, groupHandler, formatRegistry)
 	v2docker := r.Group("/v2/repository", handlers.OptionalAuth(userSvc, tokenSvc, loginGuard, log), handlers.RBACMiddleware(rbacSvc, repoRepo))

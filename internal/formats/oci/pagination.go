@@ -17,51 +17,51 @@ import (
 // Everything here is deliberately free of any knowledge of tags vs repository
 // names so the catalog endpoint can reuse it unchanged.
 
-// pageParams are the ?n= / ?last= arguments of a list request.
-type pageParams struct {
+// PageParams are the ?n= / ?last= arguments of a list request.
+type PageParams struct {
 	// n is the maximum number of entries to return; 0 means "no limit", which
 	// is what both an absent n and a non-positive one are treated as. The spec
 	// lets a registry reject a malformed n with 400, but returning the full
 	// list is the friendlier reading and matches what clients that omit n
 	// already get.
-	n int
+	N int
 	// last is the cursor: only entries strictly greater than it are returned.
-	last string
+	Last string
 }
 
-// parsePageParams reads the pagination arguments off a request.
-func parsePageParams(c *gin.Context) pageParams {
-	p := pageParams{last: c.Query("last")}
+// ParsePageParams reads the pagination arguments off a request.
+func ParsePageParams(c *gin.Context) PageParams {
+	p := PageParams{Last: c.Query("last")}
 	if raw := c.Query("n"); raw != "" {
 		if n, err := strconv.Atoi(raw); err == nil && n > 0 {
-			p.n = n
+			p.N = n
 		}
 	}
 	return p
 }
 
-// paginate cuts one page out of a sorted, ascending list of entries. It returns
+// Paginate cuts one page out of a sorted, ascending list of entries. It returns
 // the page and whether entries remain after it.
 //
 // Entries equal to the cursor are skipped, not just the first one, so a list
 // that somehow holds duplicates still advances: every page ends on a strictly
 // larger entry than the cursor that produced it, which is what makes a client
 // following the Link headers terminate.
-func paginate(entries []string, p pageParams) (page []string, more bool) {
+func Paginate(entries []string, p PageParams) (page []string, more bool) {
 	// sort.SearchStrings finds the first entry >= last; the cursor is exclusive,
 	// so skip the run equal to it as well.
 	start := 0
-	if p.last != "" {
-		start = sort.SearchStrings(entries, p.last)
-		for start < len(entries) && entries[start] <= p.last {
+	if p.Last != "" {
+		start = sort.SearchStrings(entries, p.Last)
+		for start < len(entries) && entries[start] <= p.Last {
 			start++
 		}
 	}
 	rest := entries[start:]
-	if p.n <= 0 || len(rest) <= p.n {
+	if p.N <= 0 || len(rest) <= p.N {
 		return rest, false
 	}
-	return rest[:p.n], true
+	return rest[:p.N], true
 }
 
 // nextLink renders the RFC 8288 Link header value naming the next page of the
@@ -78,11 +78,11 @@ func nextLink(c *gin.Context, n int, last string) string {
 	return "<" + c.Request.URL.EscapedPath() + "?" + q.Encode() + `>; rel="next"`
 }
 
-// setNextLink attaches the Link header for a truncated page. Nothing is set for
+// SetNextLink attaches the Link header for a truncated page. Nothing is set for
 // a complete answer — the absence of the header is what tells a client to stop.
-func setNextLink(c *gin.Context, p pageParams, page []string, more bool) {
+func SetNextLink(c *gin.Context, p PageParams, page []string, more bool) {
 	if !more || len(page) == 0 {
 		return
 	}
-	c.Header("Link", nextLink(c, p.n, page[len(page)-1]))
+	c.Header("Link", nextLink(c, p.N, page[len(page)-1]))
 }

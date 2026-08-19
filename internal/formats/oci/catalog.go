@@ -53,9 +53,9 @@ func (h *Handler) handleCatalog(c *gin.Context, repoName string) {
 	// way and searched the other makes the cursor skip entries.
 	sort.Strings(names)
 
-	params := parsePageParams(c)
-	page, more := paginate(names, params)
-	setNextLink(c, params, page, more)
+	params := ParsePageParams(c)
+	page, more := Paginate(names, params)
+	SetNextLink(c, params, page, more)
 	if page == nil {
 		// An empty catalog must serialize as [] and not null: a null breaks
 		// clients that range over the list.

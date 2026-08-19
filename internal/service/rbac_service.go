@@ -224,6 +224,39 @@ func (s *RBACService) FilterDockerRows(ctx context.Context, userID string, roles
 	return result
 }
 
+// FilterOCIImageNames returns only the image names of one docker/oci
+// repository the caller may browse. Repo-level filtering (FilterRepos) is not
+// enough for a listing of image NAMES: it deliberately ignores content
+// selectors' path clauses, so a caller path-scoped to /team-a/ would see
+// team-b's image names — the exact thing the selector exists to hide. The
+// sample path is "/<name>/", the same convention FilterComponents uses so a
+// selector path.startsWith("/da/bas/") matches the image "da/bas/python".
+func (s *RBACService) FilterOCIImageNames(
+	ctx context.Context,
+	userID string, roles []string,
+	repo *domain.Repository,
+	names []string,
+) []string {
+	if isAdmin(roles) || s.anonymousAllowed(repo.AllowAnonymous) {
+		return names
+	}
+	if userID == "" {
+		return nil
+	}
+	privs, err := s.rbac.GetUserPrivilegesWithSelectors(ctx, userID)
+	if err != nil {
+		s.log.Warnw("failed to load privileges for catalog filter", "userID", userID, "err", err)
+		return nil
+	}
+	result := make([]string, 0, len(names))
+	for _, name := range names {
+		if matchPrivileges(privs, repo.Name, "/"+name+"/", "browse") {
+			result = append(result, name)
+		}
+	}
+	return result
+}
+
 // FilterComponents returns only the components the user may browse.
 // allowAnonByRepo maps repository-name → AllowAnonymous (caller pre-loads this).
 // Sample path for content-selector matching uses "/<name>/" so that a Docker
