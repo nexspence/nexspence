@@ -79,6 +79,47 @@ describe('BrowsePage — repo selector & empty states', () => {
     expect(await screen.findByText(/Promote 1 component/)).toBeInTheDocument()
   })
 
+  it('shows per-component size and push date from the embedded assets (#257)', async () => {
+    server.use(
+      http.get('/service/rest/v1/components', () =>
+        HttpResponse.json({
+          items: [
+            {
+              id: 'c1', name: 'pkg-a', group: '', version: '1.0', format: 'maven2',
+              // Size must be the sum over all assets, the push date the newest
+              // lastModified — not the first asset's values. The unparseable
+              // timestamp comes first: were it carried as "best", every later
+              // NaN comparison would keep it and no date would render.
+              assets: [
+                { id: 'a0', path: 'p/pkg-a.md5', fileSize: 0, contentType: 't', lastModified: 'not-a-date' },
+                { id: 'a1', path: 'p/pkg-a.jar', fileSize: 2048, contentType: 't', lastModified: '2026-08-01T10:00:00Z' },
+                { id: 'a2', path: 'p/pkg-a.pom', fileSize: 1024, contentType: 't', lastModified: '2026-08-17T12:30:00Z' },
+              ],
+            },
+            { id: 'c2', name: 'pkg-b', group: '', version: '2.0', format: 'maven2', assets: [] },
+          ],
+          continuationToken: null,
+        }),
+      ),
+    )
+    renderBrowse('?repo=maven-hosted')
+    expect(await screen.findByText('3.0 KB')).toBeInTheDocument()
+    // Compared whitespace-normalized on both sides: Intl output may separate
+    // time from AM/PM with U+202F, which the testing-library normalizer
+    // collapses in the DOM text but not in the expected string.
+    const norm = (s: string) => s.replace(/\s+/g, ' ')
+    const pushed = norm(new Date('2026-08-17T12:30:00Z').toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }))
+    expect(screen.getByText((t) => norm(t) === pushed)).toBeInTheDocument()
+    // A component with no assets shows placeholders — not "0 B", not a 1970
+    // date from reducing over nothing.
+    const pkgBRow = screen.getByText('pkg-b').closest('div[style]')?.parentElement
+    expect(pkgBRow?.textContent).not.toContain('0 B')
+    expect(pkgBRow?.textContent).not.toContain('1970')
+    expect(pkgBRow?.textContent).toContain('—')
+    expect(screen.getByText('Size')).toBeInTheDocument()
+    expect(screen.getByText('Pushed')).toBeInTheDocument()
+  })
+
   it('paginates next and prev', async () => {
     const user = userEvent.setup()
     let lastOffset = '0'
