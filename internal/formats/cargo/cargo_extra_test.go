@@ -179,6 +179,42 @@ func TestCargo_Publish_EmptyBody(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
+// A publish whose embedded crate length overstates the bytes that follow must be
+// refused. Left unchecked, the declared length became the recorded fileSize while
+// the checksum described the real (shorter) bytes — every later download then
+// announced a Content-Length it could not deliver.
+func TestCargo_Publish_LyingCrateLen_Rejected(t *testing.T) {
+	repo := testutil.SimpleRepo("cargo-pub-lying", "cargo")
+	r := setup(repo)
+
+	meta := map[string]any{"name": "mylib", "vers": "0.1.0", "deps": []any{}}
+	metaJSON, _ := json.Marshal(meta)
+	real := bytes.Repeat([]byte("x"), 10_000)
+
+	var buf bytes.Buffer
+	_ = binary.Write(&buf, binary.LittleEndian, uint32(len(metaJSON)))
+	buf.Write(metaJSON)
+	_ = binary.Write(&buf, binary.LittleEndian, uint32(1_000_000)) // claims 1 MB
+	buf.Write(real)                                                // sends 10 KB
+
+	req := httptest.NewRequest(http.MethodPut,
+		"/repository/cargo-pub-lying/api/v1/crates/new", &buf)
+	// The true request length, so the HTTP layer itself flags nothing.
+	req.ContentLength = int64(buf.Len())
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "declared size")
+
+	// And nothing was registered: a later download must find no crate at all.
+	req = httptest.NewRequest(http.MethodGet,
+		"/repository/cargo-pub-lying/api/v1/crates/mylib/0.1.0/download", nil)
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
 // TestCargo_WebhookOnPublish checks that publishing a crate fires an artifact.published event.
 func TestCargo_WebhookOnPublish(t *testing.T) {
 	repo := testutil.SimpleRepo("cargo-wh", "cargo")

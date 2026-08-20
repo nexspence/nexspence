@@ -24,12 +24,21 @@ import (
 // ErrQuotaExceeded is returned by StoreArtifact when a blob store or repository quota would be exceeded.
 var ErrQuotaExceeded = errors.New("storage quota exceeded")
 
+// ErrSizeMismatch is returned by StoreArtifact when the caller declared a size
+// the request body did not deliver. The declared size is what gets recorded and
+// served back as Content-Length, so trusting it would leave the DB describing
+// bytes the store does not hold.
+var ErrSizeMismatch = errors.New("declared size does not match the bytes received")
+
 // HTTPStatusForError maps known storage errors to appropriate HTTP status codes.
-// Returns 507 Insufficient Storage for quota and out-of-space errors, 500 for
-// everything else.
+// Returns 507 Insufficient Storage for quota and out-of-space errors, 400 for a
+// body that contradicts its own declared size, and 500 for everything else.
 func HTTPStatusForError(err error) int {
 	if errors.Is(err, ErrQuotaExceeded) || errors.Is(err, storage.ErrNoSpace) {
 		return http.StatusInsufficientStorage
+	}
+	if errors.Is(err, ErrSizeMismatch) {
+		return http.StatusBadRequest
 	}
 	return http.StatusInternalServerError
 }
@@ -88,14 +97,23 @@ func StoreArtifact(ctx context.Context, d formats.Deps,
 	md5h := md5.New()   //nolint:gosec // protocol checksum, not security
 
 	pr, pw := io.Pipe()
-	var pipeErr error
+	// The copier reports how many bytes it actually moved, so the size recorded
+	// in the DB is never the caller's declaration taken on faith.
+	copied := make(chan int64, 1)
 	go func() {
-		_, pipeErr = io.Copy(io.MultiWriter(pw, sha256h, sha1h, md5h), reader)
-		pw.CloseWithError(pipeErr)
+		n, err := io.Copy(io.MultiWriter(pw, sha256h, sha1h, md5h), reader)
+		pw.CloseWithError(err)
+		copied <- n
 	}()
 
-	if err := physStore.Put(ctx, blobKey, pr, declaredSize); err != nil {
-		return nil, fmt.Errorf("store blob: %w", err)
+	putErr := physStore.Put(ctx, blobKey, pr, declaredSize)
+	// Unblocks the copier if the store stopped reading before EOF; a no-op once
+	// the pipe has drained on its own. Receiving the count then also orders the
+	// hash writers' final state against this goroutine.
+	_ = pr.Close()
+	written := <-copied
+	if putErr != nil {
+		return nil, fmt.Errorf("store blob: %w", putErr)
 	}
 
 	sha256sum := hex.EncodeToString(sha256h.Sum(nil))
@@ -107,6 +125,13 @@ func StoreArtifact(ctx context.Context, d formats.Deps,
 		if s, err := physStore.Size(ctx, blobKey); err == nil {
 			size = s
 		}
+	} else if written != declaredSize {
+		// A body shorter (or longer) than its own declared length: recording the
+		// declaration would register a component whose stored size and checksum
+		// describe different bytes, and every later download would announce a
+		// Content-Length it then fails to deliver.
+		_ = physStore.Delete(ctx, blobKey)
+		return nil, fmt.Errorf("%w: declared %d, received %d", ErrSizeMismatch, declaredSize, written)
 	}
 
 	// Post-write quota check covers streaming uploads where size wasn't declared.
@@ -341,15 +366,25 @@ func DeleteArtifact(ctx context.Context, d formats.Deps, repoName, filePath stri
 	// survivor — and the referrers index built from it — advertising content that
 	// is gone. A count that cannot be read keeps the blob: an orphan is reclaimed
 	// by the blob GC, whereas bytes deleted under a live asset are lost.
-	freed := false
 	others, cerr := d.Assets.CountByBlobKey(ctx, asset.BlobKey, asset.ID)
+
+	// The row goes first, before the bytes. Whichever half fails, the leftover
+	// has to be one the system can recover from: a blob with no row is reclaimed
+	// by the blob GC, while a row whose bytes are already gone is not
+	// self-healing — every later fetch finds the row and then fails to read the
+	// blob instead of answering a clean 404, and the store keeps accounting for
+	// bytes that no longer exist, since the usage decrement below is never
+	// reached. Everything after this point reasons from the asset struct already
+	// in hand, not from a fresh read, so the order does not change what is
+	// counted or decremented.
+	if err := d.Assets.Delete(ctx, asset.ID); err != nil {
+		return err
+	}
+	freed := false
 	if cerr == nil && others == 0 {
 		// Both blob store backends report a missing object as a successful
 		// delete, so a nil error means the bytes are not there any more.
 		freed = delStore.Delete(ctx, asset.BlobKey) == nil
-	}
-	if err := d.Assets.Delete(ctx, asset.ID); err != nil {
-		return err
 	}
 	metrics.ArtifactsDeleted.Add(1)
 	// Decremented only when the bytes actually left the store, mirroring the
@@ -425,8 +460,9 @@ func CheckQuota(ctx context.Context, d formats.Deps, repo *domain.Repository, si
 
 // checkQuota verifies that writing `size` bytes won't exceed either the blob store quota or the
 // repository-level quota. Returns ErrQuotaExceeded if either is breached.
-// For group stores, the blob-store quota check is deferred to resolveBlobStoreRef:
-// PickMember returns "" when all members are at capacity.
+// A group store has no bytes of its own, so its check is deferred to
+// resolveBlobStoreRef: PickMember skips members at capacity under every fill
+// policy and returns "" once none are left, which surfaces as ErrQuotaExceeded.
 func checkQuota(ctx context.Context, d formats.Deps, repo *domain.Repository, size int64) error {
 	bs, err := resolveBlobStoreObj(ctx, d, repo)
 	if err != nil {

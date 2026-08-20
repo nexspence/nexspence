@@ -77,8 +77,21 @@ func (r *Registry) Invalidate(id string) {
 	r.mu.Unlock()
 }
 
+// hasCapacity reports whether m can still take a write. A member with no quota
+// is bounded only by its filesystem.
+func hasCapacity(m MemberInfo) bool {
+	return m.QuotaBytes == nil || m.UsedBytes < *m.QuotaBytes
+}
+
 // PickMember selects a member blob store ID according to the fill policy.
-// Returns "" if members is empty or all members are at capacity (write_to_first_fill).
+// Returns "" when members is empty or every member is at capacity — the caller
+// turns that into a quota rejection, which is the only quota gate a group store
+// has: checkQuota deliberately skips the group's own aggregate.
+//
+// Every policy skips full members. Round-robin used to rotate blindly, so a
+// member backed by a small volume kept accepting writes past its quota until
+// the filesystem refused, failing an upload mid-flight instead of rejecting it
+// before a byte was written.
 func (r *Registry) PickMember(groupID, policy string, members []MemberInfo) string {
 	if len(members) == 0 {
 		return ""
@@ -87,17 +100,23 @@ func (r *Registry) PickMember(groupID, policy string, members []MemberInfo) stri
 	case "round_robin":
 		v, _ := r.rrCounters.LoadOrStore(groupID, new(atomic.Uint64))
 		ctr := v.(*atomic.Uint64)
-		idx := ctr.Add(1) - 1
-		return members[idx%uint64(len(members))].ID
-	case "write_to_first_fill":
-		for _, m := range members {
-			if m.QuotaBytes == nil || m.UsedBytes < *m.QuotaBytes {
+		start := ctr.Add(1) - 1
+		n := uint64(len(members))
+		for i := uint64(0); i < n; i++ {
+			if m := members[(start+i)%n]; hasCapacity(m) {
 				return m.ID
 			}
 		}
 		return ""
 	default:
-		return members[0].ID
+		// write_to_first_fill, and anything unrecognized: fill members in order,
+		// moving on only once one is full.
+		for _, m := range members {
+			if hasCapacity(m) {
+				return m.ID
+			}
+		}
+		return ""
 	}
 }
 

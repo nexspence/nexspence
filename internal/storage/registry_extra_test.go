@@ -129,3 +129,69 @@ func TestNewFromConfig_NilConfig_Local(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, bs)
 }
+
+// ── Registry.PickMember ──────────────────────────────────────────────────────
+
+func quota(n int64) *int64 { return &n }
+
+// Round-robin rotates while every member has room.
+func TestRegistry_PickMember_RoundRobin_Rotates(t *testing.T) {
+	r := storage.NewRegistry(nil)
+	members := []storage.MemberInfo{{ID: "a"}, {ID: "b"}}
+	got := []string{
+		r.PickMember("g", "round_robin", members),
+		r.PickMember("g", "round_robin", members),
+		r.PickMember("g", "round_robin", members),
+	}
+	assert.Equal(t, []string{"a", "b", "a"}, got)
+}
+
+// A member at or over its quota is skipped, not written to. Without this the
+// round-robin branch kept filling a full member until the filesystem refused.
+func TestRegistry_PickMember_RoundRobin_SkipsFullMember(t *testing.T) {
+	r := storage.NewRegistry(nil)
+	members := []storage.MemberInfo{
+		{ID: "full", QuotaBytes: quota(10), UsedBytes: 12},
+		{ID: "roomy", QuotaBytes: quota(100), UsedBytes: 1},
+	}
+	for i := 0; i < 4; i++ {
+		assert.Equal(t, "roomy", r.PickMember("g-skip", "round_robin", members),
+			"pick %d landed on the member that is over quota", i)
+	}
+}
+
+// Nothing is written when the whole group is full: the caller turns "" into a
+// clean quota rejection.
+func TestRegistry_PickMember_RoundRobin_AllFull_ReturnsEmpty(t *testing.T) {
+	r := storage.NewRegistry(nil)
+	members := []storage.MemberInfo{
+		{ID: "a", QuotaBytes: quota(10), UsedBytes: 10},
+		{ID: "b", QuotaBytes: quota(10), UsedBytes: 12},
+	}
+	assert.Equal(t, "", r.PickMember("g-full", "round_robin", members))
+}
+
+func TestRegistry_PickMember_WriteToFirstFill_MovesOnWhenFull(t *testing.T) {
+	r := storage.NewRegistry(nil)
+	members := []storage.MemberInfo{
+		{ID: "a", QuotaBytes: quota(10), UsedBytes: 10},
+		{ID: "b", QuotaBytes: quota(10), UsedBytes: 3},
+	}
+	assert.Equal(t, "b", r.PickMember("g-wtff", "write_to_first_fill", members))
+	assert.Equal(t, "", r.PickMember("g-wtff", "write_to_first_fill", []storage.MemberInfo{members[0]}))
+}
+
+// An unrecognized policy must not become a way around the quota either.
+func TestRegistry_PickMember_UnknownPolicy_StillRespectsQuota(t *testing.T) {
+	r := storage.NewRegistry(nil)
+	members := []storage.MemberInfo{
+		{ID: "a", QuotaBytes: quota(10), UsedBytes: 10},
+		{ID: "b"},
+	}
+	assert.Equal(t, "b", r.PickMember("g-unknown", "whatever", members))
+}
+
+func TestRegistry_PickMember_NoMembers_ReturnsEmpty(t *testing.T) {
+	r := storage.NewRegistry(nil)
+	assert.Equal(t, "", r.PickMember("g-empty", "round_robin", nil))
+}
