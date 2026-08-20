@@ -227,6 +227,18 @@ func TestComponentHandler_List_ContinuationTokenWinsOverOffset(t *testing.T) {
 }
 
 // A first page that has more rows behind it advertises the next token.
+// A hand-crafted negative token is ignored the same way a negative ?offset= is,
+// instead of reaching Postgres as a rejected OFFSET and surfacing as a 500.
+func TestComponentHandler_List_NegativeContinuationTokenIgnored(t *testing.T) {
+	r, comps, _, repos := mountComponents(t)
+	seedRepo(t, repos, &domain.Repository{ID: "r1", Name: "raw-host", Format: domain.FormatRaw, Type: domain.TypeHosted})
+	require.NoError(t, comps.Create(testContext(), &domain.Component{Name: "a", Repository: "raw-host"}))
+	rec := do(t, r, http.MethodGet,
+		"/service/rest/v1/components?repository=raw-host&limit=3&continuationToken=-5", nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, 0, comps.LastListOffset, "negative continuation token must not reach the repo layer")
+}
+
 func TestComponentHandler_List_ContinuationTokenEmitted(t *testing.T) {
 	r, comps, _, repos := mountComponents(t)
 	seedRepo(t, repos, &domain.Repository{ID: "r1", Name: "raw-host", Format: domain.FormatRaw, Type: domain.TypeHosted})

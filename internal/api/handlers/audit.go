@@ -53,9 +53,36 @@ func parseAuditQuery(c *gin.Context) (repository.AuditQuery, error) {
 		}
 		q.To = &t
 	}
-	q.Limit, _ = strconv.Atoi(c.DefaultQuery("limit", "100"))
-	q.Offset, _ = strconv.Atoi(c.DefaultQuery("offset", "0"))
+	// Both are rejected rather than silently coerced: a negative offset reaches
+	// Postgres as a rejected OFFSET and surfaces as a 500 with raw SQL text,
+	// where the caller sent bad input and deserves a 400. AuditRepo.List clamps
+	// the page size itself, but a non-numeric limit would otherwise be read as
+	// "use the default" without the caller ever hearing about it.
+	var err error
+	if q.Limit, err = parseNonNegative(c, "limit", 100); err != nil {
+		return q, err
+	}
+	if q.Offset, err = parseNonNegative(c, "offset", 0); err != nil {
+		return q, err
+	}
 	return q, nil
+}
+
+// parseNonNegative reads query parameter name as a non-negative int, returning
+// def when it is absent.
+func parseNonNegative(c *gin.Context, name string, def int) (int, error) {
+	raw := c.Query(name)
+	if raw == "" {
+		return def, nil
+	}
+	v, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, fmt.Errorf("invalid '%s' value: %w", name, err)
+	}
+	if v < 0 {
+		return 0, fmt.Errorf("invalid '%s' value: must be >= 0", name)
+	}
+	return v, nil
 }
 
 // parseDate accepts either an ISO date (2026-04-01) or RFC3339 (2026-04-01T12:00:00Z).

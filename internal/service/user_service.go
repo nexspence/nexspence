@@ -269,6 +269,14 @@ func (s *UserService) Create(ctx context.Context, u *domain.User, plainPassword 
 	}
 
 	if err := s.users.Create(ctx, u); err != nil {
+		// The username was pre-checked above, but email uniqueness is enforced
+		// only by the DB (a partial index, so any number of email-less users is
+		// still fine). Without this, a duplicate email escaped as a raw driver
+		// error and the handler answered 500 with SQL internals instead of 409.
+		var uv *repository.UniqueViolationError
+		if errors.As(err, &uv) {
+			return fmt.Errorf("%w: user with this %s", ErrAlreadyExists, uv.Field)
+		}
 		return err
 	}
 	if len(u.Roles) > 0 {
@@ -304,6 +312,11 @@ func (s *UserService) Update(ctx context.Context, username string, updates *doma
 	}
 
 	if err := s.users.Update(ctx, u); err != nil {
+		// Same email collision as Create's, on the sibling verb.
+		var uv *repository.UniqueViolationError
+		if errors.As(err, &uv) {
+			return nil, fmt.Errorf("%w: user with this %s", ErrAlreadyExists, uv.Field)
+		}
 		return nil, err
 	}
 	// Revoke existing JWTs when the account transitions to non-active.

@@ -308,6 +308,53 @@ func TestReplicationService_Decrypt_NoFallbackWithoutKey(t *testing.T) {
 	}
 }
 
+// An expression the scheduler cannot parse is rejected at the write, instead of
+// being persisted and then dropped by addEntryLocked with only a log line —
+// which left a rule that never ran and an API that reported success.
+func TestReplicationService_RuleWrites_RejectInvalidCronExpr(t *testing.T) {
+	ctx := context.Background()
+	repo := testutil.NewReplicationRepo()
+	svc := service.NewReplicationService(repo, testutil.NewAssetRepo(), testutil.NewBlobStore(),
+		"test-jwt-secret-32-bytes-long!!!", nil, nopReplLog())
+
+	bad := &domain.ReplicationRule{Name: "r1", SourceRepo: "raw-hosted",
+		TargetURL: "http://example", TargetRepo: "raw", CronExpr: "not-a-cron"}
+	if err := svc.CreateRule(ctx, bad, ""); err == nil {
+		t.Fatal("CreateRule accepted an unparseable cron_expr")
+	}
+	rules, err := repo.ListRules(ctx)
+	if err != nil {
+		t.Fatalf("ListRules: %v", err)
+	}
+	if len(rules) != 0 {
+		t.Fatalf("rejected rule was persisted anyway: %d rules", len(rules))
+	}
+
+	good := &domain.ReplicationRule{Name: "r1", SourceRepo: "raw-hosted",
+		TargetURL: "http://example", TargetRepo: "raw", CronExpr: "0 2 * * *"}
+	if err := svc.CreateRule(ctx, good, ""); err != nil {
+		t.Fatalf("CreateRule(valid): %v", err)
+	}
+
+	good.CronExpr = "*/5 * * * * * *"
+	if err := svc.UpdateRule(ctx, good, ""); err == nil {
+		t.Fatal("UpdateRule accepted an unparseable cron_expr")
+	}
+	stored, err := repo.GetRule(ctx, good.ID)
+	if err != nil {
+		t.Fatalf("GetRule: %v", err)
+	}
+	if stored.CronExpr != "0 2 * * *" {
+		t.Fatalf("stored schedule was overwritten: %q", stored.CronExpr)
+	}
+
+	// An empty expression stays legal: it means "manual runs only".
+	good.CronExpr = ""
+	if err := svc.UpdateRule(ctx, good, ""); err != nil {
+		t.Fatalf("UpdateRule(empty cron_expr): %v", err)
+	}
+}
+
 func TestReplicationService_ReEncryptCredentials_MigratesAndIsIdempotent(t *testing.T) {
 	ctx := context.Background()
 	repo := testutil.NewReplicationRepo()

@@ -140,8 +140,41 @@ func TestUserRepo_Create_DuplicateUsername_Errors(t *testing.T) {
 		t.Fatalf("first Create: %v", err)
 	}
 	u2 := makeUser("dup_user", "dup2@test.com")
-	if err := repo.Create(ctx, u2); err == nil {
+	err := repo.Create(ctx, u2)
+	if err == nil {
 		t.Fatal("expected error for duplicate username, got nil")
+	}
+	if !errors.Is(err, repository.ErrAlreadyExists) {
+		t.Fatalf("want ErrAlreadyExists, got %v", err)
+	}
+}
+
+// A duplicate email must come back as a recognizable conflict naming the field,
+// not as a raw driver error that callers can only answer with a 500.
+func TestUserRepo_Create_DuplicateEmail_ReturnsAlreadyExists(t *testing.T) {
+	pool := pgtest.Pool(t)
+	pgtest.Truncate(t, pool, "users", "roles")
+	ctx := context.Background()
+	repo := NewUserRepo(pool)
+
+	if err := repo.Create(ctx, makeUser("dup_email_a", "shared@test.com")); err != nil {
+		t.Fatalf("first Create: %v", err)
+	}
+	err := repo.Create(ctx, makeUser("dup_email_b", "shared@test.com"))
+	if !errors.Is(err, repository.ErrAlreadyExists) {
+		t.Fatalf("want ErrAlreadyExists, got %v", err)
+	}
+	var uv *repository.UniqueViolationError
+	if !errors.As(err, &uv) || uv.Field != "email" {
+		t.Fatalf("want the email field named, got %v", err)
+	}
+
+	// The index is partial: email-less accounts never collide.
+	if err := repo.Create(ctx, makeUser("dup_email_none_a", "")); err != nil {
+		t.Fatalf("Create(no email): %v", err)
+	}
+	if err := repo.Create(ctx, makeUser("dup_email_none_b", "")); err != nil {
+		t.Fatalf("Create(second no email): %v", err)
 	}
 }
 

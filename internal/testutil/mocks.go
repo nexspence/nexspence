@@ -1400,6 +1400,15 @@ func (r *UserRepo) Create(_ context.Context, u *domain.User) error {
 	if r.Err != nil {
 		return r.Err
 	}
+	// Mirror the real table's constraints: username is unique, and email is
+	// unique only when non-empty (users_email_nonempty_key is a partial index,
+	// so any number of email-less users is fine).
+	if _, exists := r.users[u.Username]; exists {
+		return &repository.UniqueViolationError{Field: "username"}
+	}
+	if err := r.checkEmailFreeLocked(u.Email, u.Username); err != nil {
+		return err
+	}
 	r.nextID++
 	if u.ID == "" {
 		u.ID = fmt.Sprintf("user-%d", r.nextID)
@@ -1408,11 +1417,29 @@ func (r *UserRepo) Create(_ context.Context, u *domain.User) error {
 	r.byID[u.ID] = u
 	return nil
 }
+
+// checkEmailFreeLocked reports the users_email_nonempty_key violation that the
+// real table would raise. Caller must hold r.mu.
+func (r *UserRepo) checkEmailFreeLocked(email, ownUsername string) error {
+	if email == "" {
+		return nil
+	}
+	for name, existing := range r.users {
+		if name != ownUsername && existing.Email == email {
+			return &repository.UniqueViolationError{Field: "email"}
+		}
+	}
+	return nil
+}
+
 func (r *UserRepo) Update(_ context.Context, u *domain.User) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.Err != nil {
 		return r.Err
+	}
+	if err := r.checkEmailFreeLocked(u.Email, u.Username); err != nil {
+		return err
 	}
 	r.users[u.Username] = u
 	r.byID[u.ID] = u

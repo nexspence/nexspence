@@ -28,9 +28,24 @@ func (r *componentRepo) List(ctx context.Context, repoName string, limit, offset
 	return r.ListByRepoNames(ctx, []string{repoName}, limit, offset)
 }
 
+// maxComponentPageSize caps how many components one listing request can pull,
+// mirroring the ceiling AuditRepo.List already applies. Without it a client-set
+// limit goes straight into the SQL LIMIT clause, and a single request can pull —
+// and serialize — an entire registry.
+const maxComponentPageSize = 1000
+
+// ListByRepoNames returns a page of components across repoNames. The page size
+// is clamped to [1, maxComponentPageSize]; callers page on with the returned
+// continuation token.
 func (r *componentRepo) ListByRepoNames(ctx context.Context, repoNames []string, limit, offset int) (*domain.Page[domain.Component], error) {
 	if len(repoNames) == 0 {
 		return &domain.Page[domain.Component]{Items: []domain.Component{}}, nil
+	}
+	if limit <= 0 {
+		limit = 25
+	}
+	if limit > maxComponentPageSize {
+		limit = maxComponentPageSize
 	}
 	ph := make([]string, len(repoNames))
 	args := make([]any, 0, len(repoNames)+2)

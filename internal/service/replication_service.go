@@ -522,8 +522,26 @@ func (s *ReplicationService) GetRule(ctx context.Context, id string) (*domain.Re
 	return rule, nil
 }
 
+// validateCronExpr rejects a schedule the cron scheduler cannot parse. An empty
+// expression is allowed and means "no schedule" — the rule only runs when it is
+// triggered manually. Anything else, left unvalidated, would be dropped by
+// addEntryLocked with nothing but a log line, leaving the rule permanently
+// unscheduled while the API reported success.
+func validateCronExpr(expr string) error {
+	if expr == "" {
+		return nil
+	}
+	if _, err := cron.ParseStandard(expr); err != nil {
+		return fmt.Errorf("invalid cron_expr %q: %w", expr, err)
+	}
+	return nil
+}
+
 // CreateRule encrypts the password and persists the rule.
 func (s *ReplicationService) CreateRule(ctx context.Context, rule *domain.ReplicationRule, plainPassword string) error {
+	if err := validateCronExpr(rule.CronExpr); err != nil {
+		return err
+	}
 	enc, err := s.EncryptPassword(plainPassword)
 	if err != nil {
 		return err
@@ -534,6 +552,9 @@ func (s *ReplicationService) CreateRule(ctx context.Context, rule *domain.Replic
 
 // UpdateRule encrypts the password if provided (non-empty), otherwise keeps existing.
 func (s *ReplicationService) UpdateRule(ctx context.Context, rule *domain.ReplicationRule, plainPassword string) error {
+	if err := validateCronExpr(rule.CronExpr); err != nil {
+		return err
+	}
 	if plainPassword != "" {
 		enc, err := s.EncryptPassword(plainPassword)
 		if err != nil {
