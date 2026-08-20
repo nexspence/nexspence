@@ -217,7 +217,9 @@ func (h *Handler) handlePublish(c *gin.Context, repoName string) {
 	if _, err := base.StoreArtifact(c.Request.Context(), h.deps,
 		repoName, filePath, "application/x-tar", coords,
 		io.LimitReader(c.Request.Body, int64(crateLen)), int64(crateLen)); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		// crateLen comes from the request body itself, so a body that does not
+		// deliver it is the publisher's error, not ours — see base.ErrSizeMismatch.
+		c.JSON(base.HTTPStatusForError(err), gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"warnings": gin.H{"invalid_categories": []string{}, "invalid_badges": []string{}, "other": []string{}}})

@@ -574,6 +574,9 @@ type AssetRepo struct {
 	ListStaleCalls int
 	MigrationRows  []domain.MigrationAssetRow
 	Err            error // when non-nil, ListByComponentID/ListByComponentIDs/SearchAssets/SumSizeByRepo return it (500-branch seam)
+	// DeleteErr, when non-nil, makes Delete fail while leaving the row in place —
+	// the seam for "the DB write failed after the bytes were already touched".
+	DeleteErr error
 	// ListByComponentIDsCalls counts how many times ListByComponentIDs has been called.
 	ListByComponentIDsCalls int
 	// ListByComponentIDCalls counts how many times the singular ListByComponentID has been called.
@@ -753,6 +756,9 @@ func (a *AssetRepo) TouchLastModified(_ context.Context, id string) error {
 func (a *AssetRepo) Delete(_ context.Context, id string) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if a.DeleteErr != nil {
+		return a.DeleteErr
+	}
 	asset, ok := a.byID[id]
 	if !ok {
 		return nil
