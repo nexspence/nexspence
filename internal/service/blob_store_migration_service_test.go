@@ -2,11 +2,14 @@ package service_test
 
 import (
 	"context"
+	"errors"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
+	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/service"
 	"github.com/nexspence-oss/nexspence/internal/storage"
 	"github.com/nexspence-oss/nexspence/internal/testutil"
@@ -261,5 +264,96 @@ func TestBlobStoreMigration_CompletesWithBlobCopyAndResume(t *testing.T) {
 	_ = m
 	if final.Status != "done" {
 		t.Errorf("final status = %q; want %q", final.Status, "done")
+	}
+}
+
+// The pre-check is not the guarantee: two simultaneous requests both pass it,
+// and without Redis the distributed lock is a no-op. The request that loses the
+// insert race must get the same conflict, not a raw constraint error — and only
+// one migration may exist, since both would otherwise copy the whole dataset,
+// each to its own destination.
+func TestBlobStoreMigration_StartLosesInsertRace_ReportsConflict(t *testing.T) {
+	ctx := context.Background()
+
+	sourceID := "store-src-001"
+	targetID := "store-tgt-002"
+	bsID := sourceID
+	repo := &domain.Repository{
+		ID: "repo-001", Name: "my-repo", Format: domain.RepoFormat("raw"),
+		Type: domain.TypeHosted, Online: true, BlobStoreID: &bsID,
+	}
+
+	migRepo := testutil.NewBlobStoreMigrationRepo()
+	// The pre-check finds nothing (no row yet), so the conflict can only come
+	// from the insert — exactly the state of the request that arrives second.
+	migRepo.CreateErr = &repository.UniqueViolationError{Field: "repository_name"}
+
+	svc := service.NewBlobStoreMigrationService(
+		migRepo, testutil.NewAssetRepo(), testutil.NewRepoRepo(repo),
+		testutil.NewBlobStoreRepo(
+			&domain.BlobStore{ID: sourceID, Name: "source-store", Type: "local"},
+			&domain.BlobStore{ID: targetID, Name: "target-store", Type: "local"},
+		),
+		storage.NewRegistry(testutil.NewBlobStore()),
+	)
+
+	_, err := svc.Start(ctx, "my-repo", targetID)
+	if !errors.Is(err, service.ErrMigrationAlreadyRunning) {
+		t.Fatalf("want ErrMigrationAlreadyRunning, got %v", err)
+	}
+}
+
+// Barrier-synchronized concurrent starts: whichever layer catches it, exactly
+// one migration may be created.
+func TestBlobStoreMigration_ConcurrentStarts_OnlyOneWins(t *testing.T) {
+	ctx := context.Background()
+
+	sourceID := "store-src-001"
+	bsID := sourceID
+	repo := &domain.Repository{
+		ID: "repo-001", Name: "my-repo", Format: domain.RepoFormat("raw"),
+		Type: domain.TypeHosted, Online: true, BlobStoreID: &bsID,
+	}
+	migRepo := testutil.NewBlobStoreMigrationRepo()
+	svc := service.NewBlobStoreMigrationService(
+		migRepo, testutil.NewAssetRepo(), testutil.NewRepoRepo(repo),
+		testutil.NewBlobStoreRepo(
+			&domain.BlobStore{ID: sourceID, Name: "source-store", Type: "local"},
+			&domain.BlobStore{ID: "store-tgt-a", Name: "target-a", Type: "local"},
+			&domain.BlobStore{ID: "store-tgt-b", Name: "target-b", Type: "local"},
+		),
+		storage.NewRegistry(testutil.NewBlobStore()),
+	)
+
+	// Two different destinations, the way two operators would pick them.
+	targets := []string{"store-tgt-a", "store-tgt-b"}
+	start := make(chan struct{})
+	results := make(chan error, len(targets))
+	var wg sync.WaitGroup
+	for _, target := range targets {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			_, err := svc.Start(ctx, "my-repo", target)
+			results <- err
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+
+	created := 0
+	for err := range results {
+		switch {
+		case err == nil:
+			created++
+		case errors.Is(err, service.ErrMigrationAlreadyRunning):
+		default:
+			t.Fatalf("unexpected error: %v", err)
+		}
+	}
+	if created != 1 {
+		t.Fatalf("want exactly 1 migration created, got %d", created)
 	}
 }

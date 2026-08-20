@@ -5,6 +5,7 @@ package postgres
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
@@ -58,6 +59,115 @@ func TestBlobStoreMigrationRepo_Create_PopulatesIDAndTimestamps(t *testing.T) {
 	}
 	if m.UpdatedAt.IsZero() {
 		t.Error("Create did not populate UpdatedAt")
+	}
+}
+
+// Migration 027's partial unique index is the only real guard on the
+// check-then-insert in BlobStoreMigrationService.Start — without Redis the
+// distributed lock is a no-op, so two simultaneous requests both pass the
+// pre-check and, before this index existed, both ran.
+func TestBlobStoreMigrationRepo_Create_OneActivePerRepo(t *testing.T) {
+	pool := pgtest.Pool(t)
+	pgtest.Truncate(t, pool, "blob_store_migrations", "blob_stores")
+	ctx := context.Background()
+	bsRepo := NewBlobStoreRepo(pool)
+	repo := NewBlobStoreMigrationRepo(pool)
+
+	srcID, dstID := makeBSMParents(t, ctx, bsRepo, "one_active")
+
+	first := &domain.BlobStoreMigration{
+		RepositoryName: "one_active_repo", SourceStoreID: srcID,
+		TargetStoreID: dstID, Status: "pending",
+	}
+	if err := repo.Create(ctx, first); err != nil {
+		t.Fatalf("first Create: %v", err)
+	}
+
+	second := &domain.BlobStoreMigration{
+		RepositoryName: "one_active_repo", SourceStoreID: srcID,
+		TargetStoreID: dstID, Status: "pending",
+	}
+	err := repo.Create(ctx, second)
+	if !errors.Is(err, repository.ErrAlreadyExists) {
+		t.Fatalf("second Create: want ErrAlreadyExists, got %v", err)
+	}
+
+	// 'running' collides with 'pending' too — both count as active.
+	if err := repo.UpdateStatus(ctx, first.ID, "running", nil); err != nil {
+		t.Fatalf("UpdateStatus(running): %v", err)
+	}
+	if err := repo.Create(ctx, second); !errors.Is(err, repository.ErrAlreadyExists) {
+		t.Fatalf("Create against a running migration: want ErrAlreadyExists, got %v", err)
+	}
+
+	// Once it finishes, the repository can be migrated again, any number of
+	// times — the index only constrains active rows.
+	if err := repo.FinishMigration(ctx, first.ID, "done", nil); err != nil {
+		t.Fatalf("FinishMigration: %v", err)
+	}
+	if err := repo.Create(ctx, second); err != nil {
+		t.Fatalf("Create after the previous migration finished: %v", err)
+	}
+	third := &domain.BlobStoreMigration{
+		RepositoryName: "one_active_repo", SourceStoreID: srcID,
+		TargetStoreID: dstID, Status: "pending",
+	}
+	if err := repo.Create(ctx, third); !errors.Is(err, repository.ErrAlreadyExists) {
+		t.Fatalf("third Create: want ErrAlreadyExists, got %v", err)
+	}
+
+	// A different repository is unaffected.
+	other := &domain.BlobStoreMigration{
+		RepositoryName: "one_active_other_repo", SourceStoreID: srcID,
+		TargetStoreID: dstID, Status: "pending",
+	}
+	if err := repo.Create(ctx, other); err != nil {
+		t.Fatalf("Create for a different repository: %v", err)
+	}
+}
+
+// The same guarantee under genuinely simultaneous inserts, which is how the bug
+// was reproduced: barrier-synchronized requests, no pre-check in between.
+func TestBlobStoreMigrationRepo_Create_ConcurrentInsertsOnlyOneWins(t *testing.T) {
+	pool := pgtest.Pool(t)
+	pgtest.Truncate(t, pool, "blob_store_migrations", "blob_stores")
+	ctx := context.Background()
+	bsRepo := NewBlobStoreRepo(pool)
+	repo := NewBlobStoreMigrationRepo(pool)
+
+	srcID, dstID := makeBSMParents(t, ctx, bsRepo, "concurrent")
+
+	const racers = 8
+	start := make(chan struct{})
+	results := make(chan error, racers)
+	var wg sync.WaitGroup
+	for i := 0; i < racers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			results <- repo.Create(ctx, &domain.BlobStoreMigration{
+				RepositoryName: "concurrent_repo", SourceStoreID: srcID,
+				TargetStoreID: dstID, Status: "pending",
+			})
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+
+	won := 0
+	for err := range results {
+		switch {
+		case err == nil:
+			won++
+		case errors.Is(err, repository.ErrAlreadyExists):
+		default:
+			t.Fatalf("unexpected error: %v", err)
+		}
+	}
+	if won != 1 {
+		t.Fatalf("want exactly 1 winning insert, got %d", won)
 	}
 }
 

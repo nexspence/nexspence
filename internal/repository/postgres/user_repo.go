@@ -5,7 +5,6 @@ import (
 	"errors"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
@@ -83,13 +82,8 @@ func (r *userRepo) GetByID(ctx context.Context, id string) (*domain.User, error)
 	return u, nil
 }
 
-// pgerrUniqueViolation is Postgres' SQLSTATE for a unique-constraint violation.
-const pgerrUniqueViolation = "23505"
-
 // uniqueUserFields maps the users table's unique constraints to the field name
-// a caller would recognize. A violation is a client-visible conflict, not an
-// internal failure, so it is translated instead of surfacing as a raw driver
-// error — see translateUserUnique.
+// a caller would recognize.
 var uniqueUserFields = map[string]string{
 	"users_username_key":       "username",
 	"users_email_nonempty_key": "email",
@@ -99,12 +93,12 @@ var uniqueUserFields = map[string]string{
 // into repository.ErrAlreadyExists naming the offending field. Any other error
 // passes through untouched.
 func translateUserUnique(err error) error {
-	var pgErr *pgconn.PgError
-	if !errors.As(err, &pgErr) || pgErr.Code != pgerrUniqueViolation {
+	constraint, ok := uniqueViolation(err)
+	if !ok {
 		return err
 	}
-	field, ok := uniqueUserFields[pgErr.ConstraintName]
-	if !ok {
+	field, known := uniqueUserFields[constraint]
+	if !known {
 		return err
 	}
 	return &repository.UniqueViolationError{Field: field}

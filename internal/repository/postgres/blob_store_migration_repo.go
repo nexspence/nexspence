@@ -21,18 +21,29 @@ func NewBlobStoreMigrationRepo(db *pgxpool.Pool) *blobStoreMigrationRepo {
 	return &blobStoreMigrationRepo{db: db}
 }
 
+// activeMigrationConstraint is the partial unique index that allows only one
+// pending/running migration per repository (migration 027). It is the only real
+// guard on the check-then-insert in BlobStoreMigrationService.Start: without
+// Redis the distributed lock is a no-op, so two simultaneous requests otherwise
+// both pass the pre-check.
+const activeMigrationConstraint = "blob_store_migrations_one_active_per_repo"
+
 func (r *blobStoreMigrationRepo) Create(ctx context.Context, m *domain.BlobStoreMigration) error {
 	var sourceID *string
 	if m.SourceStoreID != "" {
 		sourceID = &m.SourceStoreID
 	}
-	return r.db.QueryRow(ctx, `
+	err := r.db.QueryRow(ctx, `
 		INSERT INTO blob_store_migrations
 		  (repository_name, source_store_id, target_store_id, status)
 		VALUES ($1, $2, $3, $4)
 		RETURNING id, created_at, updated_at`,
 		m.RepositoryName, sourceID, m.TargetStoreID, m.Status,
 	).Scan(&m.ID, &m.CreatedAt, &m.UpdatedAt)
+	if constraint, ok := uniqueViolation(err); ok && constraint == activeMigrationConstraint {
+		return &repository.UniqueViolationError{Field: "repository_name"}
+	}
+	return err
 }
 
 func (r *blobStoreMigrationRepo) Get(ctx context.Context, id string) (*domain.BlobStoreMigration, error) {

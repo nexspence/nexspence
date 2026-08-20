@@ -36,7 +36,7 @@ func (h *BlobStoreMigrationHandler) Start(c *gin.Context) {
 	if err != nil {
 		msg := err.Error()
 		switch {
-		case strings.Contains(msg, "already running"):
+		case errors.Is(err, service.ErrMigrationAlreadyRunning):
 			c.JSON(http.StatusConflict, gin.H{"error": msg})
 		case strings.Contains(msg, "not found"), strings.Contains(msg, "same as"):
 			c.JSON(http.StatusBadRequest, gin.H{"error": msg})
