@@ -527,6 +527,52 @@ describe('AdminPage — Replication tab', () => {
     expect(await screen.findByText('Started')).toBeInTheDocument()
   })
 
+  // The history viewer kept one shared array, so a request for the rule that was
+  // open first resolved later and overwrote it — rendering the earlier rule's
+  // runs under the newly opened rule's header, which misattributes a broken
+  // target's failures to a healthy one and the other way round.
+  it('never renders one rule\'s history under another rule\'s header', async () => {
+    const user = userEvent.setup()
+    const ruleB = { ...repRule, id: 're-2', name: 'mirror-b', source_repo: 'npm-hosted' }
+    let releaseA: (() => void) | undefined
+    const aHeld = new Promise<void>((resolve) => { releaseA = resolve })
+    const run = (id: string, pushed: number) => ({
+      id, rule_id: id, started_at: new Date().toISOString(), finished_at: null,
+      duration_ms: 1500, pushed_count: pushed, skipped_count: 0, failed_count: 0,
+      transferred_bytes: 2048, error: '',
+    })
+
+    server.use(
+      http.get('/api/v1/replication/rules', () => HttpResponse.json([repRule, ruleB])),
+      http.get('/api/v1/replication/rules/:id/history', async ({ params }) => {
+        if (params.id === 're-1') {
+          await aHeld
+          return HttpResponse.json([run('h-a', 111)])
+        }
+        return HttpResponse.json([run('h-b', 222)])
+      }),
+    )
+
+    renderAdmin('replication')
+    await screen.findByText('mirror')
+
+    // Open rule A, then switch to rule B before A's history has arrived.
+    const historyButtons = screen.getAllByTitle('History')
+    await user.click(historyButtons[0])
+    await user.click(historyButtons[1])
+    expect(await screen.findByText('222')).toBeInTheDocument()
+
+    // A's response lands afterwards and must not reach B's panel.
+    releaseA?.()
+    await waitFor(() => expect(screen.queryByText('Loading history…')).not.toBeInTheDocument())
+    expect(screen.queryByText('111')).not.toBeInTheDocument()
+    expect(screen.getByText('222')).toBeInTheDocument()
+
+    // Reopening A shows A's own runs.
+    await user.click(screen.getAllByTitle('History')[0])
+    expect(await screen.findByText('111')).toBeInTheDocument()
+  })
+
   it('runs and tests a rule', async () => {
     const user = userEvent.setup()
     let ran = false

@@ -347,8 +347,13 @@ function ReplicationTab() {
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState<ReplicationRule | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
-  const [history, setHistory] = useState<ReplicationHistory[]>([])
-  const [histLoading, setHistLoading] = useState(false)
+  // Keyed by rule id, not a single shared array: a history request that resolves
+  // after the user has closed one rule and opened another used to overwrite the
+  // shared array unconditionally, so the earlier rule's runs were rendered under
+  // the newly expanded rule's header — misattributing a broken target's failures
+  // to a healthy one, or the reverse.
+  const [history, setHistory] = useState<Record<string, ReplicationHistory[]>>({})
+  const [histLoadingId, setHistLoadingId] = useState<string | null>(null)
   const [testResult, setTestResult] = useState<Record<string, string>>({})
 
   const [form, setForm] = useState<ReplicationRuleInput>({
@@ -401,12 +406,14 @@ function ReplicationTab() {
   async function toggleHistory(rule: ReplicationRule) {
     if (expandedId === rule.id) { setExpandedId(null); return }
     setExpandedId(rule.id)
-    setHistLoading(true)
+    setHistLoadingId(rule.id)
     try {
       const r = await nexspenceApi.listReplicationHistory(rule.id)
-      setHistory(r.data ?? [])
+      // Stored under the rule this request was made for, whatever is expanded
+      // by the time it resolves.
+      setHistory(prev => ({ ...prev, [rule.id]: r.data ?? [] }))
     } finally {
-      setHistLoading(false)
+      setHistLoadingId(cur => (cur === rule.id ? null : cur))
     }
   }
 
@@ -503,11 +510,11 @@ function ReplicationTab() {
 
           {expandedId === rule.id && (
             <div style={{ marginTop: 12, borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 10 }}>
-              {histLoading && <p style={{ color: '#64748b', fontSize: 12 }}>Loading history…</p>}
-              {!histLoading && history.length === 0 && (
+              {histLoadingId === rule.id && <p style={{ color: '#64748b', fontSize: 12 }}>Loading history…</p>}
+              {histLoadingId !== rule.id && (history[rule.id]?.length ?? 0) === 0 && (
                 <p style={{ color: '#64748b', fontSize: 12 }}>No runs recorded yet.</p>
               )}
-              {!histLoading && history.length > 0 && (
+              {histLoadingId !== rule.id && (history[rule.id]?.length ?? 0) > 0 && (
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                   <thead>
                     <tr style={{ color: '#64748b', textAlign: 'left' }}>
@@ -521,7 +528,7 @@ function ReplicationTab() {
                     </tr>
                   </thead>
                   <tbody>
-                    {history.map(h => (
+                    {(history[rule.id] ?? []).map(h => (
                       <tr key={h.id} style={{ color: '#94a3b8', borderTop: '1px solid rgba(255,255,255,0.04)' }}>
                         <td style={{ padding: '4px 8px' }}>{fmtDate(h.started_at)}</td>
                         <td style={{ padding: '4px 8px' }}>{fmtDur(h.duration_ms)}</td>
