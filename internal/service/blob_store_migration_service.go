@@ -13,6 +13,11 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/storage"
 )
 
+// ErrMigrationAlreadyRunning is returned by Start when the repository already
+// has a pending or running migration — whether the pre-check saw it or the
+// database's partial unique index refused the insert.
+var ErrMigrationAlreadyRunning = errors.New("a migration is already running for this repository")
+
 // BlobStoreMigrationService manages background migrations of repository blobs
 // from one blob store to another.
 type BlobStoreMigrationService struct {
@@ -75,13 +80,18 @@ func (s *BlobStoreMigrationService) Start(ctx context.Context, repoName, targetS
 		return nil, fmt.Errorf("target blob store is the same as the repository's current store")
 	}
 
-	// Enforce single active migration per repo.
+	// Enforce single active migration per repo. This pre-check answers the
+	// common case with a clear error; it is not the guarantee. Two simultaneous
+	// requests both pass it, and the distributed lock below cannot stop them
+	// either when Redis is absent — the default deployment, where the locker is
+	// a no-op. The database's partial unique index is what actually decides,
+	// and Create translates its violation into this same error.
 	active, err := s.migrations.GetActiveByRepo(ctx, repoName)
 	if err != nil && !errors.Is(err, repository.ErrNotFound) {
 		return nil, err
 	}
 	if active != nil {
-		return nil, fmt.Errorf("a migration is already running for this repository")
+		return nil, ErrMigrationAlreadyRunning
 	}
 
 	// Capture source store ID for the history record.
@@ -117,6 +127,12 @@ func (s *BlobStoreMigrationService) Start(ctx context.Context, repoName, targetS
 		// blocked for the rest of its TTL.
 		if migLock != nil {
 			_ = migLock.Release(ctx)
+		}
+		// The request that lost the insert race: the row another request just
+		// wrote is exactly what the pre-check above looks for, so it gets the
+		// same answer it would have got a moment later.
+		if errors.Is(err, repository.ErrAlreadyExists) {
+			return nil, ErrMigrationAlreadyRunning
 		}
 		return nil, fmt.Errorf("create migration record: %w", err)
 	}

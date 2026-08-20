@@ -2101,6 +2101,16 @@ func (r *BlobStoreMigrationRepo) Create(_ context.Context, m *domain.BlobStoreMi
 	if r.CreateErr != nil {
 		return r.CreateErr
 	}
+	// Mirror migration 027's partial unique index: at most one pending/running
+	// migration per repository, with finished rows unconstrained.
+	if m.Status == "pending" || m.Status == "running" {
+		for _, existing := range r.migrations {
+			if existing.RepositoryName == m.RepositoryName &&
+				(existing.Status == "pending" || existing.Status == "running") {
+				return &repository.UniqueViolationError{Field: "repository_name"}
+			}
+		}
+	}
 	if m.ID == "" {
 		m.ID = fmt.Sprintf("mig-%d", len(r.migrations)+1)
 	}

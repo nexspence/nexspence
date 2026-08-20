@@ -29,6 +29,23 @@ func newMigSvc(t *testing.T, repoName, sourceID, targetID string) *service.BlobS
 	return service.NewBlobStoreMigrationService(migRepo, assetRepo, repoRepo, blobRepo, reg)
 }
 
+// newMigSvcWithActive is newMigSvc with a migration already running for the
+// repository — the state a second concurrent request runs into.
+func newMigSvcWithActive(t *testing.T, repoName, sourceID, targetID string) *service.BlobStoreMigrationService {
+	t.Helper()
+	repoRepo := testutil.NewRepoRepo(&domain.Repository{ID: "r1", Name: repoName, BlobStoreID: &sourceID})
+	blobRepo := testutil.NewBlobStoreRepo(
+		&domain.BlobStore{ID: sourceID, Name: "source", Type: "local", Config: map[string]any{"path": t.TempDir()}},
+		&domain.BlobStore{ID: targetID, Name: "target", Type: "local", Config: map[string]any{"path": t.TempDir()}},
+	)
+	migRepo := testutil.NewBlobStoreMigrationRepo(&domain.BlobStoreMigration{
+		ID: "mig-active", RepositoryName: repoName,
+		SourceStoreID: sourceID, TargetStoreID: targetID, Status: "running",
+	})
+	reg := storage.NewRegistry(testutil.NewBlobStore())
+	return service.NewBlobStoreMigrationService(migRepo, testutil.NewAssetRepo(), repoRepo, blobRepo, reg)
+}
+
 func buildMigRouter(svc *service.BlobStoreMigrationService) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
@@ -65,29 +82,24 @@ func TestBlobStoreMigrationHandler_Start_201(t *testing.T) {
 	}
 }
 
-// TestBlobStoreMigrationHandler_Start_409 verifies 409 when an active migration already exists.
+// TestBlobStoreMigrationHandler_Start_409 verifies 409 when an active migration
+// already exists. The active migration is seeded rather than started by a first
+// request: an empty repository migrates in microseconds, so a first-then-second
+// request pair raced its own completion — once the first finished, the second
+// saw the repository already pointing at the target and got 400 ("same as")
+// instead of the conflict under test.
 func TestBlobStoreMigrationHandler_Start_409(t *testing.T) {
-	svc := newMigSvc(t, "my-repo", "src-store", "tgt-store")
+	svc := newMigSvcWithActive(t, "my-repo", "src-store", "tgt-store")
 	r := buildMigRouter(svc)
 
-	// Start first migration.
-	body := `{"targetStoreId":"tgt-store"}`
-	req1 := httptest.NewRequest(http.MethodPost, "/api/v1/repositories/my-repo/migrate-blob-store", strings.NewReader(body))
-	req1.Header.Set("Content-Type", "application/json")
-	w1 := httptest.NewRecorder()
-	r.ServeHTTP(w1, req1)
-	if w1.Code != http.StatusCreated {
-		t.Fatalf("first Start: want 201 got %d body=%s", w1.Code, w1.Body.String())
-	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/repositories/my-repo/migrate-blob-store",
+		strings.NewReader(`{"targetStoreId":"tgt-store"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
 
-	// Second start should conflict.
-	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/repositories/my-repo/migrate-blob-store", strings.NewReader(body))
-	req2.Header.Set("Content-Type", "application/json")
-	w2 := httptest.NewRecorder()
-	r.ServeHTTP(w2, req2)
-
-	if w2.Code != http.StatusConflict {
-		t.Fatalf("want 409 got %d body=%s", w2.Code, w2.Body.String())
+	if w.Code != http.StatusConflict {
+		t.Fatalf("want 409 got %d body=%s", w.Code, w.Body.String())
 	}
 }
 
