@@ -215,13 +215,24 @@ function ScanBadgeRow({ componentId }: { componentId: string }) {
     retry: false,
   })
 
+  // The scanned component id travels with the mutation instead of being read
+  // from the closure. This row survives a selection change — it has no key tied
+  // to the selected component — so a scan that takes minutes resolves into a
+  // render whose componentId is whatever is selected by then. Closing over it
+  // wrote one image's vulnerabilities into another image's cache entry, which
+  // then displayed them as its own: an admin could read an image as clean, or
+  // as carrying CVEs, that belong to something else entirely. React Query pins
+  // mutation variables to the call that started them, so they cannot drift.
   const scanMutation = useMutation({
-    mutationFn: () => nexspenceApi.scanComponent(componentId),
-    onSuccess: (response) => {
+    mutationFn: (id: string) => nexspenceApi.scanComponent(id),
+    onSuccess: (response, scannedId) => {
+      queryClient.setQueryData(['scanResult', scannedId], response.data as ScanResult)
+      // Local view state belongs to the row on screen, so it is only reset when
+      // the result that arrived is the one being displayed.
+      if (scannedId !== componentId) return
       setMutationError(null)
       setSevFilter('ALL')
       setElapsed(0)
-      queryClient.setQueryData(queryKey, response.data as ScanResult)
     },
     onError: (e: unknown) => {
       const msg =
@@ -231,11 +242,15 @@ function ScanBadgeRow({ componentId }: { componentId: string }) {
     },
   })
 
+  // "Scanning…" belongs to the component the in-flight scan was started for, not
+  // to whichever one is selected while it runs.
+  const isScanningThis = scanMutation.isPending && scanMutation.variables === componentId
+
   useEffect(() => {
-    if (!scanMutation.isPending) { setElapsed(0); return }
+    if (!isScanningThis) { setElapsed(0); return }
     const t = setInterval(() => setElapsed((n) => n + 1), 1000)
     return () => clearInterval(t)
-  }, [scanMutation.isPending])
+  }, [isScanningThis])
 
   const s = scanResult?.summary
   const findings = scanResult?.findings ?? []
@@ -247,7 +262,7 @@ function ScanBadgeRow({ componentId }: { componentId: string }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <ShieldAlert size={14} style={{ color: '#60a5fa', flexShrink: 0 }} />
         <span style={{ fontSize: 12, color: 'var(--holo-text-dim)' }}>Vulnerability scan</span>
-        {!scanMutation.isPending && scanResult && (
+        {!isScanningThis && scanResult && (
           <span style={{ fontSize: 11, color: 'var(--holo-text-faint)' }}>
             {new Date(scanResult.scannedAt).toLocaleString()}
           </span>
@@ -256,29 +271,29 @@ function ScanBadgeRow({ componentId }: { componentId: string }) {
           variant="primary"
           onClick={() => {
             setMutationError(null)
-            scanMutation.mutate()
+            scanMutation.mutate(componentId)
           }}
-          disabled={scanMutation.isPending}
+          disabled={isScanningThis}
           style={{ marginLeft: 'auto', fontSize: 11, padding: '3px 10px' }}
         >
-          {scanMutation.isPending ? `Scanning… ${fmtElapsed(elapsed)}` : 'Scan now'}
+          {isScanningThis ? `Scanning… ${fmtElapsed(elapsed)}` : 'Scan now'}
         </HoloButton>
       </div>
       {mutationError && (
         <span style={{ fontSize: 11, color: '#ef4444' }}>Error: {mutationError}</span>
       )}
-      {scanMutation.isPending && (
+      {isScanningThis && (
         <span style={{ fontSize: 11, color: 'var(--holo-text-faint)', lineHeight: 1.4 }}>
           Running Trivy vulnerability scan
           {elapsed >= 20 && ' — first run downloads the vulnerability DB (~2 min)'}
           {elapsed >= 90 && '; please wait…'}
         </span>
       )}
-      {!scanMutation.isPending && isLoading ? (
+      {!isScanningThis && isLoading ? (
         <span style={{ fontSize: 11, color: 'var(--holo-text-faint)' }}>Loading…</span>
-      ) : !scanMutation.isPending && scanResult?.status === 'failed' ? (
+      ) : !isScanningThis && scanResult?.status === 'failed' ? (
         <span style={{ fontSize: 11, color: '#ef4444' }}>Scan failed: {scanResult.error}</span>
-      ) : !scanMutation.isPending && s ? (
+      ) : !isScanningThis && s ? (
         <>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
             <CveBadge label="MALICIOUS" count={s.malicious} color={SEV_COLOR.malicious} />
@@ -381,7 +396,7 @@ function ScanBadgeRow({ componentId }: { componentId: string }) {
             </div>
           )}
         </>
-      ) : !scanMutation.isPending ? (
+      ) : !isScanningThis ? (
         <span style={{ fontSize: 11, color: 'var(--holo-text-faint)' }}>Not scanned yet</span>
       ) : null}
     </div>

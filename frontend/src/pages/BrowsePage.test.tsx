@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { screen, waitFor, fireEvent, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
+import { QueryClient } from '@tanstack/react-query'
 import BrowsePage from './BrowsePage'
 import { renderWithProviders, seedAuthAsAdmin } from '@/test/renderUtils'
 import { server } from '@/test/msw/server'
@@ -15,8 +16,11 @@ const repos = [
   fixtures.repository({ id: 'r4', name: 'oci-hosted', format: 'oci', type: 'hosted' }),
 ]
 
-function renderBrowse(search = '') {
-  return renderWithProviders(<BrowsePage />, { routerProps: { initialEntries: [`/browse${search}`] } })
+function renderBrowse(search = '', queryClient?: QueryClient) {
+  return renderWithProviders(<BrowsePage />, {
+    routerProps: { initialEntries: [`/browse${search}`] },
+    queryClient,
+  })
 }
 
 function seedRepos() {
@@ -399,6 +403,7 @@ describe('BrowsePage — Docker tree', () => {
             {
               kind: 'folder', label: 'Tags', path: '/myapp/Tags', children: [
                 { kind: 'tag', label: 'latest', path: '/myapp/Tags/latest', imageRef: 'myapp', version: 'latest', componentId: 'dc1' },
+                { kind: 'tag', label: 'stable', path: '/myapp/Tags/stable', imageRef: 'myapp', version: 'stable', componentId: 'dc2' },
               ],
             },
           ],
@@ -416,7 +421,14 @@ describe('BrowsePage — Docker tree', () => {
   function seedDocker() {
     server.use(
       http.get('/api/v1/browse/repositories/:name/docker-tree', () => HttpResponse.json(dockerTree)),
-      http.get('/service/rest/v1/components/:id', () => HttpResponse.json(dockerDetail)),
+      // The detail follows the requested id, so selecting a second tag really
+      // changes what the panel is describing.
+      http.get('/service/rest/v1/components/:id', ({ params }) =>
+        HttpResponse.json(
+          params.id === 'dc1'
+            ? dockerDetail
+            : { ...dockerDetail, id: String(params.id), version: 'stable' },
+        )),
     )
   }
 
@@ -534,6 +546,82 @@ describe('BrowsePage — Docker tree', () => {
     await user.click(screen.getByRole('button', { name: /Scan now/ }))
     expect(await screen.findByText('CRITICAL: 1')).toBeInTheDocument()
     expect(screen.getByText('openssl')).toBeInTheDocument()
+  })
+
+  // A scan can take minutes, and the detail panel is not remounted when another
+  // tag is selected — so its mutation used to resolve into a render describing a
+  // different component and write the finished scan into that component's cache
+  // entry, which then displayed another image's vulnerabilities as its own.
+  it('never writes a finished scan into the tag selected while it ran', async () => {
+    const user = userEvent.setup()
+    seedDocker()
+    let releaseScan: (() => void) | undefined
+    const scanStarted = new Promise<void>((resolve) => { releaseScan = resolve })
+    const latestResult = {
+      scannedAt: new Date().toISOString(), imageRef: 'myapp:latest', status: 'ok',
+      summary: { critical: 1, high: 0, medium: 0, low: 0, unknown: 0, total: 1 },
+      findings: [{ id: 'CVE-LATEST-ONLY', severity: 'CRITICAL', pkgName: 'openssl', installedVersion: '1.0', fixedVersion: '1.1', title: 'bad' }],
+    }
+    let latestScanned = false
+    server.use(
+      // Like the real endpoint: a result exists only for a component that has
+      // actually been scanned.
+      http.get('/api/v1/components/:id/scan', ({ params }) =>
+        params.id === 'dc1' && latestScanned
+          ? HttpResponse.json(latestResult)
+          : new HttpResponse(null, { status: 204 })),
+      http.post('/api/v1/components/:id/scan', async () => {
+        // Held open until the test has switched tags, standing in for the real
+        // multi-minute scan.
+        await scanStarted
+        latestScanned = true
+        return HttpResponse.json(latestResult)
+      }),
+    )
+
+    // The shared test client sets gcTime: 0, which drops a component's detail
+    // the moment it loses its observer — so every tag switch would remount the
+    // panel and, with it, tear down the in-flight scan. Real users have the
+    // default cache, where the panel survives the switch. That survival is the
+    // whole precondition for this bug, so this test keeps a real cache.
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    })
+    renderBrowse('?repo=docker-hosted', qc)
+    await user.click(await screen.findByText('myapp'))
+    await user.click(await screen.findByText('Tags'))
+
+    // Visit both tags first so their details are cached: that is what keeps the
+    // detail panel — and the scan row inside it — mounted across the switch
+    // below, instead of remounting through a loading state.
+    await user.click(await screen.findByText('stable'))
+    await screen.findByText('Vulnerability scan')
+    await user.click(screen.getByText('latest'))
+    await screen.findByText('Vulnerability scan')
+
+    await user.click(screen.getByRole('button', { name: /Scan now/ }))
+
+    // Switch to the other tag while the scan is still running.
+    await user.click(screen.getByText('stable'))
+    expect(await screen.findByText('Not scanned yet')).toBeInTheDocument()
+
+    releaseScan?.()
+
+    // The result lands on the tag it was started for — which also waits for the
+    // scan to have settled.
+    await user.click(screen.getByText('latest'))
+    expect(await screen.findByText('CRITICAL: 1')).toBeInTheDocument()
+
+    // The scan landed in the cache entry of the component it was started for,
+    // and nothing was written into the one selected while it ran.
+    expect(qc.getQueryData(['scanResult', 'dc1'])).toBeTruthy()
+    expect(qc.getQueryData(['scanResult', 'dc2'])).toBeFalsy()
+
+    // And 'stable' still shows its own state, not the finished scan of 'latest'.
+    await user.click(screen.getByText('stable'))
+    expect(await screen.findByText('Not scanned yet')).toBeInTheDocument()
+    expect(screen.queryByText('CVE-LATEST-ONLY')).not.toBeInTheDocument()
+    expect(screen.queryByText('CRITICAL: 1')).not.toBeInTheDocument()
   })
 
   // A malicious-package report has no CVSS severity. Without a badge of its own
