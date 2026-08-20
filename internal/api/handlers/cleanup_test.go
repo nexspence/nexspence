@@ -265,3 +265,48 @@ func TestCleanupHandler_Preview_NotFound_500(t *testing.T) {
 	rec := do(t, r, http.MethodPost, "/api/v1/cleanup-policies/ghost/preview", nil)
 	assert.Equal(t, http.StatusInternalServerError, rec.Code)
 }
+
+// Update must apply the same input contract as Create: a blank name is rejected
+// and a missing format defaults to "*", instead of silently blanking the policy.
+func TestCleanupHandler_Update_EmptyName_400(t *testing.T) {
+	r, policies, _, _ := mountCleanup(t)
+	p := &domain.CleanupPolicy{Name: "keep-me", Format: "*", Criteria: map[string]any{}}
+	require.NoError(t, policies.Create(testContext(), p))
+
+	rec := do(t, r, http.MethodPut, "/service/rest/v1/cleanup-policies/"+p.ID,
+		map[string]any{"name": "", "format": "maven2"})
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+
+	stored, err := policies.Get(testContext(), p.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "keep-me", stored.Name)
+}
+
+func TestCleanupHandler_Update_DefaultsFormat(t *testing.T) {
+	r, policies, _, _ := mountCleanup(t)
+	p := &domain.CleanupPolicy{Name: "old", Format: "npm", Criteria: map[string]any{}}
+	require.NoError(t, policies.Create(testContext(), p))
+
+	rec := do(t, r, http.MethodPut, "/service/rest/v1/cleanup-policies/"+p.ID,
+		map[string]any{"name": "new"})
+	require.Equal(t, http.StatusOK, rec.Code)
+	var got domain.CleanupPolicy
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	assert.Equal(t, "*", got.Format)
+	assert.NotNil(t, got.Criteria)
+}
+
+// An unparseable schedule would be dropped by the scheduler with only a log
+// line, so both write paths reject it up front.
+func TestCleanupHandler_InvalidScheduleCron_400(t *testing.T) {
+	r, policies, _, _ := mountCleanup(t)
+	rec := do(t, r, http.MethodPost, "/service/rest/v1/cleanup-policies",
+		map[string]any{"name": "p", "scheduleCron": "not-a-cron"})
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+
+	p := &domain.CleanupPolicy{Name: "p", Format: "*", Criteria: map[string]any{}}
+	require.NoError(t, policies.Create(testContext(), p))
+	rec = do(t, r, http.MethodPut, "/service/rest/v1/cleanup-policies/"+p.ID,
+		map[string]any{"name": "p", "scheduleCron": "not-a-cron"})
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}

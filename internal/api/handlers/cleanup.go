@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/robfig/cron/v3"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/repository"
@@ -62,22 +63,40 @@ func (h *CleanupHandler) Get(c *gin.Context) {
 	c.JSON(http.StatusOK, p)
 }
 
-// Create POST /service/rest/v1/cleanup-policies
-func (h *CleanupHandler) Create(c *gin.Context) {
+// bindPolicy decodes a policy body and applies the input contract shared by
+// Create and Update: a name is required, a missing format means "all formats",
+// criteria default to empty, and a schedule that the cron scheduler cannot
+// parse is rejected here rather than silently dropped at scheduling time.
+func bindPolicy(c *gin.Context) (domain.CleanupPolicy, bool) {
 	var p domain.CleanupPolicy
 	if err := c.ShouldBindJSON(&p); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
+		return p, false
 	}
 	if p.Name == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "name is required"})
-		return
+		return p, false
+	}
+	if p.ScheduleCron != "" {
+		if _, err := cron.ParseStandard(p.ScheduleCron); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid scheduleCron: " + err.Error()})
+			return p, false
+		}
 	}
 	if p.Format == "" {
 		p.Format = "*"
 	}
 	if p.Criteria == nil {
 		p.Criteria = map[string]any{}
+	}
+	return p, true
+}
+
+// Create POST /service/rest/v1/cleanup-policies
+func (h *CleanupHandler) Create(c *gin.Context) {
+	p, ok := bindPolicy(c)
+	if !ok {
+		return
 	}
 	if err := h.policies.Create(c.Request.Context(), &p); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -89,9 +108,8 @@ func (h *CleanupHandler) Create(c *gin.Context) {
 
 // Update PUT /service/rest/v1/cleanup-policies/:id
 func (h *CleanupHandler) Update(c *gin.Context) {
-	var p domain.CleanupPolicy
-	if err := c.ShouldBindJSON(&p); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	p, ok := bindPolicy(c)
+	if !ok {
 		return
 	}
 	p.ID = c.Param("id")

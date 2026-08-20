@@ -89,6 +89,13 @@ func (h *ScanHandler) Summary(c *gin.Context) {
 	c.JSON(http.StatusOK, summary)
 }
 
+// maxVulnPageSize caps one page of vulnerability rows, the same ceiling
+// AuditRepo.List and the component listing apply. Without it a client-set limit
+// reaches the SQL LIMIT clause unbounded and one request can serialize every
+// scanned component in the registry. The ?export= path is unaffected: it sets
+// its own (much higher) row cap after this parsing.
+const maxVulnPageSize = 1000
+
 // Vulnerabilities returns a paginated list of vulnerability rows.
 // GET /api/v1/security/vulnerabilities?repo=&severity=&format=&limit=&offset=
 //
@@ -105,6 +112,9 @@ func (h *ScanHandler) Vulnerabilities(c *gin.Context) {
 	offset := 0
 	if v := c.Query("limit"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			if n > maxVulnPageSize {
+				n = maxVulnPageSize
+			}
 			limit = n
 		}
 	}

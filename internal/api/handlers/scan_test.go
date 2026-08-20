@@ -239,6 +239,28 @@ func TestScanHandler_Vulnerabilities_BadLimitOffset_UsesDefaults(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rec.Code)
 }
 
+// A client-set limit is capped before it reaches the SQL LIMIT clause, so one
+// request cannot pull every scanned component in the registry.
+func TestScanHandler_Vulnerabilities_LimitClamped(t *testing.T) {
+	r, _, scanRepo, _ := mountScan(t)
+	rec := do(t, r, http.MethodGet, "/api/v1/security/vulnerabilities?limit=5000000", nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, 1000, scanRepo.LastFilter.Limit)
+
+	rec = do(t, r, http.MethodGet, "/api/v1/security/vulnerabilities?limit=10", nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, 10, scanRepo.LastFilter.Limit, "a normal page size is untouched")
+}
+
+// The export path carries its own, much larger row cap and must not be pulled
+// down to the paging ceiling.
+func TestScanHandler_VulnerabilitiesExport_NotClampedToPageSize(t *testing.T) {
+	r, _, scanRepo, _ := mountScan(t)
+	rec := do(t, r, http.MethodGet, "/api/v1/security/vulnerabilities?export=csv&limit=5000000", nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Greater(t, scanRepo.LastFilter.Limit, 1000)
+}
+
 func TestScanHandler_Vulnerabilities_RepoError_500(t *testing.T) {
 	r, _, scanRepo, _ := mountScan(t)
 	scanRepo.Err = errors.New("list down")

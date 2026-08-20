@@ -260,6 +260,54 @@ func TestUserHandler_Create_Duplicate_409(t *testing.T) {
 	assert.Equal(t, http.StatusConflict, rec.Code)
 }
 
+// Email uniqueness is enforced only by the DB, so a duplicate used to escape as
+// a raw constraint error and be answered with a 500 carrying SQL internals.
+func TestUserHandler_Create_DuplicateEmail_409(t *testing.T) {
+	r, users, _ := mountUsers(t)
+	require.NoError(t, users.Create(testContext(), &domain.User{
+		Username: "erin", Email: "shared@test.com",
+		Status: domain.UserStatusActive, Source: domain.UserSourceLocal,
+	}))
+	rec := do(t, r, http.MethodPost, "/service/rest/v1/security/users", map[string]any{
+		"userId":       "erin-svc",
+		"emailAddress": "shared@test.com",
+		"password":     "pw",
+	})
+	require.Equal(t, http.StatusConflict, rec.Code)
+	assert.Contains(t, rec.Body.String(), "email")
+	assert.NotContains(t, rec.Body.String(), "SQLSTATE")
+}
+
+// The same collision on the sibling verb: moving one account onto another's
+// email is a conflict, not an internal failure.
+func TestUserHandler_Update_DuplicateEmail_409(t *testing.T) {
+	r, users, _ := mountUsers(t)
+	for _, u := range []*domain.User{
+		{Username: "u1", Email: "taken@test.com", Status: domain.UserStatusActive, Source: domain.UserSourceLocal},
+		{Username: "u2", Email: "own@test.com", Status: domain.UserStatusActive, Source: domain.UserSourceLocal},
+	} {
+		require.NoError(t, users.Create(testContext(), u))
+	}
+	rec := do(t, r, http.MethodPut, "/service/rest/v1/security/users/u2", map[string]any{
+		"emailAddress": "taken@test.com",
+	})
+	require.Equal(t, http.StatusConflict, rec.Code)
+	assert.NotContains(t, rec.Body.String(), "SQLSTATE")
+}
+
+// Any number of email-less accounts stays legal — the DB index is partial.
+func TestUserHandler_Create_EmptyEmailsDoNotCollide(t *testing.T) {
+	r, users, _ := mountUsers(t)
+	require.NoError(t, users.Create(testContext(), &domain.User{
+		Username: "ldap-a", Status: domain.UserStatusActive, Source: domain.UserSourceLocal,
+	}))
+	rec := do(t, r, http.MethodPost, "/service/rest/v1/security/users", map[string]any{
+		"userId":   "ldap-b",
+		"password": "pw",
+	})
+	assert.Equal(t, http.StatusCreated, rec.Code)
+}
+
 func TestUserHandler_Create_RepoError_500(t *testing.T) {
 	r, users, _ := mountUsers(t)
 	users.Err = errors.New("db down")

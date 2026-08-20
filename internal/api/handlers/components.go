@@ -73,7 +73,9 @@ func (h *ComponentHandler) List(c *gin.Context) {
 		}
 	}
 	if tok := c.Query("continuationToken"); tok != "" {
-		if v, err := strconv.Atoi(tok); err == nil {
+		// Same guard as ?offset= above: the token is just an offset, and a
+		// negative one reaches Postgres as a rejected OFFSET.
+		if v, err := strconv.Atoi(tok); err == nil && v >= 0 {
 			offset = v
 		}
 	}

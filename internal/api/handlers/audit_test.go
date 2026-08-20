@@ -152,6 +152,17 @@ func TestAuditList_TotalReflectsAllMatches_NotPage(t *testing.T) {
 	assert.Len(t, body.Items, 2, "page is limited")
 }
 
+// A negative or non-numeric offset would reach Postgres as a rejected OFFSET
+// and come back as a 500 carrying raw SQL text; the caller sent bad input, so
+// it is answered the same way an unparseable 'from'/'to' already is.
+func TestAuditList_BadPaging_400(t *testing.T) {
+	r, _ := mountAudit(t)
+	for _, qs := range []string{"offset=-1", "offset=abc", "limit=-5", "limit=abc"} {
+		rec := do(t, r, http.MethodGet, "/service/rest/v1/audit?"+qs, nil)
+		assert.Equal(t, http.StatusBadRequest, rec.Code, qs)
+	}
+}
+
 func TestAuditList_NDJSON_Export(t *testing.T) {
 	r, repo := mountAudit(t)
 	seed(t, repo, []domain.AuditEvent{

@@ -412,6 +412,46 @@ func TestComponentRepo_ListByRepoNames_UnionAcrossRepos(t *testing.T) {
 	}
 }
 
+// A caller-supplied page size is capped before it reaches the SQL LIMIT clause,
+// so one request cannot pull (and serialize) an entire registry.
+func TestComponentRepo_ListByRepoNames_ClampsPageSize(t *testing.T) {
+	pool := pgtest.Pool(t)
+	pgtest.Truncate(t, pool, "blob_stores", "repositories")
+	ctx := context.Background()
+
+	p := makeCompParent(t, ctx, "lbrn_clamp")
+	repo := NewComponentRepo(pool)
+
+	// One statement instead of 1001 round trips: this test only cares that the
+	// table holds more rows than the ceiling.
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO components (repository_id, format, name, version)
+		SELECT $1, 'raw', 'clamp-lib-' || lpad(g::text, 5, '0'), '1.0'
+		FROM generate_series(1, 1001) g`, p.RepositoryID); err != nil {
+		t.Fatalf("seed components: %v", err)
+	}
+
+	page, err := repo.ListByRepoNames(ctx, []string{p.RepoName}, 5_000_000, 0)
+	if err != nil {
+		t.Fatalf("ListByRepoNames: %v", err)
+	}
+	if len(page.Items) != maxComponentPageSize {
+		t.Errorf("expected the page clamped to %d items, got %d", maxComponentPageSize, len(page.Items))
+	}
+	if page.ContinuationToken == nil {
+		t.Error("expected a continuation token so the caller can page on")
+	}
+
+	// A page size under the ceiling is untouched.
+	page, err = repo.ListByRepoNames(ctx, []string{p.RepoName}, 10, 0)
+	if err != nil {
+		t.Fatalf("ListByRepoNames(10): %v", err)
+	}
+	if len(page.Items) != 10 {
+		t.Errorf("expected 10 items, got %d", len(page.Items))
+	}
+}
+
 func TestComponentRepo_ListByRepoNames_EmptyListReturnsEmpty(t *testing.T) {
 	pool := pgtest.Pool(t)
 	pgtest.Truncate(t, pool, "blob_stores", "repositories")

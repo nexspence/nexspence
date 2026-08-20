@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
@@ -82,15 +83,42 @@ func (r *userRepo) GetByID(ctx context.Context, id string) (*domain.User, error)
 	return u, nil
 }
 
+// pgerrUniqueViolation is Postgres' SQLSTATE for a unique-constraint violation.
+const pgerrUniqueViolation = "23505"
+
+// uniqueUserFields maps the users table's unique constraints to the field name
+// a caller would recognize. A violation is a client-visible conflict, not an
+// internal failure, so it is translated instead of surfacing as a raw driver
+// error — see translateUserUnique.
+var uniqueUserFields = map[string]string{
+	"users_username_key":       "username",
+	"users_email_nonempty_key": "email",
+}
+
+// translateUserUnique converts a Postgres unique-violation on the users table
+// into repository.ErrAlreadyExists naming the offending field. Any other error
+// passes through untouched.
+func translateUserUnique(err error) error {
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) || pgErr.Code != pgerrUniqueViolation {
+		return err
+	}
+	field, ok := uniqueUserFields[pgErr.ConstraintName]
+	if !ok {
+		return err
+	}
+	return &repository.UniqueViolationError{Field: field}
+}
+
 func (r *userRepo) Create(ctx context.Context, u *domain.User) error {
-	return r.db.QueryRow(ctx, `
+	return translateUserUnique(r.db.QueryRow(ctx, `
 		INSERT INTO users (username, email, password_hash, first_name, last_name, status, source,
 		                   must_reset_password)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
 		RETURNING id, created_at, updated_at`,
 		u.Username, nilIfEmpty(u.Email), nilIfEmpty(u.PasswordHash),
 		u.FirstName, u.LastName, u.Status, u.Source, u.MustResetPassword,
-	).Scan(&u.ID, &u.CreatedAt, &u.UpdatedAt)
+	).Scan(&u.ID, &u.CreatedAt, &u.UpdatedAt))
 }
 
 func (r *userRepo) Update(ctx context.Context, u *domain.User) error {
@@ -99,7 +127,7 @@ func (r *userRepo) Update(ctx context.Context, u *domain.User) error {
 		WHERE username=$5`,
 		nilIfEmpty(u.Email), u.FirstName, u.LastName, u.Status, u.Username,
 	)
-	return err
+	return translateUserUnique(err)
 }
 
 // UpdatePassword sets a new hash and clears must_reset_password: choosing a
