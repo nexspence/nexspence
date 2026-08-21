@@ -81,7 +81,7 @@ func TestReplicationService_PushAsset_ReadsAssetsOwnStore(t *testing.T) {
 }
 
 // No resolver configured (or an asset with no store id) keeps the old
-// behaviour: read from the injected default store.
+// behavior: read from the injected default store.
 func TestReplicationService_PushAsset_FallsBackToDefaultStore(t *testing.T) {
 	defaultStore := testutil.NewBlobStore()
 	require.NoError(t, defaultStore.Put(context.Background(), "k", testutil.MakeReader("default-bytes"), 13))
