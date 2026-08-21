@@ -77,8 +77,11 @@ type AssetRepo interface {
 	// ListByComponentIDs returns assets for many components in one query,
 	// grouped by component ID (each slice ordered by path, like ListByComponentID).
 	ListByComponentIDs(ctx context.Context, componentIDs []string) (map[string][]domain.Asset, error)
-	// ListAllBlobKeys returns distinct blob_key values referenced by assets (for GC).
-	ListAllBlobKeys(ctx context.Context) ([]string, error)
+	// ListAllBlobRefs returns the distinct (blob_key, blob_store_id) pairs
+	// referenced by assets (for GC). The store id is part of the answer
+	// because a key referenced in one store says nothing about the copy of
+	// that key sitting in another.
+	ListAllBlobRefs(ctx context.Context) ([]domain.BlobRef, error)
 	// SumSizeByRepo returns total size_bytes of all assets in the repository.
 	SumSizeByRepo(ctx context.Context, repoName string) (int64, error)
 	// ListForBlobStoreMigration returns distinct (blob_key, source_blob_store_id, size_bytes)
@@ -101,6 +104,10 @@ type AssetRepo interface {
 	// CountByBlobKey returns the number of assets that reference blobKey, excluding the asset with excludeID.
 	// Used to decide whether the physical blob file can be deleted.
 	CountByBlobKey(ctx context.Context, blobKey, excludeID string) (int, error)
+	// CountByBlobKeyInStore returns the number of assets that reference blobKey
+	// and still live on blobStoreID. Used to decide whether a physical blob may
+	// be removed from one specific store.
+	CountByBlobKeyInStore(ctx context.Context, blobKey, blobStoreID string) (int, error)
 	// ListRawBrowseAssets returns all assets for the given raw-format repos with metadata for tree building.
 	ListRawBrowseAssets(ctx context.Context, repoNames []string) ([]domain.RawBrowseAsset, error)
 	// ListOCIImageNames returns the distinct image names held by the given OCI

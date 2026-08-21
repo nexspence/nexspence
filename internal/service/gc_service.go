@@ -59,17 +59,51 @@ func (s *BlobGCService) log() logger.Logger {
 	return zap.NewNop().Sugar()
 }
 
-// referencedSet returns the set of all blob keys referenced by any asset.
-func (s *BlobGCService) referencedSet(ctx context.Context) (map[string]struct{}, error) {
-	keys, err := s.Assets.ListAllBlobKeys(ctx)
+// refIndex answers "is this key referenced in this store?".
+//
+// Scoping by store is what lets GC collect a copy left behind in a store an
+// asset no longer lives on — a blob-store migration repoints the row without
+// changing the key, so a set keyed by key alone kept calling the abandoned
+// source copy "referenced" forever (#297). Rows carrying no store id (an
+// implicit default) are counted as referenced in every store: they name a key
+// but not a location, and guessing wrong here deletes live data.
+type refIndex struct {
+	byStore map[string]map[string]struct{}
+	anyPos  map[string]struct{}
+}
+
+func (i refIndex) has(storeID, key string) bool {
+	if _, ok := i.anyPos[key]; ok {
+		return true
+	}
+	keys, ok := i.byStore[storeID]
+	if !ok {
+		return false
+	}
+	_, ok = keys[key]
+	return ok
+}
+
+// referencedSet indexes every blob key referenced by an asset, by store.
+func (s *BlobGCService) referencedSet(ctx context.Context) (refIndex, error) {
+	refs, err := s.Assets.ListAllBlobRefs(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("list db blob keys: %w", err)
+		return refIndex{}, fmt.Errorf("list db blob keys: %w", err)
 	}
-	set := make(map[string]struct{}, len(keys))
-	for _, k := range keys {
-		set[k] = struct{}{}
+	idx := refIndex{byStore: make(map[string]map[string]struct{}), anyPos: make(map[string]struct{})}
+	for _, r := range refs {
+		if r.BlobStoreID == "" {
+			idx.anyPos[r.BlobKey] = struct{}{}
+			continue
+		}
+		keys, ok := idx.byStore[r.BlobStoreID]
+		if !ok {
+			keys = make(map[string]struct{})
+			idx.byStore[r.BlobStoreID] = keys
+		}
+		keys[r.BlobKey] = struct{}{}
 	}
-	return set, nil
+	return idx, nil
 }
 
 // CompactStore compacts a single blob store by name.
@@ -88,7 +122,7 @@ func (s *BlobGCService) CompactStore(ctx context.Context, name string, opts GCOp
 	if err != nil {
 		return nil, fmt.Errorf("resolve blob store %q: %w", name, err)
 	}
-	return s.compact(ctx, name, store, referenced, opts), nil
+	return s.compact(ctx, name, row.ID, store, referenced, opts), nil
 }
 
 // CompactAll compacts every blob store. It holds a distributed lock so only one
@@ -130,14 +164,14 @@ func (s *BlobGCService) CompactAll(ctx context.Context, opts GCOptions) ([]*GCRe
 			})
 			continue
 		}
-		results = append(results, s.compact(ctx, row.Name, store, referenced, opts))
+		results = append(results, s.compact(ctx, row.Name, row.ID, store, referenced, opts))
 	}
 	return results, nil
 }
 
 // compact runs the core scan/delete for a single resolved store.
-func (s *BlobGCService) compact(ctx context.Context, name string, store storage.BlobStore,
-	referenced map[string]struct{}, opts GCOptions) *GCResult {
+func (s *BlobGCService) compact(ctx context.Context, name, storeID string, store storage.BlobStore,
+	referenced refIndex, opts GCOptions) *GCResult {
 	minAge := opts.MinAge
 	if minAge <= 0 {
 		minAge = s.DefaultMinAge
@@ -154,8 +188,8 @@ func (s *BlobGCService) compact(ctx context.Context, name string, store storage.
 
 	var removed int64
 	for _, e := range entries {
-		if _, ok := referenced[e.Key]; ok {
-			continue // still referenced
+		if referenced.has(storeID, e.Key) {
+			continue // still referenced in this store
 		}
 		// Age gate: skip blobs younger than the grace period (may be an
 		// in-flight upload whose asset row is not committed yet).

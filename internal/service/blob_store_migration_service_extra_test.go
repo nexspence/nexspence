@@ -3,6 +3,7 @@ package service_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -242,4 +243,113 @@ func TestBlobStoreMigration_ResumeAll_ReleasesStaleLocks(t *testing.T) {
 		[]string{"nexspence:lock:blobmig:repo1", "nexspence:lock:blobmig:repo2"},
 		lk.forcedKeys(),
 		"every migration ResumeAll gives up gives its lock back")
+}
+
+// A finished migration must leave nothing behind in the source: the copy there
+// is unreferenced, and GC can no longer see it as an orphan by key alone. Before
+// #297 the bytes stayed on disk and in the source's used_bytes forever — so a
+// migration off a full store freed nothing.
+func TestBlobStoreMigration_DropsSourceCopyAndUsage(t *testing.T) {
+	ctx := context.Background()
+	sourceID, targetID := "store-src-001", "store-tgt-002"
+	srcDir, dstDir := t.TempDir(), t.TempDir()
+
+	sourceMeta := &domain.BlobStore{ID: sourceID, Name: "source-store", Type: "local", Config: map[string]any{"path": srcDir}}
+	targetMeta := &domain.BlobStore{ID: targetID, Name: "target-store", Type: "local", Config: map[string]any{"path": dstDir}}
+
+	bsID := sourceID
+	repo := &domain.Repository{ID: "repo-001", Name: "my-repo", Format: domain.RepoFormat("raw"),
+		Type: domain.TypeHosted, Online: true, BlobStoreID: &bsID}
+
+	srcStore, err := storage.NewLocalBlobStore(srcDir)
+	require.NoError(t, err)
+	dstStore, err := storage.NewLocalBlobStore(dstDir)
+	require.NoError(t, err)
+	require.NoError(t, srcStore.Put(ctx, "blob-1", strings.NewReader("data"), 4))
+
+	blobRepo := testutil.NewBlobStoreRepo(sourceMeta, targetMeta)
+	require.NoError(t, blobRepo.UpdateUsedBytes(ctx, "source-store", 4))
+
+	assetRepo := testutil.NewAssetRepo()
+	require.NoError(t, assetRepo.Create(ctx, &domain.Asset{
+		ComponentID: "c1", RepositoryID: repo.ID, Repository: "my-repo",
+		Path: "/data.bin", BlobKey: "blob-1", BlobStoreID: sourceID, SizeBytes: 4,
+	}))
+	assetRepo.MigrationRows = []domain.MigrationAssetRow{
+		{BlobKey: "blob-1", SourceBlobStoreID: sourceID, SizeBytes: 4},
+	}
+
+	svc := service.NewBlobStoreMigrationService(testutil.NewBlobStoreMigrationRepo(), assetRepo,
+		testutil.NewRepoRepo(repo), blobRepo, storage.NewRegistry(srcStore))
+
+	_, err = svc.Start(ctx, "my-repo", targetID)
+	require.NoError(t, err)
+	waitForMigration(t, svc, "my-repo", "done")
+
+	inTarget, err := dstStore.Exists(ctx, "blob-1")
+	require.NoError(t, err)
+	require.True(t, inTarget, "target must hold the migrated blob")
+
+	inSource, err := srcStore.Exists(ctx, "blob-1")
+	require.NoError(t, err)
+	require.False(t, inSource, "source copy must be deleted once nothing references it there")
+
+	src, err := blobRepo.Get(ctx, "source-store")
+	require.NoError(t, err)
+	require.Equal(t, int64(0), src.UsedBytes, "source usage must drop by the migrated bytes")
+
+	dst, err := blobRepo.Get(ctx, "target-store")
+	require.NoError(t, err)
+	require.Equal(t, int64(4), dst.UsedBytes)
+}
+
+// The same key can still be in use on the source by another repository's asset
+// (or an OCI digest alias). Then the physical blob stays, and so does the usage.
+func TestBlobStoreMigration_KeepsSourceCopyStillReferencedThere(t *testing.T) {
+	ctx := context.Background()
+	sourceID, targetID := "store-src-001", "store-tgt-002"
+	srcDir, dstDir := t.TempDir(), t.TempDir()
+
+	sourceMeta := &domain.BlobStore{ID: sourceID, Name: "source-store", Type: "local", Config: map[string]any{"path": srcDir}}
+	targetMeta := &domain.BlobStore{ID: targetID, Name: "target-store", Type: "local", Config: map[string]any{"path": dstDir}}
+
+	bsID := sourceID
+	repo := &domain.Repository{ID: "repo-001", Name: "my-repo", Format: domain.RepoFormat("raw"),
+		Type: domain.TypeHosted, Online: true, BlobStoreID: &bsID}
+
+	srcStore, err := storage.NewLocalBlobStore(srcDir)
+	require.NoError(t, err)
+	require.NoError(t, srcStore.Put(ctx, "blob-1", strings.NewReader("data"), 4))
+
+	blobRepo := testutil.NewBlobStoreRepo(sourceMeta, targetMeta)
+	require.NoError(t, blobRepo.UpdateUsedBytes(ctx, "source-store", 4))
+
+	assetRepo := testutil.NewAssetRepo()
+	require.NoError(t, assetRepo.Create(ctx, &domain.Asset{
+		ComponentID: "c1", RepositoryID: repo.ID, Repository: "my-repo",
+		Path: "/data.bin", BlobKey: "blob-1", BlobStoreID: sourceID, SizeBytes: 4,
+	}))
+	// Another repository shares the key on the source store; it is not migrated.
+	require.NoError(t, assetRepo.Create(ctx, &domain.Asset{
+		ComponentID: "c2", RepositoryID: "repo-002", Repository: "other-repo",
+		Path: "/data.bin", BlobKey: "blob-1", BlobStoreID: sourceID, SizeBytes: 4,
+	}))
+	assetRepo.MigrationRows = []domain.MigrationAssetRow{
+		{BlobKey: "blob-1", SourceBlobStoreID: sourceID, SizeBytes: 4},
+	}
+
+	svc := service.NewBlobStoreMigrationService(testutil.NewBlobStoreMigrationRepo(), assetRepo,
+		testutil.NewRepoRepo(repo), blobRepo, storage.NewRegistry(srcStore))
+
+	_, err = svc.Start(ctx, "my-repo", targetID)
+	require.NoError(t, err)
+	waitForMigration(t, svc, "my-repo", "done")
+
+	inSource, err := srcStore.Exists(ctx, "blob-1")
+	require.NoError(t, err)
+	require.True(t, inSource, "a copy another asset still points at must survive")
+
+	src, err := blobRepo.Get(ctx, "source-store")
+	require.NoError(t, err)
+	require.Equal(t, int64(4), src.UsedBytes)
 }

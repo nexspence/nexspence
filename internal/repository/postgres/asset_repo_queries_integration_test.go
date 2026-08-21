@@ -263,9 +263,9 @@ func TestAssetRepoQueries_SearchAssets_EmptyResult(t *testing.T) {
 	}
 }
 
-// ── ListAllBlobKeys (GC) ──────────────────────────────────────────────────────
+// ── ListAllBlobRefs (GC) ──────────────────────────────────────────────────────
 
-func TestAssetRepoQueries_ListAllBlobKeys_ReturnsDistinctKeys(t *testing.T) {
+func TestAssetRepoQueries_ListAllBlobRefs_ReturnsDistinctKeys(t *testing.T) {
 	pool := pgtest.Pool(t)
 	pgtest.Truncate(t, pool, "blob_stores", "repositories", "components")
 	ctx := context.Background()
@@ -283,9 +283,16 @@ func TestAssetRepoQueries_ListAllBlobKeys_ReturnsDistinctKeys(t *testing.T) {
 		}
 	}
 
-	keys, err := repo.ListAllBlobKeys(ctx)
+	refs, err := repo.ListAllBlobRefs(ctx)
 	if err != nil {
-		t.Fatalf("ListAllBlobKeys: %v", err)
+		t.Fatalf("ListAllBlobRefs: %v", err)
+	}
+	keys := make([]string, 0, len(refs))
+	for _, r := range refs {
+		if r.BlobStoreID != p.BlobStoreID {
+			t.Errorf("ref %q carries store %q; want %q", r.BlobKey, r.BlobStoreID, p.BlobStoreID)
+		}
+		keys = append(keys, r.BlobKey)
 	}
 	// DISTINCT should give us exactly 2 keys
 	if len(keys) != 2 {
@@ -303,7 +310,7 @@ func TestAssetRepoQueries_ListAllBlobKeys_ReturnsDistinctKeys(t *testing.T) {
 	}
 }
 
-func TestAssetRepoQueries_ListAllBlobKeys_SkipsEmptyAndNullKeys(t *testing.T) {
+func TestAssetRepoQueries_ListAllBlobRefs_SkipsEmptyAndNullKeys(t *testing.T) {
 	pool := pgtest.Pool(t)
 	pgtest.Truncate(t, pool, "blob_stores", "repositories", "components")
 	ctx := context.Background()
@@ -325,9 +332,13 @@ func TestAssetRepoQueries_ListAllBlobKeys_SkipsEmptyAndNullKeys(t *testing.T) {
 		t.Fatalf("Create no-key: %v", err)
 	}
 
-	keys, err := repo.ListAllBlobKeys(ctx)
+	refs, err := repo.ListAllBlobRefs(ctx)
 	if err != nil {
-		t.Fatalf("ListAllBlobKeys: %v", err)
+		t.Fatalf("ListAllBlobRefs: %v", err)
+	}
+	keys := make([]string, 0, len(refs))
+	for _, r := range refs {
+		keys = append(keys, r.BlobKey)
 	}
 	// Only the real key should appear; empty string excluded by WHERE TRIM <> ''
 	for _, k := range keys {
@@ -337,6 +348,66 @@ func TestAssetRepoQueries_ListAllBlobKeys_SkipsEmptyAndNullKeys(t *testing.T) {
 	}
 	if len(keys) != 1 || keys[0] != "sha256:realkey" {
 		t.Errorf("expected [sha256:realkey], got %v", keys)
+	}
+}
+
+// GC decides per store, so the store id has to come back with the key: the
+// same key can be live in one store and an abandoned migration leftover in
+// another (#297).
+func TestAssetRepoQueries_CountByBlobKeyInStore_CountsOnlyThatStore(t *testing.T) {
+	pool := pgtest.Pool(t)
+	pgtest.Truncate(t, pool, "blob_stores", "repositories", "components")
+	ctx := context.Background()
+
+	p := makeAssetParent(t, ctx, "bk_scoped")
+	repo := NewAssetRepo(pool)
+
+	// A second store, standing in for a migration target.
+	other := &domain.BlobStore{Name: "asset_bs_bk_scoped_other", Type: "local", Config: map[string]any{"path": "/data/other"}}
+	if err := NewBlobStoreRepo(pool).Create(ctx, other); err != nil {
+		t.Fatalf("second blob store: %v", err)
+	}
+
+	const key = "sha256:scoped_key"
+	here := makeAsset(p, "/scoped/here.bin")
+	here.BlobKey = key
+	if err := repo.Create(ctx, here); err != nil {
+		t.Fatalf("Create here: %v", err)
+	}
+	there := makeAsset(p, "/scoped/there.bin")
+	there.BlobKey = key
+	there.BlobStoreID = other.ID
+	if err := repo.Create(ctx, there); err != nil {
+		t.Fatalf("Create there: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name    string
+		storeID string
+		want    int
+	}{
+		{"source store", p.BlobStoreID, 1},
+		{"target store", other.ID, 1},
+	} {
+		got, err := repo.CountByBlobKeyInStore(ctx, key, tc.storeID)
+		if err != nil {
+			t.Fatalf("CountByBlobKeyInStore(%s): %v", tc.name, err)
+		}
+		if got != tc.want {
+			t.Errorf("CountByBlobKeyInStore(%s) = %d; want %d", tc.name, got, tc.want)
+		}
+	}
+
+	// Moving the last row off the source leaves nothing referencing it there.
+	if err := repo.UpdateBlobStoreForBlobKey(ctx, key, p.RepoName, other.ID); err != nil {
+		t.Fatalf("UpdateBlobStoreForBlobKey: %v", err)
+	}
+	got, err := repo.CountByBlobKeyInStore(ctx, key, p.BlobStoreID)
+	if err != nil {
+		t.Fatalf("CountByBlobKeyInStore after move: %v", err)
+	}
+	if got != 0 {
+		t.Errorf("after migrating every row off the source, count = %d; want 0", got)
 	}
 }
 

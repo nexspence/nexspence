@@ -333,22 +333,23 @@ func (r *assetRepo) TouchLastModified(ctx context.Context, id string) error {
 	return err
 }
 
-func (r *assetRepo) ListAllBlobKeys(ctx context.Context) ([]string, error) {
+func (r *assetRepo) ListAllBlobRefs(ctx context.Context) ([]domain.BlobRef, error) {
 	rows, err := r.db.Query(ctx,
-		`SELECT DISTINCT blob_key FROM assets WHERE blob_key IS NOT NULL AND TRIM(blob_key) <> ''`)
+		`SELECT DISTINCT blob_key, COALESCE(blob_store_id::text, '')
+		 FROM assets WHERE blob_key IS NOT NULL AND TRIM(blob_key) <> ''`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var keys []string
+	var refs []domain.BlobRef
 	for rows.Next() {
-		var k string
-		if err := rows.Scan(&k); err != nil {
+		var ref domain.BlobRef
+		if err := rows.Scan(&ref.BlobKey, &ref.BlobStoreID); err != nil {
 			return nil, err
 		}
-		keys = append(keys, k)
+		refs = append(refs, ref)
 	}
-	return keys, rows.Err()
+	return refs, rows.Err()
 }
 
 // SumSizeByRepo returns the bytes the repository occupies: one size per stored
@@ -672,6 +673,17 @@ func (r *assetRepo) CountByBlobKey(ctx context.Context, blobKey, excludeID strin
 	err := r.db.QueryRow(ctx,
 		`SELECT COUNT(*) FROM assets WHERE blob_key = $1 AND id != $2`,
 		blobKey, excludeID,
+	).Scan(&count)
+	return count, err
+}
+
+// CountByBlobKeyInStore reports how many assets still reference blobKey on
+// blobStoreID — the guard before deleting a physical blob from that one store.
+func (r *assetRepo) CountByBlobKeyInStore(ctx context.Context, blobKey, blobStoreID string) (int, error) {
+	var count int
+	err := r.db.QueryRow(ctx,
+		`SELECT COUNT(*) FROM assets WHERE blob_key = $1 AND blob_store_id = $2::uuid`,
+		blobKey, blobStoreID,
 	).Scan(&count)
 	return count, err
 }

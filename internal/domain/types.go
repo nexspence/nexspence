@@ -607,6 +607,14 @@ type MigrationAssetRow struct {
 	SizeBytes         int64
 }
 
+// BlobRef is one asset reference to a blob: which key, in which blob store.
+// GC needs both — the same key can exist in several stores, and being
+// referenced in one says nothing about the copy sitting in another.
+type BlobRef struct {
+	BlobKey     string
+	BlobStoreID string // empty when the asset row carries no store id
+}
+
 // BlobStoreMigration tracks progress of a background blob store migration for one repository.
 //
 // Serialized directly by the blob-store-migration handlers, so the tags ARE
