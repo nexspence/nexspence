@@ -324,19 +324,19 @@ func (s *BlobStoreMigrationService) runMigration(ctx context.Context, m *domain.
 func (s *BlobStoreMigrationService) copyBlob(ctx context.Context, sourceStore, targetStore storage.BlobStore, blobKey string) (int64, error) {
 	rc, size, err := sourceStore.Get(ctx, blobKey)
 	if err != nil {
-		return 0, fmt.Errorf("reading blob %s: %v", blobKey, err)
+		return 0, fmt.Errorf("reading blob %s: %w", blobKey, err)
 	}
 	putErr := targetStore.Put(ctx, blobKey, rc, size)
 	_ = rc.Close()
 	if putErr != nil {
-		return 0, fmt.Errorf("writing blob %s: %v", blobKey, putErr)
+		return 0, fmt.Errorf("writing blob %s: %w", blobKey, putErr)
 	}
 
 	after, sizeErr := sourceStore.Size(ctx, blobKey)
 	if sizeErr != nil || after != size {
 		_ = targetStore.Delete(ctx, blobKey)
 		if sizeErr != nil {
-			return 0, fmt.Errorf("re-checking source blob %s: %v", blobKey, sizeErr)
+			return 0, fmt.Errorf("re-checking source blob %s: %w", blobKey, sizeErr)
 		}
 		return 0, fmt.Errorf("blob %s changed during migration (%d -> %d bytes); re-run the migration", blobKey, size, after)
 	}
