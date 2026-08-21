@@ -275,20 +275,13 @@ func (s *BlobStoreMigrationService) runMigration(ctx context.Context, m *domain.
 			return
 		}
 		if !exists {
-			rc, size, err := sourceStore.Get(bgCtx, row.BlobKey)
+			copied, err := s.copyBlob(bgCtx, sourceStore, targetStore, row.BlobKey)
 			if err != nil {
-				errMsg := fmt.Sprintf("reading blob %s: %v", row.BlobKey, err)
+				errMsg := err.Error()
 				_ = s.migrations.FinishMigration(bgCtx, m.ID, "failed", &errMsg)
 				return
 			}
-			putErr := targetStore.Put(bgCtx, row.BlobKey, rc, size)
-			_ = rc.Close()
-			if putErr != nil {
-				errMsg := fmt.Sprintf("writing blob %s: %v", row.BlobKey, putErr)
-				_ = s.migrations.FinishMigration(bgCtx, m.ID, "failed", &errMsg)
-				return
-			}
-			_ = s.blobs.UpdateUsedBytes(bgCtx, targetStoreMeta.Name, size)
+			_ = s.blobs.UpdateUsedBytes(bgCtx, targetStoreMeta.Name, copied)
 		}
 
 		if err := s.assets.UpdateBlobStoreForBlobKey(bgCtx, row.BlobKey, m.RepositoryName, m.TargetStoreID); err != nil {
@@ -296,6 +289,12 @@ func (s *BlobStoreMigrationService) runMigration(ctx context.Context, m *domain.
 			_ = s.migrations.FinishMigration(bgCtx, m.ID, "failed", &errMsg)
 			return
 		}
+
+		// The bytes now live in the target and no row points at the source copy
+		// any more: drop it and give the space back. Without this the source
+		// keeps both the object and its used_bytes forever — GC cannot help,
+		// the key is still referenced, just in another store (#297).
+		s.dropSourceCopy(bgCtx, sourceStore, sourceMeta.Name, row)
 
 		doneAssets++
 		doneBytes += row.SizeBytes
@@ -310,4 +309,57 @@ func (s *BlobStoreMigrationService) runMigration(ctx context.Context, m *domain.
 	}
 
 	_ = s.migrations.FinishMigration(bgCtx, m.ID, "done", nil)
+}
+
+// copyBlob streams one blob from source to target and returns the bytes written.
+//
+// The source is re-measured after the copy, because a client can overwrite the
+// blob in place while it streams: the repository is still pointed at the source
+// store for the whole migration, so ordinary uploads keep landing there. Writing
+// the bytes we read before that upload and then repointing the row would leave
+// the asset row (new size) disagreeing with the target's physical bytes (old
+// content) — silent corruption on every later read (#298). A changed size means
+// we lost the race, so the staged copy is dropped and the whole migration fails
+// loudly; a re-run copies the current bytes.
+func (s *BlobStoreMigrationService) copyBlob(ctx context.Context, sourceStore, targetStore storage.BlobStore, blobKey string) (int64, error) {
+	rc, size, err := sourceStore.Get(ctx, blobKey)
+	if err != nil {
+		return 0, fmt.Errorf("reading blob %s: %v", blobKey, err)
+	}
+	putErr := targetStore.Put(ctx, blobKey, rc, size)
+	_ = rc.Close()
+	if putErr != nil {
+		return 0, fmt.Errorf("writing blob %s: %v", blobKey, putErr)
+	}
+
+	after, sizeErr := sourceStore.Size(ctx, blobKey)
+	if sizeErr != nil || after != size {
+		_ = targetStore.Delete(ctx, blobKey)
+		if sizeErr != nil {
+			return 0, fmt.Errorf("re-checking source blob %s: %v", blobKey, sizeErr)
+		}
+		return 0, fmt.Errorf("blob %s changed during migration (%d -> %d bytes); re-run the migration", blobKey, size, after)
+	}
+	return size, nil
+}
+
+// dropSourceCopy removes the migrated blob from the source store and decrements
+// that store's used_bytes, but only once nothing on the source references the
+// key any more — the same key can legitimately still be in use there by another
+// repository's asset or an OCI digest alias.
+func (s *BlobStoreMigrationService) dropSourceCopy(ctx context.Context, sourceStore storage.BlobStore, sourceName string, row domain.MigrationAssetRow) {
+	remaining, err := s.assets.CountByBlobKeyInStore(ctx, row.BlobKey, row.SourceBlobStoreID)
+	if err != nil || remaining > 0 {
+		return
+	}
+	size, err := sourceStore.Size(ctx, row.BlobKey)
+	if err != nil || size <= 0 {
+		size = row.SizeBytes
+	}
+	if err := sourceStore.Delete(ctx, row.BlobKey); err != nil {
+		return
+	}
+	if size > 0 {
+		_ = s.blobs.UpdateUsedBytes(ctx, sourceName, -size)
+	}
 }

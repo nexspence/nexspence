@@ -14,6 +14,11 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/testutil"
 )
 
+// defaultStoreID is the id testutil.NewBlobStoreRepo seeds the "default" store
+// with. GC now asks "referenced in THIS store?", so a fixture asset has to sit
+// on the store under compaction to count as a reference.
+const defaultStoreID = "00000000-0000-0000-0000-000000000001"
+
 func buildGC(assets *testutil.AssetRepo, bs *testutil.BlobStore) *service.BlobGCService {
 	return &service.BlobGCService{
 		Assets:   assets,
@@ -40,7 +45,7 @@ func TestGC_AllReferenced(t *testing.T) {
 	require.NoError(t, bs.Put(ctx, "key1", bytes.NewReader([]byte("data")), 4))
 	require.NoError(t, assets.Create(ctx, &domain.Asset{
 		ComponentID: "c1", RepositoryID: "r1", Repository: "repo",
-		Path: "/file.txt", BlobKey: "key1", BlobStoreID: "bs1",
+		Path: "/file.txt", BlobKey: "key1", BlobStoreID: defaultStoreID,
 	}))
 
 	svc := buildGC(assets, bs)
@@ -206,7 +211,7 @@ func TestGC_ReferencedBlob_LeavesTheStoreUsageAlone(t *testing.T) {
 	require.NoError(t, bs.Put(ctx, "kept", bytes.NewReader([]byte("data")), 4))
 	require.NoError(t, assets.Create(ctx, &domain.Asset{
 		ComponentID: "c1", RepositoryID: "r1", Repository: "repo",
-		Path: "/file.txt", BlobKey: "kept", BlobStoreID: "bs1", SizeBytes: 4,
+		Path: "/file.txt", BlobKey: "kept", BlobStoreID: defaultStoreID, SizeBytes: 4,
 	}))
 
 	stores := testutil.NewBlobStoreRepo()
@@ -233,4 +238,45 @@ func TestGC_CompactAllSkipsWhenLockHeld(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, results, "must skip when another node holds the lock")
 	assert.True(t, bs.Has("junk"), "nothing collected when skipped")
+}
+
+// A copy left behind in a store no asset points at any more is an orphan, even
+// though the very same key is alive in another store — what a blob-store
+// migration leaves behind, and what the old key-only reference set protected
+// forever (#297).
+func TestGC_KeyReferencedInAnotherStore_IsCollectedHere(t *testing.T) {
+	assets := testutil.NewAssetRepo()
+	source := testutil.NewBlobStore()
+	ctx := context.Background()
+
+	require.NoError(t, source.Put(ctx, "key1", bytes.NewReader([]byte("data")), 4))
+	// The asset was migrated: same key, now living on another store.
+	require.NoError(t, assets.Create(ctx, &domain.Asset{
+		ComponentID: "c1", RepositoryID: "r1", Repository: "repo",
+		Path: "/file.txt", BlobKey: "key1", BlobStoreID: "store-target", SizeBytes: 4,
+	}))
+
+	result, err := buildGC(assets, source).CompactStore(ctx, "default", service.GCOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.Orphans)
+	assert.False(t, source.Has("key1"))
+}
+
+// An asset row with no store id names a key but not a location. Collecting on
+// that would delete live blobs, so it counts as referenced in every store.
+func TestGC_AssetWithoutStoreID_ProtectsEveryStore(t *testing.T) {
+	assets := testutil.NewAssetRepo()
+	bs := testutil.NewBlobStore()
+	ctx := context.Background()
+
+	require.NoError(t, bs.Put(ctx, "key1", bytes.NewReader([]byte("data")), 4))
+	require.NoError(t, assets.Create(ctx, &domain.Asset{
+		ComponentID: "c1", RepositoryID: "r1", Repository: "repo",
+		Path: "/file.txt", BlobKey: "key1",
+	}))
+
+	result, err := buildGC(assets, bs).CompactStore(ctx, "default", service.GCOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, 0, result.Orphans)
+	assert.True(t, bs.Has("key1"))
 }

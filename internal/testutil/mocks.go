@@ -826,20 +826,26 @@ func (a *AssetRepo) ListByComponentIDs(_ context.Context, componentIDs []string)
 	return out, nil
 }
 
-func (a *AssetRepo) ListAllBlobKeys(_ context.Context) ([]string, error) {
+func (a *AssetRepo) ListAllBlobRefs(_ context.Context) ([]domain.BlobRef, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	seen := make(map[string]struct{})
+	seen := make(map[domain.BlobRef]struct{})
 	for _, v := range a.byID {
 		if v.BlobKey != "" {
-			seen[v.BlobKey] = struct{}{}
+			seen[domain.BlobRef{BlobKey: v.BlobKey, BlobStoreID: v.BlobStoreID}] = struct{}{}
 		}
 	}
-	keys := make([]string, 0, len(seen))
-	for k := range seen {
-		keys = append(keys, k)
+	refs := make([]domain.BlobRef, 0, len(seen))
+	for r := range seen {
+		refs = append(refs, r)
 	}
-	return keys, nil
+	sort.Slice(refs, func(i, j int) bool {
+		if refs[i].BlobKey != refs[j].BlobKey {
+			return refs[i].BlobKey < refs[j].BlobKey
+		}
+		return refs[i].BlobStoreID < refs[j].BlobStoreID
+	})
+	return refs, nil
 }
 
 func (a *AssetRepo) SumSizeByRepo(_ context.Context, repoName string) (int64, error) {
@@ -988,6 +994,24 @@ func (a *AssetRepo) CountByBlobKey(_ context.Context, blobKey, excludeID string)
 	return n, nil
 }
 
+// CountByBlobKeyInStore mirrors the postgres query: how many assets reference
+// blobKey and still live on blobStoreID. The blob-store migration reads it
+// before deleting the source copy, so a stub answer would make that untestable.
+func (a *AssetRepo) CountByBlobKeyInStore(_ context.Context, blobKey, blobStoreID string) (int, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.Err != nil {
+		return 0, a.Err
+	}
+	n := 0
+	for _, v := range a.byID {
+		if v.BlobKey == blobKey && v.BlobStoreID == blobStoreID {
+			n++
+		}
+	}
+	return n, nil
+}
+
 func (a *AssetRepo) ListRawAssetPaths(_ context.Context, repoName string) ([]string, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -1012,7 +1036,21 @@ func (a *AssetRepo) ListForBlobStoreMigration(_ context.Context, _, _ string) ([
 	return a.MigrationRows, nil
 }
 
-func (a *AssetRepo) UpdateBlobStoreForBlobKey(_ context.Context, _, _, _ string) error {
+// UpdateBlobStoreForBlobKey mirrors the postgres UPDATE: every asset of that
+// repository sharing the key is repointed at the new store. The migration
+// decides whether the source copy may be deleted from what this leaves behind,
+// so the old no-op made that decision untestable.
+func (a *AssetRepo) UpdateBlobStoreForBlobKey(_ context.Context, blobKey, repoName, newBlobStoreID string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.Err != nil {
+		return a.Err
+	}
+	for _, v := range a.byID {
+		if v.BlobKey == blobKey && v.Repository == repoName {
+			v.BlobStoreID = newBlobStoreID
+		}
+	}
 	return nil
 }
 
