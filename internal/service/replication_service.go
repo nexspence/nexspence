@@ -30,6 +30,8 @@ type ReplicationService struct {
 	repo       repository.ReplicationRepo
 	assets     repository.AssetRepo
 	blobStore  storage.BlobStore
+	blobs      repository.BlobStoreRepo
+	resolver   StoreResolver
 	primaryKey []byte // seals all new ciphertexts
 	legacyKey  []byte // sha256(jwt_secret) fallback; nil when no dedicated key is set
 	log        logger.Logger
@@ -72,6 +74,34 @@ func NewReplicationService(
 		s.primaryKey = legacy
 	}
 	return s
+}
+
+// WithResolver sets the blob-store repo and resolver so an asset is read from
+// the physical store it actually lives on (S3, a second local store, ...)
+// rather than the injected default. Without it the service falls back to
+// blobStore, which is only correct while every asset sits in the default store.
+func (s *ReplicationService) WithResolver(blobs repository.BlobStoreRepo, r StoreResolver) *ReplicationService {
+	s.blobs = blobs
+	s.resolver = r
+	return s
+}
+
+// storeForAsset resolves the physical blob store an asset lives on, falling
+// back to the default store when no resolver is configured, the asset carries
+// no store id, or resolution fails.
+func (s *ReplicationService) storeForAsset(ctx context.Context, a domain.Asset) storage.BlobStore {
+	if s.resolver == nil || s.blobs == nil || a.BlobStoreID == "" {
+		return s.blobStore
+	}
+	bs, err := s.blobs.GetByID(ctx, a.BlobStoreID)
+	if err != nil || bs == nil {
+		return s.blobStore
+	}
+	store, err := s.resolver.Get(ctx, storage.BlobStoreDescriptor{ID: bs.ID, Type: bs.Type, Config: bs.Config})
+	if err != nil || store == nil {
+		return s.blobStore
+	}
+	return store
 }
 
 // WithHTTPClientFactory overrides how HTTP clients are built (by timeout).
@@ -427,7 +457,7 @@ func (s *ReplicationService) listTargetPaths(ctx context.Context, rule *domain.R
 
 // pushAsset streams one blob to the target. Returns (pushed, bytes, error).
 func (s *ReplicationService) pushAsset(ctx context.Context, client *http.Client, rule *domain.ReplicationRule, password string, asset domain.Asset) (bool, int64, error) {
-	rc, size, err := s.blobStore.Get(ctx, asset.BlobKey)
+	rc, size, err := s.storeForAsset(ctx, asset).Get(ctx, asset.BlobKey)
 	if err != nil {
 		return false, 0, fmt.Errorf("fetch blob %s: %w", asset.BlobKey, err)
 	}

@@ -193,6 +193,9 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 	}
 
 	replSvc := service.NewReplicationService(replRepo, assetRepo, localBlob, cfg.Auth.JWTSecret, cfg.Auth.EncryptionKeyBytes(), log)
+	// Read each asset from its own physical store, so replication keeps working
+	// once a repository is pointed at S3 or a second local store.
+	replSvc.WithResolver(blobRepo, blobRegistry)
 	go replSvc.StartCronScheduler(ctx)
 
 	promotionSvc, err := service.NewPromotionService(
