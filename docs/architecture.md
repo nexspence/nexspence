@@ -186,7 +186,7 @@ Pure business logic; no HTTP concerns; depend only on repository interfaces.
 | `RoutingRuleService` | Path allow/block rules applied to group-repository fan-out |
 | `PromotionService` | Staging → production promotion with a scan-pass gate and optional manual approval |
 | `ReplicationService` | Push-on-publish to a secondary instance via streaming blob copy; per-rule cron |
-| `BlobGCService` | `ListAllBlobKeys` vs `BlobStore.ListKeys` → delete orphan blobs; dry-run |
+| `BlobGCService` | `ListAllBlobRefs` (key + store) vs `BlobStore.ListKeys` → delete blobs no asset references *in that store*; dry-run |
 | `BlobStoreMigrationService` | Move a repository's blobs between stores, resumable after a restart |
 | `NexusMigrationService` | Import a live Nexus OSS instance over its REST API — repositories, artifacts, privileges, roles, users, routing rules — one goroutine per job, pausable, and re-attached on startup |
 | `DownloadCounter` | In-memory download aggregation, flushed to the DB every 10s |
