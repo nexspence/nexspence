@@ -27,6 +27,29 @@ docker:
     base_domain: "nexspence.example.com"
 ```
 
+### Hostname aliases (optional)
+
+By default the subdomain must equal the repository name. When migrating from
+Nexus — where connector ports and DNS names are chosen independently of repo
+names — that forces repo renames or Host-rewriting proxy rules. Aliases map any
+client-facing hostname to the repository that should answer it:
+
+```yaml
+docker:
+  subdomain_connector:
+    enabled: true
+    base_domain: "nexspence.example.com"   # optional when only aliases are used
+    aliases:
+      # legacy DNS name (any domain) → repository name
+      docker-hub-proxy.domain.example.com: dockerhub-proxy
+      # an alias under base_domain overrides the implicit subdomain repo
+      hub.nexspence.example.com: dockerhub-proxy
+```
+
+Alias hostnames are matched case-insensitively, ignoring any port. Point the
+DNS record (or Istio/Ingress route) at Nexspence and pass the original `Host`
+header through, exactly as below — no repository rename needed.
+
 ### 2. Wildcard DNS
 
 Add a wildcard DNS A record pointing to your Nexspence server:

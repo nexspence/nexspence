@@ -771,8 +771,8 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 		ui(c)
 	})
 
-	if cfg.Docker.SubdomainConnector.Enabled && cfg.Docker.SubdomainConnector.BaseDomain != "" {
-		return NewSubdomainRewriter(r, cfg.Docker.SubdomainConnector.BaseDomain)
+	if sc := cfg.Docker.SubdomainConnector; sc.Enabled && (sc.BaseDomain != "" || len(sc.Aliases) > 0) {
+		return NewSubdomainRewriter(r, sc.BaseDomain, sc.Aliases)
 	}
 	return r
 }

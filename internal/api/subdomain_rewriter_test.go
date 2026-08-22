@@ -31,7 +31,7 @@ func TestSubdomainRewriter_RejectsNonRepoNameSubdomains(t *testing.T) {
 		"trailing-.nexspence.example.com",
 	} {
 		h, captured := capturePathHandler()
-		rw := api.NewSubdomainRewriter(h, "nexspence.example.com")
+		rw := api.NewSubdomainRewriter(h, "nexspence.example.com", nil)
 
 		req := httptest.NewRequest(http.MethodGet, "/v2/alpine/manifests/latest", nil)
 		req.Host = host
@@ -49,7 +49,7 @@ func TestSubdomainRewriter_AcceptsRepoNameSubdomains(t *testing.T) {
 		"MyRepo.nexspence.example.com", // host matching is case-insensitive
 	} {
 		h, captured := capturePathHandler()
-		rw := api.NewSubdomainRewriter(h, "nexspence.example.com")
+		rw := api.NewSubdomainRewriter(h, "nexspence.example.com", nil)
 
 		req := httptest.NewRequest(http.MethodGet, "/v2/alpine/manifests/latest", nil)
 		req.Host = host
@@ -62,7 +62,7 @@ func TestSubdomainRewriter_AcceptsRepoNameSubdomains(t *testing.T) {
 
 func TestSubdomainRewriter_NonDockerPath_Passthrough(t *testing.T) {
 	h, captured := capturePathHandler()
-	rw := api.NewSubdomainRewriter(h, "nexspence.example.com")
+	rw := api.NewSubdomainRewriter(h, "nexspence.example.com", nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/repository/myrepo/some/file", nil)
 	req.Host = "myrepo.nexspence.example.com"
@@ -73,7 +73,7 @@ func TestSubdomainRewriter_NonDockerPath_Passthrough(t *testing.T) {
 
 func TestSubdomainRewriter_V2Root_Passthrough(t *testing.T) {
 	h, captured := capturePathHandler()
-	rw := api.NewSubdomainRewriter(h, "nexspence.example.com")
+	rw := api.NewSubdomainRewriter(h, "nexspence.example.com", nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/v2/", nil)
 	req.Host = "myrepo.nexspence.example.com"
@@ -86,7 +86,7 @@ func TestSubdomainRewriter_V2Root_Passthrough(t *testing.T) {
 // dispatch it would 404 and break docker login/pull on subdomain hosts.
 func TestSubdomainRewriter_V2Token_Passthrough(t *testing.T) {
 	h, captured := capturePathHandler()
-	rw := api.NewSubdomainRewriter(h, "nexspence.example.com")
+	rw := api.NewSubdomainRewriter(h, "nexspence.example.com", nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/v2/token", nil)
 	req.Host = "myrepo.nexspence.example.com"
@@ -97,7 +97,7 @@ func TestSubdomainRewriter_V2Token_Passthrough(t *testing.T) {
 
 func TestSubdomainRewriter_V2ManifestPath_RepoInjected(t *testing.T) {
 	h, captured := capturePathHandler()
-	rw := api.NewSubdomainRewriter(h, "nexspence.example.com")
+	rw := api.NewSubdomainRewriter(h, "nexspence.example.com", nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/v2/alpine/manifests/latest", nil)
 	req.Host = "myrepo.nexspence.example.com"
@@ -108,7 +108,7 @@ func TestSubdomainRewriter_V2ManifestPath_RepoInjected(t *testing.T) {
 
 func TestSubdomainRewriter_V2BlobPath_RepoInjected(t *testing.T) {
 	h, captured := capturePathHandler()
-	rw := api.NewSubdomainRewriter(h, "nexspence.example.com")
+	rw := api.NewSubdomainRewriter(h, "nexspence.example.com", nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/v2/myimage/blobs/sha256:abc123", nil)
 	req.Host = "releases.nexspence.example.com"
@@ -119,7 +119,7 @@ func TestSubdomainRewriter_V2BlobPath_RepoInjected(t *testing.T) {
 
 func TestSubdomainRewriter_HostWithPort_RepoInjected(t *testing.T) {
 	h, captured := capturePathHandler()
-	rw := api.NewSubdomainRewriter(h, "nexspence.example.com")
+	rw := api.NewSubdomainRewriter(h, "nexspence.example.com", nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/v2/alpine/tags/list", nil)
 	req.Host = "myrepo.nexspence.example.com:443"
@@ -130,7 +130,7 @@ func TestSubdomainRewriter_HostWithPort_RepoInjected(t *testing.T) {
 
 func TestSubdomainRewriter_NonMatchingHost_Passthrough(t *testing.T) {
 	h, captured := capturePathHandler()
-	rw := api.NewSubdomainRewriter(h, "nexspence.example.com")
+	rw := api.NewSubdomainRewriter(h, "nexspence.example.com", nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/v2/alpine/manifests/latest", nil)
 	req.Host = "other.example.com"
@@ -141,7 +141,7 @@ func TestSubdomainRewriter_NonMatchingHost_Passthrough(t *testing.T) {
 
 func TestSubdomainRewriter_BaseDomainDirectAccess_Passthrough(t *testing.T) {
 	h, captured := capturePathHandler()
-	rw := api.NewSubdomainRewriter(h, "nexspence.example.com")
+	rw := api.NewSubdomainRewriter(h, "nexspence.example.com", nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/v2/myrepo/alpine/manifests/latest", nil)
 	req.Host = "nexspence.example.com"
@@ -152,11 +152,91 @@ func TestSubdomainRewriter_BaseDomainDirectAccess_Passthrough(t *testing.T) {
 
 func TestSubdomainRewriter_DeepSubdomain_Passthrough(t *testing.T) {
 	h, captured := capturePathHandler()
-	rw := api.NewSubdomainRewriter(h, "nexspence.example.com")
+	rw := api.NewSubdomainRewriter(h, "nexspence.example.com", nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/v2/alpine/manifests/latest", nil)
 	req.Host = "a.b.nexspence.example.com"
 	rw.ServeHTTP(httptest.NewRecorder(), req)
 
 	assert.Equal(t, "/v2/alpine/manifests/latest", *captured)
+}
+
+// ── hostname → repository aliases (#282) ──────────────────────
+
+// An alias decouples the client hostname from the repository name: legacy DNS
+// names keep working without renaming repositories (#282).
+func TestSubdomainRewriter_AliasMapsForeignHostname(t *testing.T) {
+	var gotPath string
+	h := http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) { gotPath = r.URL.Path })
+	rw := api.NewSubdomainRewriter(h, "nexspence.example.com", map[string]string{
+		// A hostname entirely outside base_domain, Nexus-migration style.
+		"docker-hub-proxy.legacy.example.org": "dockerhub-proxy",
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/v2/library/alpine/manifests/latest", nil)
+	req.Host = "docker-hub-proxy.legacy.example.org"
+	rw.ServeHTTP(httptest.NewRecorder(), req)
+
+	assert.Equal(t, "/v2/dockerhub-proxy/library/alpine/manifests/latest", gotPath)
+}
+
+// An alias for a host under base_domain overrides the implicit subdomain repo.
+func TestSubdomainRewriter_AliasOverridesSubdomain(t *testing.T) {
+	var gotPath string
+	h := http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) { gotPath = r.URL.Path })
+	rw := api.NewSubdomainRewriter(h, "nexspence.example.com", map[string]string{
+		"hub.nexspence.example.com": "dockerhub-proxy",
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/v2/alpine/manifests/latest", nil)
+	req.Host = "hub.nexspence.example.com"
+	rw.ServeHTTP(httptest.NewRecorder(), req)
+
+	assert.Equal(t, "/v2/dockerhub-proxy/alpine/manifests/latest", gotPath)
+}
+
+// Alias matching is case-insensitive and ignores the port, like the
+// subdomain pattern.
+func TestSubdomainRewriter_AliasHostNormalization(t *testing.T) {
+	var gotPath string
+	h := http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) { gotPath = r.URL.Path })
+	rw := api.NewSubdomainRewriter(h, "", map[string]string{
+		"Docker.Example.ORG": "dockerhub-proxy",
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/v2/alpine/tags/list", nil)
+	req.Host = "docker.example.org:8443"
+	rw.ServeHTTP(httptest.NewRecorder(), req)
+
+	assert.Equal(t, "/v2/dockerhub-proxy/alpine/tags/list", gotPath)
+}
+
+// The registry-level endpoints stay unrewritten on alias hosts too.
+func TestSubdomainRewriter_AliasKeepsPingAndToken(t *testing.T) {
+	var paths []string
+	h := http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) { paths = append(paths, r.URL.Path) })
+	rw := api.NewSubdomainRewriter(h, "", map[string]string{"d.example.org": "dockerhub-proxy"})
+
+	for _, p := range []string{"/v2/", "/v2/token"} {
+		req := httptest.NewRequest(http.MethodGet, p, nil)
+		req.Host = "d.example.org"
+		rw.ServeHTTP(httptest.NewRecorder(), req)
+	}
+	assert.Equal(t, []string{"/v2/", "/v2/token"}, paths)
+}
+
+// An alias whose target could inject path separators is dropped at
+// construction — a config typo must not rewrite into an arbitrary path.
+func TestSubdomainRewriter_AliasInvalidTargetIgnored(t *testing.T) {
+	var gotPath string
+	h := http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) { gotPath = r.URL.Path })
+	rw := api.NewSubdomainRewriter(h, "", map[string]string{
+		"evil.example.org": "../../admin",
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/v2/alpine/manifests/latest", nil)
+	req.Host = "evil.example.org"
+	rw.ServeHTTP(httptest.NewRecorder(), req)
+
+	assert.Equal(t, "/v2/alpine/manifests/latest", gotPath, "invalid alias target must be a passthrough")
 }

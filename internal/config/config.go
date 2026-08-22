@@ -453,9 +453,17 @@ type DockerConfig struct {
 }
 
 // SubdomainConnectorConfig configures per-repository Docker subdomain routing.
+//
+// Aliases decouple the client-facing hostname from the repository name (#282):
+// each entry maps a full hostname (any DNS name the operator wired up — it
+// does not have to sit under BaseDomain) to the repository that should answer
+// it, the way Nexus lets an arbitrary DNS name point at a connector port.
+// Without an alias, a "<sub>.<base_domain>" host still resolves to the
+// repository named "<sub>", exactly as before.
 type SubdomainConnectorConfig struct {
-	Enabled    bool   `mapstructure:"enabled"`
-	BaseDomain string `mapstructure:"base_domain"`
+	Enabled    bool              `mapstructure:"enabled"`
+	BaseDomain string            `mapstructure:"base_domain"`
+	Aliases    map[string]string `mapstructure:"aliases"`
 }
 
 // RedisConfig holds optional Redis connection settings.
