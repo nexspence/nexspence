@@ -164,3 +164,22 @@ func TestRedactedBlobStores_Nil(t *testing.T) {
 	t.Parallel()
 	require.Nil(t, RedactedBlobStores(nil))
 }
+
+// remote_password (upstream Basic auth, #281) is redacted like proxy_password.
+func TestRedactedRepository_StripsRemotePassword(t *testing.T) {
+	r := Repository{ProxyConfig: map[string]any{
+		"remote_url":      "https://api.mapbox.com/",
+		"remote_username": "deploy",
+		"remote_password": "upstream-s3cret",
+	}}
+	got := RedactedRepository(r)
+	if _, ok := got.ProxyConfig[RemotePasswordKey]; ok {
+		t.Fatal("remote_password must be stripped")
+	}
+	if got.ProxyConfig[RemotePasswordSetKey] != true {
+		t.Fatal("remote_password_set marker expected")
+	}
+	if got.ProxyConfig["remote_username"] != "deploy" {
+		t.Fatal("remote_username must survive")
+	}
+}

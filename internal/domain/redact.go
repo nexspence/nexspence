@@ -6,6 +6,12 @@ const (
 	// ProxyPasswordSetKey is a read-only proxyConfig marker the API adds in place of
 	// ProxyPasswordKey so clients can tell a password is stored without receiving it.
 	ProxyPasswordSetKey = "proxy_password_set"
+	// RemotePasswordKey is the proxyConfig entry holding the password sent to the
+	// upstream registry itself (HTTP Basic), as opposed to ProxyPasswordKey, which
+	// authenticates to an outbound forward proxy on the way there (#281).
+	RemotePasswordKey = "remote_password"
+	// RemotePasswordSetKey mirrors ProxyPasswordSetKey for RemotePasswordKey.
+	RemotePasswordSetKey = "remote_password_set"
 	// SecretKeyKey is the blob store config entry holding the S3 secret access key.
 	SecretKeyKey = "secret_key"
 	// SecretKeySetKey is the read-only blob store config marker the API adds in place
@@ -57,6 +63,7 @@ func RedactedBlobStores(list []BlobStore) []BlobStore {
 // is stored, ProxyPasswordSetKey is set to true in its place. The input is untouched.
 func RedactedRepository(r Repository) Repository {
 	r.ProxyConfig = redactedConfig(r.ProxyConfig, ProxyPasswordKey, ProxyPasswordSetKey)
+	r.ProxyConfig = redactedConfig(r.ProxyConfig, RemotePasswordKey, RemotePasswordSetKey)
 	return r
 }
 

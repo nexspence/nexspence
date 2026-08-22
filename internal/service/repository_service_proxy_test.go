@@ -128,3 +128,35 @@ func TestRepositoryService_Create_DropsProxyPasswordSetMarker(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotContains(t, stored.ProxyConfig, domain.ProxyPasswordSetKey)
 }
+
+// remote_password (upstream Basic auth, #281) follows the same redact/merge
+// contract as proxy_password: omitted means unchanged, empty clears.
+func TestRepositoryService_Update_RemotePassword_MergeContract(t *testing.T) {
+	seeded := seededProxy()
+	seeded.ProxyConfig["remote_username"] = "deploy"
+	seeded.ProxyConfig["remote_password"] = "upstream-s3cret"
+	repos := testutil.NewRepoRepo(seeded)
+	svc := newRepoSvcFull(repos, testutil.NewBlobStoreRepo(), testutil.NewCleanupPolicyRepo())
+
+	// Omitted → unchanged (and the echoed *_set marker is dropped).
+	got, err := svc.Update(context.Background(), "maven-proxy", &domain.Repository{
+		ProxyConfig: map[string]any{
+			"remote_url":          "https://api.mapbox.com/downloads/v2/releases/maven/",
+			"remote_username":     "deploy",
+			"remote_password_set": true,
+		},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "upstream-s3cret", got.ProxyConfig["remote_password"], "omitted remote_password must survive the edit")
+	assert.NotContains(t, got.ProxyConfig, "remote_password_set")
+
+	// Explicit empty → cleared.
+	got, err = svc.Update(context.Background(), "maven-proxy", &domain.Repository{
+		ProxyConfig: map[string]any{
+			"remote_url":      "https://api.mapbox.com/downloads/v2/releases/maven/",
+			"remote_password": "",
+		},
+	})
+	require.NoError(t, err)
+	assert.NotContains(t, got.ProxyConfig, "remote_password")
+}

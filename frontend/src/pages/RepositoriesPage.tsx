@@ -437,6 +437,7 @@ function CreateRepoModal({ onClose, onCreated }: {
     remoteUrl: PROXY_DEFAULTS['maven2'],
     httpProxy: '', httpsProxy: '', socks5Proxy: '', noProxy: '',
     proxyUsername: '', proxyPassword: '',
+    remoteUsername: '', remotePassword: '',
     memberNames: [] as string[],
     cleanupPolicyIds: [] as string[],
     quotaGB: '',
@@ -507,6 +508,8 @@ function CreateRepoModal({ onClose, onCreated }: {
         if (form.noProxy.trim()) proxyConfig.no_proxy = form.noProxy.trim()
         if (form.proxyUsername.trim()) proxyConfig.proxy_username = form.proxyUsername.trim()
         if (form.proxyPassword) proxyConfig.proxy_password = form.proxyPassword
+        if (form.remoteUsername.trim()) proxyConfig.remote_username = form.remoteUsername.trim()
+        if (form.remotePassword) proxyConfig.remote_password = form.remotePassword
         body.proxyConfig = proxyConfig
       }
       if (form.type === 'group') body.formatConfig = { member_names: form.memberNames }
@@ -587,6 +590,32 @@ function CreateRepoModal({ onClose, onCreated }: {
           />
           <span className={styles.hint}>URL of the upstream registry to proxy and cache</span>
         </div>
+      )}
+      {form.type === 'proxy' && (
+        <details className={styles.formRow}>
+          <summary style={{ cursor: 'pointer', ...LABEL_STYLE }}>Upstream authentication (optional)</summary>
+          <span className={styles.hint}>
+            HTTP Basic credentials sent to the remote registry itself, for private
+            upstreams that require authentication to download.
+          </span>
+          <div className={styles.formRow}>
+            <label style={LABEL_STYLE}>Username</label>
+            <HoloInput
+              value={form.remoteUsername}
+              onChange={e => setField('remoteUsername', e.target.value)}
+              placeholder="Optional"
+            />
+          </div>
+          <div className={styles.formRow}>
+            <label style={LABEL_STYLE}>Password</label>
+            <HoloInput
+              type="password"
+              value={form.remotePassword}
+              onChange={e => setField('remotePassword', e.target.value)}
+              placeholder="Optional"
+            />
+          </div>
+        </details>
       )}
       {form.type === 'proxy' && (
         <details className={styles.formRow}>
@@ -837,6 +866,10 @@ function EditRepoModal({
   const [proxyPassword, setProxyPassword] = useState('')
   const [clearProxyPassword, setClearProxyPassword] = useState(false)
   const hasStoredProxyPassword = repo.proxyConfig?.['proxy_password_set'] === true
+  const [remoteUsername, setRemoteUsername] = useState(cfgString(repo.proxyConfig, 'remote_username'))
+  const [remotePassword, setRemotePassword] = useState('')
+  const [clearRemotePassword, setClearRemotePassword] = useState(false)
+  const hasStoredRemotePassword = repo.proxyConfig?.['remote_password_set'] === true
   const [memberNames, setMemberNames] = useState<string[]>(groupMemberNames(repo))
   const memberCandidates = allRepos.filter(r => r.format === repo.format && r.type !== 'group')
   const originalStoreId = repo.blobStoreId ?? ''
@@ -955,7 +988,7 @@ function EditRepoModal({
       if (repo.type === 'proxy') {
         const proxyConfig: Record<string, unknown> = {}
         for (const [k, v] of Object.entries(repo.proxyConfig ?? {})) {
-          if (k !== 'proxy_password_set') proxyConfig[k] = v
+          if (k !== 'proxy_password_set' && k !== 'remote_password_set') proxyConfig[k] = v
         }
         proxyConfig.remote_url = remoteUrl.trim()
         assignOrDelete(proxyConfig, 'http_proxy', httpProxy)
@@ -966,6 +999,10 @@ function EditRepoModal({
         // Omitted proxy_password means "unchanged"; an explicit empty string clears it.
         if (proxyPassword) proxyConfig.proxy_password = proxyPassword
         else if (clearProxyPassword) proxyConfig.proxy_password = ''
+        assignOrDelete(proxyConfig, 'remote_username', remoteUsername)
+        // Same contract for the upstream registry password.
+        if (remotePassword) proxyConfig.remote_password = remotePassword
+        else if (clearRemotePassword) proxyConfig.remote_password = ''
         updateBody.proxyConfig = proxyConfig
       }
       await nexusApi.updateRepository(repo.format, repo.type, repo.name, updateBody)
@@ -1031,6 +1068,48 @@ function EditRepoModal({
               new fetches go to the new upstream.
             </span>
           </div>
+        )}
+        {repo.type === 'proxy' && (
+          <details className={styles.formRow}>
+            <summary style={{ cursor: 'pointer', ...LABEL_STYLE }}>Upstream authentication (optional)</summary>
+            <span className={styles.hint}>
+              HTTP Basic credentials sent to the remote registry itself, for private
+              upstreams that require authentication to download.
+            </span>
+            <div className={styles.formRow}>
+              <label style={LABEL_STYLE}>Username</label>
+              <HoloInput
+                value={remoteUsername}
+                onChange={e => setRemoteUsername(e.target.value)}
+                placeholder="Optional"
+              />
+            </div>
+            <div className={styles.formRow}>
+              <label style={LABEL_STYLE}>Password</label>
+              <HoloInput
+                type="password"
+                value={remotePassword}
+                onChange={e => { setRemotePassword(e.target.value); setClearRemotePassword(false) }}
+                placeholder="Leave blank to keep current"
+              />
+              {hasStoredRemotePassword && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--holo-text)', cursor: 'pointer', marginTop: 6 }}>
+                  <input
+                    type="checkbox"
+                    checked={clearRemotePassword}
+                    disabled={remotePassword !== ''}
+                    onChange={e => setClearRemotePassword(e.target.checked)}
+                  />
+                  Remove the stored password
+                </label>
+              )}
+              <span className={styles.hint}>
+                {hasStoredRemotePassword
+                  ? 'A password is stored. It is never sent to the browser — leave this blank to keep it.'
+                  : 'No upstream password stored for this repository.'}
+              </span>
+            </div>
+          </details>
         )}
         {repo.type === 'proxy' && (
           <details className={styles.formRow}>
