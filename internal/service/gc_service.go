@@ -135,7 +135,7 @@ func (s *BlobGCService) CompactAll(ctx context.Context, opts GCOptions) ([]*GCRe
 	if s.Locker != nil {
 		lock, err := s.Locker.Acquire(ctx, gcLockKey, gcLockTTL)
 		if errors.Is(err, distlock.ErrLockHeld) {
-			s.log().Info("blob gc skipped: another node is running gc")
+			logger.WithTraceContext(ctx, s.log()).Info("blob gc skipped: another node is running gc")
 			return nil, nil
 		}
 		if err != nil {
@@ -160,7 +160,7 @@ func (s *BlobGCService) CompactAll(ctx context.Context, opts GCOptions) ([]*GCRe
 			ID: row.ID, Type: row.Type, Config: row.Config,
 		})
 		if rerr != nil {
-			s.log().Error("blob gc: resolve store failed", "store", row.Name, "err", rerr)
+			logger.WithTraceContext(ctx, s.log()).Error("blob gc: resolve store failed", "store", row.Name, "err", rerr)
 			results = append(results, &GCResult{
 				Store:  row.Name,
 				DryRun: opts.DryRun,
@@ -216,7 +216,7 @@ func (s *BlobGCService) compact(ctx context.Context, name, storeID string, store
 	// given back: a blob whose delete failed is still on the disk.
 	if removed > 0 {
 		if err := s.Stores.UpdateUsedBytes(ctx, name, -removed); err != nil {
-			s.log().Error("blob gc: usage decrement failed", "store", name, "bytes", removed, "err", err)
+			logger.WithTraceContext(ctx, s.log()).Error("blob gc: usage decrement failed", "store", name, "bytes", removed, "err", err)
 			result.Errors = append(result.Errors, fmt.Sprintf("update used_bytes: %v", err))
 		}
 	}

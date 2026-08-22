@@ -381,6 +381,9 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 			svcName = "nexspence"
 		}
 		r.Use(otelgin.Middleware(svcName))
+		// Inside otelgin's scope: stash the span ids where requestLogger's
+		// post-Next summary can still see them (#321).
+		r.Use(traceLogStash())
 	}
 	r.Use(AuditMiddleware(auditRepo))
 	if cfg.Auth.RateLimitEnabled {

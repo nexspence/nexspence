@@ -189,7 +189,7 @@ func (s *CleanupService) runPolicyLocked(ctx context.Context, p domain.CleanupPo
 	lock, err := s.locker.Acquire(ctx, cleanupPolicyLockPrefix+p.ID, cleanupLockTTL)
 	if errors.Is(err, distlock.ErrLockHeld) {
 		const reason = "another node is already running this policy"
-		s.log.Info("cleanup skipped: "+reason, "policy", p.Name)
+		logger.WithTraceContext(ctx, s.log).Info("cleanup skipped: "+reason, "policy", p.Name)
 		return &domain.CleanupRunResult{
 			PolicyID: p.ID, DryRun: p.DryRun, Skipped: true, SkippedReason: reason,
 		}, nil
@@ -223,7 +223,7 @@ func (s *CleanupService) RunAll(ctx context.Context) error {
 			if errors.Is(err, errAcquireLock) {
 				return err
 			}
-			s.log.Error("cleanup policy failed", "policy", p.Name, "err", err)
+			logger.WithTraceContext(ctx, s.log).Error("cleanup policy failed", "policy", p.Name, "err", err)
 		}
 	}
 	return nil
@@ -253,6 +253,10 @@ func (s *CleanupService) RunPolicyResult(ctx context.Context, id string) (*domai
 }
 
 func (s *CleanupService) runPolicy(ctx context.Context, p domain.CleanupPolicy) (*domain.CleanupRunResult, error) {
+	// Every line this run logs carries the run's trace_id, so a warning like
+	// "blob delete failed" can be jumped to the exact cleanup.run trace it
+	// happened in (#321). With tracing disabled this is s.log unchanged.
+	log := logger.WithTraceContext(ctx, s.log)
 	res := &domain.CleanupRunResult{PolicyID: p.ID, DryRun: p.DryRun}
 
 	lastDownloadedDays := intCriteria(p.Criteria, "lastDownloadedDays")
@@ -275,7 +279,7 @@ func (s *CleanupService) runPolicy(ctx context.Context, p domain.CleanupPolicy) 
 	}
 	if len(repoNames) == 0 {
 		reason := "policy is not attached to any repository — attach it to a repository or set a scope"
-		s.log.Info("cleanup: "+reason, "policy", p.Name)
+		log.Info("cleanup: "+reason, "policy", p.Name)
 		res.Skipped = true
 		res.SkippedReason = reason
 		return res, nil
@@ -285,7 +289,7 @@ func (s *CleanupService) runPolicy(ctx context.Context, p domain.CleanupPolicy) 
 	// (path/name filters and retainNVersions still apply). This is intentional
 	// for a clear-all policy; the repository targeting above is the safety gate.
 	if lastDownloadedDays == 0 && artifactAgeDays == 0 {
-		s.log.Info("cleanup: no age criteria — removing all artifacts matching scope",
+		log.Info("cleanup: no age criteria — removing all artifacts matching scope",
 			"policy", p.Name, "repos", repoNames, "path_prefix", pathPrefix,
 			"name_glob", nameGlob, "retain_versions", p.RetainNVersions, "dry_run", p.DryRun)
 	}
@@ -303,7 +307,7 @@ func (s *CleanupService) runPolicy(ctx context.Context, p domain.CleanupPolicy) 
 		}
 		for _, a := range stale {
 			if p.DryRun {
-				s.log.Info("cleanup dry-run: would delete", "policy", p.Name,
+				log.Info("cleanup dry-run: would delete", "policy", p.Name,
 					"asset", a.Path, "repo", a.Repository, "size", a.SizeBytes)
 				freed += a.SizeBytes
 				deleted++
@@ -319,17 +323,17 @@ func (s *CleanupService) runPolicy(ctx context.Context, p domain.CleanupPolicy) 
 			bytesFreed := false
 			others, cerr := s.assets.CountByBlobKey(ctx, a.BlobKey, a.ID)
 			if cerr != nil {
-				s.log.Warn("cleanup: blob reference count failed, keeping blob",
+				log.Warn("cleanup: blob reference count failed, keeping blob",
 					"key", a.BlobKey, "err", cerr)
 			} else if others == 0 {
 				if err := s.storeForAsset(ctx, &asset).Delete(ctx, a.BlobKey); err != nil {
-					s.log.Warn("cleanup: blob delete failed", "key", a.BlobKey, "err", err)
+					log.Warn("cleanup: blob delete failed", "key", a.BlobKey, "err", err)
 				} else {
 					bytesFreed = true
 				}
 			}
 			if err := s.assets.Delete(ctx, a.ID); err != nil {
-				s.log.Warn("cleanup: asset delete failed", "id", a.ID, "err", err)
+				log.Warn("cleanup: asset delete failed", "id", a.ID, "err", err)
 				continue
 			}
 			// used_bytes is how full the store is, so it only moves when bytes
@@ -345,7 +349,7 @@ func (s *CleanupService) runPolicy(ctx context.Context, p domain.CleanupPolicy) 
 		// would return the same rows forever — report the first batch and stop.
 		if p.DryRun {
 			if len(stale) == batchLimit {
-				s.log.Info("cleanup dry-run: results capped at one batch — actual run would delete more",
+				log.Info("cleanup dry-run: results capped at one batch — actual run would delete more",
 					"policy", p.Name, "batch", batchLimit)
 			}
 			break
@@ -357,17 +361,17 @@ func (s *CleanupService) runPolicy(ctx context.Context, p domain.CleanupPolicy) 
 	if s.components != nil && !p.DryRun && deleted > 0 {
 		for _, rn := range repoNames {
 			if err := s.components.DeleteOrphans(ctx, rn); err != nil {
-				s.log.Warn("cleanup: failed to prune orphan components", "repo", rn, "err", err)
+				log.Warn("cleanup: failed to prune orphan components", "repo", rn, "err", err)
 			}
 		}
 	}
 
 	now := time.Now()
 	if err := s.policies.RecordRun(ctx, p.ID, now, deleted, freed); err != nil {
-		s.log.Warn("cleanup: failed to record run stats", "policy", p.Name, "err", err)
+		log.Warn("cleanup: failed to record run stats", "policy", p.Name, "err", err)
 	}
 
-	s.log.Info("cleanup policy complete",
+	log.Info("cleanup policy complete",
 		"policy", p.Name,
 		"deleted", deleted,
 		"freed_bytes", freed,

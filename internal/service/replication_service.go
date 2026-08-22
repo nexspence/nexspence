@@ -400,7 +400,7 @@ func (s *ReplicationService) runRule(ctx context.Context, rule *domain.Replicati
 			if hist.Error == "" {
 				hist.Error = pushErr.Error()
 			}
-			s.log.Warn("replication: push failed", "rule", rule.Name, "path", asset.Path, "err", pushErr)
+			logger.WithTraceContext(ctx, s.log).Warn("replication: push failed", "rule", rule.Name, "path", asset.Path, "err", pushErr)
 			continue
 		}
 		if pushed {

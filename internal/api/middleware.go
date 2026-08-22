@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/nexspence-oss/nexspence/internal/config"
 	"github.com/nexspence-oss/nexspence/internal/logger"
@@ -15,13 +16,42 @@ func requestLogger(log logger.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
 		c.Next()
-		log.Infow("request",
+		fields := []any{
 			"method", c.Request.Method,
 			"path", c.Request.URL.Path,
 			"status", c.Writer.Status(),
 			"latency", time.Since(start),
 			"ip", c.ClientIP(),
-		)
+		}
+		// Correlate the log line with the request's trace (#321). The ids come
+		// from gin's key store, not c.Request.Context(): otelgin restores the
+		// request context to its pre-span value when its own middleware
+		// returns, so by the time this post-Next line runs the span is gone
+		// from the context — see traceLogStash.
+		if tid, ok := c.Get("traceID"); ok {
+			fields = append(fields, "trace_id", tid)
+			if sid, ok := c.Get("spanID"); ok {
+				fields = append(fields, "span_id", sid)
+			}
+		}
+		log.Infow("request", fields...)
+	}
+}
+
+// traceLogStash copies the request span's ids into gin's per-request key
+// store. It must be registered AFTER otelgin: it reads the span from
+// c.Request.Context() inside otelgin's scope, and stashes it somewhere that —
+// unlike the request context, which otelgin deliberately unwinds on return —
+// survives until requestLogger's post-Next summary line. requestLogger itself
+// stays first in the chain, so it keeps timing the full chain and keeps
+// logging aborted CORS preflights (#321).
+func traceLogStash() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if sc := trace.SpanContextFromContext(c.Request.Context()); sc.IsValid() {
+			c.Set("traceID", sc.TraceID().String())
+			c.Set("spanID", sc.SpanID().String())
+		}
+		c.Next()
 	}
 }
 

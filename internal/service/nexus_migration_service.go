@@ -371,7 +371,7 @@ func (s *NexusMigrationService) run(ctx context.Context, jobID string) {
 
 	job, err := s.jobs.Get(bg, jobID)
 	if err != nil {
-		s.logf("migration: cannot load job %s: %v", jobID, err)
+		s.logf(bg, "migration: cannot load job %s: %v", jobID, err)
 		return
 	}
 	password, err := s.OpenPassword(job.SourcePassword)
@@ -381,7 +381,7 @@ func (s *NexusMigrationService) run(ctx context.Context, jobID string) {
 		return
 	}
 	if err := s.jobs.SetStarted(bg, jobID, time.Now().UTC()); err != nil {
-		s.logf("migration: cannot mark job %s started: %v", jobID, err)
+		s.logf(bg, "migration: cannot mark job %s started: %v", jobID, err)
 		return
 	}
 
@@ -825,7 +825,7 @@ func (s *NexusMigrationService) registerManifestDigestAlias(ctx context.Context,
 		res.SHA256, res.SHA1, res.MD5, res.Size,
 		res.Asset.BlobStoreID, "",
 	); err != nil {
-		s.logf("migration: cannot register digest alias %s%s: %v", a.repo, aliasPath, err)
+		s.logf(ctx, "migration: cannot register digest alias %s%s: %v", a.repo, aliasPath, err)
 	}
 }
 
@@ -1235,8 +1235,10 @@ func isNotFound(err error) bool {
 	return errors.Is(err, repository.ErrNotFound) || errors.Is(err, ErrNotFound)
 }
 
-func (s *NexusMigrationService) logf(format string, args ...any) {
+func (s *NexusMigrationService) logf(ctx context.Context, format string, args ...any) {
 	if s.log != nil {
-		s.log.Warnf(format, args...)
+		// The run's trace_id rides along, so a warning can be tied to the
+		// exact nexus_migration.run trace it belongs to (#321).
+		logger.WithTraceContext(ctx, s.log).Warnf(format, args...)
 	}
 }
