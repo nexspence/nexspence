@@ -7,9 +7,9 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
-	"strings"
 )
 
 // isDockerRegistryRemote reports whether remote_url points at Docker Hub registry
