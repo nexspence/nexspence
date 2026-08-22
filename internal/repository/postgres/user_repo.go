@@ -47,7 +47,13 @@ func (r *userRepo) List(ctx context.Context, source string) ([]domain.User, erro
 		if err != nil {
 			return nil, err
 		}
-		roles, _ := r.userRoleNames(ctx, u.ID)
+		// A failed role lookup must fail the call, not silently strip the
+		// user's roles: Get/GetByID back the auth path, where an empty Roles
+		// turns a transient DB blip into a spurious 403 for an admin (#293).
+		roles, err := r.userRoleNames(ctx, u.ID)
+		if err != nil {
+			return nil, err
+		}
 		u.Roles = roles
 		users = append(users, *u)
 	}
@@ -63,7 +69,10 @@ func (r *userRepo) Get(ctx context.Context, username string) (*domain.User, erro
 	if err != nil {
 		return nil, err
 	}
-	roles, _ := r.userRoleNames(ctx, u.ID)
+	roles, err := r.userRoleNames(ctx, u.ID)
+	if err != nil {
+		return nil, err
+	}
 	u.Roles = roles
 	return u, nil
 }
@@ -77,7 +86,10 @@ func (r *userRepo) GetByID(ctx context.Context, id string) (*domain.User, error)
 	if err != nil {
 		return nil, err
 	}
-	roles, _ := r.userRoleNames(ctx, u.ID)
+	roles, err := r.userRoleNames(ctx, u.ID)
+	if err != nil {
+		return nil, err
+	}
 	u.Roles = roles
 	return u, nil
 }
