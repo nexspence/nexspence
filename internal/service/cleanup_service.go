@@ -14,7 +14,10 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/formats/base"
 	"github.com/nexspence-oss/nexspence/internal/logger"
 	"github.com/nexspence-oss/nexspence/internal/repository"
+	"go.opentelemetry.io/otel/attribute"
+
 	"github.com/nexspence-oss/nexspence/internal/storage"
+	"github.com/nexspence-oss/nexspence/internal/tracing"
 )
 
 // CleanupService runs cleanup policies — finds stale assets and removes them.
@@ -201,7 +204,14 @@ func (s *CleanupService) runPolicyLocked(ctx context.Context, p domain.CleanupPo
 }
 
 // RunAll executes all enabled cleanup policies once and returns a summary.
+//
+// The root span exists because cleanup runs with no HTTP request behind it
+// (cron, or a fire-and-forget goroutine off the manual trigger): without an
+// explicit root its DB and blob-store spans have nothing to attach to and the
+// whole job is invisible in traces (#302).
 func (s *CleanupService) RunAll(ctx context.Context) error {
+	ctx, span := tracing.StartRoot(ctx, "cleanup.run_all")
+	defer span.End()
 	policies, err := s.policies.List(ctx)
 	if err != nil {
 		return fmt.Errorf("cleanup: list policies: %w", err)
@@ -231,6 +241,8 @@ func (s *CleanupService) RunPolicy(ctx context.Context, id string) error {
 // happened (deleted count, freed bytes, or a skip reason). The manual-run
 // endpoint uses this to report the outcome instead of a fire-and-forget ack.
 func (s *CleanupService) RunPolicyResult(ctx context.Context, id string) (*domain.CleanupRunResult, error) {
+	ctx, span := tracing.StartRoot(ctx, "cleanup.run_policy", attribute.String("cleanup.policy_id", id))
+	defer span.End()
 	p, err := s.policies.Get(ctx, id)
 	if err != nil {
 		return nil, err

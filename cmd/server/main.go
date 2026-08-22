@@ -13,6 +13,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/exaring/otelpgx"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/spf13/cobra"
 
@@ -28,6 +30,7 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/repository/postgres"
 	"github.com/nexspence-oss/nexspence/internal/storage"
+	"github.com/nexspence-oss/nexspence/internal/tracing"
 )
 
 func main() {
@@ -77,7 +80,33 @@ func cmdServe() *cobra.Command {
 			}
 			log.Info("migrations OK")
 
-			pool, err := db.Connect(cmd.Context(), cfg.Database.DSN)
+			// Tracing has to be installed before anything that hangs spans off
+			// the global provider: the router's otelgin middleware, the pool's
+			// query tracer, blob-store and background-job spans.
+			shutdownTracing, err := tracing.Init(cmd.Context(), tracing.Config{
+				Enabled:      cfg.Tracing.Enabled,
+				OTLPEndpoint: cfg.Tracing.OTLPEndpoint,
+				OTLPProtocol: cfg.Tracing.OTLPProtocol,
+				OTLPInsecure: cfg.Tracing.OTLPInsecure,
+				SampleRatio:  cfg.Tracing.SampleRatio,
+				ServiceName:  cfg.Tracing.ServiceName,
+				Environment:  cfg.Tracing.Environment,
+			}, Version)
+			if err != nil {
+				return err
+			}
+			defer func() { _ = shutdownTracing(context.Background()) }()
+			var queryTracers []pgx.QueryTracer
+			if cfg.Tracing.Enabled {
+				log.Info("tracing enabled", "endpoint", cfg.Tracing.OTLPEndpoint,
+					"protocol", cfg.Tracing.OTLPProtocol, "sample_ratio", cfg.Tracing.SampleRatio)
+				// Span names trimmed to "query SELECT" etc. — the untrimmed
+				// default puts whole multi-line SQL statements into the span
+				// name, unusable in a waterfall (#302).
+				queryTracers = append(queryTracers, otelpgx.NewTracer(otelpgx.WithTrimSQLInSpanName()))
+			}
+
+			pool, err := db.Connect(cmd.Context(), cfg.Database.DSN, queryTracers...)
 			if err != nil {
 				return err
 			}

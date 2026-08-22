@@ -32,6 +32,34 @@ type Config struct {
 	Proxy     ProxyConfig     `mapstructure:"proxy"`
 	Outbound  OutboundConfig  `mapstructure:"outbound"`
 	Metrics   MetricsConfig   `mapstructure:"metrics"`
+	Tracing   TracingConfig   `mapstructure:"tracing"`
+}
+
+// TracingConfig governs OpenTelemetry distributed tracing (#302). Disabled by
+// default, like Trivy and signing: nexspence ships no trace backend, the
+// operator brings one (Jaeger, Tempo, any OTLP receiver) the same way they
+// bring Prometheus for /metrics. The "always keep error traces" guarantee is
+// tail-sampling in the operator's collector, not a head sampler here — a head
+// sampler decides before the handler has produced a status and cannot see
+// errors.
+type TracingConfig struct {
+	Enabled bool `mapstructure:"enabled"`
+	// OTLPEndpoint is the host:port of the OTLP receiver (4317 grpc, 4318 http).
+	OTLPEndpoint string `mapstructure:"otlp_endpoint"`
+	// OTLPProtocol selects the exporter transport: "grpc" (default) or "http".
+	OTLPProtocol string `mapstructure:"otlp_protocol"`
+	// OTLPInsecure sends plaintext instead of TLS — for a collector on the
+	// same host or an internal network.
+	OTLPInsecure bool `mapstructure:"otlp_insecure"`
+	// SampleRatio head-samples root spans at this ratio (0..1). Child spans
+	// follow their parent. Conservative default: full sampling is not viable
+	// at real volume.
+	SampleRatio float64 `mapstructure:"sample_ratio"`
+	// ServiceName is the service.name resource attribute; distinguishes
+	// instances when several nexspence deployments share one backend.
+	ServiceName string `mapstructure:"service_name"`
+	// Environment becomes the deployment.environment resource attribute.
+	Environment string `mapstructure:"environment"`
 }
 
 // MetricsConfig governs the Prometheus scrape endpoint at /metrics.
@@ -579,6 +607,13 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("bootstrap.admin_email", "admin@example.com")
 	v.SetDefault("bootstrap.admin_first_name", "Admin")
 	v.SetDefault("metrics.public", false)
+	v.SetDefault("tracing.enabled", false)
+	v.SetDefault("tracing.otlp_endpoint", "localhost:4317")
+	v.SetDefault("tracing.otlp_protocol", "grpc")
+	v.SetDefault("tracing.otlp_insecure", false)
+	v.SetDefault("tracing.sample_ratio", 0.1)
+	v.SetDefault("tracing.service_name", "nexspence")
+	v.SetDefault("tracing.environment", "")
 	v.SetDefault("redis.enabled", false)
 	v.SetDefault("redis.addr", "localhost:6379")
 	v.SetDefault("redis.db", 0)
@@ -618,6 +653,17 @@ func Load(path string) (*Config, error) {
 	}
 	if err := ValidateSAML(cfg.SAML); err != nil {
 		return nil, err
+	}
+	if t := cfg.Tracing; t.Enabled {
+		if t.SampleRatio < 0 || t.SampleRatio > 1 {
+			return nil, fmt.Errorf("tracing.sample_ratio must be within [0, 1], got %v", t.SampleRatio)
+		}
+		if t.OTLPProtocol != "grpc" && t.OTLPProtocol != "http" {
+			return nil, fmt.Errorf("tracing.otlp_protocol must be \"grpc\" or \"http\", got %q", t.OTLPProtocol)
+		}
+		if t.OTLPEndpoint == "" {
+			return nil, fmt.Errorf("tracing.otlp_endpoint is required when tracing is enabled")
+		}
 	}
 
 	return &cfg, nil

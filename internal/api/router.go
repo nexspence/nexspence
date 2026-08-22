@@ -14,6 +14,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 
 	uiembed "github.com/nexspence-oss/nexspence"
 	"github.com/nexspence-oss/nexspence/internal/api/handlers"
@@ -371,6 +372,16 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 	r.Use(securityHeaders(cspPolicy(cfg)))
 	r.Use(bodyLimit(cfg.HTTP.MaxBodyMB, []string{"/repository/", "/v2/", "/api/v1/repositories/import", "/service/rest/v1/components"}))
 	r.Use(handlers.MetricsMiddleware())
+	if cfg.Tracing.Enabled {
+		// otelgin names spans by the Gin route template (c.FullPath()), never
+		// the raw path — repository names and IDs must not explode span-name
+		// cardinality (#302).
+		svcName := cfg.Tracing.ServiceName
+		if svcName == "" {
+			svcName = "nexspence"
+		}
+		r.Use(otelgin.Middleware(svcName))
+	}
 	r.Use(AuditMiddleware(auditRepo))
 	if cfg.Auth.RateLimitEnabled {
 		r.Use(RateLimitMiddleware(cfg.Auth.RateLimitRPS, cfg.Auth.RateLimitBurst))

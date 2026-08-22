@@ -14,6 +14,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
 	"github.com/nexspence-oss/nexspence/internal/storage"
 )
@@ -283,4 +286,52 @@ func (r failingReader) Read([]byte) (int, error) { return 0, r.err }
 func writeFile(t *testing.T, path, content string) error {
 	t.Helper()
 	return os.WriteFile(path, []byte(content), 0o600)
+}
+
+// Blob-store operations emit spans with metadata-only attributes (#302):
+// blob.key and blob.size_bytes, never content.
+func TestLocalBlobStore_EmitsSpans(t *testing.T) {
+	prev := otel.GetTracerProvider()
+	defer otel.SetTracerProvider(prev)
+	exp := tracetest.NewInMemoryExporter()
+	otel.SetTracerProvider(sdktrace.NewTracerProvider(sdktrace.WithSyncer(exp)))
+
+	s, err := storage.NewLocalBlobStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if err := s.Put(ctx, "spans/a.bin", strings.NewReader("data"), 4); err != nil {
+		t.Fatal(err)
+	}
+	rc, _, err := s.Get(ctx, "spans/a.bin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = rc.Close()
+	if err := s.Delete(ctx, "spans/a.bin"); err != nil {
+		t.Fatal(err)
+	}
+
+	spans := exp.GetSpans()
+	names := make([]string, 0, len(spans))
+	for _, sp := range spans {
+		names = append(names, sp.Name)
+		for _, kv := range sp.Attributes {
+			if kv.Key == "blob.key" && kv.Value.AsString() != "spans/a.bin" {
+				t.Errorf("span %s: blob.key = %q", sp.Name, kv.Value.AsString())
+			}
+		}
+	}
+	for _, want := range []string{"blobstore.local.put", "blobstore.local.get", "blobstore.local.delete"} {
+		found := false
+		for _, n := range names {
+			if n == want {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("missing span %s in %v", want, names)
+		}
+	}
 }

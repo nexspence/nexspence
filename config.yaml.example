@@ -116,6 +116,23 @@ search:
 metrics:
   public: false
 
+# OpenTelemetry distributed tracing (off by default). Where /metrics answers
+# "the p99 went up", tracing answers "this one request got stuck waiting on
+# what": per-request causality across HTTP -> DB -> blob store, the background
+# jobs (cleanup, GC, migrations, replication), and — via W3C traceparent on
+# replication's outgoing requests — across instances. Bring your own OTLP
+# backend (Jaeger, Tempo, ...), the same way you bring Prometheus for /metrics.
+# To always keep error traces, configure tail-sampling in your collector —
+# a head sampler decides before the response status exists and cannot do it.
+tracing:
+  enabled: false
+  otlp_endpoint: "localhost:4317"  # OTLP receiver (4317 grpc, 4318 http)
+  otlp_protocol: "grpc"            # "grpc" or "http"
+  otlp_insecure: false             # true for a plaintext collector (same host / internal network)
+  sample_ratio: 0.1                # head-sampling ratio for root spans, 0..1
+  service_name: "nexspence"        # service.name resource attribute
+  environment: ""                  # deployment.environment attribute, e.g. "prod"
+
 cleanup:
   default_schedule: "0 */6 * * *"   # cron schedule used for policies without schedule_cron
 

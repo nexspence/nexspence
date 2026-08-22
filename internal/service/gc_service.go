@@ -13,6 +13,7 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/logger"
 	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/storage"
+	"github.com/nexspence-oss/nexspence/internal/tracing"
 )
 
 // StoreResolver resolves a physical BlobStore from a descriptor.
@@ -128,6 +129,9 @@ func (s *BlobGCService) CompactStore(ctx context.Context, name string, opts GCOp
 // CompactAll compacts every blob store. It holds a distributed lock so only one
 // node runs at a time; if another node holds it, CompactAll returns (nil, nil).
 func (s *BlobGCService) CompactAll(ctx context.Context, opts GCOptions) ([]*GCResult, error) {
+	// Root span: GC runs from cron with no HTTP request behind it (#302).
+	ctx, span := tracing.StartRoot(ctx, "gc.compact_all")
+	defer span.End()
 	if s.Locker != nil {
 		lock, err := s.Locker.Acquire(ctx, gcLockKey, gcLockTTL)
 		if errors.Is(err, distlock.ErrLockHeld) {

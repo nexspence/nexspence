@@ -10,7 +10,10 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/distlock"
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/repository"
+	"go.opentelemetry.io/otel/attribute"
+
 	"github.com/nexspence-oss/nexspence/internal/storage"
+	"github.com/nexspence-oss/nexspence/internal/tracing"
 )
 
 // ErrMigrationAlreadyRunning is returned by Start when the repository already
@@ -201,7 +204,13 @@ func (s *BlobStoreMigrationService) runMigration(ctx context.Context, m *domain.
 		s.mu.Unlock()
 	}()
 
-	bgCtx := context.Background()
+	// Root span: the migration goroutine runs on context.Background(), cut
+	// loose from the HTTP request that started it (#302). The span hangs off
+	// bgCtx so every DB and blob-store call below joins one trace.
+	bgCtx, span := tracing.StartRoot(context.Background(), "blob_store_migration.run",
+		attribute.String("repository.name", m.RepositoryName),
+		attribute.String("blob_store.target_id", m.TargetStoreID))
+	defer span.End()
 
 	if err := s.migrations.UpdateStatus(bgCtx, m.ID, "running", nil); err != nil {
 		return
