@@ -8,14 +8,13 @@ import (
 	"time"
 
 	"github.com/robfig/cron/v3"
+	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/nexspence-oss/nexspence/internal/distlock"
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/formats/base"
 	"github.com/nexspence-oss/nexspence/internal/logger"
 	"github.com/nexspence-oss/nexspence/internal/repository"
-	"go.opentelemetry.io/otel/attribute"
-
 	"github.com/nexspence-oss/nexspence/internal/storage"
 	"github.com/nexspence-oss/nexspence/internal/tracing"
 )

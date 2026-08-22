@@ -69,3 +69,18 @@ func TestInject_RequiresLiveSpan(t *testing.T) {
 	Inject(ctx, h2)
 	assert.NotEmpty(t, h2["Traceparent"])
 }
+
+// The http transport and the default service name take the other branches of
+// Init; like grpc, the OTLP client is lazy, so no collector is required.
+func TestInit_HTTPProtocolAndDefaults(t *testing.T) {
+	prev := otel.GetTracerProvider()
+	defer otel.SetTracerProvider(prev)
+
+	shutdown, err := Init(context.Background(), Config{
+		Enabled: true, OTLPEndpoint: "localhost:1", OTLPProtocol: "http",
+		SampleRatio: 0.5, Environment: "test",
+	}, "vtest")
+	require.NoError(t, err)
+	assert.NotSame(t, prev, otel.GetTracerProvider())
+	_ = shutdown(context.Background())
+}
