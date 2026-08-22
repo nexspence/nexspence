@@ -50,6 +50,112 @@ func (h *ComponentHandler) allowAnonMap(ctx context.Context, repoNames []string)
 	return m
 }
 
+// maxFilterScanPages bounds how many DB pages one request may drain while
+// assembling a filtered page, so a caller who can see almost nothing cannot
+// make a single request walk an arbitrarily large table. On hitting the bound
+// the partial page is returned with a continuationToken, and the client
+// resumes exactly where the scan stopped.
+const maxFilterScanPages = 10
+
+// drainFilteredPage assembles one caller-visible page of up to limit items,
+// fetching as many DB pages as needed to refill what the RBAC filter removes.
+// Filtering used to happen after LIMIT/OFFSET, which handed clients short or
+// empty pages with a non-null continuationToken (#296). The returned token is
+// the DB offset just past the last row consumed — the same offset-in-disguise
+// the repos already emit — so pages stay full until the set is exhausted.
+func drainFilteredPage[T any](
+	limit, offset int,
+	fetch func(limit, offset int) ([]T, *string, error),
+	filter func([]T) []T,
+	id func(T) string,
+) ([]T, *string, error) {
+	out := make([]T, 0, limit)
+	cur := offset
+	for scanned := 0; scanned < maxFilterScanPages; scanned++ {
+		items, next, err := fetch(limit, cur)
+		if err != nil {
+			return nil, nil, err
+		}
+		kept := filter(items)
+		keptSet := make(map[string]struct{}, len(kept))
+		for _, k := range kept {
+			keptSet[id(k)] = struct{}{}
+		}
+		for i, it := range items {
+			if _, ok := keptSet[id(it)]; !ok {
+				continue
+			}
+			out = append(out, it)
+			if len(out) == limit {
+				cur += i + 1
+				if i+1 < len(items) || next != nil {
+					tok := strconv.Itoa(cur)
+					return out, &tok, nil
+				}
+				return out, nil, nil
+			}
+		}
+		cur += len(items)
+		if next == nil {
+			return out, nil, nil
+		}
+	}
+	tok := strconv.Itoa(cur)
+	return out, &tok, nil
+}
+
+// componentFilter returns the RBAC filter for a page of components, computing
+// the AllowAnonymous map from the repositories actually present in the page.
+// With no RBAC service attached it is the identity.
+func (h *ComponentHandler) componentFilter(c *gin.Context) func([]domain.Component) []domain.Component {
+	if h.rbacSvc == nil {
+		return func(items []domain.Component) []domain.Component { return items }
+	}
+	userID, _ := c.Get("userID")
+	roles, _ := c.Get("roles")
+	return func(items []domain.Component) []domain.Component {
+		if len(items) == 0 {
+			return items
+		}
+		repoSet := make(map[string]struct{}, 4)
+		for _, comp := range items {
+			repoSet[comp.Repository] = struct{}{}
+		}
+		repoList := make([]string, 0, len(repoSet))
+		for n := range repoSet {
+			repoList = append(repoList, n)
+		}
+		anonMap := h.allowAnonMap(c.Request.Context(), repoList)
+		return h.rbacSvc.FilterComponents(c.Request.Context(),
+			stringVal(userID), stringSliceVal(roles), items, anonMap)
+	}
+}
+
+// assetFilter is componentFilter's twin for asset pages.
+func (h *ComponentHandler) assetFilter(c *gin.Context) func([]domain.Asset) []domain.Asset {
+	if h.rbacSvc == nil {
+		return func(items []domain.Asset) []domain.Asset { return items }
+	}
+	userID, _ := c.Get("userID")
+	roles, _ := c.Get("roles")
+	return func(items []domain.Asset) []domain.Asset {
+		if len(items) == 0 {
+			return items
+		}
+		repoSet := make(map[string]struct{}, 4)
+		for _, a := range items {
+			repoSet[a.Repository] = struct{}{}
+		}
+		repoList := make([]string, 0, len(repoSet))
+		for n := range repoSet {
+			repoList = append(repoList, n)
+		}
+		anonMap := h.allowAnonMap(c.Request.Context(), repoList)
+		return h.rbacSvc.FilterAssets(c.Request.Context(),
+			stringVal(userID), stringSliceVal(roles), items, anonMap)
+	}
+}
+
 // List handles GET /service/rest/v1/components?repository=X
 func (h *ComponentHandler) List(c *gin.Context) {
 	repoName := c.Query("repository")
@@ -93,22 +199,19 @@ func (h *ComponentHandler) List(c *gin.Context) {
 		return
 	}
 
-	page, err := h.components.ListByRepoNames(c.Request.Context(), names, limit, offset)
+	items, token, err := drainFilteredPage(limit, offset,
+		func(l, o int) ([]domain.Component, *string, error) {
+			page, err := h.components.ListByRepoNames(c.Request.Context(), names, l, o)
+			if err != nil {
+				return nil, nil, err
+			}
+			return page.Items, page.ContinuationToken, nil
+		},
+		h.componentFilter(c),
+		func(comp domain.Component) string { return comp.ID })
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
-	}
-
-	items := page.Items
-	if items == nil {
-		items = []domain.Component{}
-	}
-	if h.rbacSvc != nil {
-		anonMap := h.allowAnonMap(c.Request.Context(), names)
-		userID, _ := c.Get("userID")
-		roles, _ := c.Get("roles")
-		items = h.rbacSvc.FilterComponents(c.Request.Context(),
-			stringVal(userID), stringSliceVal(roles), items, anonMap)
 	}
 	if err := h.attachAssets(c.Request.Context(), items); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -120,7 +223,7 @@ func (h *ComponentHandler) List(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"items":             items,
-		"continuationToken": page.ContinuationToken,
+		"continuationToken": token,
 	})
 }
 
@@ -171,6 +274,22 @@ func (h *ComponentHandler) Get(c *gin.Context) {
 		return
 	}
 	comp.Assets = assets
+	// The list and search endpoints filter what they return through RBAC; a
+	// direct GET by id must answer the same question the same way, or knowing a
+	// UUID becomes a key to metadata and scan results the caller has no
+	// privilege over (#291). Filtered-out is reported as 404, not 403 — the id
+	// should stay unguessable.
+	if h.rbacSvc != nil {
+		anonMap := h.allowAnonMap(c.Request.Context(), []string{comp.Repository})
+		userID, _ := c.Get("userID")
+		roles, _ := c.Get("roles")
+		visible := h.rbacSvc.FilterComponents(c.Request.Context(),
+			stringVal(userID), stringSliceVal(roles), []domain.Component{*comp}, anonMap)
+		if len(visible) == 0 {
+			c.JSON(http.StatusNotFound, gin.H{"error": "component not found"})
+			return
+		}
+	}
 	h.enrichComponent(c, comp)
 	c.JSON(http.StatusOK, comp)
 }
@@ -252,31 +371,21 @@ func (h *ComponentHandler) Search(c *gin.Context) {
 		p.Repository = ""
 	}
 
-	page, err := h.components.Search(c.Request.Context(), p)
+	items, token, err := drainFilteredPage(p.Limit, p.Offset,
+		func(l, o int) ([]domain.Component, *string, error) {
+			q := p
+			q.Limit, q.Offset = l, o
+			page, err := h.components.Search(c.Request.Context(), q)
+			if err != nil {
+				return nil, nil, err
+			}
+			return page.Items, page.ContinuationToken, nil
+		},
+		h.componentFilter(c),
+		func(comp domain.Component) string { return comp.ID })
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
-	}
-
-	items := page.Items
-	if items == nil {
-		items = []domain.Component{}
-	}
-	if h.rbacSvc != nil && len(items) > 0 {
-		// Collect unique repo names from results (may span group members).
-		repoSet := make(map[string]struct{}, 4)
-		for _, comp := range items {
-			repoSet[comp.Repository] = struct{}{}
-		}
-		repoList := make([]string, 0, len(repoSet))
-		for n := range repoSet {
-			repoList = append(repoList, n)
-		}
-		anonMap := h.allowAnonMap(c.Request.Context(), repoList)
-		userID, _ := c.Get("userID")
-		roles, _ := c.Get("roles")
-		items = h.rbacSvc.FilterComponents(c.Request.Context(),
-			stringVal(userID), stringSliceVal(roles), items, anonMap)
 	}
 	// Preload assets in a single batched query instead of one query per component.
 	if err := h.attachAssets(c.Request.Context(), items); err != nil {
@@ -289,7 +398,7 @@ func (h *ComponentHandler) Search(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"items":             items,
-		"continuationToken": page.ContinuationToken,
+		"continuationToken": token,
 	})
 }
 
@@ -325,30 +434,21 @@ func (h *ComponentHandler) SearchAssets(c *gin.Context) {
 		p.Repository = ""
 	}
 
-	page, err := h.assets.SearchAssets(c.Request.Context(), p)
+	items, token, err := drainFilteredPage(p.Limit, p.Offset,
+		func(l, o int) ([]domain.Asset, *string, error) {
+			q := p
+			q.Limit, q.Offset = l, o
+			page, err := h.assets.SearchAssets(c.Request.Context(), q)
+			if err != nil {
+				return nil, nil, err
+			}
+			return page.Items, page.ContinuationToken, nil
+		},
+		h.assetFilter(c),
+		func(a domain.Asset) string { return a.ID })
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
-	}
-
-	items := page.Items
-	if items == nil {
-		items = []domain.Asset{}
-	}
-	if h.rbacSvc != nil && len(items) > 0 {
-		repoSet := make(map[string]struct{}, 4)
-		for _, a := range items {
-			repoSet[a.Repository] = struct{}{}
-		}
-		repoList := make([]string, 0, len(repoSet))
-		for n := range repoSet {
-			repoList = append(repoList, n)
-		}
-		anonMap := h.allowAnonMap(c.Request.Context(), repoList)
-		userID, _ := c.Get("userID")
-		roles, _ := c.Get("roles")
-		items = h.rbacSvc.FilterAssets(c.Request.Context(),
-			stringVal(userID), stringSliceVal(roles), items, anonMap)
 	}
 	for i := range items {
 		items[i].DownloadURL = h.baseURL + "/repository/" + items[i].Repository + items[i].Path
@@ -356,7 +456,7 @@ func (h *ComponentHandler) SearchAssets(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"items":             items,
-		"continuationToken": page.ContinuationToken,
+		"continuationToken": token,
 	})
 }
 
@@ -446,6 +546,20 @@ func (h *ComponentHandler) GetQuota(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+
+	// Quota is repository-wide capacity metadata, so the gate is the same
+	// repo-level check the repository listing uses — a caller who cannot see
+	// the repository in a listing should not learn its size either (#295).
+	if h.rbacSvc != nil {
+		userID, _ := c.Get("userID")
+		roles, _ := c.Get("roles")
+		visible := h.rbacSvc.FilterRepos(c.Request.Context(),
+			stringVal(userID), stringSliceVal(roles), []domain.Repository{*repo})
+		if len(visible) == 0 {
+			c.JSON(http.StatusNotFound, gin.H{"error": "repository not found"})
+			return
+		}
 	}
 
 	used, err := h.assets.SumSizeByRepo(c.Request.Context(), name)

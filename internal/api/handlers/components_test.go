@@ -1,6 +1,7 @@
 package handlers_test
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/nexspence-oss/nexspence/internal/api/handlers"
 	"github.com/nexspence-oss/nexspence/internal/domain"
+	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/service"
 	"github.com/nexspence-oss/nexspence/internal/testutil"
 )
@@ -687,4 +689,147 @@ func TestComponentHandler_SearchAssets_RBAC_AdminPassthrough(t *testing.T) {
 	var got assetsResp
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
 	require.Len(t, got.Items, 1)
+}
+
+// ── RBAC on Get / GetQuota / pagination (#291, #295, #296) ────
+
+// grantRBACRepo grants one privilege: browse/read on a single repository.
+type grantRBACRepo struct{ repo string }
+
+func (g grantRBACRepo) GetUserPrivilegesWithSelectors(_ context.Context, _ string) ([]repository.PrivilegeWithSelector, error) {
+	return []repository.PrivilegeWithSelector{
+		{Actions: []string{"read", "browse"}, Expression: `repository == "` + g.repo + `"`},
+	}, nil
+}
+
+// mountComponentsAs wires the handler with an RBAC service backed by rbacRepo
+// and a middleware injecting the given non-admin identity.
+func mountComponentsAs(t *testing.T, rbacRepo repository.RBACRepo, userID string) (*gin.Engine, *testutil.ComponentRepo, *testutil.AssetRepo, *testutil.RepoRepo) {
+	t.Helper()
+	comps := testutil.NewComponentRepo()
+	assets := testutil.NewAssetRepo()
+	repos := testutil.NewRepoRepo()
+	rbacSvc := service.NewRBACService(rbacRepo, repos, zap.NewNop().Sugar(), true)
+	h := handlers.NewComponentHandler(comps, assets, repos, "http://localhost").WithRBAC(rbacSvc)
+
+	r := gin.New()
+	r.Use(func(c *gin.Context) {
+		c.Set("userID", userID)
+		c.Set("roles", []string{"nx-user"})
+		c.Next()
+	})
+	r.GET("/service/rest/v1/components", h.List)
+	r.GET("/service/rest/v1/components/:id", h.Get)
+	r.GET("/service/rest/v1/search", h.Search)
+	r.GET("/service/rest/v1/search/assets", h.SearchAssets)
+	r.GET("/api/v1/repositories/:name/quota", h.GetQuota)
+	return r, comps, assets, repos
+}
+
+// Knowing a component UUID must not bypass the filter List applies: a user
+// with no privilege over a non-anonymous repo gets 404, not the metadata and
+// scan results (#291).
+func TestComponentHandler_Get_RBAC_FilteredOut_404(t *testing.T) {
+	r, comps, _, repos := mountComponentsAs(t, emptyRBACRepo{}, "nobody")
+	seedRepo(t, repos, &domain.Repository{ID: "r1", Name: "private-repo", Format: domain.FormatRaw, Type: domain.TypeHosted})
+	comp := &domain.Component{Repository: "private-repo", Name: "secret", Version: "1"}
+	require.NoError(t, comps.Create(testContext(), comp))
+
+	rec := do(t, r, http.MethodGet, "/service/rest/v1/components/"+comp.ID, nil)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+// The same request with a privilege over the repo still answers in full.
+func TestComponentHandler_Get_RBAC_Privileged_OK(t *testing.T) {
+	r, comps, _, repos := mountComponentsAs(t, grantRBACRepo{repo: "private-repo"}, "reader")
+	seedRepo(t, repos, &domain.Repository{ID: "r1", Name: "private-repo", Format: domain.FormatRaw, Type: domain.TypeHosted})
+	comp := &domain.Component{Repository: "private-repo", Name: "app", Version: "1"}
+	require.NoError(t, comps.Create(testContext(), comp))
+
+	rec := do(t, r, http.MethodGet, "/service/rest/v1/components/"+comp.ID, nil)
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+// An anonymous-allowed repo stays reachable without privileges.
+func TestComponentHandler_Get_RBAC_AnonymousRepo_OK(t *testing.T) {
+	r, comps, _, repos := mountComponentsAs(t, emptyRBACRepo{}, "nobody")
+	seedRepo(t, repos, &domain.Repository{ID: "r1", Name: "public-repo", Format: domain.FormatRaw, Type: domain.TypeHosted, AllowAnonymous: true})
+	comp := &domain.Component{Repository: "public-repo", Name: "app", Version: "1"}
+	require.NoError(t, comps.Create(testContext(), comp))
+
+	rec := do(t, r, http.MethodGet, "/service/rest/v1/components/"+comp.ID, nil)
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+// Capacity metadata is gated by the same repo-level check the listing uses (#295).
+func TestComponentHandler_GetQuota_RBAC_FilteredOut_404(t *testing.T) {
+	r, _, _, repos := mountComponentsAs(t, emptyRBACRepo{}, "nobody")
+	seedRepo(t, repos, &domain.Repository{ID: "r1", Name: "private-repo", Format: domain.FormatRaw, Type: domain.TypeHosted})
+
+	rec := do(t, r, http.MethodGet, "/api/v1/repositories/private-repo/quota", nil)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestComponentHandler_GetQuota_RBAC_Privileged_OK(t *testing.T) {
+	r, _, _, repos := mountComponentsAs(t, grantRBACRepo{repo: "private-repo"}, "reader")
+	seedRepo(t, repos, &domain.Repository{ID: "r1", Name: "private-repo", Format: domain.FormatRaw, Type: domain.TypeHosted})
+
+	rec := do(t, r, http.MethodGet, "/api/v1/repositories/private-repo/quota", nil)
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+// A page must stay full while visible rows remain: the RBAC filter runs after
+// LIMIT/OFFSET at the DB, so the handler refills the page from later DB rows
+// instead of returning a short page with a dangling token (#296).
+func TestComponentHandler_List_RBAC_RefillsFilteredPage(t *testing.T) {
+	r, comps, _, repos := mountComponentsAs(t, grantRBACRepo{repo: "mine"}, "reader")
+	seedRepo(t, repos, &domain.Repository{
+		ID: "r1", Name: "grp", Format: domain.FormatRaw, Type: domain.TypeGroup,
+		FormatConfig: map[string]any{"member_names": []string{"mine", "theirs"}},
+	})
+	seedRepo(t, repos, &domain.Repository{ID: "r2", Name: "mine", Format: domain.FormatRaw, Type: domain.TypeHosted})
+	seedRepo(t, repos, &domain.Repository{ID: "r3", Name: "theirs", Format: domain.FormatRaw, Type: domain.TypeHosted})
+	// Interleave visible and invisible components. Mock lists sort by name.
+	for i := 0; i < 4; i++ {
+		require.NoError(t, comps.Create(testContext(), &domain.Component{Repository: "mine", Name: fmt.Sprintf("a%d-mine", i), Version: "1"}))
+		require.NoError(t, comps.Create(testContext(), &domain.Component{Repository: "theirs", Name: fmt.Sprintf("a%d-their", i), Version: "1"}))
+	}
+
+	rec := do(t, r, http.MethodGet, "/service/rest/v1/components?repository=grp&limit=3", nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	var got componentsResp
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	// Page 1: full despite half the DB rows being filtered out.
+	require.Len(t, got.Items, 3)
+	for _, it := range got.Items {
+		assert.Equal(t, "mine", it.Repository)
+	}
+	require.NotNil(t, got.ContinuationToken)
+
+	// Page 2: the remaining visible component, then the set is exhausted.
+	rec = do(t, r, http.MethodGet, "/service/rest/v1/components?repository=grp&limit=3&continuationToken="+*got.ContinuationToken, nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Len(t, got.Items, 1)
+	assert.Equal(t, "mine", got.Items[0].Repository)
+	assert.Nil(t, got.ContinuationToken)
+}
+
+// A caller who can see nothing must not walk the whole table in one request:
+// the scan is bounded, and the partial (empty) page keeps a token to resume.
+func TestComponentHandler_List_RBAC_ScanBounded(t *testing.T) {
+	r, comps, _, repos := mountComponentsAs(t, emptyRBACRepo{}, "nobody")
+	seedRepo(t, repos, &domain.Repository{ID: "r1", Name: "private-repo", Format: domain.FormatRaw, Type: domain.TypeHosted})
+	for i := 0; i < 30; i++ {
+		require.NoError(t, comps.Create(testContext(), &domain.Component{Repository: "private-repo", Name: fmt.Sprintf("c%02d", i), Version: "1"}))
+	}
+
+	// limit=2 → the bound allows 10 DB pages = 20 rows; 10 rows remain.
+	rec := do(t, r, http.MethodGet, "/service/rest/v1/components?repository=private-repo&limit=2", nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	var got componentsResp
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	assert.Empty(t, got.Items)
+	require.NotNil(t, got.ContinuationToken)
+	assert.Equal(t, "20", *got.ContinuationToken)
 }
