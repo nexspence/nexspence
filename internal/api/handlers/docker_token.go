@@ -20,6 +20,15 @@ type TokenIssuer interface {
 	GenerateToken(userID, username string, roles []string) (string, error)
 }
 
+// ScopedTokenIssuer is implemented by issuers that can embed an API token's
+// scopes into the minted JWT (*auth.Service does). When a scoped API token is
+// exchanged at /v2/token, the JWT must carry the restriction forward —
+// otherwise the exchange would be a one-request laundering of a read-only
+// token into a full-power session (#292).
+type ScopedTokenIssuer interface {
+	GenerateScopedToken(userID, username string, roles, scopes []string) (string, error)
+}
+
 // DockerToken serves GET /v2/token — the docker token protocol endpoint the
 // /v2/ ping's Bearer challenge points at (#260).
 //
@@ -41,7 +50,10 @@ type TokenIssuer interface {
 //
 // The requested scope/service query parameters are deliberately ignored: the
 // token conveys identity, not capability — authorization happens per request
-// in RBACMiddleware, so tokens never need to encode what they may touch.
+// in RBACMiddleware, so tokens never need to encode what they may touch. The
+// one exception is an nxs_ API token created with scopes: its restriction is
+// its own, not the protocol's, and it is embedded into the issued JWT so the
+// exchange cannot widen it.
 //
 // Registered for GET and POST. containerd and BuildKit try the OAuth2 form
 // POST (grant_type=password) first and fall back to GET only on 404/405 —
@@ -60,8 +72,14 @@ func DockerToken(
 	log logger.Logger,
 ) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		issue := func(userID, username string, roles []string) {
-			token, err := issuer.GenerateToken(userID, username, roles)
+		issue := func(userID, username string, roles, scopes []string) {
+			var token string
+			var err error
+			if si, ok := issuer.(ScopedTokenIssuer); ok && len(scopes) > 0 {
+				token, err = si.GenerateScopedToken(userID, username, roles, scopes)
+			} else {
+				token, err = issuer.GenerateToken(userID, username, roles)
+			}
 			if err != nil {
 				// Not 401: the caller's credentials were fine, signing failed.
 				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "could not issue token"})
@@ -89,8 +107,8 @@ func DockerToken(
 		if username != "" {
 			ctx := c.Request.Context()
 			if tokens != nil && strings.HasPrefix(password, service.TokenPrefix) {
-				if u, err := tokens.Authenticate(ctx, password); err == nil && u != nil {
-					issue(u.ID, u.Username, u.Roles)
+				if u, scopes, err := tokens.Authenticate(ctx, password); err == nil && u != nil {
+					issue(u.ID, u.Username, u.Roles, scopes)
 					return
 				}
 			}
@@ -103,7 +121,7 @@ func DockerToken(
 			_, user, err := users.Login(ctx, username, password)
 			if err == nil {
 				guard.RecordSuccess(ctx, username)
-				issue(user.ID, user.Username, user.Roles)
+				issue(user.ID, user.Username, user.Roles, nil)
 				return
 			}
 			guard.RecordFailure(ctx, username)
@@ -118,6 +136,6 @@ func DockerToken(
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
 			return
 		}
-		issue("", "", nil)
+		issue("", "", nil, nil)
 	}
 }

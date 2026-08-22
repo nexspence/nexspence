@@ -22,6 +22,11 @@ type Claims struct {
 	Username   string   `json:"sub"`
 	Roles      []string `json:"roles"`
 	AuthMethod string   `json:"auth_method,omitempty"`
+	// Scopes carries an API token's read/write/delete restriction into a JWT
+	// minted from it (the /v2/token exchange), so the restriction survives the
+	// exchange instead of silently widening to the full account (#292).
+	// Empty means unrestricted — every JWT issued before scopes existed.
+	Scopes []string `json:"scopes,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -67,6 +72,26 @@ func (s *Service) GenerateTokenWithMethod(userID, username string, roles []strin
 		Username:   username,
 		Roles:      roles,
 		AuthMethod: method,
+		RegisteredClaims: jwt.RegisteredClaims{
+			IssuedAt:  jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(now.Add(time.Duration(s.expiryHrs) * time.Hour)),
+			Issuer:    "nexspence",
+		},
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(s.secret)
+}
+
+// GenerateScopedToken is GenerateToken with the API token's scopes embedded,
+// used when a scoped token is exchanged for a registry JWT so the JWT is no
+// wider than the token it came from.
+func (s *Service) GenerateScopedToken(userID, username string, roles, scopes []string) (string, error) {
+	now := time.Now()
+	claims := Claims{
+		UserID:   userID,
+		Username: username,
+		Roles:    roles,
+		Scopes:   scopes,
 		RegisteredClaims: jwt.RegisteredClaims{
 			IssuedAt:  jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(now.Add(time.Duration(s.expiryHrs) * time.Hour)),

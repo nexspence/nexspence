@@ -209,19 +209,70 @@ func authenticateBearer(c *gin.Context, users *service.UserService, tokens *serv
 		c.Set("username", claims.Username)
 		c.Set("userID", claims.UserID)
 		c.Set("roles", claims.Roles)
+		setTokenScopes(c, claims.Scopes)
 		return true, false
 	}
 	if tokens == nil {
 		return false, false
 	}
-	u, err := tokens.Authenticate(c.Request.Context(), raw)
+	u, scopes, err := tokens.Authenticate(c.Request.Context(), raw)
 	if err != nil || u == nil {
 		return false, false
 	}
 	c.Set("username", u.Username)
 	c.Set("userID", u.ID)
 	c.Set("roles", u.Roles)
+	setTokenScopes(c, scopes)
 	return true, false
+}
+
+// setTokenScopes stashes a non-empty scope list for the request's
+// authorization checkpoints (scopesAllow in AuthMiddleware and
+// RBACMiddleware). Nothing is set for an unscoped token, so the absence of
+// the key means "unrestricted" everywhere it is read.
+func setTokenScopes(c *gin.Context, scopes []string) {
+	if len(scopes) > 0 {
+		c.Set("tokenScopes", scopes)
+	}
+}
+
+// scopesAllow reports whether the request's API-token scopes (if any) permit
+// the given action. Scopes are hierarchical — delete ⊃ write ⊃ read — because
+// real write flows read on the way (a Docker push HEADs blobs before
+// uploading), so a write-only token that cannot read would not be usable for
+// the one thing it was scoped to. Unknown scope names grant nothing.
+func scopesAllow(c *gin.Context, action string) bool {
+	v, ok := c.Get("tokenScopes")
+	if !ok {
+		return true
+	}
+	scopes, _ := v.([]string)
+	if len(scopes) == 0 {
+		return true
+	}
+	rank := map[string]int{"read": 1, "write": 2, "delete": 3}
+	need := rank[action]
+	if need == 0 {
+		need = rank["read"]
+	}
+	for _, sc := range scopes {
+		if rank[strings.ToLower(strings.TrimSpace(sc))] >= need {
+			return true
+		}
+	}
+	return false
+}
+
+// enforceTokenScopes aborts with 403 when the request's API-token scopes do
+// not cover the action its HTTP method implies. Returns false when aborted.
+// This is the management-API checkpoint; artifact routes get the same check
+// with a path-aware action inside RBACMiddleware.
+func enforceTokenScopes(c *gin.Context) bool {
+	if scopesAllow(c, methodToAction(c.Request.Method)) {
+		return true
+	}
+	c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "token scope does not permit this action"})
+	return false
 }
 
 // jwtNotRevoked reports whether the JWT's claims pass the per-user
@@ -256,10 +307,14 @@ func AuthMiddleware(users *service.UserService, tokens *service.TokenService, gu
 				// An API token can also be supplied via Basic auth with any
 				// username (convention: username=<token-name-or-user>, password=token).
 				if tokens != nil && strings.HasPrefix(password, service.TokenPrefix) {
-					if u, err := tokens.Authenticate(c.Request.Context(), password); err == nil && u != nil {
+					if u, scopes, err := tokens.Authenticate(c.Request.Context(), password); err == nil && u != nil {
 						c.Set("username", u.Username)
 						c.Set("userID", u.ID)
 						c.Set("roles", u.Roles)
+						setTokenScopes(c, scopes)
+						if !enforceTokenScopes(c) {
+							return
+						}
 						c.Next()
 						return
 					}
@@ -298,6 +353,9 @@ func AuthMiddleware(users *service.UserService, tokens *service.TokenService, gu
 				msg = "token invalidated"
 			}
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": msg})
+			return
+		}
+		if !enforceTokenScopes(c) {
 			return
 		}
 		c.Next()
@@ -381,7 +439,7 @@ func DockerV2Auth(
 				return
 			}
 			if tokens != nil {
-				if _, err := tokens.Authenticate(c.Request.Context(), raw); err == nil {
+				if _, _, err := tokens.Authenticate(c.Request.Context(), raw); err == nil {
 					c.Status(http.StatusOK)
 					return
 				}
@@ -389,7 +447,7 @@ func DockerV2Auth(
 		} else if strings.HasPrefix(authHeader, "Basic ") {
 			if username, password, ok := c.Request.BasicAuth(); ok {
 				if tokens != nil && strings.HasPrefix(password, service.TokenPrefix) {
-					if u, err := tokens.Authenticate(c.Request.Context(), password); err == nil && u != nil {
+					if u, _, err := tokens.Authenticate(c.Request.Context(), password); err == nil && u != nil {
 						c.Set("username", u.Username)
 						c.Set("userID", u.ID)
 						c.Status(http.StatusOK)
@@ -463,10 +521,11 @@ func OptionalAuth(users *service.UserService, tokens *service.TokenService, guar
 		if username, password, ok := c.Request.BasicAuth(); ok && username != "" {
 			ctx := c.Request.Context()
 			if tokens != nil && strings.HasPrefix(password, service.TokenPrefix) {
-				if u, err := tokens.Authenticate(ctx, password); err == nil && u != nil {
+				if u, scopes, err := tokens.Authenticate(ctx, password); err == nil && u != nil {
 					c.Set("username", u.Username)
 					c.Set("userID", u.ID)
 					c.Set("roles", u.Roles)
+					setTokenScopes(c, scopes)
 					c.Next()
 					return
 				}
