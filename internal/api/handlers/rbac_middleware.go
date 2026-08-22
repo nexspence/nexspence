@@ -28,6 +28,15 @@ func RBACMiddleware(rbacSvc *service.RBACService, repoRepo repository.Repository
 
 		action := methodToAction(c.Request.Method)
 
+		// An API token created with scopes promised a restricted session; the
+		// privilege check below judges the user, so without this the token
+		// silently carried the account's full power (#292). Scopes cap the
+		// action on top of — never instead of — the privilege check.
+		if !scopesAllow(c, action) {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "token scope does not permit this action"})
+			return
+		}
+
 		userID, _ := c.Get("userID")
 		roles, _ := c.Get("roles")
 		userIDStr, _ := userID.(string)

@@ -2,6 +2,7 @@ package handlers_test
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -403,4 +404,134 @@ func TestDockerV2Auth_WrongBasicPassword_Returns401(t *testing.T) {
 	challenges := w.Header().Values("WWW-Authenticate")
 	require.Len(t, challenges, 1)
 	assert.Contains(t, challenges[0], "Bearer realm=")
+}
+
+// ── API token scope enforcement (#292) ────────────────────────
+
+// scopedTokenSetup builds a user + token service pair and mints one API token
+// with the given scopes, returning the plaintext token.
+func scopedTokenSetup(t *testing.T, scopes []string) (*service.UserService, *service.TokenService, string) {
+	t.Helper()
+	u := activeUser("dev", "pw")
+	userRepo := testutil.NewUserRepo(u)
+	userSvc := newUserSvc(u)
+	tokenSvc := service.NewTokenService(testutil.NewUserTokenRepo(), userRepo)
+	tok, err := tokenSvc.Create(testContext(), u.ID, "ci", scopes, nil)
+	require.NoError(t, err)
+	return userSvc, tokenSvc, tok.Token
+}
+
+// scopedRouter mounts AuthMiddleware plus echo handlers for each method.
+func scopedRouter(userSvc *service.UserService, tokenSvc *service.TokenService) *gin.Engine {
+	r := gin.New()
+	r.Use(handlers.AuthMiddleware(userSvc, tokenSvc, nil, nil))
+	ok := func(c *gin.Context) { c.Status(http.StatusOK) }
+	r.GET("/x", ok)
+	r.PUT("/x", ok)
+	r.DELETE("/x", ok)
+	return r
+}
+
+// A token created with scopes: ["read"] promised a restricted session; writes
+// through it must be refused even though the owning user could write (#292).
+func TestAuthMiddleware_TokenScopes_ReadOnlyBlocksWrite(t *testing.T) {
+	userSvc, tokenSvc, raw := scopedTokenSetup(t, []string{"read"})
+	r := scopedRouter(userSvc, tokenSvc)
+
+	get := httptest.NewRequest(http.MethodGet, "/x", nil)
+	get.Header.Set("Authorization", "Bearer "+raw)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, get)
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	put := httptest.NewRequest(http.MethodPut, "/x", nil)
+	put.Header.Set("Authorization", "Bearer "+raw)
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, put)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+
+	del := httptest.NewRequest(http.MethodDelete, "/x", nil)
+	del.Header.Set("Authorization", "Bearer "+raw)
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, del)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+}
+
+// Scopes are hierarchical: write covers read (a push HEADs blobs on the way),
+// delete covers everything.
+func TestAuthMiddleware_TokenScopes_WriteImpliesRead(t *testing.T) {
+	userSvc, tokenSvc, raw := scopedTokenSetup(t, []string{"write"})
+	r := scopedRouter(userSvc, tokenSvc)
+
+	for method, want := range map[string]int{
+		http.MethodGet:    http.StatusOK,
+		http.MethodPut:    http.StatusOK,
+		http.MethodDelete: http.StatusForbidden,
+	} {
+		req := httptest.NewRequest(method, "/x", nil)
+		req.Header.Set("Authorization", "Bearer "+raw)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		assert.Equal(t, want, w.Code, method)
+	}
+}
+
+// A token created without scopes stays fully unrestricted — the behavior of
+// every token issued before scopes were enforced.
+func TestAuthMiddleware_TokenScopes_NoScopesUnrestricted(t *testing.T) {
+	userSvc, tokenSvc, raw := scopedTokenSetup(t, nil)
+	r := scopedRouter(userSvc, tokenSvc)
+
+	for _, method := range []string{http.MethodGet, http.MethodPut, http.MethodDelete} {
+		req := httptest.NewRequest(method, "/x", nil)
+		req.Header.Set("Authorization", "Bearer "+raw)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusOK, w.Code, method)
+	}
+}
+
+// The same cap holds when the token arrives as a Basic password.
+func TestAuthMiddleware_TokenScopes_BasicAuthPath(t *testing.T) {
+	userSvc, tokenSvc, raw := scopedTokenSetup(t, []string{"read"})
+	r := scopedRouter(userSvc, tokenSvc)
+
+	req := httptest.NewRequest(http.MethodPut, "/x", nil)
+	req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte("dev:"+raw)))
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+}
+
+// Exchanging a scoped API token at /v2/token must not widen it: the issued
+// JWT carries the scopes, and a Bearer request through OptionalAuth+RBAC
+// obeys the same cap (#292).
+func TestDockerToken_ScopedExchange_JWTKeepsScopes(t *testing.T) {
+	userSvc, tokenSvc, raw := scopedTokenSetup(t, []string{"read"})
+	authSvc := auth.NewService(testSecret, 24, bcryptCostTest)
+
+	r := gin.New()
+	r.GET("/v2/token", handlers.DockerToken(authSvc, userSvc, tokenSvc, false, time.Hour, nil, nil))
+
+	req := httptest.NewRequest(http.MethodGet, "/v2/token", nil)
+	req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte("dev:"+raw)))
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var body struct {
+		Token string `json:"token"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	claims, err := authSvc.ValidateToken(body.Token)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"read"}, claims.Scopes)
+
+	// The scoped JWT is capped exactly like the API token it came from.
+	pr := scopedRouter(userSvc, tokenSvc)
+	put := httptest.NewRequest(http.MethodPut, "/x", nil)
+	put.Header.Set("Authorization", "Bearer "+body.Token)
+	w = httptest.NewRecorder()
+	pr.ServeHTTP(w, put)
+	assert.Equal(t, http.StatusForbidden, w.Code)
 }

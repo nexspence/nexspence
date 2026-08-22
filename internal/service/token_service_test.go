@@ -72,7 +72,7 @@ func TestTokenService_Authenticate_RoundTrip(t *testing.T) {
 
 	tok, _ := svc.Create(context.Background(), "u1", "ci", nil, nil)
 
-	got, err := svc.Authenticate(context.Background(), tok.Token)
+	got, _, err := svc.Authenticate(context.Background(), tok.Token)
 	if err != nil {
 		t.Fatalf("Authenticate: %v", err)
 	}
@@ -83,14 +83,14 @@ func TestTokenService_Authenticate_RoundTrip(t *testing.T) {
 
 func TestTokenService_Authenticate_RejectsNonPrefix(t *testing.T) {
 	svc, _, _ := newTokenSvc(t)
-	if _, err := svc.Authenticate(context.Background(), "some-jwt-without-prefix"); err == nil {
+	if _, _, err := svc.Authenticate(context.Background(), "some-jwt-without-prefix"); err == nil {
 		t.Fatal("expected error for non-token string")
 	}
 }
 
 func TestTokenService_Authenticate_UnknownToken(t *testing.T) {
 	svc, _, _ := newTokenSvc(t)
-	if _, err := svc.Authenticate(context.Background(), service.TokenPrefix+"deadbeef"); err == nil {
+	if _, _, err := svc.Authenticate(context.Background(), service.TokenPrefix+"deadbeef"); err == nil {
 		t.Fatal("expected error for unknown token")
 	}
 }
@@ -102,7 +102,7 @@ func TestTokenService_Authenticate_ExpiredToken(t *testing.T) {
 	past := time.Now().Add(-time.Hour)
 	tok, _ := svc.Create(context.Background(), "u1", "expired", nil, &past)
 
-	if _, err := svc.Authenticate(context.Background(), tok.Token); err == nil {
+	if _, _, err := svc.Authenticate(context.Background(), tok.Token); err == nil {
 		t.Fatal("expected error for expired token")
 	}
 }
@@ -112,7 +112,7 @@ func TestTokenService_Authenticate_DisabledUser(t *testing.T) {
 	svc, _, _ := newTokenSvc(t, u)
 
 	tok, _ := svc.Create(context.Background(), "u1", "x", nil, nil)
-	if _, err := svc.Authenticate(context.Background(), tok.Token); err == nil {
+	if _, _, err := svc.Authenticate(context.Background(), tok.Token); err == nil {
 		t.Fatal("expected error for disabled user")
 	}
 }
@@ -125,7 +125,7 @@ func TestTokenService_Delete_RevokesToken(t *testing.T) {
 	if err := svc.Delete(context.Background(), tok.ID); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
-	if _, err := svc.Authenticate(context.Background(), tok.Token); err == nil {
+	if _, _, err := svc.Authenticate(context.Background(), tok.Token); err == nil {
 		t.Fatal("revoked token still authenticates")
 	}
 }

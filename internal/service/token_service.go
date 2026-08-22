@@ -53,6 +53,16 @@ func (s *TokenService) Create(ctx context.Context, userID, name string, scopes [
 	if strings.TrimSpace(name) == "" {
 		return nil, fmt.Errorf("%w: token name is required", ErrInvalidInput)
 	}
+	// Scopes are enforced now (#292): an unknown name would mint a token that
+	// can do nothing and fail every request with an unhelpful 403, so refuse
+	// it at creation where the mistake is visible.
+	for _, sc := range scopes {
+		switch strings.ToLower(strings.TrimSpace(sc)) {
+		case "read", "write", "delete":
+		default:
+			return nil, fmt.Errorf("%w: unknown scope %q (valid: read, write, delete)", ErrInvalidInput, sc)
+		}
+	}
 	u, err := s.users.GetByID(ctx, userID)
 	if err != nil {
 		return nil, err
@@ -92,32 +102,38 @@ func (s *TokenService) Get(ctx context.Context, id string) (*domain.UserToken, e
 	return s.tokens.Get(ctx, id)
 }
 
-// Authenticate validates a presented plaintext token, returns the owning user
-// or an error. TouchLastUsed is called on success best-effort.
-func (s *TokenService) Authenticate(ctx context.Context, raw string) (*domain.User, error) {
+// Authenticate validates a presented plaintext token, returning the owning
+// user and the token's scopes. TouchLastUsed is called on success best-effort.
+//
+// Scopes come back alongside the user because the caller — not this method —
+// is the authorization checkpoint: a token created with scopes promises a
+// restricted session, and returning only the user silently handed every
+// integration the account's full power instead (#292). Empty scopes mean an
+// unrestricted token, matching every token issued before scopes were enforced.
+func (s *TokenService) Authenticate(ctx context.Context, raw string) (*domain.User, []string, error) {
 	if !strings.HasPrefix(raw, TokenPrefix) {
-		return nil, fmt.Errorf("not an API token")
+		return nil, nil, fmt.Errorf("not an API token")
 	}
 	tok, err := s.tokens.GetByHash(ctx, hashToken(raw))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if tok == nil {
-		return nil, fmt.Errorf("unknown token")
+		return nil, nil, fmt.Errorf("unknown token")
 	}
 	if tok.ExpiresAt != nil && time.Now().After(*tok.ExpiresAt) {
-		return nil, fmt.Errorf("token expired")
+		return nil, nil, fmt.Errorf("token expired")
 	}
 	u, err := s.users.GetByID(ctx, tok.UserID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if u == nil {
-		return nil, fmt.Errorf("token owner not found")
+		return nil, nil, fmt.Errorf("token owner not found")
 	}
 	if u.Status != domain.UserStatusActive {
-		return nil, fmt.Errorf("user account disabled")
+		return nil, nil, fmt.Errorf("user account disabled")
 	}
 	_ = s.tokens.TouchLastUsed(ctx, tok.ID)
-	return u, nil
+	return u, tok.Scopes, nil
 }

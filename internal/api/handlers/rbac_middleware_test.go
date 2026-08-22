@@ -104,3 +104,41 @@ func TestRBACMiddleware_UnauthenticatedNonDocker_UsesGenericBody(t *testing.T) {
 	_, hasErrors := body["errors"]
 	assert.False(t, hasErrors, "non-/v2/ path must not emit OCI errors[] body")
 }
+
+// A read-scoped API token caps the artifact routes on top of the privilege
+// check: the user may write, the token may not (#292).
+func TestRBACMiddleware_TokenScopes_CapArtifactWrites(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	repo := &domain.Repository{
+		ID: "r1", Name: "raw-host", Format: domain.FormatRaw,
+		Type: domain.TypeHosted, Online: true, AllowAnonymous: true,
+	}
+	repoRepo := testutil.NewRepoRepo(repo)
+	rbacSvc := service.NewRBACService(&noPrivilegesRBACRepo{}, repoRepo, zap.NewNop().Sugar(), true)
+
+	r := gin.New()
+	// Simulate OptionalAuth having authenticated a read-scoped API token
+	// for an admin — the strongest user the scope still has to cap.
+	r.Use(func(c *gin.Context) {
+		c.Set("userID", "u1")
+		c.Set("roles", []string{"nx-admin"})
+		c.Set("tokenScopes", []string{"read"})
+		c.Next()
+	})
+	grp := r.Group("/repository/:repoName", handlers.RBACMiddleware(rbacSvc, repoRepo))
+	grp.Any("/*path", func(c *gin.Context) { c.Status(http.StatusOK) })
+
+	get := httptest.NewRequest(http.MethodGet, "/repository/raw-host/a.txt", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, get)
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	put := httptest.NewRequest(http.MethodPut, "/repository/raw-host/a.txt", nil)
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, put)
+	require.Equal(t, http.StatusForbidden, w.Code)
+	var body map[string]string
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	assert.Contains(t, body["error"], "token scope")
+}
