@@ -17,12 +17,14 @@ import (
 	"time"
 
 	"github.com/robfig/cron/v3"
+	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/logger"
 	"github.com/nexspence-oss/nexspence/internal/netguard"
 	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/storage"
+	"github.com/nexspence-oss/nexspence/internal/tracing"
 )
 
 // ReplicationService pushes artifacts from local repos to remote Nexspence instances.
@@ -321,6 +323,14 @@ func (s *ReplicationService) Running(ruleID string) bool {
 // the same assets. (Per-process is the honest scope of this guard; the cron
 // path has the same property today.)
 func (s *ReplicationService) RunRule(ctx context.Context, ruleID string) error {
+	// Root span: both callers (the manual-trigger handler and cron) launch
+	// this on context.Background(), so it looks like a service method but is
+	// a background job. It is also what makes cross-process propagation work
+	// at all — with no span in context, injecting traceparent into the
+	// outgoing requests is silently a no-op (#302).
+	ctx, span := tracing.StartRoot(ctx, "replication.run_rule",
+		attribute.String("replication.rule_id", ruleID))
+	defer span.End()
 	if _, busy := s.running.LoadOrStore(ruleID, struct{}{}); busy {
 		return fmt.Errorf("replication rule %s is already running", ruleID)
 	}
@@ -418,6 +428,9 @@ func (s *ReplicationService) listTargetPaths(ctx context.Context, rule *domain.R
 		if err != nil {
 			return nil, err
 		}
+		// Propagate the trace across the process boundary (W3C traceparent):
+		// the receiving nexspence continues this trace (#302).
+		tracing.Inject(ctx, req.Header)
 		if rule.TargetUsername != "" {
 			req.SetBasicAuth(rule.TargetUsername, password)
 		}
@@ -470,6 +483,9 @@ func (s *ReplicationService) pushAsset(ctx context.Context, client *http.Client,
 	if err != nil {
 		return false, 0, err
 	}
+	// Propagate the trace across the process boundary (W3C traceparent):
+	// the receiving nexspence continues this trace (#302).
+	tracing.Inject(ctx, req.Header)
 	if size > 0 {
 		req.ContentLength = size
 	}
@@ -512,6 +528,9 @@ func (s *ReplicationService) TestConnection(ctx context.Context, ruleID string) 
 	if err != nil {
 		return err
 	}
+	// Propagate the trace across the process boundary (W3C traceparent):
+	// the receiving nexspence continues this trace (#302).
+	tracing.Inject(ctx, req.Header)
 	if rule.TargetUsername != "" {
 		req.SetBasicAuth(rule.TargetUsername, password)
 	}

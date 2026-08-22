@@ -16,6 +16,8 @@ import (
 	"sync"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/formats"
 	"github.com/nexspence-oss/nexspence/internal/formats/base"
@@ -23,6 +25,7 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/netguard"
 	"github.com/nexspence-oss/nexspence/internal/nexusclient"
 	"github.com/nexspence-oss/nexspence/internal/repository"
+	"github.com/nexspence-oss/nexspence/internal/tracing"
 )
 
 // errMigrationPaused unwinds a run that an operator parked. It is not a
@@ -360,7 +363,11 @@ func (s *NexusMigrationService) run(ctx context.Context, jobID string) {
 
 	// Progress and status are written on a background context: a paused or
 	// canceled run still has to record where it stopped.
-	bg := context.Background()
+	// The root span hangs off it too — the import goroutine has no HTTP
+	// request behind it, so without one the run is invisible in traces (#302).
+	bg, span := tracing.StartRoot(context.Background(), "nexus_migration.run",
+		attribute.String("migration.job_id", jobID))
+	defer span.End()
 
 	job, err := s.jobs.Get(bg, jobID)
 	if err != nil {

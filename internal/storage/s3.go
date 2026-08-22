@@ -94,8 +94,10 @@ func (s *S3BlobStore) objectKey(key string) string {
 
 // Put uploads a blob using the S3 multipart manager.
 // Files larger than PartSize (10 MB) are uploaded in parallel parts automatically.
-func (s *S3BlobStore) Put(ctx context.Context, key string, r io.Reader, _ int64) error {
-	_, err := s.uploader.Upload(ctx, &s3.PutObjectInput{ //nolint:staticcheck // migration to feature/s3/transfermanager is a breaking API change; deferred to a dedicated refactor
+func (s *S3BlobStore) Put(ctx context.Context, key string, r io.Reader, declaredSize int64) (err error) {
+	ctx, span := blobSpan(ctx, "blobstore.s3.put", key, declaredSize)
+	defer func() { finishSpan(span, err) }()
+	_, err = s.uploader.Upload(ctx, &s3.PutObjectInput{ //nolint:staticcheck // migration to feature/s3/transfermanager is a breaking API change; deferred to a dedicated refactor
 		Bucket: aws.String(s.bucket),
 		Key:    aws.String(s.objectKey(key)),
 		Body:   r,
@@ -107,7 +109,9 @@ func (s *S3BlobStore) Put(ctx context.Context, key string, r io.Reader, _ int64)
 }
 
 // Get fetches the object for key and returns its body and size.
-func (s *S3BlobStore) Get(ctx context.Context, key string) (io.ReadCloser, int64, error) {
+func (s *S3BlobStore) Get(ctx context.Context, key string) (rc io.ReadCloser, size int64, err error) {
+	ctx, span := blobSpan(ctx, "blobstore.s3.get", key, -1)
+	defer func() { finishSpan(span, err) }()
 	out, err := s.client.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(s.bucket),
 		Key:    aws.String(s.objectKey(key)),
@@ -118,7 +122,6 @@ func (s *S3BlobStore) Get(ctx context.Context, key string) (io.ReadCloser, int64
 		}
 		return nil, 0, fmt.Errorf("s3 get %s: %w", key, err)
 	}
-	size := int64(0)
 	if out.ContentLength != nil {
 		size = *out.ContentLength
 	}
@@ -126,13 +129,15 @@ func (s *S3BlobStore) Get(ctx context.Context, key string) (io.ReadCloser, int64
 }
 
 // Delete removes the object for key; a missing object is not an error.
-func (s *S3BlobStore) Delete(ctx context.Context, key string) error {
+func (s *S3BlobStore) Delete(ctx context.Context, key string) (err error) {
+	ctx, span := blobSpan(ctx, "blobstore.s3.delete", key, -1)
+	defer func() { finishSpan(span, err) }()
 	// An unfinished append holds multipart parts that no listing shows and no
 	// object delete reclaims, so dropping the key without aborting first would
 	// leak them permanently — including when GC collects an abandoned upload
 	// session. Best effort: a failed abort must not block the delete.
 	_ = s.AbortAppend(ctx, key)
-	_, err := s.client.DeleteObject(ctx, &s3.DeleteObjectInput{
+	_, err = s.client.DeleteObject(ctx, &s3.DeleteObjectInput{
 		Bucket: aws.String(s.bucket),
 		Key:    aws.String(s.objectKey(key)),
 	})

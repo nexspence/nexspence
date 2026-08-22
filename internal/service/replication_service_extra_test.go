@@ -2,10 +2,19 @@ package service_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.uber.org/zap"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/service"
@@ -338,5 +347,49 @@ func TestReplicationExtra_RunRule_TargetHTTPError(t *testing.T) {
 	err := svc.RunRule(ctx, rule.ID)
 	if err == nil {
 		t.Fatal("expected error when target list-assets returns 500")
+	}
+}
+
+// Replication's outgoing requests must carry W3C traceparent, and that only
+// works because RunRule opens its own root span — the propagation was verified
+// to silently no-op without one (#302).
+func TestReplicationService_RunRule_PropagatesTraceContext(t *testing.T) {
+	prevTP := otel.GetTracerProvider()
+	prevProp := otel.GetTextMapPropagator()
+	defer otel.SetTracerProvider(prevTP)
+	defer otel.SetTextMapPropagator(prevProp)
+	otel.SetTracerProvider(sdktrace.NewTracerProvider(sdktrace.WithSampler(sdktrace.AlwaysSample())))
+	otel.SetTextMapPropagator(propagation.TraceContext{})
+
+	var traceparents []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		traceparents = append(traceparents, r.Header.Get("Traceparent"))
+		if r.Method == http.MethodGet {
+			_ = json.NewEncoder(w).Encode(map[string]any{"items": []any{}, "continuationToken": nil})
+			return
+		}
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer srv.Close()
+
+	repRepo := testutil.NewReplicationRepo()
+	assets := testutil.NewAssetRepo()
+	blob := testutil.NewBlobStore()
+	require.NoError(t, blob.Put(context.Background(), "k", strings.NewReader("data"), 4))
+	require.NoError(t, assets.Create(context.Background(), &domain.Asset{
+		Repository: "src", Path: "/a.bin", BlobKey: "k", SizeBytes: 4,
+	}))
+
+	svc := service.NewReplicationService(repRepo, assets, blob, "test-secret", nil, zap.NewNop().Sugar())
+	svc.WithHTTPClientFactory(func(timeout time.Duration) *http.Client { return srv.Client() })
+
+	rule := &domain.ReplicationRule{Name: "r", SourceRepo: "src", TargetURL: srv.URL, TargetRepo: "dst"}
+	require.NoError(t, repRepo.CreateRule(context.Background(), rule))
+
+	require.NoError(t, svc.RunRule(context.Background(), rule.ID))
+
+	require.NotEmpty(t, traceparents, "expected at least one outgoing request")
+	for _, tp := range traceparents {
+		require.NotEmpty(t, tp, "every outgoing replication request must carry traceparent")
 	}
 }

@@ -49,7 +49,9 @@ func (s *LocalBlobStore) keyPath(key string) (string, error) {
 }
 
 // Put writes the blob for key, staging to a temp file and renaming for atomicity.
-func (s *LocalBlobStore) Put(_ context.Context, key string, r io.Reader, _ int64) error {
+func (s *LocalBlobStore) Put(ctx context.Context, key string, r io.Reader, declaredSize int64) (err error) {
+	_, span := blobSpan(ctx, "blobstore.local.put", key, declaredSize)
+	defer func() { finishSpan(span, err) }()
 	dst, err := s.keyPath(key)
 	if err != nil {
 		return err
@@ -184,7 +186,11 @@ func (s *LocalBlobStore) syncDir(dir string) {
 }
 
 // Get opens the blob for key and returns its reader and size.
-func (s *LocalBlobStore) Get(_ context.Context, key string) (io.ReadCloser, int64, error) {
+func (s *LocalBlobStore) Get(ctx context.Context, key string) (rc io.ReadCloser, size int64, err error) {
+	// The span covers open+stat — time to first byte, not the full stream,
+	// which belongs to whoever consumes the reader.
+	_, span := blobSpan(ctx, "blobstore.local.get", key, -1)
+	defer func() { finishSpan(span, err) }()
 	p, err := s.keyPath(key)
 	if err != nil {
 		return nil, 0, err
@@ -202,7 +208,9 @@ func (s *LocalBlobStore) Get(_ context.Context, key string) (io.ReadCloser, int6
 }
 
 // Delete removes the blob for key; a missing blob is not an error.
-func (s *LocalBlobStore) Delete(_ context.Context, key string) error {
+func (s *LocalBlobStore) Delete(ctx context.Context, key string) (err error) {
+	_, span := blobSpan(ctx, "blobstore.local.delete", key, -1)
+	defer func() { finishSpan(span, err) }()
 	p, err := s.keyPath(key)
 	if err != nil {
 		return err
