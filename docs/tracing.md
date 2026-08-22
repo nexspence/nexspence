@@ -59,6 +59,16 @@ guarantee, configure [tail-based sampling](https://opentelemetry.io/docs/concept
 in your collector — it buffers the whole trace and decides once it is
 finished.
 
+## Log correlation
+
+Every structured log line produced inside a traced scope carries the trace's
+ids as `trace_id` / `span_id` fields: the per-request summary line
+(`requestLogger`) and the log statements inside the background jobs. An error
+log can be jumped to its full trace, and — since `sample_ratio` means most
+requests have no trace at all — the log line is also the place that tells you
+whether this particular request was one of the sampled ones worth looking up.
+With tracing disabled the fields are simply absent.
+
 ## What is never recorded
 
 Span attributes carry metadata only: routes, repository names, blob keys and
