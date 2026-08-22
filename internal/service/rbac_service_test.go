@@ -701,3 +701,63 @@ func TestRBAC_FilterRepos_PrivError_LogsAndContinues(t *testing.T) {
 	require.Len(t, got, 1)
 	assert.Equal(t, "public", got[0].Name)
 }
+
+// ── assetSamplePath keyword-collision shapes (#294) ───────────
+
+// An image name may legitimately begin with an OCI endpoint keyword. The cut
+// must anchor on the last keyword occurrence, not whichever happens to lead
+// the string — otherwise the image's own leading segment is mistaken for the
+// protocol keyword and the selector that exactly covers the image never
+// matches (#294, false-denied).
+func TestRBAC_AssetSamplePath_ImageNamedLikeKeyword(t *testing.T) {
+	privs := []repository.PrivilegeWithSelector{
+		{Actions: []string{"read", "browse"}, Expression: `repository == "dr" && path.startsWith("/manifests/webapp/")`},
+		{Actions: []string{"read", "browse"}, Expression: `repository == "dr" && path.startsWith("/blobs/webapp/")`},
+	}
+	svc := newRBACTestSvc(privs)
+	repo := &domain.Repository{Name: "dr", Format: domain.FormatDocker}
+
+	for _, path := range []string{
+		// Live request shapes for images named manifests/webapp and blobs/webapp.
+		"/manifests/webapp/manifests/latest",
+		"/manifests/webapp/blobs/sha256:deadbeef",
+		"/manifests/webapp/tags/list",
+		"/blobs/webapp/manifests/latest",
+	} {
+		ok, err := svc.CanAccessRepo(context.Background(), "user1", nil, repo, path, "read")
+		require.NoError(t, err, path)
+		assert.True(t, ok, "selector covering the image must match live path %s", path)
+	}
+}
+
+// The control shape — no collision — keeps working the same way.
+func TestRBAC_AssetSamplePath_NoCollisionControl(t *testing.T) {
+	privs := []repository.PrivilegeWithSelector{
+		{Actions: []string{"read", "browse"}, Expression: `repository == "dr" && path.startsWith("/acme/webapp/")`},
+	}
+	svc := newRBACTestSvc(privs)
+	repo := &domain.Repository{Name: "dr", Format: domain.FormatDocker}
+
+	ok, err := svc.CanAccessRepo(context.Background(), "user1", nil, repo, "/acme/webapp/manifests/latest", "read")
+	require.NoError(t, err)
+	assert.True(t, ok)
+
+	ok, err = svc.CanAccessRepo(context.Background(), "user1", nil, repo, "/other/webapp/manifests/latest", "read")
+	require.NoError(t, err)
+	assert.False(t, ok, "selector must not leak to other images")
+}
+
+// Stored DB paths (keyword leading) keep their meaning: /manifests/<image>/<ref>
+// still samples to /<image>/.
+func TestRBAC_AssetSamplePath_StoredShapeUnchanged(t *testing.T) {
+	privs := []repository.PrivilegeWithSelector{
+		{Actions: []string{"browse"}, Expression: `repository == "dr" && path.startsWith("/myimage/")`},
+	}
+	svc := newRBACTestSvc(privs)
+	items := []domain.Asset{
+		{Repository: "dr", Path: "/manifests/myimage/latest"},
+		{Repository: "dr", Path: "/blobs/myimage/sha256:deadbeef"},
+	}
+	got := svc.FilterAssets(context.Background(), "user1", nil, items, nil)
+	assert.Len(t, got, 2)
+}

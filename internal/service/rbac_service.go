@@ -332,31 +332,43 @@ func (s *RBACService) FilterAssets(
 }
 
 // assetSamplePath converts a Docker path into a path suitable for content-selector
-// matching. Handles two forms:
+// matching. Both shapes that reach it carry one of the OCI endpoint keywords
+// (manifests/blobs/tags) somewhere in the path:
 //
-//  1. Docker v2 API request paths: /v2/<image>/blobs/... or /v2/<image>/manifests/...
-//     These arrive from RBACMiddleware when Docker push goes through
-//     /repository/:repoName/v2/<image>/blobs/uploads/<uuid>.
-//     Strip /v2/ and the endpoint keyword to get /<image>/.
+//  1. Live v2 request paths (repo prefix already stripped, with or without a
+//     leading /v2/): /<image>/manifests/<ref>, /<image>/blobs/<digest>,
+//     /<image>/tags/list — the keyword follows the image name.
 //
 //  2. Stored asset DB paths: /blobs/<image>/<digest> or /manifests/<image>/<ref>
-//     Strip the leading prefix and the final segment to get /<image>/.
+//     — the keyword leads, the reference trails.
+//
+// An image name may itself begin with "manifests" or "blobs" as a legitimate
+// leading segment, so matching whichever keyword occurrence happens to lead the
+// string mistakes the image name for the protocol keyword and cuts in the wrong
+// place (#294). The shapes are told apart by the LAST keyword occurrence
+// instead: mid-string, it is the live shape's separator (cut before it, keep
+// the image name); leading, the path is the stored shape (strip the keyword,
+// drop the trailing reference).
 func assetSamplePath(p string) string {
-	if strings.HasPrefix(p, "/v2/") {
-		rest := strings.TrimPrefix(p, "/v2/")
-		for _, kw := range []string{"/manifests/", "/blobs/", "/tags/"} {
-			if idx := strings.Index(rest, kw); idx >= 0 {
-				return "/" + rest[:idx] + "/"
-			}
-		}
-		return p
+	rest := strings.TrimPrefix(p, "/v2/")
+	if rest != p {
+		rest = "/" + rest
 	}
-	for _, pfx := range []string{"/blobs/", "/manifests/"} {
-		if strings.HasPrefix(p, pfx) {
-			rest := strings.TrimPrefix(p, pfx)
-			if idx := strings.LastIndex(rest, "/"); idx > 0 {
-				return "/" + rest[:idx] + "/"
-			}
+	last, lastKw := -1, ""
+	for _, kw := range []string{"/manifests/", "/blobs/", "/tags/"} {
+		if idx := strings.LastIndex(rest, kw); idx > last {
+			last, lastKw = idx, kw
+		}
+	}
+	switch {
+	case last > 0:
+		// Live shape: /<image>/<keyword>/<ref> — keep the image name.
+		return rest[:last] + "/"
+	case last == 0 && lastKw != "/tags/":
+		// Stored shape: /<keyword>/<image>/<ref> — strip keyword and reference.
+		inner := strings.TrimPrefix(rest, lastKw)
+		if idx := strings.LastIndex(inner, "/"); idx > 0 {
+			return "/" + inner[:idx] + "/"
 		}
 	}
 	return p
