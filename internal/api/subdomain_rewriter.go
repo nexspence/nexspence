@@ -14,16 +14,34 @@ import (
 //	/v2/alpine/manifests/latest  →  /v2/<repoName>/alpine/manifests/latest
 //	/v2/                         →  /v2/  (unchanged — OCI version check)
 //
+// An explicit hostname alias wins over the subdomain pattern, so a legacy DNS
+// name can keep serving a repository whose name does not match it (#282).
+//
 // This makes the existing /v2/:repoName/*dockerpath Gin routes work transparently.
 type SubdomainRewriter struct {
 	next       http.Handler
-	baseDomain string // lower-cased, e.g. "nexspence.example.com"
+	baseDomain string            // lower-cased, e.g. "nexspence.example.com"
+	aliases    map[string]string // lower-cased full hostname → repository name
 }
 
 // NewSubdomainRewriter wraps next with subdomain path rewriting.
 // baseDomain must NOT have a leading dot (e.g. "nexspence.example.com").
-func NewSubdomainRewriter(next http.Handler, baseDomain string) http.Handler {
-	return &SubdomainRewriter{next: next, baseDomain: strings.ToLower(baseDomain)}
+// aliases maps full client hostnames to repository names; alias hostnames do
+// not have to sit under baseDomain, and an alias for "<sub>.<baseDomain>"
+// overrides the implicit "<sub>" repository. Alias targets that are not valid
+// repository name labels are ignored — the value is spliced into a URL path,
+// and a config typo must not become a path injection.
+func NewSubdomainRewriter(next http.Handler, baseDomain string, aliases map[string]string) http.Handler {
+	m := make(map[string]string, len(aliases))
+	for host, repo := range aliases {
+		host = strings.ToLower(strings.TrimSpace(host))
+		repo = strings.TrimSpace(repo)
+		if host == "" || !isRepoNameLabel(repo) {
+			continue
+		}
+		m[host] = repo
+	}
+	return &SubdomainRewriter{next: next, baseDomain: strings.ToLower(baseDomain), aliases: m}
 }
 
 func (s *SubdomainRewriter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -44,14 +62,21 @@ func (s *SubdomainRewriter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.next.ServeHTTP(w, r)
 }
 
-// extractRepo returns the subdomain when Host matches "*.<baseDomain>".
-// Returns "" when the pattern doesn't match (passthrough).
+// extractRepo returns the repository name for the request's Host: an explicit
+// alias when one is configured for the full hostname, else the subdomain when
+// Host matches "*.<baseDomain>". Returns "" when neither applies (passthrough).
 func (s *SubdomainRewriter) extractRepo(host string) string {
 	// Strip port if present.
 	if idx := strings.LastIndex(host, ":"); idx != -1 {
 		host = host[:idx]
 	}
 	host = strings.ToLower(host)
+	if repo, ok := s.aliases[host]; ok {
+		return repo
+	}
+	if s.baseDomain == "" {
+		return ""
+	}
 	suffix := "." + s.baseDomain
 	if !strings.HasSuffix(host, suffix) {
 		return ""
