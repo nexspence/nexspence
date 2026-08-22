@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+
+	"github.com/nexspence-oss/nexspence/internal/domain"
 	"strings"
 )
 
@@ -143,10 +145,11 @@ func fetchDockerRegistryToken(ctx context.Context, client *http.Client, realm, s
 	return "", fmt.Errorf("empty token in response")
 }
 
-// fetchUpstreamWithDockerHubAuth performs the HTTP request; on 401 from Docker Hub it obtains
+// fetchUpstreamWithDockerHubAuth performs the HTTP request with the repo's
+// upstream credentials (SetUpstreamAuth); on 401 from Docker Hub it obtains
 // an anonymous Bearer token and retries once. This prevents the registry client from
 // following Hub's WWW-Authenticate challenge with Nexspence credentials (wrong host).
-func fetchUpstreamWithDockerHubAuth(ctx context.Context, client *http.Client, method, upstreamURL, baseRemote string, hdr http.Header) (*http.Response, error) {
+func fetchUpstreamWithDockerHubAuth(ctx context.Context, repo *domain.Repository, client *http.Client, method, upstreamURL, baseRemote string, hdr http.Header) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, method, upstreamURL, nil)
 	if err != nil {
 		return nil, err
@@ -157,6 +160,7 @@ func fetchUpstreamWithDockerHubAuth(ctx context.Context, client *http.Client, me
 	if req.Header.Get("User-Agent") == "" {
 		req.Header.Set("User-Agent", "Nexspence/1.0 (proxy)")
 	}
+	SetUpstreamAuth(req, repo)
 
 	resp, err := client.Do(req)
 	if err != nil {

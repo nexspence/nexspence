@@ -742,12 +742,55 @@ describe('RepositoriesPage', () => {
     renderWithProviders(<RepositoriesPage />)
     await openSettingsFor('npm-proxy')
     await user.click(screen.getByText(/Outbound proxy/))
-    await user.type(screen.getByPlaceholderText('Leave blank to keep current'), 'n3w')
+    await user.type(screen.getAllByPlaceholderText('Leave blank to keep current')[1], 'n3w')
     const form = document.querySelector('form') as HTMLFormElement
     fireEvent.click(within(form).getByRole('button', { name: /^Save$/ }))
     await waitFor(() => expect(put).toBeTruthy())
     const pc = (put! as { proxyConfig?: Record<string, unknown> }).proxyConfig
     expect(pc?.proxy_password).toBe('n3w')
+  })
+
+
+  it('sends remote_password on save when typed, and omits it when untouched (#281)', async () => {
+    const user = userEvent.setup()
+    seedRepos([proxyRepo])
+    let put: Record<string, unknown> | null = null
+    server.use(
+      http.put('/service/rest/v1/repositories/:format/:type/:name', async ({ request }) => {
+        put = (await request.json()) as Record<string, unknown>
+        return HttpResponse.json(proxyRepo)
+      }),
+    )
+    renderWithProviders(<RepositoriesPage />)
+    await openSettingsFor('npm-proxy')
+    await user.click(screen.getByText(/Upstream authentication/))
+    // The upstream-auth password is the first "Leave blank to keep current"
+    // input; the outbound-proxy password is the second.
+    await user.type(screen.getAllByPlaceholderText('Leave blank to keep current')[0], 'up5tream')
+    const form = document.querySelector('form') as HTMLFormElement
+    fireEvent.click(within(form).getByRole('button', { name: /^Save$/ }))
+    await waitFor(() => expect(put).toBeTruthy())
+    const pc = (put! as { proxyConfig?: Record<string, unknown> }).proxyConfig
+    expect(pc?.remote_password).toBe('up5tream')
+    expect(pc).not.toHaveProperty('remote_password_set')
+  })
+
+  it('omits remote_password on save when the field is untouched (#281)', async () => {
+    seedRepos([proxyRepo])
+    let put: Record<string, unknown> | null = null
+    server.use(
+      http.put('/service/rest/v1/repositories/:format/:type/:name', async ({ request }) => {
+        put = (await request.json()) as Record<string, unknown>
+        return HttpResponse.json(proxyRepo)
+      }),
+    )
+    renderWithProviders(<RepositoriesPage />)
+    await openSettingsFor('npm-proxy')
+    const form = document.querySelector('form') as HTMLFormElement
+    fireEvent.click(within(form).getByRole('button', { name: /^Save$/ }))
+    await waitFor(() => expect(put).toBeTruthy())
+    const pc = (put! as { proxyConfig?: Record<string, unknown> }).proxyConfig
+    expect(pc).not.toHaveProperty('remote_password')
   })
 
   it('rejects an empty remote URL when editing a proxy repository', async () => {

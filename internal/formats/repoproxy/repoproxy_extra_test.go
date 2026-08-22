@@ -662,3 +662,57 @@ func TestServeGET_DockerHub_ScopeFromV2URL(t *testing.T) {
 	assert.True(t, tokenServerCalled, "token server should have been called with scope from URL")
 	assert.Equal(t, 2, calls)
 }
+
+// ── upstream Basic auth (#281) ────────────────────────────────
+
+// A proxy repo with remote_username/remote_password must present them to the
+// upstream itself (HTTP Basic) — private Maven registries answer 401 without.
+func TestServeGET_SendsUpstreamBasicAuth(t *testing.T) {
+	useUnguardedUpstream(t)
+	var gotAuth string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		if u, p, ok := r.BasicAuth(); !ok || u != "deploy" || p != "s3cret" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		_, _ = fmt.Fprint(w, "artifact-bytes")
+	}))
+	defer upstream.Close()
+
+	repo := proxyRepo("pauth", upstream.URL)
+	repo.ProxyConfig["remote_username"] = "deploy"
+	repo.ProxyConfig["remote_password"] = "s3cret"
+	d := makeDeps(repo)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/com/x/a.jar", nil)
+	err := repoproxy.ServeGET(c, d, repo, "/com/x/a.jar", "", base.Coords{}, "", 0)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "artifact-bytes", w.Body.String())
+	assert.Contains(t, gotAuth, "Basic ")
+}
+
+// Without credentials configured, no Authorization header is invented.
+func TestServeGET_NoUpstreamAuthByDefault(t *testing.T) {
+	useUnguardedUpstream(t)
+	var sawAuth bool
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawAuth = r.Header.Get("Authorization") != ""
+		_, _ = fmt.Fprint(w, "ok")
+	}))
+	defer upstream.Close()
+
+	repo := proxyRepo("pnoauth", upstream.URL)
+	d := makeDeps(repo)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/com/x/b.jar", nil)
+	err := repoproxy.ServeGET(c, d, repo, "/com/x/b.jar", "", base.Coords{}, "", 0)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.False(t, sawAuth)
+}

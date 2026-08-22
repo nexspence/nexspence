@@ -246,6 +246,7 @@ func (h *Handler) fetchAndRewriteHelmIndex(c *gin.Context, repo *domain.Reposito
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid upstream URL: " + err.Error()})
 		return
 	}
+	repoproxy.SetUpstreamAuth(req, repo)
 	resp, err := repoproxy.ClientFor(repo).Do(req)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "upstream fetch failed: " + err.Error()})

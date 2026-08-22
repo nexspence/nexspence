@@ -260,7 +260,7 @@ func FetchUpstreamOnce(ctx context.Context, repo *domain.Repository, upstreamPat
 	if rawQuery != "" {
 		upstream += "?" + rawQuery
 	}
-	return fetchUpstreamWithDockerHubAuth(ctx, ClientFor(repo), http.MethodGet, upstream, baseRemote, hdr)
+	return fetchUpstreamWithDockerHubAuth(ctx, repo, ClientFor(repo), http.MethodGet, upstream, baseRemote, hdr)
 }
 
 // ServeGET serves a cached asset or fetches upstream, streaming to the client
@@ -365,7 +365,7 @@ func fetchAndCache(c *gin.Context, d formats.Deps, repo *domain.Repository,
 		upstreamMethod = http.MethodGet
 	}
 
-	resp, err := fetchUpstreamWithDockerHubAuth(ctx, ClientFor(repo), upstreamMethod, upstream, baseRemote, upHdr)
+	resp, err := fetchUpstreamWithDockerHubAuth(ctx, repo, ClientFor(repo), upstreamMethod, upstream, baseRemote, upHdr)
 	if err != nil {
 		DispatchProxyError(d, repo.Name, repoRelativePath, upstream, err)
 		c.JSON(http.StatusBadGateway, gin.H{"error": "upstream fetch failed: " + err.Error()})
@@ -427,7 +427,7 @@ func revalidateAndServe(c *gin.Context, d formats.Deps, repo *domain.Repository,
 		upHdr.Set("If-Modified-Since", asset.LastModified.UTC().Format(http.TimeFormat))
 	}
 
-	resp, err := fetchUpstreamWithDockerHubAuth(ctx, ClientFor(repo), http.MethodGet, upstream, baseRemote, upHdr)
+	resp, err := fetchUpstreamWithDockerHubAuth(ctx, repo, ClientFor(repo), http.MethodGet, upstream, baseRemote, upHdr)
 	if err != nil {
 		// Upstream unreachable → serve stale cache so metadata consumers keep working.
 		DispatchProxyError(d, repo.Name, repoRelativePath, upstream, err)

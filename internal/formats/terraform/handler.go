@@ -352,6 +352,7 @@ func (h *Handler) serveProxy(c *gin.Context, repo *domain.Repository, repoName, 
 	}
 	req.Header.Set("Accept", "application/json")
 
+	repoproxy.SetUpstreamAuth(req, repo)
 	resp, err := repoproxy.ClientFor(repo).Do(req)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "upstream: " + err.Error()})

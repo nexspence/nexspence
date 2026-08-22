@@ -281,6 +281,7 @@ func (h *Handler) proxyIndex(c *gin.Context, repo *domain.Repository, repoName, 
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	repoproxy.SetUpstreamAuth(req, repo)
 	resp, err := repoproxy.ClientFor(repo).Do(req)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "upstream fetch: " + err.Error()})

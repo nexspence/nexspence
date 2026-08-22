@@ -241,27 +241,34 @@ func (s *RepositoryService) Update(ctx context.Context, name string, updates *do
 }
 
 // mergeProxyConfig produces the proxyConfig to persist from the stored one and the
-// caller's replacement. The replacement wins wholesale, except for the password:
+// caller's replacement. The replacement wins wholesale, except for the secrets:
 // clients read a redacted config (see domain.RedactedRepository), so an omitted
-// proxy_password means "unchanged" rather than "clear it". Sending an explicit empty
-// proxy_password clears the credential. The read-only proxy_password_set marker a
-// client may echo back is always dropped.
+// proxy_password / remote_password means "unchanged" rather than "clear it".
+// Sending an explicit empty value clears the credential. The read-only *_set
+// markers a client may echo back are always dropped.
 func mergeProxyConfig(stored, updates map[string]any) map[string]any {
-	merged := make(map[string]any, len(updates)+1)
+	secrets := [][2]string{
+		{domain.ProxyPasswordKey, domain.ProxyPasswordSetKey},
+		{domain.RemotePasswordKey, domain.RemotePasswordSetKey},
+	}
+	merged := make(map[string]any, len(updates)+len(secrets))
 	for k, v := range updates {
-		if k == domain.ProxyPasswordSetKey {
+		if k == domain.ProxyPasswordSetKey || k == domain.RemotePasswordSetKey {
 			continue
 		}
 		merged[k] = v
 	}
-	if pw, sent := merged[domain.ProxyPasswordKey]; sent {
-		if s, _ := pw.(string); s == "" {
-			delete(merged, domain.ProxyPasswordKey)
+	for _, keys := range secrets {
+		secretKey := keys[0]
+		if pw, sent := merged[secretKey]; sent {
+			if s, _ := pw.(string); s == "" {
+				delete(merged, secretKey)
+			}
+			continue
 		}
-		return merged
-	}
-	if pw, ok := stored[domain.ProxyPasswordKey].(string); ok && pw != "" {
-		merged[domain.ProxyPasswordKey] = pw
+		if pw, ok := stored[secretKey].(string); ok && pw != "" {
+			merged[secretKey] = pw
+		}
 	}
 	return merged
 }

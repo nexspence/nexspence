@@ -268,3 +268,23 @@ func hostPort(raw string) (string, error) {
 	}
 	return raw, nil
 }
+
+// SetUpstreamAuth adds the repository's upstream HTTP Basic credentials
+// (proxy_config.remote_username / remote_password) to an outbound request, for
+// private upstreams that gate downloads behind Basic auth — a private Maven
+// registry, Mapbox, a corporate npm mirror (#281). Distinct from
+// proxy_username/proxy_password, which authenticate to the outbound forward
+// proxy on the way, not to the registry itself.
+//
+// A request that already carries an Authorization header keeps it — the Docker
+// Hub token flow, for one, sets its own Bearer and must win.
+func SetUpstreamAuth(req *http.Request, repo *domain.Repository) {
+	if req == nil || repo == nil || req.Header.Get("Authorization") != "" {
+		return
+	}
+	user := cfgString(repo.ProxyConfig, "remote_username")
+	if user == "" {
+		return
+	}
+	req.SetBasicAuth(user, cfgString(repo.ProxyConfig, domain.RemotePasswordKey))
+}
