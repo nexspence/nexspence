@@ -579,7 +579,10 @@ func (s *ScanService) BulkScan(ctx context.Context, repoName string) (scanned in
 			break
 		}
 		next, convErr := strconv.Atoi(*page.ContinuationToken)
-		if convErr != nil || next <= offset {
+		if convErr != nil {
+			return scanned, failed, fmt.Errorf("malformed continuation token %q: %w", *page.ContinuationToken, convErr)
+		}
+		if next <= offset {
 			break
 		}
 		offset = next
