@@ -352,7 +352,7 @@ func (s *PromotionService) Approve(ctx context.Context, requestID, reviewerID st
 // first, not silently overwrite it.
 func (s *PromotionService) Reject(ctx context.Context, requestID, reviewerID, reason string) error {
 	err := s.promotionRepo.WithPendingRequestLock(ctx, requestID,
-		func(ctx context.Context, req *domain.PromotionRequest) repository.PromotionOutcome {
+		func(_ context.Context, _ *domain.PromotionRequest) repository.PromotionOutcome {
 			now := time.Now()
 			return repository.PromotionOutcome{Status: domain.PromotionRejected,
 				ReviewedBy: &reviewerID, ReviewedAt: &now, Error: reason}
