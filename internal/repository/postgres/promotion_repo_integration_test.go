@@ -5,6 +5,8 @@ package postgres
 import (
 	"context"
 	"errors"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -899,5 +901,133 @@ func TestPromotionRepo_UpdateRequestStatus_NonexistentIsNoOp(t *testing.T) {
 	}
 	if got != nil {
 		t.Errorf("GetRequest(missing): got %+v, want nil", got)
+	}
+}
+
+// ── WithPendingRequestLock ────────────────────────────────────────────────────
+
+// Concurrent reviewers of one pending request: exactly one callback runs; every
+// other caller blocks on the row lock, then sees non-pending and gets
+// RequestNotPendingError without its callback ever executing.
+func TestPromotionRepo_WithPendingRequestLock_OneCallbackWins(t *testing.T) {
+	pool := pgtest.Pool(t)
+	pgtest.Truncate(t, pool, promoTables...)
+	ctx := context.Background()
+	repo := NewPromotionRepo(pool)
+
+	p := makePromotionParents(t, ctx, "lock_race")
+	rule := makePromotionRule("rule_lock_race", p)
+	if err := repo.CreateRule(ctx, rule); err != nil {
+		t.Fatalf("CreateRule: %v", err)
+	}
+	compID := makePromotionComponent(t, ctx, p.FromRepoID, "1.0.0")
+	req := &domain.PromotionRequest{
+		RuleID: rule.ID, ComponentID: compID,
+		Status: domain.PromotionPending, RequestedBy: p.UserID,
+	}
+	if err := repo.CreateRequest(ctx, req); err != nil {
+		t.Fatalf("CreateRequest: %v", err)
+	}
+
+	const callers = 6
+	var ran atomic.Int32
+	var wg sync.WaitGroup
+	errs := make(chan error, callers)
+	for i := 0; i < callers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errs <- repo.WithPendingRequestLock(ctx, req.ID,
+				func(ctx context.Context, r *domain.PromotionRequest) repository.PromotionOutcome {
+					ran.Add(1)
+					time.Sleep(30 * time.Millisecond) // widen the window the row lock must cover
+					now := time.Now()
+					return repository.PromotionOutcome{Status: domain.PromotionCompleted, CompletedAt: &now}
+				})
+		}()
+	}
+	wg.Wait()
+	close(errs)
+
+	succeeded, notPending := 0, 0
+	for err := range errs {
+		var npe *repository.RequestNotPendingError
+		switch {
+		case err == nil:
+			succeeded++
+		case errors.As(err, &npe):
+			notPending++
+		default:
+			t.Errorf("unexpected error: %v", err)
+		}
+	}
+	if succeeded != 1 || int(ran.Load()) != 1 {
+		t.Errorf("succeeded=%d callbacks=%d, want exactly 1 of each", succeeded, ran.Load())
+	}
+	if notPending != callers-1 {
+		t.Errorf("RequestNotPendingError count = %d, want %d", notPending, callers-1)
+	}
+
+	got, err := repo.GetRequest(ctx, req.ID)
+	if err != nil {
+		t.Fatalf("GetRequest: %v", err)
+	}
+	if got.Status != domain.PromotionCompleted {
+		t.Errorf("final status = %q, want completed", got.Status)
+	}
+}
+
+// A pending outcome leaves the row untouched — the caller decided not to settle
+// the request (e.g. a validation error it will surface without consuming the
+// review).
+func TestPromotionRepo_WithPendingRequestLock_PendingOutcomeLeavesRow(t *testing.T) {
+	pool := pgtest.Pool(t)
+	pgtest.Truncate(t, pool, promoTables...)
+	ctx := context.Background()
+	repo := NewPromotionRepo(pool)
+
+	p := makePromotionParents(t, ctx, "lock_keep")
+	rule := makePromotionRule("rule_lock_keep", p)
+	if err := repo.CreateRule(ctx, rule); err != nil {
+		t.Fatalf("CreateRule: %v", err)
+	}
+	compID := makePromotionComponent(t, ctx, p.FromRepoID, "1.0.0")
+	req := &domain.PromotionRequest{
+		RuleID: rule.ID, ComponentID: compID,
+		Status: domain.PromotionPending, RequestedBy: p.UserID,
+	}
+	if err := repo.CreateRequest(ctx, req); err != nil {
+		t.Fatalf("CreateRequest: %v", err)
+	}
+
+	if err := repo.WithPendingRequestLock(ctx, req.ID,
+		func(ctx context.Context, r *domain.PromotionRequest) repository.PromotionOutcome {
+			return repository.PromotionOutcome{Status: domain.PromotionPending}
+		}); err != nil {
+		t.Fatalf("WithPendingRequestLock: %v", err)
+	}
+	got, err := repo.GetRequest(ctx, req.ID)
+	if err != nil {
+		t.Fatalf("GetRequest: %v", err)
+	}
+	if got.Status != domain.PromotionPending {
+		t.Errorf("status = %q, want still pending", got.Status)
+	}
+}
+
+// An unknown id answers ErrNotFound without running the callback.
+func TestPromotionRepo_WithPendingRequestLock_NotFound(t *testing.T) {
+	pool := pgtest.Pool(t)
+	pgtest.Truncate(t, pool, promoTables...)
+	ctx := context.Background()
+	repo := NewPromotionRepo(pool)
+
+	err := repo.WithPendingRequestLock(ctx, "00000000-0000-0000-0000-000000000000",
+		func(ctx context.Context, r *domain.PromotionRequest) repository.PromotionOutcome {
+			t.Error("callback ran for a request that does not exist")
+			return repository.PromotionOutcome{Status: domain.PromotionCompleted}
+		})
+	if !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("err = %v, want ErrNotFound", err)
 	}
 }

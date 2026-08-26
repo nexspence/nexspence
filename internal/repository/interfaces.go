@@ -372,4 +372,25 @@ type PromotionRepo interface {
 	// UpdateRequestStatus sets status and optional review/completion metadata.
 	UpdateRequestStatus(ctx context.Context, id string, status domain.PromotionStatus,
 		reviewedBy *string, reviewedAt, completedAt *time.Time, errMsg string) error
+	// WithPendingRequestLock locks the request row, verifies it is still
+	// pending, runs fn with the row held, and persists fn's outcome in the same
+	// transaction. A concurrent caller for the same request blocks until this
+	// one commits, then sees the non-pending status — so fn (the copy) can never
+	// run twice for one request. Returns ErrNotFound for an unknown id and
+	// *RequestNotPendingError when the row already left pending, in both cases
+	// without calling fn. An outcome whose Status is still PromotionPending
+	// leaves the row untouched.
+	WithPendingRequestLock(ctx context.Context, id string,
+		fn func(ctx context.Context, req *domain.PromotionRequest) PromotionOutcome) error
+}
+
+// PromotionOutcome is what a WithPendingRequestLock callback decides about the
+// locked request: the final status plus the review/completion metadata that
+// UpdateRequestStatus would take.
+type PromotionOutcome struct {
+	Status      domain.PromotionStatus
+	ReviewedBy  *string
+	ReviewedAt  *time.Time
+	CompletedAt *time.Time
+	Error       string
 }

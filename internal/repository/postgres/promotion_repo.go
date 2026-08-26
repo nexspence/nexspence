@@ -186,6 +186,51 @@ func (r *promotionRepo) ListRequests(ctx context.Context, status string) ([]doma
 	return out, rows.Err()
 }
 
+// WithPendingRequestLock serializes reviewers of one request with SELECT ...
+// FOR UPDATE: the second concurrent approver blocks on the row lock until the
+// first commits, then sees the non-pending status and never runs fn — so the
+// copy fn performs cannot execute twice for one request.
+func (r *promotionRepo) WithPendingRequestLock(ctx context.Context, id string,
+	fn func(ctx context.Context, req *domain.PromotionRequest) repository.PromotionOutcome,
+) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	row := tx.QueryRow(ctx,
+		`SELECT `+promotionReqFields+` FROM promotion_requests WHERE id=$1 FOR UPDATE`, id)
+	req, err := scanPromotionRequest(row)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return repository.ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if req.Status != domain.PromotionPending {
+		return &repository.RequestNotPendingError{Status: string(req.Status)}
+	}
+
+	outcome := fn(ctx, req)
+	if outcome.Status == domain.PromotionPending {
+		return tx.Commit(ctx)
+	}
+	var em *string
+	if outcome.Error != "" {
+		em = &outcome.Error
+	}
+	if _, err := tx.Exec(ctx,
+		`UPDATE promotion_requests
+		 SET status=$1, reviewed_by=$2, reviewed_at=$3, completed_at=$4, error=$5
+		 WHERE id=$6`,
+		string(outcome.Status), outcome.ReviewedBy, outcome.ReviewedAt, outcome.CompletedAt, em, id,
+	); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
 func (r *promotionRepo) UpdateRequestStatus(
 	ctx context.Context, id string, status domain.PromotionStatus,
 	reviewedBy *string, reviewedAt, completedAt *time.Time, errMsg string,

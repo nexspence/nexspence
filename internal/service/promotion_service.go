@@ -274,18 +274,39 @@ func (s *PromotionService) Promote(ctx context.Context, ruleID string, component
 		}
 
 		if !rule.RequireManualApproval {
-			if copyErr := s.executeCopy(ctx, req, rule); copyErr != nil {
-				now := time.Now()
-				_ = s.promotionRepo.UpdateRequestStatus(ctx, req.ID, domain.PromotionFailed,
-					nil, nil, &now, copyErr.Error())
-				req.Status = domain.PromotionFailed
-				req.Error = copyErr.Error()
-			} else {
-				now := time.Now()
-				_ = s.promotionRepo.UpdateRequestStatus(ctx, req.ID, domain.PromotionCompleted,
-					nil, nil, &now, "")
-				req.Status = domain.PromotionCompleted
-				req.CompletedAt = &now
+			// The same row lock Approve takes: the freshly created pending request
+			// is already visible, and a concurrent manual approval racing this
+			// auto-approve would otherwise copy twice.
+			lockErr := s.promotionRepo.WithPendingRequestLock(ctx, req.ID,
+				func(ctx context.Context, lockedReq *domain.PromotionRequest) repository.PromotionOutcome {
+					now := time.Now()
+					// Re-read the rule for every component: an administrator editing
+					// it mid-batch (disabling a gate, narrowing the filter) must
+					// govern the components still to be processed, exactly as it
+					// would if each were approved individually.
+					freshRule, rerr := s.promotionRepo.GetRule(ctx, ruleID)
+					if rerr != nil || freshRule == nil {
+						req.Status = domain.PromotionFailed
+						req.Error = fmt.Sprintf("promotion rule not found: %s", ruleID)
+						return repository.PromotionOutcome{Status: domain.PromotionFailed,
+							CompletedAt: &now, Error: req.Error}
+					}
+					if copyErr := s.executeCopy(ctx, lockedReq, freshRule); copyErr != nil {
+						req.Status = domain.PromotionFailed
+						req.Error = copyErr.Error()
+						return repository.PromotionOutcome{Status: domain.PromotionFailed,
+							CompletedAt: &now, Error: copyErr.Error()}
+					}
+					req.Status = domain.PromotionCompleted
+					req.CompletedAt = &now
+					return repository.PromotionOutcome{Status: domain.PromotionCompleted, CompletedAt: &now}
+				})
+			if lockErr != nil {
+				// A concurrent reviewer settled this request first; report what the
+				// row says now rather than inventing an outcome.
+				if settled, gerr := s.promotionRepo.GetRequest(ctx, req.ID); gerr == nil && settled != nil {
+					req = settled
+				}
 			}
 		}
 
@@ -294,45 +315,67 @@ func (s *PromotionService) Promote(ctx context.Context, ruleID string, component
 	return results, nil
 }
 
-// Approve approves a pending promotion request and copies the artifact.
+// Approve approves a pending promotion request and copies the artifact. The
+// pending check, the copy and the status write happen under the request row's
+// lock: two concurrent approvals would otherwise both pass the check and both
+// copy — double blob writes and a double-fired publish webhook.
 func (s *PromotionService) Approve(ctx context.Context, requestID, reviewerID string) error {
-	req, err := s.promotionRepo.GetRequest(ctx, requestID)
-	if err != nil || req == nil {
+	var copyErr error
+	err := s.promotionRepo.WithPendingRequestLock(ctx, requestID,
+		func(ctx context.Context, req *domain.PromotionRequest) repository.PromotionOutcome {
+			now := time.Now()
+			rule, rerr := s.promotionRepo.GetRule(ctx, req.RuleID)
+			if rerr != nil || rule == nil {
+				copyErr = fmt.Errorf("promotion rule not found: %s", req.RuleID)
+				return repository.PromotionOutcome{Status: domain.PromotionFailed,
+					ReviewedBy: &reviewerID, ReviewedAt: &now, CompletedAt: &now, Error: copyErr.Error()}
+			}
+			if cerr := s.executeCopy(ctx, req, rule); cerr != nil {
+				copyErr = cerr
+				return repository.PromotionOutcome{Status: domain.PromotionFailed,
+					ReviewedBy: &reviewerID, ReviewedAt: &now, CompletedAt: &now, Error: cerr.Error()}
+			}
+			return repository.PromotionOutcome{Status: domain.PromotionCompleted,
+				ReviewedBy: &reviewerID, ReviewedAt: &now, CompletedAt: &now}
+		})
+	if errors.Is(err, repository.ErrNotFound) {
 		return fmt.Errorf("promotion request not found: %s", requestID)
 	}
-	if req.Status != domain.PromotionPending {
-		return fmt.Errorf("request is not pending (status: %s)", req.Status)
+	if err != nil {
+		return err
 	}
-	rule, err := s.promotionRepo.GetRule(ctx, req.RuleID)
-	if err != nil || rule == nil {
-		return fmt.Errorf("promotion rule not found: %s", req.RuleID)
-	}
-	now := time.Now()
-	if copyErr := s.executeCopy(ctx, req, rule); copyErr != nil {
-		_ = s.promotionRepo.UpdateRequestStatus(ctx, req.ID, domain.PromotionFailed,
-			&reviewerID, &now, &now, copyErr.Error())
-		return copyErr
-	}
-	return s.promotionRepo.UpdateRequestStatus(ctx, req.ID, domain.PromotionCompleted,
-		&reviewerID, &now, &now, "")
+	return copyErr
 }
 
-// Reject rejects a pending promotion request.
+// Reject rejects a pending promotion request, under the same row lock Approve
+// takes — a rejection racing an approval must lose to whichever committed
+// first, not silently overwrite it.
 func (s *PromotionService) Reject(ctx context.Context, requestID, reviewerID, reason string) error {
-	req, err := s.promotionRepo.GetRequest(ctx, requestID)
-	if err != nil || req == nil {
+	err := s.promotionRepo.WithPendingRequestLock(ctx, requestID,
+		func(ctx context.Context, req *domain.PromotionRequest) repository.PromotionOutcome {
+			now := time.Now()
+			return repository.PromotionOutcome{Status: domain.PromotionRejected,
+				ReviewedBy: &reviewerID, ReviewedAt: &now, Error: reason}
+		})
+	if errors.Is(err, repository.ErrNotFound) {
 		return fmt.Errorf("promotion request not found: %s", requestID)
 	}
-	if req.Status != domain.PromotionPending {
-		return fmt.Errorf("request is not pending (status: %s)", req.Status)
-	}
-	now := time.Now()
-	return s.promotionRepo.UpdateRequestStatus(ctx, req.ID, domain.PromotionRejected,
-		&reviewerID, &now, nil, reason)
+	return err
 }
 
 // executeCopy copies a component's blobs and metadata from from_repo to to_repo.
-func (s *PromotionService) executeCopy(ctx context.Context, req *domain.PromotionRequest, rule *domain.PromotionRule) error {
+//
+// The copy is not transactional — the rows and blobs go one at a time — so a
+// mid-copy failure compensates explicitly: every asset row and blob THIS call
+// created fresh is removed, and the target component goes too once nothing
+// references it. Only fresh creations roll back: both ComponentRepo.Create and
+// AssetRepo.Create upsert on conflict, and blindly deleting "what I touched"
+// after an upsert would destroy a legitimate pre-existing component from an
+// earlier successful promotion of the same version. The one acknowledged
+// residual: a pre-existing asset overwritten in place by this call's own upsert
+// keeps the new content — point-in-time rollback of in-place updates is out of
+// scope; what this prevents is the DB-visible half-populated component.
+func (s *PromotionService) executeCopy(ctx context.Context, req *domain.PromotionRequest, rule *domain.PromotionRule) (err error) {
 	comp, err := s.componentRepo.Get(ctx, req.ComponentID)
 	if err != nil || comp == nil {
 		return fmt.Errorf("source component not found: %s", req.ComponentID)
@@ -376,6 +419,27 @@ func (s *PromotionService) executeCopy(ctx context.Context, req *domain.Promotio
 		return fmt.Errorf("upsert component in target: %w", err)
 	}
 
+	// Compensation state for the deferred rollback: only rows and blobs this
+	// call created fresh (rows go before their bytes — a row whose blob is
+	// already gone is not self-healing, an orphan blob is GC'd).
+	var freshAssetIDs []string
+	var freshBlobKeys []string
+	defer func() {
+		if err == nil {
+			return
+		}
+		for _, id := range freshAssetIDs {
+			_ = s.assetRepo.Delete(ctx, id)
+		}
+		for _, key := range freshBlobKeys {
+			_ = toStore.Delete(ctx, key)
+		}
+		remaining, lerr := s.assetRepo.ListByComponentID(ctx, newComp.ID)
+		if lerr == nil && len(remaining) == 0 {
+			_ = s.componentRepo.Delete(ctx, newComp.ID)
+		}
+	}()
+
 	for _, asset := range assets {
 		blobStoreID := asset.BlobStoreID
 		fromStore, _, err := s.resolveStore(ctx, &blobStoreID)
@@ -384,6 +448,15 @@ func (s *PromotionService) executeCopy(ctx context.Context, req *domain.Promotio
 		}
 
 		newBlobKey := base.BlobKey(toRepo.Name, asset.Path)
+
+		// Fresh or pre-existing decides what the rollback may touch: a fresh
+		// path's blob and row are this call's to delete; a pre-existing one was
+		// only overwritten in place and must survive the compensation.
+		_, preErr := s.assetRepo.GetByPath(ctx, toRepo.Name, asset.Path)
+		fresh := errors.Is(preErr, repository.ErrNotFound)
+		if preErr != nil && !fresh {
+			return fmt.Errorf("check target asset %s: %w", asset.Path, preErr)
+		}
 
 		rc, size, err := fromStore.Get(ctx, asset.BlobKey)
 		if err != nil {
@@ -394,6 +467,9 @@ func (s *PromotionService) executeCopy(ctx context.Context, req *domain.Promotio
 			return fmt.Errorf("write blob %s: %w", newBlobKey, putErr)
 		}
 		_ = rc.Close()
+		if fresh {
+			freshBlobKeys = append(freshBlobKeys, newBlobKey)
+		}
 
 		newAsset := &domain.Asset{
 			ComponentID:  newComp.ID,
@@ -410,6 +486,9 @@ func (s *PromotionService) executeCopy(ctx context.Context, req *domain.Promotio
 		}
 		if err := s.assetRepo.Create(ctx, newAsset); err != nil {
 			return fmt.Errorf("create asset record: %w", err)
+		}
+		if fresh {
+			freshAssetIDs = append(freshAssetIDs, newAsset.ID)
 		}
 	}
 
