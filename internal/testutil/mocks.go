@@ -605,6 +605,9 @@ type AssetRepo struct {
 	// DeleteErr, when non-nil, makes Delete fail while leaving the row in place —
 	// the seam for "the DB write failed after the bytes were already touched".
 	DeleteErr error
+	// CreateErr, when non-nil, makes Create fail without writing — the seam for
+	// "the row insert failed after the blob bytes were already stored".
+	CreateErr error
 	// ListByComponentIDsCalls counts how many times ListByComponentIDs has been called.
 	ListByComponentIDsCalls int
 	// ListByComponentIDCalls counts how many times the singular ListByComponentID has been called.
@@ -759,6 +762,9 @@ func (a *AssetRepo) ListStale(_ context.Context, _ string, _ []string, _, _ int,
 func (a *AssetRepo) Create(_ context.Context, asset *domain.Asset) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if a.CreateErr != nil {
+		return a.CreateErr
+	}
 	// Mirror the postgres upsert: an existing (repo,path) keeps its ID and refreshes
 	// last_modified, rather than creating a duplicate row.
 	key := asset.Repository + ":" + asset.Path
@@ -2559,6 +2565,13 @@ type PromotionRepo struct {
 	Rules    map[string]*domain.PromotionRule
 	Requests map[string]*domain.PromotionRequest
 	nextID   int
+	// GetRequestHook, when set, runs during GetRequest after the row is read but
+	// before it is returned (outside the repo mutex) — the seam race tests use to
+	// line up several callers on the same pending snapshot.
+	GetRequestHook func(id string)
+	// requestLocks holds one mutex per request id, mirroring the postgres
+	// SELECT ... FOR UPDATE row lock in WithPendingRequestLock.
+	requestLocks map[string]*sync.Mutex
 }
 
 func NewPromotionRepo() *PromotionRepo {
@@ -2648,12 +2661,23 @@ func (r *PromotionRepo) CreateRequest(_ context.Context, req *domain.PromotionRe
 
 func (r *PromotionRepo) GetRequest(_ context.Context, id string) (*domain.PromotionRequest, error) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
+	var req *domain.PromotionRequest
 	if v, ok := r.Requests[id]; ok {
 		cp := *v
-		return &cp, nil
+		req = &cp
 	}
-	return nil, repository.ErrNotFound
+	// The hook runs outside the repo mutex; it exists to hold callers between
+	// their status read and their next act, and holding the mutex there would
+	// wedge every other repo call.
+	hook := r.GetRequestHook
+	r.mu.Unlock()
+	if hook != nil {
+		hook(id)
+	}
+	if req == nil {
+		return nil, repository.ErrNotFound
+	}
+	return req, nil
 }
 
 func (r *PromotionRepo) ListRequests(_ context.Context, status string) ([]domain.PromotionRequest, error) {
@@ -2682,6 +2706,58 @@ func (r *PromotionRepo) UpdateRequestStatus(_ context.Context, id string, status
 	req.ReviewedAt = reviewedAt
 	req.CompletedAt = completedAt
 	req.Error = errMsg
+	return nil
+}
+
+// WithPendingRequestLock mirrors the postgres SELECT ... FOR UPDATE flow: one
+// mutex per request id serializes reviewers; the second caller enters only
+// after the first's outcome is applied and so sees the non-pending status.
+func (r *PromotionRepo) WithPendingRequestLock(ctx context.Context, id string,
+	fn func(ctx context.Context, req *domain.PromotionRequest) repository.PromotionOutcome,
+) error {
+	r.mu.Lock()
+	if r.requestLocks == nil {
+		r.requestLocks = make(map[string]*sync.Mutex)
+	}
+	l, ok := r.requestLocks[id]
+	if !ok {
+		l = &sync.Mutex{}
+		r.requestLocks[id] = l
+	}
+	r.mu.Unlock()
+	l.Lock()
+	defer l.Unlock()
+
+	r.mu.Lock()
+	stored, ok := r.Requests[id]
+	if !ok {
+		r.mu.Unlock()
+		return repository.ErrNotFound
+	}
+	if stored.Status != domain.PromotionPending {
+		status := string(stored.Status)
+		r.mu.Unlock()
+		return &repository.RequestNotPendingError{Status: status}
+	}
+	cp := *stored
+	r.mu.Unlock()
+
+	outcome := fn(ctx, &cp)
+	if outcome.Status == domain.PromotionPending {
+		return nil
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	req, ok := r.Requests[id]
+	if !ok {
+		return repository.ErrNotFound
+	}
+	req.Status = outcome.Status
+	req.ReviewedBy = outcome.ReviewedBy
+	req.ReviewedAt = outcome.ReviewedAt
+	req.CompletedAt = outcome.CompletedAt
+	req.Error = outcome.Error
 	return nil
 }
 

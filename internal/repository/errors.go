@@ -24,3 +24,14 @@ func (e *UniqueViolationError) Error() string { return e.Field + " already exist
 // Is makes every UniqueViolationError match ErrAlreadyExists, so callers that
 // only care that the row exists can test for the sentinel.
 func (e *UniqueViolationError) Is(target error) bool { return target == ErrAlreadyExists }
+
+// RequestNotPendingError is returned by WithPendingRequestLock when the locked
+// promotion request already left the pending state — typically because a
+// concurrent reviewer got there first. It carries the status that reviewer set.
+type RequestNotPendingError struct {
+	Status string
+}
+
+func (e *RequestNotPendingError) Error() string {
+	return "request is not pending (status: " + e.Status + ")"
+}
