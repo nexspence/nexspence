@@ -1498,13 +1498,24 @@ func (a *AuditRepo) Stream(_ context.Context, q repository.AuditQuery, fn func(d
 	a.mu.Lock()
 	snapshot := append([]domain.AuditEvent(nil), a.Events...)
 	a.mu.Unlock()
+	// Mirror the SQL: limit/offset apply when the caller set them; Limit 0
+	// means "not specified" and streams everything.
+	skipped, sent := 0, 0
 	for _, e := range snapshot {
 		if !a.match(e, q) {
 			continue
 		}
+		if skipped < q.Offset {
+			skipped++
+			continue
+		}
+		if q.Limit > 0 && sent >= q.Limit {
+			break
+		}
 		if err := fn(e); err != nil {
 			return err
 		}
+		sent++
 	}
 	return nil
 }

@@ -143,6 +143,17 @@ func (r *AuditRepo) Stream(ctx context.Context, q repository.AuditQuery, fn func
 		       context, result
 		FROM audit_events ` + where + `
 		ORDER BY event_time DESC`
+	// limit/offset apply only when the caller set them: Limit 0 means "not
+	// specified" and streams everything up to streamRowCap — the documented
+	// bulk-export contract.
+	if q.Limit > 0 {
+		args = append(args, q.Limit)
+		sql += fmt.Sprintf(" LIMIT $%d", len(args))
+	}
+	if q.Offset > 0 {
+		args = append(args, q.Offset)
+		sql += fmt.Sprintf(" OFFSET $%d", len(args))
+	}
 	rows, err := r.pool.Query(ctx, sql, args...)
 	if err != nil {
 		return err

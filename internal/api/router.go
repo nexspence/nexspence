@@ -299,7 +299,7 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 	// artifacts a registry delete does, from the same stores, with the same
 	// webhook.
 	browseH := handlers.NewBrowseHandler(formatDeps, rbacSvc)
-	cleanupH := handlers.NewCleanupHandler(cleanupRepo, repoRepo, cleanupSvc)
+	cleanupH := handlers.NewCleanupHandler(cleanupRepo, repoRepo, cleanupSvc, log)
 	auditH := handlers.NewAuditHandler(auditRepo)
 	scanH := handlers.NewScanHandler(scanSvc)
 	tokenH := handlers.NewTokenHandler(tokenSvc, userSvc, cfg.Auth.TokenMaxDays)

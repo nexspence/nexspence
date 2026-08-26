@@ -5,6 +5,7 @@ package postgres
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -821,5 +822,41 @@ func TestAuditRepo_Write_WithValidUserID(t *testing.T) {
 	}
 	if *items[0].UserID != u.ID {
 		t.Errorf("UserID: got %q, want %q", *items[0].UserID, u.ID)
+	}
+}
+
+// The NDJSON export documents limit/offset; Stream must apply them when the
+// caller sets them, and stream everything when it does not (Limit 0).
+func TestAuditRepo_Stream_AppliesLimitAndOffset(t *testing.T) {
+	pool := pgtest.Pool(t)
+	pgtest.Truncate(t, pool, "audit_events")
+	ctx := context.Background()
+	repo := NewAuditRepo(pool)
+
+	for i := 0; i < 5; i++ {
+		if err := repo.Write(ctx, &domain.AuditEvent{
+			Username: fmt.Sprintf("u%d", i), Domain: "REPOSITORY", Action: "CREATE", Result: "success",
+		}); err != nil {
+			t.Fatalf("Write: %v", err)
+		}
+	}
+
+	count := func(q repository.AuditQuery) int {
+		t.Helper()
+		n := 0
+		if err := repo.Stream(ctx, q, func(domain.AuditEvent) error { n++; return nil }); err != nil {
+			t.Fatalf("Stream: %v", err)
+		}
+		return n
+	}
+
+	if got := count(repository.AuditQuery{Limit: 2}); got != 2 {
+		t.Errorf("Stream(limit=2) yielded %d rows, want 2", got)
+	}
+	if got := count(repository.AuditQuery{Limit: 2, Offset: 4}); got != 1 {
+		t.Errorf("Stream(limit=2, offset=4) yielded %d rows, want the 1 remaining", got)
+	}
+	if got := count(repository.AuditQuery{}); got != 5 {
+		t.Errorf("Stream with no limit yielded %d rows, want all 5", got)
 	}
 }
