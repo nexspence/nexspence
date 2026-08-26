@@ -180,3 +180,84 @@ func TestServeGET_CacheFill_WithinQuota_StillCaches(t *testing.T) {
 	assert.Equal(t, overQuotaBody, w2.Body.String())
 	assert.Equal(t, 1, fu.count())
 }
+
+// ── Quota check failing OUTRIGHT (not "exceeded") must also skip the cache ────
+//
+// A DB timeout or blob-store lookup failure during the quota check is not a
+// license to cache: with the check unevaluated, caching proceeds with no quota
+// applied at all for the whole failure window. The client is still served from
+// upstream — a transient blip never blocks a download — but nothing is cached.
+
+// Streaming path, declared length: the pre-write gate.
+func TestServeGET_CacheFill_QuotaCheckError_ServesWithoutCaching(t *testing.T) {
+	useUnguardedUpstream(t)
+	_, srv := newFakeUpstream(overQuotaBody)
+	defer srv.Close()
+
+	repo := proxyRepo("quotaerrproxy", srv.URL)
+	quota := int64(1000) // roomy — only the check's own failure is under test
+	repo.QuotaBytes = &quota
+	d, assets, blobStore := quotaDeps(repo)
+	assets.Err = errors.New("db timeout during quota check")
+
+	w := quotaGET(d, repo, "/pkg/1.0/a.jar")
+	assert.Equal(t, http.StatusOK, w.Code, "client must still get the artifact")
+	assert.Equal(t, overQuotaBody, w.Body.String())
+
+	assets.Err = nil
+	requireNotCached(t, assets, blobStore, "quotaerrproxy", "/pkg/1.0/a.jar")
+}
+
+// Streaming path, unknown length: the post-write gate.
+func TestServeGET_CacheFill_UnknownLength_QuotaCheckError_DropsCache(t *testing.T) {
+	useUnguardedUpstream(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.WriteHeader(http.StatusOK)
+		// Flush between writes so the response goes out chunked, without Content-Length.
+		fl := w.(http.Flusher)
+		_, _ = w.Write([]byte(overQuotaBody[:10]))
+		fl.Flush()
+		_, _ = w.Write([]byte(overQuotaBody[10:]))
+	}))
+	defer srv.Close()
+
+	repo := proxyRepo("quotaerrnolen", srv.URL)
+	quota := int64(1000)
+	repo.QuotaBytes = &quota
+	d, assets, blobStore := quotaDeps(repo)
+	assets.Err = errors.New("db timeout during quota check")
+
+	w := quotaGET(d, repo, "/pkg/1.0/a.jar")
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, overQuotaBody, w.Body.String())
+
+	assets.Err = nil
+	requireNotCached(t, assets, blobStore, "quotaerrnolen", "/pkg/1.0/a.jar")
+}
+
+// Buffered/rewritten path.
+func TestServeGETRewritten_CacheFill_QuotaCheckError_ServesWithoutCaching(t *testing.T) {
+	useUnguardedUpstream(t)
+	_, srv := newFakeUpstream(overQuotaBody)
+	defer srv.Close()
+
+	repo := proxyRepo("rwquotaerr", srv.URL)
+	quota := int64(1000)
+	repo.QuotaBytes = &quota
+	d, assets, blobStore := quotaDeps(repo)
+	assets.Err = errors.New("db timeout during quota check")
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/meta.json", nil)
+	rewrite := func(b []byte) []byte { return append([]byte("rw:"), b...) }
+	err := repoproxy.ServeGETRewritten(c, d, repo, "/meta.json", "", base.Coords{Name: "meta"}, "text/plain", 0, rewrite)
+	require.NoError(t, err)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "rw:"+overQuotaBody, w.Body.String())
+
+	assets.Err = nil
+	requireNotCached(t, assets, blobStore, "rwquotaerr", "/meta.json")
+}

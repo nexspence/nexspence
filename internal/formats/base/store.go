@@ -144,6 +144,13 @@ func StoreArtifact(ctx context.Context, d formats.Deps,
 
 	asset, err := RegisterStoredBlob(ctx, d, repo, filePath, contentType, coords, blobKey, sha256sum, sha1sum, md5sum, size, resolvedBlobStoreID, resolvedBlobStoreName)
 	if err != nil {
+		// A registration the quota refused leaves bytes nothing references; drop
+		// them unless another asset legitimately shares the key.
+		if errors.Is(err, ErrQuotaExceeded) {
+			if others, cerr := d.Assets.CountByBlobKey(ctx, blobKey, ""); cerr == nil && others == 0 {
+				_ = physStore.Delete(ctx, blobKey)
+			}
+		}
 		return nil, err
 	}
 
@@ -227,9 +234,6 @@ func RegisterStoredBlob(ctx context.Context, d formats.Deps, repo *domain.Reposi
 		Name:         name,
 		Version:      version,
 	}
-	if err := d.Components.Create(ctx, comp); err != nil {
-		return nil, fmt.Errorf("upsert component: %w", err)
-	}
 
 	asset := &domain.Asset{
 		ComponentID:  comp.ID,
@@ -247,16 +251,113 @@ func RegisterStoredBlob(ctx context.Context, d formats.Deps, repo *domain.Reposi
 	if uid := requestctx.UserID(ctx); uid != "" {
 		asset.UploaderID = uid
 	}
-	if err := d.Assets.Create(ctx, asset); err != nil {
-		return nil, fmt.Errorf("upsert asset: %w", err)
+
+	// This is the narrow waist every write path funnels through, so the quota is
+	// ENFORCED here — the callers' own checkQuota calls are fast pre-checks, not
+	// the guarantee. The check, the upserts and the counter update run under
+	// per-quota advisory locks (store first, then repo — a fixed order, so two
+	// registrations can never deadlock): without the serialization, two
+	// concurrent writers each read a usage snapshot that ignores the other and
+	// jointly exceed the limit (#328). No quota configured → no locks, no cost.
+	register := func(ctx context.Context) error {
+		// The real increment, not the raw size: an alias or mount of an
+		// already-stored blob adds no bytes and must pass even at full quota.
+		probe := *asset
+		if prev != nil {
+			probe.ID = prev.ID
+		}
+		delta := usageDelta(ctx, d, &probe, prev)
+		if delta > 0 {
+			// Fresh reads inside the lock — the counters are exactly what a
+			// concurrent registration just changed.
+			if qErr := quotaHeadroom(ctx, d, repo, blobStoreID, delta); qErr != nil {
+				return qErr
+			}
+		}
+		if err := d.Components.Create(ctx, comp); err != nil {
+			return fmt.Errorf("upsert component: %w", err)
+		}
+		asset.ComponentID = comp.ID
+		if err := d.Assets.Create(ctx, asset); err != nil {
+			return fmt.Errorf("upsert asset: %w", err)
+		}
+		if delta != 0 {
+			_ = d.Blobs.UpdateUsedBytes(ctx, blobStoreName, delta)
+		}
+		return nil
 	}
 
-	if delta := usageDelta(ctx, d, asset, prev); delta != 0 {
-		_ = d.Blobs.UpdateUsedBytes(ctx, blobStoreName, delta)
+	run := register
+	if repo.QuotaBytes != nil {
+		inner := run
+		run = func(ctx context.Context) error {
+			return d.Assets.WithBlobKeyLock(ctx, "quota:repo:"+repo.Name, inner)
+		}
+	}
+	if storeQuotaConfigured(ctx, d, repo, blobStoreID) {
+		inner := run
+		lockName := blobStoreName
+		if lockName == "" {
+			lockName = "default"
+		}
+		run = func(ctx context.Context) error {
+			return d.Assets.WithBlobKeyLock(ctx, "quota:store:"+lockName, inner)
+		}
+	}
+	if err := run(ctx); err != nil {
+		return nil, err
 	}
 
 	queueForScanning(d, comp)
 	return asset, nil
+}
+
+// storeQuotaConfigured reports whether the store this registration lands in has
+// a byte quota — the signal that the registration must serialize with its
+// peers. An unreadable store reads as unconfigured: the enforcement read inside
+// the lock decides, and it fails closed.
+func storeQuotaConfigured(ctx context.Context, d formats.Deps, repo *domain.Repository, blobStoreID string) bool {
+	bs := storeForQuota(ctx, d, repo, blobStoreID)
+	return bs != nil && bs.Type != "group" && bs.QuotaBytes != nil
+}
+
+// storeForQuota resolves the blob-store row whose quota governs this
+// registration: the pinned store when the caller pinned one, the repository's
+// own store otherwise. nil when no row can be read.
+func storeForQuota(ctx context.Context, d formats.Deps, repo *domain.Repository, blobStoreID string) *domain.BlobStore {
+	if blobStoreID != "" {
+		if bs, err := d.Blobs.GetByID(ctx, blobStoreID); err == nil {
+			return bs
+		}
+		return nil
+	}
+	bs, err := resolveBlobStoreObj(ctx, d, repo)
+	if err != nil {
+		return nil
+	}
+	return bs
+}
+
+// quotaHeadroom answers whether the store and the repository can absorb delta
+// more bytes, reading both counters fresh. Callers hold the corresponding
+// advisory locks, which is what makes the answer still true at commit time.
+func quotaHeadroom(ctx context.Context, d formats.Deps, repo *domain.Repository, blobStoreID string, delta int64) error {
+	if bs := storeForQuota(ctx, d, repo, blobStoreID); bs != nil &&
+		bs.Type != "group" && bs.QuotaBytes != nil && bs.UsedBytes+delta > *bs.QuotaBytes {
+		return fmt.Errorf("%w: blob store %q usage %d + %d > limit %d",
+			ErrQuotaExceeded, bs.Name, bs.UsedBytes, delta, *bs.QuotaBytes)
+	}
+	if repo.QuotaBytes != nil {
+		used, err := d.Assets.SumSizeByRepo(ctx, repo.Name)
+		if err != nil {
+			return fmt.Errorf("quota check: %w", err)
+		}
+		if used+delta > *repo.QuotaBytes {
+			return fmt.Errorf("%w: repository %q usage %d + %d > limit %d",
+				ErrQuotaExceeded, repo.Name, used, delta, *repo.QuotaBytes)
+		}
+	}
+	return nil
 }
 
 // queueForScanning asks for a background scan of a component that has just been
