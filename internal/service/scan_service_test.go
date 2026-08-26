@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -92,6 +93,41 @@ func TestScanService_TrivyNotInstalled(t *testing.T) {
 	}
 	if unavailable.Status.State != service.ScannerMissing {
 		t.Fatalf("State = %q, want %q", unavailable.Status.State, service.ScannerMissing)
+	}
+}
+
+// A flag-shaped imageRef ("--format=table") must be rejected before Trivy is
+// ever invoked: passed through, Trivy would parse it as an option and report
+// "scanned, no vulnerabilities" for an image it never looked at.
+func TestScanService_Scan_RejectsFlagShapedImageRef(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "trivy")
+	callLog := filepath.Join(dir, "calls.log")
+	script := "#!/bin/sh\necho \"$@\" >> " + callLog + "\necho 'Version: 0.99.0'\n"
+	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	comp := newDockerComp("dockerhosted", "alpine", "latest")
+	comps := testutil.NewComponentRepo()
+	comps.Create(context.Background(), comp)
+
+	svc := service.NewScanService(comps, "http://localhost:8081").
+		WithTrivy(service.TrivyOptions{Enabled: true, Bin: bin})
+
+	_, err := svc.Scan(context.Background(), comp.ID, "--format=table")
+	if err == nil {
+		t.Fatal("a flag-shaped imageRef must be rejected, got a successful scan")
+	}
+	if !strings.Contains(err.Error(), `must not start with "-"`) {
+		t.Errorf("error = %q, want it to say the reference must not start with \"-\"", err)
+	}
+
+	calls, _ := os.ReadFile(callLog)
+	for _, line := range strings.Split(string(calls), "\n") {
+		if strings.HasPrefix(line, "image ") {
+			t.Errorf("trivy was invoked for the scan anyway: %q", line)
+		}
 	}
 }
 
@@ -374,6 +410,42 @@ func TestScanService_BulkScan(t *testing.T) {
 	}
 	if failed != 1 {
 		t.Errorf("expected failed=1, got %d", failed)
+	}
+}
+
+// BulkScan is the safety net for whatever the auto-scan queue drops, so it must
+// walk the whole repository. The repository layer hands out at most 500 rows per
+// Search call — a repository above that size is only covered if BulkScan pages
+// through with the continuation token instead of trusting one oversized Limit.
+func TestScanService_BulkScan_PagesThroughLargeRepository(t *testing.T) {
+	t.Parallel()
+	const total = 520
+	comps := testutil.NewComponentRepo()
+	for i := 0; i < total; i++ {
+		comps.Create(context.Background(), &domain.Component{
+			Repository: "npm-big", Format: "npm",
+			Name: fmt.Sprintf("pkg-%03d", i), Version: "1.0.0",
+		})
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{"vulns": []any{}})
+	}))
+	defer srv.Close()
+
+	svc := service.NewScanService(comps, "")
+	svc.WithScanResults(testutil.NewScanResultRepo())
+	svc.OSVClient.BaseURL = srv.URL
+
+	scanned, failed, err := svc.BulkScan(context.Background(), "npm-big")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if scanned != total {
+		t.Errorf("scanned = %d, want %d — components beyond the first page were never attempted", scanned, total)
+	}
+	if failed != 0 {
+		t.Errorf("failed = %d, want 0", failed)
 	}
 }
 

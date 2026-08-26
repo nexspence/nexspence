@@ -1195,6 +1195,42 @@ func TestComponentRepo_Search_DefaultLimit(t *testing.T) {
 	}
 }
 
+// A limit above the 500 cap must clamp down to 500, not collapse to the
+// 50-row default: callers asking for "everything" (BulkScan uses Limit 10000)
+// would otherwise silently get the smallest page the layer serves.
+func TestComponentRepo_Search_OversizedLimitClampsUpNotDown(t *testing.T) {
+	pool := pgtest.Pool(t)
+	pgtest.Truncate(t, pool, "blob_stores", "repositories")
+	ctx := context.Background()
+
+	p := makeCompParent(t, ctx, "srch_bigl")
+	repo := NewComponentRepo(pool)
+
+	const total = 60
+	for i := 0; i < total; i++ {
+		c := &domain.Component{
+			RepositoryID: p.RepositoryID,
+			Format:       "raw",
+			Name:         fmt.Sprintf("bigl-lib-%03d", i),
+			Version:      "1.0",
+		}
+		if err := repo.Create(ctx, c); err != nil {
+			t.Fatalf("Create bigl-lib-%03d: %v", i, err)
+		}
+	}
+
+	page, err := repo.Search(ctx, domain.SearchParams{
+		Repository: p.RepoName,
+		Limit:      10000,
+	})
+	if err != nil {
+		t.Fatalf("Search(limit=10000): %v", err)
+	}
+	if len(page.Items) != total {
+		t.Errorf("Search(limit=10000) returned %d items, want all %d — an oversized limit must clamp to 500, not reset to 50", len(page.Items), total)
+	}
+}
+
 // ── ListDockerBrowseRows ──────────────────────────────────────────────────────
 
 func TestComponentRepo_ListDockerBrowseRows_ReturnsDockerComponents(t *testing.T) {

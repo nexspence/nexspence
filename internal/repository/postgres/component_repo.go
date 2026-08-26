@@ -163,8 +163,11 @@ func (r *componentRepo) Search(ctx context.Context, p domain.SearchParams) (*dom
 	}
 
 	limit := p.Limit
-	if limit <= 0 || limit > 500 {
+	if limit <= 0 {
 		limit = 50
+	}
+	if limit > 500 {
+		limit = 500
 	}
 	offset := p.Offset
 

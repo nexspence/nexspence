@@ -424,7 +424,35 @@ func (c *ComponentRepo) Search(_ context.Context, params domain.SearchParams) (*
 		}
 		items = append(items, *v)
 	}
-	return &domain.Page[domain.Component]{Items: items}, nil
+	// Mirror the SQL layer's ordering, limit clamp and continuation token
+	// (component_repo.go Search): a mock that returns everything regardless of
+	// Limit hides exactly the class of bug where a caller asks for more rows
+	// than the repository layer will ever hand out.
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].Name != items[j].Name {
+			return items[i].Name < items[j].Name
+		}
+		return items[i].Version < items[j].Version
+	})
+	limit := params.Limit
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 500 {
+		limit = 500
+	}
+	offset := params.Offset
+	if offset >= len(items) {
+		return &domain.Page[domain.Component]{Items: []domain.Component{}}, nil
+	}
+	items = items[offset:]
+	var token *string
+	if len(items) > limit {
+		items = items[:limit]
+		next := strconv.Itoa(offset + limit)
+		token = &next
+	}
+	return &domain.Page[domain.Component]{Items: items, ContinuationToken: token}, nil
 }
 
 func (c *ComponentRepo) ListDockerBrowseRows(_ context.Context, names []string, _ int) ([]domain.DockerBrowseRow, error) {

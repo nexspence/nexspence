@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -358,6 +359,13 @@ func (s *ScanService) Scan(ctx context.Context, componentID, imageRef string) (*
 		}
 	}
 
+	// Defense in depth on top of the "--" separator in TrivyScanArgs: a
+	// flag-shaped reference is never a real image, so refuse it loudly instead
+	// of letting a misparse report "no vulnerabilities".
+	if strings.HasPrefix(ref, "-") {
+		return nil, fmt.Errorf("invalid imageRef %q: must not start with %q", ref, "-")
+	}
+
 	result := &domain.ScanResult{
 		ScannedAt: time.Now().UTC(),
 		ImageRef:  ref,
@@ -544,23 +552,37 @@ func isDigestAlias(version string) bool {
 // BulkScan scans every component in a repository (skipping SHA digest aliases),
 // returning the count of scanned and failed components.
 func (s *ScanService) BulkScan(ctx context.Context, repoName string) (scanned int, failed int, err error) {
-	page, err := s.Components.Search(ctx, domain.SearchParams{Repository: repoName, Limit: 10000})
-	if err != nil {
-		return 0, 0, err
-	}
-	for _, comp := range page.Items {
-		if isDigestAlias(comp.Version) {
-			continue
+	// 500 is the most the repository layer hands out per Search call, so the
+	// full set is only covered by walking the continuation token.
+	const pageLimit = 500
+	offset := 0
+	for {
+		page, err := s.Components.Search(ctx, domain.SearchParams{Repository: repoName, Limit: pageLimit, Offset: offset})
+		if err != nil {
+			return scanned, failed, err
 		}
-		if isImageFormat(comp.Format) && !s.Scanner(ctx).Ready() {
-			continue
+		for _, comp := range page.Items {
+			if isDigestAlias(comp.Version) {
+				continue
+			}
+			if isImageFormat(comp.Format) && !s.Scanner(ctx).Ready() {
+				continue
+			}
+			_, scanErr := s.Scan(ctx, comp.ID, "")
+			if scanErr != nil {
+				failed++
+			} else {
+				scanned++
+			}
 		}
-		_, scanErr := s.Scan(ctx, comp.ID, "")
-		if scanErr != nil {
-			failed++
-		} else {
-			scanned++
+		if page.ContinuationToken == nil {
+			break
 		}
+		next, convErr := strconv.Atoi(*page.ContinuationToken)
+		if convErr != nil || next <= offset {
+			break
+		}
+		offset = next
 	}
 	return scanned, failed, nil
 }
