@@ -793,8 +793,31 @@ func blobLocation(c *gin.Context, imageName, digest string) string {
 	return "/v2/" + imageName + "/blobs/" + digest
 }
 
-func (h *Handler) patchUpload(c *gin.Context, _, _, uuid string) {
-	offset, ok, err := h.uploads.append(c.Request.Context(), uuid, c.Request.Body)
+func (h *Handler) patchUpload(c *gin.Context, repoName, _, uuid string) {
+	ctx := c.Request.Context()
+	// Quota sees the session at every chunk, not only at the finalizing PUT: a
+	// session opened and fed chunks but never finalized would otherwise hold an
+	// arbitrary amount of data invisibly (#328). The check is against bytes
+	// already staged plus this chunk's declared length; an evaluation failure
+	// fails closed, like every other quota-checked write path.
+	if declared := c.Request.ContentLength; declared > 0 {
+		if repo, rerr := h.deps.Repos.Get(ctx, repoName); rerr == nil && repo != nil {
+			stored, known := h.uploads.size(ctx, uuid)
+			if !known {
+				dockerError(c, http.StatusNotFound, "BLOB_UPLOAD_UNKNOWN", "upload unknown")
+				return
+			}
+			if qErr := base.CheckQuota(ctx, h.deps, repo, stored+declared); qErr != nil {
+				status := http.StatusInternalServerError
+				if errors.Is(qErr, base.ErrQuotaExceeded) {
+					status = http.StatusRequestEntityTooLarge
+				}
+				dockerError(c, status, "BLOB_UPLOAD_INVALID", qErr.Error())
+				return
+			}
+		}
+	}
+	offset, ok, err := h.uploads.append(ctx, uuid, c.Request.Body)
 	if !ok {
 		dockerError(c, http.StatusNotFound, "BLOB_UPLOAD_UNKNOWN", "upload unknown")
 		return

@@ -636,6 +636,10 @@ type AssetRepo struct {
 	// taken but before it is returned (outside the repo's own mutex) — the seam
 	// race tests use to pause a caller exactly between its read and its act.
 	CountByBlobKeyHook func(blobKey, excludeID string)
+	// SumSizeByRepoHook, when set, runs during SumSizeByRepo after the sum is
+	// taken but before it is returned (outside the repo's own mutex) — the seam
+	// quota race tests use to line up concurrent uploads on one usage snapshot.
+	SumSizeByRepoHook func(repoName string)
 }
 
 func NewAssetRepo() *AssetRepo {
@@ -917,8 +921,8 @@ func (a *AssetRepo) ListAllBlobRefs(_ context.Context) ([]domain.BlobRef, error)
 
 func (a *AssetRepo) SumSizeByRepo(_ context.Context, repoName string) (int64, error) {
 	a.mu.Lock()
-	defer a.mu.Unlock()
 	if a.Err != nil {
+		a.mu.Unlock()
 		return 0, a.Err
 	}
 	// Mirrors the SQL: one size per distinct blob key, largest wins. Several
@@ -935,6 +939,14 @@ func (a *AssetRepo) SumSizeByRepo(_ context.Context, repoName string) (int64, er
 	var total int64
 	for _, size := range perKey {
 		total += size
+	}
+	// The hook runs outside the repo mutex — it exists to hold a caller between
+	// its usage read and its next act, and holding the mutex there would wedge
+	// every other repo call instead of just this caller.
+	hook := a.SumSizeByRepoHook
+	a.mu.Unlock()
+	if hook != nil {
+		hook(repoName)
 	}
 	return total, nil
 }
