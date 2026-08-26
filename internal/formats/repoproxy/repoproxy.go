@@ -562,10 +562,12 @@ func storeAndServeResponse(c *gin.Context, d formats.Deps, repo *domain.Reposito
 
 	// Post-write quota gate for upstreams that don't declare Content-Length: the
 	// client already has the bytes, so just drop the over-quota blob unregistered.
+	// A check that failed to evaluate drops the blob the same way — fail closed,
+	// but the client keeps its stream (#328).
 	if resp.ContentLength <= 0 && size > 0 {
 		if qErr := base.CheckQuota(ctx, d, repo, size); qErr != nil {
 			dropUnreferencedBlob(ctx, d, repo, repoRelativePath, physStore, blobKey)
-			return nil
+			return nil //nolint:nilerr // deliberate: skip the cache, never fail the served download
 		}
 	}
 
@@ -608,9 +610,10 @@ func dropUnreferencedBlob(ctx context.Context, d formats.Deps, repo *domain.Repo
 func storeOriginal(ctx context.Context, c *gin.Context, d formats.Deps, repo *domain.Repository,
 	repoRelativePath, ct string, coords base.Coords, body []byte,
 ) error {
-	// Quota gate (#189): over-quota metadata is served (rewritten) but not cached.
+	// Quota gate (#189): over-quota metadata is served (rewritten) but not
+	// cached; a check that failed to evaluate skips the cache the same way (#328).
 	if qErr := base.CheckQuota(ctx, d, repo, int64(len(body))); qErr != nil {
-		return nil
+		return nil //nolint:nilerr // deliberate: skip the cache, never fail the served response
 	}
 
 	blobKey := base.BlobKey(repo.Name, repoRelativePath)
