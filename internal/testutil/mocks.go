@@ -622,6 +622,17 @@ type AssetRepo struct {
 	DownloadIncrements map[string]int64
 	// createdPaths records the order Create was called in; read via CreatedPaths.
 	createdPaths []string
+	// blobKeyLocks holds one mutex per blob key, mirroring the postgres advisory
+	// lock: WithBlobKeyLock callers for the same key serialize, different keys
+	// run concurrently.
+	blobKeyLocks map[string]*sync.Mutex
+	// BlobKeyLockKeys records the keys WithBlobKeyLock was called with, in
+	// acquisition order, so tests can assert a call site takes the lock at all.
+	BlobKeyLockKeys []string
+	// CountByBlobKeyHook, when set, runs during CountByBlobKey after the count is
+	// taken but before it is returned (outside the repo's own mutex) — the seam
+	// race tests use to pause a caller exactly between its read and its act.
+	CountByBlobKeyHook func(blobKey, excludeID string)
 }
 
 func NewAssetRepo() *AssetRepo {
@@ -712,6 +723,18 @@ func (a *AssetRepo) ListStale(_ context.Context, _ string, _ []string, _, _ int,
 	if len(a.Stale) == 0 {
 		return nil, nil
 	}
+	// A row the SQL scan returns exists in the table at scan time. Tests populate
+	// Stale directly, so register each returned row as a live asset too — unless
+	// the test already seeded a (possibly diverged) live row under that ID, which
+	// is exactly how a changed-since-scan race is modeled.
+	for i := range a.Stale {
+		row := a.Stale[i]
+		if _, ok := a.byID[row.ID]; !ok && row.ID != "" {
+			live := row
+			a.byID[row.ID] = &live
+			a.assets[live.Repository+":"+live.Path] = &live
+		}
+	}
 	// Non-consuming mode: return the same rows each call (dry-run has no deletes).
 	if a.StaleRepeat {
 		n := limit
@@ -760,6 +783,16 @@ func (a *AssetRepo) Create(_ context.Context, asset *domain.Asset) error {
 	a.byID[asset.ID] = asset
 	a.createdPaths = append(a.createdPaths, asset.Path)
 	return nil
+}
+
+// SeedAsset inserts an asset preserving the ID the test chose — unlike Create,
+// which mirrors the postgres upsert and always assigns its own. Tests use it to
+// stage a live row that diverges from a scan snapshot carrying the same ID.
+func (a *AssetRepo) SeedAsset(asset *domain.Asset) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.byID[asset.ID] = asset
+	a.assets[asset.Repository+":"+asset.Path] = asset
 }
 
 // CreatedPaths returns the asset paths passed to Create, in call order. Tests
@@ -1009,8 +1042,8 @@ func (a *AssetRepo) ListOCIImageNames(_ context.Context, repoNames []string) ([]
 // untestable.
 func (a *AssetRepo) CountByBlobKey(_ context.Context, blobKey, excludeID string) (int, error) {
 	a.mu.Lock()
-	defer a.mu.Unlock()
 	if a.Err != nil {
+		a.mu.Unlock()
 		return 0, a.Err
 	}
 	n := 0
@@ -1019,7 +1052,59 @@ func (a *AssetRepo) CountByBlobKey(_ context.Context, blobKey, excludeID string)
 			n++
 		}
 	}
+	// The hook runs outside the repo mutex: it exists to block a caller between
+	// its count and its next act, and holding the mutex there would wedge every
+	// other repo call instead of just this caller.
+	hook := a.CountByBlobKeyHook
+	a.mu.Unlock()
+	if hook != nil {
+		hook(blobKey, excludeID)
+	}
 	return n, nil
+}
+
+// DeleteIfUnchanged mirrors the postgres conditional delete: the row goes only
+// if it still carries the scanned blob key and last_downloaded (NULL-safe).
+func (a *AssetRepo) DeleteIfUnchanged(_ context.Context, id, blobKey string, lastDownloaded *time.Time) (bool, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.DeleteErr != nil {
+		return false, a.DeleteErr
+	}
+	v, ok := a.byID[id]
+	if !ok || v.BlobKey != blobKey {
+		return false, nil
+	}
+	switch {
+	case v.LastDownloaded == nil && lastDownloaded == nil:
+	case v.LastDownloaded != nil && lastDownloaded != nil && v.LastDownloaded.Equal(*lastDownloaded):
+	default:
+		return false, nil
+	}
+	delete(a.byID, id)
+	delete(a.assets, v.Repository+":"+v.Path)
+	return true, nil
+}
+
+// WithBlobKeyLock mirrors the postgres advisory lock with one in-process mutex
+// per key: same-key callers serialize, different keys do not block each other.
+func (a *AssetRepo) WithBlobKeyLock(ctx context.Context, blobKey string, fn func(ctx context.Context) error) error {
+	a.mu.Lock()
+	if a.blobKeyLocks == nil {
+		a.blobKeyLocks = make(map[string]*sync.Mutex)
+	}
+	l, ok := a.blobKeyLocks[blobKey]
+	if !ok {
+		l = &sync.Mutex{}
+		a.blobKeyLocks[blobKey] = l
+	}
+	a.mu.Unlock()
+	l.Lock()
+	defer l.Unlock()
+	a.mu.Lock()
+	a.BlobKeyLockKeys = append(a.BlobKeyLockKeys, blobKey)
+	a.mu.Unlock()
+	return fn(ctx)
 }
 
 // CountByBlobKeyInStore mirrors the postgres query: how many assets reference

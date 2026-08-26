@@ -56,6 +56,89 @@ func TestRunAll_SkipsNoCriteriaPolicies(t *testing.T) {
 	assert.Empty(t, policies.Updates)
 }
 
+// Between the staleness scan and a given row's turn in the delete loop, a
+// client can download or re-upload that exact asset. The delete keyed to the
+// scan's snapshot must then skip it — deleting by captured ID erases a live
+// artifact and the next pull 404s.
+func TestRunAll_SkipsAssetChangedAfterScan(t *testing.T) {
+	now := time.Now()
+	assets := testutil.NewAssetRepo()
+	// The scan's snapshot: never downloaded, so it matched lastDownloadedDays.
+	assets.Stale = []domain.Asset{
+		{ID: "a-race", Repository: "maven-hosted", BlobKey: "bk-race", SizeBytes: 100, Path: "/rel.jar"},
+	}
+	// The live row a moment later: a client just downloaded it.
+	assets.SeedAsset(&domain.Asset{
+		ID: "a-race", Repository: "maven-hosted", BlobKey: "bk-race",
+		SizeBytes: 100, Path: "/rel.jar", LastDownloaded: &now,
+	})
+
+	policies := testutil.NewCleanupPolicyRepo(
+		&domain.CleanupPolicy{
+			ID: "p-race", Name: "race-policy", Enabled: true, Format: "maven2",
+			Criteria: map[string]any{"lastDownloadedDays": float64(30)},
+		},
+	)
+	blobs := testutil.NewBlobStore()
+	_ = blobs.Put(context.Background(), "bk-race", testutil.MakeReader("bytes"), 5)
+	blobRepo := testutil.NewBlobStoreRepo()
+	repos := testutil.NewRepoRepo(&domain.Repository{
+		Name: "maven-hosted", ID: "r1", Format: domain.FormatMaven2,
+		CleanupPolicyIDs: []string{"p-race"},
+	})
+
+	svc := service.NewCleanupService(policies, repos, assets, blobRepo, blobs, nopLog())
+	require.NoError(t, svc.RunAll(context.Background()))
+
+	if got, _ := assets.Get(context.Background(), "a-race"); got == nil {
+		t.Fatal("cleanup deleted an asset that was downloaded after the staleness scan")
+	}
+	assert.NotContains(t, blobs.Deleted, "bk-race",
+		"cleanup freed the bytes of an asset that was downloaded after the staleness scan")
+}
+
+// When every scanned row keeps changing under the loop (each pass skips
+// everything), the run must end after a few fruitless passes instead of
+// re-scanning the same rows forever.
+func TestRunAll_TerminatesWhenEveryPassSkips(t *testing.T) {
+	now := time.Now()
+	assets := testutil.NewAssetRepo()
+	assets.Stale = []domain.Asset{
+		{ID: "a-spin", Repository: "maven-hosted", BlobKey: "bk-spin", SizeBytes: 10, Path: "/spin.jar"},
+	}
+	// Non-consuming mode: ListStale keeps returning the row, as SQL would for a
+	// row that never gets deleted.
+	assets.StaleRepeat = true
+	assets.SeedAsset(&domain.Asset{
+		ID: "a-spin", Repository: "maven-hosted", BlobKey: "bk-spin",
+		SizeBytes: 10, Path: "/spin.jar", LastDownloaded: &now,
+	})
+
+	policies := testutil.NewCleanupPolicyRepo(
+		&domain.CleanupPolicy{
+			ID: "p-spin", Name: "spin-policy", Enabled: true, Format: "maven2",
+			Criteria: map[string]any{"lastDownloadedDays": float64(30)},
+		},
+	)
+	repos := testutil.NewRepoRepo(&domain.Repository{
+		Name: "maven-hosted", ID: "r1", Format: domain.FormatMaven2,
+		CleanupPolicyIDs: []string{"p-spin"},
+	})
+
+	svc := service.NewCleanupService(policies, repos, assets, testutil.NewBlobStoreRepo(), testutil.NewBlobStore(), nopLog())
+	done := make(chan error, 1)
+	go func() { done <- svc.RunAll(context.Background()) }()
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("cleanup run never terminated: every pass skipped the same changed row and the loop kept re-scanning it")
+	}
+	if got, _ := assets.Get(context.Background(), "a-spin"); got == nil {
+		t.Error("the changed asset must not be deleted")
+	}
+}
+
 func TestRunAll_DeletesStaleAssets(t *testing.T) {
 	staleAssets := []domain.Asset{
 		{ID: "a1", BlobKey: "bk1", SizeBytes: 100, Path: "/foo.jar"},

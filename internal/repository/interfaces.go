@@ -64,6 +64,18 @@ type AssetRepo interface {
 	ListStale(ctx context.Context, format string, repoNames []string, lastDownloadedDays, artifactAgeDays int, pathPrefix, nameGlob string, retainNVersions int, limit int) ([]domain.Asset, error)
 	Create(ctx context.Context, a *domain.Asset) error
 	Delete(ctx context.Context, id string) error
+	// DeleteIfUnchanged deletes the row only if it is still exactly what an
+	// earlier scan read — same blob key, same last_downloaded. It reports
+	// whether the row was deleted; a mismatch (the asset was downloaded or
+	// re-uploaded since the scan) leaves the row alone.
+	DeleteIfUnchanged(ctx context.Context, id, blobKey string, lastDownloaded *time.Time) (bool, error)
+	// WithBlobKeyLock serializes every caller that wants to read-then-act on a
+	// given blob key (count references, physically delete, register a new
+	// reference). Any other WithBlobKeyLock caller for the same key — same
+	// process or not — blocks until fn returns. fn's own reads and writes go
+	// through the repo's normal connections: the guarantee is mutual exclusion,
+	// not that fn's effects share one transaction.
+	WithBlobKeyLock(ctx context.Context, blobKey string, fn func(ctx context.Context) error) error
 	// TouchLastModified sets last_modified = NOW() for the asset. The proxy cache
 	// uses last_modified as the "last validated" timestamp for metadata freshness:
 	// on a successful upstream 304 revalidation the cached copy is confirmed current,

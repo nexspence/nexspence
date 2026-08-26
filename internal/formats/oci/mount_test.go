@@ -7,7 +7,9 @@ import (
 	"net/http/httptest"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -163,6 +165,56 @@ func TestMount_MountedBlobIsPullableAndSharesTheSourceBlobKey(t *testing.T) {
 	assert.Equal(t, src.MD5, dst.MD5)
 	assert.Equal(t, src.BlobStoreID, dst.BlobStoreID,
 		"the alias has to name the store the bytes actually live in, or the pull looks in the wrong place")
+}
+
+// A mount racing the delete of its source's last reference must not answer 201
+// while the bytes are being freed: the client — told the registry has the
+// layer — never uploads its own copy, and the first pull 404s. The mount's
+// existence check and row insert must hold the blob-key lock the deleter holds.
+func TestMount_RacingLastReferenceDelete_NeverServesDanglingRow(t *testing.T) {
+	repo := testutil.SimpleRepo("mntrace", "docker")
+	r, _, d, store := mountDeps(repo)
+	ctx := context.Background()
+
+	const layer = "bytes about to vanish"
+	dgst := pushBlob(t, r, "mntrace", "library/alpine", layer)
+	assets := d.Assets.(*testutil.AssetRepo)
+
+	srcPath := "/blobs/library/alpine/" + dgst
+	src, err := assets.GetByPath(ctx, "mntrace", srcPath)
+	require.NoError(t, err)
+
+	// Pause the deleter right after its reference count — it has just decided
+	// "I am the last reference" — fire the mount during the pause, and let the
+	// delete finish afterwards. When the lock serializes the two, the mount
+	// blocks instead and the pause simply times out.
+	var once sync.Once
+	mountResult := make(chan *httptest.ResponseRecorder, 1)
+	mountDone := make(chan struct{})
+	assets.CountByBlobKeyHook = func(string, string) {
+		once.Do(func() {
+			go func() {
+				mountResult <- postMount(r, "/repository/mntrace/v2/library/ubuntu/blobs/uploads/", dgst, "library/alpine")
+				close(mountDone)
+			}()
+			select {
+			case <-mountDone:
+			case <-time.After(500 * time.Millisecond):
+			}
+		})
+	}
+
+	require.NoError(t, base.DeleteArtifact(ctx, d, "mntrace", srcPath))
+	w := <-mountResult
+
+	if w.Code == http.StatusCreated {
+		assert.True(t, store.Has(src.BlobKey),
+			"mount answered 201 but the bytes are gone — the client will never re-upload a layer it was told the registry has")
+	}
+	if dst, gerr := assets.GetByPath(ctx, "mntrace", "/blobs/library/ubuntu/"+dgst); gerr == nil && dst != nil {
+		assert.True(t, store.Has(dst.BlobKey),
+			"the mounted asset row points at bytes that no longer exist")
+	}
 }
 
 // ── The `from` spellings a real client sends ──────────────────

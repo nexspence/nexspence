@@ -295,8 +295,14 @@ func (s *CleanupService) runPolicy(ctx context.Context, p domain.CleanupPolicy) 
 	}
 
 	const batchLimit = 500
+	// A pass can legitimately delete nothing: every row it scanned changed under
+	// it, or every delete failed. The next scan re-reads fresh snapshots and
+	// usually succeeds — but a row perturbed on every pass would otherwise keep
+	// the loop spinning forever, so a few fruitless passes end the run.
+	const maxNoProgressPasses = 3
 	var freed int64
 	var deleted int
+	noProgress := 0
 	for {
 		stale, err := s.assets.ListStale(ctx, p.Format, repoNames, lastDownloadedDays, artifactAgeDays, pathPrefix, nameGlob, p.RetainNVersions, batchLimit)
 		if err != nil {
@@ -305,6 +311,7 @@ func (s *CleanupService) runPolicy(ctx context.Context, p domain.CleanupPolicy) 
 		if len(stale) == 0 {
 			break
 		}
+		deletedBefore := deleted
 		for _, a := range stale {
 			if p.DryRun {
 				log.Info("cleanup dry-run: would delete", "policy", p.Name,
@@ -314,35 +321,62 @@ func (s *CleanupService) runPolicy(ctx context.Context, p domain.CleanupPolicy) 
 				continue
 			}
 			asset := a
-			// One object can carry several assets — an OCI manifest's tag and its
-			// digest alias, a mounted layer — and expiring one of them says
-			// nothing about the others. Deleting the bytes under a surviving
-			// asset would leave it advertising content that is gone (#144); an
-			// unreadable count keeps them, since an orphan is reclaimed by the
-			// blob GC while bytes deleted under a live asset are lost.
-			bytesFreed := false
-			others, cerr := s.assets.CountByBlobKey(ctx, a.BlobKey, a.ID)
-			if cerr != nil {
-				log.Warn("cleanup: blob reference count failed, keeping blob",
-					"key", a.BlobKey, "err", cerr)
-			} else if others == 0 {
-				if err := s.storeForAsset(ctx, &asset).Delete(ctx, a.BlobKey); err != nil {
-					log.Warn("cleanup: blob delete failed", "key", a.BlobKey, "err", err)
-				} else {
-					bytesFreed = true
+			// The lock serializes this delete against every other reader-then-actor
+			// on the same blob key — a concurrent mount, a DeleteArtifact call,
+			// another cleanup — and the conditional delete refuses a row that was
+			// downloaded or re-uploaded after the staleness scan: deleting by the
+			// captured ID would erase a live artifact and the next pull would 404.
+			lockErr := s.assets.WithBlobKeyLock(ctx, a.BlobKey, func(ctx context.Context) error {
+				rowDeleted, derr := s.assets.DeleteIfUnchanged(ctx, a.ID, a.BlobKey, a.LastDownloaded)
+				if derr != nil {
+					log.Warn("cleanup: asset delete failed", "id", a.ID, "err", derr)
+					return nil
 				}
+				if !rowDeleted {
+					log.Info("cleanup: skipped — asset changed after the staleness scan",
+						"id", a.ID, "path", a.Path, "repo", a.Repository)
+					return nil
+				}
+				freed += a.SizeBytes
+				deleted++
+				// One object can carry several assets — an OCI manifest's tag and its
+				// digest alias, a mounted layer — and expiring one of them says
+				// nothing about the others. Deleting the bytes under a surviving
+				// asset would leave it advertising content that is gone (#144); an
+				// unreadable count keeps them, since an orphan is reclaimed by the
+				// blob GC while bytes deleted under a live asset are lost.
+				others, cerr := s.assets.CountByBlobKey(ctx, a.BlobKey, a.ID)
+				if cerr != nil {
+					log.Warn("cleanup: blob reference count failed, keeping blob",
+						"key", a.BlobKey, "err", cerr)
+					return nil
+				}
+				if others == 0 {
+					if err := s.storeForAsset(ctx, &asset).Delete(ctx, a.BlobKey); err != nil {
+						log.Warn("cleanup: blob delete failed", "key", a.BlobKey, "err", err)
+					} else {
+						// used_bytes is how full the store is, so it only moves when
+						// bytes actually left it (#146).
+						_ = base.DecrementBlobStoreUsage(ctx, s.blobs, &asset)
+					}
+				}
+				return nil
+			})
+			if lockErr != nil {
+				log.Warn("cleanup: blob key lock failed", "key", a.BlobKey, "err", lockErr)
 			}
-			if err := s.assets.Delete(ctx, a.ID); err != nil {
-				log.Warn("cleanup: asset delete failed", "id", a.ID, "err", err)
-				continue
+		}
+		if !p.DryRun {
+			if deleted == deletedBefore {
+				noProgress++
+				if noProgress >= maxNoProgressPasses {
+					log.Warn("cleanup: no progress after repeated passes — stopping this run",
+						"policy", p.Name, "passes", noProgress)
+					break
+				}
+			} else {
+				noProgress = 0
 			}
-			// used_bytes is how full the store is, so it only moves when bytes
-			// actually left it (#146).
-			if bytesFreed {
-				_ = base.DecrementBlobStoreUsage(ctx, s.blobs, &asset)
-			}
-			freed += a.SizeBytes
-			deleted++
 		}
 		// A real run advances the cursor by deleting the batch, so the next query
 		// returns the following rows. A dry run deletes nothing, so re-querying

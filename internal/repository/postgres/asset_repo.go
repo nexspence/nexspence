@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -324,6 +325,39 @@ func (r *assetRepo) Create(ctx context.Context, a *domain.Asset) error {
 func (r *assetRepo) Delete(ctx context.Context, id string) error {
 	_, err := r.db.Exec(ctx, `DELETE FROM assets WHERE id = $1`, id)
 	return err
+}
+
+// DeleteIfUnchanged deletes the row only if it is still exactly what an earlier
+// scan read — same blob key, same last_downloaded. IS NOT DISTINCT FROM makes
+// the NULL comparison work: most never-downloaded rows carry NULL, and NULL =
+// NULL would refuse every one of them.
+func (r *assetRepo) DeleteIfUnchanged(ctx context.Context, id, blobKey string, lastDownloaded *time.Time) (bool, error) {
+	tag, err := r.db.Exec(ctx,
+		`DELETE FROM assets WHERE id = $1 AND blob_key = $2 AND last_downloaded IS NOT DISTINCT FROM $3`,
+		id, blobKey, lastDownloaded)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
+// WithBlobKeyLock serializes callers read-then-acting on one blob key via a
+// transaction-scoped Postgres advisory lock, so mutual exclusion holds across
+// processes, not just this one. The transaction exists only to scope the lock;
+// fn's own statements run on the pool's normal connections.
+func (r *assetRepo) WithBlobKeyLock(ctx context.Context, blobKey string, fn func(ctx context.Context) error) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, blobKey); err != nil {
+		return err
+	}
+	if err := fn(ctx); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 // TouchLastModified sets last_modified = NOW() for the asset, extending the

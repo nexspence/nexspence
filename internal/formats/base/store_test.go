@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -291,6 +293,74 @@ func TestDeleteArtifact_KeepsBlobWhileAnotherAssetReferencesIt(t *testing.T) {
 	// Delete the last asset on the blob: now the bytes go.
 	require.NoError(t, base.DeleteArtifact(ctx, d, "aliasrepo", digestPath))
 	assert.False(t, blobStore.Has(key), "no asset references the blob any more")
+}
+
+// Two concurrent DeleteArtifact calls on the last two assets sharing one blob
+// key can each see "the sibling still exists" and both skip the physical
+// delete — every row gone, bytes orphaned on disk. The count-then-delete
+// sequence must hold the blob-key lock so one caller is provably last.
+func TestDeleteArtifact_ConcurrentSiblingDeletes_FreeTheBlob(t *testing.T) {
+	repo := testutil.SimpleRepo("racerepo", "oci")
+	d, blobStore, _, assets := deps(repo)
+
+	ctx := context.Background()
+	content := `{"schemaVersion":2}`
+	tagPath := "/manifests/app/1.0"
+	res, err := base.StoreArtifact(ctx, d,
+		"racerepo", tagPath, "application/vnd.oci.image.manifest.v1+json",
+		base.Coords{Name: "app", Version: "1.0"},
+		strings.NewReader(content), int64(len(content)))
+	require.NoError(t, err)
+
+	digestPath := "/manifests/app/sha256:" + res.SHA256
+	_, err = base.RegisterStoredBlob(ctx, d, repo,
+		digestPath, "application/vnd.oci.image.manifest.v1+json",
+		base.Coords{Name: "app", Version: "sha256:" + res.SHA256},
+		res.Asset.BlobKey, res.SHA256, res.SHA1, res.MD5, res.Size, "", "")
+	require.NoError(t, err)
+
+	key := res.Asset.BlobKey
+	require.True(t, blobStore.Has(key))
+
+	// Barrier: hold each caller right after its reference count until both have
+	// counted (or, when the blob-key lock serializes them so both never arrive,
+	// a timeout lets the holder proceed). Interleaved counts are the bug window.
+	var barrierMu sync.Mutex
+	arrivals := 0
+	bothCounted := make(chan struct{})
+	assets.CountByBlobKeyHook = func(blobKey, excludeID string) {
+		barrierMu.Lock()
+		arrivals++
+		if arrivals == 2 {
+			close(bothCounted)
+		}
+		barrierMu.Unlock()
+		select {
+		case <-bothCounted:
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
+
+	var wg sync.WaitGroup
+	for _, p := range []string{tagPath, digestPath} {
+		wg.Add(1)
+		go func(path string) {
+			defer wg.Done()
+			if err := base.DeleteArtifact(ctx, d, "racerepo", path); err != nil {
+				t.Errorf("DeleteArtifact(%s): %v", path, err)
+			}
+		}(p)
+	}
+	wg.Wait()
+
+	if _, err := assets.GetByPath(ctx, "racerepo", tagPath); err == nil {
+		t.Error("tag asset row survived its delete")
+	}
+	if _, err := assets.GetByPath(ctx, "racerepo", digestPath); err == nil {
+		t.Error("digest asset row survived its delete")
+	}
+	assert.False(t, blobStore.Has(key),
+		"both rows are gone but the bytes were never freed — each deleter saw the other's row and skipped the physical delete")
 }
 
 func TestDeleteArtifact_Idempotent(t *testing.T) {
