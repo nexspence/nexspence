@@ -160,7 +160,10 @@ func (h *ReplicationHandler) TestConnection(c *gin.Context) {
 func (h *ReplicationHandler) ListHistory(c *gin.Context) {
 	limit := 20
 	if v := c.Query("limit"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil {
+		// The n > 0 guard every sibling paginated handler applies: a
+		// non-positive value falls back to the default instead of being
+		// passed through.
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			limit = n
 		}
 	}

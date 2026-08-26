@@ -58,8 +58,12 @@ func parseAuditQuery(c *gin.Context) (repository.AuditQuery, error) {
 	// where the caller sent bad input and deserves a 400. AuditRepo.List clamps
 	// the page size itself, but a non-numeric limit would otherwise be read as
 	// "use the default" without the caller ever hearing about it.
+	//
+	// An absent limit stays 0 — "not specified". List applies its own 100-row
+	// default internally; the NDJSON export deliberately streams everything
+	// (bounded only by streamRowCap), and a default here would silently cap it.
 	var err error
-	if q.Limit, err = parseNonNegative(c, "limit", 100); err != nil {
+	if q.Limit, err = parseNonNegative(c, "limit", 0); err != nil {
 		return q, err
 	}
 	if q.Offset, err = parseNonNegative(c, "offset", 0); err != nil {

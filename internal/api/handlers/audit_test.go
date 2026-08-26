@@ -190,6 +190,50 @@ func TestAuditList_NDJSON_Export(t *testing.T) {
 	assert.Equal(t, 2, n)
 }
 
+// ndjsonLines counts the JSON lines of an NDJSON response body.
+func ndjsonLines(t *testing.T, body string) int {
+	t.Helper()
+	sc := bufio.NewScanner(strings.NewReader(body))
+	n := 0
+	for sc.Scan() {
+		var e domain.AuditEvent
+		require.NoError(t, json.Unmarshal(sc.Bytes(), &e), "each line must be JSON")
+		n++
+	}
+	return n
+}
+
+// The doc lists limit/offset for both modes; the NDJSON export must honor them
+// rather than returning the full dump.
+func TestAuditList_NDJSON_HonorsLimit(t *testing.T) {
+	r, repo := mountAudit(t)
+	seed(t, repo, []domain.AuditEvent{
+		{EventTime: time.Now(), Username: "a", Domain: "REPOSITORY", Action: "CREATE", Result: "success"},
+		{EventTime: time.Now(), Username: "b", Domain: "REPOSITORY", Action: "DELETE", Result: "success"},
+		{EventTime: time.Now(), Username: "c", Domain: "REPOSITORY", Action: "CREATE", Result: "success"},
+	})
+
+	rec := do(t, r, http.MethodGet, "/service/rest/v1/audit?format=ndjson&limit=1", nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, 1, ndjsonLines(t, rec.Body.String()), "limit=1 must return one row, not the full dump")
+}
+
+// A bulk export that omits ?limit is intentionally unbounded (streamRowCap is
+// the only ceiling): the JSON mode's 100-row default must not leak into it.
+func TestAuditList_NDJSON_NoLimit_NotCappedAtJSONDefault(t *testing.T) {
+	r, repo := mountAudit(t)
+	events := make([]domain.AuditEvent, 120)
+	for i := range events {
+		events[i] = domain.AuditEvent{EventTime: time.Now(), Username: "u", Domain: "REPOSITORY", Action: "CREATE", Result: "success"}
+	}
+	seed(t, repo, events)
+
+	rec := do(t, r, http.MethodGet, "/service/rest/v1/audit?format=ndjson", nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, 120, ndjsonLines(t, rec.Body.String()),
+		"an export without ?limit must stream everything, not the JSON mode's default page")
+}
+
 func TestAuditList_BadFromValue_400(t *testing.T) {
 	r, _ := mountAudit(t)
 

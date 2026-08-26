@@ -5,11 +5,13 @@ import (
 	"errors"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 
 	"github.com/nexspence-oss/nexspence/internal/api/handlers"
 	"github.com/nexspence-oss/nexspence/internal/domain"
@@ -22,6 +24,12 @@ func cleanupNopLog() *zap.SugaredLogger { return zap.NewNop().Sugar() }
 // mountCleanup wires the real CleanupService (over mocks) as the runner so Preview / Run
 // exercise the actual service path, mirroring router.go.
 func mountCleanup(t *testing.T) (*gin.Engine, *testutil.CleanupPolicyRepo, *testutil.RepoRepo, *testutil.AssetRepo) {
+	return mountCleanupWithLog(t, cleanupNopLog())
+}
+
+// mountCleanupWithLog is mountCleanup with a caller-chosen handler logger, so
+// tests can observe what the handler logs.
+func mountCleanupWithLog(t *testing.T, log *zap.SugaredLogger) (*gin.Engine, *testutil.CleanupPolicyRepo, *testutil.RepoRepo, *testutil.AssetRepo) {
 	t.Helper()
 	policies := testutil.NewCleanupPolicyRepo()
 	repos := testutil.NewRepoRepo()
@@ -29,7 +37,7 @@ func mountCleanup(t *testing.T) (*gin.Engine, *testutil.CleanupPolicyRepo, *test
 	blobRepo := testutil.NewBlobStoreRepo()
 	blobs := testutil.NewBlobStore()
 	svc := service.NewCleanupService(policies, repos, assets, blobRepo, blobs, cleanupNopLog())
-	h := handlers.NewCleanupHandler(policies, repos, svc)
+	h := handlers.NewCleanupHandler(policies, repos, svc, log)
 
 	r := gin.New()
 	r.GET("/service/rest/v1/cleanup-policies", h.List)
@@ -180,6 +188,21 @@ func TestCleanupHandler_Delete_DeleteError_500(t *testing.T) {
 	assert.Equal(t, http.StatusInternalServerError, rec.Code)
 }
 
+// A failure in the second half of the two-step delete leaves repositories
+// already detached while the policy row survives; the response has to say so —
+// a generic 500 reads as "nothing happened" and hides that a retry finishes
+// the job.
+func TestCleanupHandler_Delete_DeleteError_SaysReposWereDetached(t *testing.T) {
+	r, policies, _, _ := mountCleanup(t)
+	policies.Err = errors.New("db connection lost")
+	rec := do(t, r, http.MethodDelete, "/service/rest/v1/cleanup-policies/p1", nil)
+	require.Equal(t, http.StatusInternalServerError, rec.Code)
+	assert.Contains(t, rec.Body.String(), "detached",
+		"the client must learn the repositories are already detached")
+	assert.Contains(t, rec.Body.String(), "retry",
+		"the client must learn a retry completes the deletion")
+}
+
 // ── Run ───────────────────────────────────────────────────────────────────────
 
 // A single-policy run is synchronous and returns the run summary. A policy not
@@ -228,6 +251,25 @@ func TestCleanupHandler_Run_All_202(t *testing.T) {
 	var body map[string]any
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
 	assert.Equal(t, "running all policies", body["status"])
+}
+
+// The client already got its 202, so a background RunAll failure (an
+// unreachable lock backend, a dead DB) is invisible unless it is logged.
+func TestCleanupHandler_Run_All_BackgroundFailureIsLogged(t *testing.T) {
+	core, logs := observer.New(zap.ErrorLevel)
+	r, policies, _, _ := mountCleanupWithLog(t, zap.New(core).Sugar())
+	policies.Err = errors.New("lock backend unreachable")
+
+	rec := do(t, r, http.MethodPost, "/service/rest/v1/cleanup-policies/_all/run", nil)
+	require.Equal(t, http.StatusAccepted, rec.Code)
+
+	deadline := time.Now().Add(2 * time.Second)
+	for logs.Len() == 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	require.NotZero(t, logs.Len(), "a failed background run-all must be logged, not discarded")
+	assert.Contains(t, logs.All()[0].Message, "run",
+		"the log entry names the failed operation")
 }
 
 // ── Preview ───────────────────────────────────────────────────────────────────

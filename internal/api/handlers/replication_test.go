@@ -208,6 +208,17 @@ func TestReplicationHandler_ListHistory_WithLimit_OK(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 }
 
+// A non-positive limit falls back to the default instead of being passed
+// through — the guard every sibling paginated handler already applies.
+func TestReplicationHandler_ListHistory_NonPositiveLimit_FallsBack(t *testing.T) {
+	r := mountReplication(t)
+	id := replicationCreate(t, r, "neg-history")
+	for _, qs := range []string{"limit=-1", "limit=0"} {
+		rec := do(t, r, http.MethodGet, "/api/v1/replication/rules/"+id+"/history?"+qs, nil)
+		assert.Equal(t, http.StatusOK, rec.Code, qs)
+	}
+}
+
 // ── Request-context detachment (#254) ───────────────────────────────────────
 
 // ctxCapturingReplRepo records the context each GetRule call arrives with.

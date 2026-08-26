@@ -2,12 +2,14 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/robfig/cron/v3"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
+	"github.com/nexspence-oss/nexspence/internal/logger"
 	"github.com/nexspence-oss/nexspence/internal/repository"
 )
 
@@ -25,6 +27,7 @@ type CleanupHandler struct {
 	policies repository.CleanupPolicyRepo
 	repos    repository.RepositoryRepo
 	runner   cleanupRunner
+	log      logger.Logger
 }
 
 // NewCleanupHandler constructs a CleanupHandler from the policy/repository repos and the cleanup runner.
@@ -32,8 +35,9 @@ func NewCleanupHandler(
 	policies repository.CleanupPolicyRepo,
 	repos repository.RepositoryRepo,
 	runner cleanupRunner,
+	log logger.Logger,
 ) *CleanupHandler {
-	return &CleanupHandler{policies: policies, repos: repos, runner: runner}
+	return &CleanupHandler{policies: policies, repos: repos, runner: runner, log: log}
 }
 
 // List GET /service/rest/v1/cleanup-policies
@@ -129,7 +133,15 @@ func (h *CleanupHandler) Delete(c *gin.Context) {
 		return
 	}
 	if err := h.policies.Delete(c.Request.Context(), id); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		// The first half already ran: repositories no longer reference the
+		// policy, but its row survives. A generic 500 reads as "nothing
+		// happened"; say what state the operation left behind and that a retry
+		// finishes it (DetachCleanupPolicyID is idempotent).
+		h.log.Errorw("cleanup policy delete failed after repositories were detached",
+			"policy", id, "err", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": fmt.Sprintf("repositories were detached from policy %s, but deleting the policy failed: %v — retry the delete to finish", id, err),
+		})
 		return
 	}
 	// Policy is deleted; ReloadPolicy sees it's gone and removes the cron entry.
@@ -144,7 +156,14 @@ func (h *CleanupHandler) Delete(c *gin.Context) {
 func (h *CleanupHandler) Run(c *gin.Context) {
 	id := c.Param("id")
 	if id == "_all" {
-		go func() { _ = h.runner.RunAll(context.Background()) }()
+		// The client already has its 202; the log is the only place a
+		// background failure (an unreachable lock backend, a dead DB) can
+		// surface.
+		go func() {
+			if err := h.runner.RunAll(context.Background()); err != nil {
+				h.log.Errorw("cleanup: background run of all policies failed", "err", err)
+			}
+		}()
 		c.JSON(http.StatusAccepted, gin.H{"status": "running all policies"})
 		return
 	}
