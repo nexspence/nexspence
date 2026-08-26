@@ -63,7 +63,10 @@ func TrivyScanArgs(o TrivyOptions, imageRef string, insecureRegistry bool) []str
 	if o.CacheDir != "" {
 		args = append(args, "--cache-dir", o.CacheDir)
 	}
-	return append(args, imageRef)
+	// "--" pins the reference as positional: imageRef arrives from a request
+	// body, and without the separator a flag-shaped value would be parsed as
+	// an option instead of an image.
+	return append(args, "--", imageRef)
 }
 
 // TrivyEnv returns the child environment for a Trivy run: the parent

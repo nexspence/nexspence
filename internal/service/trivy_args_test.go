@@ -54,6 +54,19 @@ func TestTrivyArgs_OmitsEveryUnsetFlag(t *testing.T) {
 	}
 }
 
+// The image reference is caller-controlled (it arrives in a request body), so
+// the argv must pin it as positional: without a "--" separator a flag-shaped
+// reference like "--format=table" would be parsed as an option and silently
+// change what Trivy does.
+func TestTrivyArgs_SeparatorPinsImageRefAsPositional(t *testing.T) {
+	for _, ref := range []string{"reg/img:1", "--format=table"} {
+		args := service.TrivyScanArgs(service.TrivyOptions{Enabled: true}, ref, false)
+		if len(args) < 2 || args[len(args)-2] != "--" || args[len(args)-1] != ref {
+			t.Errorf("argv %q must end with [-- %q]", strings.Join(args, " "), ref)
+		}
+	}
+}
+
 func TestTrivyArgs_PassesConfiguredDatabases(t *testing.T) {
 	args := service.TrivyScanArgs(service.TrivyOptions{
 		Enabled:          true,
