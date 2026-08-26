@@ -663,27 +663,41 @@ func (h *Handler) mountBlob(c *gin.Context, repoName, imageName, dgst, from stri
 		if !h.callerMayRead(c, repo, sourcePath) {
 			continue
 		}
-		// An asset row outlives its bytes: a manual blob delete or a GC pass can
-		// leave the record behind. Answering 201 off one of those would hand the
-		// client a layer that 404s on pull, and the client — told the registry
-		// already has it — would never upload the copy it still holds.
-		storeName, present := h.locateBlob(ctx, src)
-		if !present {
-			continue
-		}
-		blobStoreID := src.BlobStoreID
-		if storeName == "" {
-			// The store the source names could not be resolved, so let the
-			// registration fall back to the repository's own default, exactly as
-			// a fetch of that asset would.
-			blobStoreID = ""
-		}
-		if _, err := base.RegisterStoredBlob(ctx, h.deps, repo,
-			blobPath(imageName, dgst), "application/octet-stream",
-			base.Coords{Name: imageName, Version: dgst},
-			src.BlobKey, src.SHA256, src.SHA1, src.MD5, src.SizeBytes,
-			blobStoreID, storeName); err != nil {
+		// The existence check and the row insert hold the blob-key lock as one
+		// unit: a cleanup or DeleteArtifact freeing this key between the two
+		// would let the mount answer 201 with a row pointing at bytes that are
+		// gone — worse than a 404, because the client, told the registry has the
+		// layer, never uploads the copy it still holds.
+		var mounted bool
+		if lockErr := h.deps.Assets.WithBlobKeyLock(ctx, src.BlobKey, func(ctx context.Context) error {
+			// An asset row outlives its bytes: a manual blob delete or a GC pass
+			// can leave the record behind. Answering 201 off one of those would
+			// hand the client a layer that 404s on pull.
+			storeName, present := h.locateBlob(ctx, src)
+			if !present {
+				return nil
+			}
+			blobStoreID := src.BlobStoreID
+			if storeName == "" {
+				// The store the source names could not be resolved, so let the
+				// registration fall back to the repository's own default, exactly as
+				// a fetch of that asset would.
+				blobStoreID = ""
+			}
+			if _, err := base.RegisterStoredBlob(ctx, h.deps, repo,
+				blobPath(imageName, dgst), "application/octet-stream",
+				base.Coords{Name: imageName, Version: dgst},
+				src.BlobKey, src.SHA256, src.SHA1, src.MD5, src.SizeBytes,
+				blobStoreID, storeName); err != nil {
+				return err
+			}
+			mounted = true
+			return nil
+		}); lockErr != nil {
 			return false
+		}
+		if !mounted {
+			continue
 		}
 		c.Header("Docker-Content-Digest", dgst)
 		c.Header("Location", blobLocation(c, imageName, dgst))

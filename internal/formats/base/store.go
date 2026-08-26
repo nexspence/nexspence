@@ -360,31 +360,58 @@ func DeleteArtifact(ctx context.Context, d formats.Deps, repoName, filePath stri
 	if delStore == nil {
 		delStore = d.BlobStore
 	}
-	// One blob can carry several assets: an OCI manifest push registers the tag
-	// path and the digest-alias path on the same blob key, and a client that
-	// deletes one still pulls the other. Deleting the bytes here would leave the
-	// survivor — and the referrers index built from it — advertising content that
-	// is gone. A count that cannot be read keeps the blob: an orphan is reclaimed
-	// by the blob GC, whereas bytes deleted under a live asset are lost.
-	others, cerr := d.Assets.CountByBlobKey(ctx, asset.BlobKey, asset.ID)
+	// The count-then-delete sequence holds the blob-key lock: two concurrent
+	// deletes of the last two assets sharing one key would otherwise each see
+	// the other's still-present row, both skip the physical delete, and orphan
+	// the bytes with the usage counter overstated until GC.
+	var rowDeleted, freed bool
+	if err := d.Assets.WithBlobKeyLock(ctx, asset.BlobKey, func(ctx context.Context) error {
+		// Re-read under the lock: a concurrent DeleteArtifact may have already
+		// removed this row (idempotent, nothing to do), or a re-upload replaced
+		// it — in which case the path now carries a different artifact this call
+		// was never asked to delete.
+		cur, gerr := d.Assets.GetByPath(ctx, repoName, filePath)
+		if errors.Is(gerr, repository.ErrNotFound) {
+			return nil
+		}
+		if gerr != nil {
+			return gerr
+		}
+		if cur == nil || cur.ID != asset.ID || cur.BlobKey != asset.BlobKey {
+			return nil
+		}
+		// One blob can carry several assets: an OCI manifest push registers the tag
+		// path and the digest-alias path on the same blob key, and a client that
+		// deletes one still pulls the other. Deleting the bytes here would leave the
+		// survivor — and the referrers index built from it — advertising content that
+		// is gone. A count that cannot be read keeps the blob: an orphan is reclaimed
+		// by the blob GC, whereas bytes deleted under a live asset are lost.
+		others, cerr := d.Assets.CountByBlobKey(ctx, asset.BlobKey, asset.ID)
 
-	// The row goes first, before the bytes. Whichever half fails, the leftover
-	// has to be one the system can recover from: a blob with no row is reclaimed
-	// by the blob GC, while a row whose bytes are already gone is not
-	// self-healing — every later fetch finds the row and then fails to read the
-	// blob instead of answering a clean 404, and the store keeps accounting for
-	// bytes that no longer exist, since the usage decrement below is never
-	// reached. Everything after this point reasons from the asset struct already
-	// in hand, not from a fresh read, so the order does not change what is
-	// counted or decremented.
-	if err := d.Assets.Delete(ctx, asset.ID); err != nil {
+		// The row goes first, before the bytes. Whichever half fails, the leftover
+		// has to be one the system can recover from: a blob with no row is reclaimed
+		// by the blob GC, while a row whose bytes are already gone is not
+		// self-healing — every later fetch finds the row and then fails to read the
+		// blob instead of answering a clean 404, and the store keeps accounting for
+		// bytes that no longer exist, since the usage decrement below is never
+		// reached. Everything after this point reasons from the asset struct already
+		// in hand, not from a fresh read, so the order does not change what is
+		// counted or decremented.
+		if err := d.Assets.Delete(ctx, asset.ID); err != nil {
+			return err
+		}
+		rowDeleted = true
+		if cerr == nil && others == 0 {
+			// Both blob store backends report a missing object as a successful
+			// delete, so a nil error means the bytes are not there any more.
+			freed = delStore.Delete(ctx, asset.BlobKey) == nil
+		}
+		return nil
+	}); err != nil {
 		return err
 	}
-	freed := false
-	if cerr == nil && others == 0 {
-		// Both blob store backends report a missing object as a successful
-		// delete, so a nil error means the bytes are not there any more.
-		freed = delStore.Delete(ctx, asset.BlobKey) == nil
+	if !rowDeleted {
+		return nil // a concurrent caller already deleted or replaced it
 	}
 	metrics.ArtifactsDeleted.Add(1)
 	// Decremented only when the bytes actually left the store, mirroring the
