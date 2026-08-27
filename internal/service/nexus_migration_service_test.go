@@ -492,7 +492,7 @@ func TestNexusMigration_GroupCycleDoesNotHang(t *testing.T) {
 func TestNexusMigration_SkipsUnsupportedFormatAndCountsIt(t *testing.T) {
 	fake := &fakeNexus{
 		settings: `[
-			{"name":"gems","format":"rubygems","type":"hosted","online":true},
+			{"name":"bower-things","format":"bower","type":"hosted","online":true},
 			{"name":"raw-hosted","format":"raw","type":"hosted","online":true}
 		]`,
 	}
@@ -503,9 +503,9 @@ func TestNexusMigration_SkipsUnsupportedFormatAndCountsIt(t *testing.T) {
 	assert.Equal(t, 1, done.DoneRepos, "only the supported repository is created")
 	assert.Equal(t, 1, done.ErrorCount)
 	require.NotNil(t, done.LastError)
-	assert.Contains(t, *done.LastError, "rubygems")
+	assert.Contains(t, *done.LastError, "bower")
 
-	_, err := h.repos.Get(context.Background(), "gems")
+	_, err := h.repos.Get(context.Background(), "bower-things")
 	assert.Error(t, err)
 }
 

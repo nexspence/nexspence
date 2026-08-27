@@ -69,6 +69,7 @@ const FORMAT_COLORS: Record<string, string> = {
   apt:       '#f59e0b',
   yum:       '#10b981',
   conda:     '#44b765',
+  rubygems:  '#e9573f',
   terraform: '#7b42bc',
 }
 
@@ -158,7 +159,7 @@ export default function RepositoriesPage() {
         <Select
           options={[
             { value: '', label: 'All formats' },
-            ...['maven2','npm','docker','oci','pypi','go','nuget','helm','raw','apt','yum','cargo','conan','conda','terraform'].map(f => ({ value: f, label: f })),
+            ...['maven2','npm','docker','oci','pypi','go','nuget','helm','raw','apt','yum','cargo','conan','conda','terraform','rubygems'].map(f => ({ value: f, label: f })),
           ]}
           value={formatFilter}
           onChange={setFormatFilter}
@@ -396,6 +397,7 @@ const PROXY_DEFAULTS: Record<string, string> = {
   yum:       'https://dl.fedoraproject.org/pub/epel/9/Everything/x86_64/',
   raw:       '',
   conda:     'https://conda.anaconda.org/conda-forge/',
+  rubygems:  'https://rubygems.org/',
   terraform: 'https://registry.terraform.io/',
 }
 
@@ -539,7 +541,7 @@ function CreateRepoModal({ onClose, onCreated }: {
       <div className={styles.formRow}>
         <label style={LABEL_STYLE}>Format</label>
         <Select
-          options={['maven2','npm','docker','oci','pypi','go','nuget','helm','raw','apt','yum','cargo','conan','conda','terraform'].map(f => ({ value: f, label: f }))}
+          options={['maven2','npm','docker','oci','pypi','go','nuget','helm','raw','apt','yum','cargo','conan','conda','terraform','rubygems'].map(f => ({ value: f, label: f }))}
           value={form.format}
           onChange={handleFormatChange}
         />

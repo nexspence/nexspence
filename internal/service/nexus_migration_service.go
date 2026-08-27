@@ -59,6 +59,7 @@ var nexusFormats = map[string]domain.RepoFormat{
 	"conan":     "conan",
 	"conda":     "conda",
 	"terraform": "terraform",
+	"rubygems":  domain.FormatRubyGems,
 }
 
 // nexusPrivilegeTypes maps Nexus privilege types onto the Nexspence ones. The
