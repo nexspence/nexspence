@@ -29,10 +29,16 @@ type MigrationJob struct {
 	// SourcePassword is the Nexus password sealed with the instance encryption
 	// key. It is persisted so a job can resume after a process restart, and is
 	// never included in an API response.
-	SourcePassword      string
-	Status              MigrationJobStatus
-	MigrateRepos        bool
-	MigrateUsers        bool
+	SourcePassword string
+	Status         MigrationJobStatus
+	MigrateRepos   bool
+	MigrateUsers   bool
+	// UserRealms names the source realms user migration pulls accounts from,
+	// via Nexus's own ?source= filter ("default" is the local realm). Empty
+	// means local-only — the only realm guaranteed to make sense on a fresh
+	// target: an externally-authenticated account migrated without its provider
+	// configured is a permanently-unusable login (#342).
+	UserRealms          []string
 	MigrateBlobs        bool
 	MigratePolicies     bool
 	MigratePrivileges   bool

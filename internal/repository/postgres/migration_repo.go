@@ -22,17 +22,26 @@ func NewMigrationRepo(pool *pgxpool.Pool) *MigrationRepo {
 
 const migrationCols = `id, source_url, source_user, source_password, status,
 	migrate_repos, migrate_users, migrate_blobs, migrate_policies,
-	migrate_privileges, migrate_roles, migrate_routing_rules,
+	migrate_privileges, migrate_roles, migrate_routing_rules, user_realms,
 	total_repos, done_repos, total_assets, done_assets,
 	total_bytes, done_bytes, error_count, last_error,
 	started_at, finished_at, created_at, updated_at`
+
+// userRealmsValue maps a nil slice onto the empty array the NOT NULL column
+// expects; nil means "not specified", which the runner reads as local-only.
+func userRealmsValue(realms []string) []string {
+	if realms == nil {
+		return []string{}
+	}
+	return realms
+}
 
 func scanJob(row pgx.Row) (*domain.MigrationJob, error) {
 	var j domain.MigrationJob
 	err := row.Scan(
 		&j.ID, &j.SourceURL, &j.SourceUser, &j.SourcePassword, &j.Status,
 		&j.MigrateRepos, &j.MigrateUsers, &j.MigrateBlobs, &j.MigratePolicies,
-		&j.MigratePrivileges, &j.MigrateRoles, &j.MigrateRoutingRules,
+		&j.MigratePrivileges, &j.MigrateRoles, &j.MigrateRoutingRules, &j.UserRealms,
 		&j.TotalRepos, &j.DoneRepos, &j.TotalAssets, &j.DoneAssets,
 		&j.TotalBytes, &j.DoneBytes, &j.ErrorCount, &j.LastError,
 		&j.StartedAt, &j.FinishedAt, &j.CreatedAt, &j.UpdatedAt,
@@ -83,12 +92,12 @@ func (r *MigrationRepo) Create(ctx context.Context, job *domain.MigrationJob) er
 		INSERT INTO migration_jobs
 			(source_url, source_user, source_password, status,
 			 migrate_repos, migrate_users, migrate_blobs, migrate_policies,
-			 migrate_privileges, migrate_roles, migrate_routing_rules)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+			 migrate_privileges, migrate_roles, migrate_routing_rules, user_realms)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 		RETURNING id, created_at, updated_at`,
 		job.SourceURL, job.SourceUser, job.SourcePassword, status,
 		job.MigrateRepos, job.MigrateUsers, job.MigrateBlobs, job.MigratePolicies,
-		job.MigratePrivileges, job.MigrateRoles, job.MigrateRoutingRules,
+		job.MigratePrivileges, job.MigrateRoles, job.MigrateRoutingRules, userRealmsValue(job.UserRealms),
 	).Scan(&job.ID, &job.CreatedAt, &job.UpdatedAt)
 }
 

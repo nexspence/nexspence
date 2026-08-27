@@ -515,7 +515,7 @@ func (s *NexusMigrationService) runStages(ctx context.Context, client *nexusclie
 		}
 	}
 	if job.MigrateUsers {
-		if err := runStage("users", func() error { return s.migrateUsers(ctx, client, p) }); err != nil {
+		if err := runStage("users", func() error { return s.migrateUsers(ctx, client, job, p) }); err != nil {
 			return err
 		}
 	}
@@ -1360,33 +1360,51 @@ func sortedKeys(m map[string]nexusclient.Role) []string {
 
 // ── users ───────────────────────────────────────────────────────────────────
 
-func (s *NexusMigrationService) migrateUsers(ctx context.Context, client *nexusclient.Client, p *progress) error {
+func (s *NexusMigrationService) migrateUsers(ctx context.Context, client *nexusclient.Client,
+	job *domain.MigrationJob, p *progress,
+) error {
 	bg := context.Background()
 
-	source, err := client.ListUsers(ctx)
-	if err != nil {
-		return fmt.Errorf("list users on the source Nexus: %w", err)
+	// Realms are listed one at a time via ?source= (#342): an externally-
+	// authenticated account on a fresh target is a permanently-unusable login,
+	// so only the realms the operator asked for come across — local by default
+	// — and one poisoned realm's listing failure neither takes the others down
+	// nor is silently masked as stage success.
+	realms := job.UserRealms
+	if len(realms) == 0 {
+		realms = []string{"default"}
 	}
-	for _, src := range source {
+	var realmErrs []error
+	for _, realm := range realms {
 		if err := checkPaused(ctx); err != nil {
 			return err
 		}
-		if src.UserID == "" {
+		source, err := client.ListUsersBySource(ctx, realm)
+		if err != nil {
+			realmErrs = append(realmErrs, fmt.Errorf("realm %q: list users on the source Nexus: %w", realm, err))
 			continue
 		}
-		existing, err := s.users.Get(ctx, src.UserID)
-		if err != nil && !isNotFound(err) {
-			p.fail(bg, "user %q: %v", src.UserID, err)
-			continue
-		}
-		if existing != nil {
-			continue // an account of that name is already here; it is not overwritten
-		}
-		if err := s.createMigratedUser(ctx, src); err != nil {
-			p.fail(bg, "user %q: %v", src.UserID, err)
+		for _, src := range source {
+			if err := checkPaused(ctx); err != nil {
+				return err
+			}
+			if src.UserID == "" {
+				continue
+			}
+			existing, err := s.users.Get(ctx, src.UserID)
+			if err != nil && !isNotFound(err) {
+				p.fail(bg, "user %q: %v", src.UserID, err)
+				continue
+			}
+			if existing != nil {
+				continue // an account of that name is already here; it is not overwritten
+			}
+			if err := s.createMigratedUser(ctx, src); err != nil {
+				p.fail(bg, "user %q: %v", src.UserID, err)
+			}
 		}
 	}
-	return nil
+	return errors.Join(realmErrs...)
 }
 
 func (s *NexusMigrationService) createMigratedUser(ctx context.Context, src nexusclient.User) error {
@@ -1420,7 +1438,19 @@ func (s *NexusMigrationService) createMigratedUser(ctx context.Context, src nexu
 	}
 
 	if err := s.users.Create(ctx, user, password); err != nil {
-		return err
+		// An email colliding with an already-present account drops ONLY the
+		// email and retries (#342): "no email" is a first-class account state
+		// here (the partial unique index exists for LDAP users without a mail
+		// attribute), while dropping the whole account loses a credential an
+		// operator may depend on. Username collisions were already skipped by
+		// the existence check above.
+		if errors.Is(err, ErrAlreadyExists) && strings.Contains(err.Error(), "email") && user.Email != "" {
+			user.Email = ""
+			err = s.users.Create(ctx, user, password)
+		}
+		if err != nil {
+			return err
+		}
 	}
 
 	roleIDs := make([]string, 0, len(src.Roles))
