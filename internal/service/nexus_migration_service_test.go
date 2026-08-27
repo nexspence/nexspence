@@ -368,6 +368,102 @@ func TestNexusMigration_CreatesGroupAfterItsMembers(t *testing.T) {
 	assert.Equal(t, "https://repo1.maven.org/maven2", proxy.ProxyConfig["remote_url"])
 }
 
+// #342/7: Nexus never validated docker repository names, so a real source can
+// hold "Docker-Group" — a name docker clients cannot address. Failing only on
+// letter case is repaired by lowercasing; a group referencing the repository
+// under its source spelling must resolve the renamed member.
+func TestNexusMigration_DockerNameFailingOnlyOnCaseIsLowercased(t *testing.T) {
+	fake := &fakeNexus{
+		settings: `[
+			{"name":"Docker-Hosted","format":"docker","type":"hosted","online":true},
+			{"name":"Main-Group","format":"docker","type":"group","online":true,
+			 "group":{"memberNames":["Docker-Hosted"]}}
+		]`,
+	}
+	h := newMigHarness(t, fake)
+	job := h.startJob(t)
+	done := h.waitForStatus(t, job.ID, domain.MigrationDone)
+	assert.Zero(t, done.ErrorCount, "both repositories must migrate: %v", done.LastError)
+
+	ctx := context.Background()
+	created, err := h.repos.Get(ctx, "docker-hosted")
+	require.NoError(t, err, "the repository migrates under the lowercased name")
+	assert.Equal(t, domain.FormatDocker, created.Format)
+
+	group, err := h.repos.Get(ctx, "main-group")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"docker-hosted"}, domain.GroupMemberNames(group),
+		"the group resolves its member through the rename")
+}
+
+// A name invalid beyond letter case keeps failing exactly as before.
+func TestNexusMigration_DockerNameInvalidBeyondCaseStillFails(t *testing.T) {
+	fake := &fakeNexus{
+		settings: `[{"name":"docker repo","format":"docker","type":"hosted","online":true}]`,
+	}
+	h := newMigHarness(t, fake)
+	job := h.startJob(t)
+	done := h.waitForStatus(t, job.ID, domain.MigrationDone)
+	assert.Equal(t, 1, done.ErrorCount)
+	_, err := h.repos.Get(context.Background(), "docker repo")
+	assert.Error(t, err)
+}
+
+// #342/8: Nexus allows a group to name another group as a member; this schema
+// does not. A nested-group member is expanded into the leaf repositories it
+// aggregates instead of failing the whole outer group — resolved from the
+// SOURCE data, so the outcome does not depend on iteration order.
+func TestNexusMigration_NestedGroupMembersAreFlattened(t *testing.T) {
+	fake := &fakeNexus{
+		settings: `[
+			{"name":"outer","format":"raw","type":"group","online":true,
+			 "group":{"memberNames":["inner","raw-a"]}},
+			{"name":"inner","format":"raw","type":"group","online":true,
+			 "group":{"memberNames":["raw-a","raw-b"]}},
+			{"name":"raw-a","format":"raw","type":"hosted","online":true},
+			{"name":"raw-b","format":"raw","type":"hosted","online":true}
+		]`,
+	}
+	h := newMigHarness(t, fake)
+	job := h.startJob(t)
+	done := h.waitForStatus(t, job.ID, domain.MigrationDone)
+	assert.Zero(t, done.ErrorCount, "every repository must migrate: %v", done.LastError)
+
+	ctx := context.Background()
+	outer, err := h.repos.Get(ctx, "outer")
+	require.NoError(t, err, "the outer group must not be dropped over its nested member")
+	assert.ElementsMatch(t, []string{"raw-a", "raw-b"}, domain.GroupMemberNames(outer),
+		"the nested group flattens to its leaves, deduplicated")
+
+	inner, err := h.repos.Get(ctx, "inner")
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []string{"raw-a", "raw-b"}, domain.GroupMemberNames(inner))
+}
+
+// A reference cycle between source groups stops contributing members instead
+// of recursing forever.
+func TestNexusMigration_GroupCycleDoesNotHang(t *testing.T) {
+	fake := &fakeNexus{
+		settings: `[
+			{"name":"g1","format":"raw","type":"group","online":true,
+			 "group":{"memberNames":["g2","raw-a"]}},
+			{"name":"g2","format":"raw","type":"group","online":true,
+			 "group":{"memberNames":["g1","raw-b"]}},
+			{"name":"raw-a","format":"raw","type":"hosted","online":true},
+			{"name":"raw-b","format":"raw","type":"hosted","online":true}
+		]`,
+	}
+	h := newMigHarness(t, fake)
+	job := h.startJob(t)
+	h.waitForStatus(t, job.ID, domain.MigrationDone)
+
+	ctx := context.Background()
+	g1, err := h.repos.Get(ctx, "g1")
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []string{"raw-a", "raw-b"}, domain.GroupMemberNames(g1),
+		"the cycle stops; every reachable leaf still contributes")
+}
+
 func TestNexusMigration_SkipsUnsupportedFormatAndCountsIt(t *testing.T) {
 	fake := &fakeNexus{
 		settings: `[
