@@ -9,9 +9,12 @@ package pypi
 import (
 	"fmt"
 	"html"
+	"log"
 	"net/http"
 	"path"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -22,7 +25,14 @@ import (
 )
 
 // Handler serves the PyPI repository protocol.
-type Handler struct{ deps formats.Deps }
+type Handler struct {
+	deps formats.Deps
+
+	// ageMu/ageDates cache per-package upload-time maps for the
+	// minimum-package-age policy (#323); see age_filter.go.
+	ageMu    sync.Mutex
+	ageDates map[string]uploadTimesEntry
+}
 
 // New creates a PyPI format Handler with the given dependencies.
 func New(deps formats.Deps) *Handler { return &Handler{deps: deps} }
@@ -73,6 +83,15 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 			// this proxy instead of upstream (#98); the cache keeps the original.
 			localBase := strings.TrimRight(h.deps.BaseURL, "/") + "/repository/" + repo.Name
 			rewrite := func(b []byte) []byte { return RewriteSimplePage(b, localBase) }
+			if minAge := repoproxy.MinimumPackageAge(repo); minAge > 0 {
+				if dates := h.simpleUploadTimes(c.Request.Context(), repo, normalized); len(dates) > 0 {
+					cutoff := time.Now().Add(-minAge)
+					inner := rewrite
+					rewrite = func(b []byte) []byte { return inner(FilterSimpleHTMLByAge(b, dates, cutoff)) }
+				} else {
+					log.Printf("nexspence: minimum_package_age not applied for %s/%s — upstream provides no upload dates", repo.Name, normalized)
+				}
+			}
 			if err := repoproxy.ServeGETRewritten(c, h.deps, repo, p, "", coords, "text/html; charset=utf-8", repoproxy.MetadataMaxAge(repo), rewrite); err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			}
@@ -206,6 +225,11 @@ func (h *Handler) serveFile(c *gin.Context, repoName, filePath string) {
 		return
 	}
 	if repo != nil && repo.Type == domain.TypeProxy {
+		if minAge := repoproxy.MinimumPackageAge(repo); minAge > 0 {
+			if !h.fileAgeAllowed(c, repo, filePath, minAge) {
+				return
+			}
+		}
 		pkgGuess := path.Base(path.Dir(filePath))
 		coords := base.Coords{Name: normalizePackageName(pkgGuess), Version: "wheel"}
 		ct := pypiContentType(path.Base(filePath))

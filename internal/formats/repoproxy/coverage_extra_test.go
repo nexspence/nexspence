@@ -131,3 +131,32 @@ func TestScopeFromRegistryV2URL_Endpoints(t *testing.T) {
 		}
 	}
 }
+
+// MinimumPackageAge: absent/zero/invalid means DISABLED (0) — the policy is
+// opt-in, unlike MetadataMaxAge which falls back to a positive default.
+func TestMinimumPackageAge_Parsing(t *testing.T) {
+	cases := []struct {
+		name string
+		repo *domain.Repository
+		want time.Duration
+	}{
+		{"nil repo", nil, 0},
+		{"nil config", &domain.Repository{}, 0},
+		{"missing key", proxyRepoWith(map[string]any{"remote_url": "x"}), 0},
+		{"seconds float64", proxyRepoWith(map[string]any{"minimum_package_age": float64(604800)}), 7 * 24 * time.Hour},
+		{"seconds int", proxyRepoWith(map[string]any{"minimum_package_age": 86400}), 24 * time.Hour},
+		{"seconds string", proxyRepoWith(map[string]any{"minimum_package_age": "3600"}), time.Hour},
+		{"json.Number", proxyRepoWith(map[string]any{"minimum_package_age": json.Number("60")}), time.Minute},
+		{"zero disables", proxyRepoWith(map[string]any{"minimum_package_age": 0}), 0},
+		{"negative disables", proxyRepoWith(map[string]any{"minimum_package_age": -5}), 0},
+		{"bad string disables", proxyRepoWith(map[string]any{"minimum_package_age": "week"}), 0},
+		{"wrong type disables", proxyRepoWith(map[string]any{"minimum_package_age": true}), 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := MinimumPackageAge(tc.repo); got != tc.want {
+				t.Fatalf("MinimumPackageAge = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
