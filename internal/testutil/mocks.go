@@ -2206,6 +2206,12 @@ func (r *PrivilegeRepo) Create(_ context.Context, p *domain.Privilege) error {
 	if r.Err != nil {
 		return r.Err
 	}
+	// Mirror migration 007's check constraint: a repository-content-selector
+	// privilege must name its selector. A mock that accepts the row hides
+	// exactly the failure every such privilege hits against real Postgres.
+	if p.Type == domain.PrivilegeTypeRepositoryContentSelector && (p.ContentSelectorID == nil || *p.ContentSelectorID == "") {
+		return fmt.Errorf(`new row for relation "privileges" violates check constraint "privileges_selector_required"`)
+	}
 	if p.ID == "" {
 		p.ID = fmt.Sprintf("priv-%d", len(r.data)+1)
 	}

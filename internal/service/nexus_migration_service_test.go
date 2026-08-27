@@ -28,15 +28,16 @@ import (
 // fakeNexus serves the slice of the Nexus OSS REST API the migration reads.
 // Every field is a raw JSON body; empty means "endpoint returns an empty list".
 type fakeNexus struct {
-	settings     string            // /service/rest/v1/repositorySettings
-	settingsCode int               // non-zero forces this status instead of settings
-	repositories string            // /service/rest/v1/repositories
-	components   map[string]string // repository name → one full component page
-	files        map[string]string // /repository/... path → body
-	users        string
-	roles        string
-	privileges   string
-	routingRules string
+	settings         string            // /service/rest/v1/repositorySettings
+	settingsCode     int               // non-zero forces this status instead of settings
+	repositories     string            // /service/rest/v1/repositories
+	components       map[string]string // repository name → one full component page
+	files            map[string]string // /repository/... path → body
+	users            string
+	roles            string
+	privileges       string
+	routingRules     string
+	contentSelectors string
 	// onFile, when set, runs before an artifact byte is served. It lets a test
 	// hold the run inside a download and act while it is demonstrably in flight.
 	onFile func()
@@ -86,6 +87,8 @@ func (f *fakeNexus) start(t *testing.T) *httptest.Server {
 			_, _ = io.WriteString(w, orEmptyList(f.roles))
 		case r.URL.Path == "/service/rest/v1/security/privileges":
 			_, _ = io.WriteString(w, orEmptyList(f.privileges))
+		case r.URL.Path == "/service/rest/v1/security/content-selectors":
+			_, _ = io.WriteString(w, orEmptyList(f.contentSelectors))
 		case r.URL.Path == "/service/rest/v1/routing-rules":
 			_, _ = io.WriteString(w, orEmptyList(f.routingRules))
 		case strings.HasPrefix(r.URL.Path, "/repository/"):
@@ -179,6 +182,7 @@ type migHarness struct {
 	roles      *testutil.RoleRepo
 	privileges *testutil.PrivilegeRepo
 	rules      *testutil.RoutingRuleRepo
+	csRepo     *testutil.ContentSelectorRepo
 	nexus      *httptest.Server
 }
 
@@ -213,8 +217,11 @@ func newMigHarness(t *testing.T, fake *fakeNexus, existingUsers ...*domain.User)
 		roles:      testutil.NewRoleRepo(),
 		privileges: testutil.NewPrivilegeRepo(),
 		rules:      testutil.NewRoutingRuleRepo(),
+		csRepo:     testutil.NewContentSelectorRepo(),
 		nexus:      srv,
 	}
+	selectorSvc, err := service.NewContentSelectorService(h.csRepo)
+	require.NoError(t, err)
 
 	h.svc = service.NewNexusMigrationService(service.NexusMigrationConfig{
 		Jobs:          h.jobs,
@@ -223,6 +230,7 @@ func newMigHarness(t *testing.T, fake *fakeNexus, existingUsers ...*domain.User)
 		Roles:         h.roles,
 		Privileges:    h.privileges,
 		RoutingRules:  h.rules,
+		Selectors:     selectorSvc,
 		Deps:          deps,
 		JWTSecret:     "unit-test-secret",
 		Log:           zap.NewNop().Sugar(),
@@ -639,6 +647,87 @@ func TestNexusMigration_MigratesPrivilegesSkippingBuiltins(t *testing.T) {
 
 	_, err = h.privileges.GetByName(ctx, "nx-all")
 	assert.Error(t, err, "Nexus built-in privileges are not copied")
+}
+
+// #342/2: Nexus's action vocabulary (add/edit/all) must translate into the
+// four actions this RBAC engine understands, or migrated accounts silently
+// lose their push/delete/admin rights.
+func TestNexusMigration_TranslatesPrivilegeActionVocabulary(t *testing.T) {
+	fake := &fakeNexus{
+		privileges: `[
+			{"type":"repository-view","name":"push-maven","description":"","readOnly":false,
+			 "format":"maven2","repository":"r","actions":["ADD","EDIT"]},
+			{"type":"repository-admin","name":"admin-maven","description":"","readOnly":false,
+			 "format":"maven2","repository":"r","actions":["ALL","READ"]}
+		]`,
+	}
+	h := newMigHarness(t, fake)
+	job := h.startJob(t)
+	h.waitForStatus(t, job.ID, domain.MigrationDone)
+
+	ctx := context.Background()
+	push, err := h.privileges.GetByName(ctx, "push-maven")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"write"}, push.Attrs["actions"],
+		"add and edit both mean write — translated and deduplicated")
+
+	admin, err := h.privileges.GetByName(ctx, "admin-maven")
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []string{"read", "browse", "write", "delete"}, admin.Attrs["actions"],
+		"all expands to every action, without doubling the explicit read")
+}
+
+// #342/6: repository-content-selector privileges are unusable without the
+// selector they name — the selectors must be re-created first (with Nexus's
+// "=~" regex operator and its raw-backslash literals translated to CEL), and
+// each privilege's ContentSelectorID resolved, or every one of them fails the
+// DB constraint with an opaque error.
+func TestNexusMigration_MigratesContentSelectorsAndResolvesPrivileges(t *testing.T) {
+	fake := &fakeNexus{
+		contentSelectors: `[
+			{"name":"meta-files","type":"csel","description":"metadata only",
+			 "expression":"format == \"maven2\" && path =~ \".*maven-metadata\\.xml.*\""}
+		]`,
+		privileges: `[
+			{"type":"repository-content-selector","name":"cs-priv","description":"","readOnly":false,
+			 "contentSelector":"meta-files","repository":"*","actions":["READ"]}
+		]`,
+	}
+	h := newMigHarness(t, fake)
+	job := h.startJob(t)
+	done := h.waitForStatus(t, job.ID, domain.MigrationDone)
+	assert.Zero(t, done.ErrorCount, "nothing may fail: %v", done.LastError)
+
+	ctx := context.Background()
+	sel, err := h.csRepo.GetByName(ctx, "meta-files")
+	require.NoError(t, err, "the source's content selector must be re-created here")
+	assert.Equal(t, `format == "maven2" && path.matches(".*maven-metadata\\.xml.*")`, sel.Expression,
+		"Nexus's =~ becomes CEL matches(), and the raw backslash is doubled into a valid CEL literal")
+
+	priv, err := h.privileges.GetByName(ctx, "cs-priv")
+	require.NoError(t, err, "the privilege must migrate now that its selector exists")
+	require.NotNil(t, priv.ContentSelectorID)
+	assert.Equal(t, sel.ID, *priv.ContentSelectorID)
+}
+
+// A privilege naming a selector the source does not define fails as that one
+// item, with an error that names the selector — not a raw DB constraint.
+func TestNexusMigration_ContentSelectorPrivilegeWithUnknownSelectorFailsClearly(t *testing.T) {
+	fake := &fakeNexus{
+		privileges: `[
+			{"type":"repository-content-selector","name":"orphan-priv","description":"","readOnly":false,
+			 "contentSelector":"no-such-selector","repository":"*","actions":["READ"]}
+		]`,
+	}
+	h := newMigHarness(t, fake)
+	job := h.startJob(t)
+	done := h.waitForStatus(t, job.ID, domain.MigrationDone)
+
+	_, err := h.privileges.GetByName(context.Background(), "orphan-priv")
+	assert.Error(t, err, "a privilege with no resolvable selector cannot be created")
+	require.NotNil(t, done.LastError)
+	assert.Contains(t, *done.LastError, "no-such-selector",
+		"the failure must name the missing selector, not a database constraint")
 }
 
 func TestNexusMigration_MigratesRolesInDependencyOrderAndFlattensNesting(t *testing.T) {

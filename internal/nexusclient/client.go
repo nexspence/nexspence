@@ -87,6 +87,14 @@ type Privilege struct {
 	Attrs       map[string]any
 }
 
+// ContentSelector is a CSEL content selector: a named expression that scopes
+// repository-content-selector privileges to a subset of a repository's paths.
+type ContentSelector struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Expression  string `json:"expression"`
+}
+
 // RoutingRule is a request routing rule (ALLOW or BLOCK plus regex matchers).
 type RoutingRule struct {
 	Name        string
@@ -425,6 +433,17 @@ func (c *Client) ListRoles(ctx context.Context) ([]Role, error) {
 // Nexus returns is type-specific and kept in Attrs.
 var privilegeIdentityFields = map[string]bool{
 	"name": true, "description": true, "type": true, "readOnly": true,
+}
+
+// ListContentSelectors returns every content selector on the source. A
+// repository-content-selector privilege is unusable without the selector it
+// names, so the migration re-creates these first.
+func (c *Client) ListContentSelectors(ctx context.Context) ([]ContentSelector, error) {
+	var out []ContentSelector
+	if err := c.getJSON(ctx, "/service/rest/v1/security/content-selectors", &out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // ListPrivileges returns every security privilege with its type-specific
