@@ -87,6 +87,10 @@ type NexusMigrationConfig struct {
 	Roles        repository.RoleRepo
 	Privileges   repository.PrivilegeRepo
 	RoutingRules repository.RoutingRuleRepo
+	// Selectors re-creates the source's content selectors (and validates their
+	// translated CEL), so repository-content-selector privileges can resolve
+	// the selector they name instead of failing the DB constraint.
+	Selectors *ContentSelectorService
 	// Deps is the storage waist every format handler writes through; the
 	// migration ingests assets the same way an upload does.
 	Deps formats.Deps
@@ -114,6 +118,7 @@ type NexusMigrationService struct {
 	roles        repository.RoleRepo
 	privileges   repository.PrivilegeRepo
 	routingRules repository.RoutingRuleRepo
+	selectors    *ContentSelectorService
 	deps         formats.Deps
 	log          logger.Logger
 
@@ -135,6 +140,7 @@ func NewNexusMigrationService(cfg NexusMigrationConfig) *NexusMigrationService {
 		roles:        cfg.Roles,
 		privileges:   cfg.Privileges,
 		routingRules: cfg.RoutingRules,
+		selectors:    cfg.Selectors,
 		deps:         cfg.Deps,
 		log:          cfg.Log,
 		newClient:    cfg.HTTPClientFor,
@@ -873,6 +879,14 @@ func ociManifestPath(raw string) (ociPath, bool) {
 func (s *NexusMigrationService) migratePrivileges(ctx context.Context, client *nexusclient.Client, p *progress) error {
 	bg := context.Background()
 
+	// Content selectors first: a repository-content-selector privilege is
+	// rejected by the DB outright unless it names its selector, so without
+	// this every such privilege fails with a raw constraint violation (#342).
+	selectorIDs, err := s.migrateContentSelectors(ctx, client, p)
+	if err != nil {
+		return err
+	}
+
 	source, err := client.ListPrivileges(ctx)
 	if err != nil {
 		return fmt.Errorf("list privileges on the source Nexus: %w", err)
@@ -898,6 +912,15 @@ func (s *NexusMigrationService) migratePrivileges(ctx context.Context, client *n
 			Type:        privType,
 			Attrs:       normalizePrivilegeAttrs(src.Attrs),
 		}
+		if privType == domain.PrivilegeTypeRepositoryContentSelector {
+			selName, _ := src.Attrs["contentSelector"].(string)
+			id, ok := selectorIDs[selName]
+			if !ok {
+				p.fail(bg, "privilege %q: content selector %q was not migrated (missing on the source, or its expression could not be translated)", src.Name, selName)
+				continue
+			}
+			priv.ContentSelectorID = &id
+		}
 		if err := s.privileges.Create(ctx, priv); err != nil {
 			p.fail(bg, "privilege %q: %v", src.Name, err)
 		}
@@ -905,8 +928,95 @@ func (s *NexusMigrationService) migratePrivileges(ctx context.Context, client *n
 	return nil
 }
 
-// normalizePrivilegeAttrs lowercases the action names. Nexus reports them
-// uppercase ("READ"); every check here compares against lowercase.
+// migrateContentSelectors re-creates the source's content selectors and
+// returns a name→ID map for resolving privileges. A selector whose expression
+// cannot be translated or validated is a per-item failure, not fatal.
+func (s *NexusMigrationService) migrateContentSelectors(ctx context.Context, client *nexusclient.Client, p *progress) (map[string]string, error) {
+	bg := context.Background()
+	ids := make(map[string]string)
+	if s.selectors == nil {
+		return ids, nil
+	}
+	source, err := client.ListContentSelectors(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list content selectors on the source Nexus: %w", err)
+	}
+	existing, err := s.selectors.List(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list local content selectors: %w", err)
+	}
+	byName := make(map[string]string, len(existing))
+	for _, sel := range existing {
+		byName[sel.Name] = sel.ID
+	}
+	for _, src := range source {
+		if err := checkPaused(ctx); err != nil {
+			return nil, err
+		}
+		if id, ok := byName[src.Name]; ok {
+			ids[src.Name] = id // idempotent re-run
+			continue
+		}
+		sel := &domain.ContentSelector{
+			Name:        src.Name,
+			Description: src.Description,
+			Expression:  translateNexusSelectorExpression(src.Expression),
+		}
+		// Create validates against the exact CEL environment selectors are
+		// evaluated under later, so a migrated selector is guaranteed to still
+		// compile when it matters.
+		if err := s.selectors.Create(ctx, sel); err != nil {
+			p.fail(bg, "content selector %q: %v", src.Name, err)
+			continue
+		}
+		ids[src.Name] = sel.ID
+	}
+	return ids, nil
+}
+
+// nexusSelectorRegexRe matches Nexus's "field =~ \"regex\"" — a Sonatype
+// extension to CEL for regex match, a hard syntax error in plain CEL.
+var nexusSelectorRegexRe = regexp.MustCompile(`([A-Za-z_][A-Za-z0-9_.]*)\s*=~\s*"([^"]*)"`)
+
+// translateNexusSelectorExpression rewrites a Nexus CSEL expression into the
+// CEL dialect selectors are evaluated under here. Two divergences matter on
+// real data (#342):
+//
+//   - `field =~ "regex"` becomes `field.matches("regex")`.
+//   - Nexus's grammar passes a backslash straight through as a regex escape
+//     (`\.` for a literal dot) — never an escape in its own string literal.
+//     CEL disagrees: `\.` is a hard syntax error, and `\\` is the only way to
+//     spell one literal backslash. Every backslash inside the captured
+//     literal is doubled, which decodes back to exactly the regex Nexus meant.
+//
+// Anything else passes through unchanged; validation happens at Create.
+func translateNexusSelectorExpression(expr string) string {
+	return nexusSelectorRegexRe.ReplaceAllStringFunc(expr, func(m string) string {
+		sub := nexusSelectorRegexRe.FindStringSubmatch(m)
+		pattern := strings.ReplaceAll(sub[2], `\`, `\\`)
+		return sub[1] + `.matches("` + pattern + `")`
+	})
+}
+
+// nexusActionVocabulary maps Nexus's action names onto the four actions this
+// RBAC engine understands (actionAllowed compares exact lowercase strings).
+// "add" and "edit" are both write; an untranslated one silently strips
+// push/delete rights from every migrated account (#342).
+var nexusActionVocabulary = map[string]string{
+	"read":   "read",
+	"browse": "browse",
+	"add":    "write",
+	"edit":   "write",
+	"delete": "delete",
+}
+
+// nexusActionAll is what Nexus's "all" expands to.
+var nexusActionAll = []string{"read", "browse", "write", "delete"}
+
+// normalizePrivilegeAttrs lowercases the action names and translates Nexus's
+// vocabulary (add/edit → write, all → every action). Nexus reports them
+// uppercase ("READ"); every check here compares against lowercase. An
+// unrecognized action is kept as-is rather than silently dropped.
 func normalizePrivilegeAttrs(attrs map[string]any) map[string]any {
 	out := make(map[string]any, len(attrs))
 	for k, v := range attrs {
@@ -919,11 +1029,31 @@ func normalizePrivilegeAttrs(attrs map[string]any) map[string]any {
 			out[k] = v
 			continue
 		}
+		seen := make(map[string]bool, len(raw))
 		actions := make([]string, 0, len(raw))
-		for _, item := range raw {
-			if s, ok := item.(string); ok {
-				actions = append(actions, strings.ToLower(s))
+		add := func(a string) {
+			if !seen[a] {
+				seen[a] = true
+				actions = append(actions, a)
 			}
+		}
+		for _, item := range raw {
+			s, ok := item.(string)
+			if !ok {
+				continue
+			}
+			lower := strings.ToLower(s)
+			if lower == "all" || lower == "*" {
+				for _, a := range nexusActionAll {
+					add(a)
+				}
+				continue
+			}
+			if translated, ok := nexusActionVocabulary[lower]; ok {
+				add(translated)
+				continue
+			}
+			add(lower)
 		}
 		out[k] = actions
 	}

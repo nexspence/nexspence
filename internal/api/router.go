@@ -320,6 +320,7 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 		Roles:         roleRepo,
 		Privileges:    privilegeRepo,
 		RoutingRules:  rrRepo,
+		Selectors:     selectorSvc,
 		Deps:          formatDeps,
 		JWTSecret:     cfg.Auth.JWTSecret,
 		EncryptionKey: cfg.Auth.EncryptionKeyBytes(),
