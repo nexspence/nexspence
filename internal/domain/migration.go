@@ -57,3 +57,10 @@ type MigrationJob struct {
 func (j MigrationJob) IsActive() bool {
 	return j.Status == MigrationPending || j.Status == MigrationRunning
 }
+
+// IsResumable reports whether Resume may relaunch the job: parked by an
+// operator, or failed and worth retrying after the cause is fixed. A finished
+// job is not — relaunching it would relist the entire source for nothing.
+func (j MigrationJob) IsResumable() bool {
+	return j.Status == MigrationPaused || j.Status == MigrationError
+}
