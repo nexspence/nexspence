@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -203,4 +204,22 @@ func (h *Handler) readCachedBlob(ctx context.Context, asset *domain.Asset) []byt
 		return nil
 	}
 	return b
+}
+
+// tarballVersion cuts "<base>-<version>.tgz" at the package's base-name
+// prefix, so prerelease hyphens survive ("pkg-1.0.0-beta.1.tgz" →
+// "1.0.0-beta.1"; a last-hyphen split would yield "beta.1" and fail closed on
+// a perfectly aged artifact). npm requests scoped tarballs as
+// /@scope/name/-/name-ver.tgz — the filename carries the unscoped base name.
+// An unrecognizable filename yields "", which the gate fails closed on.
+func tarballVersion(pkg, baseName string) string {
+	base := pkg
+	if i := strings.LastIndex(pkg, "/"); i >= 0 {
+		base = pkg[i+1:]
+	}
+	name := strings.TrimSuffix(baseName, ".tgz")
+	if v, ok := strings.CutPrefix(name, base+"-"); ok {
+		return v
+	}
+	return ""
 }

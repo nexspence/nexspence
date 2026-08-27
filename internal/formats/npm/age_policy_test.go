@@ -158,3 +158,37 @@ func TestNPM_AgePolicy_DisabledByDefault(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &doc))
 	assert.Contains(t, doc["versions"].(map[string]any), "2.0.0")
 }
+
+// Prerelease versions carry hyphens ("1.0.0-beta.1"): the version must be cut
+// at the package-name prefix, not at the last hyphen, or an OLD prerelease
+// fails closed as "not in the publish history" — a false positive that blocks
+// a perfectly aged artifact.
+func TestNPM_AgePolicy_OldPrereleaseTarballServes(t *testing.T) {
+	now := time.Now().UTC()
+	doc := map[string]any{
+		"name":      "pkg",
+		"dist-tags": map[string]any{"latest": "1.0.0-beta.1"},
+		"versions": map[string]any{
+			"1.0.0-beta.1": map[string]any{"name": "pkg", "version": "1.0.0-beta.1", "dist": map[string]any{"tarball": "https://up/pkg/-/pkg-1.0.0-beta.1.tgz"}},
+		},
+		"time": map[string]any{
+			"1.0.0-beta.1": now.Add(-90 * 24 * time.Hour).Format(time.RFC3339),
+		},
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/-/") {
+			_, _ = w.Write([]byte("tarball-bytes"))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(doc)
+	}))
+	t.Cleanup(srv.Close)
+	r := agedProxySetup(srv)
+
+	req := httptest.NewRequest(http.MethodGet, "/repository/npm-aged/pkg/-/pkg-1.0.0-beta.1.tgz", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code,
+		"a 90-day-old prerelease must serve: %d %s", w.Code, w.Body.String())
+}

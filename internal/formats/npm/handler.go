@@ -111,7 +111,7 @@ func (h *Handler) serveTarball(c *gin.Context, repoName, filePath string) {
 		}
 		pkg := strings.TrimPrefix(strings.Split(filePath, "/-/")[0], "/")
 		if minAge := repoproxy.MinimumPackageAge(repo); minAge > 0 {
-			if !h.tarballAgeAllowed(c, repo, pkg, ver, minAge) {
+			if !h.tarballAgeAllowed(c, repo, pkg, tarballVersion(pkg, path.Base(filePath)), minAge) {
 				return
 			}
 		}
