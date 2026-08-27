@@ -373,8 +373,14 @@ func TestServeGET_UpstreamPathOverride(t *testing.T) {
 	// When upstreamPath is set, that path should be fetched but cache key uses repoRelativePath.
 	const body = "scoped npm meta"
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Should be called with the upstream path, not the repo-relative path.
-		assert.Equal(t, "/@babel%2Fcore", r.URL.Path)
+		// Should be called with the upstream path, not the repo-relative path —
+		// and escaped exactly once on the wire. The old assertion checked
+		// r.URL.Path (the DECODED path) against "/@babel%2Fcore", which only
+		// held while the wire carried the double-escaped "/@babel%252Fcore" —
+		// the very bug that made registry.npmjs.org answer 405 for every
+		// scoped package.
+		assert.Equal(t, "/@babel%2Fcore", r.RequestURI)
+		assert.Equal(t, "/@babel/core", r.URL.Path)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_, _ = fmt.Fprint(w, body)
