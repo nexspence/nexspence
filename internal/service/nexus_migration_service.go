@@ -483,7 +483,7 @@ func (s *NexusMigrationService) runStages(ctx context.Context, client *nexusclie
 	}
 
 	if job.MigrateRepos {
-		var hosted []nexusclient.Repository
+		var hosted []migratedRepo
 		if err := runStage("repositories", func() error {
 			var e error
 			hosted, e = s.migrateRepositories(ctx, client, p)
@@ -540,11 +540,19 @@ func checkPaused(ctx context.Context) error {
 
 // ── repositories ────────────────────────────────────────────────────────────
 
+// migratedRepo pairs a source repository with the name it was created under
+// here — identical except when a docker/OCI name was repaired by lowercasing
+// (#342): Nexus never validated the grammar docker clients parse names with.
+type migratedRepo struct {
+	src       nexusclient.Repository
+	localName string
+}
+
 // migrateRepositories re-creates the source repositories here and returns the
 // hosted ones, which are the only ones holding artifacts worth transferring.
 func (s *NexusMigrationService) migrateRepositories(ctx context.Context, client *nexusclient.Client,
 	p *progress,
-) ([]nexusclient.Repository, error) {
+) ([]migratedRepo, error) {
 	bg := context.Background()
 
 	source, err := client.ListRepositoriesWithConfig(ctx)
@@ -564,7 +572,16 @@ func (s *NexusMigrationService) migrateRepositories(ctx context.Context, client 
 		}
 	}
 
-	var hosted []nexusclient.Repository
+	// srcByName lets a group expand a nested-group member from SOURCE data,
+	// independent of what has migrated so far; localNames resolves a member
+	// through any rename its repository picked up.
+	srcByName := make(map[string]nexusclient.Repository, len(source))
+	for _, r := range source {
+		srcByName[r.Name] = r
+	}
+	localNames := make(map[string]string, len(source))
+
+	var hosted []migratedRepo
 	for _, src := range ordered {
 		if err := checkPaused(ctx); err != nil {
 			return nil, err
@@ -574,26 +591,45 @@ func (s *NexusMigrationService) migrateRepositories(ctx context.Context, client 
 			p.fail(bg, "repository %q: format %q has no Nexspence equivalent", src.Name, src.Format)
 			continue
 		}
-		if err := s.ensureRepository(ctx, src, format, p); err != nil {
+		localName := migratedRepoName(src.Name, format)
+		if err := s.ensureRepository(ctx, src, format, localName, srcByName, localNames, p); err != nil {
 			p.fail(bg, "repository %q: %v", src.Name, err)
 			continue
 		}
+		localNames[src.Name] = localName
 		p.doneRepos++
 		p.flush(bg)
 		if src.Type == "hosted" {
-			hosted = append(hosted, src)
+			hosted = append(hosted, migratedRepo{src: src, localName: localName})
 		}
 	}
 	return hosted, nil
+}
+
+// migratedRepoName is the name the source repository is created under here.
+// A docker/OCI name failing the naming grammar ONLY on letter case is
+// lowercased — Nexus itself never validated it, so a real source can hold
+// "Docker-Group" (#342). A name invalid beyond case is returned unchanged and
+// fails the same create-time validation as before.
+func migratedRepoName(name string, format domain.RepoFormat) string {
+	if validateNameForFormat(name, format) == nil {
+		return name
+	}
+	lower := strings.ToLower(name)
+	if lower != name && validateNameForFormat(lower, format) == nil {
+		return lower
+	}
+	return name
 }
 
 // ensureRepository creates the repository unless one of that name is already
 // here. An existing repository is left exactly as it is: a re-run must not
 // rewrite configuration an operator has since changed.
 func (s *NexusMigrationService) ensureRepository(ctx context.Context, src nexusclient.Repository,
-	format domain.RepoFormat, p *progress,
+	format domain.RepoFormat, localName string,
+	srcByName map[string]nexusclient.Repository, localNames map[string]string, p *progress,
 ) error {
-	existing, err := s.deps.Repos.Get(ctx, src.Name)
+	existing, err := s.deps.Repos.Get(ctx, localName)
 	if err != nil && !errors.Is(err, repository.ErrNotFound) {
 		return err
 	}
@@ -602,7 +638,7 @@ func (s *NexusMigrationService) ensureRepository(ctx context.Context, src nexusc
 	}
 
 	repo := &domain.Repository{
-		Name:        src.Name,
+		Name:        localName,
 		Format:      format,
 		Type:        domain.RepoType(src.Type),
 		Online:      true,
@@ -615,10 +651,18 @@ func (s *NexusMigrationService) ensureRepository(ctx context.Context, src nexusc
 		}
 		repo.ProxyConfig = map[string]any{"remote_url": src.RemoteURL}
 	case "group":
+		// Nexus allows a group to nest another group; this schema does not. A
+		// nested member is expanded into the leaves it aggregates — resolved
+		// from the SOURCE data, so the outcome is independent of iteration
+		// order — instead of failing the entire outer group (#342).
 		members := make([]string, 0, len(src.MemberNames))
-		for _, name := range src.MemberNames {
-			if _, err := s.deps.Repos.Get(ctx, name); err == nil {
-				members = append(members, name)
+		for _, name := range flattenGroupMembers(src, srcByName) {
+			local, ok := localNames[name]
+			if !ok {
+				local = name
+			}
+			if _, err := s.deps.Repos.Get(ctx, local); err == nil {
+				members = append(members, local)
 				continue
 			}
 			p.fail(context.Background(),
@@ -627,6 +671,37 @@ func (s *NexusMigrationService) ensureRepository(ctx context.Context, src nexusc
 		repo.FormatConfig = map[string]any{"member_names": members}
 	}
 	return s.repos.Create(ctx, repo)
+}
+
+// flattenGroupMembers expands a source group's member list into the leaf
+// (hosted/proxy) repositories it ultimately aggregates, deduplicated in first-
+// seen order. A group already being expanded is not re-entered, so a reference
+// cycle just stops contributing further members — the same guard the role
+// flattening uses. An unknown member name is kept as a leaf; the caller's
+// existence check reports it.
+func flattenGroupMembers(src nexusclient.Repository, byName map[string]nexusclient.Repository) []string {
+	var out []string
+	seen := make(map[string]bool)
+	expanded := map[string]bool{src.Name: true}
+	var walk func(names []string)
+	walk = func(names []string) {
+		for _, n := range names {
+			if member, known := byName[n]; known && member.Type == "group" {
+				if expanded[n] {
+					continue
+				}
+				expanded[n] = true
+				walk(member.MemberNames)
+				continue
+			}
+			if !seen[n] {
+				seen[n] = true
+				out = append(out, n)
+			}
+		}
+	}
+	walk(src.MemberNames)
+	return out
 }
 
 // ── assets ──────────────────────────────────────────────────────────────────
@@ -649,17 +724,17 @@ type plannedAsset struct {
 }
 
 func (s *NexusMigrationService) migrateAssets(ctx context.Context, client *nexusclient.Client,
-	hosted []nexusclient.Repository, p *progress,
+	hosted []migratedRepo, p *progress,
 ) error {
 	bg := context.Background()
 
-	for _, src := range hosted {
+	for _, m := range hosted {
 		if err := checkPaused(ctx); err != nil {
 			return err
 		}
-		planned, err := s.planAssets(ctx, client, src, p)
+		planned, err := s.planAssets(ctx, client, m, p)
 		if err != nil {
-			p.fail(bg, "repository %q: listing components: %v", src.Name, err)
+			p.fail(bg, "repository %q: listing components: %v", m.src.Name, err)
 			continue
 		}
 		p.setTotals(bg, p.totalRepos, p.totalAssets+int64(len(planned)))
@@ -682,8 +757,9 @@ func (s *NexusMigrationService) migrateAssets(ctx context.Context, client *nexus
 // planAssets lists every component in the repository and turns it into the set
 // of files to transfer, ordered so a manifest never lands before its blobs.
 func (s *NexusMigrationService) planAssets(ctx context.Context, client *nexusclient.Client,
-	src nexusclient.Repository, _ *progress,
+	m migratedRepo, _ *progress,
 ) ([]plannedAsset, error) {
+	src := m.src
 	isOCI := nexusFormats[src.Format].IsOCIRegistry()
 
 	var planned []plannedAsset
@@ -699,7 +775,7 @@ func (s *NexusMigrationService) planAssets(ctx context.Context, client *nexuscli
 		for _, comp := range components {
 			for _, a := range comp.Assets {
 				pa := plannedAsset{
-					repo:        src.Name,
+					repo:        m.localName,
 					downloadURL: a.DownloadURL,
 					contentType: a.ContentType,
 					size:        a.SizeBytes,
