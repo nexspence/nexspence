@@ -438,6 +438,7 @@ function CreateRepoModal({ onClose, onCreated }: {
     httpProxy: '', httpsProxy: '', socks5Proxy: '', noProxy: '',
     proxyUsername: '', proxyPassword: '',
     remoteUsername: '', remotePassword: '',
+    minPackageAgeDays: '',
     memberNames: [] as string[],
     cleanupPolicyIds: [] as string[],
     quotaGB: '',
@@ -501,7 +502,9 @@ function CreateRepoModal({ onClose, onCreated }: {
       }
       if (effectiveStoreId) body.blobStoreId = effectiveStoreId
       if (form.type === 'proxy') {
-        const proxyConfig: Record<string, string> = { remote_url: form.remoteUrl.trim() }
+        const proxyConfig: Record<string, string | number> = { remote_url: form.remoteUrl.trim() }
+        const ageDays = parseFloat(form.minPackageAgeDays)
+        if (!isNaN(ageDays) && ageDays > 0) proxyConfig.minimum_package_age = Math.round(ageDays * 86400)
         if (form.httpProxy.trim()) proxyConfig.http_proxy = form.httpProxy.trim()
         if (form.httpsProxy.trim()) proxyConfig.https_proxy = form.httpsProxy.trim()
         if (form.socks5Proxy.trim()) proxyConfig.socks5_proxy = form.socks5Proxy.trim()
@@ -589,6 +592,23 @@ function CreateRepoModal({ onClose, onCreated }: {
             placeholder="https://registry.example.com/"
           />
           <span className={styles.hint}>URL of the upstream registry to proxy and cache</span>
+        </div>
+      )}
+      {form.type === 'proxy' && ['npm', 'pypi'].includes(form.format) && (
+        <div className={styles.formRow}>
+          <label style={LABEL_STYLE}>Minimum package age (days)</label>
+          <HoloInput
+            type="number"
+            min="0"
+            step="any"
+            value={form.minPackageAgeDays}
+            onChange={e => setField('minPackageAgeDays', e.target.value)}
+            placeholder="e.g. 7"
+          />
+          <span className={styles.hint}>
+            Supply-chain quarantine: upstream versions published more recently than this
+            are hidden until they reach the configured age. Leave blank to disable.
+          </span>
         </div>
       )}
       {form.type === 'proxy' && (
@@ -856,6 +876,13 @@ function EditRepoModal({
   const [blobStoreId, setBlobStoreId] = useState<string>(repo.blobStoreId ?? '')
   const [routingRuleId, setRoutingRuleId] = useState<string>(repo.routingRuleId ?? '')
   const [remoteUrl, setRemoteUrl] = useState(cfgString(repo.proxyConfig, 'remote_url'))
+  // Stored in seconds (proxy_config.minimum_package_age); the operator thinks
+  // in days. Empty = policy disabled.
+  const [minAgeDays, setMinAgeDays] = useState(() => {
+    const raw = repo.proxyConfig?.['minimum_package_age']
+    const secs = typeof raw === 'number' ? raw : typeof raw === 'string' ? parseFloat(raw) : NaN
+    return !isNaN(secs) && secs > 0 ? String(secs / 86400) : ''
+  })
   const [httpProxy, setHttpProxy] = useState(cfgString(repo.proxyConfig, 'http_proxy'))
   const [httpsProxy, setHttpsProxy] = useState(cfgString(repo.proxyConfig, 'https_proxy'))
   const [socks5Proxy, setSocks5Proxy] = useState(cfgString(repo.proxyConfig, 'socks5_proxy'))
@@ -1003,6 +1030,9 @@ function EditRepoModal({
         // Same contract for the upstream registry password.
         if (remotePassword) proxyConfig.remote_password = remotePassword
         else if (clearRemotePassword) proxyConfig.remote_password = ''
+        const ageDays = parseFloat(minAgeDays)
+        if (!isNaN(ageDays) && ageDays > 0) proxyConfig.minimum_package_age = Math.round(ageDays * 86400)
+        else delete proxyConfig.minimum_package_age
         updateBody.proxyConfig = proxyConfig
       }
       await nexusApi.updateRepository(repo.format, repo.type, repo.name, updateBody)
@@ -1066,6 +1096,24 @@ function EditRepoModal({
             <span className={styles.hint}>
               URL of the upstream registry to proxy and cache. Already-cached artifacts are kept;
               new fetches go to the new upstream.
+            </span>
+          </div>
+        )}
+        {repo.type === 'proxy' && ['npm', 'pypi'].includes(repo.format) && (
+          <div className={styles.formRow}>
+            <label style={LABEL_STYLE}>Minimum package age (days)</label>
+            <HoloInput
+              type="number"
+              min="0"
+              step="any"
+              value={minAgeDays}
+              onChange={e => setMinAgeDays(e.target.value)}
+              placeholder="e.g. 7"
+            />
+            <span className={styles.hint}>
+              Supply-chain quarantine: upstream versions published more recently than this
+              are hidden from metadata and refused on download until they reach the
+              configured age. Leave blank to disable.
             </span>
           </div>
         )}

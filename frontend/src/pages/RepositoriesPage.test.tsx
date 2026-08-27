@@ -419,6 +419,37 @@ describe('RepositoriesPage', () => {
     expect((put! as { description: string }).description).toBe('updated desc')
   })
 
+  // #323: an npm/pypi proxy exposes the minimum-package-age policy in its
+  // settings; the field round-trips as proxy_config.minimum_package_age in
+  // seconds while the operator types days.
+  it('edits minimum package age on an npm proxy', async () => {
+    const user = userEvent.setup()
+    let put: Record<string, unknown> | null = null
+    server.use(
+      http.put('/service/rest/v1/repositories/:format/:type/:name', async ({ request }) => {
+        put = (await request.json()) as Record<string, unknown>
+        return HttpResponse.json(fixtures.repository())
+      }),
+    )
+    renderWithProviders(<RepositoriesPage />)
+    await screen.findByText('npm-proxy')
+    fireEvent.click(screen.getAllByTitle('Settings')[1])
+    await screen.findByText('Repository settings')
+
+    const url = screen.getByPlaceholderText('https://registry.example.com/')
+    await user.clear(url)
+    await user.type(url, 'https://registry.npmjs.org/')
+    const age = screen.getByPlaceholderText('e.g. 7')
+    await user.clear(age)
+    await user.type(age, '7')
+
+    const form = document.querySelector('form') as HTMLFormElement
+    fireEvent.click(within(form).getByRole('button', { name: /^Save$/ }))
+    await waitFor(() => expect(put).toBeTruthy())
+    const cfg = (put! as { proxyConfig: Record<string, unknown> }).proxyConfig
+    expect(cfg.minimum_package_age).toBe(7 * 24 * 3600)
+  })
+
   it('shows an error when edit save fails', async () => {
     const user = userEvent.setup()
     server.use(
