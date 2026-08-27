@@ -129,6 +129,12 @@ type NexusMigrationService struct {
 
 	mu      sync.Mutex
 	cancels map[string]context.CancelFunc
+	// dones lets Pause block until the runner has actually unwound: the channel
+	// is created in launch and closed in run's deferred cleanup, AFTER the final
+	// status is written. Returning from Pause on cancel() alone raced Resume
+	// (a second overlapping run) and DeleteJob (deleting the row under a
+	// still-writing goroutine) — #342.
+	dones map[string]chan struct{}
 }
 
 // NewNexusMigrationService constructs the migration runner.
@@ -145,6 +151,7 @@ func NewNexusMigrationService(cfg NexusMigrationConfig) *NexusMigrationService {
 		log:          cfg.Log,
 		newClient:    cfg.HTTPClientFor,
 		cancels:      make(map[string]context.CancelFunc),
+		dones:        make(map[string]chan struct{}),
 	}
 	if s.newClient == nil {
 		s.newClient = netguard.Client
@@ -159,16 +166,19 @@ func NewNexusMigrationService(cfg NexusMigrationConfig) *NexusMigrationService {
 	return s
 }
 
-// SealPassword encrypts a Nexus password for storage on the job row.
-func (s *NexusMigrationService) SealPassword(plain string) string {
+// SealPassword encrypts a Nexus password for storage on the job row. The
+// error is real: swallowing it used to return "", indistinguishable from "no
+// password provided", and the job then authenticated with an empty credential
+// forever, failing every item with a misleading per-item error (#342).
+func (s *NexusMigrationService) SealPassword(plain string) (string, error) {
 	if plain == "" {
-		return ""
+		return "", nil
 	}
 	sealed, err := sealWithKey(s.primaryKey, plain)
 	if err != nil {
-		return ""
+		return "", fmt.Errorf("seal the source credential: %w", err)
 	}
-	return sealed
+	return sealed, nil
 }
 
 // OpenPassword decrypts a stored source credential, falling back to the legacy
@@ -200,7 +210,11 @@ func (s *NexusMigrationService) Create(ctx context.Context, job *domain.Migratio
 	}
 	job.SourceURL = strings.TrimRight(strings.TrimSpace(job.SourceURL), "/")
 	job.Status = domain.MigrationPending
-	job.SourcePassword = s.SealPassword(password)
+	sealed, err := s.SealPassword(password)
+	if err != nil {
+		return err
+	}
+	job.SourcePassword = sealed
 
 	if err := s.jobs.Create(ctx, job); err != nil {
 		return err
@@ -209,8 +223,19 @@ func (s *NexusMigrationService) Create(ctx context.Context, job *domain.Migratio
 	return nil
 }
 
+// pauseUnwindCeiling caps how long Pause waits for the runner to unwind. The
+// runner reacts to cancellation within one aborted request in practice; the
+// ceiling only guards against a pathological source that ignores the closed
+// connection.
+const pauseUnwindCeiling = 30 * time.Second
+
 // Pause stops the run and parks the job. A job that is not running is parked
 // where it stands, so an operator can stop one before it ever starts.
+//
+// Pause returns only after the runner has actually unwound and written the
+// final state (#342): returning on cancel() alone let an immediate Resume
+// no-op against the still-registered run (or start a second overlapping one),
+// and let DeleteJob remove the row under a goroutine still writing progress.
 func (s *NexusMigrationService) Pause(ctx context.Context, id string) error {
 	job, err := s.jobs.Get(ctx, id)
 	if err != nil {
@@ -218,11 +243,20 @@ func (s *NexusMigrationService) Pause(ctx context.Context, id string) error {
 	}
 	s.mu.Lock()
 	cancel, running := s.cancels[id]
+	done := s.dones[id]
 	s.mu.Unlock()
 	if running {
 		// The runner writes the paused status when it unwinds, so progress
 		// recorded between here and there is not lost.
 		cancel()
+		if done != nil {
+			select {
+			case <-done:
+			case <-time.After(pauseUnwindCeiling):
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
 		return nil
 	}
 	if !job.IsActive() {
@@ -232,10 +266,16 @@ func (s *NexusMigrationService) Pause(ctx context.Context, id string) error {
 }
 
 // Resume starts a fresh pass over the job. Everything already migrated is
-// skipped, so resuming costs only the work that is left.
+// skipped, so resuming costs only the work that is left. Only a paused or
+// errored job is resumable (#342): a finished one would relist the entire
+// source for nothing, and Pause's status guard deserves a symmetric sibling.
 func (s *NexusMigrationService) Resume(ctx context.Context, id string) error {
-	if _, err := s.jobs.Get(ctx, id); err != nil {
+	job, err := s.jobs.Get(ctx, id)
+	if err != nil {
 		return err
+	}
+	if !job.IsResumable() {
+		return fmt.Errorf("%w: migration job is %s, not resumable", ErrInvalidInput, job.Status)
 	}
 	s.launch(id)
 	return nil
@@ -265,6 +305,7 @@ func (s *NexusMigrationService) launch(id string) {
 	//nolint:gosec // the run must outlive the request; cancel is stored below and always invoked in run's defer
 	ctx, cancel := context.WithCancel(context.Background())
 	s.cancels[id] = cancel
+	s.dones[id] = make(chan struct{})
 	s.mu.Unlock()
 
 	go s.run(ctx, id)
@@ -364,6 +405,12 @@ func (s *NexusMigrationService) run(ctx context.Context, jobID string) {
 			cancel()
 			delete(s.cancels, jobID)
 		}
+		// Closed AFTER the final status write below (this defer runs last):
+		// whoever unblocks from Pause reads the already-settled job.
+		if done, ok := s.dones[jobID]; ok {
+			close(done)
+			delete(s.dones, jobID)
+		}
 		s.mu.Unlock()
 	}()
 
@@ -410,20 +457,46 @@ func (s *NexusMigrationService) finish(ctx context.Context, jobID string, status
 }
 
 // runStages walks the fixed sequence. Each stage is gated by its own scope
-// flag, and each returns an error only when it cannot proceed at all —
-// per-item problems are counted on the job instead.
+// flag, tolerates per-item problems internally (counted on the job), and
+// returns a hard error only when it cannot proceed at all. A hard error in one
+// stage must not rob the independent stages after it of their chance to run —
+// on a real source, one broken LDAP record 500'd the users listing and
+// routing rules never even started (#342). Every stage failure is named and
+// collected; only a pause aborts the walk outright, because a pause must not
+// leave later stages half-done behind the operator's back.
 func (s *NexusMigrationService) runStages(ctx context.Context, client *nexusclient.Client,
 	job *domain.MigrationJob, p *progress,
 ) error {
 	bg := context.Background()
 
-	if job.MigrateRepos {
-		hosted, err := s.migrateRepositories(ctx, client, p)
-		if err != nil {
+	var stageErrs []error
+	runStage := func(name string, fn func() error) error {
+		err := fn()
+		if err == nil {
+			return nil
+		}
+		if errors.Is(err, errMigrationPaused) {
 			return err
 		}
-		if job.MigrateBlobs {
-			if err := s.migrateAssets(ctx, client, hosted, p); err != nil {
+		stageErrs = append(stageErrs, fmt.Errorf("%s: %w", name, err))
+		return nil
+	}
+
+	if job.MigrateRepos {
+		var hosted []nexusclient.Repository
+		if err := runStage("repositories", func() error {
+			var e error
+			hosted, e = s.migrateRepositories(ctx, client, p)
+			return e
+		}); err != nil {
+			return err
+		}
+		// Blobs genuinely depend on the repository listing — hosted is empty
+		// when that stage failed hard, so there is nothing to transfer.
+		if job.MigrateBlobs && len(hosted) > 0 {
+			if err := runStage("blobs", func() error {
+				return s.migrateAssets(ctx, client, hosted, p)
+			}); err != nil {
 				return err
 			}
 		}
@@ -432,27 +505,30 @@ func (s *NexusMigrationService) runStages(ctx context.Context, client *nexusclie
 	// Privileges first: a role references them by name, so they must exist
 	// before the roles that name them are wired up.
 	if job.MigratePrivileges {
-		if err := s.migratePrivileges(ctx, client, p); err != nil {
+		if err := runStage("privileges", func() error { return s.migratePrivileges(ctx, client, p) }); err != nil {
 			return err
 		}
 	}
 	if job.MigrateRoles {
-		if err := s.migrateRoles(ctx, client, p); err != nil {
+		if err := runStage("roles", func() error { return s.migrateRoles(ctx, client, p) }); err != nil {
 			return err
 		}
 	}
 	if job.MigrateUsers {
-		if err := s.migrateUsers(ctx, client, p); err != nil {
+		if err := runStage("users", func() error { return s.migrateUsers(ctx, client, p) }); err != nil {
 			return err
 		}
 	}
 	if job.MigrateRoutingRules {
-		if err := s.migrateRoutingRules(ctx, client, p); err != nil {
+		if err := runStage("routing rules", func() error { return s.migrateRoutingRules(ctx, client, p) }); err != nil {
 			return err
 		}
 	}
 	p.flush(bg)
-	return checkPaused(ctx)
+	if err := checkPaused(ctx); err != nil {
+		return err
+	}
+	return errors.Join(stageErrs...)
 }
 
 func checkPaused(ctx context.Context) error {

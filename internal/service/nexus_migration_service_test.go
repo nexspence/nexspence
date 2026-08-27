@@ -34,6 +34,7 @@ type fakeNexus struct {
 	components       map[string]string // repository name → one full component page
 	files            map[string]string // /repository/... path → body
 	users            string
+	usersCode        int // non-zero forces this status on /security/users
 	roles            string
 	privileges       string
 	routingRules     string
@@ -82,6 +83,10 @@ func (f *fakeNexus) start(t *testing.T) *httptest.Server {
 			}
 			_, _ = io.WriteString(w, body)
 		case r.URL.Path == "/service/rest/v1/security/users":
+			if f.usersCode != 0 {
+				w.WriteHeader(f.usersCode)
+				return
+			}
 			_, _ = io.WriteString(w, orEmptyList(f.users))
 		case r.URL.Path == "/service/rest/v1/security/roles":
 			_, _ = io.WriteString(w, orEmptyList(f.roles))
@@ -836,6 +841,103 @@ func TestNexusMigration_ExistingUserIsSkipped(t *testing.T) {
 	assert.Equal(t, "old@example.com", h.users.get("jdoe").Email)
 }
 
+// #342/1: a hard failure in one stage must not abort the independent stages
+// after it. On the reporter's real instance a broken LDAP record 500'd the
+// whole /security/users listing — and routing rules, which depend on nothing
+// that failed, never even ran.
+func TestNexusMigration_StageFailureDoesNotAbortIndependentStages(t *testing.T) {
+	fake := &fakeNexus{
+		usersCode:    http.StatusInternalServerError,
+		privileges:   `[{"type":"application","name":"p-ok","description":"","readOnly":false,"domain":"d","actions":["read"]}]`,
+		routingRules: `[{"name":"block-x","description":"","mode":"BLOCK","matchers":["^/x/.*"]}]`,
+	}
+	h := newMigHarness(t, fake)
+	job := h.startJob(t)
+	got := h.waitForStatus(t, job.ID, domain.MigrationError)
+
+	require.NotNil(t, got.LastError)
+	assert.Contains(t, *got.LastError, "users:",
+		"the stage failure is named, so an operator sees WHICH stage broke")
+
+	ctx := context.Background()
+	rule, err := h.rules.GetByName(ctx, "block-x")
+	require.NoError(t, err, "routing rules depend on nothing that failed — they must still run")
+	assert.Equal(t, "BLOCK", rule.Mode)
+	_, err = h.privileges.GetByName(ctx, "p-ok")
+	require.NoError(t, err, "the privileges stage before the failure keeps its result")
+}
+
+// #342/3: Pause must not return before the runner has actually unwound —
+// otherwise Pause→Resume can silently no-op or launch a second overlapping
+// run, and Pause→Delete can delete the row under a still-writing goroutine.
+func TestNexusMigration_PauseBlocksUntilTheRunUnwinds(t *testing.T) {
+	entered := make(chan struct{}, 1)
+	release := make(chan struct{})
+	fake := &fakeNexus{
+		settings: `[{"name":"raw-hosted","format":"raw","type":"hosted","online":true}]`,
+		components: map[string]string{
+			"raw-hosted": `{"items":[{"name":"a.txt","version":null,"group":"/","format":"raw","assets":[
+				{"path":"a.txt","downloadUrl":"%BASE%/repository/raw-hosted/a.txt",
+				 "contentType":"text/plain","fileSize":5}]}],"continuationToken":null}`,
+		},
+		files: map[string]string{"/repository/raw-hosted/a.txt": "hello"},
+		onFile: func() {
+			select {
+			case entered <- struct{}{}:
+			default:
+			}
+			<-release
+		},
+	}
+	h := newMigHarness(t, fake)
+	fake.components["raw-hosted"] = strings.ReplaceAll(fake.components["raw-hosted"], "%BASE%", h.nexus.URL)
+	defer close(release)
+
+	job := h.startJob(t)
+	<-entered // the run is demonstrably inside a download
+
+	require.NoError(t, h.svc.Pause(context.Background(), job.ID))
+
+	// No polling: by the time Pause returns, the runner must have unwound and
+	// written the final state.
+	got, err := h.jobs.Get(context.Background(), job.ID)
+	require.NoError(t, err)
+	assert.Equal(t, domain.MigrationPaused, got.Status,
+		"Pause returned before the runner finished unwinding")
+}
+
+// #342/5: Resume relaunches only a paused or errored job. A done job must be
+// refused, not re-run through the whole pipeline.
+func TestNexusMigration_ResumeRefusesFinishedJobs(t *testing.T) {
+	fake := &fakeNexus{}
+	h := newMigHarness(t, fake)
+	job := h.startJob(t)
+	h.waitForStatus(t, job.ID, domain.MigrationDone)
+	listings := fake.count("/service/rest/v1/repositorySettings")
+
+	err := h.svc.Resume(context.Background(), job.ID)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not resumable")
+	assert.ErrorIs(t, err, service.ErrInvalidInput)
+
+	time.Sleep(50 * time.Millisecond)
+	assert.Equal(t, listings, fake.count("/service/rest/v1/repositorySettings"),
+		"a refused resume must not have relaunched the pipeline")
+}
+
+// The flip side: an errored job IS resumable — that is how an operator retries
+// after fixing the cause.
+func TestNexusMigration_ResumeRelaunchesErroredJobs(t *testing.T) {
+	fake := &fakeNexus{usersCode: http.StatusInternalServerError}
+	h := newMigHarness(t, fake)
+	job := h.startJob(t)
+	h.waitForStatus(t, job.ID, domain.MigrationError)
+
+	fake.usersCode = 0 // the operator fixed the source
+	require.NoError(t, h.svc.Resume(context.Background(), job.ID))
+	h.waitForStatus(t, job.ID, domain.MigrationDone)
+}
+
 func TestNexusMigration_MigratesRoutingRules(t *testing.T) {
 	fake := &fakeNexus{
 		routingRules: `[
@@ -987,12 +1089,14 @@ func TestNexusMigration_ResumeAllRestartsInterruptedJobs(t *testing.T) {
 		MigrateRepos: true,
 	}
 	require.NoError(t, h.jobs.Create(ctx, job))
-	require.NoError(t, h.jobs.SetSourcePassword(ctx, job.ID, h.svc.SealPassword("s3cret")))
+	sealed, err := h.svc.SealPassword("s3cret")
+	require.NoError(t, err)
+	require.NoError(t, h.jobs.SetSourcePassword(ctx, job.ID, sealed))
 
 	require.NoError(t, h.svc.ResumeAll(ctx))
 	h.waitForStatus(t, job.ID, domain.MigrationDone)
 
-	_, err := h.repos.Get(ctx, "raw-hosted")
+	_, err = h.repos.Get(ctx, "raw-hosted")
 	assert.NoError(t, err)
 }
 
