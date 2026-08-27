@@ -27,27 +27,28 @@ func NewMigrationHandler(repo repository.MigrationRepo, svc *service.NexusMigrat
 }
 
 type migrationJobResp struct {
-	ID                  string  `json:"id"`
-	SourceURL           string  `json:"sourceUrl"`
-	SourceUser          string  `json:"sourceUser"`
-	Status              string  `json:"status"`
-	MigrateRepos        bool    `json:"migrateRepos"`
-	MigrateUsers        bool    `json:"migrateUsers"`
-	MigrateBlobs        bool    `json:"migrateBlobs"`
-	MigratePolicies     bool    `json:"migratePolicies"`
-	MigratePrivileges   bool    `json:"migratePrivileges"`
-	MigrateRoles        bool    `json:"migrateRoles"`
-	MigrateRoutingRules bool    `json:"migrateRoutingRules"`
-	RepositoriesTotal   int     `json:"repositoriesTotal"`
-	RepositoriesDone    int     `json:"repositoriesDone"`
-	AssetsTotal         int64   `json:"assetsTotal"`
-	AssetsDone          int64   `json:"assetsDone"`
-	ErrorCount          int     `json:"errorCount"`
-	LastError           *string `json:"lastError,omitempty"`
-	StartedAt           *string `json:"startedAt,omitempty"`
-	FinishedAt          *string `json:"finishedAt,omitempty"`
-	CreatedAt           string  `json:"createdAt"`
-	UpdatedAt           string  `json:"updatedAt"`
+	ID                  string   `json:"id"`
+	SourceURL           string   `json:"sourceUrl"`
+	SourceUser          string   `json:"sourceUser"`
+	Status              string   `json:"status"`
+	MigrateRepos        bool     `json:"migrateRepos"`
+	MigrateUsers        bool     `json:"migrateUsers"`
+	MigrateBlobs        bool     `json:"migrateBlobs"`
+	MigratePolicies     bool     `json:"migratePolicies"`
+	MigratePrivileges   bool     `json:"migratePrivileges"`
+	MigrateRoles        bool     `json:"migrateRoles"`
+	MigrateRoutingRules bool     `json:"migrateRoutingRules"`
+	UserRealms          []string `json:"userRealms,omitempty"`
+	RepositoriesTotal   int      `json:"repositoriesTotal"`
+	RepositoriesDone    int      `json:"repositoriesDone"`
+	AssetsTotal         int64    `json:"assetsTotal"`
+	AssetsDone          int64    `json:"assetsDone"`
+	ErrorCount          int      `json:"errorCount"`
+	LastError           *string  `json:"lastError,omitempty"`
+	StartedAt           *string  `json:"startedAt,omitempty"`
+	FinishedAt          *string  `json:"finishedAt,omitempty"`
+	CreatedAt           string   `json:"createdAt"`
+	UpdatedAt           string   `json:"updatedAt"`
 }
 
 // toJobResp maps a job onto its API shape. SourcePassword is deliberately
@@ -65,6 +66,7 @@ func toJobResp(j domain.MigrationJob) migrationJobResp {
 		MigratePrivileges:   j.MigratePrivileges,
 		MigrateRoles:        j.MigrateRoles,
 		MigrateRoutingRules: j.MigrateRoutingRules,
+		UserRealms:          j.UserRealms,
 		RepositoriesTotal:   j.TotalRepos,
 		RepositoriesDone:    j.DoneRepos,
 		AssetsTotal:         j.TotalAssets,
@@ -126,6 +128,9 @@ type createJobReq struct {
 		MigratePrivileges   *bool `json:"migratePrivileges"`
 		MigrateRoles        *bool `json:"migrateRoles"`
 		MigrateRoutingRules *bool `json:"migrateRoutingRules"`
+		// UserRealms names the source realms user migration pulls accounts
+		// from ("default" = local). Empty means local-only (#342).
+		UserRealms []string `json:"userRealms"`
 	} `json:"scope"`
 }
 
@@ -159,6 +164,7 @@ func (h *MigrationHandler) CreateJob(c *gin.Context) {
 		MigratePrivileges:   boolDefault(req.Scope.MigratePrivileges, policies),
 		MigrateRoles:        boolDefault(req.Scope.MigrateRoles, policies),
 		MigrateRoutingRules: boolDefault(req.Scope.MigrateRoutingRules, policies),
+		UserRealms:          req.Scope.UserRealms,
 	}
 
 	if err := h.svc.Create(c.Request.Context(), job, req.Credentials.Password); err != nil {

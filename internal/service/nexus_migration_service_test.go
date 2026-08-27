@@ -28,13 +28,18 @@ import (
 // fakeNexus serves the slice of the Nexus OSS REST API the migration reads.
 // Every field is a raw JSON body; empty means "endpoint returns an empty list".
 type fakeNexus struct {
-	settings         string            // /service/rest/v1/repositorySettings
-	settingsCode     int               // non-zero forces this status instead of settings
-	repositories     string            // /service/rest/v1/repositories
-	components       map[string]string // repository name → one full component page
-	files            map[string]string // /repository/... path → body
-	users            string
-	usersCode        int // non-zero forces this status on /security/users
+	settings     string            // /service/rest/v1/repositorySettings
+	settingsCode int               // non-zero forces this status instead of settings
+	repositories string            // /service/rest/v1/repositories
+	components   map[string]string // repository name → one full component page
+	files        map[string]string // /repository/... path → body
+	users        string
+	usersCode    int // non-zero forces this status on /security/users
+	// usersBySource, when set, answers /security/users per its ?source= filter;
+	// a request WITHOUT the filter (or for an absent realm) then gets a 500 —
+	// modeling the real instance whose one poisoned realm broke the unfiltered
+	// listing (#342/10).
+	usersBySource    map[string]string
 	roles            string
 	privileges       string
 	routingRules     string
@@ -85,6 +90,15 @@ func (f *fakeNexus) start(t *testing.T) *httptest.Server {
 		case r.URL.Path == "/service/rest/v1/security/users":
 			if f.usersCode != 0 {
 				w.WriteHeader(f.usersCode)
+				return
+			}
+			if f.usersBySource != nil {
+				body, ok := f.usersBySource[r.URL.Query().Get("source")]
+				if !ok {
+					w.WriteHeader(http.StatusInternalServerError)
+					return
+				}
+				_, _ = io.WriteString(w, orEmptyList(body))
 				return
 			}
 			_, _ = io.WriteString(w, orEmptyList(f.users))
@@ -156,6 +170,17 @@ func (s *fakeUserStore) Create(_ context.Context, u *domain.User, plainPassword 
 	defer s.mu.Unlock()
 	if s.createErr != nil {
 		return s.createErr
+	}
+	// Mirror UserService.Create's email-uniqueness translation: the DB's
+	// partial unique index allows any number of email-LESS accounts, but a
+	// duplicate email surfaces as ErrAlreadyExists naming the field. A fake
+	// that accepts everything hides exactly the account loss #342/9 is about.
+	if u.Email != "" {
+		for _, existing := range s.users {
+			if existing.Email == u.Email {
+				return fmt.Errorf("%w: user with this email", service.ErrAlreadyExists)
+			}
+		}
 	}
 	s.nextID++
 	u.ID = fmt.Sprintf("user-%d", s.nextID)
@@ -1032,6 +1057,92 @@ func TestNexusMigration_ResumeRelaunchesErroredJobs(t *testing.T) {
 	fake.usersCode = 0 // the operator fixed the source
 	require.NoError(t, h.svc.Resume(context.Background(), job.ID))
 	h.waitForStatus(t, job.ID, domain.MigrationDone)
+}
+
+// #342/9: two source accounts sharing one email (a real data-quality issue)
+// must both migrate — the second without the colliding email, the same state
+// any LDAP user without a mail attribute already lives in — instead of being
+// dropped entirely.
+func TestNexusMigration_EmailCollisionRetriesWithoutEmail(t *testing.T) {
+	fake := &fakeNexus{
+		users: `[
+			{"userId":"svc-ci","firstName":"CI","lastName":"Bot","emailAddress":"ops@example.com","source":"default","status":"active","roles":[]},
+			{"userId":"svc-deploy","firstName":"Deploy","lastName":"Bot","emailAddress":"ops@example.com","source":"default","status":"active","roles":[]}
+		]`,
+	}
+	h := newMigHarness(t, fake)
+	job := h.startJob(t)
+	done := h.waitForStatus(t, job.ID, domain.MigrationDone)
+	assert.Zero(t, done.ErrorCount, "both accounts must migrate: %v", done.LastError)
+
+	first := h.users.get("svc-ci")
+	require.NotNil(t, first)
+	assert.Equal(t, "ops@example.com", first.Email, "the first account keeps the email")
+
+	second := h.users.get("svc-deploy")
+	require.NotNil(t, second, "the colliding account must not be dropped")
+	assert.Empty(t, second.Email, "the collision is resolved by dropping only the email")
+	assert.NotEmpty(t, h.users.password("svc-deploy"), "the account is otherwise intact")
+}
+
+// #342/10: user migration defaults to the local realm only, via Nexus's own
+// ?source= filter — an externally-authenticated account migrated onto a fresh
+// target is a permanently-unusable login, and one poisoned realm must not take
+// the whole unfiltered listing down.
+func TestNexusMigration_UsersDefaultToLocalRealmOnly(t *testing.T) {
+	fake := &fakeNexus{
+		// No unfiltered entry: the real instance's unfiltered listing 500s.
+		usersBySource: map[string]string{
+			"default": `[{"userId":"jdoe","source":"default","status":"active","roles":[]}]`,
+		},
+	}
+	h := newMigHarness(t, fake)
+	job := h.startJob(t)
+	done := h.waitForStatus(t, job.ID, domain.MigrationDone)
+	assert.Zero(t, done.ErrorCount, "local-only migration must not touch the poisoned realm: %v", done.LastError)
+
+	require.NotNil(t, h.users.get("jdoe"))
+}
+
+// Opting into an external realm pulls its accounts too, each realm listed
+// independently.
+func TestNexusMigration_UserRealmsOptInLDAP(t *testing.T) {
+	fake := &fakeNexus{
+		usersBySource: map[string]string{
+			"default": `[{"userId":"jdoe","source":"default","status":"active","roles":[]}]`,
+			"LDAP":    `[{"userId":"ldap-user","source":"LDAP","status":"active","roles":[]}]`,
+		},
+	}
+	h := newMigHarness(t, fake)
+	job := h.startJob(t, func(j *domain.MigrationJob) {
+		j.UserRealms = []string{"default", "LDAP"}
+	})
+	done := h.waitForStatus(t, job.ID, domain.MigrationDone)
+	assert.Zero(t, done.ErrorCount, "%v", done.LastError)
+
+	require.NotNil(t, h.users.get("jdoe"))
+	ldap := h.users.get("ldap-user")
+	require.NotNil(t, ldap)
+	assert.Empty(t, h.users.password("ldap-user"), "an external account gets no local credential")
+}
+
+// A realm that fails to list is a named stage failure; realms that listed fine
+// still migrate their accounts.
+func TestNexusMigration_OneRealmListingFailureDoesNotMaskTheOthers(t *testing.T) {
+	fake := &fakeNexus{
+		usersBySource: map[string]string{
+			"default": `[{"userId":"jdoe","source":"default","status":"active","roles":[]}]`,
+			// "LDAP" absent → 500, modeling the poisoned realm.
+		},
+	}
+	h := newMigHarness(t, fake)
+	job := h.startJob(t, func(j *domain.MigrationJob) {
+		j.UserRealms = []string{"default", "LDAP"}
+	})
+	got := h.waitForStatus(t, job.ID, domain.MigrationError)
+	require.NotNil(t, got.LastError)
+	assert.Contains(t, *got.LastError, "LDAP", "the failing realm is named")
+	require.NotNil(t, h.users.get("jdoe"), "the healthy realm's accounts still migrate")
 }
 
 func TestNexusMigration_MigratesRoutingRules(t *testing.T) {

@@ -154,11 +154,22 @@ const SCOPES = [
 
 type ScopeKey = (typeof SCOPES)[number]['key']
 
+/** Source realms user migration can pull accounts from ("default" = local).
+ *  Local-only by default: an external account migrated onto a fresh target is
+ *  a permanently-unusable login unless its provider is already configured. */
+const USER_REALMS = [
+  { key: 'default', label: 'Local' },
+  { key: 'LDAP', label: 'LDAP' },
+  { key: 'OIDC', label: 'OIDC' },
+  { key: 'SAML', label: 'SAML' },
+] as const
+
 function CreateMigrationModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
   const [form, setForm] = useState({ sourceUrl: '', username: 'admin', password: '', concurrency: '4' })
   const [scope, setScope] = useState<Record<ScopeKey, boolean>>(
     () => Object.fromEntries(SCOPES.map(s => [s.key, true])) as Record<ScopeKey, boolean>,
   )
+  const [userRealms, setUserRealms] = useState<string[]>(['default'])
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [testing, setTesting] = useState(false)
@@ -174,6 +185,9 @@ function CreateMigrationModal({ onClose, onCreated }: { onClose: () => void; onC
   }
 
   const toggleScope = (k: ScopeKey) => () => setScope(s => ({ ...s, [k]: !s[k] }))
+
+  const toggleRealm = (realm: string) => () =>
+    setUserRealms(r => (r.includes(realm) ? r.filter(x => x !== realm) : [...r, realm]))
 
   const handleTest = async () => {
     setPreview(null)
@@ -202,7 +216,7 @@ function CreateMigrationModal({ onClose, onCreated }: { onClose: () => void; onC
         sourceUrl: form.sourceUrl,
         credentials: { username: form.username, password: form.password },
         options: { concurrency: parseInt(form.concurrency) || 4 },
-        scope,
+        scope: { ...scope, userRealms },
       })
       onCreated()
     } catch (err) {
@@ -270,6 +284,22 @@ function CreateMigrationModal({ onClose, onCreated }: { onClose: () => void; onC
             ))}
           </div>
         </div>
+        {scope.migrateUsers && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--holo-text-dim)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>User realms</label>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 12px' }}>
+              {USER_REALMS.map(r => (
+                <label key={r.key} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--holo-text)', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={userRealms.includes(r.key)} onChange={toggleRealm(r.key)} />
+                  {r.label}
+                </label>
+              ))}
+            </div>
+            <span style={{ fontSize: 11, color: 'var(--holo-text-faint)' }}>
+              An external realm (LDAP/OIDC/SAML) only makes sense when the matching provider is already configured here.
+            </span>
+          </div>
+        )}
         {error && <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 8, padding: '10px 12px', color: '#fca5a5', fontSize: 13 }}>{error}</div>}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 8 }}>
           <HoloButton type="button" onClick={onClose}>Cancel</HoloButton>

@@ -22,6 +22,7 @@ func TestMigrationRepo_CRUD(t *testing.T) {
 		SourceUser:   "admin",
 		MigrateRepos: true,
 		MigrateUsers: true,
+		UserRealms:   []string{"default", "LDAP"},
 	}
 	if err := repo.Create(ctx, job); err != nil {
 		t.Fatalf("Create: %v", err)
@@ -42,6 +43,9 @@ func TestMigrationRepo_CRUD(t *testing.T) {
 	}
 	if !got.MigrateRepos || !got.MigrateUsers || got.MigrateBlobs || got.MigratePolicies {
 		t.Fatalf("Get bool flags mismatch: %+v", got)
+	}
+	if len(got.UserRealms) != 2 || got.UserRealms[0] != "default" || got.UserRealms[1] != "LDAP" {
+		t.Fatalf("UserRealms did not round-trip: %+v", got.UserRealms)
 	}
 
 	if err := repo.UpdateStatus(ctx, job.ID, domain.MigrationRunning); err != nil {

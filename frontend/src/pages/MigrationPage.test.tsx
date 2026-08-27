@@ -300,6 +300,42 @@ describe('MigrationPage — test connection', () => {
       migratePrivileges: true,
       migrateRoles: true,
       migrateRoutingRules: false,
+      userRealms: ['default'],
     })
+  })
+
+  // #342/10: user migration is scoped to explicit realms, local by default;
+  // an opted-in external realm travels with the scope.
+  it('sends the user realms the operator opted into', async () => {
+    const user = userEvent.setup()
+    let posted: { scope?: { userRealms?: string[] } } | null = null
+    server.use(
+      http.post('/api/v1/migration/jobs', async ({ request }) => {
+        posted = (await request.json()) as { scope?: { userRealms?: string[] } }
+        return HttpResponse.json({ id: 'new-job' }, { status: 201 })
+      }),
+    )
+    await openModal(user)
+
+    await user.type(screen.getByPlaceholderText('https://nexus.example.com'), 'https://src.example.com')
+    const pwd = document.querySelector('input[type="password"]') as HTMLInputElement
+    await user.type(pwd, 'secret')
+
+    expect(screen.getByRole('checkbox', { name: 'Local' })).toBeChecked()
+    await user.click(screen.getByRole('checkbox', { name: 'LDAP' }))
+
+    const submit = pwd.closest('form')!.querySelector('button[type="submit"]') as HTMLButtonElement
+    await user.click(submit)
+
+    await waitFor(() => expect(posted).toBeTruthy())
+    expect(posted!.scope!.userRealms).toEqual(['default', 'LDAP'])
+  })
+
+  it('hides the realm picker when user migration is off', async () => {
+    const user = userEvent.setup()
+    await openModal(user)
+    expect(screen.getByText('User realms')).toBeInTheDocument()
+    await user.click(screen.getByRole('checkbox', { name: /Users/ }))
+    expect(screen.queryByText('User realms')).not.toBeInTheDocument()
   })
 })

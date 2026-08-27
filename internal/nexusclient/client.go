@@ -396,8 +396,20 @@ type userDTO struct {
 // ListUsers returns every security user. Requires admin credentials; Nexus OSS
 // returns the full list unpaginated.
 func (c *Client) ListUsers(ctx context.Context) ([]User, error) {
+	return c.listUsers(ctx, "/service/rest/v1/security/users")
+}
+
+// ListUsersBySource returns the accounts of one realm, via Nexus's own
+// ?source= filter ("default" is the local realm). Listing realms one at a
+// time keeps one poisoned realm's server-side failure from taking the whole
+// unfiltered listing down (#342).
+func (c *Client) ListUsersBySource(ctx context.Context, source string) ([]User, error) {
+	return c.listUsers(ctx, "/service/rest/v1/security/users?source="+url.QueryEscape(source))
+}
+
+func (c *Client) listUsers(ctx context.Context, path string) ([]User, error) {
 	var dto []userDTO
-	if err := c.getJSON(ctx, "/service/rest/v1/security/users", &dto); err != nil {
+	if err := c.getJSON(ctx, path, &dto); err != nil {
 		return nil, err
 	}
 	out := make([]User, 0, len(dto))
