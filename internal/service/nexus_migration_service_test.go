@@ -28,11 +28,11 @@ import (
 // fakeNexus serves the slice of the Nexus OSS REST API the migration reads.
 // Every field is a raw JSON body; empty means "endpoint returns an empty list".
 type fakeNexus struct {
-	settings     string            // /service/rest/v1/repositorySettings
-	settingsCode int               // non-zero forces this status instead of settings
-	repositories string            // /service/rest/v1/repositories
-	components   map[string]string // repository name → one full component page
-	files        map[string]string // /repository/... path → body
+	settings         string            // /service/rest/v1/repositorySettings
+	settingsCode     int               // non-zero forces this status instead of settings
+	repositories     string            // /service/rest/v1/repositories
+	components       map[string]string // repository name → one full component page
+	files            map[string]string // /repository/... path → body
 	users            string
 	roles            string
 	privileges       string
