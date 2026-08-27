@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
 import { Shield, RefreshCw, Webhook, AlertTriangle, CheckCircle, Loader, Trash2, Plus, Bug, Zap, Pencil, Download } from 'lucide-react'
@@ -738,6 +738,10 @@ function VulnDashTab() {
   const [error, setError] = useState('')
 
   const LIMIT = 50
+  // Responses are applied in resolution order, not request order: a broader,
+  // earlier query resolving late must not overwrite the current one — the
+  // table would show rows for a filter the input no longer contains (#337).
+  const vulnReqSeq = useRef(0)
 
   async function loadSummary() {
     try {
@@ -747,6 +751,7 @@ function VulnDashTab() {
   }
 
   async function loadVulns(reset = false, explicitOffset?: number) {
+    const seq = ++vulnReqSeq.current
     const newOffset = reset ? 0 : (explicitOffset ?? offset)
     if (reset) setOffset(0)
     setLoading(true)
@@ -755,12 +760,14 @@ function VulnDashTab() {
       if (repoFilter) params.repo = repoFilter
       if (severityFilter) params.severity = severityFilter
       const res = await apiClient.get<{ items: VulnRow[]; total: number }>('/api/v1/security/vulnerabilities', { params })
+      if (seq !== vulnReqSeq.current) return // superseded by a newer request
       setItems(reset ? res.data.items : [...items, ...res.data.items])
       setTotal(res.data.total)
     } catch (e: unknown) {
+      if (seq !== vulnReqSeq.current) return
       if (axios.isAxiosError(e)) setError(e.response?.data?.error ?? e.message)
     } finally {
-      setLoading(false)
+      if (seq === vulnReqSeq.current) setLoading(false)
     }
   }
 

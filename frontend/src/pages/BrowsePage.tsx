@@ -1185,6 +1185,15 @@ export default function BrowsePage() {
 
   async function confirmDelete() {
     if (!deleteTarget) return
+    const repo = deleteTarget.repo
+    // Invalidation must not depend on full success: a batch that fails partway
+    // has already deleted assets server-side, and a view still showing them
+    // would mislead the retry (#337).
+    const invalidate = () => {
+      void queryClient.invalidateQueries({ queryKey: ['components', repo] })
+      void queryClient.invalidateQueries({ queryKey: ['dockerBrowseTree', repo] })
+      void queryClient.invalidateQueries({ queryKey: ['rawBrowseTree', repo] })
+    }
     setDeleting(true)
     setDeleteError(null)
     try {
@@ -1203,16 +1212,14 @@ export default function BrowsePage() {
           await nexspenceApi.deleteByPath(deleteTarget.repo, p)
         }
       }
-      const repo = deleteTarget.repo
       setDeleteTarget(null)
-      void queryClient.invalidateQueries({ queryKey: ['components', repo] })
-      void queryClient.invalidateQueries({ queryKey: ['dockerBrowseTree', repo] })
-      void queryClient.invalidateQueries({ queryKey: ['rawBrowseTree', repo] })
+      invalidate()
     } catch (err: unknown) {
       const msg = axios.isAxiosError(err)
         ? err.response?.data?.message ?? err.response?.data?.error ?? err.message
         : err instanceof Error ? err.message : String(err)
       setDeleteError(msg)
+      invalidate()
     } finally {
       setDeleting(false)
     }
@@ -1486,10 +1493,15 @@ export default function BrowsePage() {
                       try {
                         const res = await apiClient.get(`/api/v1/components/${dockerSelection.componentId}/promotion-rules`)
                         if (res.data.length === 0) { alert('No promotion rules defined for this repository.'); return }
+                        // Seed the selection from the response, not from state:
+                        // `promotionRules` here is still the PREVIOUS component's
+                        // list (React state updates are async), and a rule id left
+                        // over from it would arm an unrelated rule behind an
+                        // apparently-empty dropdown (#337).
                         setPromotionRules(res.data)
-                      } catch { setPromotionRules([]) }
+                        setSelectedRuleID(res.data[0]?.id ?? '')
+                      } catch { setPromotionRules([]); setSelectedRuleID('') }
                       setPromoteComponentIDs([dockerSelection.componentId])
-                      setSelectedRuleID(promotionRules[0]?.id ?? '')
                       setPromotionResult(null)
                       setPromoteModalOpen(true)
                     }}>
@@ -1610,10 +1622,12 @@ export default function BrowsePage() {
                           try {
                             const res = await apiClient.get(`/api/v1/components/${node.componentId}/promotion-rules`)
                             if (res.data.length === 0) { alert('No promotion rules defined for this repository.'); return }
+                            // Same stale-closure hazard as the Docker handler
+                            // above: seed from the response, not from state (#337).
                             setPromotionRules(res.data)
-                          } catch { setPromotionRules([]) }
+                            setSelectedRuleID(res.data[0]?.id ?? '')
+                          } catch { setPromotionRules([]); setSelectedRuleID('') }
                           setPromoteComponentIDs([node.componentId!])
-                          setSelectedRuleID(promotionRules[0]?.id ?? '')
                           setPromotionResult(null)
                           setPromoteModalOpen(true)
                         }}>
@@ -1941,7 +1955,13 @@ function RawUploadModal({
   const [progress, setProgress] = useState(0)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState(false)
-  const xhrRef = useState<XMLHttpRequest | null>(null)
+  const xhrRef = useRef<XMLHttpRequest | null>(null)
+
+  // The modal can go away without its Cancel button — the backdrop click, a
+  // repository switch — and the in-flight PUT would otherwise keep running
+  // headless, landing a file in a repository the user is no longer looking at,
+  // with no notification either way (#337). Aborting a finished XHR is a no-op.
+  useEffect(() => () => { xhrRef.current?.abort() }, [])
 
   function handleFileChange(f: File) {
     setFile(f)
@@ -1955,7 +1975,7 @@ function RawUploadModal({
   function doUpload() {
     if (!file) return
     const xhr = new XMLHttpRequest()
-    xhrRef[0] = xhr
+    xhrRef.current = xhr
     const path = destPath.replace(/^\//, '')
     xhr.open('PUT', `/repository/${repoName}/${path}`)
     xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream')
@@ -2083,8 +2103,8 @@ function RawUploadModal({
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <HoloButton
             onClick={() => {
-              if (uploadState === 'uploading' && xhrRef[0]) {
-                xhrRef[0].abort()
+              if (uploadState === 'uploading' && xhrRef.current) {
+                xhrRef.current.abort()
                 setUploadState('idle')
               } else {
                 onClose()
