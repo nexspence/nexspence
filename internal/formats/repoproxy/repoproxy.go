@@ -197,6 +197,52 @@ func MetadataMaxAge(repo *domain.Repository) time.Duration {
 	return time.Duration(secs * float64(time.Second))
 }
 
+// MinimumPackageAge returns the minimum age an upstream package version must
+// have before this proxy repository serves it (#323) — a supply-chain gate: a
+// freshly published malicious version stays invisible until it has had time to
+// be detected and reported. Read from proxy_config["minimum_package_age"] in
+// seconds (the metadata_max_age convention). Absent, zero, negative or invalid
+// means DISABLED (0) — the policy is opt-in, so unlike MetadataMaxAge there is
+// no positive default to fall back to.
+func MinimumPackageAge(repo *domain.Repository) time.Duration {
+	if repo == nil || repo.ProxyConfig == nil {
+		return 0
+	}
+	raw, ok := repo.ProxyConfig["minimum_package_age"]
+	if !ok {
+		return 0
+	}
+	var secs float64
+	switch v := raw.(type) {
+	case float64:
+		secs = v
+	case float32:
+		secs = float64(v)
+	case int:
+		secs = float64(v)
+	case int64:
+		secs = float64(v)
+	case json.Number:
+		f, err := v.Float64()
+		if err != nil {
+			return 0
+		}
+		secs = f
+	case string:
+		f, err := strconv.ParseFloat(strings.TrimSpace(v), 64)
+		if err != nil {
+			return 0
+		}
+		secs = f
+	default:
+		return 0
+	}
+	if secs <= 0 {
+		return 0
+	}
+	return time.Duration(secs * float64(time.Second))
+}
+
 // cacheFetchStore resolves the physical blob store that holds a cached asset.
 func cacheFetchStore(ctx context.Context, d formats.Deps, asset *domain.Asset) storage.BlobStore {
 	if asset.BlobStoreID != "" {

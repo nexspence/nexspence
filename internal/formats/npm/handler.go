@@ -13,9 +13,11 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -108,6 +110,11 @@ func (h *Handler) serveTarball(c *gin.Context, repoName, filePath string) {
 			}
 		}
 		pkg := strings.TrimPrefix(strings.Split(filePath, "/-/")[0], "/")
+		if minAge := repoproxy.MinimumPackageAge(repo); minAge > 0 {
+			if !h.tarballAgeAllowed(c, repo, pkg, ver, minAge) {
+				return
+			}
+		}
 		coords := base.Coords{Name: pkg, Version: ver}
 		if coords.Version == "" {
 			coords.Version = "1"
@@ -154,6 +161,17 @@ func (h *Handler) serveMetadata(c *gin.Context, repoName, pkgPath string) {
 		// upstream original.
 		localBase := strings.TrimRight(h.deps.BaseURL, "/") + "/repository/" + repo.Name
 		rewrite := func(b []byte) []byte { return RewritePackument(b, localBase) }
+		if minAge := repoproxy.MinimumPackageAge(repo); minAge > 0 {
+			cutoff := time.Now().Add(-minAge)
+			inner := rewrite
+			rewrite = func(b []byte) []byte {
+				filtered, applied := FilterPackumentByAge(b, cutoff)
+				if !applied {
+					log.Printf("nexspence: minimum_package_age not applied for %s%s — upstream metadata carries no publish dates", repo.Name, pkgPath)
+				}
+				return inner(filtered)
+			}
+		}
 		if err := repoproxy.ServeGETRewritten(c, h.deps, repo, pkgPath, up, coords, "application/json", repoproxy.MetadataMaxAge(repo), rewrite); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		}
