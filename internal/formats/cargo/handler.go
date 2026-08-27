@@ -62,7 +62,7 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 		if strings.HasPrefix(p, "/index/") {
 			maxAge = repoproxy.MetadataMaxAge(repo)
 		}
-		coords := base.Coords{}
+		coords := proxyCoords(p)
 		if err := repoproxy.ServeGET(c, h.deps, repo, p, "", coords, "application/octet-stream", maxAge); err != nil {
 			c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		}
@@ -262,6 +262,30 @@ func (h *Handler) handleYank(c *gin.Context, repoName, p string) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+// proxyCoords derives component coordinates for a proxied path. A cached crate
+// must carry its real name and version — the OSV scan queries by them, so the
+// generic path-fallback name and placeholder version made every crate pulled
+// through a Cargo proxy invisible to vulnerability scanning (#336). Index
+// entries are versionless metadata and follow the npm proxy's convention
+// (Version "metadata"). Anything else keeps the generic fallback.
+func proxyCoords(p string) base.Coords {
+	if rest, ok := strings.CutPrefix(p, "/api/v1/crates/"); ok {
+		if nv, isDownload := strings.CutSuffix(rest, "/download"); isDownload {
+			if name, version, ok := strings.Cut(nv, "/"); ok &&
+				name != "" && version != "" && !strings.Contains(version, "/") {
+				return base.Coords{Name: strings.ToLower(name), Version: version}
+			}
+		}
+	}
+	if rest, ok := strings.CutPrefix(p, "/index/"); ok && rest != "config.json" {
+		parts := strings.Split(rest, "/")
+		if name := parts[len(parts)-1]; name != "" {
+			return base.Coords{Name: strings.ToLower(name), Version: "metadata"}
+		}
+	}
+	return base.Coords{}
 }
 
 func normPath(p string) string {
