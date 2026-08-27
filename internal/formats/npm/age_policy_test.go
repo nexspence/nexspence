@@ -192,3 +192,31 @@ func TestNPM_AgePolicy_OldPrereleaseTarballServes(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code,
 		"a 90-day-old prerelease must serve: %d %s", w.Code, w.Body.String())
 }
+
+// Scoped packages reach upstream as "@scope%2Fname" (one escape). Found live:
+// JoinURL re-escaped the "%" into "%252F" and registry.npmjs.org answered 405
+// for every scoped package pulled through a proxy.
+func TestNPM_Proxy_ScopedMetadata_SingleEscapeUpstream(t *testing.T) {
+	var gotURI string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotURI = r.RequestURI
+		if r.RequestURI != "/@types%2Fnode" {
+			// Mimic registry.npmjs.org: anything else (double-escaped included)
+			// is not a package route.
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"name":"@types/node","dist-tags":{"latest":"1.0.0"},"versions":{"1.0.0":{"name":"@types/node","version":"1.0.0"}}}`))
+	}))
+	t.Cleanup(srv.Close)
+	r, _ := proxySetup(srv)
+
+	req := httptest.NewRequest(http.MethodGet, "/repository/npm-proxy/@types/node", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code,
+		"scoped metadata failed (upstream saw %q): %d %s", gotURI, w.Code, w.Body.String())
+	assert.Equal(t, "/@types%2Fnode", gotURI)
+	assert.Contains(t, w.Body.String(), `"@types/node"`)
+}

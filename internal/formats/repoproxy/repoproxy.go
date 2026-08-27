@@ -117,6 +117,17 @@ func JoinURL(remoteBase, repoRelativePath string) (string, error) {
 	suffix := strings.Trim(repoRelativePath, "/")
 	merged := path.Join(strings.TrimSuffix(u.Path, "/"), suffix)
 	u.Path = "/" + strings.TrimPrefix(merged, "/")
+	// A caller may hand over a pre-escaped segment — NPMMetadataPath encodes a
+	// scoped package as "@scope%2Fname". Serializing that from Path alone would
+	// escape the "%" again ("%252F"), a URL registry.npmjs.org answers with 405.
+	// When the merged path IS a valid encoding, record it as the raw form and
+	// keep the decoded form in Path, so String() emits it exactly once-escaped.
+	// A stray "%" that is not a valid escape fails PathUnescape and keeps
+	// today's escape-once behavior.
+	if unescaped, uerr := url.PathUnescape(u.Path); uerr == nil && unescaped != u.Path {
+		u.RawPath = u.Path
+		u.Path = unescaped
+	}
 	return u.String(), nil
 }
 

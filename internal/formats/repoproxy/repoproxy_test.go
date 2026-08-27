@@ -58,6 +58,22 @@ func TestJoinURL(t *testing.T) {
 	}
 }
 
+// A pre-escaped segment must survive serialization intact: NPMMetadataPath
+// hands over "@scope%2Fname", and re-escaping the "%" turns it into
+// "@scope%252Fname" — a URL registry.npmjs.org answers with 405, which broke
+// every scoped package through an npm proxy.
+func TestJoinURL_PreservesPreEscapedSegments(t *testing.T) {
+	got, err := repoproxy.JoinURL("https://registry.npmjs.org/", "@types%2Fnode")
+	require.NoError(t, err)
+	assert.Equal(t, "https://registry.npmjs.org/@types%2Fnode", got)
+
+	// A literal "%" that is NOT a valid escape keeps today's behavior: it is
+	// escaped once so the URL stays parseable.
+	got, err = repoproxy.JoinURL("https://repo.example.com", "/odd%file.txt")
+	require.NoError(t, err)
+	assert.Equal(t, "https://repo.example.com/odd%25file.txt", got)
+}
+
 // ── RejectMutation ───────────────────────────────────────────────
 
 func TestRejectMutation_ProxyPUT(t *testing.T) {
