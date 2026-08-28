@@ -4,7 +4,7 @@ go 1.26.5
 
 require (
 	github.com/ProtonMail/go-crypto v1.4.1
-	github.com/aws/aws-sdk-go-v2 v1.43.6
+	github.com/aws/aws-sdk-go-v2 v1.43.7
 	github.com/aws/aws-sdk-go-v2/config v1.32.37
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.36
 	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.22.42
