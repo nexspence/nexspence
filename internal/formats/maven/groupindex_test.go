@@ -108,3 +108,45 @@ func TestMaven_MergeGroupIndex_MalformedPartSkipped(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, string(body), "<version>1.0</version>")
 }
+
+func perVersionXML(timestamp string, buildNumber int) []byte {
+	return []byte(fmt.Sprintf(`<metadata modelVersion="1.1.0"><groupId>com.foo</groupId><artifactId>bar</artifactId><version>2.0-SNAPSHOT</version><versioning><snapshot><timestamp>%s</timestamp><buildNumber>%d</buildNumber></snapshot><lastUpdated>%s</lastUpdated><snapshotVersions><snapshotVersion><extension>jar</extension><value>2.0-%s-%d</value></snapshotVersion></snapshotVersions></versioning></metadata>`,
+		timestamp, buildNumber, timestamp, timestamp, buildNumber))
+}
+
+// The per-SNAPSHOT-version metadata shape (#350): merging it as if it were the
+// aggregate shape silently produced a content-free document — the XML decoder
+// leaves an unrecognized shape as zero values instead of failing. The merge
+// must dispatch on the requested path and, for a SNAPSHOT directory, pick the
+// member reporting the single latest (timestamp, buildNumber) build.
+func TestMaven_MergeGroupIndex_PerVersionShape_PicksLatestBuild(t *testing.T) {
+	h := maven.New(formats.Deps{})
+	parts := []formats.GroupIndexPart{
+		{Member: "m1", Body: perVersionXML("20260829.101010", 5)},
+		{Member: "m2", Body: perVersionXML("20260830.123456", 3)},
+	}
+
+	body, ct, err := h.MergeGroupIndex("g", "/com/foo/bar/2.0-SNAPSHOT/maven-metadata.xml", parts)
+	require.NoError(t, err)
+	assert.Contains(t, ct, "xml")
+	out := string(body)
+	assert.Contains(t, out, "<timestamp>20260830.123456</timestamp>", "later timestamp wins regardless of member order")
+	assert.Contains(t, out, "<buildNumber>3</buildNumber>")
+	assert.Contains(t, out, "<value>2.0-20260830.123456-3</value>")
+	assert.NotContains(t, out, "20260829.101010")
+	assert.NotContains(t, out, "<versions>", "must not degrade into an empty aggregate document")
+}
+
+func TestMaven_MergeGroupIndex_PerVersionShape_ChecksumOfWinner(t *testing.T) {
+	h := maven.New(formats.Deps{})
+	parts := []formats.GroupIndexPart{
+		{Member: "m1", Body: perVersionXML("20260830.123456", 3)},
+	}
+
+	doc, _, err := h.MergeGroupIndex("g", "/com/foo/bar/2.0-SNAPSHOT/maven-metadata.xml", parts)
+	require.NoError(t, err)
+	sum, ct, err := h.MergeGroupIndex("g", "/com/foo/bar/2.0-SNAPSHOT/maven-metadata.xml.sha1", parts)
+	require.NoError(t, err)
+	assert.Contains(t, ct, "text/plain")
+	assert.Equal(t, fmt.Sprintf("%x", sha1.Sum(doc)), string(sum)) //nolint:gosec
+}
