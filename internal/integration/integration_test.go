@@ -20,13 +20,16 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/nexspence-oss/nexspence/internal/api"
+	"github.com/nexspence-oss/nexspence/internal/auth"
 	"github.com/nexspence-oss/nexspence/internal/config"
 	"github.com/nexspence-oss/nexspence/internal/formats/repoproxy"
 	"github.com/nexspence-oss/nexspence/internal/logger"
+	"github.com/nexspence-oss/nexspence/internal/repository/postgres"
 	"github.com/nexspence-oss/nexspence/internal/testutil/pgtest"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -43,9 +46,28 @@ func server(t *testing.T) *httptest.Server {
 	serverOnce.Do(func() {
 		pool := pgtest.Pool(t)
 
-		l, err := net.Listen("tcp", "127.0.0.1:0")
+		// The seed migration pre-creates the admin user with a placeholder
+		// hash; the configured password is normally applied by the server
+		// binary's bootstrap step, which lives in package main — set it here.
+		authSvc := auth.NewService("integration-test-secret-32bytes!!", 1, 4)
+		hash, err := authSvc.HashPassword("admin123")
 		if err != nil {
-			t.Fatalf("listen: %v", err)
+			t.Fatalf("hash admin password: %v", err)
+		}
+		if err := postgres.NewUserRepo(pool).UpdatePassword(context.Background(), "admin", hash); err != nil {
+			t.Fatalf("set admin password: %v", err)
+		}
+		// UpdatePassword bumps tokens_valid_after, and a JWT's second-granular
+		// iat issued within the same second reads as pre-cutoff — harmless for
+		// humans, fatal for a test that logs in milliseconds later. Rewind it.
+		if _, err := pool.Exec(context.Background(),
+			`UPDATE users SET tokens_valid_after = now() - interval '1 minute' WHERE username = 'admin'`); err != nil {
+			t.Fatalf("rewind token cutoff: %v", err)
+		}
+
+		l, lerr := net.Listen("tcp", "127.0.0.1:0")
+		if lerr != nil {
+			t.Fatalf("listen: %v", lerr)
 		}
 		baseURL := "http://" + l.Addr().String()
 
@@ -55,6 +77,7 @@ func server(t *testing.T) *httptest.Server {
 		cfg.Auth.BcryptCost = 4
 		cfg.Storage.Local.BasePath = t.TempDir()
 		cfg.HTTP.BaseURL = baseURL
+		cfg.HTTP.MaxBodyMB = 64 // a zero-value config means "0 bytes", not "unlimited"
 		cfg.Log.Level = "error"
 		cfg.Bootstrap.AdminUsername = "admin"
 		cfg.Bootstrap.AdminPassword = "admin123"
@@ -95,10 +118,12 @@ func login(t *testing.T, username, password string) string {
 	resp, err := http.Post(server(t).URL+"/api/v1/login", "application/json", bytes.NewBufferString(body))
 	require.NoError(t, err)
 	defer resp.Body.Close()
-	require.Equal(t, http.StatusOK, resp.StatusCode)
+	raw, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode, "login response: %s", raw)
 
 	var result map[string]any
-	require.NoError(t, json.NewDecoder(resp.Body).Decode(&result))
+	require.NoError(t, json.Unmarshal(raw, &result))
 	token, ok := result["token"].(string)
 	require.True(t, ok, "response missing token")
 	return token
@@ -136,7 +161,7 @@ func TestLoginAndMe(t *testing.T) {
 
 	var me map[string]any
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&me))
-	assert.Equal(t, "admin", me["userId"])
+	assert.Equal(t, "admin", me["username"])
 }
 
 func TestRepositoryCRUD(t *testing.T) {
@@ -204,8 +229,8 @@ func TestRawArtifactPushPull(t *testing.T) {
 }
 
 func TestMetricsEndpoint(t *testing.T) {
-	resp, err := http.Get(server(t).URL + "/api/v1/metrics")
-	require.NoError(t, err)
+	token := login(t, "admin", "admin123")
+	resp := authReq(t, http.MethodGet, "/api/v1/metrics", nil, token)
 	defer resp.Body.Close()
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
