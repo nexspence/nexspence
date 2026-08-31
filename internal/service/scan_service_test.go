@@ -56,7 +56,7 @@ func TestDockerScanImageRef(t *testing.T) {
 }
 
 func TestScanService_NonDocker(t *testing.T) {
-	comp := &domain.Component{ID: "x", Format: "maven2", Name: "spring-core", Version: "5.3.0"}
+	comp := &domain.Component{ID: "x", Format: "conan", Name: "openssl", Version: "3.0.0"}
 	comps := testutil.NewComponentRepo()
 	comps.Create(context.Background(), comp)
 

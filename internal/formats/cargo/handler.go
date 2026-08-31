@@ -15,12 +15,14 @@
 package cargo
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"path"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -32,7 +34,22 @@ import (
 )
 
 // Handler serves the Rust Cargo registry protocol.
-type Handler struct{ deps formats.Deps }
+type Handler struct {
+	deps formats.Deps
+
+	// dlMu/dlBases cache each proxy repository's upstream download base — the
+	// "dl" value of the UPSTREAM's own /config.json. The real crates.io splits
+	// its API across hosts (sparse index on index.crates.io, downloads on
+	// crates.io), so the download endpoint cannot be derived from remote_url
+	// (#347). Cached per repo for the metadata TTL.
+	dlMu    sync.Mutex
+	dlBases map[string]dlBaseEntry
+}
+
+type dlBaseEntry struct {
+	fetched time.Time
+	dl      string // empty = upstream has no usable config.json; fall back to remote_url
+}
 
 // New creates a Cargo format Handler with the given dependencies.
 func New(deps formats.Deps) *Handler { return &Handler{deps: deps} }
@@ -63,7 +80,18 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 			maxAge = repoproxy.MetadataMaxAge(repo)
 		}
 		coords := proxyCoords(p)
-		if err := repoproxy.ServeGET(c, h.deps, repo, p, "", coords, "application/octet-stream", maxAge); err != nil {
+		// The local /index/ route prefix is not part of any real registry's
+		// URL scheme; downloads may live on a different host than the index —
+		// both resolved into an explicit upstreamPath (#347).
+		upstreamPath := ""
+		if strings.HasPrefix(p, "/index/") {
+			upstreamPath = repoproxy.CargoIndexUpstreamPath(p)
+		} else if name, version, ok := parseDownloadPath(p); ok {
+			if dl := h.upstreamDlBase(c.Request.Context(), repo); dl != "" {
+				upstreamPath = cargoDownloadURL(dl, name, version)
+			}
+		}
+		if err := repoproxy.ServeGET(c, h.deps, repo, p, upstreamPath, coords, "application/octet-stream", maxAge); err != nil {
 			c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		}
 		return
@@ -286,6 +314,97 @@ func proxyCoords(p string) base.Coords {
 		}
 	}
 	return base.Coords{}
+}
+
+// parseDownloadPath recognizes /api/v1/crates/<name>/<version>/download.
+func parseDownloadPath(p string) (name, version string, ok bool) {
+	rest, found := strings.CutPrefix(p, "/api/v1/crates/")
+	if !found {
+		return "", "", false
+	}
+	rest, found = strings.CutSuffix(rest, "/download")
+	if !found {
+		return "", "", false
+	}
+	name, version, found = strings.Cut(rest, "/")
+	if !found || name == "" || version == "" || strings.Contains(version, "/") {
+		return "", "", false
+	}
+	return name, version, true
+}
+
+// upstreamDlBase returns the upstream registry's own download base — the "dl"
+// value of ITS /config.json — cached per repository for the metadata TTL. An
+// unreachable or unparsable config yields "", and the download falls back to
+// remote_url + the local path (correct for single-host registries).
+func (h *Handler) upstreamDlBase(ctx context.Context, repo *domain.Repository) string {
+	h.dlMu.Lock()
+	if h.dlBases == nil {
+		h.dlBases = make(map[string]dlBaseEntry)
+	}
+	if e, ok := h.dlBases[repo.Name]; ok && time.Since(e.fetched) < repoproxy.MetadataMaxAge(repo) {
+		h.dlMu.Unlock()
+		return e.dl
+	}
+	h.dlMu.Unlock()
+
+	dl := fetchUpstreamDl(ctx, repo)
+
+	h.dlMu.Lock()
+	h.dlBases[repo.Name] = dlBaseEntry{fetched: time.Now(), dl: dl}
+	h.dlMu.Unlock()
+	return dl
+}
+
+func fetchUpstreamDl(ctx context.Context, repo *domain.Repository) string {
+	resp, err := repoproxy.FetchUpstreamOnce(ctx, repo, "/config.json", "", nil)
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return ""
+	}
+	var cfg struct {
+		Dl string `json:"dl"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&cfg); err != nil {
+		return ""
+	}
+	if !strings.HasPrefix(cfg.Dl, "http://") && !strings.HasPrefix(cfg.Dl, "https://") {
+		return ""
+	}
+	return cfg.Dl
+}
+
+// cargoDownloadURL renders the registry's dl template for one crate. Per the
+// registry-index spec, dl may carry {crate}/{version}/{prefix}/{lowerprefix}
+// markers; a dl without any markers gets "/{crate}/{version}/download"
+// appended — exactly how cargo itself interprets it.
+func cargoDownloadURL(dl, name, version string) string {
+	if strings.Contains(dl, "{crate}") || strings.Contains(dl, "{version}") ||
+		strings.Contains(dl, "{prefix}") || strings.Contains(dl, "{lowerprefix}") {
+		out := strings.ReplaceAll(dl, "{crate}", name)
+		out = strings.ReplaceAll(out, "{version}", version)
+		out = strings.ReplaceAll(out, "{prefix}", cargoPrefix(name))
+		out = strings.ReplaceAll(out, "{lowerprefix}", cargoPrefix(strings.ToLower(name)))
+		return out
+	}
+	return strings.TrimRight(dl, "/") + "/" + name + "/" + version + "/download"
+}
+
+// cargoPrefix is the sparse-index sharding prefix ("se/rd" for serde).
+func cargoPrefix(name string) string {
+	switch {
+	case len(name) == 1:
+		return "1"
+	case len(name) == 2:
+		return "2"
+	case len(name) == 3:
+		return "3/" + name[:1]
+	default:
+		return name[:2] + "/" + name[2:4]
+	}
 }
 
 func normPath(p string) string {

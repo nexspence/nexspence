@@ -9,6 +9,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/service"
 	"github.com/nexspence-oss/nexspence/internal/testutil"
@@ -455,5 +458,69 @@ func TestScanExtra_TrivyErrorMessage_LeavesOtherFailuresAlone(t *testing.T) {
 	msg := svc.TrivyErrorMessage(errors.New("exit status 1"), "MANIFEST_UNKNOWN")
 	if !strings.Contains(msg, "re-push the image") {
 		t.Errorf("msg = %q, want the existing manifest message untouched", msg)
+	}
+}
+
+// #347 follow-ups: the reporter's zero-findings scan turned out to be a fixed
+// version (smallvec 1.6.1 IS the fix for RUSTSEC-2021-0003) — but the
+// investigation surfaced two real gaps.
+
+// Maven components carry format "maven2"; the scan path compared against
+// "maven", so Maven scanning has never actually worked.
+func TestScanService_Maven2_ReachesOSV(t *testing.T) {
+	comp := &domain.Component{ID: "m2", Repository: "maven-hosted", Format: "maven2",
+		Group: "org.apache.logging.log4j", Name: "log4j-core", Version: "2.14.1"}
+	comps := testutil.NewComponentRepo()
+	comps.Create(context.Background(), comp)
+
+	var gotEcosystem, gotName string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Package struct {
+				Name      string `json:"name"`
+				Ecosystem string `json:"ecosystem"`
+			} `json:"package"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		gotEcosystem, gotName = req.Package.Ecosystem, req.Package.Name
+		_ = json.NewEncoder(w).Encode(map[string]any{"vulns": []any{}})
+	}))
+	defer srv.Close()
+
+	svc := service.NewScanService(comps, "")
+	svc.WithScanResults(testutil.NewScanResultRepo())
+	svc.OSVClient.BaseURL = srv.URL
+
+	res, err := svc.Scan(context.Background(), comp.ID, "")
+	require.NoError(t, err, "a maven2 component must be scannable")
+	assert.Equal(t, domain.ScanStatusOK, res.Status)
+	assert.Equal(t, "Maven", gotEcosystem)
+	assert.Equal(t, "org.apache.logging.log4j:log4j-core", gotName,
+		"OSV identifies Maven packages as group:artifact")
+}
+
+// A cached metadata placeholder (an npm packument, a cargo index entry, a pypi
+// simple page) is not a package version: scanning it answered "ok, 0
+// vulnerabilities", indistinguishable from a clean scan of the real artifact.
+// It must refuse with an explanation instead.
+func TestScanService_MetadataPlaceholderRefused(t *testing.T) {
+	comps := testutil.NewComponentRepo()
+	var ids []string
+	for _, tc := range []struct{ format, version string }{
+		{"cargo", "metadata"},
+		{"npm", "metadata"},
+		{"pypi", "simple-page"},
+	} {
+		comp := &domain.Component{Repository: "r", Format: tc.format, Name: "pkg-" + tc.format, Version: tc.version}
+		require.NoError(t, comps.Create(context.Background(), comp))
+		ids = append(ids, comp.ID)
+	}
+	svc := service.NewScanService(comps, "")
+	svc.WithScanResults(testutil.NewScanResultRepo())
+
+	for _, id := range ids {
+		_, err := svc.Scan(context.Background(), id, "")
+		require.Error(t, err, "component %s", id)
+		assert.Contains(t, err.Error(), "metadata", "the refusal explains itself: %v", err)
 	}
 }

@@ -326,6 +326,13 @@ func (s *ScanService) Scan(ctx context.Context, componentID, imageRef string) (*
 		return nil, fmt.Errorf("component %s not found", componentID)
 	}
 	format := strings.ToLower(comp.Format)
+	// A cached metadata placeholder (an npm packument, a cargo index entry, a
+	// pypi simple page) is not a package version: scanning it would answer
+	// "ok, 0 vulnerabilities" — indistinguishable from a clean scan of the
+	// real artifact and exactly the confusion #347 reports.
+	if metadataPlaceholderVersions[comp.Version] {
+		return nil, fmt.Errorf("component %q@%q is a cached metadata artifact, not a package version — scan the versioned package component instead", comp.Name, comp.Version)
+	}
 	switch {
 	case isImageFormat(format):
 		// Falls through to the Trivy path below. An oci repository holds the same
@@ -333,7 +340,7 @@ func (s *ScanService) Scan(ctx context.Context, componentID, imageRef string) (*
 		// so refusing it on its format label would be wrong. A non-image artifact
 		// (a chart, a signature) surfaces as a Trivy error instead of being
 		// refused up front, which is the more honest answer.
-	case format == "maven" || format == "npm" || format == "pypi" || format == "cargo":
+	case format == "maven" || format == "maven2" || format == "npm" || format == "pypi" || format == "cargo":
 		return s.scanOSV(ctx, comp)
 	default:
 		return nil, fmt.Errorf("vulnerability scanning is not supported for format %q", comp.Format)
@@ -475,7 +482,13 @@ func (s *ScanService) scanOSV(ctx context.Context, comp *domain.Component) (*dom
 		Status:    domain.ScanStatusOK,
 	}
 
-	vulns, err := s.OSVClient.Query(ctx, comp.Name, comp.Version, ecosystem)
+	// OSV identifies Maven packages as "group:artifact"; the bare artifact
+	// name matches nothing.
+	pkgName := comp.Name
+	if ecosystem == "Maven" && comp.Group != "" {
+		pkgName = comp.Group + ":" + comp.Name
+	}
+	vulns, err := s.OSVClient.Query(ctx, pkgName, comp.Version, ecosystem)
 	if err != nil {
 		result.Status = domain.ScanStatusFailed
 		result.Error = err.Error()
@@ -535,6 +548,16 @@ func (s *ScanService) persistScanRow(ctx context.Context, comp *domain.Component
 	if err := s.ScanResults.Insert(ctx, row); err != nil {
 		log.Printf("nexor: scan result row not inserted component=%s scanner=%s: %v", comp.ID, scanner, err)
 	}
+}
+
+// metadataPlaceholderVersions are the version labels format handlers register
+// cached metadata under (an npm packument, a pypi simple page, a cargo index
+// entry). They are files, not package versions — no advisory database can say
+// anything about them.
+var metadataPlaceholderVersions = map[string]bool{
+	"metadata":    true,
+	"simple-page": true,
+	"index":       true,
 }
 
 // isDigestAlias reports whether a component version is a content digest rather
