@@ -61,11 +61,28 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 		}
 		// Serve .sha1/.md5/.sha256 checksums from DB without separate blob
 		if isChecksum(filePath) {
-			h.serveChecksum(c, repoName, filePath)
+			main := strings.TrimSuffix(filePath, path.Ext(filePath))
+			if a, err := h.deps.Assets.GetByPath(c.Request.Context(), repoName, main); err == nil && a != nil {
+				h.serveChecksum(c, repoName, filePath)
+				return
+			}
+			// No stored file to hash — a maven-metadata.xml sidecar is computed
+			// over the generated document instead (#350).
+			if h.serveGeneratedMetadata(c, repoName, filePath) {
+				return
+			}
+			c.JSON(http.StatusNotFound, gin.H{"error": "checksum not available"})
 			return
 		}
 		rc, asset, err := base.FetchArtifact(c.Request.Context(), h.deps, repoName, filePath)
 		if err != nil {
+			// Neither metadata shape is ever stored as a literal asset (Nexus
+			// has no component to attach them to; see #350) — generate it from
+			// the repository's real contents. A stored file, when a client did
+			// upload one, was already served above.
+			if h.serveGeneratedMetadata(c, repoName, filePath) {
+				return
+			}
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 			return
 		}

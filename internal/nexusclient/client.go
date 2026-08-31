@@ -305,6 +305,56 @@ func (c *Client) ListComponents(ctx context.Context, repo, continuationToken str
 	return out, page.ContinuationToken, nil
 }
 
+// assetPageDTO mirrors GET /service/rest/v1/assets.
+type assetPageDTO struct {
+	Items []struct {
+		Path        string `json:"path"`
+		DownloadURL string `json:"downloadUrl"`
+		ContentType string `json:"contentType"`
+		FileSize    int64  `json:"fileSize"`
+		Checksum    struct {
+			SHA256 string `json:"sha256"`
+			SHA1   string `json:"sha1"`
+			MD5    string `json:"md5"`
+		} `json:"checksum"`
+	} `json:"items"`
+	ContinuationToken string `json:"continuationToken"`
+}
+
+// ListAssets returns one page of the repository's FULL asset listing — unlike
+// ListComponents, this includes assets Nexus cannot group under any component
+// (#350: aggregate and per-SNAPSHOT-version maven-metadata.xml and their
+// checksum sidecars). Pagination works like ListComponents.
+func (c *Client) ListAssets(ctx context.Context, repo, continuationToken string) ([]Asset, string, error) {
+	reqURL := c.baseURL + "/service/rest/v1/assets?repository=" + url.QueryEscape(repo)
+	if continuationToken != "" {
+		reqURL += "&continuationToken=" + url.QueryEscape(continuationToken)
+	}
+	resp, err := c.do(ctx, reqURL)
+	if err != nil {
+		return nil, "", err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	var page assetPageDTO
+	if err := json.NewDecoder(resp.Body).Decode(&page); err != nil {
+		return nil, "", err
+	}
+	out := make([]Asset, 0, len(page.Items))
+	for _, it := range page.Items {
+		out = append(out, Asset{
+			Path:        it.Path,
+			DownloadURL: it.DownloadURL,
+			ContentType: it.ContentType,
+			SizeBytes:   it.FileSize,
+			SHA256:      it.Checksum.SHA256,
+			SHA1:        it.Checksum.SHA1,
+			MD5:         it.Checksum.MD5,
+		})
+	}
+	return out, page.ContinuationToken, nil
+}
+
 // DownloadAsset streams an asset from its absolute download URL. The caller
 // closes the returned reader.
 func (c *Client) DownloadAsset(ctx context.Context, downloadURL string) (io.ReadCloser, error) {

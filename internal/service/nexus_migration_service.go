@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"path"
 	"regexp"
 	"sort"
 	"strings"
@@ -758,7 +759,7 @@ func (s *NexusMigrationService) migrateAssets(ctx context.Context, client *nexus
 // planAssets lists every component in the repository and turns it into the set
 // of files to transfer, ordered so a manifest never lands before its blobs.
 func (s *NexusMigrationService) planAssets(ctx context.Context, client *nexusclient.Client,
-	m migratedRepo, _ *progress,
+	m migratedRepo, p *progress,
 ) ([]plannedAsset, error) {
 	src := m.src
 	isOCI := nexusFormats[src.Format].IsOCIRegistry()
@@ -809,7 +810,69 @@ func (s *NexusMigrationService) planAssets(ctx context.Context, client *nexuscli
 		token = next
 	}
 
+	// The Components API only lists assets it can group under a component;
+	// anything else (#350: both maven-metadata.xml shapes and their checksum
+	// sidecars) is invisible to the plan. Reconcile against the FULL asset
+	// listing so nothing vanishes without a trace. OCI repositories are
+	// exempt: their blob assets are deliberately unplanned — they come across
+	// with the manifests that name them.
+	if !isOCI {
+		s.reconcilePlanAgainstAssetListing(ctx, client, m, planned, p)
+	}
+
 	return planned, nil
+}
+
+// reconcilePlanAgainstAssetListing walks GET /service/rest/v1/assets and
+// records every asset the component-based plan missed. maven-metadata.xml and
+// its sidecars are the known — and by design unmigrated — population: both
+// shapes are generated dynamically from stored components on every GET, so a
+// literal copy would only go stale. Anything else is counted through the
+// job's error path. A source without the endpoint skips the check.
+func (s *NexusMigrationService) reconcilePlanAgainstAssetListing(ctx context.Context,
+	client *nexusclient.Client, m migratedRepo, planned []plannedAsset, p *progress,
+) {
+	known := make(map[string]bool, len(planned))
+	for _, pa := range planned {
+		known[pa.path] = true
+	}
+	token := ""
+	for {
+		if err := checkPaused(ctx); err != nil {
+			return
+		}
+		assets, next, err := client.ListAssets(ctx, m.src.Name, token)
+		if err != nil {
+			s.logf(ctx, "migration: asset listing unavailable for %s — completeness check skipped: %v", m.src.Name, err)
+			return
+		}
+		for _, a := range assets {
+			ap := normalizeAssetPath(a.Path)
+			if known[ap] || isMavenMetadataSidecarPath(ap) {
+				continue
+			}
+			p.fail(ctx, "repo %s: asset %s has no owning component and was not planned for transfer", m.src.Name, ap)
+		}
+		if next == "" {
+			return
+		}
+		token = next
+	}
+}
+
+// isMavenMetadataSidecarPath reports whether the path names an aggregate or
+// per-version maven-metadata.xml or one of its checksum sidecars.
+func isMavenMetadataSidecarPath(p string) bool {
+	name := path.Base(p)
+	if name == "maven-metadata.xml" {
+		return true
+	}
+	for _, ext := range []string{".sha1", ".md5", ".sha256"} {
+		if name == "maven-metadata.xml"+ext {
+			return true
+		}
+	}
+	return false
 }
 
 // transferAsset brings one planned unit across, skipping whatever is already

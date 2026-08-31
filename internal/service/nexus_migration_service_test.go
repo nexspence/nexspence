@@ -32,6 +32,8 @@ type fakeNexus struct {
 	settingsCode int               // non-zero forces this status instead of settings
 	repositories string            // /service/rest/v1/repositories
 	components   map[string]string // repository name → one full component page
+	assetPages   map[string]string // repository name → one full /v1/assets page
+	assetsCode   int               // non-zero forces this status on /v1/assets
 	files        map[string]string // /repository/... path → body
 	users        string
 	usersCode    int // non-zero forces this status on /security/users
@@ -83,6 +85,16 @@ func (f *fakeNexus) start(t *testing.T) *httptest.Server {
 			_, _ = io.WriteString(w, orEmptyList(f.repositories))
 		case r.URL.Path == "/service/rest/v1/components":
 			body := f.components[r.URL.Query().Get("repository")]
+			if body == "" {
+				body = `{"items":[],"continuationToken":null}`
+			}
+			_, _ = io.WriteString(w, body)
+		case r.URL.Path == "/service/rest/v1/assets":
+			if f.assetsCode != 0 {
+				w.WriteHeader(f.assetsCode)
+				return
+			}
+			body := f.assetPages[r.URL.Query().Get("repository")]
 			if body == "" {
 				body = `{"items":[],"continuationToken":null}`
 			}
@@ -1407,4 +1419,100 @@ func TestFakeNexusFixturesAreValidJSON(t *testing.T) {
 		var v any
 		require.NoError(t, json.Unmarshal([]byte(doc), &v))
 	}
+}
+
+// ── #350: assets with no owning component must be counted, not vanish ────────
+
+// The Components API only returns assets it can group under a component;
+// anything else was never planned, never transferred, and never counted. The
+// plan is now reconciled against /service/rest/v1/assets — the full listing —
+// and every unplanned asset is recorded through the error count.
+func TestNexusMigration_NonComponentAssetCountedAsError(t *testing.T) {
+	fake := &fakeNexus{
+		settings: `[{"name":"raw-hosted","format":"raw","type":"hosted","online":true}]`,
+		components: map[string]string{
+			"raw-hosted": `{"items":[{"name":"a.txt","version":null,"group":"/","format":"raw","assets":[
+				{"path":"a.txt","downloadUrl":"%BASE%/repository/raw-hosted/a.txt",
+				 "contentType":"text/plain","fileSize":5}]}],"continuationToken":null}`,
+		},
+		assetPages: map[string]string{
+			"raw-hosted": `{"items":[
+				{"path":"a.txt","downloadUrl":"%BASE%/repository/raw-hosted/a.txt","contentType":"text/plain","fileSize":5},
+				{"path":"orphan.bin","downloadUrl":"%BASE%/repository/raw-hosted/orphan.bin","contentType":"application/octet-stream","fileSize":9}
+			],"continuationToken":null}`,
+		},
+		files: map[string]string{"/repository/raw-hosted/a.txt": "hello"},
+	}
+	h := newMigHarness(t, fake)
+	fake.components["raw-hosted"] = strings.ReplaceAll(fake.components["raw-hosted"], "%BASE%", h.nexus.URL)
+	fake.assetPages["raw-hosted"] = strings.ReplaceAll(fake.assetPages["raw-hosted"], "%BASE%", h.nexus.URL)
+
+	job := h.startJob(t)
+	done := h.waitForStatus(t, job.ID, domain.MigrationDone)
+
+	assert.Equal(t, 1, done.ErrorCount, "the orphan asset must be counted, not silently dropped")
+	require.NotNil(t, done.LastError)
+	assert.Contains(t, *done.LastError, "orphan.bin")
+
+	// The componentized asset still migrates normally.
+	stored, err := h.assets.GetByPath(context.Background(), "raw-hosted", "/a.txt")
+	require.NoError(t, err)
+	require.NotNil(t, stored)
+}
+
+// maven-metadata.xml and its checksum sidecars are the known population of
+// non-componentized assets (#350's audit found nothing else, format-wide).
+// They are deliberately NOT migrated — both shapes are generated dynamically
+// from stored components on every GET — so they must not inflate the error
+// count either.
+func TestNexusMigration_MavenMetadataAssetsAreNotErrors(t *testing.T) {
+	fake := &fakeNexus{
+		settings: `[{"name":"mvn-hosted","format":"maven2","type":"hosted","online":true}]`,
+		components: map[string]string{
+			"mvn-hosted": `{"items":[{"name":"widget-app","version":"1.0","group":"com.example","format":"maven2","assets":[
+				{"path":"com/example/widget-app/1.0/widget-app-1.0.jar",
+				 "downloadUrl":"%BASE%/repository/mvn-hosted/com/example/widget-app/1.0/widget-app-1.0.jar",
+				 "contentType":"application/java-archive","fileSize":3}]}],"continuationToken":null}`,
+		},
+		assetPages: map[string]string{
+			"mvn-hosted": `{"items":[
+				{"path":"com/example/widget-app/1.0/widget-app-1.0.jar","downloadUrl":"%BASE%/repository/mvn-hosted/com/example/widget-app/1.0/widget-app-1.0.jar","contentType":"application/java-archive","fileSize":3},
+				{"path":"com/example/widget-app/maven-metadata.xml","downloadUrl":"%BASE%/repository/mvn-hosted/com/example/widget-app/maven-metadata.xml","contentType":"application/xml","fileSize":10},
+				{"path":"com/example/widget-app/maven-metadata.xml.sha1","downloadUrl":"%BASE%/repository/mvn-hosted/com/example/widget-app/maven-metadata.xml.sha1","contentType":"text/plain","fileSize":40}
+			],"continuationToken":null}`,
+		},
+		files: map[string]string{"/repository/mvn-hosted/com/example/widget-app/1.0/widget-app-1.0.jar": "jar"},
+	}
+	h := newMigHarness(t, fake)
+	fake.components["mvn-hosted"] = strings.ReplaceAll(fake.components["mvn-hosted"], "%BASE%", h.nexus.URL)
+	fake.assetPages["mvn-hosted"] = strings.ReplaceAll(fake.assetPages["mvn-hosted"], "%BASE%", h.nexus.URL)
+
+	job := h.startJob(t)
+	done := h.waitForStatus(t, job.ID, domain.MigrationDone)
+
+	assert.Zero(t, done.ErrorCount,
+		"maven-metadata.xml is generated dynamically, its absence from the plan is by design: %v", done.LastError)
+}
+
+// An older Nexus without the assets endpoint (or a hardened one refusing it)
+// must not fail the migration — the completeness check is best-effort.
+func TestNexusMigration_AssetListingUnavailable_Tolerated(t *testing.T) {
+	fake := &fakeNexus{
+		settings: `[{"name":"raw-hosted","format":"raw","type":"hosted","online":true}]`,
+		components: map[string]string{
+			"raw-hosted": `{"items":[{"name":"a.txt","version":null,"group":"/","format":"raw","assets":[
+				{"path":"a.txt","downloadUrl":"%BASE%/repository/raw-hosted/a.txt",
+				 "contentType":"text/plain","fileSize":5}]}],"continuationToken":null}`,
+		},
+		assetsCode: 404,
+		files:      map[string]string{"/repository/raw-hosted/a.txt": "hello"},
+	}
+	h := newMigHarness(t, fake)
+	fake.components["raw-hosted"] = strings.ReplaceAll(fake.components["raw-hosted"], "%BASE%", h.nexus.URL)
+
+	job := h.startJob(t)
+	done := h.waitForStatus(t, job.ID, domain.MigrationDone)
+
+	assert.Zero(t, done.ErrorCount)
+	assert.Equal(t, int64(1), done.DoneAssets)
 }
