@@ -1024,6 +1024,7 @@ curl -sf http://localhost:8081/service/rest/v1/status/check</div></div>
       <tr><td>Go</td><td><code>/repository/{name}/</code></td><td data-i18n="repo.urls.go">Set as <code>GOPROXY</code></td></tr>
       <tr><td>NuGet</td><td><code>/repository/{name}/index.json</code></td><td data-i18n="repo.urls.nuget">v3 flat container endpoint</td></tr>
       <tr><td>Cargo</td><td><code>/repository/{name}/</code></td><td data-i18n="repo.urls.cargo">Sparse index endpoint</td></tr>
+      <tr><td>RubyGems</td><td><code>/repository/{name}/</code></td><td data-i18n="repo.urls.rubygems">Compact index + gem push</td></tr>
       <tr><td>Raw</td><td><code>/repository/{name}/</code></td><td data-i18n="repo.urls.raw">PUT/GET any path</td></tr>
     </tbody>
   </table>
@@ -1711,7 +1712,7 @@ export NEXSPENCE_OIDC_CLIENT_SECRET="..."</div></div>
       </section>
       <section id="sec-formats" class="doc-section" hidden>
   <div class="doc-section-title" data-i18n="fmt.title">Supported Formats</div>
-  <div class="doc-section-sub" data-i18n="fmt.sub">15 artifact formats — each supports Hosted, Proxy, and Group repository types.</div>
+  <div class="doc-section-sub" data-i18n="fmt.sub">16 artifact formats — each supports Hosted, Proxy, and Group repository types.</div>
   <table class="doc-table">
     <thead><tr><th>Format</th><th>Protocol</th><th>Hosted</th><th>Proxy</th><th>Group</th></tr></thead>
     <tbody>
@@ -1730,6 +1731,7 @@ export NEXSPENCE_OIDC_CLIENT_SECRET="..."</div></div>
       <tr><td>Raw</td><td>HTTP PUT/GET</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
       <tr><td>Conda</td><td>conda index</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
       <tr><td>Terraform</td><td>Registry protocol v1</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
+      <tr><td>RubyGems</td><td>Compact index</td><td class="y">✓</td><td class="y">✓</td><td>—</td></tr>
     </tbody>
   </table>
       </section>
@@ -1862,6 +1864,7 @@ const TRANSLATIONS={
     'repo.urls.go':'Set as <code>GOPROXY</code>',
     'repo.urls.nuget':'v3 flat container endpoint',
     'repo.urls.cargo':'Sparse index endpoint',
+    'repo.urls.rubygems':'Compact index + gem push',
     'repo.urls.raw':'PUT/GET any path',
     'repo.anon.sep':'Anonymous Access',
     'repo.anon.info':'Enable <strong>Allow anonymous access</strong> on a repository to let unauthenticated users download artifacts. Write operations always require authentication.',
@@ -2125,7 +2128,7 @@ const TRANSLATIONS={
     'sb.native-install':'Native Install',
     'crumb.native-install':'native install',
     'fmt.title':'Supported Formats',
-    'fmt.sub':'15 artifact formats — each supports Hosted, Proxy, and Group repository types.',
+    'fmt.sub':'16 artifact formats — each supports Hosted, Proxy, and Group repository types.',
     'api.title':'API Reference','api.sub':'Nexspence exposes two API surfaces.',
     'api.auth.title':'Authentication',
     'api.auth.desc':'JWT Bearer token (from <code>POST /api/v1/auth/login</code>), API tokens (<code>nxs_*</code> prefix via Bearer or Basic password), or HTTP Basic with username + password.',
@@ -2232,6 +2235,7 @@ const TRANSLATIONS={
     'repo.urls.go':'Установите как <code>GOPROXY</code>',
     'repo.urls.nuget':'Endpoint v3 flat container',
     'repo.urls.cargo':'Sparse index endpoint',
+    'repo.urls.rubygems':'Compact index + gem push',
     'repo.urls.raw':'PUT/GET любого пути',
     'repo.anon.sep':'Анонимный доступ',
     'repo.anon.info':'Включите <strong>Allow anonymous access</strong> для репозитория, чтобы неаутентифицированные пользователи могли скачивать артефакты. Операции записи всегда требуют аутентификации.',
@@ -2502,7 +2506,7 @@ const TRANSLATIONS={
     'sb.native-install':'Нативная установка',
     'crumb.native-install':'нативная установка',
     'fmt.title':'Поддерживаемые форматы',
-    'fmt.sub':'15 форматов артефактов — каждый поддерживает типы Hosted, Proxy и Group.',
+    'fmt.sub':'16 форматов артефактов — каждый поддерживает типы Hosted, Proxy и Group.',
     'api.title':'Справочник API',
     'api.sub':'Nexspence предоставляет два API-интерфейса.',
     'api.auth.title':'Аутентификация',

@@ -37,6 +37,7 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/formats/oci"
 	"github.com/nexspence-oss/nexspence/internal/formats/pypi"
 	"github.com/nexspence-oss/nexspence/internal/formats/raw"
+	"github.com/nexspence-oss/nexspence/internal/formats/rubygems"
 	"github.com/nexspence-oss/nexspence/internal/formats/terraform"
 	"github.com/nexspence-oss/nexspence/internal/formats/yum"
 	"github.com/nexspence-oss/nexspence/internal/logger"
@@ -280,6 +281,7 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 		"conda":     conda.New(formatDeps),
 		"apt":       apt.New(formatDeps),
 		"terraform": terraform.New(formatDeps),
+		"rubygems":  rubygems.New(formatDeps),
 		"yum":       yum.New(formatDeps),
 		"docker":    oci.New(formatDeps),
 	}

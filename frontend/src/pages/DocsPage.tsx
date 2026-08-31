@@ -685,6 +685,30 @@ conan upload "mylib/1.0" -r=nexspence --confirm` },
     ],
   },
   {
+    id: 'rubygems',
+    name: 'RubyGems',
+    icon: '💎',
+    iconUrl: 'https://cdn.simpleicons.org/rubygems/E9573F',
+    description: 'RubyGems repository for Ruby packages. Serves the compact index Bundler resolves against, gem downloads, and gem push/yank for hosted repositories.',
+    sections: (base) => [
+      {
+        title: 'Bundler',
+        text: 'Point your Gemfile at the repository:',
+        codes: [{ lang: 'ruby', content: `source "${base}/repository/gems-hosted" do\n  gem "rails"\nend` }],
+      },
+      {
+        title: 'gem CLI',
+        text: 'Install directly, or add the repository as a source:',
+        codes: [{ lang: 'bash', content: `gem sources --add ${base}/repository/gems-hosted/\ngem install rails --source ${base}/repository/gems-hosted/` }],
+      },
+      {
+        title: 'Publish',
+        text: 'The gem client authenticates pushes with an API key; use your credentials encoded as HTTP Basic:',
+        codes: [{ lang: 'bash', content: `printf ':rubygems_api_key: Basic %s\\n' "$(printf 'USER:PASSWORD' | base64)" > ~/.gem/credentials\nchmod 600 ~/.gem/credentials\ngem push my-gem-1.0.0.gem --host ${base}/repository/gems-hosted` }],
+      },
+    ],
+  },
+  {
     id: 'conda',
     name: 'Conda',
     icon: '🐍',
