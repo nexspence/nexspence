@@ -1,76 +1,98 @@
 //go:build integration
 
-// Package integration contains end-to-end tests that require a running
-// PostgreSQL database and blob storage. Run with:
+// Package integration contains end-to-end tests that boot the real router over
+// a real PostgreSQL database (started automatically via dockertest, like the
+// repository-layer integration tests). Run with:
 //
-//	docker compose up -d postgres
-//	NEXSPENCE_DB_DSN="postgres://nexspence:nexspence@localhost:5432/nexspence" \
-//	    go test ./internal/integration/... -tags integration -v
+//	go test ./internal/integration/... -tags integration -v
 package integration
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"sync"
 	"testing"
 
 	"github.com/nexspence-oss/nexspence/internal/api"
 	"github.com/nexspence-oss/nexspence/internal/config"
-	"github.com/nexspence-oss/nexspence/internal/db"
+	"github.com/nexspence-oss/nexspence/internal/formats/repoproxy"
 	"github.com/nexspence-oss/nexspence/internal/logger"
+	"github.com/nexspence-oss/nexspence/internal/testutil/pgtest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-var testServer *httptest.Server
+var (
+	serverOnce sync.Once
+	testServer *httptest.Server
+)
+
+// server boots the full application once per test binary: a migrated postgres
+// from pgtest, the real router, and an HTTP listener whose address is also the
+// configured BaseURL — proxy handlers rewrite upstream URLs onto it, so it
+// must be the address clients actually reach.
+func server(t *testing.T) *httptest.Server {
+	t.Helper()
+	serverOnce.Do(func() {
+		pool := pgtest.Pool(t)
+
+		l, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatalf("listen: %v", err)
+		}
+		baseURL := "http://" + l.Addr().String()
+
+		cfg := &config.Config{}
+		cfg.Auth.JWTSecret = "integration-test-secret-32bytes!!"
+		cfg.Auth.JWTExpiryHours = 1
+		cfg.Auth.BcryptCost = 4
+		cfg.Storage.Local.BasePath = t.TempDir()
+		cfg.HTTP.BaseURL = baseURL
+		cfg.Log.Level = "error"
+		cfg.Bootstrap.AdminUsername = "admin"
+		cfg.Bootstrap.AdminPassword = "admin123"
+		cfg.Bootstrap.AdminEmail = "admin@test.local"
+
+		log := logger.New("error", "json")
+		handler := api.NewRouter(context.Background(), cfg, pool, log, "integration-test")
+
+		ts := httptest.NewUnstartedServer(handler)
+		_ = ts.Listener.Close()
+		ts.Listener = l
+		ts.Start()
+		testServer = ts
+	})
+	if testServer == nil {
+		t.Fatal("integration server failed to start")
+	}
+	return testServer
+}
 
 func TestMain(m *testing.M) {
-	dsn := os.Getenv("NEXSPENCE_DB_DSN")
-	if dsn == "" {
-		dsn = "postgres://nexspence:nexspence@localhost:5432/nexspence?sslmode=disable"
+	// The proxy-format tests point repositories at loopback httptest fakes;
+	// the production upstream client is SSRF-guarded and would refuse them.
+	repoproxy.UpstreamClient = &http.Client{}
+
+	code := m.Run()
+	if testServer != nil {
+		testServer.Close()
 	}
-
-	// Run migrations
-	if err := db.Migrate(dsn, "up"); err != nil {
-		fmt.Fprintf(os.Stderr, "migration failed: %v\n", err)
-		os.Exit(1)
-	}
-
-	pool, err := db.Connect(dsn)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "db connect failed: %v\n", err)
-		os.Exit(1)
-	}
-	defer pool.Close()
-
-	cfg := &config.Config{}
-	cfg.Auth.JWTSecret = "integration-test-secret-32bytes!!"
-	cfg.Auth.JWTExpiryHours = 1
-	cfg.Auth.BcryptCost = 4
-	cfg.Storage.Local.BasePath = os.TempDir() + "/nexspence-integration-test"
-	cfg.HTTP.BaseURL = "http://localhost"
-	cfg.Log.Level = "error"
-	cfg.Bootstrap.AdminUsername = "admin"
-	cfg.Bootstrap.AdminPassword = "admin123"
-	cfg.Bootstrap.AdminEmail = "admin@test.local"
-
-	log := logger.New("error", "json")
-	handler := api.NewRouter(cfg, pool, log)
-	testServer = httptest.NewServer(handler)
-	defer testServer.Close()
-
-	os.Exit(m.Run())
+	pgtest.Cleanup()
+	os.Exit(code)
 }
 
 // login returns a Bearer token for the given credentials.
 func login(t *testing.T, username, password string) string {
 	t.Helper()
 	body := fmt.Sprintf(`{"username":%q,"password":%q}`, username, password)
-	resp, err := http.Post(testServer.URL+"/api/v1/login", "application/json", bytes.NewBufferString(body))
+	resp, err := http.Post(server(t).URL+"/api/v1/login", "application/json", bytes.NewBufferString(body))
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
@@ -84,7 +106,7 @@ func login(t *testing.T, username, password string) string {
 
 func authReq(t *testing.T, method, path string, body io.Reader, token string) *http.Response {
 	t.Helper()
-	req, err := http.NewRequest(method, testServer.URL+path, body)
+	req, err := http.NewRequest(method, server(t).URL+path, body)
 	require.NoError(t, err)
 	req.Header.Set("Authorization", "Bearer "+token)
 	if body != nil {
@@ -98,7 +120,7 @@ func authReq(t *testing.T, method, path string, body io.Reader, token string) *h
 // ── Tests ─────────────────────────────────────────────────────
 
 func TestStatusCheck(t *testing.T) {
-	resp, err := http.Get(testServer.URL + "/service/rest/v1/status/check")
+	resp, err := http.Get(server(t).URL + "/service/rest/v1/status/check")
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
@@ -156,7 +178,7 @@ func TestRawArtifactPushPull(t *testing.T) {
 	// Push artifact
 	artifactData := []byte("integration test artifact content")
 	putReq, _ := http.NewRequest(http.MethodPut,
-		testServer.URL+"/repository/e2e-raw/integration/test/artifact.bin",
+		server(t).URL+"/repository/e2e-raw/integration/test/artifact.bin",
 		bytes.NewReader(artifactData))
 	putReq.Header.Set("Authorization", "Bearer "+token)
 	putReq.Header.Set("Content-Type", "application/octet-stream")
@@ -182,7 +204,7 @@ func TestRawArtifactPushPull(t *testing.T) {
 }
 
 func TestMetricsEndpoint(t *testing.T) {
-	resp, err := http.Get(testServer.URL + "/api/v1/metrics")
+	resp, err := http.Get(server(t).URL + "/api/v1/metrics")
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
