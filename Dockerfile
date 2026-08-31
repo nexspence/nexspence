@@ -1,6 +1,6 @@
 # ── Build stage ───────────────────────────────────────────────
 # $BUILDPLATFORM = native runner arch (amd64); cross-compile for $TARGETPLATFORM
-FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS builder
 
 RUN apk add --no-cache git ca-certificates
 
