@@ -141,7 +141,7 @@ func maliciousID(id string, aliases []string) string {
 // Returns "" if the format is not supported.
 func FormatToEcosystem(format string) string {
 	switch strings.ToLower(format) {
-	case "maven":
+	case "maven", "maven2":
 		return "Maven"
 	case "npm":
 		return "npm"

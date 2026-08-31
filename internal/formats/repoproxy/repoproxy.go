@@ -110,6 +110,18 @@ func RemoteURL(repo *domain.Repository) (string, error) {
 
 // JoinURL joins the remote base URL with the repository-relative artifact path.
 func JoinURL(remoteBase, repoRelativePath string) (string, error) {
+	// An absolute upstream URL passes through: a handler hands one over when
+	// the real registry splits its API across hosts (crates.io serves
+	// downloads on a different host than its sparse index, #347). Only
+	// handler code ever builds upstreamPath — client paths arrive normalized
+	// and relative — so this is not reachable from request input, and the
+	// SSRF guard on the upstream client still applies to the fetch itself.
+	if strings.HasPrefix(repoRelativePath, "http://") || strings.HasPrefix(repoRelativePath, "https://") {
+		if _, err := url.Parse(repoRelativePath); err != nil {
+			return "", fmt.Errorf("invalid upstream url: %w", err)
+		}
+		return repoRelativePath, nil
+	}
 	u, err := url.Parse(remoteBase)
 	if err != nil {
 		return "", fmt.Errorf("invalid remote_url: %w", err)
@@ -720,6 +732,17 @@ func DispatchProxyError(d formats.Deps, repoName, path, upstream string, cause e
 			"error":    cause.Error(),
 		},
 	})
+}
+
+// CargoIndexUpstreamPath strips the local /index/ route prefix before a
+// sparse-index request leaves for the upstream registry (#347): the prefix is
+// this codebase's own URL scheme, and index.crates.io's real keys are
+// "se/rd/serde", not "index/se/rd/serde". Non-index paths pass through.
+func CargoIndexUpstreamPath(p string) string {
+	if rest, ok := strings.CutPrefix(p, "/index/"); ok {
+		return "/" + rest
+	}
+	return p
 }
 
 // NPMMetadataPath returns the path segment npmjs.org uses for metadata (scoped packages use %2F).

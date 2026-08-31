@@ -160,3 +160,36 @@ func TestMinimumPackageAge_Parsing(t *testing.T) {
 		})
 	}
 }
+
+// CargoIndexUpstreamPath: the local /index/ prefix is this codebase's own
+// route, not part of any real registry's URL scheme (#347) — index.crates.io
+// keys are "se/rd/serde", not "index/se/rd/serde".
+func TestCargoIndexUpstreamPath(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"/index/se/rd/serde", "/se/rd/serde"},
+		{"/index/2/cc", "/2/cc"},
+		{"/index/3/u/url", "/3/u/url"},
+		{"/index/config.json", "/config.json"},
+		{"/not-index/x", "/not-index/x"},
+	}
+	for _, tc := range cases {
+		if got := CargoIndexUpstreamPath(tc.in); got != tc.want {
+			t.Errorf("CargoIndexUpstreamPath(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+// JoinURL passes an absolute upstream URL through untouched: format handlers
+// hand one over when the real registry splits its API across hosts (the
+// crates.io download endpoint lives on a different host than its sparse
+// index). Only handler code ever sets upstreamPath — client paths are
+// normalized relative paths — so this is not reachable from request input.
+func TestJoinURL_AbsoluteUpstreamPassesThrough(t *testing.T) {
+	got, err := JoinURL("https://index.crates.io", "https://crates.io/api/v1/crates/serde/1.0.0/download")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "https://crates.io/api/v1/crates/serde/1.0.0/download" {
+		t.Fatalf("got %q", got)
+	}
+}
