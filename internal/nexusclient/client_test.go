@@ -336,3 +336,55 @@ func TestDownloadManifest_SurfacesHTTPError(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "404")
 }
+
+func TestListAssets_FollowsContinuationToken(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/service/rest/v1/assets", r.URL.Path)
+		require.Equal(t, "mvn-hosted", r.URL.Query().Get("repository"))
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Query().Get("continuationToken") == "" {
+			_, _ = io.WriteString(w, `{"items":[
+				{"path":"com/example/widget-app/1.0/widget-app-1.0.jar",
+				 "downloadUrl":"http://n/repository/mvn-hosted/com/example/widget-app/1.0/widget-app-1.0.jar",
+				 "contentType":"application/java-archive","fileSize":3,"checksum":{"sha1":"bb"}}
+			],"continuationToken":"tok2"}`)
+			return
+		}
+		require.Equal(t, "tok2", r.URL.Query().Get("continuationToken"))
+		// The whole point of this listing (#350): it also returns assets with
+		// no owning component, like maven-metadata.xml.
+		_, _ = io.WriteString(w, `{"items":[
+			{"path":"com/example/widget-app/maven-metadata.xml",
+			 "downloadUrl":"http://n/repository/mvn-hosted/com/example/widget-app/maven-metadata.xml",
+			 "contentType":"application/xml","fileSize":10}
+		],"continuationToken":null}`)
+	}))
+	defer srv.Close()
+
+	c := newClient(t, srv)
+	first, tok, err := c.ListAssets(context.Background(), "mvn-hosted", "")
+	require.NoError(t, err)
+	require.Len(t, first, 1)
+	assert.Equal(t, "com/example/widget-app/1.0/widget-app-1.0.jar", first[0].Path)
+	assert.Equal(t, "application/java-archive", first[0].ContentType)
+	assert.Equal(t, int64(3), first[0].SizeBytes)
+	assert.Equal(t, "bb", first[0].SHA1)
+	require.Equal(t, "tok2", tok)
+
+	second, tok, err := c.ListAssets(context.Background(), "mvn-hosted", tok)
+	require.NoError(t, err)
+	require.Len(t, second, 1)
+	assert.Equal(t, "com/example/widget-app/maven-metadata.xml", second[0].Path)
+	assert.Empty(t, tok)
+}
+
+func TestListAssets_ErrorStatus(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	c := newClient(t, srv)
+	_, _, err := c.ListAssets(context.Background(), "gone", "")
+	require.Error(t, err)
+}
