@@ -151,6 +151,9 @@ jobs:
             -coverpkg=./internal/storage/... \
             -coverprofile=storage_cov.out \
             ./internal/storage/...
+      - name: Run end-to-end integration tests (full router + real-shape registry fakes)
+        run: |
+          go test -tags=integration -count=1 ./internal/integration/...
       - name: Enforce storage package ≥80%
         run: |
           pct=$(go tool cover -func=storage_cov.out | awk '/^total:/ {gsub(/%/,"",$3); print $3}')

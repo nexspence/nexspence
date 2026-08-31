@@ -66,6 +66,13 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 			maxAge = repoproxy.MetadataMaxAge(repo)
 		}
 		coords := base.Coords{}
+		// Resource paths advertised by the rewritten index are the upstream's
+		// own paths re-rooted locally — forward them onto the bare origin,
+		// not onto a possibly /v3-suffixed remote_url (#349).
+		upstreamPath := ""
+		if origin := nugetRemoteOrigin(remoteURLOf(repo)); origin != "" {
+			upstreamPath = origin + p
+		}
 		// Registration pages embed absolute upstream URLs (packageContent,
 		// @id) — rewrite them on serve so clients pull packages through this
 		// proxy (#98); the cache keeps the upstream original.
@@ -74,7 +81,7 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 			localBase := strings.TrimRight(h.deps.BaseURL, "/") + "/repository/" + repo.Name
 			rewrite = func(b []byte) []byte { return RewriteRegistration(b, localBase) }
 		}
-		if err := repoproxy.ServeGETRewritten(c, h.deps, repo, p, "", coords, "application/octet-stream", maxAge, rewrite); err != nil {
+		if err := repoproxy.ServeGETRewritten(c, h.deps, repo, p, upstreamPath, coords, "application/octet-stream", maxAge, rewrite); err != nil {
 			c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		}
 		return
@@ -345,7 +352,12 @@ func (h *Handler) fetchAndRewriteNuGetIndex(c *gin.Context, repo *domain.Reposit
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, remoteBase+"/index.json", nil)
+	// The v3 service index is the ONE fixed path in an otherwise fully
+	// discoverable protocol, and it lives at /v3/index.json on the real
+	// nuget.org (#349). remote_url is the bare origin; a legacy /v3-suffixed
+	// value is normalized so it neither breaks discovery nor doubles itself
+	// onto the resource paths the index advertises.
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, nugetRemoteOrigin(remoteBase)+"/v3/index.json", nil)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid upstream URL: " + err.Error()})
 		return
@@ -398,6 +410,22 @@ func (h *Handler) fetchAndRewriteNuGetIndex(c *gin.Context, repo *domain.Reposit
 		return
 	}
 	c.JSON(http.StatusOK, index)
+}
+
+// nugetRemoteOrigin normalizes remote_url to the registry's bare origin: a
+// legacy configuration carried a /v3 suffix (once the only way the index fetch
+// worked), which would double itself onto every already-correct resource path.
+func nugetRemoteOrigin(remoteBase string) string {
+	return strings.TrimSuffix(strings.TrimRight(remoteBase, "/"), "/v3")
+}
+
+// remoteURLOf reads the repository's remote_url, empty when unset.
+func remoteURLOf(repo *domain.Repository) string {
+	base, err := repoproxy.RemoteURL(repo)
+	if err != nil {
+		return ""
+	}
+	return base
 }
 
 func normPath(p string) string {
