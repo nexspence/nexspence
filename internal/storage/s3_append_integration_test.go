@@ -5,6 +5,7 @@ package storage_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"testing"
 
@@ -297,4 +298,55 @@ func TestS3BlobStore_Delete_AbortsInFlightAppend(t *testing.T) {
 	_, ok, err := as.AppendedSize(ctx, key)
 	require.NoError(t, err)
 	assert.False(t, ok, "delete must leave no append session behind")
+}
+
+// failAfterReader hands over data and then fails, modeling a client that aborts
+// (or a proxy that drops) partway through a single PATCH.
+type failAfterReader struct {
+	data []byte
+	off  int
+	err  error
+}
+
+func (r *failAfterReader) Read(p []byte) (int, error) {
+	if r.off >= len(r.data) {
+		return 0, r.err
+	}
+	n := copy(p, r.data[r.off:])
+	r.off += n
+	return n, nil
+}
+
+// A chunk larger than the part minimum flushes a real, billable part mid-call.
+// The session state used to be written only after the whole call succeeded, so
+// an error later in that same call — this read failure, or a later part's own
+// upload error — returned with the part sitting in S3 and nothing on record
+// naming it, not even the upload id that could abort it (#370).
+func TestS3BlobStore_AppendBlob_PersistsPartAfterLaterReadFailure(t *testing.T) {
+	bs := minioPool(t)
+	as := s3Appendable(t, bs)
+	ctx := context.Background()
+	key := "ap09eeee11112222"
+
+	const mib = 1024 * 1024
+	content := bytes.Repeat([]byte("Z"), 6*mib)
+
+	_, err := as.AppendBlob(ctx, key, &failAfterReader{data: content, err: errors.New("client went away")})
+	require.Error(t, err)
+
+	staged, ok, err := as.AppendedSize(ctx, key)
+	require.NoError(t, err)
+	require.True(t, ok, "the append session must survive: a real part is already in the bucket")
+	// The 1 MiB tail never reached S3, so it is legitimately dropped — the
+	// client re-sends it from the offset reported here at no cost.
+	require.EqualValues(t, 5*mib, staged)
+
+	// Resuming from that offset must still produce the original bytes.
+	_, err = as.AppendBlob(ctx, key, bytes.NewReader(content[5*mib:]))
+	require.NoError(t, err)
+	require.NoError(t, as.FinalizeAppend(ctx, key))
+
+	got := s3Content(t, bs, key)
+	require.Len(t, got, 6*mib)
+	assert.True(t, bytes.Equal(content, got), "resumed blob does not match the original content")
 }

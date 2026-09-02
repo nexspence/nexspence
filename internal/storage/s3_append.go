@@ -89,6 +89,16 @@ func (s *S3BlobStore) AppendBlob(ctx context.Context, key string, r io.Reader) (
 				if err := s.flushPart(ctx, key, st, buf); err != nil {
 					return 0, err
 				}
+				// A flushed part is real, billable S3 storage the moment
+				// UploadPart returns, so it is recorded before anything later in
+				// this same call can fail: a read error on the request body, or
+				// a later part's own upload failure, used to return before the
+				// single saveAppendState at the end of the loop and lose both
+				// the part and the upload id that could reclaim it (#370).
+				st.Pending = buf.Bytes()
+				if err := s.saveAppendState(ctx, key, st); err != nil {
+					return 0, err
+				}
 			}
 		}
 		if rerr == io.EOF {

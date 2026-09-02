@@ -1,6 +1,7 @@
 package events
 
 import (
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -88,5 +89,31 @@ func TestBroker_NilTargetTolerated(t *testing.T) {
 	b.Dispatch(mkPayload(domain.EventRepoCreated, ""))
 	if b.Count() != 0 {
 		t.Fatalf("Count() should be 0 with no subscribers")
+	}
+}
+
+// Dispatch used to snapshot the subscriber map under RLock and send outside any
+// lock, so an Unsubscribe running in the gap closed a channel a pending send was
+// about to use — "send on closed channel" (#369). Nothing wires the broker up
+// yet, but one goroutine per subscriber calling Unsubscribe on disconnect while
+// another dispatches is exactly the shape the package exists to serve.
+func TestBroker_ConcurrentDispatchAndUnsubscribe_NoPanic(t *testing.T) {
+	b := NewBroker(1)
+	for i := 0; i < 2000; i++ {
+		s := b.Subscribe()
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			b.Dispatch(mkPayload(domain.EventArtifactPublished, "race"))
+		}()
+		go func() {
+			defer wg.Done()
+			b.Unsubscribe(s)
+		}()
+		wg.Wait()
+	}
+	if b.Count() != 0 {
+		t.Fatalf("subscriber count = %d, want 0", b.Count())
 	}
 }

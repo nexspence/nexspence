@@ -66,14 +66,18 @@ func (b *Broker) Unsubscribe(s *Subscription) {
 
 // Dispatch broadcasts the payload to every active subscriber.
 // Implements domain.WebhookDispatcher.
+// The whole send loop runs under the read lock, not just the snapshot of the
+// subscriber map: Unsubscribe closes a subscriber's channel under the write
+// lock, so a send left outside the lock could land on a channel a concurrent
+// Unsubscribe had just closed and panic with "send on closed channel" (#369).
+// Holding RLock across the sends makes the two orderings the only ones
+// possible — Unsubscribe waits for an in-flight Dispatch, or Dispatch never
+// sees the subscriber at all. Sends never block (the default arm drops), so
+// holding the lock cannot stall Unsubscribe on a slow reader.
 func (b *Broker) Dispatch(payload domain.WebhookPayload) {
 	b.mu.RLock()
-	subs := make([]*Subscription, 0, len(b.subs))
+	defer b.mu.RUnlock()
 	for s := range b.subs {
-		subs = append(subs, s)
-	}
-	b.mu.RUnlock()
-	for _, s := range subs {
 		select {
 		case s.out <- payload:
 		default:
