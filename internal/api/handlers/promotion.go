@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -121,6 +122,13 @@ func (h *PromotionHandler) Promote(c *gin.Context) {
 
 	requests, err := h.svc.Promote(c.Request.Context(), body.RuleID, body.ComponentIDs, uid)
 	if err != nil {
+		// Two rules covering the same component is a conflict in the rules, not
+		// a malformed request: the caller is told to make the configuration
+		// unambiguous rather than to fix its own payload (#366).
+		if errors.Is(err, service.ErrAmbiguousPromotionRule) {
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+			return
+		}
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
 		return
 	}
@@ -146,6 +154,12 @@ func (h *PromotionHandler) Approve(c *gin.Context) {
 	reviewerID, _ := c.Get("userID")
 	uid, _ := reviewerID.(string)
 	if err := h.svc.Approve(c.Request.Context(), c.Param("id"), uid); err != nil {
+		// A rule created while the request sat pending can make it ambiguous
+		// only at approval time; same answer as on Promote (#366).
+		if errors.Is(err, service.ErrAmbiguousPromotionRule) {
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+			return
+		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
