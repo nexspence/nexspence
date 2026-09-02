@@ -541,6 +541,10 @@ type CleanupRunResult struct {
 	DryRun        bool   `json:"dryRun"`
 	Skipped       bool   `json:"skipped"`
 	SkippedReason string `json:"skippedReason,omitempty"`
+	// Aborted reports a run that stopped early because it reached its
+	// distributed lock's TTL: Deleted/FreedBytes are then partial, and the rest
+	// of the policy's backlog is left for the next run (#371).
+	Aborted bool `json:"aborted,omitempty"`
 }
 
 // ── Audit Event ──────────────────────────────────────────────

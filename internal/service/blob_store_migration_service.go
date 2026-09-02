@@ -108,6 +108,7 @@ func (s *BlobStoreMigrationService) Start(ctx context.Context, repoName, targetS
 	// the lock is lost — so a row created first would stay "pending" forever and
 	// wedge every later Start for this repo as "already running".
 	var migLock distlock.Lock
+	var deadline time.Time
 	if s.locker != nil {
 		var lockErr error
 		migLock, lockErr = s.locker.Acquire(ctx, blobMigLockKey(repoName), blobMigLockTTL)
@@ -117,6 +118,12 @@ func (s *BlobStoreMigrationService) Start(ctx context.Context, repoName, targetS
 		if lockErr != nil {
 			return nil, fmt.Errorf("acquire migration lock: %w", lockErr)
 		}
+		// Nothing renews the lock, so at blobMigLockTTL another node can start a
+		// second migration of this repo. Two runMigration goroutines interleaving
+		// their UpdateBlobStoreForBlobKey and FinishMigration calls is the one
+		// case here that is not merely duplicate work, so the run stops at its
+		// deadline instead (#371).
+		deadline = time.Now().Add(blobMigLockTTL)
 	}
 
 	m := &domain.BlobStoreMigration{
@@ -145,7 +152,7 @@ func (s *BlobStoreMigrationService) Start(ctx context.Context, repoName, targetS
 	s.cancels[m.ID] = cancel
 	s.mu.Unlock()
 
-	go s.runMigration(migCtx, m, migLock) //nolint:gosec // detached context is intentional: background migration must outlive the request
+	go s.runMigration(migCtx, m, migLock, deadline) //nolint:gosec // detached context is intentional: background migration must outlive the request
 	return m, nil
 }
 
@@ -189,7 +196,11 @@ func (s *BlobStoreMigrationService) ResumeAll(ctx context.Context) error {
 	return nil
 }
 
-func (s *BlobStoreMigrationService) runMigration(ctx context.Context, m *domain.BlobStoreMigration, lock distlock.Lock) {
+// runMigration copies every asset of the repo to the target store. deadline is
+// when the migration's distributed lock expires; a zero deadline means no lock
+// is held and the run has nothing to outlive.
+func (s *BlobStoreMigrationService) runMigration(ctx context.Context, m *domain.BlobStoreMigration,
+	lock distlock.Lock, deadline time.Time) {
 	defer func() {
 		if lock != nil {
 			_ = lock.Release(context.Background())
@@ -251,6 +262,11 @@ func (s *BlobStoreMigrationService) runMigration(ctx context.Context, m *domain.
 	var doneBytes int64
 
 	for _, row := range rows {
+		if !deadline.IsZero() && !time.Now().Before(deadline) {
+			msg := fmt.Sprintf("aborted: exceeded the lock's TTL after migrating %d of %d assets", doneAssets, len(rows))
+			_ = s.migrations.FinishMigration(bgCtx, m.ID, "cancelled", &msg) //nolint:misspell // API/DB status value consumed by frontend (status === 'cancelled')
+			return
+		}
 		select {
 		case <-ctx.Done():
 			_ = s.migrations.FinishMigration(bgCtx, m.ID, "cancelled", nil) //nolint:misspell // API/DB status value consumed by frontend (status === 'cancelled')

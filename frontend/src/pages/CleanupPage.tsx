@@ -703,13 +703,18 @@ export default function CleanupPage() {
     try {
       // A single-policy run is synchronous and returns its outcome.
       const res = await nexusApi.runCleanupPolicy(id)
-      const r = res.data as { deleted?: number; freedBytes?: number; dryRun?: boolean; skipped?: boolean; skippedReason?: string } | undefined
+      const r = res.data as { deleted?: number; freedBytes?: number; dryRun?: boolean; skipped?: boolean; skippedReason?: string; aborted?: boolean } | undefined
       if (r?.skipped) {
         setRunResult({ tone: 'warn', text: `Skipped: ${r.skippedReason ?? 'nothing to do'}` })
       } else if (r) {
         const freedKb = Math.round((r.freedBytes ?? 0) / 1024)
         const verb = r.dryRun ? 'Would delete' : 'Deleted'
-        setRunResult({ tone: 'ok', text: `${verb} ${r.deleted ?? 0} asset(s), ${freedKb} KB${r.dryRun ? ' (dry run)' : ''}` })
+        const text = `${verb} ${r.deleted ?? 0} asset(s), ${freedKb} KB${r.dryRun ? ' (dry run)' : ''}`
+        // An aborted run hit its lock time limit: the counts are partial and the
+        // rest of the backlog waits for the next run.
+        setRunResult(r.aborted
+          ? { tone: 'warn', text: `${text} — stopped early at the run time limit, the rest is left for the next run` }
+          : { tone: 'ok', text })
       } else {
         setRunResult({ tone: 'ok', text: 'Cleanup started' })
       }
