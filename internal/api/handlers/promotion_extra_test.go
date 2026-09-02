@@ -210,3 +210,21 @@ func TestPromotionExtra_Reject_OK(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
 	assert.Equal(t, true, body["ok"])
 }
+
+// Two rules covering the same component is a conflict in the configuration, not
+// a malformed request: 409, with a message naming both rules (#366).
+func TestPromotionExtra_Promote_AmbiguousRules_409(t *testing.T) {
+	r, repo, comps := mountPromotion2(t)
+	comp := &domain.Component{Name: "lib", Repository: "staging", Format: "maven2"}
+	require.NoError(t, comps.Create(testContext(), comp))
+	strict := &domain.PromotionRule{Name: "strict", FromRepo: "staging", ToRepo: "prod", RequireScanPass: true}
+	lax := &domain.PromotionRule{Name: "lax", FromRepo: "staging", ToRepo: "prod"}
+	require.NoError(t, repo.CreateRule(testContext(), strict))
+	require.NoError(t, repo.CreateRule(testContext(), lax))
+
+	rec := do(t, r, http.MethodPost, "/api/v1/promotion/promote", map[string]any{
+		"rule_id": lax.ID, "component_ids": []string{comp.ID},
+	})
+	assert.Equal(t, http.StatusConflict, rec.Code, "body=%s", rec.Body.String())
+	assert.Contains(t, rec.Body.String(), "strict")
+}

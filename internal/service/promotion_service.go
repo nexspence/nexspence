@@ -106,6 +106,11 @@ func (s *PromotionService) evalPathFilter(rule domain.PromotionRule, comp *domai
 	return matched, nil
 }
 
+// ErrAmbiguousPromotionRule reports that more than one promotion rule covers the
+// same component for the same repository pair. Callers map it to 409: it is not
+// a malformed request, it is a configuration the server refuses to guess at.
+var ErrAmbiguousPromotionRule = errors.New("more than one promotion rule applies")
+
 // ruleAppliesTo reports whether the rule actually covers the component: the
 // component lives in the rule's from_repo and passes its path filter. This is
 // the same test ListRulesForComponent offers rules by — but offering is not
@@ -114,7 +119,7 @@ func (s *PromotionService) evalPathFilter(rule domain.PromotionRule, comp *domai
 // arbitrary component with whichever rule has the laxest gates, bypassing a
 // stricter rule's require_scan_pass/require_manual_approval on the pair that
 // actually covers it (#255).
-func (s *PromotionService) ruleAppliesTo(rule *domain.PromotionRule, comp *domain.Component) error {
+func (s *PromotionService) ruleAppliesTo(ctx context.Context, rule *domain.PromotionRule, comp *domain.Component) error {
 	if comp.Repository != rule.FromRepo {
 		return fmt.Errorf("component %s lives in repository %q, which rule %q does not promote from (%q)",
 			comp.ID, comp.Repository, rule.Name, rule.FromRepo)
@@ -127,6 +132,43 @@ func (s *PromotionService) ruleAppliesTo(rule *domain.PromotionRule, comp *domai
 	}
 	if !matched {
 		return fmt.Errorf("component %s does not match rule %q's path filter", comp.ID, rule.Name)
+	}
+	return s.noSiblingRuleApplies(ctx, rule, comp)
+}
+
+// noSiblingRuleApplies refuses a promotion that more than one rule covers.
+//
+// Confirming the named rule covers the component is not enough: two rules on
+// the same repository pair can both cover it with different gates, and naming
+// the laxer one then completes a promotion the stricter one's
+// require_scan_pass/require_manual_approval would have blocked — no error, no
+// warning, nothing recording that a gate was routed around (#366). Since the
+// server cannot tell which rule the caller meant, the refusal is symmetric:
+// naming either one is refused, including the stricter one, until an operator
+// deletes or narrows a rule so exactly one applies.
+func (s *PromotionService) noSiblingRuleApplies(ctx context.Context, rule *domain.PromotionRule, comp *domain.Component) error {
+	siblings, err := s.promotionRepo.ListRulesByFromRepo(ctx, comp.Repository)
+	if err != nil {
+		return fmt.Errorf("cannot check whether other rules cover component %s: %w", comp.ID, err)
+	}
+	for i := range siblings {
+		sib := siblings[i]
+		if sib.ID == rule.ID || sib.ToRepo != rule.ToRepo {
+			continue
+		}
+		matched, ferr := s.evalPathFilter(sib, comp)
+		if ferr != nil {
+			// A sibling whose filter cannot be evaluated may well cover this
+			// component; letting the promotion through would be exactly the
+			// bypass this check exists to prevent.
+			return fmt.Errorf("%w: rule %q also promotes %q→%q and its path filter could not be evaluated: %w",
+				ErrAmbiguousPromotionRule, sib.Name, sib.FromRepo, sib.ToRepo, ferr)
+		}
+		if matched {
+			return fmt.Errorf("%w: rules %q and %q both cover component %s from %q to %q — "+
+				"delete or narrow one of them, since naming either decides which gates apply",
+				ErrAmbiguousPromotionRule, rule.Name, sib.Name, comp.ID, rule.FromRepo, rule.ToRepo)
+		}
 	}
 	return nil
 }
@@ -253,7 +295,7 @@ func (s *PromotionService) Promote(ctx context.Context, ruleID string, component
 		if cerr != nil || comp == nil {
 			return nil, fmt.Errorf("component not found: %s", compID)
 		}
-		if aerr := s.ruleAppliesTo(rule, comp); aerr != nil {
+		if aerr := s.ruleAppliesTo(ctx, rule, comp); aerr != nil {
 			return nil, aerr
 		}
 		if serr := s.scanGate(ctx, rule, compID); serr != nil {
@@ -384,7 +426,7 @@ func (s *PromotionService) executeCopy(ctx context.Context, req *domain.Promotio
 	// runs later, and the component may have moved, the rule changed, or a
 	// scan found something while the request sat pending — the invariants
 	// have to hold when the bytes actually move.
-	if err := s.ruleAppliesTo(rule, comp); err != nil {
+	if err := s.ruleAppliesTo(ctx, rule, comp); err != nil {
 		return err
 	}
 	if err := s.scanGate(ctx, rule, comp.ID); err != nil {
