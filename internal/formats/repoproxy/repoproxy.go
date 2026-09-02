@@ -593,7 +593,15 @@ func storeAndServeResponse(c *gin.Context, d formats.Deps, repo *domain.Reposito
 	pr, pw := io.Pipe()
 	putErrCh := make(chan error, 1)
 	go func() {
-		putErrCh <- physStore.Put(ctx, blobKey, pr, resp.ContentLength)
+		err := physStore.Put(ctx, blobKey, pr, resp.ContentLength)
+		// The io.Copy below runs on the client's own request goroutine, so a Put
+		// that returns without draining pr — a disk-full or permission failure
+		// fails before reading a single byte — would block that copy on
+		// pw.Write forever: no response, no error, no timeout (#367). Closing
+		// the read end makes the pending write return io.ErrClosedPipe at once,
+		// and is a no-op once the pipe has already drained normally.
+		_ = pr.Close()
+		putErrCh <- err
 	}()
 
 	hashes := io.MultiWriter(sha256h, sha1h, md5h)
