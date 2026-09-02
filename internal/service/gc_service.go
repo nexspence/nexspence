@@ -37,6 +37,10 @@ type GCResult struct {
 	FreedBytes   int64    `json:"freedBytes"`
 	DryRun       bool     `json:"dryRun"`
 	Errors       []string `json:"errors,omitempty"`
+	// Aborted reports a pass that stopped early because the GC run reached its
+	// distributed lock's TTL: the counts above are partial and the store still
+	// holds orphans for the next run (#371).
+	Aborted bool `json:"aborted,omitempty"`
 }
 
 // BlobGCService finds and removes blobs not referenced by any asset (orphans),
@@ -123,7 +127,8 @@ func (s *BlobGCService) CompactStore(ctx context.Context, name string, opts GCOp
 	if err != nil {
 		return nil, fmt.Errorf("resolve blob store %q: %w", name, err)
 	}
-	return s.compact(ctx, name, row.ID, store, referenced, opts), nil
+	// A single-store compaction takes no lock, so it has no TTL to outlive.
+	return s.compact(ctx, name, row.ID, store, referenced, opts, time.Time{}), nil
 }
 
 // CompactAll compacts every blob store. It holds a distributed lock so only one
@@ -132,6 +137,7 @@ func (s *BlobGCService) CompactAll(ctx context.Context, opts GCOptions) ([]*GCRe
 	// Root span: GC runs from cron with no HTTP request behind it (#302).
 	ctx, span := tracing.StartRoot(ctx, "gc.compact_all")
 	defer span.End()
+	var deadline time.Time
 	if s.Locker != nil {
 		lock, err := s.Locker.Acquire(ctx, gcLockKey, gcLockTTL)
 		if errors.Is(err, distlock.ErrLockHeld) {
@@ -142,6 +148,10 @@ func (s *BlobGCService) CompactAll(ctx context.Context, opts GCOptions) ([]*GCRe
 			return nil, fmt.Errorf("blob gc: acquire lock: %w", err)
 		}
 		defer func() { _ = lock.Release(ctx) }()
+		// Nothing renews the lock, so once gcLockTTL is up another node can
+		// acquire it and start compacting the same stores alongside this run.
+		// Passes stop at that moment rather than deleting unprotected (#371).
+		deadline = time.Now().Add(gcLockTTL)
 	}
 
 	referenced, err := s.referencedSet(ctx)
@@ -168,14 +178,16 @@ func (s *BlobGCService) CompactAll(ctx context.Context, opts GCOptions) ([]*GCRe
 			})
 			continue
 		}
-		results = append(results, s.compact(ctx, row.Name, row.ID, store, referenced, opts))
+		results = append(results, s.compact(ctx, row.Name, row.ID, store, referenced, opts, deadline))
 	}
 	return results, nil
 }
 
-// compact runs the core scan/delete for a single resolved store.
+// compact runs the core scan/delete for a single resolved store. deadline is
+// when the run's distributed lock expires; a zero deadline means no lock is
+// held and the pass runs to the end.
 func (s *BlobGCService) compact(ctx context.Context, name, storeID string, store storage.BlobStore,
-	referenced refIndex, opts GCOptions) *GCResult {
+	referenced refIndex, opts GCOptions, deadline time.Time) *GCResult {
 	minAge := opts.MinAge
 	if minAge <= 0 {
 		minAge = s.DefaultMinAge
@@ -192,6 +204,12 @@ func (s *BlobGCService) compact(ctx context.Context, name, storeID string, store
 
 	var removed int64
 	for _, e := range entries {
+		if pastDeadline(deadline) {
+			s.log().Warn("blob gc: stopping — the run reached its lock TTL, another node may already hold the lock",
+				"store", name, "orphans", result.Orphans, "freed_bytes", removed)
+			result.Aborted = true
+			break
+		}
 		if referenced.has(storeID, e.Key) {
 			continue // still referenced in this store
 		}

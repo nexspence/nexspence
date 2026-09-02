@@ -183,7 +183,9 @@ var errAcquireLock = errors.New("cleanup: acquire lock")
 // The lock is per policy, so unrelated policies still run in parallel.
 func (s *CleanupService) runPolicyLocked(ctx context.Context, p domain.CleanupPolicy) (*domain.CleanupRunResult, error) {
 	if s.locker == nil {
-		return s.runPolicy(ctx, p)
+		// No locker, no exclusivity to lose: a single-node deployment has no TTL
+		// to run out of.
+		return s.runPolicy(ctx, p, time.Time{})
 	}
 
 	lock, err := s.locker.Acquire(ctx, cleanupPolicyLockPrefix+p.ID, cleanupLockTTL)
@@ -199,7 +201,13 @@ func (s *CleanupService) runPolicyLocked(ctx context.Context, p domain.CleanupPo
 	}
 	defer func() { _ = lock.Release(ctx) }()
 
-	return s.runPolicy(ctx, p)
+	// The lock expires on its own after cleanupLockTTL whether or not this run
+	// has finished, and nothing renews it — so past that moment another node can
+	// acquire the same lock and start the same policy alongside this one (#371).
+	// A run that reaches its deadline stops instead of continuing unprotected;
+	// what it already deleted is kept and reported, and the next run picks up
+	// the rest.
+	return s.runPolicy(ctx, p, time.Now().Add(cleanupLockTTL))
 }
 
 // RunAll executes all enabled cleanup policies once and returns a summary.
@@ -252,7 +260,10 @@ func (s *CleanupService) RunPolicyResult(ctx context.Context, id string) (*domai
 	return s.runPolicyLocked(ctx, *p)
 }
 
-func (s *CleanupService) runPolicy(ctx context.Context, p domain.CleanupPolicy) (*domain.CleanupRunResult, error) {
+// runPolicy executes p. deadline is the moment this run's distributed lock
+// expires; a zero deadline means the run holds no lock and has nothing to
+// outlive.
+func (s *CleanupService) runPolicy(ctx context.Context, p domain.CleanupPolicy, deadline time.Time) (*domain.CleanupRunResult, error) {
 	// Every line this run logs carries the run's trace_id, so a warning like
 	// "blob delete failed" can be jumped to the exact cleanup.run trace it
 	// happened in (#321). With tracing disabled this is s.log unchanged.
@@ -303,7 +314,14 @@ func (s *CleanupService) runPolicy(ctx context.Context, p domain.CleanupPolicy) 
 	var freed int64
 	var deleted int
 	noProgress := 0
+	aborted := false
 	for {
+		if pastDeadline(deadline) {
+			log.Warn("cleanup: stopping — the run reached its lock TTL, another node may already hold the lock",
+				"policy", p.Name, "deleted", deleted, "freed_bytes", freed)
+			aborted = true
+			break
+		}
 		stale, err := s.assets.ListStale(ctx, p.Format, repoNames, lastDownloadedDays, artifactAgeDays, pathPrefix, nameGlob, p.RetainNVersions, batchLimit)
 		if err != nil {
 			return nil, fmt.Errorf("cleanup: list stale assets: %w", err)
@@ -337,7 +355,6 @@ func (s *CleanupService) runPolicy(ctx context.Context, p domain.CleanupPolicy) 
 						"id", a.ID, "path", a.Path, "repo", a.Repository)
 					return nil
 				}
-				freed += a.SizeBytes
 				deleted++
 				// One object can carry several assets — an OCI manifest's tag and its
 				// digest alias, a mounted layer — and expiring one of them says
@@ -355,6 +372,13 @@ func (s *CleanupService) runPolicy(ctx context.Context, p domain.CleanupPolicy) 
 					if err := s.storeForAsset(ctx, &asset).Delete(ctx, a.BlobKey); err != nil {
 						log.Warn("cleanup: blob delete failed", "key", a.BlobKey, "err", err)
 					} else {
+						// Bytes count as freed on exactly the same condition as
+						// used_bytes moves: the physical delete succeeded. A row
+						// whose blob is shared with a surviving asset, or whose
+						// delete failed, leaves the bytes on disk — reporting them
+						// as freed tells the operator storage was reclaimed that
+						// never was (#368).
+						freed += a.SizeBytes
 						// used_bytes is how full the store is, so it only moves when
 						// bytes actually left it (#146).
 						_ = base.DecrementBlobStoreUsage(ctx, s.blobs, &asset)
@@ -413,6 +437,7 @@ func (s *CleanupService) runPolicy(ctx context.Context, p domain.CleanupPolicy) 
 
 	res.Deleted = deleted
 	res.FreedBytes = freed
+	res.Aborted = aborted
 	return res, nil
 }
 
