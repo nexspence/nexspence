@@ -316,7 +316,7 @@ func (s *CleanupService) runPolicy(ctx context.Context, p domain.CleanupPolicy, 
 	noProgress := 0
 	aborted := false
 	for {
-		if !deadline.IsZero() && !time.Now().Before(deadline) {
+		if pastDeadline(deadline) {
 			log.Warn("cleanup: stopping — the run reached its lock TTL, another node may already hold the lock",
 				"policy", p.Name, "deleted", deleted, "freed_bytes", freed)
 			aborted = true

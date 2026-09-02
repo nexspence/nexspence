@@ -20,8 +20,8 @@ import (
 // TTLs are 30 minutes and 2 hours, so these tests drive the unexported entry
 // points with a deadline that has already passed.
 
-func pastDeadline() time.Time   { return time.Now().Add(-time.Minute) }
-func futureDeadline() time.Time { return time.Now().Add(time.Hour) }
+func expiredDeadline() time.Time { return time.Now().Add(-time.Minute) }
+func futureDeadline() time.Time  { return time.Now().Add(time.Hour) }
 
 func deadlineCleanupService(assets *testutil.AssetRepo) (*CleanupService, *testutil.CleanupPolicyRepo) {
 	policies := testutil.NewCleanupPolicyRepo(&domain.CleanupPolicy{
@@ -43,7 +43,7 @@ func TestCleanup_RunPolicy_AbortsAtLockDeadline(t *testing.T) {
 	p, err := policies.Get(context.Background(), "p")
 	require.NoError(t, err)
 
-	res, err := svc.runPolicy(context.Background(), *p, pastDeadline())
+	res, err := svc.runPolicy(context.Background(), *p, expiredDeadline())
 	require.NoError(t, err)
 	assert.True(t, res.Aborted, "a run past its lock TTL must stop instead of deleting unprotected")
 	assert.Equal(t, 0, res.Deleted, "no further work is attempted after the deadline")
@@ -74,7 +74,7 @@ func TestGC_Compact_AbortsAtLockDeadline(t *testing.T) {
 	referenced, err := svc.referencedSet(ctx)
 	require.NoError(t, err)
 
-	res := svc.compact(ctx, "default", "store-1", store, referenced, GCOptions{}, pastDeadline())
+	res := svc.compact(ctx, "default", "store-1", store, referenced, GCOptions{}, expiredDeadline())
 	assert.True(t, res.Aborted, "a pass past the GC lock's TTL must stop")
 	assert.Equal(t, 0, res.Orphans, "no orphan is deleted after the deadline")
 	assert.Empty(t, store.Deleted)
@@ -107,7 +107,7 @@ func TestBlobStoreMigration_RunMigration_AbortsAtLockDeadline(t *testing.T) {
 	m := &domain.BlobStoreMigration{RepositoryName: "my-repo", SourceStoreID: source.ID, TargetStoreID: target.ID, Status: "pending"}
 	require.NoError(t, migs.Create(ctx, m))
 
-	svc.runMigration(ctx, m, nil, pastDeadline())
+	svc.runMigration(ctx, m, nil, expiredDeadline())
 
 	got, err := migs.GetLatestByRepo(ctx, "my-repo")
 	require.NoError(t, err)

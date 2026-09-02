@@ -204,7 +204,7 @@ func (s *BlobGCService) compact(ctx context.Context, name, storeID string, store
 
 	var removed int64
 	for _, e := range entries {
-		if !deadline.IsZero() && !time.Now().Before(deadline) {
+		if pastDeadline(deadline) {
 			s.log().Warn("blob gc: stopping — the run reached its lock TTL, another node may already hold the lock",
 				"store", name, "orphans", result.Orphans, "freed_bytes", removed)
 			result.Aborted = true

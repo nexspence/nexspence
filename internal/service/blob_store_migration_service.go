@@ -262,7 +262,7 @@ func (s *BlobStoreMigrationService) runMigration(ctx context.Context, m *domain.
 	var doneBytes int64
 
 	for _, row := range rows {
-		if !deadline.IsZero() && !time.Now().Before(deadline) {
+		if pastDeadline(deadline) {
 			msg := fmt.Sprintf("aborted: exceeded the lock's TTL after migrating %d of %d assets", doneAssets, len(rows))
 			_ = s.migrations.FinishMigration(bgCtx, m.ID, "cancelled", &msg) //nolint:misspell // API/DB status value consumed by frontend (status === 'cancelled')
 			return
