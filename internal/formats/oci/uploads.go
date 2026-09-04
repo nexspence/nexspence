@@ -94,10 +94,17 @@ func (s uploadStore) size(ctx context.Context, id string) (n int64, ok bool) {
 	return n, true
 }
 
-// read returns everything received so far; ok is false when the session is unknown.
-func (s uploadStore) read(ctx context.Context, id string) (data []byte, ok bool, err error) {
+// open returns a reader over everything received so far, with the session's
+// size; ok is false when the session is unknown. The caller closes the reader.
+//
+// This is read's streaming counterpart. read has to materialize the session to
+// concatenate onto it, which is inherent to the whole-object fallback append
+// path — but finalizing a push does not, and buffering there put a whole layer
+// (up to MaxUploadBytes, 10 GiB by default) in RAM at the moment of the commit
+// (#385).
+func (s uploadStore) open(ctx context.Context, id string) (rc io.ReadCloser, size int64, ok bool, err error) {
 	if _, ok = s.size(ctx, id); !ok {
-		return nil, false, nil
+		return nil, 0, false, nil
 	}
 	if as, isAppendable := s.appendable(); isAppendable {
 		// Publish the appended bytes at the key before reading them back: on a
@@ -105,12 +112,21 @@ func (s uploadStore) read(ctx context.Context, id string) (data []byte, ok bool,
 		// otherwise return whatever the key held before the session started.
 		// Idempotent, so a client re-sending the finalizing PUT is fine.
 		if err := as.FinalizeAppend(ctx, s.key(id)); err != nil {
-			return nil, true, err
+			return nil, 0, true, err
 		}
 	}
-	rc, _, err := s.deps.BlobStore.Get(ctx, s.key(id))
+	rc, size, err = s.deps.BlobStore.Get(ctx, s.key(id))
 	if err != nil {
-		return nil, true, err
+		return nil, 0, true, err
+	}
+	return rc, size, true, nil
+}
+
+// read returns everything received so far; ok is false when the session is unknown.
+func (s uploadStore) read(ctx context.Context, id string) (data []byte, ok bool, err error) {
+	rc, _, ok, err := s.open(ctx, id)
+	if err != nil || !ok {
+		return nil, ok, err
 	}
 	defer func() { _ = rc.Close() }()
 	data, err = io.ReadAll(rc)
