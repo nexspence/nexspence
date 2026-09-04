@@ -861,7 +861,17 @@ func (h *Handler) finalizeUpload(c *gin.Context, repoName, imageName, uuid strin
 		}
 	}
 
-	data, ok, err := h.uploads.read(ctx, uuid)
+	// The blob is stored and served under the client-claimed digest, so the
+	// claim must match the bytes before anything is written (issue #194). Both
+	// the check and the store below stream the staged session rather than
+	// buffering it: the whole blob — up to MaxUploadBytes, 10 GiB by default —
+	// used to sit in RAM at exactly the moment of the commit, so a handful of
+	// concurrent large-layer pushes finalizing together each held their own
+	// full copy (#385). Verifying before writing costs a second streaming pass
+	// over the staged session, which is far cheaper than materializing it, and
+	// keeps #194's guarantee that nothing lands under a digest it doesn't hash
+	// to.
+	verify, size, ok, err := h.uploads.open(ctx, uuid)
 	if !ok {
 		dockerError(c, http.StatusNotFound, "BLOB_UPLOAD_UNKNOWN", "upload unknown")
 		return
@@ -870,20 +880,34 @@ func (h *Handler) finalizeUpload(c *gin.Context, repoName, imageName, uuid strin
 		dockerError(c, http.StatusInternalServerError, "UNKNOWN", err.Error())
 		return
 	}
-
-	// The blob is stored and served under the client-claimed digest, so the
-	// claim must match the bytes before anything is written (issue #194). The
-	// session is kept: the client may retry the PUT with the correct digest.
-	if msg := digestMismatch(digest, data); msg != "" {
+	msg, err := digestMismatchStream(digest, verify)
+	_ = verify.Close()
+	if err != nil {
+		dockerError(c, http.StatusInternalServerError, "UNKNOWN", err.Error())
+		return
+	}
+	// The session is kept: the client may retry the PUT with the correct digest.
+	if msg != "" {
 		dockerError(c, http.StatusBadRequest, "DIGEST_INVALID", msg)
 		return
 	}
+
+	body, _, ok, err := h.uploads.open(ctx, uuid)
+	if !ok {
+		dockerError(c, http.StatusNotFound, "BLOB_UPLOAD_UNKNOWN", "upload unknown")
+		return
+	}
+	if err != nil {
+		dockerError(c, http.StatusInternalServerError, "UNKNOWN", err.Error())
+		return
+	}
+	defer func() { _ = body.Close() }()
 
 	fp := blobPath(imageName, digest)
 	coords := base.Coords{Name: imageName, Version: digest}
 	if _, err := base.StoreArtifact(c.Request.Context(), h.deps,
 		repoName, fp, "application/octet-stream", coords,
-		bytes.NewReader(data), int64(len(data))); err != nil {
+		body, size); err != nil {
 		dockerError(c, http.StatusInternalServerError, "UNKNOWN", err.Error())
 		return
 	}
@@ -892,7 +916,7 @@ func (h *Handler) finalizeUpload(c *gin.Context, repoName, imageName, uuid strin
 
 	c.Header("Docker-Content-Digest", digest)
 	c.Header("Location", blobLocation(c, imageName, digest))
-	c.Header("Content-Range", fmt.Sprintf("0-%d", len(data)-1))
+	c.Header("Content-Range", fmt.Sprintf("0-%d", size-1))
 	c.Status(http.StatusCreated)
 }
 
@@ -919,18 +943,32 @@ func requireDockerAuth(c *gin.Context) bool {
 // under an unverified digest would let any pusher publish arbitrary bytes
 // under a digest a consumer already pins (issue #194).
 func digestMismatch(claimed string, content []byte) string {
+	// io.Copy over a bytes.Reader cannot fail, so the read error is moot here.
+	msg, _ := digestMismatchStream(claimed, bytes.NewReader(content))
+	return msg
+}
+
+// digestMismatchStream is digestMismatch over a reader: it hashes the content
+// as it streams past instead of requiring all of it in memory first. The
+// returned string describes the mismatch and is empty when the claim holds;
+// the error is separate because a failure to read the content is not the
+// client claiming the wrong digest.
+func digestMismatchStream(claimed string, r io.Reader) (string, error) {
 	algo, hexDigest, ok := strings.Cut(claimed, ":")
 	if !ok {
-		return fmt.Sprintf("digest %q must have the form <algorithm>:<hex>", claimed)
+		return fmt.Sprintf("digest %q must have the form <algorithm>:<hex>", claimed), nil
 	}
 	if algo != "sha256" {
-		return fmt.Sprintf("unsupported digest algorithm %q: only sha256 can be verified", algo)
+		return fmt.Sprintf("unsupported digest algorithm %q: only sha256 can be verified", algo), nil
 	}
-	sum := sha256.Sum256(content)
-	if actual := hex.EncodeToString(sum[:]); actual != hexDigest {
-		return fmt.Sprintf("digest %s does not match content sha256:%s", claimed, actual)
+	h := sha256.New()
+	if _, err := io.Copy(h, r); err != nil {
+		return "", err
 	}
-	return ""
+	if actual := hex.EncodeToString(h.Sum(nil)); actual != hexDigest {
+		return fmt.Sprintf("digest %s does not match content sha256:%s", claimed, actual), nil
+	}
+	return "", nil
 }
 
 func dockerError(c *gin.Context, status int, code, message string) {

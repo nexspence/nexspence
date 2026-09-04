@@ -39,6 +39,46 @@ func newTestPromotionSvc(t *testing.T) (
 	return svc, promoRepo, compRepo, assetRepo, blobStore, repoRepo, blobRepo, scanRepo
 }
 
+// UpdateRule used to check only FromRepo == ToRepo, which catches a rule with
+// *both* sides blank ("" == "") but not one with a single side blank — a PUT
+// with from_repo:"" persisted an orphaned rule no promotion could ever match.
+func TestPromotionService_UpdateRule_RejectsBlankRepo(t *testing.T) {
+	svc, promoRepo, _, _, _, _, _, _ := newTestPromotionSvc(t)
+	ctx := context.Background()
+
+	rule := &domain.PromotionRule{Name: "staging-to-prod", FromRepo: "staging", ToRepo: "production"}
+	if err := svc.CreateRule(ctx, rule); err != nil {
+		t.Fatalf("CreateRule: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name     string
+		fromRepo string
+		toRepo   string
+	}{
+		{"blank from_repo", "", "production"},
+		{"blank to_repo", "staging", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := svc.UpdateRule(ctx, &domain.PromotionRule{
+				ID: rule.ID, Name: rule.Name, FromRepo: tc.fromRepo, ToRepo: tc.toRepo,
+			})
+			if err == nil || !strings.Contains(err.Error(), "are required") {
+				t.Fatalf("expected from_repo/to_repo required error, got: %v", err)
+			}
+		})
+	}
+
+	// The stored rule is untouched by the rejected updates.
+	stored, err := promoRepo.GetRule(ctx, rule.ID)
+	if err != nil {
+		t.Fatalf("GetRule: %v", err)
+	}
+	if stored.FromRepo != "staging" || stored.ToRepo != "production" {
+		t.Fatalf("rule was mutated by a rejected update: %+v", stored)
+	}
+}
+
 // TestPromotionService_CreateRule_Validation checks that invalid rule inputs are rejected.
 func TestPromotionService_CreateRule_Validation(t *testing.T) {
 	svc, _, _, _, _, _, _, _ := newTestPromotionSvc(t)
