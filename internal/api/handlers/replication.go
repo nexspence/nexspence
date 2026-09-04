@@ -86,6 +86,13 @@ func (h *ReplicationHandler) Update(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	// Mirrors Create's validation: without it, a client could blank out
+	// target_url/source_repo on an existing rule — the cron then fails every
+	// tick (unsupported protocol scheme "") with no signal at update time.
+	if inp.Name == "" || inp.SourceRepo == "" || inp.TargetURL == "" || inp.TargetRepo == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "name, source_repo, target_url, target_repo are required"})
+		return
+	}
 	rule := &domain.ReplicationRule{
 		ID:             c.Param("id"),
 		Name:           inp.Name,

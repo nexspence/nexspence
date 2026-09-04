@@ -134,6 +134,24 @@ func TestReplicationHandler_Update_BadJSON_400(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
 }
 
+// Without this check, a client could blank out target_url/source_repo on an
+// existing rule — the cron then fails every tick with no signal at update time.
+func TestReplicationHandler_Update_MissingFields_400(t *testing.T) {
+	r := mountReplication(t)
+	id := replicationCreate(t, r, "before")
+	// each row drops exactly one required field
+	cases := []map[string]any{
+		{"source_repo": "src", "target_url": "http://x/", "target_repo": "dst"}, // no name
+		{"name": "n", "target_url": "http://x/", "target_repo": "dst"},          // no source_repo
+		{"name": "n", "source_repo": "src", "target_repo": "dst"},               // no target_url
+		{"name": "n", "source_repo": "src", "target_url": "http://x/"},          // no target_repo
+	}
+	for i, body := range cases {
+		rec := do(t, r, http.MethodPut, "/api/v1/replication/rules/"+id, body)
+		assert.Equalf(t, http.StatusBadRequest, rec.Code, "case %d body=%s", i, rec.Body.String())
+	}
+}
+
 func TestReplicationHandler_Update_UnknownID_400(t *testing.T) {
 	r := mountReplication(t)
 	// mock UpdateRule returns an error for an unknown id → handler maps to 400.

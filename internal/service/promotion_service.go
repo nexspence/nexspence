@@ -213,6 +213,13 @@ func (s *PromotionService) UpdateRule(ctx context.Context, rule *domain.Promotio
 	if rule.Name == "" {
 		return fmt.Errorf("name is required")
 	}
+	// Mirrors CreateRule's validation: FromRepo == ToRepo also happens to
+	// catch the both-empty case (since "" == ""), but not "one side blank" —
+	// without this, PUT .../rules/:id with from_repo:"" could persist an
+	// orphaned rule.
+	if rule.FromRepo == "" || rule.ToRepo == "" {
+		return fmt.Errorf("from_repo and to_repo are required")
+	}
 	if rule.FromRepo == rule.ToRepo {
 		return fmt.Errorf("from_repo and to_repo must be different")
 	}

@@ -352,6 +352,33 @@ func TestPromotionService_UpdateRule_Validation(t *testing.T) {
 		}
 	})
 
+	// FromRepo == ToRepo also happens to catch the both-empty case (since
+	// "" == ""), but not "one side blank" — without this check,
+	// PUT .../rules/:id with from_repo:"" could persist an orphaned rule.
+	t.Run("blank from_repo", func(t *testing.T) {
+		err := svc.UpdateRule(ctx, &domain.PromotionRule{
+			ID:       "any",
+			Name:     "r",
+			FromRepo: "",
+			ToRepo:   "b",
+		})
+		if err == nil || !strings.Contains(err.Error(), "from_repo and to_repo are required") {
+			t.Fatalf("expected from_repo/to_repo required error, got %v", err)
+		}
+	})
+
+	t.Run("blank to_repo", func(t *testing.T) {
+		err := svc.UpdateRule(ctx, &domain.PromotionRule{
+			ID:       "any",
+			Name:     "r",
+			FromRepo: "a",
+			ToRepo:   "",
+		})
+		if err == nil || !strings.Contains(err.Error(), "from_repo and to_repo are required") {
+			t.Fatalf("expected from_repo/to_repo required error, got %v", err)
+		}
+	})
+
 	t.Run("invalid CEL", func(t *testing.T) {
 		err := svc.UpdateRule(ctx, &domain.PromotionRule{
 			ID:         "any",
