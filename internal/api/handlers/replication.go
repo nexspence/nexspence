@@ -44,6 +44,30 @@ type ruleInput struct {
 	Enabled        bool   `json:"enabled"`
 }
 
+// defaultReplicationCron is the schedule a rule falls back to when the caller
+// sends none: nightly at 02:00.
+const defaultReplicationCron = "0 2 * * *"
+
+// validate rejects an input that would persist a rule the replication cron
+// cannot actually run, and fills in the default schedule. Update needs exactly
+// the same guard Create does: a PUT that blanks target_url or source_repo used
+// to be accepted, and the only signal was the cron failing every tick after
+// the fact ("unsupported protocol scheme \"\""). An empty cron_expr is likewise
+// accepted by validateCronExpr, so leaving it blank on update silently
+// unscheduled the rule instead of keeping it on its old schedule.
+//
+// It writes the 400 itself and reports whether the caller may proceed.
+func (inp *ruleInput) validate(c *gin.Context) bool {
+	if inp.Name == "" || inp.SourceRepo == "" || inp.TargetURL == "" || inp.TargetRepo == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "name, source_repo, target_url, target_repo are required"})
+		return false
+	}
+	if inp.CronExpr == "" {
+		inp.CronExpr = defaultReplicationCron
+	}
+	return true
+}
+
 // Create handles POST /api/v1/replication/rules
 func (h *ReplicationHandler) Create(c *gin.Context) {
 	var inp ruleInput
@@ -51,12 +75,8 @@ func (h *ReplicationHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if inp.Name == "" || inp.SourceRepo == "" || inp.TargetURL == "" || inp.TargetRepo == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "name, source_repo, target_url, target_repo are required"})
+	if !inp.validate(c) {
 		return
-	}
-	if inp.CronExpr == "" {
-		inp.CronExpr = "0 2 * * *"
 	}
 	rule := &domain.ReplicationRule{
 		Name:           inp.Name,
@@ -84,6 +104,9 @@ func (h *ReplicationHandler) Update(c *gin.Context) {
 	var inp ruleInput
 	if err := c.ShouldBindJSON(&inp); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if !inp.validate(c) {
 		return
 	}
 	rule := &domain.ReplicationRule{

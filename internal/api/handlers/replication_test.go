@@ -146,6 +146,48 @@ func TestReplicationHandler_Update_UnknownID_400(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
 }
 
+// A PUT used to skip Create's required-field check entirely, so blanking
+// target_url (or source_repo) on an existing rule was accepted with a 200 and
+// only surfaced later, as the cron failing every tick with "unsupported
+// protocol scheme \"\"".
+func TestReplicationHandler_Update_RejectsBlankedRequiredFields(t *testing.T) {
+	r := mountReplication(t)
+	id := replicationCreate(t, r, "before")
+	full := map[string]any{
+		"name":        "after",
+		"source_repo": "src",
+		"target_url":  "http://127.0.0.1:1/",
+		"target_repo": "dst",
+	}
+	for _, blank := range []string{"name", "source_repo", "target_url", "target_repo"} {
+		body := map[string]any{}
+		for k, v := range full {
+			body[k] = v
+		}
+		body[blank] = ""
+		rec := do(t, r, http.MethodPut, "/api/v1/replication/rules/"+id, body)
+		assert.Equalf(t, http.StatusBadRequest, rec.Code, "blanked %s, body=%s", blank, rec.Body.String())
+	}
+}
+
+// validateCronExpr accepts an empty expression, so an update omitting
+// cron_expr used to persist a rule with no schedule at all — silently
+// unscheduling it. Update applies Create's default instead.
+func TestReplicationHandler_Update_DefaultsMissingCronExpr(t *testing.T) {
+	r := mountReplication(t)
+	id := replicationCreate(t, r, "before")
+	rec := do(t, r, http.MethodPut, "/api/v1/replication/rules/"+id, map[string]any{
+		"name":        "after",
+		"source_repo": "src",
+		"target_url":  "http://127.0.0.1:1/",
+		"target_repo": "dst",
+	})
+	require.Equal(t, http.StatusOK, rec.Code, "body=%s", rec.Body.String())
+	var rule domain.ReplicationRule
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &rule))
+	assert.Equal(t, "0 2 * * *", rule.CronExpr)
+}
+
 // ── Delete ──────────────────────────────────────────────────────────────────
 
 func TestReplicationHandler_Delete_204(t *testing.T) {

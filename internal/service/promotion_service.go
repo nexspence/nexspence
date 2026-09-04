@@ -213,6 +213,14 @@ func (s *PromotionService) UpdateRule(ctx context.Context, rule *domain.Promotio
 	if rule.Name == "" {
 		return fmt.Errorf("name is required")
 	}
+	// CreateRule's own emptiness check, which this sibling was missing. The
+	// FromRepo == ToRepo test below happens to catch a rule with *both* sides
+	// blank ("" == ""), but not one with a single side blank, so a PUT with
+	// from_repo:"" persisted an orphaned rule that no promotion could ever
+	// match.
+	if rule.FromRepo == "" || rule.ToRepo == "" {
+		return fmt.Errorf("from_repo and to_repo are required")
+	}
 	if rule.FromRepo == rule.ToRepo {
 		return fmt.Errorf("from_repo and to_repo must be different")
 	}
