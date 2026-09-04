@@ -268,13 +268,6 @@ type RBACRepo interface {
 	GetUserPrivilegesWithSelectors(ctx context.Context, userID string) ([]PrivilegeWithSelector, error)
 }
 
-// BlobRefRepo manages reference counts for deduplicated blobs in global_blobs.
-type BlobRefRepo interface {
-	Increment(ctx context.Context, blobKey string, sizeBytes int64) error
-	Decrement(ctx context.Context, blobKey string) (bool, error)
-	Get(ctx context.Context, blobKey string) (int, error)
-}
-
 // MigrationRepo manages migration job records.
 type MigrationRepo interface {
 	List(ctx context.Context) ([]domain.MigrationJob, error)
