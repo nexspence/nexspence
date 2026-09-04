@@ -111,15 +111,22 @@ func (h *MigrationHandler) GetJob(c *gin.Context) {
 	c.JSON(http.StatusOK, toJobResp(*job))
 }
 
+// createJobReq is the body of POST /api/v1/migration/jobs.
+//
+// It carries no concurrency knob: migrateAssets transfers one asset at a time,
+// and the safe unit of parallelism would be a whole repository rather than
+// individual assets within one (an OCI manifest must never transfer before the
+// blobs it references). The field this struct used to bind, options.concurrency,
+// was read nowhere else in the codebase, so a caller asking for 10 got the same
+// single-threaded transfer with no error or warning that the setting was
+// ignored. An options object on an older client's request is still accepted and
+// ignored, as any unknown field is.
 type createJobReq struct {
 	SourceURL   string `json:"sourceUrl" binding:"required"`
 	Credentials struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
 	} `json:"credentials"`
-	Options struct {
-		Concurrency int `json:"concurrency"`
-	} `json:"options"`
 	Scope struct {
 		MigrateRepos        *bool `json:"migrateRepos"`
 		MigrateUsers        *bool `json:"migrateUsers"`
