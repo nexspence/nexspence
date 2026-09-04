@@ -76,16 +76,24 @@ func readinessHandler(log logger.Logger, db, redis pinger, ttl time.Duration) gi
 			defer safego.Recover(log, "readiness-check-"+name)()
 			pctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 			defer cancel()
-			status := "ok"
-			if err := p.Ping(pctx); err != nil {
-				status = "error"
+			// status starts pessimistic and is recorded from a defer registered
+			// after cancel(): defers run LIFO, so this one fires before
+			// safego.Recover's above, capturing whatever status was at the
+			// moment of a panic instead of letting Recover swallow it silently
+			// and leaving the check missing from checks (which would drop it
+			// out of the response and never flip failed).
+			status := "error"
+			defer func() {
+				cmu.Lock()
+				checks[name] = status
+				if status != "ok" {
+					failed = true
+				}
+				cmu.Unlock()
+			}()
+			if err := p.Ping(pctx); err == nil {
+				status = "ok"
 			}
-			cmu.Lock()
-			checks[name] = status
-			if status != "ok" {
-				failed = true
-			}
-			cmu.Unlock()
 		}
 
 		if db != nil {

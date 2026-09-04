@@ -93,3 +93,19 @@ func TestReadiness_NoDependencies_IsOK(t *testing.T) {
 	w := serveReady(readinessHandler(nil, nil, nil, time.Minute))
 	assert.Equal(t, http.StatusOK, w.Code)
 }
+
+type panickingPinger struct{}
+
+func (panickingPinger) Ping(context.Context) error { panic("boom") }
+
+// safego.Recover stops a panicking Ping from crashing the process, but the
+// check's own result must still land in checks as "error" (and flip failed),
+// not be silently dropped — a dropped check would leave /readyz reporting 200
+// "ok" for a dependency that just panicked.
+func TestReadiness_PanickingDependencyReportsFailure(t *testing.T) {
+	h := readinessHandler(nil, panickingPinger{}, nil, time.Minute)
+
+	w := serveReady(h)
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+	assert.Contains(t, w.Body.String(), `"db":"error"`)
+}
