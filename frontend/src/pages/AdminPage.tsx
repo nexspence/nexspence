@@ -2307,7 +2307,7 @@ function MigrationJobCard({ job, onPause, onResume }: { job: MigrationJobData; o
 
 function CreateMigrationJobModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
   const [form, setForm] = useState({
-    sourceUrl: '', username: 'admin', password: '', concurrency: '4',
+    sourceUrl: '', username: 'admin', password: '',
   })
   const [scope, setScope] = useState({
     migrateRepos: true, migrateUsers: true, migratePolicies: true, migrateBlobs: true,
@@ -2340,7 +2340,6 @@ function CreateMigrationJobModal({ onClose, onCreated }: { onClose: () => void; 
       await nexspenceApi.createMigrationJob({
         sourceUrl: form.sourceUrl,
         credentials: { username: form.username, password: form.password },
-        options: { concurrency: parseInt(form.concurrency) || 4 },
         scope: {
           migrateRepos: scope.migrateRepos,
           migrateUsers: scope.migrateUsers,
@@ -2407,10 +2406,6 @@ function CreateMigrationJobModal({ onClose, onCreated }: { onClose: () => void; 
 
   const step3 = (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-        <label style={LABEL}>Concurrency</label>
-        <HoloInput type="number" min={1} max={16} value={form.concurrency} onChange={set('concurrency')} />
-      </div>
       <div style={{
         background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(124,92,255,0.15)',
         borderRadius: 10, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 6,
@@ -2422,9 +2417,6 @@ function CreateMigrationJobModal({ onClose, onCreated }: { onClose: () => void; 
         <div style={{ fontSize: 12, color: 'var(--holo-text-dim)' }}>
           <b style={{ color: 'var(--holo-text)' }}>Scope:</b>{' '}
           {scopeItems.filter(i => scope[i.key]).map(i => i.label).join(', ') || 'none'}
-        </div>
-        <div style={{ fontSize: 12, color: 'var(--holo-text-dim)' }}>
-          <b style={{ color: 'var(--holo-text)' }}>Concurrency:</b> {form.concurrency}
         </div>
       </div>
     </div>

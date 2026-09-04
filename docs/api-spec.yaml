@@ -1146,10 +1146,6 @@ paths:
                   properties:
                     username: { type: string }
                     password: { type: string, description: "Stored sealed; never returned." }
-                options:
-                  type: object
-                  properties:
-                    concurrency: { type: integer, default: 4 }
                 scope:
                   type: object
                   description: |

@@ -165,7 +165,7 @@ const USER_REALMS = [
 ] as const
 
 function CreateMigrationModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
-  const [form, setForm] = useState({ sourceUrl: '', username: 'admin', password: '', concurrency: '4' })
+  const [form, setForm] = useState({ sourceUrl: '', username: 'admin', password: '' })
   const [scope, setScope] = useState<Record<ScopeKey, boolean>>(
     () => Object.fromEntries(SCOPES.map(s => [s.key, true])) as Record<ScopeKey, boolean>,
   )
@@ -215,7 +215,6 @@ function CreateMigrationModal({ onClose, onCreated }: { onClose: () => void; onC
       await nexspenceApi.createMigrationJob({
         sourceUrl: form.sourceUrl,
         credentials: { username: form.username, password: form.password },
-        options: { concurrency: parseInt(form.concurrency) || 4 },
         scope: { ...scope, userRealms },
       })
       onCreated()
@@ -268,10 +267,6 @@ function CreateMigrationModal({ onClose, onCreated }: { onClose: () => void; onC
             <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--holo-text-dim)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Password *</label>
             <HoloInput type="password" value={form.password} onChange={set('password')} required />
           </div>
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-          <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--holo-text-dim)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Concurrency</label>
-          <HoloInput type="number" min={1} max={16} value={form.concurrency} onChange={set('concurrency')} />
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--holo-text-dim)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>What to migrate</label>
