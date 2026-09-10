@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { UserPlus, Trash2, RefreshCw, Shield, User, AlertTriangle, Plus, Edit2, KeyRound } from 'lucide-react'
+import { UserPlus, Trash2, RefreshCw, Shield, User, AlertTriangle, Plus, Edit2, KeyRound, Pencil } from 'lucide-react'
 import { nexusApi, apiClient, apiErrorMessage } from '@/api/client'
 import styles from './UsersPage.module.css'
 import { Select } from '../components/Select'
@@ -173,6 +173,78 @@ export function AssignRolesModal({ user, roles, onClose, onSaved }: {
   )
 }
 
+/* ─── Edit user modal ───────────────────────────────────────── */
+// UserService.Update applies its fields partially: an empty string means "keep
+// what is there", not "clear it". So a field left blank here stays as it was —
+// said out loud in the modal, because an admin blanking an email and getting
+// the old one back has no other way to find out why.
+export function EditUserModal({ user, onClose, onSaved }: {
+  user: UserItem
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [form, setForm] = useState({
+    firstName: user.firstName ?? '',
+    lastName: user.lastName ?? '',
+    emailAddress: user.emailAddress ?? '',
+    status: user.status ?? 'active',
+  })
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState('')
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSaving(true); setErr('')
+    try {
+      await nexusApi.updateUser(user.userId, form)
+      onSaved()
+    } catch (e) {
+      setErr(apiErrorMessage(e, 'Failed to update user'))
+    } finally { setSaving(false) }
+  }
+
+  return (
+    <HoloModal open={true} onClose={onClose}>
+      <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: 'var(--holo-text)' }}>Edit User — {user.userId}</h2>
+      <form onSubmit={submit} className={styles.form}>
+        <div className={styles.formGrid}>
+          <div className={styles.formRow}>
+            <label className={styles.label} htmlFor="edit-first-name">First name</label>
+            <HoloInput id="edit-first-name" value={form.firstName} onChange={e => setForm(f => ({ ...f, firstName: e.target.value }))} />
+          </div>
+          <div className={styles.formRow}>
+            <label className={styles.label} htmlFor="edit-last-name">Last name</label>
+            <HoloInput id="edit-last-name" value={form.lastName} onChange={e => setForm(f => ({ ...f, lastName: e.target.value }))} />
+          </div>
+        </div>
+        <div className={styles.formRow}>
+          <label className={styles.label} htmlFor="edit-email">Email</label>
+          <HoloInput id="edit-email" type="email" value={form.emailAddress} onChange={e => setForm(f => ({ ...f, emailAddress: e.target.value }))} />
+        </div>
+        <div className={styles.formRow}>
+          <label className={styles.label}>Status</label>
+          <Select
+            options={[
+              { value: 'active',   label: 'Active' },
+              { value: 'disabled', label: 'Disabled' },
+            ]}
+            value={form.status}
+            onChange={v => setForm(f => ({ ...f, status: v }))}
+          />
+        </div>
+        <div style={{ fontSize: 11, color: 'var(--holo-text-faint)' }}>
+          Emptying a field leaves it unchanged — the API applies these fields partially.
+        </div>
+        {err && <div role="alert" className={styles.error}>{err}</div>}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 8 }}>
+          <HoloButton type="button" onClick={onClose}>Cancel</HoloButton>
+          <HoloButton variant="primary" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save'}</HoloButton>
+        </div>
+      </form>
+    </HoloModal>
+  )
+}
+
 /* ─── Reset password modal ──────────────────────────────────── */
 // An admin resetting somebody else's password does not send a current one:
 // the backend's ChangePassword takes the SetPassword branch for a caller with
@@ -228,6 +300,7 @@ export function UsersTab() {
   const [showCreate, setShowCreate] = useState(false)
   const [assignUser, setAssignUser] = useState<UserItem | null>(null)
   const [resetUser, setResetUser] = useState<UserItem | null>(null)
+  const [editUser, setEditUser] = useState<UserItem | null>(null)
 
   const { data: users = [], isLoading, isError, error, refetch } = useQuery<UserItem[]>({
     queryKey: ['users'],
@@ -287,7 +360,7 @@ export function UsersTab() {
             const fullName = [user.firstName, user.lastName].filter(Boolean).join(' ')
             return (
               <div key={user.userId} style={{
-                display: 'grid', gridTemplateColumns: '8px 1fr auto auto auto auto',
+                display: 'grid', gridTemplateColumns: '8px 1fr auto auto auto auto auto',
                 alignItems: 'center', gap: 12, padding: '11px 16px',
                 background: 'rgba(10,8,28,0.97)', border: '1px solid rgba(124,92,255,0.2)',
                 borderRadius: 10, transition: 'border-color 0.15s, background 0.15s',
@@ -313,6 +386,10 @@ export function UsersTab() {
                   </HoloButton>
                 </div>
                 <HoloPill style={{ fontSize: 11 }}>{user.source}</HoloPill>
+                <HoloButton style={{ padding: 5 }} disabled={user.source !== 'local'} onClick={() => setEditUser(user)}
+                  title={user.source !== 'local'
+                    ? `A ${user.source} account's profile is re-provisioned from the identity provider on every login`
+                    : 'Edit user'}><Pencil size={14} /></HoloButton>
                 <HoloButton style={{ padding: 5 }} disabled={user.source === 'ldap'} onClick={() => setResetUser(user)}
                   title={user.source === 'ldap'
                     ? 'LDAP users authenticate against the directory — a local password is never checked'
@@ -342,6 +419,13 @@ export function UsersTab() {
 
       {resetUser && (
         <ResetPasswordModal user={resetUser} onClose={() => setResetUser(null)} onSaved={() => setResetUser(null)} />
+      )}
+
+      {editUser && (
+        <EditUserModal user={editUser} onClose={() => setEditUser(null)} onSaved={() => {
+          setEditUser(null)
+          qc.invalidateQueries({ queryKey: ['users'] })
+        }} />
       )}
     </>
   )
@@ -469,7 +553,7 @@ export default function UsersPage() {
 
 /* ─── Create user modal ──────────────────────────────────────── */
 export function CreateUserModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
-  const [form, setForm] = useState({ userId: '', email: '', firstName: '', lastName: '', password: '', status: 'active' })
+  const [form, setForm] = useState({ userId: '', emailAddress: '', firstName: '', lastName: '', password: '', status: 'active' })
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -507,7 +591,7 @@ export function CreateUserModal({ onClose, onCreated }: { onClose: () => void; o
         </div>
         <div className={styles.formRow}>
           <label className={styles.label}>Email</label>
-          <HoloInput type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} />
+          <HoloInput type="email" value={form.emailAddress} onChange={e => setForm(f => ({ ...f, emailAddress: e.target.value }))} />
         </div>
         <div className={styles.formRow}>
           <label className={styles.label}>Status</label>

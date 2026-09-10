@@ -472,4 +472,91 @@ describe('UsersPage', () => {
     const btn = screen.getByTitle(/LDAP users authenticate against the directory/)
     expect(btn).toBeDisabled()
   })
+
+  it('edits a local user and sends the fields the API binds', async () => {
+    const user = userEvent.setup()
+    let putUser = ''
+    let body: Record<string, unknown> | null = null
+    server.use(
+      http.put('/service/rest/v1/security/users/:userId', async ({ request, params }) => {
+        putUser = String(params.userId)
+        body = (await request.json()) as Record<string, unknown>
+        return HttpResponse.json(userItem())
+      }),
+    )
+    renderWithProviders(<UsersPage />)
+    await screen.findByText('alice')
+    await user.click(screen.getAllByTitle('Edit user')[0])
+
+    const heading = await screen.findByRole('heading', { name: /Edit User — alice/ })
+    const form = heading.parentElement!.querySelector('form')!
+    // Pre-filled from the row, so an edit of one field keeps the rest.
+    expect(within(form).getByLabelText('Email')).toHaveValue('alice@test.com')
+    await user.clear(within(form).getByLabelText('Email'))
+    await user.type(within(form).getByLabelText('Email'), 'alice@fixed.com')
+    await user.click(form.querySelector('button[type="submit"]') as HTMLButtonElement)
+
+    await waitFor(() => expect(body).toBeTruthy())
+    expect(putUser).toBe('alice')
+    // emailAddress, not email: that is the tag domain.User binds.
+    expect(body).toEqual({
+      firstName: 'Alice',
+      lastName: 'Smith',
+      emailAddress: 'alice@fixed.com',
+      status: 'active',
+    })
+  })
+
+  it('surfaces a failed edit instead of closing the modal', async () => {
+    const user = userEvent.setup()
+    server.use(
+      http.put('/service/rest/v1/security/users/:userId', () =>
+        HttpResponse.json({ error: 'user with this email' }, { status: 409 }),
+      ),
+    )
+    renderWithProviders(<UsersPage />)
+    await screen.findByText('alice')
+    await user.click(screen.getAllByTitle('Edit user')[0])
+    const form = (await screen.findByRole('heading', { name: /Edit User/ })).parentElement!.querySelector('form')!
+    await user.click(form.querySelector('button[type="submit"]') as HTMLButtonElement)
+    expect(await screen.findByRole('alert')).toHaveTextContent('user with this email')
+    expect(screen.getByRole('heading', { name: /Edit User/ })).toBeInTheDocument()
+  })
+
+  it('disables the edit action for a user provisioned by an identity provider', async () => {
+    server.use(
+      http.get('/service/rest/v1/security/users', () =>
+        HttpResponse.json([userItem({ userId: 'sso', source: 'oidc' })]),
+      ),
+    )
+    renderWithProviders(<UsersPage />)
+    await screen.findByText('sso')
+    // The IdP overwrites the profile on every login, so an edit here is a dead end.
+    expect(screen.getByTitle(/re-provisioned from the identity provider/)).toBeDisabled()
+  })
+
+  it('sends the email address the create modal collected', async () => {
+    const user = userEvent.setup()
+    let posted: Record<string, unknown> | null = null
+    server.use(
+      http.post('/service/rest/v1/security/users', async ({ request }) => {
+        posted = (await request.json()) as Record<string, unknown>
+        return HttpResponse.json(userItem(), { status: 201 })
+      }),
+    )
+    renderWithProviders(<UsersPage />)
+    await screen.findByText('alice')
+    await user.click(screen.getByRole('button', { name: /Add User/ }))
+    const heading = await screen.findByRole('heading', { name: 'Add User' })
+    const form = heading.parentElement!.querySelector('form')!
+    await user.type(within(form).getByText('Username *').parentElement!.querySelector('input') as HTMLInputElement, 'charlie')
+    await user.type(form.querySelector('input[type="password"]') as HTMLInputElement, 's3cret')
+    await user.type(form.querySelector('input[type="email"]') as HTMLInputElement, 'charlie@test.com')
+    await user.click(form.querySelector('button[type="submit"]') as HTMLButtonElement)
+
+    await waitFor(() => expect(posted).toBeTruthy())
+    // The key used to be "email", which the handler's domain.User bind ignored,
+    // so every user created from the UI lost their address (#446).
+    expect(posted).toMatchObject({ userId: 'charlie', emailAddress: 'charlie@test.com' })
+  })
 })
