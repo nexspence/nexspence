@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { UserPlus, Trash2, RefreshCw, Shield, User, AlertTriangle, Plus, Edit2 } from 'lucide-react'
+import { UserPlus, Trash2, RefreshCw, Shield, User, AlertTriangle, Plus, Edit2, KeyRound } from 'lucide-react'
 import { nexusApi, apiClient, apiErrorMessage } from '@/api/client'
 import styles from './UsersPage.module.css'
 import { Select } from '../components/Select'
@@ -173,12 +173,61 @@ export function AssignRolesModal({ user, roles, onClose, onSaved }: {
   )
 }
 
+/* ─── Reset password modal ──────────────────────────────────── */
+// An admin resetting somebody else's password does not send a current one:
+// the backend's ChangePassword takes the SetPassword branch for a caller with
+// nx-admin, and only asks for oldPassword when a user changes their own.
+export function ResetPasswordModal({ user, onClose, onSaved }: {
+  user: UserItem
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [password, setPassword] = useState('')
+  const [confirmation, setConfirmation] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState('')
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (password !== confirmation) { setErr('The two passwords do not match'); return }
+    setSaving(true); setErr('')
+    try {
+      await nexusApi.changePassword(user.userId, password)
+      onSaved()
+    } catch (e) {
+      setErr(apiErrorMessage(e, 'Failed to reset password'))
+    } finally { setSaving(false) }
+  }
+
+  return (
+    <HoloModal open={true} onClose={onClose}>
+      <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: 'var(--holo-text)' }}>Reset Password — {user.userId}</h2>
+      <form onSubmit={submit} className={styles.form}>
+        <div className={styles.formRow}>
+          <label className={styles.label} htmlFor="reset-password">New password *</label>
+          <HoloInput id="reset-password" type="password" value={password} onChange={e => setPassword(e.target.value)} required />
+        </div>
+        <div className={styles.formRow}>
+          <label className={styles.label} htmlFor="reset-password-confirm">Confirm new password *</label>
+          <HoloInput id="reset-password-confirm" type="password" value={confirmation} onChange={e => setConfirmation(e.target.value)} required />
+        </div>
+        {err && <div role="alert" className={styles.error}>{err}</div>}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 8 }}>
+          <HoloButton type="button" onClick={onClose}>Cancel</HoloButton>
+          <HoloButton variant="primary" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Reset Password'}</HoloButton>
+        </div>
+      </form>
+    </HoloModal>
+  )
+}
+
 /* ─── Users tab ──────────────────────────────────────────────── */
 export function UsersTab() {
   const qc = useQueryClient()
   const [filter, setFilter] = useState('')
   const [showCreate, setShowCreate] = useState(false)
   const [assignUser, setAssignUser] = useState<UserItem | null>(null)
+  const [resetUser, setResetUser] = useState<UserItem | null>(null)
 
   const { data: users = [], isLoading, isError, error, refetch } = useQuery<UserItem[]>({
     queryKey: ['users'],
@@ -238,7 +287,7 @@ export function UsersTab() {
             const fullName = [user.firstName, user.lastName].filter(Boolean).join(' ')
             return (
               <div key={user.userId} style={{
-                display: 'grid', gridTemplateColumns: '8px 1fr auto auto auto',
+                display: 'grid', gridTemplateColumns: '8px 1fr auto auto auto auto',
                 alignItems: 'center', gap: 12, padding: '11px 16px',
                 background: 'rgba(10,8,28,0.97)', border: '1px solid rgba(124,92,255,0.2)',
                 borderRadius: 10, transition: 'border-color 0.15s, background 0.15s',
@@ -264,6 +313,10 @@ export function UsersTab() {
                   </HoloButton>
                 </div>
                 <HoloPill style={{ fontSize: 11 }}>{user.source}</HoloPill>
+                <HoloButton style={{ padding: 5 }} disabled={user.source === 'ldap'} onClick={() => setResetUser(user)}
+                  title={user.source === 'ldap'
+                    ? 'LDAP users authenticate against the directory — a local password is never checked'
+                    : 'Reset password'}><KeyRound size={14} /></HoloButton>
                 <HoloButton variant="danger" style={{ padding: 5 }} disabled={user.userId === 'admin'} onClick={() => {
                   if (confirm(`Delete user "${user.userId}"?`)) deleteMutation.mutate(user.userId)
                 }} title="Delete user"><Trash2 size={14} /></HoloButton>
@@ -285,6 +338,10 @@ export function UsersTab() {
           setAssignUser(null)
           qc.invalidateQueries({ queryKey: ['users'] })
         }} />
+      )}
+
+      {resetUser && (
+        <ResetPasswordModal user={resetUser} onClose={() => setResetUser(null)} onSaved={() => setResetUser(null)} />
       )}
     </>
   )

@@ -388,4 +388,88 @@ describe('UsersPage', () => {
     await user.click(screen.getByRole('button', { name: 'Roles' }))
     expect(await screen.findByText('No roles defined')).toBeInTheDocument()
   })
+
+  it("resets a user's password from the row action, sending JSON the backend binds", async () => {
+    const user = userEvent.setup()
+    let putUrl = ''
+    let body: Record<string, unknown> | null = null
+    let contentType = ''
+    server.use(
+      http.put('/service/rest/v1/security/users/:userId/change-password', async ({ request, params }) => {
+        putUrl = String(params.userId)
+        contentType = request.headers.get('content-type') ?? ''
+        body = (await request.json()) as Record<string, unknown>
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+    renderWithProviders(<UsersPage />)
+    await screen.findByText('alice')
+    await user.click(screen.getAllByTitle('Reset password')[0])
+
+    const heading = await screen.findByRole('heading', { name: /Reset Password — alice/ })
+    const form = heading.parentElement!.querySelector('form')!
+    await user.type(within(form).getByLabelText('New password *'), 'n3wp4ss')
+    await user.type(within(form).getByLabelText('Confirm new password *'), 'n3wp4ss')
+    await user.click(form.querySelector('button[type="submit"]') as HTMLButtonElement)
+
+    await waitFor(() => expect(body).toBeTruthy())
+    expect(putUrl).toBe('alice')
+    // The old shape was a raw string with Content-Type: text/plain, which the
+    // handler's ShouldBindJSON answered with a 400.
+    expect(contentType).toContain('application/json')
+    expect(body).toEqual({ newPassword: 'n3wp4ss' })
+    await waitFor(() => expect(screen.queryByRole('heading', { name: /Reset Password/ })).not.toBeInTheDocument())
+  })
+
+  it('refuses a mismatched confirmation without calling the API', async () => {
+    const user = userEvent.setup()
+    let called = false
+    server.use(
+      http.put('/service/rest/v1/security/users/:userId/change-password', () => {
+        called = true
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+    renderWithProviders(<UsersPage />)
+    await screen.findByText('alice')
+    await user.click(screen.getAllByTitle('Reset password')[0])
+    const form = (await screen.findByRole('heading', { name: /Reset Password/ })).parentElement!.querySelector('form')!
+    await user.type(within(form).getByLabelText('New password *'), 'one')
+    await user.type(within(form).getByLabelText('Confirm new password *'), 'two')
+    await user.click(form.querySelector('button[type="submit"]') as HTMLButtonElement)
+    expect(await screen.findByRole('alert')).toHaveTextContent('The two passwords do not match')
+    expect(called).toBe(false)
+  })
+
+  it('surfaces a failed reset instead of closing the modal', async () => {
+    const user = userEvent.setup()
+    server.use(
+      http.put('/service/rest/v1/security/users/:userId/change-password', () =>
+        HttpResponse.json({ error: 'password too short' }, { status: 500 }),
+      ),
+    )
+    renderWithProviders(<UsersPage />)
+    await screen.findByText('alice')
+    await user.click(screen.getAllByTitle('Reset password')[0])
+    const form = (await screen.findByRole('heading', { name: /Reset Password/ })).parentElement!.querySelector('form')!
+    await user.type(within(form).getByLabelText('New password *'), 'short')
+    await user.type(within(form).getByLabelText('Confirm new password *'), 'short')
+    await user.click(form.querySelector('button[type="submit"]') as HTMLButtonElement)
+    expect(await screen.findByRole('alert')).toHaveTextContent('password too short')
+    expect(screen.getByRole('heading', { name: /Reset Password/ })).toBeInTheDocument()
+  })
+
+  it('disables the reset action for an LDAP-sourced user', async () => {
+    server.use(
+      http.get('/service/rest/v1/security/users', () =>
+        HttpResponse.json([userItem({ userId: 'ldapuser', source: 'ldap' })]),
+      ),
+    )
+    renderWithProviders(<UsersPage />)
+    await screen.findByText('ldapuser')
+    // A local password is never checked for a user the directory authenticates,
+    // so offering the action would be a dead end.
+    const btn = screen.getByTitle(/LDAP users authenticate against the directory/)
+    expect(btn).toBeDisabled()
+  })
 })

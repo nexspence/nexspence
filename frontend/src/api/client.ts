@@ -260,11 +260,14 @@ export const nexusApi = {
     apiClient.put(`/service/rest/v1/security/users/${userId}`, data),
   deleteUser: (userId: string) =>
     apiClient.delete(`/service/rest/v1/security/users/${userId}`),
-  changePassword: (userId: string, password: string) =>
+  // The backend binds {oldPassword, newPassword} as JSON. oldPassword is
+  // omitted on the admin path (resetting another user's password), where the
+  // handler does not ask for it; the self path (/api/v1/me/change-password)
+  // requires it.
+  changePassword: (userId: string, newPassword: string, oldPassword?: string) =>
     apiClient.put(
-      `/service/rest/v1/security/users/${userId}/change-password`,
-      password,
-      { headers: { 'Content-Type': 'text/plain' } },
+      `/service/rest/v1/security/users/${encodeURIComponent(userId)}/change-password`,
+      { oldPassword, newPassword },
     ),
 
   // Roles
