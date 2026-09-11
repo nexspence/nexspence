@@ -99,6 +99,31 @@ func TestProxyAlpine_RealShape(t *testing.T) {
 	assert.Equal(t, "apk-bytes", fetchOK(t, "/repository/alpine-real/x86_64/curl-8.9.0-r0.apk"))
 }
 
+// ── huggingface (huggingface.co shape) ───────────────────────────
+
+func TestProxyHuggingFace_RealShape(t *testing.T) {
+	const commit = "1dbc166cf8765166998eff31ade2eb64c8a40076"
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/models/bert-base-uncased":
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{"id":"bert-base-uncased","sha":"`+commit+`","siblings":[{"rfilename":"config.json"}]}`)
+		case "/bert-base-uncased/resolve/main/config.json":
+			// The two headers huggingface_hub refuses to download without.
+			w.Header().Set("ETag", `"real-etag"`)
+			w.Header().Set("X-Repo-Commit", commit)
+			fmt.Fprint(w, "config-bytes")
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer up.Close()
+	createProxyRepo(t, "huggingface", "hf-real", up.URL)
+
+	assert.Contains(t, fetchOK(t, "/repository/hf-real/api/models/bert-base-uncased"), `"rfilename":"config.json"`)
+	assert.Equal(t, "config-bytes", fetchOK(t, "/repository/hf-real/bert-base-uncased/resolve/main/config.json"))
+}
+
 // ── cran (cran.r-project.org shape) ──────────────────────────────
 
 func TestProxyCRAN_RealShape(t *testing.T) {
