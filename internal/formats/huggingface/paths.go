@@ -237,9 +237,10 @@ func revisionCommit(ref repoRef, revision string, files []domain.Asset) string {
 		return strings.ToLower(revision)
 	}
 	h := sha256.New()
-	fmt.Fprintf(h, "%s/%s@%s\n", ref.Type, ref.id(), revision)
+	// hash.Hash.Write never returns an error — nothing to check.
+	_, _ = fmt.Fprintf(h, "%s/%s@%s\n", ref.Type, ref.id(), revision)
 	for _, f := range files {
-		fmt.Fprintf(h, "%s %s\n", f.Path, f.SHA256)
+		_, _ = fmt.Fprintf(h, "%s %s\n", f.Path, f.SHA256)
 	}
 	return hex.EncodeToString(h.Sum(nil))[:40]
 }

@@ -590,8 +590,15 @@ func (h *Handler) upstreamHeadHop(c *gin.Context, repo *domain.Repository, p str
 		if resp.StatusCode < 300 || resp.StatusCode >= 400 || loc == "" || hop >= maxRedirectHops {
 			return resp, nil
 		}
-		target, err := resp.Request.URL.Parse(loc)
-		if err != nil || target.Host != resp.Request.URL.Host {
+		target, parseErr := resp.Request.URL.Parse(loc)
+		if parseErr != nil {
+			// An unparseable Location is not this function's error to raise —
+			// the response otherwise stands on its own, so it's returned as
+			// the (possibly non-redirect) terminal answer, same as any other
+			// hop that isn't a same-host redirect.
+			return resp, nil //nolint:nilerr // deliberate: malformed Location just means "don't follow it"
+		}
+		if target.Host != resp.Request.URL.Host {
 			return resp, nil // leaving the host: this response carries the file's metadata
 		}
 		_ = resp.Body.Close()
