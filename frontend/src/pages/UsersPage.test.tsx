@@ -101,7 +101,7 @@ describe('UsersPage', () => {
     const usernameInput = within(form).getByText('Username *').parentElement!.querySelector('input') as HTMLInputElement
     await user.type(usernameInput, 'charlie')
     const pwd = form.querySelector('input[type="password"]') as HTMLInputElement
-    await user.type(pwd, 's3cret')
+    await user.type(pwd, 's3cret-pw')
 
     const submit = form.querySelector('button[type="submit"]') as HTMLButtonElement
     await user.click(submit)
@@ -132,7 +132,7 @@ describe('UsersPage', () => {
     const usernameInput = within(form).getByText('Username *').parentElement!.querySelector('input') as HTMLInputElement
     await user.type(usernameInput, 'dave')
     const pwd = form.querySelector('input[type="password"]') as HTMLInputElement
-    await user.type(pwd, 'pw')
+    await user.type(pwd, 'pw-long-enough')
     await user.click(form.querySelector('button[type="submit"]') as HTMLButtonElement)
     await waitFor(() => expect(posted).toBeTruthy())
     expect((posted! as { status: string }).status).toBe('disabled')
@@ -153,7 +153,7 @@ describe('UsersPage', () => {
     const usernameInput = within(form).getByText('Username *').parentElement!.querySelector('input') as HTMLInputElement
     await user.type(usernameInput, 'charlie')
     const pwd = form.querySelector('input[type="password"]') as HTMLInputElement
-    await user.type(pwd, 's3cret')
+    await user.type(pwd, 's3cret-pw')
     await user.click(form.querySelector('button[type="submit"]') as HTMLButtonElement)
     expect(await screen.findByText('username taken')).toBeInTheDocument()
   })
@@ -408,8 +408,8 @@ describe('UsersPage', () => {
 
     const heading = await screen.findByRole('heading', { name: /Reset Password — alice/ })
     const form = heading.parentElement!.querySelector('form')!
-    await user.type(within(form).getByLabelText('New password *'), 'n3wp4ss')
-    await user.type(within(form).getByLabelText('Confirm new password *'), 'n3wp4ss')
+    await user.type(within(form).getByLabelText('New password *'), 'n3wp4ss-long')
+    await user.type(within(form).getByLabelText('Confirm new password *'), 'n3wp4ss-long')
     await user.click(form.querySelector('button[type="submit"]') as HTMLButtonElement)
 
     await waitFor(() => expect(body).toBeTruthy())
@@ -417,7 +417,7 @@ describe('UsersPage', () => {
     // The old shape was a raw string with Content-Type: text/plain, which the
     // handler's ShouldBindJSON answered with a 400.
     expect(contentType).toContain('application/json')
-    expect(body).toEqual({ newPassword: 'n3wp4ss' })
+    expect(body).toEqual({ newPassword: 'n3wp4ss-long' })
     await waitFor(() => expect(screen.queryByRole('heading', { name: /Reset Password/ })).not.toBeInTheDocument())
   })
 
@@ -445,32 +445,62 @@ describe('UsersPage', () => {
     const user = userEvent.setup()
     server.use(
       http.put('/service/rest/v1/security/users/:userId/change-password', () =>
-        HttpResponse.json({ error: 'password too short' }, { status: 500 }),
+        HttpResponse.json({ error: 'database unavailable' }, { status: 500 }),
       ),
     )
     renderWithProviders(<UsersPage />)
     await screen.findByText('alice')
     await user.click(screen.getAllByTitle('Reset password')[0])
     const form = (await screen.findByRole('heading', { name: /Reset Password/ })).parentElement!.querySelector('form')!
-    await user.type(within(form).getByLabelText('New password *'), 'short')
-    await user.type(within(form).getByLabelText('Confirm new password *'), 'short')
+    await user.type(within(form).getByLabelText('New password *'), 'long-enough-pw')
+    await user.type(within(form).getByLabelText('Confirm new password *'), 'long-enough-pw')
     await user.click(form.querySelector('button[type="submit"]') as HTMLButtonElement)
-    expect(await screen.findByRole('alert')).toHaveTextContent('password too short')
+    expect(await screen.findByRole('alert')).toHaveTextContent('database unavailable')
     expect(screen.getByRole('heading', { name: /Reset Password/ })).toBeInTheDocument()
   })
 
-  it('disables the reset action for an LDAP-sourced user', async () => {
+  it('refuses a password below the configured minimum without calling the API', async () => {
+    // The form mirrors auth.password_min_length from /api/v1/auth/config (8 in
+    // the fixture) so the rule is stated up front instead of arriving as a 400.
+    const user = userEvent.setup()
+    const putHandler = vi.fn()
+    server.use(http.put('/service/rest/v1/security/users/:userId/change-password', putHandler))
+    renderWithProviders(<UsersPage />)
+    await screen.findByText('alice')
+    await user.click(screen.getAllByTitle('Reset password')[0])
+    const form = (await screen.findByRole('heading', { name: /Reset Password/ })).parentElement!.querySelector('form')!
+    expect(within(form).getByText('At least 8 characters')).toBeInTheDocument()
+    await user.type(within(form).getByLabelText('New password *'), 'short')
+    await user.type(within(form).getByLabelText('Confirm new password *'), 'short')
+    await user.click(form.querySelector('button[type="submit"]') as HTMLButtonElement)
+    expect(await screen.findByRole('alert')).toHaveTextContent('at least 8 characters')
+    expect(putHandler).not.toHaveBeenCalled()
+  })
+
+  it.each(['ldap', 'oidc', 'saml'])('disables the reset action for a %s-sourced user', async (source) => {
     server.use(
       http.get('/service/rest/v1/security/users', () =>
-        HttpResponse.json([userItem({ userId: 'ldapuser', source: 'ldap' })]),
+        HttpResponse.json([userItem({ userId: 'sso-user', source })]),
       ),
     )
     renderWithProviders(<UsersPage />)
-    await screen.findByText('ldapuser')
-    // A local password is never checked for a user the directory authenticates,
-    // so offering the action would be a dead end.
-    const btn = screen.getByTitle(/LDAP users authenticate against the directory/)
+    await screen.findByText('sso-user')
+    // The backend now refuses a local password write for any non-local source
+    // (the identity provider owns the credential), so offering the action
+    // would only produce a 403.
+    const btn = screen.getByTitle(`A ${source} account's password is managed by the identity provider`)
     expect(btn).toBeDisabled()
+  })
+
+  it('keeps the reset action enabled for a local user', async () => {
+    server.use(
+      http.get('/service/rest/v1/security/users', () =>
+        HttpResponse.json([userItem({ userId: 'alice', source: 'local' })]),
+      ),
+    )
+    renderWithProviders(<UsersPage />)
+    await screen.findByText('alice')
+    expect(screen.getByTitle('Reset password')).toBeEnabled()
   })
 
   it('edits a local user and sends the fields the API binds', async () => {
@@ -550,7 +580,7 @@ describe('UsersPage', () => {
     const heading = await screen.findByRole('heading', { name: 'Add User' })
     const form = heading.parentElement!.querySelector('form')!
     await user.type(within(form).getByText('Username *').parentElement!.querySelector('input') as HTMLInputElement, 'charlie')
-    await user.type(form.querySelector('input[type="password"]') as HTMLInputElement, 's3cret')
+    await user.type(form.querySelector('input[type="password"]') as HTMLInputElement, 's3cret-pw')
     await user.type(form.querySelector('input[type="email"]') as HTMLInputElement, 'charlie@test.com')
     await user.click(form.querySelector('button[type="submit"]') as HTMLButtonElement)
 

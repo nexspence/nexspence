@@ -36,3 +36,16 @@ func conflictOnDuplicateName(c *gin.Context, err error) bool {
 func isInvalidInput(err error) bool {
 	return errors.Is(err, service.ErrInvalidInput)
 }
+
+// isPasswordTooShort covers a new password below auth.password_min_length —
+// a client error on every route that writes a password.
+func isPasswordTooShort(err error) bool {
+	return errors.Is(err, service.ErrPasswordTooShort)
+}
+
+// isPasswordManagedExternally covers a password change attempted on an
+// ldap/oidc/saml account: the route exists, but the credential belongs to
+// the identity provider — a policy refusal (403), not a bad value.
+func isPasswordManagedExternally(err error) bool {
+	return errors.Is(err, service.ErrPasswordManagedExternally)
+}

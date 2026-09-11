@@ -278,6 +278,23 @@ func TestAuthConfig_ReturnsOIDCEnabled(t *testing.T) {
 	assert.Contains(t, body, `"ldapEnabled":false`)
 }
 
+func TestAuthConfig_ReturnsPasswordMinLength(t *testing.T) {
+	// The password forms mirror auth.password_min_length from here; without it
+	// the rule is only discoverable by submitting and reading the 400.
+	cfg := config.Config{Auth: config.AuthConfig{PasswordMinLength: 12}}
+	h := handlers.NewAuthHandler(nil, zap.NewNop().Sugar()).WithConfig(cfg)
+
+	r := gin.New()
+	r.GET("/api/v1/auth/config", h.Config)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/config", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), `"passwordMinLength":12`)
+}
+
 func TestAuthConfig_OIDCDisabled_WhenButtonHidden(t *testing.T) {
 	cfg := config.Config{
 		OIDC: config.OIDCConfig{

@@ -436,7 +436,8 @@ func warnIfAdminUnusable(ctx context.Context, userRepo repository.UserRepo, b co
 
 // bootstrapAdmin ensures the admin user exists with the configured password.
 func bootstrapAdmin(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config, log logger.Logger) error {
-	authSvc := auth.NewService(cfg.Auth.JWTSecret, cfg.Auth.JWTExpiryHours, cfg.Auth.BcryptCost)
+	authSvc := auth.NewService(cfg.Auth.JWTSecret, cfg.Auth.JWTExpiryHours, cfg.Auth.BcryptCost).
+		WithMinPasswordLength(cfg.Auth.PasswordMinLength)
 	userRepo := postgres.NewUserRepo(pool)
 	roleRepo := postgres.NewRoleRepo(pool)
 	return ensureBootstrapAdmin(ctx, userRepo, roleRepo, authSvc, cfg.Bootstrap, log)

@@ -186,3 +186,118 @@ describe('Layout ProfileModal token management', () => {
     await waitFor(() => expect(delHandler).toHaveBeenCalled())
   })
 })
+
+describe('Layout ProfileModal change password', () => {
+  // logout() navigates via window.location, which jsdom cannot unload — swap
+  // in a stub that performs the same state/localStorage clear so the test can
+  // assert the sign-out without corrupting location for later tests.
+  function stubLogout() {
+    const real = useAuthStore.getState().logout
+    const stub = vi.fn(() => {
+      localStorage.removeItem('nexspence_token')
+      useAuthStore.setState({ token: null, user: null })
+    })
+    useAuthStore.setState({ logout: stub })
+    return { stub, restore: () => useAuthStore.setState({ logout: real }) }
+  }
+
+  beforeEach(() => {
+    server.use(http.get('/api/v1/tokens', () => HttpResponse.json([])))
+  })
+
+  async function openProfile() {
+    renderLayout()
+    await userEvent.click(screen.getByTitle('API Tokens & Profile'))
+    await screen.findByText(/Profile — admin/)
+  }
+
+  it('renders change password fields for a local user', async () => {
+    useAuthStore.setState({
+      token: 'tok',
+      user: fixtures.user({ source: 'local' }) as never,
+    })
+    await openProfile()
+    expect(screen.getByLabelText('Current password')).toBeInTheDocument()
+    expect(screen.getByLabelText('New password')).toBeInTheDocument()
+    expect(screen.getByLabelText('Confirm new password')).toBeInTheDocument()
+  })
+
+  it('hides change password for an oidc user', async () => {
+    useAuthStore.setState({
+      token: 'tok',
+      user: fixtures.user({ source: 'oidc' }) as never,
+    })
+    await openProfile()
+    expect(screen.getByText('Create API Token')).toBeInTheDocument()
+    expect(screen.queryByText('Change Password')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Current password')).not.toBeInTheDocument()
+  })
+
+  it('rejects mismatched confirmation without calling the API', async () => {
+    seedAuthAsAdmin() // fixtures.user() carries source: 'local'
+    const putHandler = vi.fn()
+    server.use(http.put('/api/v1/me/change-password', putHandler))
+    await openProfile()
+    await userEvent.type(screen.getByLabelText('Current password'), 'old-pass')
+    await userEvent.type(screen.getByLabelText('New password'), 'new-pass-long')
+    await userEvent.type(screen.getByLabelText('Confirm new password'), 'different')
+    await userEvent.click(screen.getByRole('button', { name: /Change password/ }))
+    expect(await screen.findByText('The two passwords do not match')).toBeInTheDocument()
+    expect(putHandler).not.toHaveBeenCalled()
+  })
+
+  it('changes password and signs the user out', async () => {
+    seedAuthAsAdmin()
+    server.use(
+      http.put('/api/v1/me/change-password', () => new HttpResponse(null, { status: 204 }))
+    )
+    const { stub, restore } = stubLogout()
+    try {
+      await openProfile()
+      await userEvent.type(screen.getByLabelText('Current password'), 'old-pass')
+      await userEvent.type(screen.getByLabelText('New password'), 'new-pass-long')
+      await userEvent.type(screen.getByLabelText('Confirm new password'), 'new-pass-long')
+      await userEvent.click(screen.getByRole('button', { name: /Change password/ }))
+      expect(await screen.findByText(/Password changed — please sign in again/)).toBeInTheDocument()
+      // The backend bumps tokens_valid_after, so this JWT is dead — the UI
+      // must sign out (after its grace period) rather than limp along.
+      await waitFor(() => expect(stub).toHaveBeenCalled(), { timeout: 3000 })
+      expect(localStorage.getItem('nexspence_token')).toBeNull()
+    } finally {
+      restore()
+    }
+  })
+
+  it('surfaces the server error message', async () => {
+    // A refusal the form cannot anticipate — the current password is wrong —
+    // must arrive from the server and be shown verbatim.
+    seedAuthAsAdmin()
+    server.use(
+      http.put('/api/v1/me/change-password', () =>
+        HttpResponse.json({ error: 'invalid password' }, { status: 400 })
+      )
+    )
+    await openProfile()
+    await userEvent.type(screen.getByLabelText('Current password'), 'wrong-pass')
+    await userEvent.type(screen.getByLabelText('New password'), 'new-pass-long')
+    await userEvent.type(screen.getByLabelText('Confirm new password'), 'new-pass-long')
+    await userEvent.click(screen.getByRole('button', { name: /Change password/ }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('invalid password')
+  })
+
+  it('refuses a password below the configured minimum without calling the API', async () => {
+    // The form mirrors auth.password_min_length from /api/v1/auth/config (8 in
+    // the fixture); the server still enforces it, this only saves the round trip.
+    seedAuthAsAdmin()
+    const putHandler = vi.fn()
+    server.use(http.put('/api/v1/me/change-password', putHandler))
+    await openProfile()
+    expect(screen.getByText('At least 8 characters')).toBeInTheDocument()
+    await userEvent.type(screen.getByLabelText('Current password'), 'old-pass')
+    await userEvent.type(screen.getByLabelText('New password'), 'x')
+    await userEvent.type(screen.getByLabelText('Confirm new password'), 'x')
+    await userEvent.click(screen.getByRole('button', { name: /Change password/ }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('at least 8 characters')
+    expect(putHandler).not.toHaveBeenCalled()
+  })
+})

@@ -121,7 +121,7 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 		cfg.Auth.JWTSecret,
 		cfg.Auth.JWTExpiryHours,
 		cfg.Auth.BcryptCost,
-	)
+	).WithMinPasswordLength(cfg.Auth.PasswordMinLength)
 
 	localBlob, err := storage.NewBlobStoreFromConfig(context.Background(), cfg)
 	if err != nil {

@@ -75,6 +75,9 @@ func server(t *testing.T) *httptest.Server {
 		cfg.Auth.JWTSecret = "integration-test-secret-32bytes!!"
 		cfg.Auth.JWTExpiryHours = 1
 		cfg.Auth.BcryptCost = 4
+		// Production gets this from the viper default; a zero-value config
+		// here would mean "not wired" and skip the min-length enforcement.
+		cfg.Auth.PasswordMinLength = 8
 		cfg.Storage.Local.BasePath = t.TempDir()
 		cfg.HTTP.BaseURL = baseURL
 		cfg.HTTP.MaxBodyMB = 64 // a zero-value config means "0 bytes", not "unlimited"
@@ -167,6 +170,161 @@ func TestLoginAndMe(t *testing.T) {
 	var me map[string]any
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&me))
 	assert.Equal(t, "admin", me["username"])
+}
+
+// TestSelfChangePassword covers the profile-modal flow end to end: a local
+// user changes their own password, the change revokes the caller's own JWT
+// (tokens_valid_after is bumped server-side), and only the new password
+// logs in afterwards.
+func TestSelfChangePassword(t *testing.T) {
+	admin := login(t, "admin", "admin123")
+
+	body := `{"userId":"pw-change-eve","emailAddress":"pw-change-eve@example.com","password":"firstPass123!","status":"active","roles":[]}`
+	createResp := authReq(t, http.MethodPost, "/service/rest/v1/security/users", bytes.NewBufferString(body), admin)
+	createResp.Body.Close()
+	require.Equal(t, http.StatusCreated, createResp.StatusCode)
+	t.Cleanup(func() {
+		d := authReq(t, http.MethodDelete, "/service/rest/v1/security/users/pw-change-eve", nil, admin)
+		d.Body.Close()
+	})
+	// Same second-granularity tokens_valid_after race as TestAssetGetByID.
+	_, err := pgtest.Pool(t).Exec(context.Background(),
+		`UPDATE users SET tokens_valid_after = now() - interval '1 minute' WHERE username = 'pw-change-eve'`)
+	require.NoError(t, err)
+
+	eve := login(t, "pw-change-eve", "firstPass123!")
+
+	// Too short for the wired default minimum (8) — refused before any write.
+	shortResp := authReq(t, http.MethodPut, "/api/v1/me/change-password",
+		bytes.NewBufferString(`{"oldPassword":"firstPass123!","newPassword":"tiny"}`), eve)
+	shortResp.Body.Close()
+	assert.Equal(t, http.StatusBadRequest, shortResp.StatusCode)
+
+	chgResp := authReq(t, http.MethodPut, "/api/v1/me/change-password",
+		bytes.NewBufferString(`{"oldPassword":"firstPass123!","newPassword":"secondPass456!"}`), eve)
+	chgResp.Body.Close()
+	require.Equal(t, http.StatusNoContent, chgResp.StatusCode)
+
+	// The change revoked every session, including the caller's own — a live
+	// UI would 401 on its next call, which is why it logs the user out.
+	meResp := authReq(t, http.MethodGet, "/api/v1/me", nil, eve)
+	meResp.Body.Close()
+	assert.Equal(t, http.StatusUnauthorized, meResp.StatusCode)
+
+	// The login path must also see the revocation (second-granularity iat
+	// would otherwise let a token minted in the same second pass).
+	_, err = pgtest.Pool(t).Exec(context.Background(),
+		`UPDATE users SET tokens_valid_after = now() - interval '1 minute' WHERE username = 'pw-change-eve'`)
+	require.NoError(t, err)
+
+	oldLogin, err := http.Post(server(t).URL+"/api/v1/login", "application/json",
+		bytes.NewBufferString(`{"username":"pw-change-eve","password":"firstPass123!"}`))
+	require.NoError(t, err)
+	oldLogin.Body.Close()
+	assert.Equal(t, http.StatusUnauthorized, oldLogin.StatusCode)
+
+	newToken := login(t, "pw-change-eve", "secondPass456!")
+	require.NotEmpty(t, newToken)
+}
+
+// TestAdminSelfChangePassword covers the profile modal for an nx-admin: the
+// self route verifies the current password whatever the caller's role. The
+// handler used to branch on the role and send an admin's own change through
+// the no-old-password admin verb, so the current password the form asks for
+// was accepted with any value.
+func TestAdminSelfChangePassword(t *testing.T) {
+	admin := login(t, "admin", "admin123")
+
+	// The users API binds role IDs, not role names.
+	rolesResp := authReq(t, http.MethodGet, "/service/rest/v1/security/roles", nil, admin)
+	rawRoles, err := io.ReadAll(rolesResp.Body)
+	rolesResp.Body.Close()
+	require.NoError(t, err)
+	var roles []struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
+	require.NoError(t, json.Unmarshal(rawRoles, &roles))
+	adminRoleID := ""
+	for _, role := range roles {
+		if role.Name == "nx-admin" {
+			adminRoleID = role.ID
+		}
+	}
+	require.NotEmpty(t, adminRoleID, "nx-admin role: %s", rawRoles)
+
+	body := fmt.Sprintf(`{"userId":"pw-admin-eve","emailAddress":"pw-admin-eve@example.com","password":"firstPass123!","status":"active","roles":[%q]}`, adminRoleID)
+	createResp := authReq(t, http.MethodPost, "/service/rest/v1/security/users", bytes.NewBufferString(body), admin)
+	rawCreate, _ := io.ReadAll(createResp.Body)
+	createResp.Body.Close()
+	require.Equal(t, http.StatusCreated, createResp.StatusCode, "create: %s", rawCreate)
+	t.Cleanup(func() {
+		d := authReq(t, http.MethodDelete, "/service/rest/v1/security/users/pw-admin-eve", nil, admin)
+		d.Body.Close()
+	})
+	// Same second-granularity tokens_valid_after race as TestAssetGetByID.
+	_, err = pgtest.Pool(t).Exec(context.Background(),
+		`UPDATE users SET tokens_valid_after = now() - interval '1 minute' WHERE username = 'pw-admin-eve'`)
+	require.NoError(t, err)
+
+	eve := login(t, "pw-admin-eve", "firstPass123!")
+
+	wrongResp := authReq(t, http.MethodPut, "/api/v1/me/change-password",
+		bytes.NewBufferString(`{"oldPassword":"not-the-password","newPassword":"attackerPass789!"}`), eve)
+	wrongResp.Body.Close()
+	require.Equal(t, http.StatusBadRequest, wrongResp.StatusCode,
+		"an admin's own change must still verify the current password")
+
+	// The refused attempt wrote nothing: the original password still logs in.
+	require.NotEmpty(t, login(t, "pw-admin-eve", "firstPass123!"))
+
+	// With the right current password the same route works.
+	okResp := authReq(t, http.MethodPut, "/api/v1/me/change-password",
+		bytes.NewBufferString(`{"oldPassword":"firstPass123!","newPassword":"secondPass456!"}`), eve)
+	okResp.Body.Close()
+	require.Equal(t, http.StatusNoContent, okResp.StatusCode)
+
+	_, err = pgtest.Pool(t).Exec(context.Background(),
+		`UPDATE users SET tokens_valid_after = now() - interval '1 minute' WHERE username = 'pw-admin-eve'`)
+	require.NoError(t, err)
+	require.NotEmpty(t, login(t, "pw-admin-eve", "secondPass456!"))
+}
+
+// TestAdminResetsLocalUserPassword covers the other half of the feature: an
+// admin resets someone else's local password without supplying the old one,
+// the old password stops working and the new one logs in.
+func TestAdminResetsLocalUserPassword(t *testing.T) {
+	admin := login(t, "admin", "admin123")
+
+	body := `{"userId":"pw-reset-bob","emailAddress":"pw-reset-bob@example.com","password":"firstPass123!","status":"active","roles":[]}`
+	createResp := authReq(t, http.MethodPost, "/service/rest/v1/security/users", bytes.NewBufferString(body), admin)
+	createResp.Body.Close()
+	require.Equal(t, http.StatusCreated, createResp.StatusCode)
+	t.Cleanup(func() {
+		d := authReq(t, http.MethodDelete, "/service/rest/v1/security/users/pw-reset-bob", nil, admin)
+		d.Body.Close()
+	})
+	_, err := pgtest.Pool(t).Exec(context.Background(),
+		`UPDATE users SET tokens_valid_after = now() - interval '1 minute' WHERE username = 'pw-reset-bob'`)
+	require.NoError(t, err)
+	require.NotEmpty(t, login(t, "pw-reset-bob", "firstPass123!"))
+
+	rst := authReq(t, http.MethodPut, "/service/rest/v1/security/users/pw-reset-bob/change-password",
+		bytes.NewBufferString(`{"newPassword":"adminSetPass456!"}`), admin)
+	rst.Body.Close()
+	require.Equal(t, http.StatusNoContent, rst.StatusCode)
+
+	_, err = pgtest.Pool(t).Exec(context.Background(),
+		`UPDATE users SET tokens_valid_after = now() - interval '1 minute' WHERE username = 'pw-reset-bob'`)
+	require.NoError(t, err)
+
+	oldLogin, err := http.Post(server(t).URL+"/api/v1/login", "application/json",
+		bytes.NewBufferString(`{"username":"pw-reset-bob","password":"firstPass123!"}`))
+	require.NoError(t, err)
+	oldLogin.Body.Close()
+	assert.Equal(t, http.StatusUnauthorized, oldLogin.StatusCode, "the old password must stop working")
+
+	require.NotEmpty(t, login(t, "pw-reset-bob", "adminSetPass456!"))
 }
 
 func TestRepositoryCRUD(t *testing.T) {

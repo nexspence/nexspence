@@ -161,6 +161,7 @@ uses OSV.dev and works with nothing installed.
 | `auth.jwt_secret` | — | JWT signing key. **From source / native install: set this (min 32 chars) before production.** The Docker image and Helm chart auto-generate a unique secret when it is unset. |
 | `auth.encryption_key` | — | Optional base64 32-byte key for replication credentials (decouples them from `jwt_secret`; existing rows are re-encrypted automatically at startup). Generate: `openssl rand -base64 32` |
 | `auth.jwt_expiry_hours` | `24` | JWT token lifetime |
+| `auth.password_min_length` | `8` | Minimum length enforced on every locally-set password (user creation, self-service change in the profile modal, admin reset). The UI mirrors the value from `/api/v1/auth/config` so the forms state the rule, but the service layer is what enforces it. LDAP / OIDC / SAML accounts have no local password and are excluded. |
 | `auth.anonymous_enabled` | `true` | Instance-wide switch for unauthenticated reads. `false` refuses them everywhere, overriding any repository's `allow_anonymous`. |
 | `auth.token_max_days` | `180` | Maximum lifetime for user API tokens (`nxs_*`) |
 | `outbound.allowed_internal_cidrs` | `[]` | Internal ranges the SSRF guard may reach for proxy, webhook and replication targets. Empty refuses every loopback/private/link-local/CGNAT address. |

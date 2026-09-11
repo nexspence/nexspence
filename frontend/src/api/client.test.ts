@@ -305,6 +305,19 @@ describe('nexusApi helpers', () => {
     expect(res.status).toBe(200)
   })
 
+  it('changeMyPassword calls PUT /api/v1/me/change-password with both passwords', async () => {
+    let capturedBody: Record<string, unknown> | null = null
+    server.use(
+      http.put('/api/v1/me/change-password', async ({ request }) => {
+        capturedBody = (await request.json()) as Record<string, unknown>
+        return new HttpResponse(null, { status: 204 })
+      })
+    )
+    const res = await nexusApi.changeMyPassword('old-pass', 'new-pass')
+    expect(res.status).toBe(204)
+    expect(capturedBody).toEqual({ oldPassword: 'old-pass', newPassword: 'new-pass' })
+  })
+
   it('listRoles calls GET /service/rest/v1/security/roles', async () => {
     const res = await nexusApi.listRoles()
     expect(Array.isArray(res.data)).toBe(true)

@@ -301,6 +301,35 @@ paths:
         '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/User' } } } }
         '401': { description: Unauthorized }
 
+  /api/v1/me/change-password:
+    put:
+      tags: [Auth]
+      summary: Change your own password
+      description: >
+        Self-service change for the authenticated user. `oldPassword` is always
+        verified, whatever the caller's role — the admin reset that skips it
+        lives on the `{userId}` route below. Only local accounts have a password
+        here: ldap/oidc/saml credentials belong to the identity provider and are
+        refused with 403. A successful change bumps the JWT cutoff, so every
+        existing browser session (including the caller's) stops working;
+        `nxs_*` API tokens are separate credentials and keep working.
+      operationId: changeMyPassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [oldPassword, newPassword]
+              properties:
+                oldPassword: { type: string }
+                newPassword: { type: string, description: 'At least `auth.password_min_length` characters' }
+      responses:
+        '204': { description: Changed }
+        '400': { description: Wrong current password, or the new one is below auth.password_min_length }
+        '401': { description: Unauthorized }
+        '403': { description: The account's password is managed by an identity provider }
+
   # ── Metrics (Nexspence-native) ───────────────────────────────────
 
   /metrics:
@@ -650,17 +679,30 @@ paths:
   /service/rest/v1/security/users/{userId}/change-password:
     put:
       tags: [Security]
-      summary: Change user password
+      summary: Reset a user's password (admin)
+      description: >
+        Admin reset: no `oldPassword` is required. Only local accounts can be
+        reset — ldap/oidc/saml credentials belong to the identity provider and
+        are refused with 403. The reset bumps the target's JWT cutoff, ending
+        their existing browser sessions. Users changing their own password use
+        `/api/v1/me/change-password`, which always verifies the current one.
       operationId: changePassword
       parameters:
         - { name: userId, in: path, required: true, schema: { type: string } }
       requestBody:
         required: true
         content:
-          text/plain:
-            schema: { type: string }
+          application/json:
+            schema:
+              type: object
+              required: [newPassword]
+              properties:
+                newPassword: { type: string, description: 'At least `auth.password_min_length` characters' }
       responses:
         '204': { description: Changed }
+        '400': { description: The new password is below auth.password_min_length }
+        '403': { description: The account's password is managed by an identity provider }
+        '404': { description: No such user }
 
   # ── Security — Roles ─────────────────────────────────────────
 

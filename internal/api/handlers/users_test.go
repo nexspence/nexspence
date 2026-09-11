@@ -96,6 +96,80 @@ func TestUserHandler_SelfChangePassword_OwnPassword_NoContent(t *testing.T) {
 	assert.Equal(t, http.StatusNoContent, rec.Code)
 }
 
+func TestUserHandler_SelfChangePassword_AdminStillNeedsOldPassword(t *testing.T) {
+	// The self route verifies the current password whatever the caller's role.
+	// Branching on the role instead sent an admin's own change through the
+	// no-old-password admin verb, so the "Current password" the profile modal
+	// asks for was accepted with any value — a stolen session (or an unattended
+	// browser) could take the account over without knowing it.
+	r, users := mountSelfChangePassword(t, "admin", []string{"nx-admin"})
+	authSvc := auth.NewService("test-secret-32-chars-long-here!!", 1, 4)
+	hash, err := authSvc.HashPassword("real-old-pw")
+	require.NoError(t, err)
+	require.NoError(t, users.Create(testContext(), &domain.User{
+		Username: "admin", Email: "admin@test.com", PasswordHash: hash,
+		Status: domain.UserStatusActive, Source: domain.UserSourceLocal,
+	}))
+
+	rec := do(t, r, http.MethodPut, "/api/v1/me/change-password", map[string]any{
+		"oldPassword": "wrong-pw",
+		"newPassword": "attacker-chosen-pw",
+	})
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+
+	stored, err := users.Get(testContext(), "admin")
+	require.NoError(t, err)
+	assert.Error(t, authSvc.CheckPassword(stored.PasswordHash, "attacker-chosen-pw"),
+		"a wrong current password must not rewrite the stored hash")
+	assert.NoError(t, authSvc.CheckPassword(stored.PasswordHash, "real-old-pw"))
+}
+
+func TestUserHandler_SelfChangePassword_AdminCorrectOldPassword_NoContent(t *testing.T) {
+	// The flip side: the admin's own change still works with the right password.
+	r, users := mountSelfChangePassword(t, "admin", []string{"nx-admin"})
+	authSvc := auth.NewService("test-secret-32-chars-long-here!!", 1, 4)
+	hash, err := authSvc.HashPassword("real-old-pw")
+	require.NoError(t, err)
+	require.NoError(t, users.Create(testContext(), &domain.User{
+		Username: "admin", Email: "admin@test.com", PasswordHash: hash,
+		Status: domain.UserStatusActive, Source: domain.UserSourceLocal,
+	}))
+
+	rec := do(t, r, http.MethodPut, "/api/v1/me/change-password", map[string]any{
+		"oldPassword": "real-old-pw",
+		"newPassword": "brand-new-pw",
+	})
+	require.Equal(t, http.StatusNoContent, rec.Code)
+
+	stored, err := users.Get(testContext(), "admin")
+	require.NoError(t, err)
+	assert.NoError(t, authSvc.CheckPassword(stored.PasswordHash, "brand-new-pw"))
+}
+
+func TestUserHandler_AdminRoute_ResetsOwnPasswordWithoutOldPassword(t *testing.T) {
+	// The admin route keeps the no-old-password reset, including on the admin's
+	// own account — that is the Users-page reset button, and narrowing the self
+	// route must not take it away.
+	r, users := mountChangePassword(t, "admin", []string{"nx-admin"})
+	authSvc := auth.NewService("test-secret-32-chars-long-here!!", 1, 4)
+	hash, err := authSvc.HashPassword("real-old-pw")
+	require.NoError(t, err)
+	require.NoError(t, users.Create(testContext(), &domain.User{
+		Username: "admin", Email: "admin@test.com", PasswordHash: hash,
+		Status: domain.UserStatusActive, Source: domain.UserSourceLocal,
+	}))
+
+	rec := do(t, r, http.MethodPut,
+		"/service/rest/v1/security/users/admin/change-password", map[string]any{
+			"newPassword": "brand-new-pw",
+		})
+	require.Equal(t, http.StatusNoContent, rec.Code)
+
+	stored, err := users.Get(testContext(), "admin")
+	require.NoError(t, err)
+	assert.NoError(t, authSvc.CheckPassword(stored.PasswordHash, "brand-new-pw"))
+}
+
 func TestUserHandler_SelfChangePassword_CannotTargetOther(t *testing.T) {
 	// The admin route requires the :userId param. A non-admin hitting the admin
 	// route for another user is forbidden (proves self cannot change others).
@@ -244,6 +318,27 @@ func TestUserHandler_Create_MissingUsername_400(t *testing.T) {
 		"password":     "pw",
 	})
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestUserHandler_Create_PasswordTooShort_400(t *testing.T) {
+	// POST parity with the change-password verbs: on a service wired with the
+	// configured minimum (as router.go does), a short initial password is a
+	// 400 — not the 500 an unmapped service error used to produce.
+	users := testutil.NewUserRepo()
+	authSvc := auth.NewService("test-secret-32-chars-long-here!!", 1, 4).WithMinPasswordLength(8)
+	h := handlers.NewUserHandler(service.NewUserService(users, testutil.NewRoleRepo(), authSvc, zap.NewNop().Sugar()))
+	r := gin.New()
+	r.POST("/service/rest/v1/security/users", h.Create)
+	rec := do(t, r, http.MethodPost, "/service/rest/v1/security/users", map[string]any{
+		"userId":   "tiny",
+		"password": "short",
+	})
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "too short")
+
+	got, err := users.Get(testContext(), "tiny")
+	require.ErrorIs(t, err, repository.ErrNotFound)
+	assert.Nil(t, got)
 }
 
 func TestUserHandler_Create_Duplicate_409(t *testing.T) {
@@ -480,4 +575,97 @@ func TestUserHandler_ChangePassword_OtherUser_Forbidden_403(t *testing.T) {
 			"newPassword": "new",
 		})
 	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+func TestUserHandler_ChangePassword_AdminResetNonLocal_403(t *testing.T) {
+	// An admin resetting an oidc account is refused server-side: the identity
+	// provider owns that credential, writing a local hash would do nothing.
+	r, users := mountChangePassword(t, "admin", []string{"nx-admin"})
+	require.NoError(t, users.Create(testContext(), &domain.User{
+		Username: "sso-user", Email: "sso@test.com",
+		Status: domain.UserStatusActive, Source: domain.UserSourceOIDC,
+	}))
+	rec := do(t, r, http.MethodPut,
+		"/service/rest/v1/security/users/sso-user/change-password", map[string]any{
+			"newPassword": "brand-new-pw",
+		})
+	require.Equal(t, http.StatusForbidden, rec.Code)
+	assert.Contains(t, rec.Body.String(), "identity provider")
+
+	stored, err := users.Get(testContext(), "sso-user")
+	require.NoError(t, err)
+	assert.Empty(t, stored.PasswordHash)
+}
+
+func TestUserHandler_SelfChangePassword_NonLocal_403(t *testing.T) {
+	// A self-change on an ldap account must answer "password is managed by
+	// the identity provider" — not bcrypt's confusing "invalid password"
+	// from the empty local hash.
+	r, users := mountSelfChangePassword(t, "ldap-user", []string{})
+	require.NoError(t, users.Create(testContext(), &domain.User{
+		Username: "ldap-user", Email: "ldap@test.com",
+		Status: domain.UserStatusActive, Source: domain.UserSourceLDAP,
+	}))
+	rec := do(t, r, http.MethodPut, "/api/v1/me/change-password", map[string]any{
+		"oldPassword": "whatever",
+		"newPassword": "brand-new-pw",
+	})
+	require.Equal(t, http.StatusForbidden, rec.Code)
+	assert.Contains(t, rec.Body.String(), "identity provider")
+}
+
+func TestUserHandler_ChangePassword_RejectsTooShort(t *testing.T) {
+	// Both verbs on a service wired with the configured minimum (as router.go
+	// does) answer 400 before anything is written.
+	mount := func(t *testing.T, caller string, roles []string) (*gin.Engine, *testutil.UserRepo) {
+		t.Helper()
+		users := testutil.NewUserRepo()
+		roleRepo := testutil.NewRoleRepo()
+		authSvc := auth.NewService("test-secret-32-chars-long-here!!", 1, 4).WithMinPasswordLength(8)
+		h := handlers.NewUserHandler(service.NewUserService(users, roleRepo, authSvc, zap.NewNop().Sugar()))
+		r := gin.New()
+		wrap := func(c *gin.Context) {
+			c.Set("username", caller)
+			c.Set("roles", roles)
+			h.ChangePassword(c)
+		}
+		r.PUT("/service/rest/v1/security/users/:userId/change-password", wrap)
+		r.PUT("/api/v1/me/change-password", wrap)
+		return r, users
+	}
+
+	t.Run("admin reset", func(t *testing.T) {
+		r, users := mount(t, "admin", []string{"nx-admin"})
+		require.NoError(t, users.Create(testContext(), &domain.User{
+			Username: "target", Email: "target@test.com",
+			Status: domain.UserStatusActive, Source: domain.UserSourceLocal,
+		}))
+		rec := do(t, r, http.MethodPut,
+			"/service/rest/v1/security/users/target/change-password", map[string]any{
+				"newPassword": "short",
+			})
+		require.Equal(t, http.StatusBadRequest, rec.Code)
+		assert.Contains(t, rec.Body.String(), "too short")
+
+		stored, err := users.Get(testContext(), "target")
+		require.NoError(t, err)
+		assert.Empty(t, stored.PasswordHash)
+	})
+
+	t.Run("self change", func(t *testing.T) {
+		r, users := mount(t, "self", []string{})
+		authSvc := auth.NewService("test-secret-32-chars-long-here!!", 1, 4)
+		hash, err := authSvc.HashPassword("old-password")
+		require.NoError(t, err)
+		require.NoError(t, users.Create(testContext(), &domain.User{
+			Username: "self", Email: "self@test.com", PasswordHash: hash,
+			Status: domain.UserStatusActive, Source: domain.UserSourceLocal,
+		}))
+		rec := do(t, r, http.MethodPut, "/api/v1/me/change-password", map[string]any{
+			"oldPassword": "old-password",
+			"newPassword": "short",
+		})
+		require.Equal(t, http.StatusBadRequest, rec.Code)
+		assert.Contains(t, rec.Body.String(), "too short")
+	})
 }

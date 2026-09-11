@@ -56,6 +56,11 @@ func (h *AuthHandler) Config(c *gin.Context) {
 		"samlEnabled":     samlOn,
 		"samlDisplayName": h.cfg.SAML.DisplayName,
 		"samlLoginUrl":    "/api/v1/auth/saml/login",
+		// auth.password_min_length, so the password forms can state the rule
+		// instead of letting the user discover it through a 400. The service
+		// layer stays the authority — this is a mirror, not the check. Zero
+		// means "not wired", which the UI reads as "do not constrain".
+		"passwordMinLength": h.cfg.Auth.PasswordMinLength,
 	}
 	if h.cfg.SAML.Enabled {
 		resp["samlEntityId"] = h.cfg.SAML.SPEntityID
@@ -113,6 +118,10 @@ func (h *AuthHandler) Login(c *gin.Context) {
 			"firstName": user.FirstName,
 			"lastName":  user.LastName,
 			"roles":     user.Roles,
+			// The profile modal hides the local-password section for SSO
+			// accounts; without source here the UI only learns it after a
+			// refresh (when init() refetches /api/v1/me).
+			"source": user.Source,
 		},
 	})
 }

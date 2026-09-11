@@ -5,6 +5,8 @@ import { nexusApi, apiClient, apiErrorMessage } from '@/api/client'
 import styles from './UsersPage.module.css'
 import { Select } from '../components/Select'
 import { HoloTabs, HoloPill, HoloButton, HoloInput, HoloModal, HoloCard } from '@/components/holo'
+import { useAuthStore } from '@/store/authStore'
+import { usePasswordMinLength, tooShort, passwordTooShortMessage } from '@/hooks/usePasswordPolicy'
 
 /* ─── Types ─────────────────────────────────────────────────── */
 interface UserItem {
@@ -247,8 +249,9 @@ export function EditUserModal({ user, onClose, onSaved }: {
 
 /* ─── Reset password modal ──────────────────────────────────── */
 // An admin resetting somebody else's password does not send a current one:
-// the backend's ChangePassword takes the SetPassword branch for a caller with
-// nx-admin, and only asks for oldPassword when a user changes their own.
+// this is the admin route (:userId in the path), which takes the SetPassword
+// branch. The self route — the profile modal — always verifies the current
+// password, whatever the caller's role.
 export function ResetPasswordModal({ user, onClose, onSaved }: {
   user: UserItem
   onClose: () => void
@@ -258,10 +261,16 @@ export function ResetPasswordModal({ user, onClose, onSaved }: {
   const [confirmation, setConfirmation] = useState('')
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
+  const minLength = usePasswordMinLength()
+  // Resetting your own password revokes your own sessions too, so the page
+  // would simply bounce to /login on its next call. Say so beforehand rather
+  // than letting it look like a crash.
+  const isSelf = useAuthStore(s => s.user?.username) === user.userId
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (password !== confirmation) { setErr('The two passwords do not match'); return }
+    if (tooShort(password, minLength)) { setErr(passwordTooShortMessage(minLength as number)); return }
     setSaving(true); setErr('')
     try {
       await nexusApi.changePassword(user.userId, password)
@@ -277,12 +286,21 @@ export function ResetPasswordModal({ user, onClose, onSaved }: {
       <form onSubmit={submit} className={styles.form}>
         <div className={styles.formRow}>
           <label className={styles.label} htmlFor="reset-password">New password *</label>
-          <HoloInput id="reset-password" type="password" value={password} onChange={e => setPassword(e.target.value)} required />
+          <HoloInput id="reset-password" type="password" value={password} onChange={e => setPassword(e.target.value)} required autoComplete="new-password" />
+          {minLength !== undefined && (
+            <div style={{ fontSize: 11, color: 'var(--holo-text-faint)' }}>At least {minLength} characters</div>
+          )}
         </div>
         <div className={styles.formRow}>
           <label className={styles.label} htmlFor="reset-password-confirm">Confirm new password *</label>
-          <HoloInput id="reset-password-confirm" type="password" value={confirmation} onChange={e => setConfirmation(e.target.value)} required />
+          <HoloInput id="reset-password-confirm" type="password" value={confirmation} onChange={e => setConfirmation(e.target.value)} required autoComplete="new-password" />
         </div>
+        {isSelf && (
+          <div style={{ fontSize: 11, color: 'var(--holo-text-faint)' }}>
+            This is your own account — the reset revokes every browser session,
+            including this one, and you will be asked to sign in again.
+          </div>
+        )}
         {err && <div role="alert" className={styles.error}>{err}</div>}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 8 }}>
           <HoloButton type="button" onClick={onClose}>Cancel</HoloButton>
@@ -390,9 +408,9 @@ export function UsersTab() {
                   title={user.source !== 'local'
                     ? `A ${user.source} account's profile is re-provisioned from the identity provider on every login`
                     : 'Edit user'}><Pencil size={14} /></HoloButton>
-                <HoloButton style={{ padding: 5 }} disabled={user.source === 'ldap'} onClick={() => setResetUser(user)}
-                  title={user.source === 'ldap'
-                    ? 'LDAP users authenticate against the directory — a local password is never checked'
+                <HoloButton style={{ padding: 5 }} disabled={user.source !== 'local'} onClick={() => setResetUser(user)}
+                  title={user.source !== 'local'
+                    ? `A ${user.source} account's password is managed by the identity provider`
                     : 'Reset password'}><KeyRound size={14} /></HoloButton>
                 <HoloButton variant="danger" style={{ padding: 5 }} disabled={user.userId === 'admin'} onClick={() => {
                   if (confirm(`Delete user "${user.userId}"?`)) deleteMutation.mutate(user.userId)
@@ -556,9 +574,14 @@ export function CreateUserModal({ onClose, onCreated }: { onClose: () => void; o
   const [form, setForm] = useState({ userId: '', emailAddress: '', firstName: '', lastName: '', password: '', status: 'active' })
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const minLength = usePasswordMinLength()
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault(); setError(''); setLoading(true)
+    e.preventDefault()
+    // The initial password goes through the same minimum as every later
+    // change; catching it here saves a round trip that would only 400.
+    if (tooShort(form.password, minLength)) { setError(passwordTooShortMessage(minLength as number)); return }
+    setError(''); setLoading(true)
     try {
       await nexusApi.createUser({ ...form })
       onCreated()
@@ -577,7 +600,10 @@ export function CreateUserModal({ onClose, onCreated }: { onClose: () => void; o
         </div>
         <div className={styles.formRow}>
           <label className={styles.label}>Password *</label>
-          <HoloInput type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} required />
+          <HoloInput type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} required autoComplete="new-password" />
+          {minLength !== undefined && (
+            <div style={{ fontSize: 11, color: 'var(--holo-text-faint)' }}>At least {minLength} characters</div>
+          )}
         </div>
         <div className={styles.formGrid}>
           <div className={styles.formRow}>

@@ -9,7 +9,8 @@ import {
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import styles from './Layout.module.css'
 import { useAuthStore } from '@/store/authStore'
-import { apiClient } from '@/api/client'
+import { apiClient, nexusApi, apiErrorMessage } from '@/api/client'
+import { usePasswordMinLength, tooShort, passwordTooShortMessage } from '@/hooks/usePasswordPolicy'
 import logo from '@/assets/logo.png'
 import miniLogo from '@/assets/mini_logo.png'
 import { HoloApp, HoloModal, HoloButton, HoloInput } from '@/components/holo'
@@ -88,6 +89,44 @@ function ProfileModal({ onClose }: { onClose: () => void }) {
     mutationFn: (id: string) => apiClient.delete(`/api/v1/tokens/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['my-tokens'] }),
   })
+
+  // ── Change password (local accounts only) ─────────────────
+  const [curPw, setCurPw] = useState('')
+  const [newPw, setNewPw] = useState('')
+  const [confirmPw, setConfirmPw] = useState('')
+  const [pwErr, setPwErr] = useState('')
+  const [pwChanged, setPwChanged] = useState(false)
+  const pwMinLength = usePasswordMinLength()
+
+  // A missing source predates the field (an older build issued the session) —
+  // treat it as local so dev/bootstrap keeps working; only a *known* external
+  // source hides the section (no dead inputs for SSO users).
+  const isLocalAccount = !user?.source || user.source === 'local'
+
+  const changePw = useMutation({
+    mutationFn: ({ oldPassword, newPassword }: { oldPassword: string; newPassword: string }) =>
+      nexusApi.changeMyPassword(oldPassword, newPassword),
+    onSuccess: () => {
+      setPwChanged(true)
+      // The backend revokes every JWT on a password change (tokens_valid_after
+      // is bumped) — including this session's. Keeping the UI "logged in" would
+      // just 401 on the next call, so the honest UX is to sign the user out
+      // here and have them return with the new password. The store singleton is
+      // read fresh so this logout is the live one, not a stale render closure.
+      setTimeout(() => useAuthStore.getState().logout(), 1500)
+    },
+    onError: (e) => setPwErr(apiErrorMessage(e, 'Failed to change password')),
+  })
+
+  function submitPasswordChange(e: React.FormEvent) {
+    e.preventDefault()
+    if (newPw !== confirmPw) { setPwErr('The two passwords do not match'); return }
+    // A mirror of the server rule, so the user is told before the round trip.
+    // The server still enforces it — an unknown minimum just submits.
+    if (tooShort(newPw, pwMinLength)) { setPwErr(passwordTooShortMessage(pwMinLength as number)); return }
+    setPwErr('')
+    changePw.mutate({ oldPassword: curPw, newPassword: newPw })
+  }
 
   const S = {
     header:    { display: 'flex', alignItems: 'center', justifyContent: 'space-between' },
@@ -211,6 +250,45 @@ function ProfileModal({ onClose }: { onClose: () => void }) {
               )
           }
         </div>
+
+        {isLocalAccount && (pwChanged ? (
+          <div className="holo-card" style={{ padding: 16, background: 'rgba(94,255,184,0.08)', border: '1px solid rgba(94,255,184,0.25)' }}>
+            <div style={{ fontSize: 13, color: 'var(--holo-green)', fontWeight: 600 }}>
+              Password changed — please sign in again.
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--holo-text-faint)', marginTop: 4 }}>
+              Signing you out… every browser session was revoked. API tokens are
+              separate credentials and keep working.
+            </div>
+          </div>
+        ) : (
+          <div className="holo-card" style={{ padding: 16 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--holo-text)', marginBottom: 10 }}>Change Password</div>
+            <form onSubmit={submitPasswordChange} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <label htmlFor="cur-password" style={{ fontSize: 12, color: 'var(--holo-text-faint)' }}>Current password</label>
+                <HoloInput id="cur-password" type="password" value={curPw} onChange={e => setCurPw(e.target.value)} required autoComplete="current-password" />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <label htmlFor="new-password" style={{ fontSize: 12, color: 'var(--holo-text-faint)' }}>New password</label>
+                <HoloInput id="new-password" type="password" value={newPw} onChange={e => setNewPw(e.target.value)} required autoComplete="new-password" />
+                {pwMinLength !== undefined && (
+                  <div style={{ fontSize: 11, color: 'var(--holo-text-faint)' }}>At least {pwMinLength} characters</div>
+                )}
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <label htmlFor="new-password-confirm" style={{ fontSize: 12, color: 'var(--holo-text-faint)' }}>Confirm new password</label>
+                <HoloInput id="new-password-confirm" type="password" value={confirmPw} onChange={e => setConfirmPw(e.target.value)} required autoComplete="new-password" />
+              </div>
+              {pwErr && <div role="alert" style={{ fontSize: 11, color: 'var(--holo-red)' }}>{pwErr}</div>}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 4 }}>
+                <HoloButton variant="primary" type="submit" disabled={changePw.isPending}>
+                  {changePw.isPending ? 'Saving…' : 'Change password'}
+                </HoloButton>
+              </div>
+            </form>
+          </div>
+        ))}
       </div>
     </HoloModal>
   )

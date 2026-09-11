@@ -1215,6 +1215,7 @@ curl -u admin:admin123 \
     <div class="step-item"><div class="step-num">01</div><div><div class="step-title" data-i18n="usr.create.title">Create a user</div><div class="step-desc" data-i18n="usr.create.desc">Go to <strong>Admin → Security → Users</strong>. Click <strong>+ Create User</strong>. Fill in username, email, first/last name, and initial password. Assign roles immediately or later.</div></div></div>
     <div class="step-item"><div class="step-num">02</div><div><div class="step-title" data-i18n="usr.roles.title">Assign roles</div><div class="step-desc" data-i18n="usr.roles.desc">Open a user and click <strong>Assign Roles</strong>. Select roles from the transfer list. The built-in <code>nx-admin</code> role grants full access; custom roles control per-repository access via privileges.</div></div></div>
     <div class="step-item"><div class="step-num">03</div><div><div class="step-title" data-i18n="usr.ldap.title">LDAP / Active Directory</div><div class="step-desc" data-i18n="usr.ldap.desc">Configure LDAP in <code>config.yaml</code> under the <code>ldap</code> section. Users are provisioned on first login (JIT). Groups map to Nexspence roles via <code>role_mappings</code>.</div></div></div>
+    <div class="step-item"><div class="step-num">04</div><div><div class="step-title" data-i18n="usr.changepw.title">Change your password</div><div class="step-desc" data-i18n="usr.changepw.desc">Local accounts change their own password via <strong>avatar → Profile → Change Password</strong>; admins reset any local account's password under <strong>Admin → Security → Users</strong>. A password change signs every session out — sign in again with the new password. LDAP / OIDC / SAML accounts have no local password: the identity provider owns that credential, and Nexspence refuses local changes for them. The minimum length is set by <code>auth.password_min_length</code>.</div></div></div>
   </div>
   <div class="cb"><div class="cb-bar"><span>curl — create user via API</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
   <div class="cb-body">curl -u admin:admin123 -X POST \
@@ -1701,14 +1702,14 @@ export NEXSPENCE_OIDC_CLIENT_SECRET="..."</div></div>
   </table>
 
   <div class="inst-sep" data-i18n="sec.selfservice.sep">Self-Service Password Change</div>
-  <p style="font-size:.8rem;color:var(--dim);margin-bottom:10px;line-height:1.6" data-i18n="sec.selfservice.desc">Any non-admin user can rotate their own password without an administrator. Changing the password bumps the JWT cutoff, so existing sessions are invalidated.</p>
+  <p style="font-size:.8rem;color:var(--dim);margin-bottom:10px;line-height:1.6" data-i18n="sec.selfservice.desc">Any local user — administrators included — can rotate their own password without help. The current password is always required on this route, whatever the caller’s role. Changing the password bumps the JWT cutoff, so every browser session is invalidated; API tokens are separate credentials and keep working.</p>
   <div class="cb"><div class="cb-bar"><span>curl — change own password</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
   <div class="cb-body">curl -X PUT http://localhost:8081/api/v1/me/change-password \
   -H "Authorization: Bearer $JWT" \
   -H "Content-Type: application/json" \
   -d '{
-    "current_password": "old-pass",
-    "new_password": "a-much-stronger-pass"
+    "oldPassword": "old-pass",
+    "newPassword": "a-much-stronger-pass"
   }'</div></div>
       </section>
       <section id="sec-formats" class="doc-section" hidden>
@@ -1888,6 +1889,7 @@ const TRANSLATIONS={
     'usr.create.title':'Create a user','usr.create.desc':'Go to <strong>Admin → Security → Users</strong>. Click <strong>+ Create User</strong>. Assign roles immediately or later.',
     'usr.roles.title':'Assign roles','usr.roles.desc':'Open a user and click <strong>Assign Roles</strong>. The built-in <code>nx-admin</code> role grants full access; custom roles control per-repository access.',
     'usr.ldap.title':'LDAP / Active Directory','usr.ldap.desc':'Configure LDAP in <code>config.yaml</code> under the <code>ldap</code> section. Users are provisioned on first login (JIT).',
+    'usr.changepw.title':'Change your password','usr.changepw.desc':'Local accounts change their own password via <strong>avatar → Profile → Change Password</strong>; admins reset any local account\u0027s password under <strong>Admin → Security → Users</strong>. A password change signs every session out. LDAP / OIDC / SAML accounts have no local password.',
     'usr.token.create.title':'Create a token','usr.token.create.desc':'Open your profile → <strong>API Tokens</strong>. Click <strong>Generate Token</strong>. The token is shown <strong>once</strong> — copy it immediately.',
     'usr.token.use.title':'Use the token','usr.token.use.desc':'Tokens start with <code>nxs_</code>. Use as Bearer token or as HTTP Basic password.',
     'usr.token.limit.note':'<strong>Token expiry:</strong> Maximum lifetime is controlled by <code>auth.token_max_days</code> in <code>config.yaml</code> (default 180 days). Tokens are hashed — never stored as plaintext.',
@@ -2005,7 +2007,7 @@ const TRANSLATIONS={
     'sec.supply.release.label':'Release artifacts','sec.supply.release.desc':'Releases publish an SBOM and build provenance, and the image is scanned with Trivy.',
     'sec.supply.actions.label':'Pinned Actions','sec.supply.actions.desc':'All GitHub Actions are pinned to commit SHAs to prevent tag-hijack supply-chain attacks.',
     'sec.selfservice.sep':'Self-Service Password Change',
-    'sec.selfservice.desc':'Any non-admin user can rotate their own password without an administrator. Changing the password bumps the JWT cutoff, so existing sessions are invalidated.',
+    'sec.selfservice.desc':'Any local user — administrators included — can rotate their own password without help. The current password is always required on this route, whatever the caller’s role. Changing the password bumps the JWT cutoff, so every browser session is invalidated; API tokens are separate credentials and keep working.',
     'upg.title':'Upgrading',
     'upg.sub':'Moving an existing deployment to a newer Nexspence release — pick your install method below.',
 'upg.method.sep':'Upgrade by Install Method',
@@ -2259,6 +2261,7 @@ const TRANSLATIONS={
     'usr.create.title':'Создание пользователя','usr.create.desc':'Перейдите в <strong>Admin → Security → Users</strong>. Нажмите <strong>+ Create User</strong>.',
     'usr.roles.title':'Назначение ролей','usr.roles.desc':'Откройте пользователя и нажмите <strong>Assign Roles</strong>. Встроенная роль <code>nx-admin</code> даёт полный доступ.',
     'usr.ldap.title':'LDAP / Active Directory','usr.ldap.desc':'Настройте LDAP в <code>config.yaml</code> в разделе <code>ldap</code>. Пользователи создаются при первом входе (JIT).',
+    'usr.changepw.title':'Смена пароля','usr.changepw.desc':'Локальные аккаунты меняют пароль через <strong>аватар → Profile → Change Password</strong>; администратор сбрасывает пароль локального аккаунта в <strong>Admin → Security → Users</strong>. Смена пароля завершает все сессии. У аккаунтов LDAP / OIDC / SAML локального пароля нет.',
     'usr.token.create.title':'Создание токена','usr.token.create.desc':'Откройте профиль → <strong>API Tokens</strong>. Нажмите <strong>Generate Token</strong>. Токен показывается <strong>один раз</strong> — скопируйте сразу.',
     'usr.token.use.title':'Использование токена','usr.token.use.desc':'Токены начинаются с <code>nxs_</code>. Используйте как Bearer-токен или пароль в HTTP Basic.',
     'usr.token.limit.note':'<strong>Срок действия:</strong> максимальный срок задаётся параметром <code>auth.token_max_days</code> в <code>config.yaml</code> (по умолчанию 180 дней). Токены хранятся в виде SHA-256 хеша.',
@@ -2376,7 +2379,7 @@ const TRANSLATIONS={
     'sec.supply.release.label':'Артефакты релиза','sec.supply.release.desc':'Релизы публикуют SBOM и provenance сборки, а образ сканируется через Trivy.',
     'sec.supply.actions.label':'Закреплённые Actions','sec.supply.actions.desc':'Все GitHub Actions закреплены по SHA коммитов для защиты от атак на цепочку поставок через перехват тегов.',
     'sec.selfservice.sep':'Самостоятельная смена пароля',
-    'sec.selfservice.desc':'Любой пользователь без прав администратора может сменить свой пароль без участия администратора. Смена пароля обновляет отметку JWT, поэтому существующие сессии становятся недействительными.',
+    'sec.selfservice.desc':'Любой локальный пользователь, включая администраторов, может сам сменить свой пароль. Текущий пароль на этом маршруте требуется всегда, независимо от роли. Смена пароля обновляет отметку JWT, поэтому все сессии в браузере становятся недействительными; токены API продолжают работать.',
     'upg.title':'Обновление',
     'upg.sub':'Перевод существующего развёртывания на новую версию Nexspence — выберите свой способ установки.',
 'upg.method.sep':'Обновление по способу установки',

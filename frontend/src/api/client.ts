@@ -67,6 +67,9 @@ export interface AuthConfig {
   samlIdpMetadataUrl?: string
   samlProvisioning?: string
   samlMetadataUrl?: string
+  // auth.password_min_length, mirrored by the password forms. Optional: a
+  // server predating the field omits it, and 0 means the setting is unwired.
+  passwordMinLength?: number
 }
 
 export interface ServiceStatus {
@@ -269,6 +272,10 @@ export const nexusApi = {
       `/service/rest/v1/security/users/${encodeURIComponent(userId)}/change-password`,
       { oldPassword, newPassword },
     ),
+  // Self-service change (avatar → Profile): always sends the current password;
+  // the route derives the target user from the session, no :userId.
+  changeMyPassword: (oldPassword: string, newPassword: string) =>
+    apiClient.put('/api/v1/me/change-password', { oldPassword, newPassword }),
 
   // Roles
   listRoles: () => apiClient.get('/service/rest/v1/security/roles'),

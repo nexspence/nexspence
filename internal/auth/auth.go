@@ -35,6 +35,10 @@ type Service struct {
 	secret     []byte
 	expiryHrs  int
 	bcryptCost int
+	// minPasswordLen is auth.password_min_length; 0 means "not wired" and
+	// disables the check, so every constructor that predates the setting
+	// (tests, bootstrap wiring) keeps working.
+	minPasswordLen int
 }
 
 // NewService creates an auth Service with the given JWT signing secret, token expiry in hours, and bcrypt cost.
@@ -45,6 +49,22 @@ func NewService(secret string, expiryHrs, bcryptCost int) *Service {
 		bcryptCost: bcryptCost,
 	}
 }
+
+// WithMinPasswordLength attaches the configured minimum password length and
+// returns the same service for chaining. The setting used to be read from
+// config and never enforced anywhere; this is what feeds it to the service
+// layer's password validation.
+func (s *Service) WithMinPasswordLength(n int) *Service {
+	if n < 0 {
+		n = 0
+	}
+	s.minPasswordLen = n
+	return s
+}
+
+// MinPasswordLength returns the configured minimum password length, or 0 when
+// no minimum is wired (callers must then skip the check, not reject everything).
+func (s *Service) MinPasswordLength() int { return s.minPasswordLen }
 
 // GenerateToken creates a signed JWT for the given user.
 func (s *Service) GenerateToken(userID, username string, roles []string) (string, error) {

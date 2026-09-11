@@ -175,7 +175,7 @@ Pure business logic; no HTTP concerns; depend only on repository interfaces.
 | Service | Responsibility |
 |---------|----------------|
 | `RepositoryService` | CRUD + group member validation + proxy URL validation + cleanup policy ID validation + quota field persistence |
-| `UserService` | User CRUD, bcrypt password, role assignment, JWT issuance; LDAP login reloads roles from DB after sync |
+| `UserService` | User CRUD, bcrypt password, role assignment, JWT issuance; LDAP login reloads roles from DB after sync. Password writes (`Create`/`ChangePassword`/`SetPassword`) enforce `auth.password_min_length` and are local-source-only — ldap/oidc/saml credentials belong to the identity provider. The handler picks the verb by route, not by role: the self route (`/api/v1/me/change-password`) always verifies the current password, the admin route (`:userId`) never asks for one |
 | `TokenService` | `nxs_*` token issuance (SHA-256 hash stored); `TouchLastUsed` |
 | `CleanupService` | Stale asset scan; batched blob delete; scheduler (6h); manual run |
 | `BackupService` | Full tar.gz export (metadata + blobs); non-destructive restore with UUID remapping |

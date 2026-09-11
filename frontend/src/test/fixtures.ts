@@ -7,6 +7,7 @@ export const fixtures = {
     oidcLoginUrl: '/api/v1/auth/oidc/login',
     ldapEnabled: false,
     samlEnabled: false,
+    passwordMinLength: 8,
     ...overrides,
   }),
 

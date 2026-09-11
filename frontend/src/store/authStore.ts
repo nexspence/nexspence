@@ -8,6 +8,10 @@ interface User {
   firstName: string
   lastName: string
   roles: string[]
+  // 'local' | 'ldap' | 'oidc' | 'saml'; served by /api/v1/me and the login
+  // response. Optional: sessions restored from an older build may lack it —
+  // the UI treats missing as local so dev/bootstrap keeps working.
+  source?: string
 }
 
 interface AuthState {
