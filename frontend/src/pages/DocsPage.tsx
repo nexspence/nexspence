@@ -826,17 +826,17 @@ conan upload "mylib/1.0" -r=nexspence --confirm` },
       {
         title: 'Point the Client at Nexspence',
         text: 'Every huggingface_hub call honours HF_ENDPOINT, so no other client change is needed:',
-        codes: [{ lang: 'bash', content: `export HF_ENDPOINT=${base}/repository/huggingface-hosted\nhuggingface-cli download myorg/mymodel config.json` }],
+        codes: [{ lang: 'bash', content: `export HF_ENDPOINT=${base}/repository/huggingface-hosted\nhf download myorg/mymodel config.json` }],
       },
       {
         title: 'Download from Python',
-        codes: [{ lang: 'python', content: `from huggingface_hub import hf_hub_download, list_repo_files\n\nendpoint = "${base}/repository/huggingface-hosted"\n\nprint(list_repo_files("myorg/mymodel", endpoint=endpoint))\npath = hf_hub_download("myorg/mymodel", "config.json", endpoint=endpoint)` }],
+        codes: [{ lang: 'python', content: `from huggingface_hub import HfApi\n\napi = HfApi(endpoint="${base}/repository/huggingface-hosted")\n\nprint(api.list_repo_files("myorg/mymodel"))\npath = api.hf_hub_download("myorg/mymodel", "config.json")` }],
       },
       {
         title: 'Publish a File',
-        text: 'A hosted repository accepts one file per PUT, at the same URL the file is downloaded from. This is a Nexspence convention — the Hub Commit API (preupload + atomic git commit) is not implemented.',
-        codes: [{ label: 'Model:', lang: 'bash', content: `curl -u admin:admin123 \\\n  -X PUT \\\n  --data-binary @config.json \\\n  "${base}/repository/huggingface-hosted/myorg/mymodel/resolve/main/config.json"` },
-          { label: 'Dataset:', lang: 'bash', content: `curl -u admin:admin123 \\\n  -X PUT \\\n  --data-binary @train.parquet \\\n  "${base}/repository/huggingface-hosted/datasets/myorg/mydataset/resolve/main/data/train.parquet"` }],
+        text: 'A hosted repository accepts one file per PUT, at the same URL the file is downloaded from. This is a Nexspence convention — the Hub Commit API (preupload + atomic git commit) is not implemented. Use -T rather than --data-binary @file for a real model weights file: curl reads the whole --data-binary argument into memory first, which fails outright on a multi-gigabyte checkpoint; -T streams it from disk.',
+        codes: [{ label: 'Model weights:', lang: 'bash', content: `curl -u admin:admin123 \\\n  -X PUT \\\n  -T model.safetensors \\\n  "${base}/repository/huggingface-hosted/myorg/mymodel/resolve/main/model.safetensors"` },
+          { label: 'Dataset:', lang: 'bash', content: `curl -u admin:admin123 \\\n  -X PUT \\\n  -T train.parquet \\\n  "${base}/repository/huggingface-hosted/datasets/myorg/mydataset/resolve/main/data/train.parquet"` }],
       },
       {
         title: 'Mirror huggingface.co',

@@ -124,8 +124,10 @@ func fetchDockerRegistryToken(ctx context.Context, client *http.Client, realm, s
 	}
 	defer func() { _ = resp.Body.Close() }()
 
+	body := idleReader{resp.Body, idleBodyTimeout}
+
 	if resp.StatusCode != http.StatusOK {
-		b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		b, _ := io.ReadAll(io.LimitReader(body, 4096))
 		return "", fmt.Errorf("token endpoint %s: %s", resp.Status, string(b))
 	}
 
@@ -133,7 +135,7 @@ func fetchDockerRegistryToken(ctx context.Context, client *http.Client, realm, s
 		Token       string `json:"token"`
 		AccessToken string `json:"access_token"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+	if err := json.NewDecoder(body).Decode(&out); err != nil {
 		return "", err
 	}
 	if out.Token != "" {
@@ -173,7 +175,7 @@ func fetchUpstreamWithDockerHubAuth(ctx context.Context, repo *domain.Repository
 	realm, service, scope, ok := parseDockerBearerChallenge(resp.Header)
 	upu, parseErr := url.Parse(upstreamURL)
 	if parseErr != nil {
-		_, _ = io.Copy(io.Discard, resp.Body)
+		_, _ = io.Copy(io.Discard, idleReader{resp.Body, idleBodyTimeout})
 		_ = resp.Body.Close()
 		return nil, parseErr
 	}
@@ -187,7 +189,7 @@ func fetchUpstreamWithDockerHubAuth(ctx context.Context, repo *domain.Repository
 		service = "registry.docker.io"
 	}
 
-	_, _ = io.Copy(io.Discard, resp.Body)
+	_, _ = io.Copy(io.Discard, idleReader{resp.Body, idleBodyTimeout})
 	_ = resp.Body.Close()
 
 	if scope == "" {

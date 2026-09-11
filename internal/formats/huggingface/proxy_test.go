@@ -187,3 +187,116 @@ func TestProxy_RejectsPublish(t *testing.T) {
 	assert.Equal(t, http.StatusMethodNotAllowed, w.Code)
 	assert.Empty(t, hits)
 }
+
+// TestProxy_HEADFollowsSameHostButStopsAtTheCDN reproduces a real Hub LFS
+// download: HEAD on the resolve/ path answers with a redirect to a separate
+// host (the CDN), and the file's real metadata (X-Repo-Commit, X-Linked-ETag,
+// X-Linked-Size) lives ONLY on that redirect response — confirmed live
+// against bert-base-uncased's real pytorch_model.bin (420 MB) through
+// huggingface_hub 1.31.0. A client that only saw the CDN's own response
+// (which carries none of those headers) refuses to download at all
+// (FileMetadataError) — this is exactly what a naive "let the client
+// auto-follow" implementation produces, and unit tests whose mock upstream
+// never actually redirects cannot catch it.
+func TestProxy_HEADFollowsSameHostButStopsAtTheCDN(t *testing.T) {
+	useUnguardedUpstream(t)
+
+	cdnHits := 0
+	cdn := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cdnHits++
+		// The CDN's own response carries none of the Hub's metadata headers —
+		// exactly what a real signed-URL storage backend returns.
+		w.Header().Set("ETag", `"cdn-storage-etag"`)
+		w.Header().Set("Content-Length", "440473133")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer cdn.Close()
+
+	hub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/big-org/big-model/resolve/main/pytorch_model.bin" {
+			http.NotFound(w, r)
+			return
+		}
+		// The metadata-carrying redirect: only present on THIS response, not
+		// on whatever the client's HTTP stack eventually lands on.
+		w.Header().Set("X-Repo-Commit", "86b5e0934494bd15c9632b12f734a8a67f723594")
+		w.Header().Set("X-Linked-ETag", `"097417381d6c7230bd9e3557456d726de6e83245ec8b24f529f60198a67b203a"`)
+		w.Header().Set("X-Linked-Size", "440473133")
+		w.Header().Set("Location", cdn.URL+"/xet-bridge-us/deadbeef")
+		w.WriteHeader(http.StatusFound)
+	}))
+	defer hub.Close()
+
+	r, _, _ := setupProxy(t, "hf-proxy", hub.URL)
+
+	w := do(r, http.MethodHead, "/repository/hf-proxy/big-org/big-model/resolve/main/pytorch_model.bin", "")
+	require.Equal(t, http.StatusOK, w.Code, "must answer 200, not relay the redirect, so the client's GET comes back through Nexspence")
+	assert.Equal(t, "86b5e0934494bd15c9632b12f734a8a67f723594", w.Header().Get("X-Repo-Commit"))
+	assert.Equal(t, `"097417381d6c7230bd9e3557456d726de6e83245ec8b24f529f60198a67b203a"`, w.Header().Get("X-Linked-ETag"))
+	assert.Equal(t, "440473133", w.Header().Get("X-Linked-Size"))
+	assert.Empty(t, w.Header().Get("Location"), "the CDN's signed URL must not leak to the client")
+	// The CDN itself is never hit for a HEAD — only its metadata-carrying
+	// redirect from the Hub is consulted.
+	assert.Equal(t, 0, cdnHits)
+}
+
+// TestProxy_HEADFollowsAnInternalRedirectBeforeTheCDN mirrors
+// huggingface_hub's own redirect follower: a same-host redirect (e.g. the Hub
+// canonicalizing an org name) is followed transparently, and only a
+// cross-host hand-off stops the chain.
+func TestProxy_HEADFollowsAnInternalRedirectBeforeTheCDN(t *testing.T) {
+	useUnguardedUpstream(t)
+
+	var hub *httptest.Server
+	hub = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/old-org/model/resolve/main/f.bin":
+			// Same-host canonicalization redirect — no metadata here, and
+			// none expected: the real metadata lives on the NEXT hop.
+			w.Header().Set("Location", hub.URL+"/new-org/model/resolve/main/f.bin")
+			w.WriteHeader(http.StatusMovedPermanently)
+		case "/new-org/model/resolve/main/f.bin":
+			w.Header().Set("X-Repo-Commit", "cafef00dcafef00dcafef00dcafef00dcafef00")
+			w.WriteHeader(http.StatusOK)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer hub.Close()
+
+	r, _, _ := setupProxy(t, "hf-proxy", hub.URL)
+
+	w := do(r, http.MethodHead, "/repository/hf-proxy/old-org/model/resolve/main/f.bin", "")
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "cafef00dcafef00dcafef00dcafef00dcafef00", w.Header().Get("X-Repo-Commit"))
+}
+
+// TestProxy_HEADDropsXetHashSoTheClientFallsBackToPlainHTTP reproduces a real
+// Xet-backed file (huggingface.co's newer storage backend for most of its
+// actual weight files today — model.safetensors, pytorch_model.bin,
+// tf_model.h5). huggingface_hub treats X-Xet-Hash as the sole trigger to fetch
+// through a three-party CAS reconstruction protocol this proxy does not speak
+// (a xet-read-token call back to the Hub, then chunk reconstruction against a
+// THIRD host) — relaying it verbatim sends a real client into that path and
+// then into a 404, since Nexspence answers none of those endpoints. Confirmed
+// live against bert-base-uncased's real pytorch_model.bin before this test
+// was written.
+func TestProxy_HEADDropsXetHashSoTheClientFallsBackToPlainHTTP(t *testing.T) {
+	useUnguardedUpstream(t)
+
+	hub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Repo-Commit", "86b5e0934494bd15c9632b12f734a8a67f723594")
+		w.Header().Set("X-Xet-Hash", "2d8408d3a894d02517d04956e2f7546ff08362594072f3527ce144b5212a3296")
+		w.Header().Set("Link", `<https://huggingface.co/api/models/big-org/big-model/xet-read-token/86b5e0934494bd15c9632b12f734a8a67f723594>; rel="xet-auth"`)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer hub.Close()
+
+	r, _, _ := setupProxy(t, "hf-proxy", hub.URL)
+
+	w := do(r, http.MethodHead, "/repository/hf-proxy/big-org/big-model/resolve/main/pytorch_model.bin", "")
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "86b5e0934494bd15c9632b12f734a8a67f723594", w.Header().Get("X-Repo-Commit"))
+	assert.Empty(t, w.Header().Get("X-Xet-Hash"),
+		"leaking this sends a real client into a CAS protocol Nexspence does not serve, instead of the plain HTTP fallback it also offers")
+}

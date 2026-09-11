@@ -485,19 +485,118 @@ func (h *Handler) serveProxyResolve(c *gin.Context, repo *domain.Repository, p s
 }
 
 // forwardUpstreamHead relays a HEAD to upstream and answers with its headers.
+//
+// It must not let the shared client auto-follow a redirect off the Hub: a
+// real Hub host answers HEAD on an LFS-backed file with a redirect to its CDN
+// (confirmed live against bert-base-uncased's real pytorch_model.bin, 420 MB),
+// and X-Repo-Commit/X-Linked-ETag/X-Linked-Size live ONLY on that redirect
+// response — the CDN's own final response carries none of them, so a client
+// that saw only the final hop would refuse to download at all
+// (FileMetadataError). huggingface_hub's own redirect follower
+// (_httpx_follow_hub_redirects_with_backoff) does exactly this: it keeps
+// following same-host redirects but stops at the first one that leaves the
+// host, and reads the file's metadata off THAT response. Mirrored here with
+// upstreamHeadHop, then answered as 200 rather than relayed as a redirect —
+// get_hf_file_metadata falls back to the REQUESTED url as "location" whenever
+// the response it read metadata from wasn't itself a redirect, so this keeps
+// the client's follow-up GET coming back through Nexspence (and its cache)
+// instead of sending it straight to upstream's CDN, which is exactly the kind
+// of large file this cache exists for.
+//
+// X-Xet-Hash is dropped from the relay. Confirmed live: most of huggingface.co's
+// real weight files today (model.safetensors, pytorch_model.bin, tf_model.h5 —
+// not the small text files) are stored on Xet, its newer content-addressable
+// backend, and the client treats X-Xet-Hash as the sole trigger
+// (parse_xet_file_data_from_response) to fetch the file through a THREE-PARTY
+// CAS reconstruction protocol (a xet-read-token call back to the Hub, then
+// chunk reconstruction against a third host, cas-server.xethub.hf.co) instead
+// of a plain download — a protocol this proxy does not, and is not trying to,
+// speak. Relaying that header verbatim sent every real client into that path
+// and then straight into a 404, since Nexspence answers none of its endpoints.
+// Withholding it is not a lossy shortcut: huggingface.co keeps a "xet-bridge"
+// fallback URL behind the SAME redirect precisely for non-Xet-aware HTTP
+// clients (confirmed live — it answers a plain GET with the complete file over
+// ordinary HTTP), which is exactly what falls out of the client's own
+// xet_file_data-is-None branch, and exactly the URL this proxy's GET path
+// already follows and caches. The bytes served are identical either way; only
+// the Xet client's own content-defined dedup transport is skipped.
 func (h *Handler) forwardUpstreamHead(c *gin.Context, repo *domain.Repository, p string) {
-	resp, err := h.upstreamRequest(c, repo, http.MethodHead, p)
+	resp, err := h.upstreamHeadHop(c, repo, p)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		return
 	}
 	defer func() { _ = resp.Body.Close() }()
 	for k, vv := range resp.Header {
+		switch k {
+		case "Location", "Content-Length", "X-Xet-Hash":
+			continue
+		}
 		for _, v := range vv {
 			c.Writer.Header().Add(k, v)
 		}
 	}
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+		c.Status(http.StatusOK)
+		return
+	}
 	c.Status(resp.StatusCode)
+}
+
+// maxRedirectHops bounds upstreamHeadHop's manual redirect-following — same
+// order of magnitude as net/http's own default (10) and
+// huggingface_hub's _MAX_REDIRECTS (20).
+const maxRedirectHops = 20
+
+// upstreamHeadHop issues a HEAD to upstream, following same-host redirects
+// (a Hub canonicalizing a path) but stopping at and returning the first
+// redirect that leaves the host — the response a CDN hand-off's metadata
+// lives on. A terminal non-redirect response (200, 404, ...) is returned as
+// received.
+func (h *Handler) upstreamHeadHop(c *gin.Context, repo *domain.Repository, p string) (*http.Response, error) {
+	remoteBase, err := repoproxy.RemoteURL(repo)
+	if err != nil {
+		return nil, err
+	}
+	upstream, err := repoproxy.JoinURL(remoteBase, p)
+	if err != nil {
+		return nil, err
+	}
+
+	// A shallow copy: the redirect policy changes for this call without
+	// touching the shared client's pooled Transport or its own policy.
+	client := *repoproxy.ClientFor(repo)
+	client.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+
+	for hop := 0; ; hop++ {
+		req, err := http.NewRequestWithContext(c.Request.Context(), http.MethodHead, upstream, nil)
+		if err != nil {
+			return nil, err
+		}
+		if ac := c.GetHeader("Accept"); ac != "" {
+			req.Header.Set("Accept", ac)
+		}
+		repoproxy.SetUpstreamAuth(req, repo)
+
+		resp, err := client.Do(req)
+		if err != nil {
+			repoproxy.DispatchProxyError(h.deps, repo.Name, p, upstream, err)
+			return nil, fmt.Errorf("upstream: %w", err)
+		}
+
+		loc := resp.Header.Get("Location")
+		if resp.StatusCode < 300 || resp.StatusCode >= 400 || loc == "" || hop >= maxRedirectHops {
+			return resp, nil
+		}
+		target, err := resp.Request.URL.Parse(loc)
+		if err != nil || target.Host != resp.Request.URL.Host {
+			return resp, nil // leaving the host: this response carries the file's metadata
+		}
+		_ = resp.Body.Close()
+		upstream = target.String()
+	}
 }
 
 // serveProxyAPI relays the metadata surface.
