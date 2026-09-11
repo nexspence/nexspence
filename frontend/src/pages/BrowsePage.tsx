@@ -685,6 +685,7 @@ const FORMAT_COLORS: Record<string, string> = {
   apt: '#f59e0b',
   yum: '#10b981',
   cran: '#276dc3',
+  huggingface: '#ffd21e',
 }
 
 // Colors for the artifact-type labels the registry browse tree reports. A media

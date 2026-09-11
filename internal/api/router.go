@@ -33,6 +33,7 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/formats/gomod"
 	"github.com/nexspence-oss/nexspence/internal/formats/group"
 	"github.com/nexspence-oss/nexspence/internal/formats/helm"
+	"github.com/nexspence-oss/nexspence/internal/formats/huggingface"
 	"github.com/nexspence-oss/nexspence/internal/formats/maven"
 	"github.com/nexspence-oss/nexspence/internal/formats/npm"
 	"github.com/nexspence-oss/nexspence/internal/formats/nuget"
@@ -272,22 +273,23 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 		MaxUploadBytes: cfg.Docker.MaxUploadBytes,
 	}
 	formatRegistry := map[string]formats.FormatHandler{
-		"raw":       raw.New(formatDeps),
-		"maven2":    maven.New(formatDeps),
-		"npm":       npm.New(formatDeps),
-		"pypi":      pypi.New(formatDeps),
-		"go":        gomod.New(formatDeps),
-		"helm":      helm.New(formatDeps),
-		"nuget":     nuget.New(formatDeps),
-		"cargo":     cargo.New(formatDeps),
-		"conan":     conan.New(formatDeps),
-		"conda":     conda.New(formatDeps),
-		"apt":       apt.New(formatDeps),
-		"terraform": terraform.New(formatDeps),
-		"rubygems":  rubygems.New(formatDeps),
-		"cran":      cran.New(formatDeps),
-		"yum":       yum.New(formatDeps),
-		"docker":    oci.New(formatDeps),
+		"raw":         raw.New(formatDeps),
+		"maven2":      maven.New(formatDeps),
+		"npm":         npm.New(formatDeps),
+		"pypi":        pypi.New(formatDeps),
+		"go":          gomod.New(formatDeps),
+		"helm":        helm.New(formatDeps),
+		"nuget":       nuget.New(formatDeps),
+		"cargo":       cargo.New(formatDeps),
+		"conan":       conan.New(formatDeps),
+		"conda":       conda.New(formatDeps),
+		"apt":         apt.New(formatDeps),
+		"terraform":   terraform.New(formatDeps),
+		"rubygems":    rubygems.New(formatDeps),
+		"cran":        cran.New(formatDeps),
+		"yum":         yum.New(formatDeps),
+		"docker":      oci.New(formatDeps),
+		"huggingface": huggingface.New(formatDeps),
 	}
 	// The OCI Distribution protocol is served under two labels — same handler,
 	// different presentation (proxy defaults, UI, command hints).

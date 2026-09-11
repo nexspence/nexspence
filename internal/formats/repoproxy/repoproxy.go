@@ -39,6 +39,22 @@ import (
 // for env-configured proxies the guard still applies, so internal proxies must
 // be set via per-repo proxy_config or SetGlobalProxy (see proxyclient.go),
 // which route through a client that permits the trusted proxy address.
+//
+// It carries no overall Client.Timeout. That field bounds the ENTIRE
+// round trip — connect through the last byte of the body — which is wrong for
+// a client whose job is to stream artifacts of whatever size an upstream
+// happens to publish: a real multi-gigabyte model checkpoint proxied live
+// against huggingface.co was cut off mid-transfer at a fixed 5-minute mark
+// (confirmed: gpt2-xl's real 6.4 GB model.safetensors, ~5.6 GB in when killed)
+// — not a timeout tied to how the transfer was actually going, just an
+// artificial ceiling on top of a streaming design that otherwise has none
+// (base.StoreArtifact and this package's own cache-fill both pipe bytes
+// through directly, never buffering a whole artifact in memory). Bounding
+// unresponsiveness instead of duration is Transport.ResponseHeaderTimeout
+// (connect + wait for headers, still 5 minutes) plus idleReader on the body
+// once streaming starts (repoproxy.go's copy sites) — together they catch a
+// hung or silently-stalled upstream exactly as before, without capping how
+// long a live, progressing transfer may run.
 var UpstreamClient = &http.Client{
 	Transport: &http.Transport{
 		Proxy: envProxyFromRequest,
@@ -46,17 +62,55 @@ var UpstreamClient = &http.Client{
 			Timeout: 10 * time.Second,
 			Control: netguard.DialControl,
 		}).DialContext,
-		MaxIdleConns:        128,
-		IdleConnTimeout:     90 * time.Second,
-		TLSHandshakeTimeout: 15 * time.Second,
+		MaxIdleConns:          128,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   15 * time.Second,
+		ResponseHeaderTimeout: 5 * time.Minute,
 	},
-	Timeout: 5 * time.Minute,
 	CheckRedirect: func(_ *http.Request, via []*http.Request) error {
 		if len(via) >= 12 {
 			return fmt.Errorf("stopped after 12 redirects")
 		}
 		return nil
 	},
+}
+
+// idleBodyTimeout bounds how long a single Read on an upstream response body
+// may go without producing a byte. It protects against a connection that
+// answers, then goes silent forever — the failure mode a body-read timeout
+// actually needs to catch — without bounding how long a large, still-
+// progressing transfer may take in total, which the removed Client.Timeout
+// used to do and real multi-gigabyte artifacts (see UpstreamClient's doc)
+// need not to be bound by.
+const idleBodyTimeout = 2 * time.Minute
+
+// idleReader wraps r so Read fails once idleBodyTimeout passes with no data —
+// not once total elapsed time does. The Read that timed out keeps running in
+// its own goroutine; it is expected to unblock (with an error, discarded)
+// when the caller's own resp.Body.Close() tears down the underlying
+// connection, which every caller here already does via defer.
+type idleReader struct {
+	r    io.Reader
+	idle time.Duration
+}
+
+type idleReadResult struct {
+	n   int
+	err error
+}
+
+func (ir idleReader) Read(p []byte) (int, error) {
+	ch := make(chan idleReadResult, 1)
+	go func() {
+		n, err := ir.r.Read(p)
+		ch <- idleReadResult{n, err}
+	}()
+	select {
+	case res := <-ch:
+		return res.n, res.err
+	case <-time.After(ir.idle):
+		return 0, fmt.Errorf("upstream: no data received for %s", ir.idle)
+	}
 }
 
 // envProxyFromRequest resolves the proxy for a request from the process
@@ -336,7 +390,9 @@ func serveCachedAsset(c *gin.Context, d formats.Deps, asset *domain.Asset, rc io
 // JoinURL percent-escapes whatever it is handed as a path — a "?" glued on would
 // arrive upstream as %3F, i.e. part of the digest, not a filter.
 //
-// The caller must close the response body.
+// The caller must close the response body. Its Body already guards against a
+// connection that answers and then goes silent (see idleReader) — callers
+// need not wrap it themselves.
 func FetchUpstreamOnce(ctx context.Context, repo *domain.Repository, upstreamPath, rawQuery string, hdr http.Header) (*http.Response, error) {
 	baseRemote, err := RemoteURL(repo)
 	if err != nil {
@@ -349,7 +405,23 @@ func FetchUpstreamOnce(ctx context.Context, repo *domain.Repository, upstreamPat
 	if rawQuery != "" {
 		upstream += "?" + rawQuery
 	}
-	return fetchUpstreamWithDockerHubAuth(ctx, repo, ClientFor(repo), http.MethodGet, upstream, baseRemote, hdr)
+	resp, err := fetchUpstreamWithDockerHubAuth(ctx, repo, ClientFor(repo), http.MethodGet, upstream, baseRemote, hdr)
+	if err != nil {
+		return nil, err
+	}
+	resp.Body = idleReadCloser{resp.Body, idleBodyTimeout}
+	return resp, nil
+}
+
+// idleReadCloser is idleReader plus the Close a caller expects an
+// http.Response.Body to have.
+type idleReadCloser struct {
+	io.ReadCloser
+	idle time.Duration
+}
+
+func (rc idleReadCloser) Read(p []byte) (int, error) {
+	return idleReader{rc.ReadCloser, rc.idle}.Read(p)
 }
 
 // ServeGET serves a cached asset or fetches upstream, streaming to the client
@@ -471,7 +543,7 @@ func fetchAndCache(c *gin.Context, d formats.Deps, repo *domain.Repository,
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		copyRespHeaders(c.Writer.Header(), resp.Header)
 		c.Status(resp.StatusCode)
-		_, _ = io.Copy(c.Writer, resp.Body)
+		_, _ = io.Copy(c.Writer, idleReader{resp.Body, idleBodyTimeout})
 		return nil
 	}
 
@@ -568,7 +640,7 @@ func storeAndServeResponse(c *gin.Context, d formats.Deps, repo *domain.Reposito
 		// Same cap and +1 trick as serveCachedAsset's re-read below: a
 		// hostile, compromised, or simply oversized-by-accident upstream
 		// otherwise buffers without limit before any quota/size check runs.
-		body, readErr := io.ReadAll(io.LimitReader(resp.Body, maxRewrittenMetadataBytes+1))
+		body, readErr := io.ReadAll(io.LimitReader(idleReader{resp.Body, idleBodyTimeout}, maxRewrittenMetadataBytes+1))
 		if readErr != nil {
 			return fmt.Errorf("proxy metadata read: %w", readErr)
 		}
@@ -601,7 +673,7 @@ func storeAndServeResponse(c *gin.Context, d formats.Deps, repo *domain.Reposito
 	if resp.ContentLength > 0 {
 		if qErr := base.CheckQuota(ctx, d, repo, resp.ContentLength); qErr != nil {
 			if c.Request.Method != http.MethodHead {
-				_, _ = io.Copy(c.Writer, resp.Body)
+				_, _ = io.Copy(c.Writer, idleReader{resp.Body, idleBodyTimeout})
 			}
 			return nil
 		}
@@ -637,7 +709,7 @@ func storeAndServeResponse(c *gin.Context, d formats.Deps, repo *domain.Reposito
 	}
 	mw := io.MultiWriter(pw, hashes, clientSink)
 
-	written, copyErr := io.Copy(mw, resp.Body)
+	written, copyErr := io.Copy(mw, idleReader{resp.Body, idleBodyTimeout})
 	_ = pw.CloseWithError(copyErr)
 	putErr := <-putErrCh
 

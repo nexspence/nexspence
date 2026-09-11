@@ -783,6 +783,39 @@ conan upload "mylib/1.0" -r=nexspence --confirm` },
       },
     ],
   },
+  {
+    id: 'huggingface',
+    name: 'Hugging Face',
+    icon: '🤗',
+    iconUrl: 'https://cdn.simpleicons.org/huggingface/FFD21E',
+    description: 'Hugging Face Hub protocol for models, datasets and spaces. Serves the repository metadata and tree APIs plus resolve/ downloads, so huggingface_hub, transformers and diffusers work by pointing HF_ENDPOINT at the repository. Publishing uses a plain per-file PUT, not the Hub Commit API.',
+    sections: (base) => [
+      {
+        title: 'Repository URL',
+        codes: [{ lang: 'text', content: `${base}/repository/huggingface-hosted/` }],
+      },
+      {
+        title: 'Point the Client at Nexspence',
+        text: 'Every huggingface_hub call honours HF_ENDPOINT, so no other client change is needed:',
+        codes: [{ lang: 'bash', content: `export HF_ENDPOINT=${base}/repository/huggingface-hosted\nhf download myorg/mymodel config.json` }],
+      },
+      {
+        title: 'Download from Python',
+        codes: [{ lang: 'python', content: `from huggingface_hub import HfApi\n\napi = HfApi(endpoint="${base}/repository/huggingface-hosted")\n\nprint(api.list_repo_files("myorg/mymodel"))\npath = api.hf_hub_download("myorg/mymodel", "config.json")` }],
+      },
+      {
+        title: 'Publish a File',
+        text: 'A hosted repository accepts one file per PUT, at the same URL the file is downloaded from. This is a Nexspence convention — the Hub Commit API (preupload + atomic git commit) is not implemented. Use -T rather than --data-binary @file for a real model weights file: curl reads the whole --data-binary argument into memory first, which fails outright on a multi-gigabyte checkpoint; -T streams it from disk.',
+        codes: [{ label: 'Model weights:', lang: 'bash', content: `curl -u admin:admin123 \\\n  -X PUT \\\n  -T model.safetensors \\\n  "${base}/repository/huggingface-hosted/myorg/mymodel/resolve/main/model.safetensors"` },
+          { label: 'Dataset:', lang: 'bash', content: `curl -u admin:admin123 \\\n  -X PUT \\\n  -T train.parquet \\\n  "${base}/repository/huggingface-hosted/datasets/myorg/mydataset/resolve/main/data/train.parquet"` }],
+      },
+      {
+        title: 'Mirror huggingface.co',
+        text: 'A proxy repository caches every downloaded file. LFS needs nothing here — huggingface.co resolves it server-side before answering resolve/.',
+        codes: [{ lang: 'bash', content: `export HF_ENDPOINT=${base}/repository/huggingface-proxy\npython -c "from transformers import AutoConfig; AutoConfig.from_pretrained('bert-base-uncased')"` }],
+      },
+    ],
+  },
 ]
 
 function GuideRepositories() {

@@ -21,20 +21,21 @@ const (
 	FormatDocker RepoFormat = "docker"
 	// FormatOCI is the same OCI Distribution protocol as FormatDocker, labeled
 	// for charts, ORAS artifacts and signatures rather than container images.
-	FormatOCI       RepoFormat = "oci"
-	FormatPyPI      RepoFormat = "pypi"
-	FormatGo        RepoFormat = "go"
-	FormatNuGet     RepoFormat = "nuget"
-	FormatHelm      RepoFormat = "helm"
-	FormatRaw       RepoFormat = "raw"
-	FormatApt       RepoFormat = "apt"
-	FormatYum       RepoFormat = "yum"
-	FormatCargo     RepoFormat = "cargo"
-	FormatConan     RepoFormat = "conan"
-	FormatConda     RepoFormat = "conda"
-	FormatTerraform RepoFormat = "terraform"
-	FormatRubyGems  RepoFormat = "rubygems"
-	FormatCRAN      RepoFormat = "cran"
+	FormatOCI         RepoFormat = "oci"
+	FormatPyPI        RepoFormat = "pypi"
+	FormatGo          RepoFormat = "go"
+	FormatNuGet       RepoFormat = "nuget"
+	FormatHelm        RepoFormat = "helm"
+	FormatRaw         RepoFormat = "raw"
+	FormatApt         RepoFormat = "apt"
+	FormatYum         RepoFormat = "yum"
+	FormatCargo       RepoFormat = "cargo"
+	FormatConan       RepoFormat = "conan"
+	FormatConda       RepoFormat = "conda"
+	FormatTerraform   RepoFormat = "terraform"
+	FormatRubyGems    RepoFormat = "rubygems"
+	FormatCRAN        RepoFormat = "cran"
+	FormatHuggingFace RepoFormat = "huggingface"
 
 	TypeHosted RepoType = "hosted"
 	TypeProxy  RepoType = "proxy"
@@ -62,6 +63,7 @@ var AllFormats = []RepoFormat{
 	FormatTerraform,
 	FormatRubyGems,
 	FormatCRAN,
+	FormatHuggingFace,
 }
 
 // IsOCIRegistry reports whether a repository of this format speaks the OCI
