@@ -460,3 +460,50 @@ func TestLoad_TrivyFromEnv(t *testing.T) {
 	assert.Equal(t, []string{"mirror1.example.com/trivy-db", "mirror2.example.com/trivy-db"}, cfg.Scan.Trivy.DBRepository,
 		"NEXSPENCE_SCAN_TRIVY_DB_REPOSITORY was not applied")
 }
+
+func TestLoad_AzureStorageFromEnv(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := "" +
+		"database:\n  dsn: \"postgres://u:p@localhost:5432/db?sslmode=disable\"\n" +
+		"auth:\n  jwt_secret: \"a-unique-production-secret-at-least-32b\"\n"
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+
+	t.Setenv("NEXSPENCE_STORAGE_DEFAULT_TYPE", "azure")
+	t.Setenv("NEXSPENCE_STORAGE_AZURE_CONTAINER", "nexspence-blobs")
+	t.Setenv("NEXSPENCE_STORAGE_AZURE_ACCOUNT_NAME", "mystorage")
+	t.Setenv("NEXSPENCE_STORAGE_AZURE_ACCOUNT_KEY", "secret-key")
+	t.Setenv("NEXSPENCE_STORAGE_AZURE_ENDPOINT", "https://mystorage.blob.core.windows.net")
+	t.Setenv("NEXSPENCE_STORAGE_AZURE_SKIP_TLS_VERIFY", "true")
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.Equal(t, "azure", cfg.Storage.DefaultType)
+	assert.Equal(t, "nexspence-blobs", cfg.Storage.Azure.Container)
+	assert.Equal(t, "mystorage", cfg.Storage.Azure.AccountName)
+	assert.Equal(t, "secret-key", cfg.Storage.Azure.AccountKey)
+	assert.Equal(t, "https://mystorage.blob.core.windows.net", cfg.Storage.Azure.Endpoint)
+	assert.True(t, cfg.Storage.Azure.SkipTLSVerify)
+}
+
+func TestValidateStorage(t *testing.T) {
+	for _, tc := range []struct {
+		typ     string
+		wantErr bool
+	}{
+		{"", false},
+		{"local", false},
+		{"s3", false},
+		{"azure", false},
+		{"S3", true},
+		{"azue", true},
+		{"gcs", true},
+	} {
+		err := ValidateStorage(StorageConfig{DefaultType: tc.typ})
+		if tc.wantErr {
+			assert.Error(t, err, "default_type %q must be rejected, not silently treated as local", tc.typ)
+			continue
+		}
+		assert.NoError(t, err, "default_type %q must be accepted", tc.typ)
+	}
+}

@@ -56,6 +56,16 @@ storage:
   #   secret_access_key: ""
   #   force_path_style: true
   #   skip_tls_verify: false        # accept an unverifiable certificate (private CA); off by default
+  # azure:                          # default_type: "azure"; the container must already exist
+  #   container: "nexspence-blobs"
+  #   account_name: "mystorage"     # required unless a connection string carries it
+  #   account_key: ""               # shared key; enables presigning
+  #   connection_string: ""         # wins over account_name/account_key/sas_token
+  #   sas_token: ""                 # pre-generated SAS; disables presigning
+  #   endpoint: ""                  # e.g. http://127.0.0.1:10000/devstoreaccount1 (Azurite)
+  #   skip_tls_verify: false
+  #   # leave every credential empty to use the host's Entra ID identity
+  #   # (managed identity, az CLI login); presigning then uses user delegation SAS
 
 auth:
   jwt_secret: "CHANGE_ME_AT_LEAST_32_CHARACTERS_LONG"   # from source / native install: set this (or NEXSPENCE_AUTH_JWT_SECRET) — server refuses to start with this placeholder unless allow_insecure_defaults=true. The Docker image and Helm chart auto-generate a unique secret when it is unset, so you don't set it there.

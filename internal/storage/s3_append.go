@@ -35,9 +35,10 @@ const (
 	// a client sending one enormous PATCH still costs ~5 MiB of memory, not its
 	// whole chunk.
 	s3AppendReadChunk = 256 * 1024
-	// s3AppendMetaSuffix names the session side-object. Keys carrying it are
+	// appendMetaSuffix names the session side-object. Keys carrying it are
 	// hidden from the listings, so GC never mistakes bookkeeping for a blob.
-	s3AppendMetaSuffix = ".append-meta"
+	// Shared by every backend with a side-object append session (S3, Azure).
+	appendMetaSuffix = ".append-meta"
 )
 
 // s3AppendPart records one uploaded part; CompleteMultipartUpload needs the
@@ -60,7 +61,7 @@ type s3AppendState struct {
 func (st *s3AppendState) staged() int64 { return st.Uploaded + int64(len(st.Pending)) }
 
 func (s *S3BlobStore) appendMetaKey(key string) string {
-	return s.objectKey(key) + s3AppendMetaSuffix
+	return s.objectKey(key) + appendMetaSuffix
 }
 
 // AppendBlob appends r to the blob at key and returns the total staged so far.
@@ -401,5 +402,5 @@ func (s *S3BlobStore) deleteAppendState(ctx context.Context, key string) error {
 // and, worse, offer GC an "orphan" whose deletion would strand the multipart
 // parts it is the only record of.
 func isAppendMetaObject(objectKey string) bool {
-	return strings.HasSuffix(objectKey, s3AppendMetaSuffix)
+	return strings.HasSuffix(objectKey, appendMetaSuffix)
 }

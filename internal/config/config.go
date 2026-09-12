@@ -150,12 +150,13 @@ type DatabaseConfig struct {
 	MaxIdleSec int    `mapstructure:"max_idle_sec"`
 }
 
-// StorageConfig selects the default blob store backend and its local/S3 settings.
+// StorageConfig selects the default blob store backend and its local/S3/Azure settings.
 type StorageConfig struct {
-	// Default blob store type: "local" or "s3"
+	// Default blob store type: "local", "s3" or "azure"
 	DefaultType string      `mapstructure:"default_type"`
 	Local       LocalConfig `mapstructure:"local"`
 	S3          S3Config    `mapstructure:"s3"`
+	Azure       AzureConfig `mapstructure:"azure"`
 }
 
 // LocalConfig holds the base path for the local filesystem blob store.
@@ -173,6 +174,22 @@ type S3Config struct {
 	ForcePathStyle  bool   `mapstructure:"force_path_style"`
 	// SkipTLSVerify disables certificate verification against the endpoint,
 	// for an on-prem S3 fronted by a private CA (#403). Off by default.
+	SkipTLSVerify bool `mapstructure:"skip_tls_verify"`
+}
+
+// AzureConfig holds credentials and endpoint settings for the Azure Blob
+// Storage backend. Exactly one credential path is required: ConnectionString,
+// AccountKey (with AccountName), SASToken, or an ambient Entra ID identity
+// via DefaultAzureCredential (which still needs AccountName).
+type AzureConfig struct {
+	Container        string `mapstructure:"container"`
+	AccountName      string `mapstructure:"account_name"`
+	AccountKey       string `mapstructure:"account_key"`
+	ConnectionString string `mapstructure:"connection_string"`
+	SASToken         string `mapstructure:"sas_token"`
+	Endpoint         string `mapstructure:"endpoint"`
+	// SkipTLSVerify mirrors the S3 option of the same name for an
+	// endpoint behind a private CA. Off by default.
 	SkipTLSVerify bool `mapstructure:"skip_tls_verify"`
 }
 
@@ -307,6 +324,19 @@ func (a AuthConfig) EncryptionKeyBytes() []byte {
 		return nil
 	}
 	return b
+}
+
+// ValidateStorage rejects an unknown storage.default_type. Viper has no notion
+// of an enum, so a typo ("S3", "azue") used to fall through to the local
+// backend and every push landed on a container filesystem nobody was watching —
+// with the configured bucket or container sitting there empty.
+func ValidateStorage(s StorageConfig) error {
+	switch s.DefaultType {
+	case "", "local", "s3", "azure":
+		return nil
+	default:
+		return fmt.Errorf("storage.default_type must be \"local\", \"s3\" or \"azure\", got %q", s.DefaultType)
+	}
 }
 
 // ValidateAuth rejects an empty, placeholder, or too-short JWT signing secret.
@@ -533,6 +563,13 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("storage.s3.secret_access_key", "")
 	v.SetDefault("storage.s3.force_path_style", false)
 	v.SetDefault("storage.s3.skip_tls_verify", false)
+	v.SetDefault("storage.azure.container", "")
+	v.SetDefault("storage.azure.account_name", "")
+	v.SetDefault("storage.azure.account_key", "")
+	v.SetDefault("storage.azure.connection_string", "")
+	v.SetDefault("storage.azure.sas_token", "")
+	v.SetDefault("storage.azure.endpoint", "")
+	v.SetDefault("storage.azure.skip_tls_verify", false)
 	v.SetDefault("database.max_conns", 100)
 	v.SetDefault("database.min_conns", 5)
 	v.SetDefault("database.max_idle_sec", 300)
@@ -648,6 +685,9 @@ func Load(path string) (*Config, error) {
 
 	if cfg.Database.DSN == "" {
 		return nil, fmt.Errorf("database.dsn is required (or set NEXSPENCE_DATABASE_DSN)")
+	}
+	if err := ValidateStorage(cfg.Storage); err != nil {
+		return nil, err
 	}
 	if err := ValidateAuth(cfg.Auth); err != nil {
 		return nil, err

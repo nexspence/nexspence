@@ -11,6 +11,12 @@ import (
 // space. Callers map it to 507 Insufficient Storage instead of an opaque 500.
 var ErrNoSpace = errors.New("no space left on device")
 
+// ErrLifecycleUnsupported reports that a store cannot hold lifecycle
+// expiration rules. Azure answers with it because lifecycle policies are
+// storage-account-scoped there — setting one from a single container's
+// settings would expire foreign containers on shared accounts.
+var ErrLifecycleUnsupported = errors.New("lifecycle configuration is not supported by this blob store")
+
 // BlobStore is the interface every storage backend must implement.
 // Keys are opaque strings (typically UUID-based paths).
 type BlobStore interface {

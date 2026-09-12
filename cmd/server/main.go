@@ -10,6 +10,8 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"reflect"
+	"strings"
 	"syscall"
 	"time"
 
@@ -115,12 +117,18 @@ func cmdServe() *cobra.Command {
 			log.Info("database connected", "host", dbHost(cfg.Database.DSN))
 
 			// Storage
-			if cfg.Storage.DefaultType == "s3" {
+			switch cfg.Storage.DefaultType {
+			case "s3":
 				log.Info("storage", "type", "s3", "bucket", cfg.Storage.S3.Bucket, "endpoint", cfg.Storage.S3.Endpoint)
 				if cfg.Storage.S3.SkipTLSVerify {
 					log.Warn("storage.s3.skip_tls_verify is enabled — the S3 endpoint's certificate is NOT verified; use only with a private CA you cannot install into the trust store")
 				}
-			} else {
+			case "azure":
+				log.Info("storage", "type", "azure", "container", cfg.Storage.Azure.Container, "account", cfg.Storage.Azure.AccountName, "endpoint", cfg.Storage.Azure.Endpoint)
+				if cfg.Storage.Azure.SkipTLSVerify {
+					log.Warn("storage.azure.skip_tls_verify is enabled — the Azure endpoint's certificate is NOT verified; use only with a private CA you cannot install into the trust store")
+				}
+			default:
 				log.Info("storage", "type", "local", "path", cfg.Storage.Local.BasePath)
 			}
 
@@ -184,6 +192,10 @@ func cmdServe() *cobra.Command {
 			if err := syncS3BlobStores(cmd.Context(), pool, cfg, log); err != nil {
 				log.Warn("s3 blob store sync failed", "err", err)
 				// Non-fatal — server still starts
+			}
+
+			if err := syncAzureBlobStores(cmd.Context(), pool, cfg, log); err != nil {
+				return fmt.Errorf("azure blob store sync failed: %w", err)
 			}
 
 			// Seed Prometheus gauges from DB on startup.
@@ -319,12 +331,13 @@ func syncBlobStorePaths(ctx context.Context, pool *pgxpool.Pool, cfg *config.Con
 	return nil
 }
 
-// s3SeedStores are the blob stores the initial migration seeds as local
+// seedBlobStores are the blob stores the initial migration seeds as local
 // ("default", "docker"). "default" is the fallback store resolveBlobStoreRef
 // uses for every repository without an explicit blobStoreId; "docker" is the
-// store docker repositories may be assigned. Both are reconciled to s3 when
-// storage.default_type=s3 so no local store silently captures writes.
-var s3SeedStores = []string{"default", "docker"}
+// store docker repositories may be assigned. Both are reconciled to s3 or
+// azure when storage.default_type is set to that backend, so no local store
+// silently captures writes.
+var seedBlobStores = []string{"default", "docker"}
 
 // desiredS3Config maps the config-file S3 settings onto the config-key names the
 // storage registry expects when instantiating an s3 BlobStore. Note the key
@@ -356,14 +369,14 @@ func syncS3BlobStores(ctx context.Context, pool *pgxpool.Pool, cfg *config.Confi
 	return reconcileS3BlobStores(ctx, postgres.NewBlobStoreRepo(pool), cfg.Storage.S3, nil, log)
 }
 
-// reconcileS3BlobStores upserts the s3SeedStores to type=s3 with s3, creating
+// reconcileS3BlobStores upserts the seedBlobStores to type=s3 with s3, creating
 // any that are missing. Idempotent: stores already matching the desired s3
 // config are left untouched. When reg is non-nil, updated stores are
 // invalidated so a cached local instance isn't reused (reg is nil on startup —
 // the Registry is built after this runs, so it reads the reconciled rows fresh).
 func reconcileS3BlobStores(ctx context.Context, blobRepo repository.BlobStoreRepo, s3 config.S3Config, reg *storage.Registry, log logger.Logger) error {
 	desired := desiredS3Config(s3)
-	for _, name := range s3SeedStores {
+	for _, name := range seedBlobStores {
 		bs, err := blobRepo.Get(ctx, name)
 		if err != nil && !errors.Is(err, repository.ErrNotFound) {
 			return err
@@ -389,6 +402,273 @@ func reconcileS3BlobStores(ctx context.Context, blobRepo repository.BlobStoreRep
 		log.Info("s3 blob store reconciled", "name", name, "bucket", s3.Bucket, "endpoint", s3.Endpoint)
 	}
 	return nil
+}
+
+// desiredAzureConfig maps the config-file Azure settings onto the keys the
+// storage registry expects when instantiating an azure BlobStore. Unlike S3
+// there is no rename: the registry reads the same names as the config file.
+func desiredAzureConfig(az config.AzureConfig) map[string]any {
+	return map[string]any{
+		"container":         az.Container,
+		"account_name":      az.AccountName,
+		"account_key":       az.AccountKey,
+		"connection_string": az.ConnectionString,
+		"sas_token":         az.SASToken,
+		"endpoint":          az.Endpoint,
+		"skip_tls_verify":   az.SkipTLSVerify,
+	}
+}
+
+// syncAzureBlobStores reconciles the configured Azure settings into the seed
+// blob stores when storage.default_type=azure. Same trap as issue #81 for S3:
+// without it the seed migration leaves "default"/"docker" as local stores.
+func syncAzureBlobStores(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config, log logger.Logger) error {
+	if cfg.Storage.DefaultType != "azure" {
+		return nil
+	}
+	basePath := cfg.Storage.Local.BasePath
+	if basePath == "" {
+		basePath = "./data/blobs"
+	}
+	return reconcileAzureBlobStoresWithReferences(ctx, postgres.NewBlobStoreRepo(pool), azureBlobStoreReferences{
+		repositories: postgres.NewRepositoryRepo(pool),
+		assets:       postgres.NewAssetRepo(pool),
+	}, basePath, cfg.Storage.Azure, nil, log)
+}
+
+// azureBlobStoreReferences is the read-only view used to prove that a seed
+// store is still unused before changing its storage target.
+type azureBlobStoreReferences struct {
+	repositories repository.RepositoryRepo
+	assets       repository.AssetRepo
+}
+
+func (r azureBlobStoreReferences) inUse(ctx context.Context, bs *domain.BlobStore) (bool, error) {
+	if bs.UsedBytes > 0 {
+		return true, nil
+	}
+	if r.repositories == nil && r.assets == nil {
+		// The compatibility wrapper is used only by focused unit tests. Startup
+		// always supplies both repositories and therefore never takes this path.
+		return false, nil
+	}
+	if r.repositories != nil {
+		linked, err := r.repositories.ListByBlobStoreID(ctx, bs.ID)
+		if err != nil {
+			return false, fmt.Errorf("list repositories for blob store %q: %w", bs.Name, err)
+		}
+		if len(linked) > 0 {
+			return true, nil
+		}
+	}
+	if r.assets != nil {
+		refs, err := r.assets.ListAllBlobRefs(ctx)
+		if err != nil {
+			return false, fmt.Errorf("list assets for blob store %q: %w", bs.Name, err)
+		}
+		for _, ref := range refs {
+			if ref.BlobStoreID == bs.ID || (ref.BlobStoreID == "" && bs.Name == "default") {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
+}
+
+// reconcileAzureBlobStores keeps the compact test-facing wrapper for the
+// migration seed path. Startup uses the reference-aware variant below with
+// the configured local base path.
+func reconcileAzureBlobStores(ctx context.Context, blobRepo repository.BlobStoreRepo, az config.AzureConfig, reg *storage.Registry, log logger.Logger) error {
+	return reconcileAzureBlobStoresWithReferences(ctx, blobRepo, azureBlobStoreReferences{}, "./data/blobs", az, reg, log)
+}
+
+// reconcileAzureBlobStoresWithReferences updates only untouched seed stores,
+// or rotates credentials on an existing Azure store whose effective target is
+// unchanged. Target changes for occupied or individually configured stores
+// are rejected; moving their blobs belongs to BlobStoreMigrationService.
+func reconcileAzureBlobStoresWithReferences(ctx context.Context, blobRepo repository.BlobStoreRepo, refs azureBlobStoreReferences, localBasePath string, az config.AzureConfig, reg *storage.Registry, log logger.Logger) error {
+	desired := desiredAzureConfig(az)
+	stores, err := blobRepo.List(ctx)
+	if err != nil {
+		return fmt.Errorf("list blob stores: %w", err)
+	}
+	groupMembers := referencedBlobStoreIDs(stores)
+
+	type pendingChange struct {
+		store              *domain.BlobStore
+		credentialRotation bool
+	}
+	var creates []*domain.BlobStore
+	var updates []pendingChange
+	var rejected []string
+
+	for _, name := range seedBlobStores {
+		bs, err := blobRepo.Get(ctx, name)
+		if err != nil && !errors.Is(err, repository.ErrNotFound) {
+			return err
+		}
+		if bs == nil {
+			creates = append(creates, &domain.BlobStore{Name: name, Type: "azure", Config: cloneConfig(desired)})
+			continue
+		}
+		if bs.Type == "azure" && reflect.DeepEqual(bs.Config, desired) {
+			continue
+		}
+		if bs.Type == "azure" && azureConfigOnlyCredentialsDiffer(bs.Config, desired) {
+			candidate := cloneBlobStore(bs)
+			candidate.Config = cloneConfig(desired)
+			updates = append(updates, pendingChange{store: candidate, credentialRotation: true})
+			continue
+		}
+		if isUntouchedAzureSeedStore(bs, name, localBasePath) {
+			used, usageErr := refs.inUse(ctx, bs)
+			if usageErr != nil {
+				return usageErr
+			}
+			if used || groupMembers[bs.ID] {
+				rejected = append(rejected, fmt.Sprintf("%q is already used or referenced", name))
+				continue
+			}
+			candidate := cloneBlobStore(bs)
+			candidate.Type = "azure"
+			candidate.Config = cloneConfig(desired)
+			updates = append(updates, pendingChange{store: candidate})
+			continue
+		}
+		rejected = append(rejected, fmt.Sprintf("%q has an individual configuration or a different storage target", name))
+	}
+	if len(rejected) > 0 {
+		return fmt.Errorf("refusing automatic Azure blob-store target change for %s; create a new store and use the blob-store migration endpoint for repositories that need to move", strings.Join(rejected, ", "))
+	}
+
+	for _, bs := range creates {
+		if createErr := blobRepo.Create(ctx, bs); createErr != nil {
+			return createErr
+		}
+		log.Info("azure blob store created", "name", bs.Name, "container", az.Container, "account", az.AccountName)
+	}
+	for _, change := range updates {
+		if updateErr := blobRepo.Update(ctx, change.store); updateErr != nil {
+			return updateErr
+		}
+		if reg != nil && change.store.ID != "" {
+			reg.Invalidate(change.store.ID)
+		}
+		if change.credentialRotation {
+			log.Info("azure blob store credentials rotated", "name", change.store.Name, "container", az.Container, "account", az.AccountName)
+		} else {
+			log.Info("azure blob store reconciled", "name", change.store.Name, "container", az.Container, "account", az.AccountName)
+		}
+	}
+	return nil
+}
+
+func cloneConfig(src map[string]any) map[string]any {
+	if src == nil {
+		return nil
+	}
+	dst := make(map[string]any, len(src))
+	for k, v := range src {
+		dst[k] = v
+	}
+	return dst
+}
+
+func cloneBlobStore(src *domain.BlobStore) *domain.BlobStore {
+	if src == nil {
+		return nil
+	}
+	dst := *src
+	dst.Config = cloneConfig(src.Config)
+	return &dst
+}
+
+func isUntouchedAzureSeedStore(bs *domain.BlobStore, name, localBasePath string) bool {
+	if bs == nil || bs.Name != name || bs.Type != "local" || bs.QuotaBytes != nil {
+		return false
+	}
+	if localBasePath == "" {
+		localBasePath = "./data/blobs"
+	}
+	if len(bs.Config) != 1 {
+		return false
+	}
+	path, ok := bs.Config["path"].(string)
+	// Fresh databases still carry migration 001's relative paths: the local
+	// path sync is intentionally skipped when the selected backend is Azure.
+	return ok && (filepath.Clean(path) == filepath.Clean(filepath.Join(localBasePath, name)) ||
+		filepath.Clean(path) == filepath.Clean(filepath.Join("./data/blobs", name)))
+}
+
+func referencedBlobStoreIDs(stores []domain.BlobStore) map[string]bool {
+	refs := make(map[string]bool)
+	for _, store := range stores {
+		if store.Type != "group" || store.Config == nil {
+			continue
+		}
+		switch members := store.Config["member_ids"].(type) {
+		case []string:
+			for _, id := range members {
+				refs[id] = true
+			}
+		case []any:
+			for _, member := range members {
+				if id, ok := member.(string); ok {
+					refs[id] = true
+				}
+			}
+		}
+	}
+	return refs
+}
+
+var azureCredentialConfigKeys = map[string]struct{}{
+	"account_key":       {},
+	"connection_string": {},
+	"sas_token":         {},
+}
+
+func azureConfigOnlyCredentialsDiffer(cur, desired map[string]any) bool {
+	if !azureStorageTargetEqual(cur, desired) {
+		return false
+	}
+	return reflect.DeepEqual(azureNonCredentialConfig(cur), azureNonCredentialConfig(desired))
+}
+
+func azureStorageTargetEqual(cur, desired map[string]any) bool {
+	return azureStorageTarget(cur)["identity"] != "" && reflect.DeepEqual(azureStorageTarget(cur), azureStorageTarget(desired))
+}
+
+func azureNonCredentialConfig(cfg map[string]any) map[string]any {
+	out := map[string]any{}
+	for k, v := range cfg {
+		if _, credential := azureCredentialConfigKeys[k]; credential {
+			continue
+		}
+		switch k {
+		case "container", "account_name", "endpoint", "skip_tls_verify":
+			continue
+		default:
+			out[k] = v
+		}
+	}
+	target := azureStorageTarget(cfg)
+	for k, v := range target {
+		out[k] = v
+	}
+	return out
+}
+
+func azureStorageTarget(cfg map[string]any) map[string]any {
+	return map[string]any{
+		"identity":        storage.PhysicalStoreIdentity(storage.BlobStoreDescriptor{Type: "azure", Config: cfg}),
+		"skip_tls_verify": configBool(cfg, "skip_tls_verify"),
+	}
+}
+
+func configBool(cfg map[string]any, key string) bool {
+	value, _ := cfg[key].(bool)
+	return value
 }
 
 // s3ConfigEqual reports whether cur already holds exactly the desired s3 config.
