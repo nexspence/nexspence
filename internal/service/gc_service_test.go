@@ -15,9 +15,11 @@ import (
 )
 
 // defaultStoreID is the id testutil.NewBlobStoreRepo seeds the "default" store
-// with. GC now asks "referenced in THIS store?", so a fixture asset has to sit
-// on the store under compaction to count as a reference.
+// with. The GC keeps the logical-store distinction for migrations, while also
+// combining references when multiple rows address one physical namespace.
 const defaultStoreID = "00000000-0000-0000-0000-000000000001"
+
+const sharedAzureDockerStoreID = "00000000-0000-0000-0000-000000000002"
 
 func buildGC(assets *testutil.AssetRepo, bs *testutil.BlobStore) *service.BlobGCService {
 	return &service.BlobGCService{
@@ -279,4 +281,51 @@ func TestGC_AssetWithoutStoreID_ProtectsEveryStore(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 0, result.Orphans)
 	assert.True(t, bs.Has("key1"))
+}
+
+func TestGC_CompactStore_SharedAzureContainer_ProtectsOtherLogicalStore(t *testing.T) {
+	assets := testutil.NewAssetRepo()
+	shared := testutil.NewBlobStore()
+	ctx := context.Background()
+
+	require.NoError(t, shared.Put(ctx, "docker-live", bytes.NewReader([]byte("live")), 4))
+	require.NoError(t, shared.Put(ctx, "orphan", bytes.NewReader([]byte("old")), 3))
+	require.NoError(t, assets.Create(ctx, &domain.Asset{
+		ComponentID: "c1", RepositoryID: "r1", Repository: "docker-repo",
+		Path: "/manifest", BlobKey: "docker-live", BlobStoreID: sharedAzureDockerStoreID, SizeBytes: 4,
+	}))
+
+	stores := testutil.NewBlobStoreRepo(
+		&domain.BlobStore{
+			ID: defaultStoreID, Name: "default", Type: "azure", UsedBytes: 3,
+			Config: map[string]any{
+				"container": "shared", "account_name": "acct",
+				"endpoint": "https://acct.blob.core.windows.net",
+			},
+		},
+		&domain.BlobStore{
+			ID: sharedAzureDockerStoreID, Name: "docker", Type: "azure", UsedBytes: 4,
+			Config: map[string]any{
+				"container": "shared", "account_name": "ignored",
+				"endpoint":          "https://ignored.example",
+				"connection_string": "DefaultEndpointsProtocol=https;AccountName=acct;AccountKey=YQ==;EndpointSuffix=core.windows.net",
+			},
+		},
+	).WithAssets(assets)
+
+	result, err := (&service.BlobGCService{
+		Assets: assets, Stores: stores, Resolver: testutil.NewFakeResolver(shared),
+	}).CompactStore(ctx, "default", service.GCOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, 2, result.ScannedBlobs)
+	assert.Equal(t, 1, result.Orphans)
+	assert.False(t, shared.Has("orphan"))
+	assert.True(t, shared.Has("docker-live"), "a reference in the sibling logical store must protect the shared-container blob")
+
+	defaultStore, err := stores.Get(ctx, "default")
+	require.NoError(t, err)
+	dockerStore, err := stores.Get(ctx, "docker")
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), defaultStore.UsedBytes)
+	assert.Equal(t, int64(4), dockerStore.UsedBytes)
 }
