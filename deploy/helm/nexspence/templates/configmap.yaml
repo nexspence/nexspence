@@ -49,10 +49,14 @@ data:
   # backend to use — emitting only the type-specific block below and never
   # this key meant storage.type: s3 in values had zero effect on the running
   # app, which stayed on "local" (its own default) regardless.
-  NEXSPENCE_STORAGE_DEFAULT_TYPE: {{ .Values.storage.type | quote }}
-  {{- if eq .Values.storage.type "local" }}
+  {{- $storageType := .Values.storage.type }}
+  {{- if not (or (eq $storageType "local") (eq $storageType "s3") (eq $storageType "azure")) }}
+  {{- fail (printf "storage.type must be local, s3 or azure, got %q" $storageType) }}
+  {{- end }}
+  NEXSPENCE_STORAGE_DEFAULT_TYPE: {{ $storageType | quote }}
+  {{- if eq $storageType "local" }}
   NEXSPENCE_STORAGE_LOCAL_BASE_PATH: {{ .Values.storage.local.mountPath | quote }}
-  {{- else if eq .Values.storage.type "s3" }}
+  {{- else if eq $storageType "s3" }}
   NEXSPENCE_STORAGE_S3_ENDPOINT: {{ .Values.storage.s3.endpoint | quote }}
   NEXSPENCE_STORAGE_S3_BUCKET: {{ .Values.storage.s3.bucket | quote }}
   NEXSPENCE_STORAGE_S3_REGION: {{ .Values.storage.s3.region | quote }}
@@ -62,6 +66,11 @@ data:
   # dropped, leaving MinIO installs without path-style addressing.
   NEXSPENCE_STORAGE_S3_FORCE_PATH_STYLE: {{ .Values.storage.s3.forcePathStyle | quote }}
   NEXSPENCE_STORAGE_S3_SKIP_TLS_VERIFY: {{ .Values.storage.s3.skipTLSVerify | quote }}
+  {{- else if eq $storageType "azure" }}
+  NEXSPENCE_STORAGE_AZURE_CONTAINER: {{ .Values.storage.azure.container | quote }}
+  NEXSPENCE_STORAGE_AZURE_ACCOUNT_NAME: {{ .Values.storage.azure.accountName | quote }}
+  NEXSPENCE_STORAGE_AZURE_ENDPOINT: {{ .Values.storage.azure.endpoint | quote }}
+  NEXSPENCE_STORAGE_AZURE_SKIP_TLS_VERIFY: {{ .Values.storage.azure.skipTLSVerify | quote }}
   {{- end }}
 {{- if .Values.config.docker.subdomainConnector.aliases }}
 ---

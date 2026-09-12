@@ -27,6 +27,8 @@ RENDERS = [
     [],
     ["--set", "scanning.enabled=true"],
     ["--set", "storage.type=s3", "--set", "storage.s3.bucket=b"],
+    ["--set", "storage.type=azure", "--set", "storage.azure.container=c",
+     "--set", "storage.azure.accountName=acct"],
     ["--set", "config.docker.subdomainConnector.enabled=true"],
 ]
 

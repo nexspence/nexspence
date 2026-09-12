@@ -6,7 +6,7 @@ Nexspence — open-source universal artifact repository manager (Nexus OSS alter
 
 - Helm 3.x
 - Kubernetes >= 1.26
-- PersistentVolume provisioner (for local blob storage) or S3-compatible storage
+- PersistentVolume provisioner (for local blob storage), S3-compatible storage, or Azure Blob Storage
 
 ---
 
@@ -148,6 +148,53 @@ helm install nexspence \
 
 ---
 
+## Azure Blob Storage
+
+Set `storage.type=azure` and provide an existing container. Use this
+for any multi-replica deployment — a single `ReadWriteOnce` PVC does not scale
+horizontally. Exactly one credential path is required: account key,
+connection string, SAS token, or the pod's Entra ID identity (leave every
+credential empty and set `serviceAccount.annotations` for workload identity).
+
+```bash
+helm install nexspence \
+  deploy/helm/nexspence \
+  --set storage.type=azure \
+  --set storage.azure.container="nexspence-blobs" \
+  --set storage.azure.accountName="mystorage" \
+  --set storage.azure.accountKey="..." \
+  -f deploy/helm/nexspence/values-examples/nginx.yaml \
+  --namespace nexspence \
+  --create-namespace
+```
+
+Prefer an existing Secret over putting the key in values:
+
+```yaml
+storage:
+  type: azure
+  azure:
+    container: nexspence-blobs
+    accountName: mystorage
+    existingSecret: nexspence-azure
+    existingSecretKind: accountKey   # or connectionString / sasToken
+    existingSecretKey: account-key
+```
+
+### AKS Workload Identity (recommended for Azure)
+
+For AKS, use a user-assigned managed identity and leave all Azure credential
+values empty. The chart already supports the required ServiceAccount
+annotations and pod label. Start with
+[the ready-to-render example](values-examples/azure-workload-identity.yaml)
+and follow the complete [AKS Workload Identity guide](../../../docs/azure-workload-identity.md).
+The identity needs `Storage Blob Data Contributor` on the container. Add
+`Storage Blob Delegator` on the storage account when Nexspence must generate
+user-delegation SAS URLs; the container data role alone does not grant that
+account-level action.
+
+---
+
 ## Docker Subdomain Connector
 
 Serves each Docker repository on its own hostname, so clients can
@@ -220,7 +267,7 @@ helm install nexspence \
   --create-namespace
 ```
 
-For multi-replica deployments, use S3 storage (see above).
+For multi-replica deployments, use S3 or Azure storage (see above).
 
 ---
 

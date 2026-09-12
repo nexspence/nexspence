@@ -158,7 +158,7 @@ externalRedis:
   existingSecretKey: "password"
   db: 0
 
-# -- Blob storage: "local" or "s3"
+# -- Blob storage: "local", "s3" or "azure"
 storage:
   type: local
   local:
@@ -194,6 +194,28 @@ storage:
     # -- Accept the endpoint's TLS certificate without verifying it. For an
     # on-prem S3 behind a private CA; the connection carries the credentials and
     # every blob, so prefer trusting the CA.
+    skipTLSVerify: false
+  azure:
+    # -- Filled when storage.type=azure. The container must already exist.
+    container: ""
+    accountName: ""
+    # -- Custom endpoint, e.g. Azurite. Empty uses https://<account>.blob.core.windows.net
+    endpoint: ""
+    # -- Prefer existingSecret below — a plaintext value here tends to end up
+    # committed to a values file. Uncomment only if you genuinely have no
+    # existing Secret to point at. Leave every credential empty to use the
+    # pod's Entra ID identity (workload identity / managed identity); set
+    # serviceAccount.annotations accordingly.
+    # accountKey: ""
+    # connectionString: ""
+    # sasToken: ""
+    # -- Reference an existing Secret instead of putting credentials in values.
+    existingSecret: ""
+    # -- Which credential the Secret holds: accountKey | connectionString | sasToken
+    existingSecretKind: "accountKey"
+    existingSecretKey: ""
+    # -- Accept the endpoint's TLS certificate without verifying it. For an
+    # on-prem emulator / private CA; prefer trusting the CA.
     skipTLSVerify: false
 
 # -- OpenTelemetry distributed tracing (HTTP, DB, blob-store, background jobs,

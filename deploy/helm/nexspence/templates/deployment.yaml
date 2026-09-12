@@ -103,6 +103,31 @@ spec:
                   name: {{ .Values.storage.s3.existingSecret }}
                   key: {{ .Values.storage.s3.existingSecretSecretKeyKey | default "secret-key" }}
             {{- end }}
+            {{- if and (eq .Values.storage.type "azure") .Values.storage.azure.existingSecret }}
+            {{- $azKind := .Values.storage.azure.existingSecretKind | default "accountKey" }}
+            {{- if not (or (eq $azKind "accountKey") (eq $azKind "connectionString") (eq $azKind "sasToken")) }}
+            {{- fail (printf "storage.azure.existingSecretKind must be accountKey, connectionString or sasToken, got %q" $azKind) }}
+            {{- end }}
+            {{- if eq $azKind "connectionString" }}
+            - name: NEXSPENCE_STORAGE_AZURE_CONNECTION_STRING
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.storage.azure.existingSecret }}
+                  key: {{ .Values.storage.azure.existingSecretKey | default "connection-string" }}
+            {{- else if eq $azKind "sasToken" }}
+            - name: NEXSPENCE_STORAGE_AZURE_SAS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.storage.azure.existingSecret }}
+                  key: {{ .Values.storage.azure.existingSecretKey | default "sas-token" }}
+            {{- else }}
+            - name: NEXSPENCE_STORAGE_AZURE_ACCOUNT_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.storage.azure.existingSecret }}
+                  key: {{ .Values.storage.azure.existingSecretKey | default "account-key" }}
+            {{- end }}
+            {{- end }}
             {{- if and .Values.redis.enabled .Values.redis.auth.existingSecret }}
             - name: NEXSPENCE_REDIS_PASSWORD
               valueFrom:

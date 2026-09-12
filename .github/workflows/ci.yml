@@ -41,6 +41,7 @@ jobs:
           helm template check deploy/helm/nexspence >/dev/null
           helm template check deploy/helm/nexspence --set scanning.enabled=true >/dev/null
           helm template check deploy/helm/nexspence --set storage.type=s3 --set storage.s3.bucket=b >/dev/null
+          helm template check deploy/helm/nexspence --set storage.type=azure --set storage.azure.container=c --set storage.azure.accountName=acct >/dev/null
           helm template check deploy/helm/nexspence --set config.docker.subdomainConnector.enabled=true >/dev/null
       # An env name that matches no config key is silently ignored by viper, so
       # the value in values.yaml never reaches the server and nothing says so.
