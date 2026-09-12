@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -46,7 +47,8 @@ func TestResolveBlobStore_DefaultFallback(t *testing.T) {
 	repo := testutil.SimpleRepo("rsb-repo", "raw")
 	d, _, _, _ := deps(repo)
 
-	id, name, store := base.ResolveBlobStore(context.Background(), d, repo)
+	id, name, store, err := base.ResolveBlobStore(context.Background(), d, repo)
+	require.NoError(t, err)
 	// testutil.BlobStoreRepo seeds a "default" store; id may be empty if
 	// GetByID fails on it, but the store must always be non-nil.
 	assert.NotNil(t, store)
@@ -75,7 +77,8 @@ func TestResolveBlobStore_WithBlobStoreID(t *testing.T) {
 		BaseURL:    "http://localhost",
 	}
 
-	id, name, store := base.ResolveBlobStore(context.Background(), d, repo)
+	id, name, store, err := base.ResolveBlobStore(context.Background(), d, repo)
+	require.NoError(t, err)
 	assert.Equal(t, bsID, id)
 	assert.Equal(t, "my-store", name)
 	assert.NotNil(t, store)
@@ -215,20 +218,126 @@ func TestDeleteArtifact_WebhookFired(t *testing.T) {
 
 // ── PhysicalStore ─────────────────────────────────────────────
 
-func TestPhysicalStore_NilRegistry_FallsBackToDefault(t *testing.T) {
+func TestPhysicalStore_NilRegistry_ExplicitStoreReturnsError(t *testing.T) {
 	defaultStore := testutil.NewBlobStore()
 	d := formats.Deps{BlobStore: defaultStore}
 	bs := &domain.BlobStore{ID: "some-id", Name: "some-store", Type: "local"}
-	result := base.PhysicalStore(context.Background(), d, bs)
-	assert.Equal(t, defaultStore, result)
+	result, err := base.PhysicalStore(context.Background(), d, bs)
+	assert.Nil(t, result)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, base.ErrBlobStoreUnavailable)
 }
 
 func TestPhysicalStore_NilBS_FallsBackToDefault(t *testing.T) {
 	defaultStore := testutil.NewBlobStore()
 	reg := storage.NewRegistry(defaultStore)
 	d := formats.Deps{BlobStore: defaultStore, Registry: reg}
-	result := base.PhysicalStore(context.Background(), d, nil)
+	result, err := base.PhysicalStore(context.Background(), d, nil)
+	require.NoError(t, err)
 	assert.Equal(t, defaultStore, result)
+}
+
+func TestPhysicalStore_NamedStoreWithoutID_DoesNotUseDefault(t *testing.T) {
+	defaultStore := testutil.NewBlobStore()
+	d := formats.Deps{BlobStore: defaultStore, Registry: storage.NewRegistry(defaultStore)}
+	result, err := base.PhysicalStore(context.Background(), d, &domain.BlobStore{Name: "azure"})
+	assert.Nil(t, result)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, base.ErrBlobStoreUnavailable)
+}
+
+func TestStoreArtifact_ExplicitAzureFailure_DoesNotUseDefaultOrRegister(t *testing.T) {
+	failingAzure := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "synthetic Azure outage", http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(failingAzure.Close)
+
+	defaultStore := &domain.BlobStore{ID: "default-id", Name: "default", Type: "local"}
+	azureStore := &domain.BlobStore{
+		ID: "azure-id", Name: "azure", Type: "azure",
+		Config: map[string]any{
+			"container":    "nexspence",
+			"account_name": "devstoreaccount1",
+			"sas_token":    "sv=2024-11-04&sig=synthetic",
+			"endpoint":     failingAzure.URL,
+		},
+	}
+	blobs := testutil.NewBlobStoreRepo(defaultStore, azureStore)
+	defaultPhysical := testutil.NewBlobStore()
+	assets := testutil.NewAssetRepo()
+	bsID := azureStore.ID
+	repo := &domain.Repository{
+		ID: "azure-repo-id", Name: "azure-repo", Format: "raw", Type: domain.TypeHosted,
+		Online: true, BlobStoreID: &bsID,
+	}
+	d := formats.Deps{
+		Repos:      testutil.NewRepoRepo(repo),
+		Blobs:      blobs,
+		Components: testutil.NewComponentRepo(),
+		Assets:     assets,
+		BlobStore:  defaultPhysical,
+		Registry:   storage.NewRegistry(defaultPhysical),
+	}
+
+	_, err := base.StoreArtifact(context.Background(), d, repo.Name, "/artifact.txt", "text/plain",
+		base.Coords{Name: "artifact.txt"}, strings.NewReader("must not be stored"), int64(len("must not be stored")))
+	require.Error(t, err)
+	assert.ErrorIs(t, err, base.ErrBlobStoreUnavailable)
+	assert.False(t, defaultPhysical.Has(base.BlobKey(repo.Name, "/artifact.txt")),
+		"an unavailable explicit Azure store must not fall back to the default store")
+	assetList, listErr := assets.List(context.Background(), "", 100, 0)
+	require.NoError(t, listErr)
+	assert.Empty(t, assetList.Items, "failed storage must not register an asset")
+	storedDefault, getErr := blobs.GetByID(context.Background(), defaultStore.ID)
+	require.NoError(t, getErr)
+	assert.Zero(t, storedDefault.UsedBytes, "failed storage must not charge the default store")
+	storedAzure, getErr := blobs.GetByID(context.Background(), azureStore.ID)
+	require.NoError(t, getErr)
+	assert.Zero(t, storedAzure.UsedBytes, "failed storage must not charge the failed Azure store")
+}
+
+func TestFetchArtifact_ExplicitAzureFailure_DoesNotReadDefault(t *testing.T) {
+	failingAzure := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "synthetic Azure outage", http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(failingAzure.Close)
+
+	defaultStore := &domain.BlobStore{ID: "default-fetch-id", Name: "default", Type: "local"}
+	azureStore := &domain.BlobStore{
+		ID: "azure-fetch-id", Name: "azure-fetch", Type: "azure",
+		Config: map[string]any{
+			"container":    "nexspence",
+			"account_name": "devstoreaccount1",
+			"sas_token":    "sv=2024-11-04&sig=synthetic",
+			"endpoint":     failingAzure.URL,
+		},
+	}
+	blobs := testutil.NewBlobStoreRepo(defaultStore, azureStore)
+	defaultPhysical := testutil.NewBlobStore()
+	assets := testutil.NewAssetRepo()
+	key := "explicit-azure-fetch-key"
+	require.NoError(t, defaultPhysical.Put(context.Background(), key, strings.NewReader("wrong store"), 11))
+	asset := &domain.Asset{
+		ID: "asset-azure-fetch", Repository: "fetch-azure", RepositoryID: "fetch-azure-id",
+		Path: "/artifact.txt", BlobKey: key, BlobStoreID: azureStore.ID, SizeBytes: 11,
+	}
+	require.NoError(t, assets.Create(context.Background(), asset))
+	repo := &domain.Repository{ID: "fetch-azure-id", Name: "fetch-azure", Format: "raw", Type: domain.TypeHosted, Online: true}
+	d := formats.Deps{
+		Repos:      testutil.NewRepoRepo(repo),
+		Blobs:      blobs,
+		Components: testutil.NewComponentRepo(),
+		Assets:     assets,
+		BlobStore:  defaultPhysical,
+		Registry:   storage.NewRegistry(defaultPhysical),
+	}
+
+	rc, gotAsset, err := base.FetchArtifact(context.Background(), d, repo.Name, asset.Path)
+	assert.Nil(t, rc)
+	assert.Nil(t, gotAsset)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, base.ErrBlobStoreUnavailable)
+	assert.True(t, defaultPhysical.Has(key), "an unavailable explicit Azure store must not read the default store")
 }
 
 // ── checkQuota via StoreArtifact (streaming size path) ───────
@@ -384,7 +493,7 @@ func TestStoreArtifact_NoDefaultStore_UsesTheOnlyOne(t *testing.T) {
 	blobStore := testutil.NewBlobStore()
 	d := formats.Deps{
 		Repos:      testutil.NewRepoRepo(repo),
-		Blobs:      testutil.NewBlobStoreRepo(&domain.BlobStore{ID: "bs-minio", Name: "minio", Type: "s3"}),
+		Blobs:      testutil.NewBlobStoreRepo(&domain.BlobStore{ID: "bs-only", Name: "only-store", Type: "local", Config: map[string]any{"path": t.TempDir()}}),
 		Components: testutil.NewComponentRepo(),
 		Assets:     testutil.NewAssetRepo(),
 		BlobStore:  blobStore,
@@ -402,7 +511,7 @@ func TestStoreArtifact_NoDefaultStore_UsesTheOnlyOne(t *testing.T) {
 	assets, err := d.Assets.ListByRepoAndPath(context.Background(), "raw-hosted", "")
 	require.NoError(t, err)
 	require.NotEmpty(t, assets)
-	assert.Equal(t, "bs-minio", assets[0].BlobStoreID)
+	assert.Equal(t, "bs-only", assets[0].BlobStoreID)
 }
 
 // Several stores and none named "default" is ambiguous, and picking one at
