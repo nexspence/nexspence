@@ -183,3 +183,25 @@ func TestRedactedRepository_StripsRemotePassword(t *testing.T) {
 		t.Fatal("remote_username must survive")
 	}
 }
+
+func TestRedactedBlobStore_StripsAzureCredentials(t *testing.T) {
+	bs := BlobStore{Config: map[string]any{
+		"container":         "nx",
+		"account_name":      "acct",
+		"account_key":       "supersecret",
+		"connection_string": "AccountKey=***",
+		"sas_token":         "sig=abc",
+	}}
+	got := RedactedBlobStore(bs)
+	for _, k := range []string{"account_key", "connection_string", "sas_token"} {
+		if _, leaked := got.Config[k]; leaked {
+			t.Errorf("%s leaked into the redacted config", k)
+		}
+		if got.Config[k+"_set"] != true {
+			t.Errorf("%s_set marker missing", k)
+		}
+	}
+	if got.Config["container"] != "nx" || got.Config["account_name"] != "acct" {
+		t.Error("non-secret fields must survive redaction")
+	}
+}

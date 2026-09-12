@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -85,30 +86,41 @@ func (h *BlobStoreHandler) Get(c *gin.Context) {
 }
 
 // mergeBlobStoreConfig produces the config to persist from the stored one and the
-// caller's replacement. The replacement wins wholesale, except for the S3 secret key:
+// caller's replacement. The replacement wins wholesale, except for credentials:
 // clients read a redacted config (see domain.RedactedBlobStore), so an omitted
-// secret_key means "unchanged" rather than "clear it". Sending an explicit empty
-// secret_key clears the credential. The read-only secret_key_set marker a client may
-// echo back is always dropped.
+// secret_key, account_key, connection_string or sas_token means "unchanged"
+// rather than "clear it". Sending an explicit empty value clears the credential.
+// The read-only *_set markers a client may echo back are always dropped.
 func mergeBlobStoreConfig(stored, updates map[string]any) map[string]any {
 	if updates == nil {
 		return nil
 	}
-	merged := make(map[string]any, len(updates)+1)
+	secrets := domain.BlobStoreSecretKeys()
+	isMarker := func(k string) bool {
+		for _, s := range secrets {
+			if k == s+"_set" || (s == domain.SecretKeyKey && k == domain.SecretKeySetKey) {
+				return true
+			}
+		}
+		return false
+	}
+	merged := make(map[string]any, len(updates)+len(secrets))
 	for k, v := range updates {
-		if k == domain.SecretKeySetKey {
+		if isMarker(k) {
 			continue
 		}
 		merged[k] = v
 	}
-	if secret, sent := merged[domain.SecretKeyKey]; sent {
-		if s, _ := secret.(string); s == "" {
-			delete(merged, domain.SecretKeyKey)
+	for _, key := range secrets {
+		if secret, sent := merged[key]; sent {
+			if s, _ := secret.(string); s == "" {
+				delete(merged, key)
+			}
+			continue
 		}
-		return merged
-	}
-	if secret, ok := stored[domain.SecretKeyKey].(string); ok && secret != "" {
-		merged[domain.SecretKeyKey] = secret
+		if secret, ok := stored[key].(string); ok && secret != "" {
+			merged[key] = secret
+		}
 	}
 	return merged
 }
@@ -116,6 +128,27 @@ func mergeBlobStoreConfig(stored, updates map[string]any) map[string]any {
 var validFillPolicies = map[string]bool{
 	"round_robin":         true,
 	"write_to_first_fill": true,
+}
+
+// validateAzureConfig rejects ambiguous authentication settings. Azure's
+// constructor has a precedence order for legacy configurations, but silently
+// choosing one credential over another makes an edit look successful while
+// leaving the operator with a different authentication mode than intended.
+// An empty credential set is valid and selects the host's Entra ID identity.
+func validateAzureConfig(cfg map[string]any) string {
+	if cfg == nil {
+		return ""
+	}
+	var configured []string
+	for _, key := range []string{"account_key", "connection_string", "sas_token"} {
+		if value, ok := cfg[key].(string); ok && strings.TrimSpace(value) != "" {
+			configured = append(configured, key)
+		}
+	}
+	if len(configured) > 1 {
+		return "azure blob store accepts at most one credential: account_key, connection_string or sas_token"
+	}
+	return ""
 }
 
 // extractMemberIDs pulls member_ids from blob store config, handling []string and []interface{}.
@@ -199,6 +232,9 @@ func (h *BlobStoreHandler) Create(c *gin.Context) {
 		return
 	}
 	bs.Type = blobType
+	for _, k := range domain.BlobStoreSecretKeys() {
+		delete(bs.Config, k+"_set")
+	}
 	delete(bs.Config, domain.SecretKeySetKey)
 
 	if bs.Name == "" {
@@ -208,6 +244,12 @@ func (h *BlobStoreHandler) Create(c *gin.Context) {
 
 	if bs.Type == "group" {
 		if msg := h.validateGroupConfig(c.Request.Context(), bs.Config); msg != "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": msg})
+			return
+		}
+	}
+	if bs.Type == "azure" {
+		if msg := validateAzureConfig(bs.Config); msg != "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": msg})
 			return
 		}
@@ -252,6 +294,12 @@ func (h *BlobStoreHandler) Update(c *gin.Context) {
 			return
 		}
 	}
+	if updates.Type == "azure" {
+		if msg := validateAzureConfig(updates.Config); msg != "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": msg})
+			return
+		}
+	}
 
 	if err := h.repo.Update(c.Request.Context(), &updates); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -279,7 +327,7 @@ func (h *BlobStoreHandler) Delete(c *gin.Context) {
 
 // PresignGet handles GET /api/v1/blobstores/:name/presign
 // Query params: key=<blobKey>, ttl=<seconds> (default 3600).
-// Returns a presigned download URL (S3 stores only).
+// Returns a presigned download URL (S3 and Azure stores only).
 func (h *BlobStoreHandler) PresignGet(c *gin.Context) {
 	// The key is caller-supplied and repository RBAC never sees it, so this is
 	// an admin operation wherever it ends up mounted.
@@ -288,7 +336,7 @@ func (h *BlobStoreHandler) PresignGet(c *gin.Context) {
 	}
 	ps, ok := h.blobStore.(storage.PresignableStore)
 	if !ok {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "presigned URLs are only supported for S3 blob stores"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "presigned URLs are only supported for S3 and Azure blob stores"})
 		return
 	}
 	key := c.Query("key")
@@ -315,14 +363,14 @@ func (h *BlobStoreHandler) PresignGet(c *gin.Context) {
 
 // PresignPut handles POST /api/v1/blobstores/:name/presign
 // Body JSON: {"key": "<blobKey>", "ttl": <seconds>}
-// Returns a presigned upload URL (S3 stores only).
+// Returns a presigned upload URL (S3 and Azure stores only).
 func (h *BlobStoreHandler) PresignPut(c *gin.Context) {
 	if !requireAdmin(c) {
 		return
 	}
 	ps, ok := h.blobStore.(storage.PresignableStore)
 	if !ok {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "presigned URLs are only supported for S3 blob stores"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "presigned URLs are only supported for S3 and Azure blob stores"})
 		return
 	}
 	var req struct {
@@ -373,6 +421,10 @@ func (h *BlobStoreHandler) ConfigureLifecycle(c *gin.Context) {
 		return
 	}
 	if err := ps.ConfigureLifecycle(c.Request.Context(), req.ExpirationDays); err != nil {
+		if errors.Is(err, storage.ErrLifecycleUnsupported) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -432,8 +484,11 @@ func (h *BlobStoreHandler) Usage(c *gin.Context) {
 		total += used
 	}
 
+	// The usage payload embeds the whole store — redact it like every
+	// other response, or an admin reading usage gets raw credentials that
+	// List/Get deliberately strip.
 	resp := gin.H{
-		"store":              bs,
+		"store":              domain.RedactedBlobStore(*bs),
 		"linkedRepositories": info,
 		"totalAssetBytes":    total,
 	}
@@ -490,7 +545,7 @@ func (h *BlobStoreHandler) usageGroup(ctx context.Context, c *gin.Context, group
 	}
 
 	resp := gin.H{
-		"store":              group,
+		"store":              domain.RedactedBlobStore(*group),
 		"members":            members,
 		"memberTotalUsed":    totalUsed,
 		"linkedRepositories": allRepos,
@@ -504,7 +559,7 @@ func (h *BlobStoreHandler) usageGroup(ctx context.Context, c *gin.Context, group
 }
 
 // TestConnection handles POST /api/v1/blobstores/test.
-// Body: {"type": "s3"|"local", "config": {...}}
+// Body: {"type": "s3"|"azure"|"local", "config": {...}}
 // Tries to connect and returns {"ok": true} or {"ok": false, "error": "..."}.
 func (h *BlobStoreHandler) TestConnection(c *gin.Context) {
 	var req struct {
@@ -518,6 +573,12 @@ func (h *BlobStoreHandler) TestConnection(c *gin.Context) {
 	if req.Type == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "type is required"})
 		return
+	}
+	if req.Type == "azure" {
+		if msg := validateAzureConfig(req.Config); msg != "" {
+			c.JSON(http.StatusOK, gin.H{"ok": false, "error": msg})
+			return
+		}
 	}
 
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)

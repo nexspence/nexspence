@@ -360,6 +360,174 @@ describe('AdminPage — Blob Stores tab', () => {
     expect(await screen.findByText(/Fill Policy/)).toBeInTheDocument()
     expect(screen.getByText(/Members \(non-group/)).toBeInTheDocument()
   })
+
+  it('detail modal: names the stored azure credential from the _set markers', async () => {
+    const az = {
+      ...blobStore,
+      type: 'azure',
+      config: { container: 'nx-oci', account_name: 'mystorage', account_key_set: true },
+    }
+    server.use(
+      http.get('/service/rest/v1/blobstores', () => HttpResponse.json([az])),
+      http.get('/api/v1/blob-stores/:name/usage', () =>
+        HttpResponse.json({ store: az, linkedRepositories: [], totalAssetBytes: 0 }),
+      ),
+    )
+    renderAdmin('blobs')
+    fireEvent.click(await screen.findByText('default'))
+    await screen.findByText('Blob Store: default')
+    expect(await screen.findByText('Credential')).toBeInTheDocument()
+    expect(screen.getByText('Account key')).toBeInTheDocument()
+  })
+
+  it('detail modal: an azure store with no credential reads as Entra ID', async () => {
+    const az = { ...blobStore, type: 'azure', config: { container: 'nx-oci', account_name: 'mystorage' } }
+    server.use(
+      http.get('/service/rest/v1/blobstores', () => HttpResponse.json([az])),
+      http.get('/api/v1/blob-stores/:name/usage', () =>
+        HttpResponse.json({ store: az, linkedRepositories: [], totalAssetBytes: 0 }),
+      ),
+    )
+    renderAdmin('blobs')
+    fireEvent.click(await screen.findByText('default'))
+    await screen.findByText('Blob Store: default')
+    expect(await screen.findByText('Entra ID identity')).toBeInTheDocument()
+  })
+
+  it('detail modal: edit form marks which azure credentials are stored', async () => {
+    const az = {
+      ...blobStore,
+      type: 'azure',
+      config: { container: 'nx-oci', account_name: 'mystorage', sas_token_set: true },
+    }
+    server.use(
+      http.get('/service/rest/v1/blobstores', () => HttpResponse.json([az])),
+      http.get('/api/v1/blob-stores/:name/usage', () =>
+        HttpResponse.json({ store: az, linkedRepositories: [], totalAssetBytes: 0 }),
+      ),
+    )
+    renderAdmin('blobs')
+    fireEvent.click(await screen.findByText('default'))
+    await screen.findByText('Blob Store: default')
+    fireEvent.click(await screen.findByRole('button', { name: /Edit Config/i }))
+    await screen.findByText('Edit Configuration')
+    expect(await screen.findByText(/SAS token \(stored — leave blank to keep\)/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'SAS token' })).toBeInTheDocument()
+  })
+
+  it('azure edit: keeps an unchanged credential but clears the other modes explicitly', async () => {
+    const az = {
+      ...blobStore,
+      type: 'azure',
+      config: { container: 'nx-oci', account_name: 'mystorage', account_key_set: true },
+    }
+    let put: { config?: Record<string, unknown> } | null = null
+    server.use(
+      http.get('/service/rest/v1/blobstores', () => HttpResponse.json([az])),
+      http.get('/api/v1/blob-stores/:name/usage', () =>
+        HttpResponse.json({ store: az, linkedRepositories: [], totalAssetBytes: 0 }),
+      ),
+      http.put('/service/rest/v1/blobstores/:type/:name', async ({ request }) => {
+        put = (await request.json()) as { config?: Record<string, unknown> }
+        return HttpResponse.json(az)
+      }),
+    )
+    renderAdmin('blobs')
+    fireEvent.click(await screen.findByText('default'))
+    await screen.findByRole('button', { name: /Edit Config/i })
+    fireEvent.click(screen.getByRole('button', { name: /Edit Config/i }))
+    await screen.findByText('Edit Configuration')
+    fireEvent.click(screen.getByRole('button', { name: 'Account key' }))
+    expect(await screen.findByText('Entra ID identity')).toBeInTheDocument()
+    fireEvent.click(screen.getByText('Entra ID identity'))
+    fireEvent.click(screen.getByRole('button', { name: /^Save$/ }))
+    await waitFor(() => expect(put).toBeTruthy())
+    expect(put!.config?.account_key).toBe('')
+    expect(put!.config?.connection_string).toBe('')
+    expect(put!.config?.sas_token).toBe('')
+  })
+
+  it('azure edit: switching authentication sends the new credential and removes the old one', async () => {
+    const user = userEvent.setup()
+    const az = {
+      ...blobStore,
+      type: 'azure',
+      config: { container: 'nx-oci', account_name: 'mystorage', account_key_set: true },
+    }
+    let put: { config?: Record<string, unknown> } | null = null
+    server.use(
+      http.get('/service/rest/v1/blobstores', () => HttpResponse.json([az])),
+      http.get('/api/v1/blob-stores/:name/usage', () =>
+        HttpResponse.json({ store: az, linkedRepositories: [], totalAssetBytes: 0 }),
+      ),
+      http.put('/service/rest/v1/blobstores/:type/:name', async ({ request }) => {
+        put = (await request.json()) as { config?: Record<string, unknown> }
+        return HttpResponse.json(az)
+      }),
+    )
+    renderAdmin('blobs')
+    fireEvent.click(await screen.findByText('default'))
+    fireEvent.click(await screen.findByRole('button', { name: /Edit Config/i }))
+    await screen.findByText('Edit Configuration')
+    fireEvent.click(screen.getByRole('button', { name: 'Account key' }))
+    await user.click(await screen.findByText('Connection string'))
+    await user.type(screen.getByPlaceholderText('not set'), 'new-connection-string')
+    await user.click(screen.getByRole('button', { name: /^Save$/ }))
+    await waitFor(() => expect(put).toBeTruthy())
+    expect(put!.config?.account_key).toBe('')
+    expect(put!.config?.connection_string).toBe('new-connection-string')
+    expect(put!.config?.sas_token).toBe('')
+  })
+
+  it('create modal: switches to azure type showing azure fields', async () => {
+    const user = userEvent.setup()
+    server.use(http.get('/service/rest/v1/blobstores', () => HttpResponse.json([])))
+    renderAdmin('blobs')
+    await screen.findByText('No blob stores configured')
+    await user.click(screen.getAllByRole('button', { name: /New Blob Store/ })[0])
+    await screen.findByRole('heading', { name: 'New Blob Store' })
+    await user.click(screen.getByRole('button', { name: /Local filesystem/ }))
+    await user.click(await screen.findByText('Azure Blob Storage'))
+    expect(await screen.findByText('Container')).toBeInTheDocument()
+    expect(screen.getByText(/Account name/)).toBeInTheDocument()
+  })
+
+  it('create modal: azure test button stays disabled without a container', async () => {
+    const user = userEvent.setup()
+    server.use(http.get('/service/rest/v1/blobstores', () => HttpResponse.json([])))
+    renderAdmin('blobs')
+    await screen.findByText('No blob stores configured')
+    await user.click(screen.getAllByRole('button', { name: /New Blob Store/ })[0])
+    await user.type(screen.getByPlaceholderText('e.g. fast-ssd'), 'azstore')
+    await user.click(screen.getByRole('button', { name: /Local filesystem/ }))
+    await user.click(await screen.findByText('Azure Blob Storage'))
+    await screen.findByText('Container')
+    expect(screen.getByRole('button', { name: /Test Connection/ })).toBeDisabled()
+    await user.type(screen.getByPlaceholderText('must already exist'), 'nx-oci')
+    expect(screen.getByRole('button', { name: /Test Connection/ })).toBeEnabled()
+  })
+
+  it('create modal: azure payload carries the container', async () => {
+    const user = userEvent.setup()
+    let posted: { name: string; config?: Record<string, unknown> } | null = null
+    server.use(
+      http.get('/service/rest/v1/blobstores', () => HttpResponse.json([])),
+      http.post('/service/rest/v1/blobstores/:type', async ({ request }) => {
+        posted = (await request.json()) as { name: string; config?: Record<string, unknown> }
+        return HttpResponse.json({}, { status: 201 })
+      }),
+    )
+    renderAdmin('blobs')
+    await screen.findByText('No blob stores configured')
+    await user.click(screen.getAllByRole('button', { name: /New Blob Store/ })[0])
+    await user.type(screen.getByPlaceholderText('e.g. fast-ssd'), 'azstore')
+    await user.click(screen.getByRole('button', { name: /Local filesystem/ }))
+    await user.click(await screen.findByText('Azure Blob Storage'))
+    await user.type(screen.getByPlaceholderText('must already exist'), 'nx-oci')
+    await user.click(screen.getByRole('button', { name: /^Create$/ }))
+    await waitFor(() => expect(posted).toBeTruthy())
+    expect(posted!.config?.container).toBe('nx-oci')
+  })
 })
 
 describe('AdminPage — Backup tab', () => {

@@ -19,6 +19,21 @@ const (
 	SecretKeySetKey = "secret_key_set"
 )
 
+// blobStoreSecretKeys are every blob store config entry that carries a
+// credential. All of them are stripped from API responses and replaced by a
+// "<key>_set" marker; an update that omits one keeps the stored value (see
+// handlers.mergeBlobStoreConfig). Azure adds three beyond the S3 secret_key:
+// an account key, a connection string (which embeds one), and a SAS token
+// that is itself a bearer credential.
+var blobStoreSecretKeys = []string{SecretKeyKey, "account_key", "connection_string", "sas_token"}
+
+// BlobStoreSecretKeys returns the blob store config keys treated as secrets.
+func BlobStoreSecretKeys() []string {
+	out := make([]string, len(blobStoreSecretKeys))
+	copy(out, blobStoreSecretKeys)
+	return out
+}
+
 // redactedConfig copies cfg without secretKey, substituting a `<secretKey>_set: true`
 // marker when a non-empty secret is present. A nil cfg is returned unchanged.
 func redactedConfig(cfg map[string]any, secretKey, setKey string) map[string]any {
@@ -38,11 +53,18 @@ func redactedConfig(cfg map[string]any, secretKey, setKey string) map[string]any
 	return out
 }
 
-// RedactedBlobStore returns a copy of bs with the S3 secret access key stripped from
-// its config, so blob store payloads can be served to any reader. When a secret is
-// stored, SecretKeySetKey is set to true in its place. The input is untouched.
+// RedactedBlobStore returns a copy of bs with every credential stripped from
+// its config, so blob store payloads can be served to any reader. When a
+// secret is stored, "<key>_set" is set to true in its place (secret_key
+// mirrors the established SecretKeySetKey marker). The input is untouched.
 func RedactedBlobStore(bs BlobStore) BlobStore {
-	bs.Config = redactedConfig(bs.Config, SecretKeyKey, SecretKeySetKey)
+	for _, k := range blobStoreSecretKeys {
+		setKey := k + "_set"
+		if k == SecretKeyKey {
+			setKey = SecretKeySetKey
+		}
+		bs.Config = redactedConfig(bs.Config, k, setKey)
+	}
 	return bs
 }
 

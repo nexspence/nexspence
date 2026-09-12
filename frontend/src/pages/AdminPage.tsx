@@ -1584,6 +1584,42 @@ export default function AdminPage() {
 }
 
 // ── BlobStoreDetailModal ─────────────────────────────────────────
+// The API redacts every credential and answers with <key>_set markers instead
+// (see domain.RedactedBlobStore), so this is all the UI can know about what an
+// azure store authenticates with — and the admin needs to know it before a
+// credential can be replaced or cleared without seeing the secret itself.
+type AzureCredentialMode = 'account_key' | 'connection_string' | 'sas_token' | 'entra_id'
+type AzureCredentialField = Exclude<AzureCredentialMode, 'entra_id'>
+
+const azureCredentialOptions = [
+  { value: 'entra_id', label: 'Entra ID identity' },
+  { value: 'account_key', label: 'Account key' },
+  { value: 'connection_string', label: 'Connection string' },
+  { value: 'sas_token', label: 'SAS token' },
+]
+
+function azureCredentialMode(config: Record<string, unknown> | undefined): AzureCredentialMode {
+  if (config?.connection_string_set === true) return 'connection_string'
+  if (config?.account_key_set === true) return 'account_key'
+  if (config?.sas_token_set === true) return 'sas_token'
+  return 'entra_id'
+}
+
+function azureCredentialField(mode: AzureCredentialMode): AzureCredentialField | null {
+  return mode === 'entra_id' ? null : mode
+}
+
+function azureCredentialLabel(config: Record<string, unknown> | undefined): string {
+  if (!config) return '—'
+  const mode = azureCredentialMode(config)
+  return mode === 'entra_id' ? 'Entra ID identity' : mode === 'sas_token' ? 'SAS token (no presigned URLs)' : azureCredentialOptions.find(o => o.value === mode)?.label ?? mode
+}
+
+function azureCredentialPayload(mode: AzureCredentialMode, values: Record<AzureCredentialField, string>): Record<string, string> {
+  const field = azureCredentialField(mode)
+  return field && values[field].trim() !== '' ? { [field]: values[field] } : {}
+}
+
 function BlobStoreDetailModal({ name, blobStores: _blobStores, onClose }: { name: string; blobStores: BlobStore[]; onClose: () => void }) {
   const qc = useQueryClient()
   const { data, isLoading, error } = useQuery<UsageResp>({
@@ -1606,6 +1642,14 @@ function BlobStoreDetailModal({ name, blobStores: _blobStores, onClose }: { name
   const [editSecretKey, setEditSecretKey] = useState('')
   const [editSkipTLS, setEditSkipTLS]     = useState(false)
   const [editPath, setEditPath]           = useState('')
+  const [editAzContainer, setEditAzContainer]     = useState('')
+  const [editAzAccount, setEditAzAccount]         = useState('')
+  const [editAzAccountKey, setEditAzAccountKey]   = useState('')
+  const [editAzConnStr, setEditAzConnStr]         = useState('')
+  const [editAzSas, setEditAzSas]                 = useState('')
+  const [editAzEndpoint, setEditAzEndpoint]       = useState('')
+  const [editAzSkipTLS, setEditAzSkipTLS]         = useState(false)
+  const [editAzCredentialMode, setEditAzCredentialMode] = useState<AzureCredentialMode>('entra_id')
   const [editErr, setEditErr]             = useState('')
   const delMut = useMutation({
     mutationFn: () => nexusApi.deleteBlobStore(name),
@@ -1624,11 +1668,36 @@ function BlobStoreDetailModal({ name, blobStores: _blobStores, onClose }: { name
       if (!bs) return Promise.reject('no store')
       // The API never sends the secret key back (only a secret_key_set marker), so an
       // untouched field must omit it entirely — the server then keeps the stored one.
-      const config: Record<string, unknown> = bs.type === 's3'
-        ? { bucket: editBucket, region: editRegion, endpoint: editEndpoint,
-            access_key: editAccessKey, skip_tls_verify: editSkipTLS,
-            ...(editSecretKey ? { secret_key: editSecretKey } : {}) }
-        : { path: editPath }
+      // Azure credential inputs follow the same rule for account_key,
+      // connection_string and sas_token.
+      let config: Record<string, unknown>
+      if (bs.type === 's3') {
+        config = { bucket: editBucket, region: editRegion, endpoint: editEndpoint,
+          access_key: editAccessKey, skip_tls_verify: editSkipTLS,
+          ...(editSecretKey ? { secret_key: editSecretKey } : {}) }
+      } else if (bs.type === 'azure') {
+        const currentMode = azureCredentialMode(bs.config)
+        const selectedField = azureCredentialField(editAzCredentialMode)
+        const values: Record<AzureCredentialField, string> = {
+          account_key: editAzAccountKey,
+          connection_string: editAzConnStr,
+          sas_token: editAzSas,
+        }
+        const credentials: Record<string, string> = {}
+        for (const field of ['account_key', 'connection_string', 'sas_token'] as AzureCredentialField[]) {
+          if (field !== selectedField) {
+            credentials[field] = ''
+          } else if (values[field].trim() !== '') {
+            credentials[field] = values[field]
+          } else if (editAzCredentialMode !== currentMode) {
+            credentials[field] = ''
+          }
+        }
+        config = { container: editAzContainer, account_name: editAzAccount,
+          endpoint: editAzEndpoint, skip_tls_verify: editAzSkipTLS, ...credentials }
+      } else {
+        config = { path: editPath }
+      }
       return nexusApi.updateBlobStore(bs.type, bs.name, { config, quotaBytes: bs.quotaBytes ?? null })
     },
     onSuccess: () => {
@@ -1674,8 +1743,33 @@ function BlobStoreDetailModal({ name, blobStores: _blobStores, onClose }: { name
     setEditSecretKey('')
     setEditSkipTLS(cfg.skip_tls_verify === true)
     setEditPath((cfg.path as string) ?? '')
+    setEditAzContainer((cfg.container as string) ?? '')
+    setEditAzAccount((cfg.account_name as string) ?? '')
+    setEditAzAccountKey('')
+    setEditAzConnStr('')
+    setEditAzSas('')
+    setEditAzEndpoint((cfg.endpoint as string) ?? '')
+    setEditAzSkipTLS(cfg.skip_tls_verify === true)
+    setEditAzCredentialMode(azureCredentialMode(cfg))
     setEditErr('')
     setEditing(true)
+  }
+
+  const saveEdit = () => {
+    if (bs?.type === 'azure') {
+      const selectedField = azureCredentialField(editAzCredentialMode)
+      const values: Record<AzureCredentialField, string> = {
+        account_key: editAzAccountKey,
+        connection_string: editAzConnStr,
+        sas_token: editAzSas,
+      }
+      if (selectedField && values[selectedField].trim() === '' && azureCredentialMode(bs.config) !== editAzCredentialMode) {
+        setEditErr(`Enter a ${azureCredentialOptions.find(o => o.value === editAzCredentialMode)?.label ?? 'credential'} or select Entra ID identity.`)
+        return
+      }
+    }
+    setEditErr('')
+    editMut.mutate()
   }
 
   return (
@@ -1717,6 +1811,26 @@ function BlobStoreDetailModal({ name, blobStores: _blobStores, onClose }: { name
                 <span style={{ color: 'var(--holo-text-dim)' }}>Region</span>
                 <span style={{ color: 'var(--holo-text)', fontFamily: 'monospace', fontSize: 12 }}>
                   {(bs.config.region as string) || '—'}
+                </span>
+              </>
+            )}
+            {bs.type === 'azure' && bs.config && (
+              <>
+                <span style={{ color: 'var(--holo-text-dim)' }}>Endpoint</span>
+                <span style={{ color: 'var(--holo-text)', fontFamily: 'monospace', fontSize: 12 }}>
+                  {(bs.config.endpoint as string) || 'Azure public cloud'}
+                </span>
+                <span style={{ color: 'var(--holo-text-dim)' }}>Container</span>
+                <span style={{ color: 'var(--holo-text)', fontFamily: 'monospace', fontSize: 12 }}>
+                  {(bs.config.container as string) || '—'}
+                </span>
+                <span style={{ color: 'var(--holo-text-dim)' }}>Account</span>
+                <span style={{ color: 'var(--holo-text)', fontFamily: 'monospace', fontSize: 12 }}>
+                  {(bs.config.account_name as string) || '—'}
+                </span>
+                <span style={{ color: 'var(--holo-text-dim)' }}>Credential</span>
+                <span style={{ color: 'var(--holo-text)', fontSize: 12 }}>
+                  {azureCredentialLabel(bs.config)}
                 </span>
               </>
             )}
@@ -1805,6 +1919,67 @@ function BlobStoreDetailModal({ name, blobStores: _blobStores, onClose }: { name
                     </div>
                   </div>
                 </div>
+              ) : bs.type === 'azure' ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    <div>
+                      <label style={{ fontSize: 11, color: 'var(--holo-text-faint)', display: 'block', marginBottom: 3 }}>Container</label>
+                      <HoloInput value={editAzContainer} onChange={e => setEditAzContainer(e.target.value)} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 11, color: 'var(--holo-text-faint)', display: 'block', marginBottom: 3 }}>Account name</label>
+                      <HoloInput value={editAzAccount} onChange={e => setEditAzAccount(e.target.value)} />
+                    </div>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, color: 'var(--holo-text-faint)', display: 'block', marginBottom: 3 }}>Endpoint (leave empty for Azure public cloud)</label>
+                    <HoloInput value={editAzEndpoint} onChange={e => setEditAzEndpoint(e.target.value)} placeholder="https://127.0.0.1:10000/devstoreaccount1" />
+                  </div>
+                  <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer', fontSize: 12, color: 'var(--holo-text)' }}>
+                    <input type="checkbox" checked={editAzSkipTLS} onChange={e => setEditAzSkipTLS(e.target.checked)} style={{ marginTop: 2 }} />
+                    <span>
+                      Skip TLS certificate verification
+                      <span style={{ display: 'block', color: 'var(--holo-text-faint)', fontSize: 11 }}>
+                        For an endpoint behind a private CA. Credentials and every blob travel over an unverified connection.
+                      </span>
+                    </span>
+                  </label>
+                  <div>
+                    <label style={{ fontSize: 11, color: 'var(--holo-text-faint)', display: 'block', marginBottom: 3 }}>Authentication</label>
+                    <Select value={editAzCredentialMode} onChange={v => { setEditAzCredentialMode(v as AzureCredentialMode); setEditErr('') }} options={azureCredentialOptions} />
+                  </div>
+                  {editAzCredentialMode === 'account_key' && (
+                    <div>
+                      <label style={{ fontSize: 11, color: 'var(--holo-text-faint)', display: 'block', marginBottom: 3 }}>
+                        Account key {bs.config?.account_key_set === true ? '(stored — leave blank to keep)' : '(not set)'}
+                      </label>
+                      <HoloInput type="password" value={editAzAccountKey} onChange={e => setEditAzAccountKey(e.target.value)}
+                        placeholder={bs.config?.account_key_set === true ? 'unchanged' : 'not set'} />
+                    </div>
+                  )}
+                  {editAzCredentialMode === 'connection_string' && (
+                    <div>
+                      <label style={{ fontSize: 11, color: 'var(--holo-text-faint)', display: 'block', marginBottom: 3 }}>
+                        Connection string {bs.config?.connection_string_set === true ? '(stored — leave blank to keep)' : '(not set)'}
+                      </label>
+                      <HoloInput type="password" value={editAzConnStr} onChange={e => setEditAzConnStr(e.target.value)}
+                        placeholder={bs.config?.connection_string_set === true ? 'unchanged' : 'not set'} />
+                    </div>
+                  )}
+                  {editAzCredentialMode === 'sas_token' && (
+                    <div>
+                      <label style={{ fontSize: 11, color: 'var(--holo-text-faint)', display: 'block', marginBottom: 3 }}>
+                        SAS token {bs.config?.sas_token_set === true ? '(stored — leave blank to keep)' : '(not set)'}
+                      </label>
+                      <HoloInput type="password" value={editAzSas} onChange={e => setEditAzSas(e.target.value)}
+                        placeholder={bs.config?.sas_token_set === true ? 'unchanged' : 'not set'} />
+                    </div>
+                  )}
+                  <div style={{ fontSize: 11, color: 'var(--holo-text-faint)', marginTop: 3 }}>
+                    Selecting Entra ID clears all stored credentials. Leave the selected credential blank to keep it unchanged.
+                    Presigned URLs need an account key or Entra ID; Azure lifecycle policies are account-scoped.
+                  </div>
+                </div>
               ) : (
                 <div>
                   <label style={{ fontSize: 11, color: 'var(--holo-text-faint)', display: 'block', marginBottom: 3 }}>Path</label>
@@ -1813,7 +1988,7 @@ function BlobStoreDetailModal({ name, blobStores: _blobStores, onClose }: { name
               )}
               {editErr && <div style={{ marginTop: 8, color: 'var(--holo-red)', fontSize: 12 }}>{editErr}</div>}
               <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-                <HoloButton variant="primary" disabled={editMut.isPending} onClick={() => editMut.mutate()}>
+                <HoloButton variant="primary" disabled={editMut.isPending} onClick={saveEdit}>
                   {editMut.isPending ? 'Saving…' : 'Save'}
                 </HoloButton>
                 <HoloButton onClick={() => { setEditing(false); setEditErr('') }}>Cancel</HoloButton>
@@ -1914,7 +2089,7 @@ function BlobStoreDetailModal({ name, blobStores: _blobStores, onClose }: { name
 function CreateBlobStoreModal({ blobStores, onClose }: { blobStores: BlobStore[]; onClose: () => void }) {
   const qc = useQueryClient()
   const [name, setName] = useState('')
-  const [type, setType] = useState<'local' | 's3' | 'group'>('local')
+  const [type, setType] = useState<'local' | 's3' | 'azure' | 'group'>('local')
   const [path, setPath] = useState('./data/blobs/')
   const [bucket, setBucket] = useState('')
   const [region, setRegion] = useState('us-east-1')
@@ -1923,6 +2098,14 @@ function CreateBlobStoreModal({ blobStores, onClose }: { blobStores: BlobStore[]
   const [accessKey, setAccessKey] = useState('')
   const [secretKey, setSecretKey] = useState('')
   const [skipTLS, setSkipTLS] = useState(false)
+  const [azContainer, setAzContainer] = useState('')
+  const [azAccount, setAzAccount] = useState('')
+  const [azAccountKey, setAzAccountKey] = useState('')
+  const [azConnStr, setAzConnStr] = useState('')
+  const [azSas, setAzSas] = useState('')
+  const [azCredentialMode, setAzCredentialMode] = useState<AzureCredentialMode>('entra_id')
+  const [azEndpoint, setAzEndpoint] = useState('')
+  const [azSkipTLS, setAzSkipTLS] = useState(false)
   const [quotaGB, setQuotaGB] = useState('')
   const [err, setErr] = useState('')
   const [testResult, setTestResult] = useState<{ ok: boolean; error?: string } | null>(null)
@@ -1943,6 +2126,9 @@ function CreateBlobStoreModal({ blobStores, onClose }: { blobStores: BlobStore[]
         ? { path }
         : type === 's3'
         ? { bucket, region, endpoint, prefix, access_key: accessKey, secret_key: secretKey, skip_tls_verify: skipTLS }
+        : type === 'azure'
+        ? { container: azContainer, account_name: azAccount, endpoint: azEndpoint, skip_tls_verify: azSkipTLS,
+            ...azureCredentialPayload(azCredentialMode, { account_key: azAccountKey, connection_string: azConnStr, sas_token: azSas }) }
         : {}
       if (type === 'group') {
         config.fill_policy = groupFillPolicy
@@ -1969,6 +2155,9 @@ function CreateBlobStoreModal({ blobStores, onClose }: { blobStores: BlobStore[]
     try {
       const cfg: Record<string, unknown> = type === 'local'
         ? { path }
+        : type === 'azure'
+        ? { container: azContainer, account_name: azAccount, endpoint: azEndpoint, skip_tls_verify: azSkipTLS,
+            ...azureCredentialPayload(azCredentialMode, { account_key: azAccountKey, connection_string: azConnStr, sas_token: azSas }) }
         : { bucket, region, endpoint, prefix, access_key: accessKey, secret_key: secretKey, skip_tls_verify: skipTLS }
       const res = await nexusApi.testBlobStore(type === 'group' ? 'local' : type, cfg)
       if (seq !== testReqSeq.current) return // a field changed since this test started
@@ -1996,8 +2185,8 @@ function CreateBlobStoreModal({ blobStores, onClose }: { blobStores: BlobStore[]
           <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--holo-text-dim)', marginBottom: 4, display: 'block' }}>Type</label>
           <Select
             value={type}
-            onChange={v => { testReqSeq.current++; setType(v as 'local' | 's3' | 'group'); setTestResult(null) }}
-            options={[{ value: 'local', label: 'Local filesystem' }, { value: 's3', label: 'S3-compatible' }, { value: 'group', label: 'Group' }]}
+            onChange={v => { testReqSeq.current++; setType(v as 'local' | 's3' | 'azure' | 'group'); setTestResult(null) }}
+            options={[{ value: 'local', label: 'Local filesystem' }, { value: 's3', label: 'S3-compatible' }, { value: 'azure', label: 'Azure Blob Storage' }, { value: 'group', label: 'Group' }]}
           />
         </div>
         {type === 'local' && (
@@ -2046,6 +2235,64 @@ function CreateBlobStoreModal({ blobStores, onClose }: { blobStores: BlobStore[]
                 <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--holo-text-dim)', marginBottom: 4, display: 'block' }}>Secret Key</label>
                 <HoloInput type="password" value={secretKey} onChange={e => { testReqSeq.current++; setTestResult(null); setSecretKey(e.target.value) }} />
               </div>
+            </div>
+          </>
+        )}
+        {type === 'azure' && (
+          <>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--holo-text-dim)', marginBottom: 4, display: 'block' }}>Container</label>
+                <HoloInput value={azContainer} onChange={e => { testReqSeq.current++; setTestResult(null); setAzContainer(e.target.value) }} placeholder="must already exist" />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--holo-text-dim)', marginBottom: 4, display: 'block' }}>Account name</label>
+                <HoloInput value={azAccount} onChange={e => { testReqSeq.current++; setTestResult(null); setAzAccount(e.target.value) }} placeholder="mystorage" />
+              </div>
+            </div>
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--holo-text-dim)', marginBottom: 4, display: 'block' }}>Endpoint (leave empty for Azure public cloud)</label>
+              <HoloInput value={azEndpoint} onChange={e => { testReqSeq.current++; setTestResult(null); setAzEndpoint(e.target.value) }} placeholder="https://127.0.0.1:10000/devstoreaccount1" />
+            </div>
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--holo-text-dim)', marginBottom: 4, display: 'block' }}>Authentication</label>
+              <Select
+                value={azCredentialMode}
+                onChange={v => { testReqSeq.current++; setTestResult(null); setAzCredentialMode(v as AzureCredentialMode) }}
+                options={azureCredentialOptions}
+              />
+            </div>
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer', fontSize: 12, color: 'var(--holo-text)' }}>
+              <input type="checkbox" checked={azSkipTLS}
+                onChange={e => { testReqSeq.current++; setTestResult(null); setAzSkipTLS(e.target.checked) }}
+                style={{ marginTop: 2 }} />
+              <span>
+                Skip TLS certificate verification
+                <span style={{ display: 'block', color: 'var(--holo-text-faint)', fontSize: 11 }}>
+                  For an endpoint behind a private CA. Credentials and every blob travel over an unverified connection.
+                </span>
+              </span>
+            </label>
+            {azCredentialMode === 'account_key' && (
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--holo-text-dim)', marginBottom: 4, display: 'block' }}>Account key</label>
+                <HoloInput type="password" value={azAccountKey} onChange={e => { testReqSeq.current++; setTestResult(null); setAzAccountKey(e.target.value) }} />
+              </div>
+            )}
+            {azCredentialMode === 'connection_string' && (
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--holo-text-dim)', marginBottom: 4, display: 'block' }}>Connection string</label>
+                <HoloInput type="password" value={azConnStr} onChange={e => { testReqSeq.current++; setTestResult(null); setAzConnStr(e.target.value) }} />
+              </div>
+            )}
+            {azCredentialMode === 'sas_token' && (
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--holo-text-dim)', marginBottom: 4, display: 'block' }}>SAS token</label>
+                <HoloInput type="password" value={azSas} onChange={e => { testReqSeq.current++; setTestResult(null); setAzSas(e.target.value) }} />
+              </div>
+            )}
+            <div style={{ fontSize: 11, color: 'var(--holo-text-faint)', marginTop: 3 }}>
+              Entra ID uses the host identity (managed identity, workload identity or az CLI login). Presigned URLs need an account key or Entra ID.
             </div>
           </>
         )}
@@ -2112,7 +2359,7 @@ function CreateBlobStoreModal({ blobStores, onClose }: { blobStores: BlobStore[]
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
           <HoloButton onClick={onClose}>Cancel</HoloButton>
           {type !== 'group' && (
-            <HoloButton onClick={handleTest} disabled={testBusy || !name.trim() || (type === 's3' && !bucket.trim())}>
+            <HoloButton onClick={handleTest} disabled={testBusy || !name.trim() || (type === 's3' && !bucket.trim()) || (type === 'azure' && !azContainer.trim())}>
               {testBusy ? 'Testing…' : 'Test Connection'}
             </HoloButton>
           )}

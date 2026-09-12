@@ -510,3 +510,106 @@ func TestBlobStore_RecomputeUsage_RedactsSecrets(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 	assert.NotContains(t, rec.Body.String(), "super-secret")
 }
+
+// ── Azure credential redaction & merge ───────────────────────────────────────
+
+func TestBlobStore_Get_Azure_StripsEveryCredential(t *testing.T) {
+	r, _, _, _, _ := mountBlobStores(t, &domain.BlobStore{
+		ID: "az", Name: "az-store", Type: "azure",
+		Config: map[string]any{
+			"container":         "nx",
+			"account_name":      "acct",
+			"account_key":       "sekret",
+			"connection_string": "AccountKey=***",
+			"sas_token":         "sig=xyz",
+		},
+	})
+	rec := do(t, r, http.MethodGet, "/service/rest/v1/blobstores/az-store", nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	body := rec.Body.String()
+	for _, secret := range []string{"sekret", "***", "sig=xyz"} {
+		assert.NotContains(t, body, secret)
+	}
+	for _, marker := range []string{"account_key_set", "connection_string_set", "sas_token_set"} {
+		assert.Contains(t, body, marker)
+	}
+}
+
+func TestBlobStore_Update_Azure_OmittedSecretsSurvive(t *testing.T) {
+	r, repo, _, _, _ := mountBlobStores(t, &domain.BlobStore{
+		ID: "az", Name: "az-store", Type: "azure",
+		Config: map[string]any{"container": "nx", "account_key": "kept", "sas_token": "sas-kept"},
+	})
+	// The UI edit form re-sends container and an explicit empty account
+	// key field; sas_token is absent entirely.
+	rec := do(t, r, http.MethodPut, "/service/rest/v1/blobstores/azure/az-store",
+		map[string]any{"config": map[string]any{
+			"container":   "nx2",
+			"account_key": "",
+		}})
+	require.Equal(t, http.StatusOK, rec.Code)
+	updated, _ := repo.Get(testContext(), "az-store")
+	require.NotNil(t, updated)
+	assert.Equal(t, "nx2", updated.Config["container"])
+	// An explicit empty account_key clears the credential…
+	_, cleared := updated.Config["account_key"]
+	assert.False(t, cleared, "explicit empty account_key must clear the stored credential")
+	// …while an omitted one is kept.
+	assert.Equal(t, "sas-kept", updated.Config["sas_token"])
+}
+
+func TestBlobStore_Create_Azure_DropsSetMarkers(t *testing.T) {
+	r, repo, _, _, _ := mountBlobStores(t)
+	rec := do(t, r, http.MethodPost, "/service/rest/v1/blobstores/azure",
+		map[string]any{"name": "az", "config": map[string]any{
+			"container": "nx", "account_name": "acct", "account_key_set": true,
+		}})
+	require.Equal(t, http.StatusCreated, rec.Code)
+	created, _ := repo.Get(testContext(), "az")
+	require.NotNil(t, created)
+	_, marker := created.Config["account_key_set"]
+	assert.False(t, marker, "read-only markers must never be persisted")
+}
+
+func TestBlobStore_Create_Azure_RejectsMultipleCredentials(t *testing.T) {
+	r, _, _, _, _ := mountBlobStores(t)
+	rec := do(t, r, http.MethodPost, "/service/rest/v1/blobstores/azure", map[string]any{
+		"name": "az", "config": map[string]any{
+			"container": "nx", "account_name": "acct",
+			"account_key": "key", "sas_token": "sas",
+		},
+	})
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "at most one credential")
+}
+
+func TestBlobStore_Update_Azure_RejectsAmbiguousMergedCredentials(t *testing.T) {
+	r, repo, _, _, _ := mountBlobStores(t, &domain.BlobStore{
+		ID: "az", Name: "az-store", Type: "azure",
+		Config: map[string]any{"container": "nx", "account_name": "acct", "account_key": "old-key"},
+	})
+	rec := do(t, r, http.MethodPut, "/service/rest/v1/blobstores/azure/az-store", map[string]any{
+		"config": map[string]any{"connection_string": "DefaultEndpointsProtocol=https;AccountName=acct;AccountKey=new-key"},
+	})
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "at most one credential")
+	stored, err := repo.Get(testContext(), "az-store")
+	require.NoError(t, err)
+	assert.Equal(t, "old-key", stored.Config["account_key"], "a rejected update must not replace the existing configuration")
+}
+
+func TestBlobStore_TestConnection_Azure_RejectsMultipleCredentials(t *testing.T) {
+	r, _, _, _, _ := mountBlobStores(t)
+	rec := do(t, r, http.MethodPost, "/api/v1/blobstores/test", map[string]any{
+		"type": "azure", "config": map[string]any{
+			"container": "nx", "account_name": "acct",
+			"connection_string": "DefaultEndpointsProtocol=https;AccountName=acct;AccountKey=key",
+			"sas_token":         "sas",
+		},
+	})
+	require.Equal(t, http.StatusOK, rec.Code)
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	assert.Equal(t, false, resp["ok"])
+	assert.Contains(t, resp["error"], "at most one credential")
+}
