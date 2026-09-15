@@ -71,7 +71,8 @@ func startMinio() {
 	}
 
 	resource, err := pool.RunWithOptions(&dockertest.RunOptions{
-		Repository: "minio/minio",
+		// MinIO publishes its community image on Quay; Docker Hub no longer serves it.
+		Repository: "quay.io/minio/minio",
 		Tag:        "latest",
 		Cmd:        []string{"server", "/data"},
 		Env: []string{
