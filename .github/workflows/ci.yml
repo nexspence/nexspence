@@ -40,8 +40,12 @@ jobs:
           set -euo pipefail
           helm template check deploy/helm/nexspence >/dev/null
           helm template check deploy/helm/nexspence --set scanning.enabled=true >/dev/null
+          helm template check deploy/helm/nexspence --set scanning.enabled=true --set scanning.dbRepository={ghcr.io/aquasecurity/trivy-db:2} --set scanning.javaDbRepository={ghcr.io/aquasecurity/trivy-java-db:1} >/dev/null
           helm template check deploy/helm/nexspence --set storage.type=s3 --set storage.s3.bucket=b >/dev/null
+          helm template check deploy/helm/nexspence --set storage.type=azure --set storage.azure.container=c --set storage.azure.accountName=acct >/dev/null
           helm template check deploy/helm/nexspence --set config.docker.subdomainConnector.enabled=true >/dev/null
+          helm template check deploy/helm/nexspence --set config.adminExistingSecret=ext --set config.jwtSecretExistingSecret=ext >/dev/null
+          helm template check deploy/helm/nexspence --set gateway.istio.enabled=true --set gateway.istio.existingGateway=istio-system/gw >/dev/null
       # An env name that matches no config key is silently ignored by viper, so
       # the value in values.yaml never reaches the server and nothing says so.
       # That has happened three times; this is the guard.

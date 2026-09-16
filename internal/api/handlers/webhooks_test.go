@@ -15,10 +15,13 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/testutil"
 )
 
-func buildWebhookRouter(t *testing.T) (*gin.Engine, *testutil.WebhookRepo) {
+func buildWebhookRouter(t *testing.T, clients ...*http.Client) (*gin.Engine, *testutil.WebhookRepo) {
 	t.Helper()
 	repo := testutil.NewWebhookRepo()
 	svc := service.NewWebhookService(repo)
+	if len(clients) > 0 {
+		svc.WithHTTPClient(clients[0])
+	}
 	h := handlers.NewWebhookHandler(svc)
 	r := gin.New()
 	r.GET("/webhooks/:id", h.Get)
@@ -74,7 +77,7 @@ func TestWebhookHandler_Test_200(t *testing.T) {
 	}))
 	defer receiver.Close()
 
-	r, _ := buildWebhookRouter(t)
+	r, _ := buildWebhookRouter(t, receiver.Client())
 
 	// Create a webhook pointing at the local receiver.
 	body := `{"name":"live","url":"` + receiver.URL + `","events":["repo.created"],"active":true}`

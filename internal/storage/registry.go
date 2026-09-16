@@ -3,8 +3,12 @@ package storage
 import (
 	"context"
 	"fmt"
+	"net/url"
+	"strings"
 	"sync"
 	"sync/atomic"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
 )
 
 // MemberInfo carries the blob-store fields needed for fill-policy member selection.
@@ -17,8 +21,69 @@ type MemberInfo struct {
 // BlobStoreDescriptor carries the minimal DB data needed to instantiate a physical BlobStore.
 type BlobStoreDescriptor struct {
 	ID     string
-	Type   string // "local" | "s3"
+	Type   string // "local" | "s3" | "group" | "azure"
 	Config map[string]any
+}
+
+// PhysicalStoreIdentity returns a stable identifier for the physical object
+// namespace addressed by desc. Credentials and the logical database ID are
+// deliberately excluded: two logical Azure stores can share one container,
+// and GC must treat a blob referenced by either store as live.
+func PhysicalStoreIdentity(desc BlobStoreDescriptor) string {
+	switch desc.Type {
+	case "azure":
+		// Let the SDK resolve connection strings exactly as it does for I/O.
+		// Separate account/endpoint fields are ignored in this credential mode.
+		endpoint := azureServiceURL(strVal(desc.Config, "endpoint"), strVal(desc.Config, "account_name")) + "/" + strVal(desc.Config, "container")
+		if cs := strVal(desc.Config, "connection_string"); cs != "" {
+			client, err := container.NewClientFromConnectionString(azureIdentityConnectionString(cs), strVal(desc.Config, "container"), nil)
+			if err != nil {
+				return "" // An invalid descriptor has no known physical namespace.
+			}
+			endpoint = client.URL()
+		}
+		u, err := url.Parse(endpoint)
+		if err != nil || u.Host == "" {
+			return ""
+		}
+		u.Scheme = strings.ToLower(u.Scheme)
+		u.Host = strings.ToLower(u.Host)
+		u.User, u.RawQuery, u.Fragment = nil, "", ""
+		u.ForceQuery = false
+		return "azure|" + u.String()
+	case "s3":
+		return "s3|" + strings.ToLower(strings.TrimRight(strVal(desc.Config, "endpoint"), "/")) + "|" + strVal(desc.Config, "region") + "|" + strVal(desc.Config, "bucket")
+	case "local", "":
+		path := strVal(desc.Config, "path")
+		if path == "" {
+			path = "./data/blobs"
+		}
+		return "local|" + path
+	default:
+		// Unknown and group descriptors are not known to share a physical
+		// namespace. Keep the logical ID in the fallback key.
+		return desc.Type + "|" + desc.ID
+	}
+}
+
+// azureIdentityConnectionString leaves endpoint resolution to the SDK while
+// replacing credentials with syntactically valid placeholders. An invalid or
+// expired credential must not hide a live blob's namespace from GC.
+func azureIdentityConnectionString(cs string) string {
+	parts := strings.Split(cs, ";")
+	for i, part := range parts {
+		key, _, ok := strings.Cut(part, "=")
+		if !ok {
+			continue
+		}
+		switch key {
+		case "AccountKey":
+			parts[i] = "AccountKey=YQ=="
+		case "SharedAccessSignature":
+			parts[i] = "SharedAccessSignature=sig=identity"
+		}
+	}
+	return strings.Join(parts, ";")
 }
 
 // Registry creates and caches physical BlobStore instances keyed by blob store ID.
@@ -148,6 +213,20 @@ func newFromDescriptor(ctx context.Context, desc BlobStoreDescriptor) (BlobStore
 			return nil, fmt.Errorf("s3 blob store: bucket is required")
 		}
 		return NewS3BlobStore(ctx, opts)
+	case "azure":
+		opts := AzureOptions{
+			Container:        strVal(desc.Config, "container"),
+			AccountName:      strVal(desc.Config, "account_name"),
+			AccountKey:       strVal(desc.Config, "account_key"),
+			ConnectionString: strVal(desc.Config, "connection_string"),
+			SASToken:         strVal(desc.Config, "sas_token"),
+			Endpoint:         strVal(desc.Config, "endpoint"),
+			SkipTLSVerify:    boolVal(desc.Config, "skip_tls_verify"),
+		}
+		if opts.Container == "" {
+			return nil, fmt.Errorf("azure blob store: container is required")
+		}
+		return NewAzureBlobStore(ctx, opts)
 	case "local", "":
 		path := strVal(desc.Config, "path")
 		if path == "" {

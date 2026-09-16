@@ -30,6 +30,11 @@ var ErrQuotaExceeded = errors.New("storage quota exceeded")
 // bytes the store does not hold.
 var ErrSizeMismatch = errors.New("declared size does not match the bytes received")
 
+// ErrBlobStoreUnavailable marks a named store that could not be resolved or
+// reached. Callers that can legally fall back for a missing assignment must
+// still propagate this error for an explicit store.
+var ErrBlobStoreUnavailable = errors.New("blob store unavailable")
+
 // HTTPStatusForError maps known storage errors to appropriate HTTP status codes.
 // Returns 507 Insufficient Storage for quota and out-of-space errors, 400 for a
 // body that contradicts its own declared size, and 500 for everything else.
@@ -79,16 +84,11 @@ func StoreArtifact(ctx context.Context, d formats.Deps,
 
 	// Resolve once — result passed to RegisterStoredBlob to avoid double-call.
 	// For group stores, double-call would advance the round-robin counter twice.
-	resolvedBlobStoreID, resolvedBlobStoreName, _ := resolveBlobStoreRef(ctx, d, repo)
-
-	var physStore storage.BlobStore
-	if resolvedBlobStoreID != "" {
-		if bsMeta, getErr := d.Blobs.GetByID(ctx, resolvedBlobStoreID); getErr == nil {
-			physStore = PhysicalStore(ctx, d, bsMeta)
-		}
-	}
-	if physStore == nil {
-		physStore = d.BlobStore
+	// Resolution errors must stop before any byte is written: falling back to the
+	// default store would leave the asset row pointing at a different store.
+	resolvedBlobStoreID, resolvedBlobStoreName, physStore, err := ResolveBlobStore(ctx, d, repo)
+	if err != nil {
+		return nil, err
 	}
 
 	// Stream → hash writers → blob store via pipe
@@ -423,14 +423,9 @@ func FetchArtifact(ctx context.Context, d formats.Deps, repoName, filePath strin
 		return nil, nil, err
 	}
 
-	var fetchStore storage.BlobStore
-	if asset.BlobStoreID != "" {
-		if bsMeta, getErr := d.Blobs.GetByID(ctx, asset.BlobStoreID); getErr == nil {
-			fetchStore = PhysicalStore(ctx, d, bsMeta)
-		}
-	}
-	if fetchStore == nil {
-		fetchStore = d.BlobStore
+	fetchStore, err := assetPhysicalStore(ctx, d, asset)
+	if err != nil {
+		return nil, nil, err
 	}
 	rc, _, err := fetchStore.Get(ctx, asset.BlobKey)
 	if err != nil {
@@ -452,14 +447,9 @@ func DeleteArtifact(ctx context.Context, d formats.Deps, repoName, filePath stri
 	if err != nil {
 		return err
 	}
-	var delStore storage.BlobStore
-	if asset.BlobStoreID != "" {
-		if bsMeta, getErr := d.Blobs.GetByID(ctx, asset.BlobStoreID); getErr == nil {
-			delStore = PhysicalStore(ctx, d, bsMeta)
-		}
-	}
-	if delStore == nil {
-		delStore = d.BlobStore
+	delStore, err := assetPhysicalStore(ctx, d, asset)
+	if err != nil {
+		return err
 	}
 	// The count-then-delete sequence holds the blob-key lock: two concurrent
 	// deletes of the last two assets sharing one key would otherwise each see
@@ -638,25 +628,49 @@ func resolveBlobStoreObj(ctx context.Context, d formats.Deps, repo *domain.Repos
 // ResolveBlobStore returns the physical BlobStore, its DB id, and its DB name for repo.
 // It mirrors the blob store resolution used inside StoreArtifact, so callers that need to
 // write blobs directly (e.g. proxy cache) use the same store that RegisterStoredBlob records.
-func ResolveBlobStore(ctx context.Context, d formats.Deps, repo *domain.Repository) (id, name string, store storage.BlobStore) {
-	id, name, _ = resolveBlobStoreRef(ctx, d, repo)
-	if id != "" {
-		if bsMeta, err := d.Blobs.GetByID(ctx, id); err == nil {
-			store = PhysicalStore(ctx, d, bsMeta)
-		}
+// Implicit and explicit assignments resolve the same database descriptor so the
+// bytes are written to the location recorded on the asset.
+func ResolveBlobStore(ctx context.Context, d formats.Deps, repo *domain.Repository) (id, name string, store storage.BlobStore, err error) {
+	id, name, err = resolveBlobStoreRef(ctx, d, repo)
+	if err != nil {
+		return "", "", nil, err
 	}
-	if store == nil {
-		store = d.BlobStore
+	if id == "" {
+		return id, name, d.BlobStore, nil
 	}
-	return id, name, store
+	bsMeta, getErr := d.Blobs.GetByID(ctx, id)
+	if getErr != nil {
+		return "", "", nil, fmt.Errorf("%w: blob store %q: %w", ErrBlobStoreUnavailable, id, getErr)
+	}
+	if bsMeta == nil {
+		return "", "", nil, fmt.Errorf("%w: blob store id %q not found", ErrBlobStoreUnavailable, id)
+	}
+	store, err = PhysicalStore(ctx, d, bsMeta)
+	if err != nil {
+		return "", "", nil, err
+	}
+	return id, name, store, nil
 }
 
 // PhysicalStore returns the physical BlobStore for the given domain blob store.
 // If the registry is set and the descriptor is valid, it returns the cached/created instance.
-// Falls back to d.BlobStore (the global default) on any error or missing registry.
-func PhysicalStore(ctx context.Context, d formats.Deps, bs *domain.BlobStore) storage.BlobStore {
-	if d.Registry == nil || bs == nil {
-		return d.BlobStore
+// A nil descriptor is the only fallback case. Errors creating or resolving a named store are
+// returned to the caller so an explicitly assigned store can never write to the default store.
+func PhysicalStore(ctx context.Context, d formats.Deps, bs *domain.BlobStore) (storage.BlobStore, error) {
+	if bs == nil {
+		return d.BlobStore, nil
+	}
+	if d.Registry == nil {
+		if bs.Name == "default" {
+			return d.BlobStore, nil
+		}
+		return nil, fmt.Errorf("%w: blob store %q: registry is not configured for an explicit store", ErrBlobStoreUnavailable, bs.Name)
+	}
+	if strings.TrimSpace(bs.ID) == "" {
+		if bs.Name == "default" {
+			return d.BlobStore, nil
+		}
+		return nil, fmt.Errorf("%w: blob store %q has no persistent id", ErrBlobStoreUnavailable, bs.Name)
 	}
 	store, err := d.Registry.Get(ctx, storage.BlobStoreDescriptor{
 		ID:     bs.ID,
@@ -664,9 +678,29 @@ func PhysicalStore(ctx context.Context, d formats.Deps, bs *domain.BlobStore) st
 		Config: bs.Config,
 	})
 	if err != nil {
-		return d.BlobStore
+		return nil, fmt.Errorf("%w: blob store %q: %w", ErrBlobStoreUnavailable, bs.Name, err)
 	}
-	return store
+	if store == nil {
+		return nil, fmt.Errorf("%w: blob store %q resolved to a nil physical store", ErrBlobStoreUnavailable, bs.Name)
+	}
+	return store, nil
+}
+
+// assetPhysicalStore resolves the store recorded on an asset. Historical rows
+// without a store id belong to the installation default; a present id is a
+// hard location and every lookup or registry error is returned.
+func assetPhysicalStore(ctx context.Context, d formats.Deps, asset *domain.Asset) (storage.BlobStore, error) {
+	if asset == nil || strings.TrimSpace(asset.BlobStoreID) == "" {
+		return d.BlobStore, nil
+	}
+	bsMeta, err := d.Blobs.GetByID(ctx, asset.BlobStoreID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: asset blob store %q: %w", ErrBlobStoreUnavailable, asset.BlobStoreID, err)
+	}
+	if bsMeta == nil {
+		return nil, fmt.Errorf("%w: asset blob store id %q not found", ErrBlobStoreUnavailable, asset.BlobStoreID)
+	}
+	return PhysicalStore(ctx, d, bsMeta)
 }
 
 // groupMemberIDs extracts member_ids from a group blob store config.

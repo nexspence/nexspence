@@ -26,8 +26,23 @@ CHART = ROOT / "deploy" / "helm" / "nexspence"
 RENDERS = [
     [],
     ["--set", "scanning.enabled=true"],
+    [
+        "--set", "scanning.enabled=true",
+        "--set", "scanning.dbRepository={ghcr.io/aquasecurity/trivy-db:2}",
+        "--set", "scanning.javaDbRepository={ghcr.io/aquasecurity/trivy-java-db:1}",
+    ],
     ["--set", "storage.type=s3", "--set", "storage.s3.bucket=b"],
+    ["--set", "storage.type=azure", "--set", "storage.azure.container=c",
+     "--set", "storage.azure.accountName=acct"],
     ["--set", "config.docker.subdomainConnector.enabled=true"],
+    [
+        "--set", "config.adminExistingSecret=ext",
+        "--set", "config.jwtSecretExistingSecret=ext",
+    ],
+    [
+        "--set", "gateway.istio.enabled=true",
+        "--set", "gateway.istio.existingGateway=istio-system/gw",
+    ],
 ]
 
 

@@ -271,7 +271,7 @@ func (s *S3BlobStore) ListEntries(ctx context.Context) ([]BlobEntry, error) {
 				if obj.LastModified == nil {
 					continue
 				}
-				key := blobKeyFromObjectKey(strings.TrimSuffix(*obj.Key, s3AppendMetaSuffix))
+				key := blobKeyFromObjectKey(strings.TrimSuffix(*obj.Key, appendMetaSuffix))
 				if mt := *obj.LastModified; mt.After(metaModTimes[key]) {
 					metaModTimes[key] = mt
 				}

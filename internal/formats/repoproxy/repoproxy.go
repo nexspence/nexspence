@@ -279,13 +279,20 @@ func MinimumPackageAge(repo *domain.Repository) time.Duration {
 }
 
 // cacheFetchStore resolves the physical blob store that holds a cached asset.
-func cacheFetchStore(ctx context.Context, d formats.Deps, asset *domain.Asset) storage.BlobStore {
-	if asset.BlobStoreID != "" {
-		if bsMeta, getErr := d.Blobs.GetByID(ctx, asset.BlobStoreID); getErr == nil && bsMeta != nil {
-			return base.PhysicalStore(ctx, d, bsMeta)
-		}
+// An asset store id is a hard location; lookup and initialization errors must
+// not turn a cache read into a read from the installation default.
+func cacheFetchStore(ctx context.Context, d formats.Deps, asset *domain.Asset) (storage.BlobStore, error) {
+	if asset == nil || asset.BlobStoreID == "" {
+		return d.BlobStore, nil
 	}
-	return d.BlobStore
+	bsMeta, err := d.Blobs.GetByID(ctx, asset.BlobStoreID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: cached asset blob store %q: %w", base.ErrBlobStoreUnavailable, asset.BlobStoreID, err)
+	}
+	if bsMeta == nil {
+		return nil, fmt.Errorf("%w: cached asset blob store id %q not found", base.ErrBlobStoreUnavailable, asset.BlobStoreID)
+	}
+	return base.PhysicalStore(ctx, d, bsMeta)
 }
 
 // serveCachedAsset streams (or, for HEAD, describes) a cached asset to the client.
@@ -400,7 +407,11 @@ func ServeGETRewritten(c *gin.Context, d formats.Deps, repo *domain.Repository, 
 		return fmt.Errorf("repoproxy: asset lookup: %w", err)
 	}
 	if asset != nil {
-		rc, _, blobErr := cacheFetchStore(ctx, d, asset).Get(ctx, asset.BlobKey)
+		cacheStore, storeErr := cacheFetchStore(ctx, d, asset)
+		if storeErr != nil {
+			return fmt.Errorf("repoproxy: resolve cached blob store: %w", storeErr)
+		}
+		rc, _, blobErr := cacheStore.Get(ctx, asset.BlobKey)
 		if blobErr == nil {
 			// Metadata freshness: a stale cached copy of mutable metadata is
 			// revalidated against upstream before serving. Immutable content
@@ -589,10 +600,6 @@ func storeAndServeResponse(c *gin.Context, d formats.Deps, repo *domain.Reposito
 		return nil
 	}
 
-	copyRespHeaders(c.Writer.Header(), resp.Header)
-	c.Header("Content-Type", ct)
-	c.Status(resp.StatusCode)
-
 	// Quota gate (#189): when caching this artifact would exceed the repository
 	// or blob-store quota, serve it straight from upstream and skip the cache —
 	// clients keep working, the cache stops growing. Any check failure skips the
@@ -600,6 +607,9 @@ func storeAndServeResponse(c *gin.Context, d formats.Deps, repo *domain.Reposito
 	// with no quota applied (#328).
 	if resp.ContentLength > 0 {
 		if qErr := base.CheckQuota(ctx, d, repo, resp.ContentLength); qErr != nil {
+			copyRespHeaders(c.Writer.Header(), resp.Header)
+			c.Header("Content-Type", ct)
+			c.Status(resp.StatusCode)
 			if c.Request.Method != http.MethodHead {
 				_, _ = io.Copy(c.Writer, resp.Body)
 			}
@@ -614,7 +624,14 @@ func storeAndServeResponse(c *gin.Context, d formats.Deps, repo *domain.Reposito
 
 	// Resolve the physical blob store for this repo so the write location matches
 	// what RegisterStoredBlob will record in the DB asset row.
-	resolvedID, resolvedName, physStore := base.ResolveBlobStore(ctx, d, repo)
+	resolvedID, resolvedName, physStore, resolveErr := base.ResolveBlobStore(ctx, d, repo)
+	if resolveErr != nil {
+		return fmt.Errorf("proxy cache store: %w", resolveErr)
+	}
+
+	copyRespHeaders(c.Writer.Header(), resp.Header)
+	c.Header("Content-Type", ct)
+	c.Status(resp.StatusCode)
 
 	pr, pw := io.Pipe()
 	putErrCh := make(chan error, 1)
@@ -720,7 +737,10 @@ func storeOriginal(ctx context.Context, c *gin.Context, d formats.Deps, repo *do
 	}
 
 	blobKey := base.BlobKey(repo.Name, repoRelativePath)
-	resolvedID, resolvedName, physStore := base.ResolveBlobStore(ctx, d, repo)
+	resolvedID, resolvedName, physStore, resolveErr := base.ResolveBlobStore(ctx, d, repo)
+	if resolveErr != nil {
+		return fmt.Errorf("proxy cache store: %w", resolveErr)
+	}
 	if err := physStore.Put(ctx, blobKey, bytes.NewReader(body), int64(len(body))); err != nil {
 		return fmt.Errorf("proxy cache write: %w", err)
 	}

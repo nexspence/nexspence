@@ -69,7 +69,7 @@ View the full site with interactive architecture diagram, install guide, and com
     <td><img src="website/assets/screenshots/security_roles.PNG" alt="Roles & RBAC" width="480"></td>
   </tr>
   <tr>
-    <td align="center"><em>Blob stores — S3 + local with connection test</em></td>
+    <td align="center"><em>Blob stores — S3, Azure + local with connection test</em></td>
     <td align="center"><em>Roles, privileges, content selectors</em></td>
   </tr>
 </table>
@@ -294,7 +294,7 @@ Published on the [Terraform Registry](https://registry.terraform.io/providers/ne
 - RBAC — Roles, Privileges, Content Selectors (CEL expressions)
 
 **Storage**
-- Local filesystem (default) or S3-compatible (AWS S3, MinIO, Ceph)
+- Local filesystem (default), S3-compatible (AWS S3, MinIO, Ceph), or Azure Blob Storage
 - Per-repository blob store routing; blob store groups (round-robin / write-to-first)
 - Storage quotas per blob store and per repository
 

@@ -339,8 +339,8 @@ and flip it back to refresh.
 |---|---|---|---|
 | Enable image scanning | `scan.trivy.enabled` | `NEXSPENCE_SCAN_TRIVY_ENABLED` | `scanning.enabled` (sets the env var to `true` for you) |
 | Path to the binary | `scan.trivy.bin` | `NEXSPENCE_SCAN_TRIVY_BIN` | set automatically to `/opt/trivy/trivy` when `scanning.enabled` is on |
-| DB source (list) | `scan.trivy.db_repository` | `NEXSPENCE_SCAN_TRIVY_DB_REPOSITORY` (comma-separated) | via config file / env |
-| Java DB source (list) | `scan.trivy.java_db_repository` | `NEXSPENCE_SCAN_TRIVY_JAVA_DB_REPOSITORY` (comma-separated) | via config file / env |
+| DB source (list) | `scan.trivy.db_repository` | `NEXSPENCE_SCAN_TRIVY_DB_REPOSITORY` (comma-separated) | `scanning.dbRepository` |
+| Java DB source (list) | `scan.trivy.java_db_repository` | `NEXSPENCE_SCAN_TRIVY_JAVA_DB_REPOSITORY` (comma-separated) | `scanning.javaDbRepository` |
 | Skip DB refresh | `scan.trivy.skip_db_update` | `NEXSPENCE_SCAN_TRIVY_SKIP_DB_UPDATE` | via config file / env |
 | Cache directory | `scan.trivy.cache_dir` | `NEXSPENCE_SCAN_TRIVY_CACHE_DIR` | via config file / env (image default: `TRIVY_CACHE_DIR=/app/.cache/trivy`) |
 

@@ -9,6 +9,9 @@ ingress:
 gateway:
   istio:
     enabled: true
+    # Workload labels on the Gateway this file creates (spec.selector).
+    # To attach to a Gateway that already exists, use
+    # values-examples/istio-existing-gateway.yaml instead.
     gatewaySelector:
       istio: ingressgateway
     port: 443

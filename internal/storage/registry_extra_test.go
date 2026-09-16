@@ -195,3 +195,51 @@ func TestRegistry_PickMember_NoMembers_ReturnsEmpty(t *testing.T) {
 	r := storage.NewRegistry(nil)
 	assert.Equal(t, "", r.PickMember("g-empty", "round_robin", nil))
 }
+
+func TestNewFromConfig_AzureMissingContainer_Error(t *testing.T) {
+	_, err := storage.NewFromConfig(context.Background(), "azure", map[string]any{
+		"account_name": "acct",
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "container")
+}
+
+func TestNewFromConfig_Azure_ContainerAndFlags(t *testing.T) {
+	f := newAzureFake(t)
+	// skip_tls_verify arrives as the JSONB string "true" after a round
+	// trip through Postgres — the parser must accept that spelling.
+	bs, err := storage.NewFromConfig(context.Background(), "azure", map[string]any{
+		"container":       "nx",
+		"sas_token":       "sv=2024-11-04&sig=fake",
+		"account_name":    "devstoreaccount1",
+		"endpoint":        f.server,
+		"skip_tls_verify": "true",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, bs)
+}
+
+func TestPhysicalStoreIdentity_AzureCredentialRotationKeepsContainerIdentity(t *testing.T) {
+	base := storage.BlobStoreDescriptor{
+		ID:   "default",
+		Type: "azure",
+		Config: map[string]any{
+			"container":    "shared",
+			"account_name": "acct",
+			"account_key":  "old-key",
+			"endpoint":     "https://acct.blob.core.windows.net/",
+		},
+	}
+	rotated := storage.BlobStoreDescriptor{
+		ID:   "docker",
+		Type: "azure",
+		Config: map[string]any{
+			"container":    "shared",
+			"account_name": "acct",
+			"account_key":  "new-key",
+			"endpoint":     "https://acct.blob.core.windows.net",
+		},
+	}
+
+	assert.Equal(t, storage.PhysicalStoreIdentity(base), storage.PhysicalStoreIdentity(rotated))
+}

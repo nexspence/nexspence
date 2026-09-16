@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"sort"
@@ -294,13 +295,18 @@ func sortBrowseChildren(n *dockerBrowseNode) {
 // bytes. A repository can be pinned to a blob store of its own, and reading or
 // deleting through the default store then addresses a store the asset was never
 // written to: the delete silently misses and the read comes back empty.
-func (h *BrowseHandler) assetStore(ctx context.Context, asset *domain.Asset) storage.BlobStore {
-	if asset != nil && asset.BlobStoreID != "" {
-		if bsMeta, err := h.deps.Blobs.GetByID(ctx, asset.BlobStoreID); err == nil {
-			return base.PhysicalStore(ctx, h.deps, bsMeta)
-		}
+func (h *BrowseHandler) assetStore(ctx context.Context, asset *domain.Asset) (storage.BlobStore, error) {
+	if asset == nil || asset.BlobStoreID == "" {
+		return h.deps.BlobStore, nil
 	}
-	return h.deps.BlobStore
+	bsMeta, err := h.deps.Blobs.GetByID(ctx, asset.BlobStoreID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: asset blob store %q: %w", base.ErrBlobStoreUnavailable, asset.BlobStoreID, err)
+	}
+	if bsMeta == nil {
+		return nil, fmt.Errorf("%w: asset blob store id %q not found", base.ErrBlobStoreUnavailable, asset.BlobStoreID)
+	}
+	return base.PhysicalStore(ctx, h.deps, bsMeta)
 }
 
 // authorizeDelete loads repoName and checks RBAC "delete" permission on path,
@@ -393,7 +399,12 @@ func (h *BrowseHandler) DeleteDockerTag(c *gin.Context) {
 	// Read through the store that holds this asset: a repository on its own blob
 	// store keeps its manifests there, and reading the default store would return
 	// nothing — leaving deletedDigests empty and the layers below never swept.
-	deletedDigests := parseManifestDigests(h.assetStore(ctx, tagAsset).Get(ctx, tagAsset.BlobKey))
+	store, err := h.assetStore(ctx, tagAsset)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	deletedDigests := parseManifestDigests(store.Get(ctx, tagAsset.BlobKey))
 
 	// 2. Delete the tag manifest record and its digest alias — two records of one
 	// manifest on one blob. DeleteArtifact keeps a blob alive while another asset
@@ -417,7 +428,12 @@ func (h *BrowseHandler) DeleteDockerTag(c *gin.Context) {
 	remaining, _ := h.deps.Assets.ListByRepoAndPath(ctx, repoName, "/manifests/"+imageName+"/")
 	for i := range remaining {
 		ra := remaining[i]
-		for _, d := range parseManifestDigests(h.assetStore(ctx, &ra).Get(ctx, ra.BlobKey)) {
+		store, storeErr := h.assetStore(ctx, &ra)
+		if storeErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": storeErr.Error()})
+			return
+		}
+		for _, d := range parseManifestDigests(store.Get(ctx, ra.BlobKey)) {
 			stillUsed[d] = struct{}{}
 		}
 	}

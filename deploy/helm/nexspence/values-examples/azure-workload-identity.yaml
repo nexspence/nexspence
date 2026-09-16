@@ -1,0 +1,29 @@
+# Azure Blob Storage with AKS Workload Identity.
+# Replace both IDs with the client ID and tenant ID from your user-assigned
+# managed identity. The container must already exist.
+serviceAccount:
+  create: true
+  name: nexspence-azure
+  annotations:
+    azure.workload.identity/client-id: "00000000-0000-0000-0000-000000000000"
+    azure.workload.identity/tenant-id: "00000000-0000-0000-0000-000000000000"
+
+# The webhook only mutates pods carrying this label. Without it the pod does
+# not receive the projected Azure federated token volume and environment vars.
+podLabels:
+  azure.workload.identity/use: "true"
+
+storage:
+  type: azure
+  azure:
+    container: nexspence-blobs
+    accountName: mystorageaccount
+    # Workload Identity supplies the credential. Keep all three credential
+    # values empty: accountKey, connectionString and sasToken.
+    endpoint: ""
+    existingSecret: ""
+
+config:
+  baseURL: "https://nexspence.example.com"
+  allowInsecureDefaults: false
+  adminPassword: "replace-with-a-strong-password"

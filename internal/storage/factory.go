@@ -8,7 +8,7 @@ import (
 )
 
 // NewBlobStoreFromConfig creates the appropriate BlobStore implementation
-// based on the config's storage.default_type ("local" or "s3").
+// based on the config's storage.default_type ("local", "s3" or "azure").
 func NewBlobStoreFromConfig(ctx context.Context, cfg *nexspencecfg.Config) (BlobStore, error) {
 	switch cfg.Storage.DefaultType {
 	case "s3":
@@ -24,6 +24,20 @@ func NewBlobStoreFromConfig(ctx context.Context, cfg *nexspencecfg.Config) (Blob
 			SecretAccessKey: s3cfg.SecretAccessKey,
 			ForcePathStyle:  s3cfg.ForcePathStyle,
 			SkipTLSVerify:   s3cfg.SkipTLSVerify,
+		})
+	case "azure":
+		azcfg := cfg.Storage.Azure
+		if azcfg.Container == "" {
+			return nil, fmt.Errorf("storage.azure.container is required when default_type=azure")
+		}
+		return NewAzureBlobStore(ctx, AzureOptions{
+			Container:        azcfg.Container,
+			AccountName:      azcfg.AccountName,
+			AccountKey:       azcfg.AccountKey,
+			ConnectionString: azcfg.ConnectionString,
+			SASToken:         azcfg.SASToken,
+			Endpoint:         azcfg.Endpoint,
+			SkipTLSVerify:    azcfg.SkipTLSVerify,
 		})
 	default: // "local" or empty
 		basePath := cfg.Storage.Local.BasePath
