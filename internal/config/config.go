@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"reflect"
 	"strings"
 	"time"
 
+	"github.com/go-viper/mapstructure/v2"
 	"github.com/spf13/viper"
 )
 
@@ -642,7 +644,18 @@ func Load(path string) (*Config, error) {
 	}
 
 	var cfg Config
-	if err := v.Unmarshal(&cfg); err != nil {
+	// Viper's key delimiter is ".". Hostname keys in
+	// docker.subdomain_connector.aliases (docker-hub-proxy.example.com) are
+	// therefore split into nested maps, and Unmarshal into map[string]string
+	// fails with: aliases[docker-hub-proxy] expected string, got map.
+	// Quoting the YAML key does not help — the split happens after parse.
+	// Flatten those nested maps back into dotted hostnames. Passing DecodeHook
+	// replaces viper's defaults, so keep the duration and comma-slice hooks.
+	if err := v.Unmarshal(&cfg, viper.DecodeHook(mapstructure.ComposeDecodeHookFunc(
+		mapstructure.StringToTimeDurationHookFunc(),
+		mapstructure.StringToSliceHookFunc(","),
+		flattenDottedStringMapHook(),
+	))); err != nil {
 		return nil, fmt.Errorf("parse config: %w", err)
 	}
 
@@ -671,4 +684,92 @@ func Load(path string) (*Config, error) {
 	}
 
 	return &cfg, nil
+}
+
+// flattenDottedStringMapHook rebuilds map[string]string keys that viper split
+// on ".". It only runs when unmarshalling into map[string]string.
+func flattenDottedStringMapHook() mapstructure.DecodeHookFunc {
+	return func(from, to reflect.Type, data any) (any, error) {
+		if to.Kind() != reflect.Map || to.Key().Kind() != reflect.String || to.Elem().Kind() != reflect.String {
+			return data, nil
+		}
+		flat, ok, err := flattenStringMap(data, "")
+		if err != nil || !ok {
+			return data, err
+		}
+		return flat, nil
+	}
+}
+
+func flattenStringMap(data any, prefix string) (map[string]string, bool, error) {
+	switch m := data.(type) {
+	case map[string]string:
+		if prefix == "" {
+			return m, true, nil
+		}
+		out := make(map[string]string, len(m))
+		for k, v := range m {
+			out[joinDotted(prefix, k)] = v
+		}
+		return out, true, nil
+	case map[string]any:
+		out := map[string]string{}
+		for k, v := range m {
+			if err := mergeFlattened(out, joinDotted(prefix, k), v); err != nil {
+				return nil, false, err
+			}
+		}
+		return out, true, nil
+	case map[any]any:
+		out := map[string]string{}
+		for k, v := range m {
+			ks, ok := k.(string)
+			if !ok {
+				return nil, false, fmt.Errorf("expected string map key, got %T", k)
+			}
+			if err := mergeFlattened(out, joinDotted(prefix, ks), v); err != nil {
+				return nil, false, err
+			}
+		}
+		return out, true, nil
+	default:
+		return nil, false, nil
+	}
+}
+
+func mergeFlattened(out map[string]string, key string, v any) error {
+	switch child := v.(type) {
+	case string:
+		out[key] = child
+	case map[string]any:
+		for ck, cv := range child {
+			if err := mergeFlattened(out, joinDotted(key, ck), cv); err != nil {
+				return err
+			}
+		}
+	case map[string]string:
+		for ck, cv := range child {
+			out[joinDotted(key, ck)] = cv
+		}
+	case map[any]any:
+		for ck, cv := range child {
+			ks, ok := ck.(string)
+			if !ok {
+				return fmt.Errorf("%s: expected string map key, got %T", key, ck)
+			}
+			if err := mergeFlattened(out, joinDotted(key, ks), cv); err != nil {
+				return err
+			}
+		}
+	default:
+		return fmt.Errorf("%s: expected string, got %T", key, v)
+	}
+	return nil
+}
+
+func joinDotted(prefix, key string) string {
+	if prefix == "" {
+		return key
+	}
+	return prefix + "." + key
 }

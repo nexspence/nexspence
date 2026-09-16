@@ -460,3 +460,31 @@ func TestLoad_TrivyFromEnv(t *testing.T) {
 	assert.Equal(t, []string{"mirror1.example.com/trivy-db", "mirror2.example.com/trivy-db"}, cfg.Scan.Trivy.DBRepository,
 		"NEXSPENCE_SCAN_TRIVY_DB_REPOSITORY was not applied")
 }
+
+// Viper splits map keys on "." (its path delimiter). Alias hostnames always
+// contain dots, so without flattening Unmarshal into map[string]string fails
+// even when the YAML key is quoted — the split is after parse, not a YAML issue.
+func TestLoad_DockerSubdomainAliases_DottedHostnames(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := "" +
+		"database:\n  dsn: \"postgres://u:p@localhost:5432/db?sslmode=disable\"\n" +
+		"auth:\n  jwt_secret: \"a-unique-production-secret-at-least-32b\"\n" +
+		"docker:\n" +
+		"  subdomain_connector:\n" +
+		"    enabled: true\n" +
+		"    base_domain: \"nexspence.example.com\"\n" +
+		"    aliases:\n" +
+		"      \"docker-hub-proxy.example.com\": \"dockerhub-proxy\"\n" +
+		"      hub.nexspence.example.com: dockerhub-proxy\n" +
+		"      docker-group.example.com: docker-group\n"
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{
+		"docker-hub-proxy.example.com": "dockerhub-proxy",
+		"hub.nexspence.example.com":    "dockerhub-proxy",
+		"docker-group.example.com":     "docker-group",
+	}, cfg.Docker.SubdomainConnector.Aliases)
+}
