@@ -29,7 +29,12 @@ type OIDCClaims struct {
 	FirstName string
 	LastName  string
 	Groups    []string
-	Raw       map[string]any
+	// GroupsPresent is true when the id_token carries a claim under
+	// GroupsClaim at all, even an empty one. False means the IdP never sent
+	// group info for this login (as opposed to confirming zero groups) — see
+	// syncOIDCRoles, which treats the two differently.
+	GroupsPresent bool
+	Raw           map[string]any
 }
 
 // OIDCAuthenticator is the interface for OIDC operations (enables mocking).
@@ -216,15 +221,17 @@ func (s *OIDCService) extractClaims(subject string, raw map[string]any) *OIDCCla
 		}
 		return out
 	}
+	_, groupsPresent := raw[s.cfg.GroupsClaim]
 	return &OIDCClaims{
-		Subject:   subject,
-		Username:  getStr(s.cfg.UsernameClaim),
-		Email:     getStr(s.cfg.EmailClaim),
-		Name:      getStr(s.cfg.NameClaim),
-		FirstName: getStr("given_name"),
-		LastName:  getStr("family_name"),
-		Groups:    getStrSlice(s.cfg.GroupsClaim),
-		Raw:       raw,
+		Subject:       subject,
+		Username:      getStr(s.cfg.UsernameClaim),
+		Email:         getStr(s.cfg.EmailClaim),
+		Name:          getStr(s.cfg.NameClaim),
+		FirstName:     getStr("given_name"),
+		LastName:      getStr("family_name"),
+		Groups:        getStrSlice(s.cfg.GroupsClaim),
+		GroupsPresent: groupsPresent,
+		Raw:           raw,
 	}
 }
 

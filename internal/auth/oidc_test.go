@@ -215,6 +215,43 @@ func TestOIDCService_ClaimCustomization_GooglePattern(t *testing.T) {
 	assert.Equal(t, "bob@example.com", claims.Username)
 }
 
+func TestOIDCService_NoGroupsClaimInToken_GroupsPresentFalse(t *testing.T) {
+	idp := newFakeIdP(t)
+	defer idp.close()
+	idp.issuedNonce = "n"
+	idp.issuedAud = "client-xyz"
+	idp.issuedExp = time.Now().Add(5 * time.Minute).Unix()
+	// No "groups" key at all — the real shape of a Google Workspace id_token
+	// without Admin SDK integration.
+	idp.claims = map[string]any{"preferred_username": "alice", "email": "alice@example.com"}
+
+	svc, err := NewOIDCService(context.Background(), baseOIDCTestCfg(idp))
+	require.NoError(t, err)
+	claims, _, err := svc.ExchangeAndVerify(context.Background(), "code", "verifier", "n")
+	require.NoError(t, err)
+
+	assert.False(t, claims.GroupsPresent, "id_token has no groups claim at all")
+	assert.Empty(t, claims.Groups)
+}
+
+func TestOIDCService_GroupsClaimPresentButEmpty_GroupsPresentTrue(t *testing.T) {
+	idp := newFakeIdP(t)
+	defer idp.close()
+	idp.issuedNonce = "n"
+	idp.issuedAud = "client-xyz"
+	idp.issuedExp = time.Now().Add(5 * time.Minute).Unix()
+	// Real signal from the IdP: the claim is there, it's just an empty list.
+	idp.claims = map[string]any{"preferred_username": "alice", "email": "alice@example.com", "groups": []any{}}
+
+	svc, err := NewOIDCService(context.Background(), baseOIDCTestCfg(idp))
+	require.NoError(t, err)
+	claims, _, err := svc.ExchangeAndVerify(context.Background(), "code", "verifier", "n")
+	require.NoError(t, err)
+
+	assert.True(t, claims.GroupsPresent, "an empty-but-present claim is still real signal from the IdP")
+	assert.Empty(t, claims.Groups)
+}
+
 func TestOIDCService_TestConnection_OK(t *testing.T) {
 	idp := newFakeIdP(t)
 	defer idp.close()

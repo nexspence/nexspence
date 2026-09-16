@@ -31,7 +31,11 @@ type SAMLClaims struct {
 	Username string
 	Name     string
 	Groups   []string
-	RawAttrs map[string][]string
+	// GroupsPresent is true when the assertion carries an attribute under
+	// GroupsAttribute at all, even with zero values. False means the IdP
+	// never sent group info for this login — see syncSAMLRoles.
+	GroupsPresent bool
+	RawAttrs      map[string][]string
 }
 
 // SAMLAuthenticator is the interface for SAML SP operations (enables mocking).
@@ -261,13 +265,15 @@ func (s *SAMLService) extractClaims(a *saml.Assertion) *SAMLClaims {
 		username = subject
 	}
 
+	_, groupsPresent := raw[s.cfg.GroupsAttribute]
 	return &SAMLClaims{
-		Subject:  subject,
-		Email:    getFirst(s.cfg.EmailAttribute),
-		Username: username,
-		Name:     getFirst(s.cfg.NameAttribute),
-		Groups:   raw[s.cfg.GroupsAttribute],
-		RawAttrs: raw,
+		Subject:       subject,
+		Email:         getFirst(s.cfg.EmailAttribute),
+		Username:      username,
+		Name:          getFirst(s.cfg.NameAttribute),
+		Groups:        raw[s.cfg.GroupsAttribute],
+		GroupsPresent: groupsPresent,
+		RawAttrs:      raw,
 	}
 }
 

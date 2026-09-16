@@ -55,11 +55,12 @@ func baseOIDCSvcCfg() config.OIDCConfig {
 func TestLoginOIDC_NewUser_JIT_AutoCreatesWithRoles(t *testing.T) {
 	s := newUserSvcOIDC(t, baseOIDCSvcCfg())
 	claims := &auth.OIDCClaims{
-		Username:  "alice",
-		Email:     "alice@ex.com",
-		FirstName: "Alice",
-		LastName:  "Example",
-		Groups:    []string{"developers", "nexspence-admins"},
+		Username:      "alice",
+		Email:         "alice@ex.com",
+		FirstName:     "Alice",
+		LastName:      "Example",
+		Groups:        []string{"developers", "nexspence-admins"},
+		GroupsPresent: true,
 	}
 	tok, u, err := s.LoginOIDC(context.Background(), claims, "fake-id-token")
 	require.NoError(t, err)
@@ -76,7 +77,7 @@ func TestLoginOIDC_NewUser_Allowlist_EmailMatch_Created(t *testing.T) {
 	s := newUserSvcOIDC(t, cfg)
 	_, u, err := s.LoginOIDC(context.Background(), &auth.OIDCClaims{
 		Username: "bob", Email: "bob@company.com",
-		Groups: []string{"developers"},
+		Groups: []string{"developers"}, GroupsPresent: true,
 	}, "fake-id-token")
 	require.NoError(t, err)
 	assert.Equal(t, "bob", u.Username)
@@ -136,7 +137,7 @@ func TestLoginOIDC_ExistingOIDCUser_SyncRoles_Replaces(t *testing.T) {
 
 	_, u, err := s.LoginOIDC(context.Background(), &auth.OIDCClaims{
 		Username: "alice", Email: "alice@ex.com",
-		Groups: []string{"developers"}, // no nexspence-admins → nx-admin must drop
+		Groups: []string{"developers"}, GroupsPresent: true, // no nexspence-admins → nx-admin must drop
 	}, "fake-id-token")
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []string{"release-manager"}, u.Roles)
@@ -148,7 +149,7 @@ func TestLoginOIDC_MissingRoleInDB_Warns_NoFail(t *testing.T) {
 	s := newUserSvcOIDC(t, cfg)
 	_, u, err := s.LoginOIDC(context.Background(), &auth.OIDCClaims{
 		Username: "alice", Email: "alice@ex.com",
-		Groups: []string{"developers"},
+		Groups: []string{"developers"}, GroupsPresent: true,
 	}, "fake-id-token")
 	require.NoError(t, err)
 	assert.Empty(t, u.Roles)
@@ -183,10 +184,49 @@ func TestLoginOIDC_DNFormatGroup_MatchesAdminGroup(t *testing.T) {
 	s := newUserSvcOIDC(t, baseOIDCSvcCfg())
 	_, u, err := s.LoginOIDC(context.Background(), &auth.OIDCClaims{
 		Username: "alice", Email: "alice@ex.com",
-		Groups: []string{"CN=nexspence-admins,OU=Groups,DC=ex,DC=com"},
+		Groups: []string{"CN=nexspence-admins,OU=Groups,DC=ex,DC=com"}, GroupsPresent: true,
 	}, "fake-id-token")
 	require.NoError(t, err)
 	assert.Contains(t, u.Roles, "nx-admin")
+}
+
+func TestLoginOIDC_NoGroupsClaim_PreservesManualRoles(t *testing.T) {
+	existing := &domain.User{
+		ID:       "u1",
+		Username: "alice",
+		Email:    "alice@ex.com",
+		Source:   domain.UserSourceOIDC,
+		Status:   domain.UserStatusActive,
+	}
+	s := newUserSvcOIDC(t, baseOIDCSvcCfg(), existing)
+	// A role granted manually, out of band (e.g. via Security > Users).
+	require.NoError(t, s.roles.SetUserRoles(context.Background(), "u1", []string{"role-read"}))
+
+	_, u, err := s.LoginOIDC(context.Background(), &auth.OIDCClaims{
+		Username: "alice", Email: "alice@ex.com",
+		Groups: nil, GroupsPresent: false, // id_token has no groups claim at all
+	}, "fake-id-token")
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []string{"read-only"}, u.Roles, "manual role must survive a login with no groups claim")
+}
+
+func TestLoginOIDC_GroupsClaimPresentButEmpty_StillReplaces(t *testing.T) {
+	existing := &domain.User{
+		ID:       "u1",
+		Username: "alice",
+		Email:    "alice@ex.com",
+		Source:   domain.UserSourceOIDC,
+		Status:   domain.UserStatusActive,
+	}
+	s := newUserSvcOIDC(t, baseOIDCSvcCfg(), existing)
+	require.NoError(t, s.roles.SetUserRoles(context.Background(), "u1", []string{"role-read"}))
+
+	_, u, err := s.LoginOIDC(context.Background(), &auth.OIDCClaims{
+		Username: "alice", Email: "alice@ex.com",
+		Groups: []string{}, GroupsPresent: true, // IdP confirmed: zero groups
+	}, "fake-id-token")
+	require.NoError(t, err)
+	assert.Empty(t, u.Roles, "a present-but-empty groups claim is real signal from the IdP and must still wipe roles")
 }
 
 func TestLoginOIDC_OIDCDisabled_Fails(t *testing.T) {

@@ -56,11 +56,12 @@ func baseSAMLCfg() config.SAMLConfig {
 func TestLoginSAML_NewUser_JIT_AutoCreatesWithRoles(t *testing.T) {
 	s := newUserSvcSAML(t, baseSAMLCfg())
 	claims := &auth.SAMLClaims{
-		Subject:  "alice@idp",
-		Username: "alice",
-		Email:    "alice@ex.com",
-		Name:     "Alice Example",
-		Groups:   []string{"developers", "nexspence-admins"},
+		Subject:       "alice@idp",
+		Username:      "alice",
+		Email:         "alice@ex.com",
+		Name:          "Alice Example",
+		Groups:        []string{"developers", "nexspence-admins"},
+		GroupsPresent: true,
 	}
 	tok, u, err := s.LoginSAML(context.Background(), claims)
 	require.NoError(t, err)
@@ -77,7 +78,7 @@ func TestLoginSAML_NewUser_Allowlist_EmailMatch_Created(t *testing.T) {
 	s := newUserSvcSAML(t, cfg)
 	_, u, err := s.LoginSAML(context.Background(), &auth.SAMLClaims{
 		Username: "bob", Email: "bob@company.com",
-		Groups: []string{"developers"},
+		Groups: []string{"developers"}, GroupsPresent: true,
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "bob", u.Username)
@@ -136,7 +137,7 @@ func TestLoginSAML_ExistingSAMLUser_SyncRoles_Replaces(t *testing.T) {
 
 	_, u, err := s.LoginSAML(context.Background(), &auth.SAMLClaims{
 		Username: "alice", Email: "alice@ex.com",
-		Groups: []string{"developers"},
+		Groups: []string{"developers"}, GroupsPresent: true,
 	})
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []string{"release-manager"}, u.Roles)
@@ -146,7 +147,7 @@ func TestLoginSAML_AdminGroup_AssignsNxAdmin(t *testing.T) {
 	s := newUserSvcSAML(t, baseSAMLCfg())
 	_, u, err := s.LoginSAML(context.Background(), &auth.SAMLClaims{
 		Username: "alice", Email: "alice@ex.com",
-		Groups: []string{"nexspence-admins"},
+		Groups: []string{"nexspence-admins"}, GroupsPresent: true,
 	})
 	require.NoError(t, err)
 	assert.Contains(t, u.Roles, "nx-admin")
@@ -175,6 +176,44 @@ func TestLoginSAML_EmptyUsername_Rejected(t *testing.T) {
 	})
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrInvalidInput))
+}
+
+func TestLoginSAML_NoGroupsAttribute_PreservesManualRoles(t *testing.T) {
+	existing := &domain.User{
+		ID:       "u1",
+		Username: "alice",
+		Email:    "alice@ex.com",
+		Source:   domain.UserSourceSAML,
+		Status:   domain.UserStatusActive,
+	}
+	s := newUserSvcSAML(t, baseSAMLCfg(), existing)
+	require.NoError(t, s.roles.SetUserRoles(context.Background(), "u1", []string{"role-read"}))
+
+	_, u, err := s.LoginSAML(context.Background(), &auth.SAMLClaims{
+		Username: "alice", Email: "alice@ex.com",
+		Groups: nil, GroupsPresent: false, // assertion has no groups attribute at all
+	})
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []string{"read-only"}, u.Roles, "manual role must survive a login with no groups attribute")
+}
+
+func TestLoginSAML_GroupsAttributePresentButEmpty_StillReplaces(t *testing.T) {
+	existing := &domain.User{
+		ID:       "u1",
+		Username: "alice",
+		Email:    "alice@ex.com",
+		Source:   domain.UserSourceSAML,
+		Status:   domain.UserStatusActive,
+	}
+	s := newUserSvcSAML(t, baseSAMLCfg(), existing)
+	require.NoError(t, s.roles.SetUserRoles(context.Background(), "u1", []string{"role-read"}))
+
+	_, u, err := s.LoginSAML(context.Background(), &auth.SAMLClaims{
+		Username: "alice", Email: "alice@ex.com",
+		Groups: []string{}, GroupsPresent: true, // IdP confirmed: zero groups
+	})
+	require.NoError(t, err)
+	assert.Empty(t, u.Roles, "a present-but-empty groups attribute is real signal from the IdP and must still wipe roles")
 }
 
 func TestLoginSAML_SAMLDisabled_Fails(t *testing.T) {
