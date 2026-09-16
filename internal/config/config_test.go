@@ -535,3 +535,38 @@ func TestLoad_DockerSubdomainAliases_DottedHostnames(t *testing.T) {
 		"docker-group.example.com":     "docker-group",
 	}, cfg.Docker.SubdomainConnector.Aliases)
 }
+
+// Viper's env lookup treats an empty value as "unset" unless AllowEmptyEnv is
+// on, so NEXSPENCE_OIDC_GROUPS_CLAIM="" used to leave the non-empty default
+// ("groups") in place — the exact opposite of what an operator disabling the
+// claim asked for, with no error to say so (#482).
+func TestLoad_ExplicitEmptyEnvOverridesNonEmptyDefault(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := "" +
+		"database:\n  dsn: \"postgres://u:p@localhost:5432/db?sslmode=disable\"\n" +
+		"auth:\n  jwt_secret: \"a-unique-production-secret-at-least-32b\"\n"
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+
+	t.Setenv("NEXSPENCE_OIDC_GROUPS_CLAIM", "")
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.Equal(t, "", cfg.OIDC.GroupsClaim,
+		"an env var set to the empty string is an explicit override, not an absent one")
+}
+
+// The other direction must keep working: an env var that is not set at all
+// leaves the default alone.
+func TestLoad_UnsetEnvKeepsNonEmptyDefault(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := "" +
+		"database:\n  dsn: \"postgres://u:p@localhost:5432/db?sslmode=disable\"\n" +
+		"auth:\n  jwt_secret: \"a-unique-production-secret-at-least-32b\"\n"
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+
+	require.NoError(t, os.Unsetenv("NEXSPENCE_OIDC_GROUPS_CLAIM"))
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.Equal(t, "groups", cfg.OIDC.GroupsClaim)
+}

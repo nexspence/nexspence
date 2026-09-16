@@ -668,6 +668,12 @@ func Load(path string) (*Config, error) {
 	// Env override: NEXSPENCE_DATABASE_DSN, NEXSPENCE_AUTH_JWT_SECRET, etc.
 	v.SetEnvPrefix("NEXSPENCE")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	// Without this, viper treats an env var set to "" as unset, so an operator
+	// blanking a key that has a non-empty default (oidc.groups_claim is
+	// "groups") silently keeps the default — with no error and no way to tell
+	// from the outside (#482). Only variables that are genuinely present in
+	// the environment are affected; an absent one still yields the default.
+	v.AllowEmptyEnv(true)
 	v.AutomaticEnv()
 
 	if err := v.ReadInConfig(); err != nil {
