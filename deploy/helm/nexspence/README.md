@@ -43,7 +43,7 @@ helm dependency update
 
 Then install with exactly one of the networking options below.
 
-> **JWT secret:** `config.jwtSecret` is optional. When omitted, the chart auto-generates a unique random secret on first install and reuses it across upgrades (via a `lookup` of the existing Secret). The `--set config.jwtSecret=...` in the examples below is only needed to pin a known value or share the secret across clusters.
+> **JWT secret:** `config.jwtSecret` is optional. When omitted, the chart auto-generates a unique random secret on first install and reuses it across upgrades (via a `lookup` of the existing Secret). Point `config.jwtSecretExistingSecret` at a Secret you already have instead — the chart then neither generates nor stores the key. Bootstrap admin (`config.adminExistingSecret`) is the same. See `values-examples/existing-secrets.yaml`. `--set config.jwtSecret=...` is only needed to pin a known value or share it across clusters.
 
 ### nginx ingress-controller
 
@@ -95,6 +95,19 @@ helm install nexspence \
   --namespace nexspence \
   --create-namespace
 ```
+
+To attach the VirtualService to a Gateway that already exists, set
+`gateway.istio.existingGateway` (`name` or `namespace/name`). The chart then does not create a Gateway. `gatewaySelector` is only the workload labels on a chart-created Gateway (`spec.selector`), not a Gateway CR name.
+```yaml
+gateway:
+  istio:
+    enabled: true
+    existingGateway: istio-system/istio-ingressgateway
+    hosts:
+      - nexspence.example.com
+```
+
+See `values-examples/istio-existing-gateway.yaml`.
 
 ### Cilium K8s Gateway API (>= 1.14)
 

@@ -83,6 +83,33 @@ spec:
               value: "true"
             - name: NEXSPENCE_SCAN_TRIVY_BIN
               value: /opt/trivy/trivy
+            {{- with .Values.scanning.dbRepository }}
+            - name: NEXSPENCE_SCAN_TRIVY_DB_REPOSITORY
+              value: {{ . | join "," | quote }}
+            {{- end }}
+            {{- with .Values.scanning.javaDbRepository }}
+            - name: NEXSPENCE_SCAN_TRIVY_JAVA_DB_REPOSITORY
+              value: {{ . | join "," | quote }}
+            {{- end }}
+            {{- end }}
+            {{- if .Values.config.jwtSecretExistingSecret }}
+            - name: NEXSPENCE_AUTH_JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.config.jwtSecretExistingSecret }}
+                  key: {{ .Values.config.jwtSecretExistingSecretKey | default "jwt-secret" }}
+            {{- end }}
+            {{- if .Values.config.adminExistingSecret }}
+            - name: NEXSPENCE_BOOTSTRAP_ADMIN_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.config.adminExistingSecret }}
+                  key: {{ .Values.config.adminExistingSecretUsernameKey | default "admin-username" }}
+            - name: NEXSPENCE_BOOTSTRAP_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.config.adminExistingSecret }}
+                  key: {{ .Values.config.adminExistingSecretPasswordKey | default "admin-password" }}
             {{- end }}
             {{- if and (not .Values.postgresql.enabled) .Values.externalDatabase.existingSecret }}
             - name: NEXSPENCE_DATABASE_DSN

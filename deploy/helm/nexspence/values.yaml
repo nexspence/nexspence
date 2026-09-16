@@ -55,6 +55,9 @@ config:
   # secret on first install and persist it across upgrades (recommended). Set an
   # explicit value only if you need to share the secret across clusters.
   jwtSecret: ""
+  # -- Existing Secret instead of jwtSecret / auto-generate.
+  jwtSecretExistingSecret: ""
+  jwtSecretExistingSecretKey: "jwt-secret"
   # -- Permit the shipped default admin password ("admin123") at startup.
   # Defaults to true so the chart's quick-start boots out of the box; set to false
   # in production once you have set a unique adminPassword. The JWT secret is no
@@ -68,6 +71,10 @@ config:
   # -- Bootstrap admin credentials (ignored when bootstrapEnabled is false)
   adminUsername: "admin"
   adminPassword: "admin123"
+  # -- Existing Secret for bootstrap username and password.
+  adminExistingSecret: ""
+  adminExistingSecretUsernameKey: "admin-username"
+  adminExistingSecretPasswordKey: "admin-password"
   adminEmail: "admin@example.com"
   adminFirstName: "Admin"
   # -- Serve GET /metrics without authentication. It shares the listener with
@@ -237,9 +244,11 @@ ingress:
 gateway:
   istio:
     enabled: false
-    # -- Name of the existing Istio IngressGateway service selector
+    # -- Labels for Gateway.spec.selector (workload), not a Gateway CR name.
     gatewaySelector:
       istio: ingressgateway
+    # -- Existing Gateway CR (`name` or `namespace/name`). Skips creating one.
+    existingGateway: ""
     # -- Port exposed on the Istio Gateway
     port: 80
     # -- TLS mode: SIMPLE | PASSTHROUGH | MUTUAL | ""
@@ -367,3 +376,9 @@ scanning:
   # The binary is ~150 MB; the vulnerability database it downloads on first use
   # lands in the existing cache volume.
   volumeSize: 300Mi
+  # -- OCI refs for trivy-db. Empty = Trivy default (public GHCR).
+  dbRepository: []
+  #   - ghcr-proxy.example.com/aquasecurity/trivy-db:2
+  # -- OCI refs for trivy-java-db. Empty = Trivy default.
+  javaDbRepository: []
+  #   - ghcr-proxy.example.com/aquasecurity/trivy-java-db:1

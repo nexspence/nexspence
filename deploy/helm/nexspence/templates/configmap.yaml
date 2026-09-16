@@ -22,7 +22,9 @@ data:
   NEXSPENCE_AUTH_JWT_EXPIRY_HOURS: {{ .Values.config.jwtExpiryHours | quote }}
   NEXSPENCE_AUTH_ALLOW_INSECURE_DEFAULTS: {{ .Values.config.allowInsecureDefaults | quote }}
   NEXSPENCE_BOOTSTRAP_ENABLED: {{ .Values.config.bootstrapEnabled | quote }}
+  {{- if not .Values.config.adminExistingSecret }}
   NEXSPENCE_BOOTSTRAP_ADMIN_USERNAME: {{ .Values.config.adminUsername | quote }}
+  {{- end }}
   NEXSPENCE_BOOTSTRAP_ADMIN_EMAIL: {{ .Values.config.adminEmail | quote }}
   NEXSPENCE_BOOTSTRAP_ADMIN_FIRST_NAME: {{ .Values.config.adminFirstName | quote }}
   NEXSPENCE_METRICS_PUBLIC: {{ .Values.config.metricsPublic | quote }}

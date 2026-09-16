@@ -14,7 +14,7 @@ spec:
   hosts:
     {{- toYaml .Values.gateway.istio.hosts | nindent 4 }}
   gateways:
-    - {{ include "nexspence.fullname" . }}-istio
+    - {{ default (printf "%s-istio" (include "nexspence.fullname" .)) .Values.gateway.istio.existingGateway }}
   http:
     - match:
         - uri:
