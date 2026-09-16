@@ -103,10 +103,10 @@ func cmdServe() *cobra.Command {
 			if cfg.Tracing.Enabled {
 				log.Info("tracing enabled", "endpoint", cfg.Tracing.OTLPEndpoint,
 					"protocol", cfg.Tracing.OTLPProtocol, "sample_ratio", cfg.Tracing.SampleRatio)
-				// Span names trimmed to "query SELECT" etc. — the untrimmed
-				// default puts whole multi-line SQL statements into the span
-				// name, unusable in a waterfall (#302).
-				queryTracers = append(queryTracers, otelpgx.NewTracer(otelpgx.WithTrimSQLInSpanName()))
+				// Span names are "query SELECT" etc. — since otelpgx 0.12 that
+				// trimming is the default; the whole multi-line SQL statement
+				// in the span name (#302) is now the opt-in WithFullSQLInSpanName.
+				queryTracers = append(queryTracers, otelpgx.NewTracer())
 			}
 
 			pool, err := db.Connect(cmd.Context(), cfg.Database.DSN, queryTracers...)
