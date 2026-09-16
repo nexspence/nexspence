@@ -24,6 +24,13 @@ updates:
         patterns:
           - "typescript-eslint"
           - "@typescript-eslint/*"
+      # @vitest/coverage-v8 peer-depends on vitest at the exact same version.
+      # Dependabot bumped the coverage provider to 5.0.0 on its own (#456) and
+      # `npm ci` failed with ERESOLVE, so the two move together.
+      vitest:
+        patterns:
+          - "vitest"
+          - "@vitest/*"
   - package-ecosystem: docker
     directory: "/"
     schedule:
