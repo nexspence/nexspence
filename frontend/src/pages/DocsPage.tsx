@@ -840,7 +840,7 @@ conan upload "mylib/1.0" -r=nexspence --confirm` },
       },
       {
         title: 'Mirror huggingface.co',
-        text: 'A proxy repository caches every downloaded file. LFS needs nothing here — huggingface.co resolves it server-side before answering resolve/.',
+        text: 'A proxy repository caches every downloaded file. LFS needs nothing here — huggingface.co resolves it server-side before answering resolve/. A cached file is not fully usable offline, though: huggingface_hub sends a HEAD before every download to read the file’s ETag/commit, and that HEAD always reaches upstream (never answered from cache) — so huggingface.co being unreachable still fails hf_hub_download/snapshot_download even when the file already sits in the cache. Only a direct GET by immutable commit sha skips upstream entirely; a GET by branch/tag revalidates against upstream once its cached copy is older than metadata_max_age.',
         codes: [{ lang: 'bash', content: `export HF_ENDPOINT=${base}/repository/huggingface-proxy\npython -c "from transformers import AutoConfig; AutoConfig.from_pretrained('bert-base-uncased')"` }],
       },
     ],

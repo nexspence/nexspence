@@ -76,10 +76,11 @@ func TestBuildProxyClient_SOCKS5_BuildsDialer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildProxyClient socks5: %v", err)
 	}
-	tr, ok := c.Transport.(*http.Transport)
+	igt, ok := c.Transport.(idleGuardedTransport)
 	if !ok {
-		t.Fatal("expected *http.Transport")
+		t.Fatal("expected idleGuardedTransport")
 	}
+	tr := igt.Transport
 	if tr.DialContext == nil {
 		t.Fatal("expected a SOCKS5 DialContext to be set")
 	}

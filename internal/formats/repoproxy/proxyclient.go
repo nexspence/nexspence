@@ -20,7 +20,9 @@ import (
 // proxyRequestTimeout bounds connect + wait-for-headers only (Transport.
 // ResponseHeaderTimeout) — not the whole call, so it does not cap how long a
 // large artifact's body may take to stream once the upstream has started
-// answering. See UpstreamClient's doc comment in repoproxy.go for why.
+// answering. The body itself is bounded by idleGuardedTransport instead,
+// wrapped around the transport built below. See UpstreamClient's doc comment
+// in repoproxy.go for why.
 const (
 	proxyDialTimeout    = 10 * time.Second
 	proxyRequestTimeout = 5 * time.Minute
@@ -198,8 +200,8 @@ func buildProxyClient(s proxySettings) (*http.Client, error) {
 		// Bounds connect + wait-for-headers only, matching UpstreamClient (see
 		// its doc comment) — not the whole call, which would cap a large
 		// artifact's total transfer time regardless of how the fetch is
-		// actually going. The body itself is bounded by idleReader instead,
-		// applied where repoproxy.go reads resp.Body.
+		// actually going. The body itself is bounded by idleGuardedTransport
+		// instead, wrapped around this transport below.
 		ResponseHeaderTimeout: proxyRequestTimeout,
 	}
 
@@ -232,7 +234,7 @@ func buildProxyClient(s proxySettings) (*http.Client, error) {
 	}
 
 	return &http.Client{
-		Transport:     tr,
+		Transport:     idleGuardedTransport{Transport: tr, idle: idleBodyTimeout},
 		CheckRedirect: redirectPolicy,
 	}, nil
 }
