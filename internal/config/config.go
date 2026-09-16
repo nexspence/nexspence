@@ -729,7 +729,7 @@ func Load(path string) (*Config, error) {
 // flattenDottedStringMapHook rebuilds map[string]string keys that viper split
 // on ".". It only runs when unmarshalling into map[string]string.
 func flattenDottedStringMapHook() mapstructure.DecodeHookFunc {
-	return func(from, to reflect.Type, data any) (any, error) {
+	return func(_ reflect.Type, to reflect.Type, data any) (any, error) {
 		if to.Kind() != reflect.Map || to.Key().Kind() != reflect.String || to.Elem().Kind() != reflect.String {
 			return data, nil
 		}
