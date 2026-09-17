@@ -992,6 +992,50 @@ describe('AdminPage — Migration tab', () => {
     await waitFor(() => expect(paused).toBe(true))
   })
 
+  it('reveals lastError under the history row that was opened', async () => {
+    const user = userEvent.setup()
+    const historyJob = (over: Record<string, unknown>) => ({
+      sourceUser: 'nexspence',
+      status: 'done',
+      migrateRepos: true,
+      migrateUsers: false,
+      migrateBlobs: true,
+      migratePolicies: false,
+      repositoriesTotal: 1,
+      repositoriesDone: 1,
+      assetsTotal: 10,
+      assetsDone: 10,
+      createdAt: '',
+      updatedAt: new Date().toISOString(),
+      finishedAt: new Date().toISOString(),
+      ...over,
+    })
+    server.use(
+      http.get('/api/v1/migration/jobs', () =>
+        HttpResponse.json([
+          historyJob({ id: 'helm', sourceUrl: 'https://nexus.helm.example', errorCount: 2, lastError: 'repo helm-hosted: asset index.yaml was not planned' }),
+          historyJob({ id: 'raw', sourceUrl: 'https://nexus.raw.example', errorCount: 1, lastError: 'repo raw-hosted: asset orphan.bin was not planned' }),
+        ]),
+      ),
+    )
+    renderAdmin('migration')
+    expect(await screen.findByText('https://nexus.helm.example')).toBeInTheDocument()
+    expect(screen.queryByText(/index.yaml was not planned/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/orphan.bin was not planned/)).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '2 errors' }))
+    expect(screen.getByText(/index.yaml was not planned/)).toBeInTheDocument()
+    expect(screen.queryByText(/orphan.bin was not planned/)).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '1 errors' }))
+    expect(screen.getByText(/index.yaml was not planned/)).toBeInTheDocument()
+    expect(screen.getByText(/orphan.bin was not planned/)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '2 errors' }))
+    expect(screen.queryByText(/index.yaml was not planned/)).not.toBeInTheDocument()
+    expect(screen.getByText(/orphan.bin was not planned/)).toBeInTheDocument()
+  })
+
   it('creates a migration job through the wizard', async () => {
     const user = userEvent.setup()
     let posted: { sourceUrl: string } | null = null

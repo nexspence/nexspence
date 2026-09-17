@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, lazy, Suspense } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Activity, Archive, ArrowRightLeft, ArrowUpCircle, CheckCircle, Database, Download, ExternalLink, GitBranch, HardDrive, Info, Network, Paperclip, Pause, Pencil, Play, Plus, RefreshCw, Share2, Shield, Trash2, Upload, Wifi, X } from 'lucide-react'
+import { Activity, Archive, ArrowRightLeft, ArrowUpCircle, CheckCircle, ChevronDown, ChevronUp, Database, Download, ExternalLink, GitBranch, HardDrive, Info, Network, Paperclip, Pause, Pencil, Play, Plus, RefreshCw, Share2, Shield, Trash2, Upload, Wifi, X } from 'lucide-react'
 import { nexusApi, nexspenceApi, apiClient, apiErrorMessage, ImportRepoStats, ServiceStatus, RoutingRule, RoutingRuleInput, ReplicationRule, ReplicationHistory, ReplicationRuleInput, AuthConfig } from '@/api/client'
 const MonitoringView = lazy(() => import('@/pages/MonitoringPage').then(m => ({ default: m.MonitoringView })))
 import { Select } from '@/components/Select'
@@ -2498,26 +2498,7 @@ function MigrationTab() {
                   <div>Assets</div>
                   <div>Finished</div>
                 </div>
-                {historyJobs.map(job => {
-                  const st = MIG_STATUS[job.status] ?? MIG_STATUS.pending
-                  return (
-                    <div key={job.id} style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr 1fr', padding: '11px 16px', borderBottom: '1px solid rgba(255,255,255,0.04)', fontSize: 13, color: 'var(--holo-text)', alignItems: 'center' }}>
-                      <div>
-                        <Truncated text={job.sourceUrl} style={{ fontFamily: 'monospace', fontSize: 12, fontWeight: 600, color: 'var(--holo-text)' }} />
-                        {job.sourceUser && <div style={{ fontSize: 11, color: 'var(--holo-text-faint)', marginTop: 2 }}>{job.sourceUser}</div>}
-                      </div>
-                      <div>
-                        <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 4, background: st.bg, color: st.color }}>{job.status}</span>
-                        {job.errorCount > 0 && <div style={{ fontSize: 11, color: '#ef4444', marginTop: 3 }}>{job.errorCount} errors</div>}
-                      </div>
-                      <div style={{ fontSize: 13 }}>{job.repositoriesDone}/{job.repositoriesTotal || '?'}</div>
-                      <div style={{ fontSize: 13 }}>{job.assetsDone.toLocaleString()}/{job.assetsTotal ? job.assetsTotal.toLocaleString() : '?'}</div>
-                      <div style={{ fontSize: 12, color: 'var(--holo-text-faint)' }}>
-                        {job.finishedAt ? new Date(job.finishedAt).toLocaleString() : job.updatedAt ? new Date(job.updatedAt).toLocaleString() : '—'}
-                      </div>
-                    </div>
-                  )
-                })}
+                {historyJobs.map(job => <MigrationHistoryRow key={job.id} job={job} />)}
               </div>
             </>
           )}
@@ -2532,6 +2513,51 @@ function MigrationTab() {
             qc.invalidateQueries({ queryKey: ['migrationJobs'] })
           }}
         />
+      )}
+    </div>
+  )
+}
+
+function MigrationHistoryRow({ job }: { job: MigrationJobData }) {
+  const [open, setOpen] = useState(false)
+  const st = MIG_STATUS[job.status] ?? MIG_STATUS.pending
+  const canReveal = job.errorCount > 0 && Boolean(job.lastError)
+  const Chevron = open ? ChevronUp : ChevronDown
+  return (
+    <div style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr 1fr', padding: '11px 16px', fontSize: 13, color: 'var(--holo-text)', alignItems: 'center' }}>
+        <div>
+          <Truncated text={job.sourceUrl} style={{ fontFamily: 'monospace', fontSize: 12, fontWeight: 600, color: 'var(--holo-text)' }} />
+          {job.sourceUser && <div style={{ fontSize: 11, color: 'var(--holo-text-faint)', marginTop: 2 }}>{job.sourceUser}</div>}
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 3 }}>
+          <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 4, background: st.bg, color: st.color }}>{job.status}</span>
+          {canReveal ? (
+            <button
+              type="button"
+              onClick={() => setOpen(v => !v)}
+              aria-expanded={open}
+              aria-label={`${job.errorCount} errors`}
+              style={{ display: 'flex', alignItems: 'center', gap: 2, padding: 0, border: 0, background: 'none', font: 'inherit', fontSize: 11, fontWeight: 600, color: '#ef4444', cursor: 'pointer' }}
+            >
+              {job.errorCount} errors
+              <Chevron size={14} aria-hidden="true" />
+            </button>
+          ) : job.errorCount > 0 ? (
+            <div style={{ fontSize: 11, color: '#ef4444' }}>{job.errorCount} errors</div>
+          ) : null}
+        </div>
+        <div style={{ fontSize: 13 }}>{job.repositoriesDone}/{job.repositoriesTotal || '?'}</div>
+        <div style={{ fontSize: 13 }}>{job.assetsDone.toLocaleString()}/{job.assetsTotal ? job.assetsTotal.toLocaleString() : '?'}</div>
+        <div style={{ fontSize: 12, color: 'var(--holo-text-faint)' }}>
+          {job.finishedAt ? new Date(job.finishedAt).toLocaleString() : job.updatedAt ? new Date(job.updatedAt).toLocaleString() : '—'}
+        </div>
+      </div>
+      {open && job.lastError && (
+        <div style={{ margin: '0 16px 12px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 8, padding: '8px 12px' }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: '#ef4444', marginBottom: 4 }}>Last error</div>
+          <div style={{ fontSize: 12, color: '#fca5a5', wordBreak: 'break-word', fontFamily: 'monospace' }}>{job.lastError}</div>
+        </div>
       )}
     </div>
   )
