@@ -279,6 +279,27 @@ describe('AdminPage — Blob Stores tab', () => {
     await waitFor(() => expect(deleted).toBe(true))
   })
 
+  it('detail modal: shows the 409 delete error from the API', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    server.use(
+      http.get('/service/rest/v1/blobstores', () => HttpResponse.json([blobStore])),
+      http.get('/api/v1/blob-stores/:name/usage', () =>
+        HttpResponse.json({ store: blobStore, linkedRepositories: [], totalAssetBytes: 0 }),
+      ),
+      http.delete('/service/rest/v1/blobstores/:name', () =>
+        HttpResponse.json(
+          { error: 'blob store "default" still holds 3 assets — migrate those artifacts to another store or delete them first' },
+          { status: 409 },
+        ),
+      ),
+    )
+    renderAdmin('blobs')
+    fireEvent.click(await screen.findByText('default'))
+    await screen.findByText('Blob Store: default')
+    fireEvent.click(await screen.findByRole('button', { name: /Delete/ }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(/still holds 3 assets/)
+  })
+
   it('detail modal: shows group members for group type', async () => {
     const group = { ...blobStore, type: 'group', config: { fill_policy: 'round_robin' } }
     server.use(

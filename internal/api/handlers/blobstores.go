@@ -222,6 +222,64 @@ func (h *BlobStoreHandler) checkNotGroupMember(ctx context.Context, name string)
 	return ""
 }
 
+// checkNotReferenced returns a non-empty message if repositories still use the
+// named store as blob_store_id, or if assets still live on it. Group members
+// routinely hold assets while repository.blob_store_id points at the group, so
+// counting repositories alone would miss them. Query errors are left to Delete
+// — the FK translation there is the backstop, same as checkNotGroupMember.
+func (h *BlobStoreHandler) checkNotReferenced(ctx context.Context, name string) string {
+	if h.repos == nil && h.assets == nil {
+		return ""
+	}
+	bs, err := h.repo.Get(ctx, name)
+	if err != nil || bs == nil {
+		return ""
+	}
+	if h.repos != nil {
+		linked, err := h.repos.ListByBlobStoreID(ctx, bs.ID)
+		if err == nil && len(linked) > 0 {
+			if len(linked) == 1 {
+				return fmt.Sprintf("blob store %q is still assigned to repository %q — reassign or delete that repository first", name, linked[0].Name)
+			}
+			names := make([]string, 0, len(linked))
+			for _, r := range linked {
+				names = append(names, r.Name)
+			}
+			shown := names
+			extra := ""
+			if len(names) > 3 {
+				shown = names[:3]
+				extra = fmt.Sprintf(" and %d more", len(names)-3)
+			}
+			return fmt.Sprintf("blob store %q is still assigned to %d repositories (%s%s) — reassign or delete them first",
+				name, len(names), strings.Join(shown, ", "), extra)
+		}
+	}
+	if h.assets != nil {
+		n, err := h.assets.CountByBlobStoreID(ctx, bs.ID)
+		if err == nil && n > 0 {
+			return fmt.Sprintf("blob store %q still holds %d assets — migrate those artifacts to another store or delete them first", name, n)
+		}
+	}
+	return ""
+}
+
+// blobStoreInUseMessage turns a translated FK conflict into the same kind of
+// operator-facing 409 the pre-checks produce. The constraint name stays out of
+// the body: the UI must not see SQL internals, SQLSTATE included.
+func blobStoreInUseMessage(name string, err error) string {
+	var inUse *repository.InUseError
+	if errors.As(err, &inUse) {
+		switch inUse.Constraint {
+		case "repositories_blob_store_id_fkey":
+			return fmt.Sprintf("blob store %q is still assigned to one or more repositories — reassign or delete them first", name)
+		case "assets_blob_store_id_fkey":
+			return fmt.Sprintf("blob store %q still holds artifacts — migrate or delete those assets first", name)
+		}
+	}
+	return fmt.Sprintf("blob store %q is still in use — detach remaining repositories and assets first", name)
+}
+
 // Create handles POST /service/rest/v1/blobstores/:type
 func (h *BlobStoreHandler) Create(c *gin.Context) {
 	blobType := c.Param("type")
@@ -314,11 +372,20 @@ func (h *BlobStoreHandler) Update(c *gin.Context) {
 // Delete handles DELETE /service/rest/v1/blobstores/:name
 func (h *BlobStoreHandler) Delete(c *gin.Context) {
 	name := c.Param("name")
-	if msg := h.checkNotGroupMember(c.Request.Context(), name); msg != "" {
+	ctx := c.Request.Context()
+	if msg := h.checkNotGroupMember(ctx, name); msg != "" {
 		c.JSON(http.StatusConflict, gin.H{"error": msg})
 		return
 	}
-	if err := h.repo.Delete(c.Request.Context(), name); err != nil {
+	if msg := h.checkNotReferenced(ctx, name); msg != "" {
+		c.JSON(http.StatusConflict, gin.H{"error": msg})
+		return
+	}
+	if err := h.repo.Delete(ctx, name); err != nil {
+		if errors.Is(err, repository.ErrInUse) {
+			c.JSON(http.StatusConflict, gin.H{"error": blobStoreInUseMessage(name, err)})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

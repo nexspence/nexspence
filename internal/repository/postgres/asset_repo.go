@@ -726,6 +726,19 @@ func (r *assetRepo) CountByBlobKeyInStore(ctx context.Context, blobKey, blobStor
 	return count, err
 }
 
+// CountByBlobStoreID reports how many assets still live on blobStoreID — the
+// guard before deleting that store. A group member can hold artifacts even
+// when no repository.blob_store_id points at it, so counting repositories
+// alone would miss them.
+func (r *assetRepo) CountByBlobStoreID(ctx context.Context, blobStoreID string) (int, error) {
+	var count int
+	err := r.db.QueryRow(ctx,
+		`SELECT COUNT(*) FROM assets WHERE blob_store_id = $1::uuid`,
+		blobStoreID,
+	).Scan(&count)
+	return count, err
+}
+
 // ListForBlobStoreMigration returns distinct (blob_key, blob_store_id, size_bytes) for all
 // assets in repoName whose blob_store_id differs from targetStoreID.
 func (r *assetRepo) ListForBlobStoreMigration(ctx context.Context, repoName, targetStoreID string) ([]domain.MigrationAssetRow, error) {

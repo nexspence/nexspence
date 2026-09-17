@@ -579,3 +579,30 @@ func TestBlobStoreRepo_Delete_SurvivesOrphanedMigrationHistory(t *testing.T) {
 		t.Error("timestamps must survive the store delete")
 	}
 }
+
+func TestBlobStoreRepo_Delete_ReferencedByRepository_IsInUse(t *testing.T) {
+	pool := pgtest.Pool(t)
+	pgtest.Truncate(t, pool, "repositories", "blob_stores")
+	ctx := context.Background()
+	bsRepo := NewBlobStoreRepo(pool)
+	repoRepo := NewRepositoryRepo(pool)
+
+	bs := makeLocalBS("inuse_bs")
+	insertBS(t, ctx, bsRepo, bs)
+	r := makeRepo("inuse_repo", domain.FormatRaw, domain.TypeHosted, strPtr(bs.ID))
+	if err := repoRepo.Create(ctx, r); err != nil {
+		t.Fatalf("create repository: %v", err)
+	}
+
+	err := bsRepo.Delete(ctx, bs.Name)
+	if !errors.Is(err, repository.ErrInUse) {
+		t.Fatalf("Delete: want ErrInUse, got %v", err)
+	}
+	var inUse *repository.InUseError
+	if !errors.As(err, &inUse) {
+		t.Fatalf("Delete: want InUseError, got %T", err)
+	}
+	if inUse.Constraint != "repositories_blob_store_id_fkey" {
+		t.Errorf("constraint: got %q, want repositories_blob_store_id_fkey", inUse.Constraint)
+	}
+}

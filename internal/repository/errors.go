@@ -13,6 +13,12 @@ var ErrNotFound = errors.New("not found")
 // rather than letting a raw driver error surface as a 500 carrying SQL internals.
 var ErrAlreadyExists = errors.New("already exists")
 
+// ErrInUse is returned by repository write methods when a delete would
+// violate a foreign-key constraint — the row is still referenced. Callers
+// translate it into HTTP 409 rather than letting a raw driver error surface
+// as a 500 carrying SQLSTATE.
+var ErrInUse = errors.New("still in use")
+
 // UniqueViolationError is an ErrAlreadyExists that names the field which
 // collided, so callers can report which one without parsing driver text.
 type UniqueViolationError struct {
@@ -24,6 +30,23 @@ func (e *UniqueViolationError) Error() string { return e.Field + " already exist
 // Is makes every UniqueViolationError match ErrAlreadyExists, so callers that
 // only care that the row exists can test for the sentinel.
 func (e *UniqueViolationError) Is(target error) bool { return target == ErrAlreadyExists }
+
+// InUseError is an ErrInUse that names the blocking foreign-key constraint,
+// so callers can say what still holds the row without parsing driver text.
+type InUseError struct {
+	Constraint string
+}
+
+func (e *InUseError) Error() string {
+	if e.Constraint == "" {
+		return "resource is still in use"
+	}
+	return "resource is still in use (" + e.Constraint + ")"
+}
+
+// Is makes every InUseError match ErrInUse, so callers that only care that
+// the row is referenced can test for the sentinel.
+func (e *InUseError) Is(target error) bool { return target == ErrInUse }
 
 // RequestNotPendingError is returned by WithPendingRequestLock when the locked
 // promotion request already left the pending state — typically because a

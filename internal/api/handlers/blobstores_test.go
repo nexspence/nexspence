@@ -12,6 +12,7 @@ import (
 
 	"github.com/nexspence-oss/nexspence/internal/api/handlers"
 	"github.com/nexspence-oss/nexspence/internal/domain"
+	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/service"
 	"github.com/nexspence-oss/nexspence/internal/testutil"
 )
@@ -177,6 +178,47 @@ func TestBlobStore_Delete_NotPresent_204(t *testing.T) {
 	r, _, _, _, _ := mountBlobStores(t)
 	rec := do(t, r, http.MethodDelete, "/service/rest/v1/blobstores/ghost", nil)
 	assert.Equal(t, http.StatusNoContent, rec.Code)
+}
+
+func TestBlobStore_Delete_LinkedRepository_409(t *testing.T) {
+	store := &domain.BlobStore{ID: "a", Name: "store-a", Type: "local"}
+	r, _, repoRepo, _, _ := mountBlobStores(t, store)
+	bsID := store.ID
+	require.NoError(t, repoRepo.Create(testContext(), &domain.Repository{
+		Name: "maven-central", Format: domain.FormatMaven2, Type: domain.TypeHosted,
+		BlobStoreID: &bsID,
+	}))
+
+	rec := do(t, r, http.MethodDelete, "/service/rest/v1/blobstores/store-a", nil)
+	require.Equal(t, http.StatusConflict, rec.Code, "body=%s", rec.Body.String())
+	assert.Contains(t, rec.Body.String(), "maven-central")
+	assert.NotContains(t, rec.Body.String(), "23503")
+}
+
+func TestBlobStore_Delete_LinkedAssets_409(t *testing.T) {
+	store := &domain.BlobStore{ID: "a", Name: "store-a", Type: "local"}
+	r, _, _, assetRepo, _ := mountBlobStores(t, store)
+	require.NoError(t, assetRepo.Create(testContext(), &domain.Asset{
+		ComponentID: "c1", RepositoryID: "r1", Repository: "other-repo",
+		Path: "/f.bin", BlobKey: "k", BlobStoreID: store.ID, SizeBytes: 1,
+	}))
+
+	rec := do(t, r, http.MethodDelete, "/service/rest/v1/blobstores/store-a", nil)
+	require.Equal(t, http.StatusConflict, rec.Code, "body=%s", rec.Body.String())
+	assert.Contains(t, rec.Body.String(), "asset")
+	assert.NotContains(t, rec.Body.String(), "23503")
+}
+
+func TestBlobStore_Delete_InUseError_409(t *testing.T) {
+	store := &domain.BlobStore{ID: "a", Name: "store-a", Type: "local"}
+	r, blobRepo, _, _, _ := mountBlobStores(t, store)
+	blobRepo.DeleteErr = &repository.InUseError{Constraint: "assets_blob_store_id_fkey"}
+
+	rec := do(t, r, http.MethodDelete, "/service/rest/v1/blobstores/store-a", nil)
+	require.Equal(t, http.StatusConflict, rec.Code, "body=%s", rec.Body.String())
+	assert.Contains(t, rec.Body.String(), "artifact")
+	assert.NotContains(t, rec.Body.String(), "23503")
+	assert.NotContains(t, rec.Body.String(), "assets_blob_store_id_fkey")
 }
 
 // ── Presign / Lifecycle (mock store is not PresignableStore → 400) ───────────

@@ -804,3 +804,37 @@ func TestAssetRepo_CountByBlobKey_UniqueKeyIsZeroAfterExcludeSelf(t *testing.T) 
 		t.Errorf("CountByBlobKey: got %d want 0", count)
 	}
 }
+
+func TestAssetRepo_CountByBlobStoreID_CountsAssetsOnThatStore(t *testing.T) {
+	pool := pgtest.Pool(t)
+	pgtest.Truncate(t, pool, "blob_stores", "repositories", "components")
+	ctx := context.Background()
+
+	p := makeAssetParent(t, ctx, "cbsid")
+	other := makeAssetParent(t, ctx, "cbsid_other")
+	repo := NewAssetRepo(pool)
+
+	a1 := makeAsset(p, "/store/a.bin")
+	a2 := makeAsset(p, "/store/b.bin")
+	aOther := makeAsset(other, "/store/c.bin")
+	for _, a := range []*domain.Asset{a1, a2, aOther} {
+		if err := repo.Create(ctx, a); err != nil {
+			t.Fatalf("Create %s: %v", a.Path, err)
+		}
+	}
+
+	n, err := repo.CountByBlobStoreID(ctx, p.BlobStoreID)
+	if err != nil {
+		t.Fatalf("CountByBlobStoreID: %v", err)
+	}
+	if n != 2 {
+		t.Errorf("CountByBlobStoreID(%s) = %d, want 2", p.BlobStoreID, n)
+	}
+	n, err = repo.CountByBlobStoreID(ctx, other.BlobStoreID)
+	if err != nil {
+		t.Fatalf("CountByBlobStoreID other: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("CountByBlobStoreID(other) = %d, want 1", n)
+	}
+}

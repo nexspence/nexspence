@@ -25,6 +25,26 @@ func TestUniqueViolationError_NamesTheFieldAndMatchesTheSentinel(t *testing.T) {
 	}
 }
 
+func TestInUseError_NamesTheConstraintAndMatchesTheSentinel(t *testing.T) {
+	err := error(&repository.InUseError{Constraint: "assets_blob_store_id_fkey"})
+	if got := err.Error(); got != "resource is still in use (assets_blob_store_id_fkey)" {
+		t.Fatalf("Error() = %q", got)
+	}
+	if !errors.Is(err, repository.ErrInUse) {
+		t.Fatal("an InUseError must satisfy errors.Is(err, ErrInUse)")
+	}
+	if errors.Is(err, repository.ErrAlreadyExists) {
+		t.Fatal("it must not match an unrelated sentinel")
+	}
+	if !errors.Is(fmt.Errorf("delete blob store: %w", err), repository.ErrInUse) {
+		t.Fatal("wrapping lost the sentinel")
+	}
+	var inUse *repository.InUseError
+	if !errors.As(fmt.Errorf("delete blob store: %w", err), &inUse) || inUse.Constraint != "assets_blob_store_id_fkey" {
+		t.Fatal("errors.As must recover the blocking constraint")
+	}
+}
+
 func TestRequestNotPendingError_CarriesTheStatus(t *testing.T) {
 	err := error(&repository.RequestNotPendingError{Status: "approved"})
 	if got := err.Error(); got != "request is not pending (status: approved)" {
