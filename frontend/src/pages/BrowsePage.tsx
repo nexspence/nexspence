@@ -467,11 +467,21 @@ function pickPrimaryDockerAsset(
 }
 
 const S = {
-  page: { padding: 24, display: 'flex', flexDirection: 'column' as const, gap: 20, height: '100%' },
-  header: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 },
+  page: {
+    padding: 24,
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: 20,
+    flex: 1,
+    height: '100%',
+    minHeight: 0,
+    boxSizing: 'border-box' as const,
+    overflow: 'hidden' as const,
+  },
+  header: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexShrink: 0 },
   title: { fontSize: 20, fontWeight: 700, color: 'var(--holo-text)', margin: '0 0 4px' },
   subtitle: { fontSize: 13, color: 'var(--holo-text-dim)', margin: 0 },
-  toolbar: { display: 'flex', gap: 12, alignItems: 'center' },
+  toolbar: { display: 'flex', gap: 12, alignItems: 'center', flexShrink: 0 },
   empty: {
     flex: 1,
     display: 'flex',
@@ -483,10 +493,14 @@ const S = {
     fontSize: 14,
   },
   table: {
-    // Auto, not hidden: the fixed tracks alone need ~380px, and a clipped
-    // table would silently lose the Pushed and delete columns on a narrow
-    // (or deeply zoomed-in) viewport instead of scrolling.
-    overflowX: 'auto' as const,
+    // .holo-card sets overflow:hidden. A flex item with non-visible overflow
+    // may shrink below its content (#258's min-height:auto rule), which clipped
+    // every row that did not fit the viewport — no scrollbar, pager still
+    // visible underneath. Auto restores vertical scroll for a full page of
+    // components and keeps the horizontal scroll when the fixed tracks overflow.
+    overflow: 'auto' as const,
+    flex: 1,
+    minHeight: 0,
   },
   thead: {
     display: 'grid',
@@ -532,7 +546,7 @@ const S = {
   }),
   muted: { color: 'var(--holo-text-faint)', fontSize: 12 },
   path: { fontSize: 12, color: 'rgba(147,197,253,0.85)', fontFamily: 'monospace' as const },
-  pager: { display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'center', paddingTop: 4 },
+  pager: { display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'center', paddingTop: 4, flexShrink: 0 },
   pgBtn: (disabled: boolean) => ({
     background: disabled ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.07)',
     border: '1px solid rgba(255,255,255,0.1)',
@@ -544,8 +558,8 @@ const S = {
   }),
   treePanel: {
     padding: '12px 8px',
-    maxHeight: 'calc(100vh - 220px)',
-    overflowY: 'auto' as const,
+    overflow: 'auto' as const,
+    minHeight: 0,
   },
   treeRow: (depth: number) => ({
     display: 'flex',
@@ -562,16 +576,19 @@ const S = {
   dockerLayout: {
     display: 'flex',
     gap: 16,
-    alignItems: 'flex-start' as const,
+    alignItems: 'stretch' as const,
     flexWrap: 'wrap' as const,
+    flex: 1,
+    minHeight: 0,
+    overflow: 'auto' as const,
   },
   detailPanel: {
     flex: '1 1 320px',
     minWidth: 280,
     maxWidth: '100%',
     padding: '14px 16px',
-    maxHeight: 'calc(100vh - 220px)',
-    overflowY: 'auto' as const,
+    overflow: 'auto' as const,
+    minHeight: 0,
   },
   detailTitle: { fontSize: 14, fontWeight: 600, color: 'var(--holo-text)', margin: '0 0 12px' },
   detailRow: {
@@ -1392,7 +1409,7 @@ export default function BrowsePage() {
 
   return (
     <div style={S.page}>
-      <div style={{ marginBottom: 4 }}>
+      <div style={{ marginBottom: 4, flexShrink: 0 }}>
         <div className="holo-section-label" style={{ marginBottom: 4 }}>WORKSPACE / BROWSE</div>
         <h1 style={{ fontSize: 20, fontWeight: 700, margin: '0 0 3px', letterSpacing: '-0.01em', lineHeight: 1.2, background: 'linear-gradient(110deg, #7c5cff, #22d3ee 60%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' as const }}>Browse</h1>
         <p style={{ fontSize: 12, color: 'var(--holo-text-faint)', margin: 0 }}>Explore repository contents</p>
@@ -1675,7 +1692,7 @@ export default function BrowsePage() {
       ) : (
         <>
           {signedIn && selectedComponentIDs.size > 0 && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px', background: 'rgba(59,130,246,0.1)', borderRadius: 8, marginBottom: 8, border: '1px solid rgba(59,130,246,0.3)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px', background: 'rgba(59,130,246,0.1)', borderRadius: 8, marginBottom: 8, border: '1px solid rgba(59,130,246,0.3)', flexShrink: 0 }}>
               <span style={{ fontSize: 13, color: '#93c5fd' }}>{selectedComponentIDs.size} selected</span>
               <HoloButton variant="primary" onClick={async () => {
                 const ids = Array.from(selectedComponentIDs)
