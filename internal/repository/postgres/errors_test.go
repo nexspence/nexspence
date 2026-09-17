@@ -45,7 +45,7 @@ func TestTranslateInUse_ConvertsForeignKey(t *testing.T) {
 		t.Fatalf("translateInUse: want constraint named, got %#v", got)
 	}
 	plain := errors.New("disk full")
-	if translateInUse(plain) != plain {
+	if got := translateInUse(plain); !errors.Is(got, plain) {
 		t.Fatal("translateInUse must pass unrelated errors through")
 	}
 }
