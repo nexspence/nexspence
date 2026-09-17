@@ -3,6 +3,7 @@ package service
 import (
 	"testing"
 
+	"github.com/nexspence-oss/nexspence/internal/formats/base"
 	"github.com/nexspence-oss/nexspence/internal/nexusclient"
 )
 
@@ -81,5 +82,27 @@ func TestExpandRepoAllowSet(t *testing.T) {
 	hostedOnly := expandRepoAllowSet(repoAllowSet([]string{"raw-hosted"}), source)
 	if len(hostedOnly) != 1 || !repoAllowed(hostedOnly, "raw-hosted") {
 		t.Fatalf("hosted-only allowlist must not grow: %v", hostedOnly)
+	}
+}
+
+func TestHostedPypiDest(t *testing.T) {
+	got, coords := hostedPypiDest(
+		"packages/cc-notifications-client/0.1.3/cc_notifications_client-0.1.3-py3-none-any.whl",
+		base.Coords{},
+	)
+	want := "/packages/cc-notifications-client/cc_notifications_client-0.1.3-py3-none-any.whl"
+	if got != want {
+		t.Fatalf("path = %q, want %q", got, want)
+	}
+	if coords.Name != "cc-notifications-client" || coords.Version != "0.1.3" {
+		t.Fatalf("coords = %+v", coords)
+	}
+
+	got, coords = hostedPypiDest("/simple/cc-notifications-client/", base.Coords{})
+	if got != "/simple/cc-notifications-client/" {
+		t.Fatalf("simple index must stay put: %q", got)
+	}
+	if coords.Name != "" {
+		t.Fatalf("simple index must not invent coords: %+v", coords)
 	}
 }

@@ -1128,7 +1128,7 @@ describe('AdminPage — Migration tab', () => {
     expect(posted!.scope!.repositories).toEqual(['raw-hosted'])
   })
 
-  it('disables proxy repositories when only artifacts are in scope', async () => {
+  it('disables groups when only artifacts are in scope', async () => {
     const user = userEvent.setup()
     let posted: { scope?: { migrateRepos?: boolean; migrateBlobs?: boolean; repositories?: string[] } } | null = null
     server.use(
@@ -1136,10 +1136,11 @@ describe('AdminPage — Migration tab', () => {
       http.post('/api/v1/migration/preview', () =>
         HttpResponse.json({
           reachable: true,
-          repoCount: 2,
+          repoCount: 3,
           repos: [
             { name: 'raw-hosted', format: 'raw', type: 'hosted' },
             { name: 'maven-central', format: 'maven2', type: 'proxy' },
+            { name: 'raw-group', format: 'raw', type: 'group' },
           ],
         }),
       ),
@@ -1156,11 +1157,12 @@ describe('AdminPage — Migration tab', () => {
     const pwInputs = document.querySelectorAll('input[type="password"]')
     fireEvent.change(pwInputs[0], { target: { value: 'secret' } })
     await user.click(screen.getByRole('button', { name: /Test connection/ }))
-    expect(await screen.findByText(/2 repositories found/)).toBeInTheDocument()
+    expect(await screen.findByText(/3 repositories found/)).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /Next/ }))
     await screen.findByText('Step 2 of 3')
     await user.click(screen.getByRole('checkbox', { name: 'Repositories' }))
-    expect(screen.getByRole('checkbox', { name: /maven-central/ })).toBeDisabled()
+    expect(screen.getByRole('checkbox', { name: /maven-central/ })).toBeEnabled()
+    expect(screen.getByRole('checkbox', { name: /raw-group/ })).toBeDisabled()
     expect(screen.getByRole('checkbox', { name: /raw-hosted/ })).toBeEnabled()
     await user.click(screen.getByRole('checkbox', { name: /raw-hosted/ }))
     await user.click(screen.getByRole('button', { name: /Next/ }))

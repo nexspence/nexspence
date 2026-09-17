@@ -72,38 +72,44 @@ describe('MigrationRepoPicker', () => {
     expect(screen.getByText(/selecting one also migrates its members/i)).toBeInTheDocument()
   })
 
-  it('greys out proxy and group when only artifacts will run', async () => {
+  it('greys out groups when only artifacts will run', async () => {
     const user = userEvent.setup()
-    function HostedOnlyHarness() {
+    function BlobOnlyHarness() {
       const [selected, setSelected] = useState<string[]>([])
       return (
         <MigrationRepoPicker
-          hostedOnly
+          blobSourcesOnly
           repos={[...repos, { name: 'raw-group', format: 'raw', type: 'group' }]}
           selected={selected}
           onChange={setSelected}
         />
       )
     }
-    render(<HostedOnlyHarness />)
-    expect(screen.getByText('0 of 2 hosted selected')).toBeInTheDocument()
-    expect(screen.getByRole('checkbox', { name: /maven-central/ })).toBeDisabled()
+    render(<BlobOnlyHarness />)
+    expect(screen.getByText('0 of 3 selected')).toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: /maven-central/ })).toBeEnabled()
     expect(screen.getByRole('checkbox', { name: /raw-group/ })).toBeDisabled()
     expect(screen.getByRole('checkbox', { name: /raw-hosted/ })).toBeEnabled()
-    expect(screen.getByText(/Artifacts copy only from hosted/)).toBeInTheDocument()
+    expect(screen.getByText(/Artifacts copy from hosted repositories and proxy caches/)).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'All' }))
-    expect(screen.getByText('2 of 2 hosted selected')).toBeInTheDocument()
+    expect(screen.getByText('3 of 3 selected')).toBeInTheDocument()
     expect(screen.getByRole('checkbox', { name: /raw-hosted/ })).toBeChecked()
     expect(screen.getByRole('checkbox', { name: /npm-hosted/ })).toBeChecked()
-    expect(screen.getByRole('checkbox', { name: /maven-central/ })).not.toBeChecked()
+    expect(screen.getByRole('checkbox', { name: /maven-central/ })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: /raw-group/ })).not.toBeChecked()
   })
 })
 
 describe('scopedRepoSelection', () => {
   it('keeps every name unless artifacts-only', () => {
     expect(scopedRepoSelection(repos, ['maven-central', 'raw-hosted'], false)).toEqual(['maven-central', 'raw-hosted'])
-    expect(scopedRepoSelection(repos, ['maven-central', 'raw-hosted'], true)).toEqual(['raw-hosted'])
+    expect(scopedRepoSelection(repos, ['maven-central', 'raw-hosted'], true)).toEqual(['maven-central', 'raw-hosted'])
+    expect(scopedRepoSelection(
+      [...repos, { name: 'raw-group', format: 'raw', type: 'group' }],
+      ['maven-central', 'raw-group'],
+      true,
+    )).toEqual(['maven-central'])
   })
 })
 
@@ -129,9 +135,9 @@ describe('validateMigrationRepoScope', () => {
     })).toBeNull()
   })
 
-  it('rejects artifacts-only when the source has no hosted repository', () => {
+  it('rejects artifacts-only when the source has no hosted or proxy repository', () => {
     expect(validateMigrationRepoScope({
       migrateRepos: false, migrateBlobs: true, previewed: true, previewRepoCount: 0, selectedCount: 0,
-    })).toMatch(/No hosted repositories/)
+    })).toMatch(/No hosted or proxy repositories/)
   })
 })

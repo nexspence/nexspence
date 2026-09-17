@@ -4,7 +4,7 @@ import { ArrowRightLeft, Play, Pause, RefreshCw, Plus } from 'lucide-react'
 import { nexspenceApi, apiErrorMessage } from '@/api/client'
 import { HoloCard, HoloButton, HoloPill, HoloInput, HoloModal } from '@/components/holo'
 import { type MigrationJob, shouldPollJobs } from './migrationJobs'
-import { MigrationRepoPicker, isHostedRepo, scopedRepoSelection, validateMigrationRepoScope, type PreviewRepo } from './MigrationRepoPicker'
+import { MigrationRepoPicker, isBlobSourceRepo, scopedRepoSelection, validateMigrationRepoScope, type PreviewRepo } from './MigrationRepoPicker'
 
 const STATUS_STYLE: Record<string, { bg: string; color: string }> = {
   pending:   { bg: 'rgba(245,158,11,0.15)',  color: '#f59e0b' },
@@ -56,8 +56,8 @@ export default function MigrationPage() {
         <strong>How it works:</strong> Nexspence connects to your Nexus instance via its REST API and
         streams repositories, users, roles and artifacts directly — no downtime required.
         Test the connection, then pick one or several repositories. Artifacts copy into hosted
-        destinations that already exist here, however they were created, so you can skip
-        Repositories when the matching hosted repositories are already present. Jobs are pausable and resumable.
+        and proxy destinations that already exist here, however they were created, so you can skip
+        Repositories when the matching repositories are already present. Jobs are pausable and resumable.
       </div>
 
       {isLoading ? (
@@ -234,13 +234,13 @@ function CreateMigrationModal({ onClose, onCreated }: { onClose: () => void; onC
       setError('Test the connection before starting')
       return
     }
-    const hostedOnly = scope.migrateBlobs && !scope.migrateRepos
-    const scopedSelected = scopedRepoSelection(preview.repos, selectedRepos, hostedOnly)
+    const blobSourcesOnly = scope.migrateBlobs && !scope.migrateRepos
+    const scopedSelected = scopedRepoSelection(preview.repos, selectedRepos, blobSourcesOnly)
     const repoErr = validateMigrationRepoScope({
       migrateRepos: scope.migrateRepos,
       migrateBlobs: scope.migrateBlobs,
       previewed: true,
-      previewRepoCount: hostedOnly ? preview.repos.filter(isHostedRepo).length : preview.repos.length,
+      previewRepoCount: blobSourcesOnly ? preview.repos.filter(isBlobSourceRepo).length : preview.repos.length,
       selectedCount: scopedSelected.length,
     })
     if (repoErr) {
@@ -287,7 +287,7 @@ function CreateMigrationModal({ onClose, onCreated }: { onClose: () => void; onC
             </div>
             {(scope.migrateRepos || scope.migrateBlobs) && preview.repos.length > 0 && (
               <div style={{ marginTop: 10, color: 'var(--holo-text)' }}>
-                <MigrationRepoPicker repos={preview.repos} selected={selectedRepos} onChange={setSelectedRepos} hostedOnly={scope.migrateBlobs && !scope.migrateRepos} />
+                <MigrationRepoPicker repos={preview.repos} selected={selectedRepos} onChange={setSelectedRepos} blobSourcesOnly={scope.migrateBlobs && !scope.migrateRepos} />
               </div>
             )}
           </div>

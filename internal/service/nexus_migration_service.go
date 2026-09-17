@@ -502,11 +502,11 @@ func (s *NexusMigrationService) runStages(ctx context.Context, client *nexusclie
 		return nil
 	}
 
-	var hosted []migratedRepo
+	var blobSrcs []migratedRepo
 	if job.MigrateRepos {
 		if err := runStage("repositories", func() error {
 			var e error
-			hosted, e = s.migrateRepositories(ctx, client, job, p)
+			blobSrcs, e = s.migrateRepositories(ctx, client, job, p)
 			return e
 		}); err != nil {
 			return err
@@ -515,11 +515,11 @@ func (s *NexusMigrationService) runStages(ctx context.Context, client *nexusclie
 
 	// Artifacts used to live inside the repositories stage, so unchecking
 	// Repositories silently transferred nothing even when Artifacts was on.
-	// The two are independent: a blobs-only job copies into hosted
+	// The two are independent: a blobs-only job copies into hosted and proxy
 	// repositories that already exist here, however they were created.
 	if job.MigrateBlobs {
 		if err := runStage("blobs", func() error {
-			targets, e := s.blobTargets(ctx, client, job, hosted, p)
+			targets, e := s.blobTargets(ctx, client, job, blobSrcs, p)
 			if e != nil {
 				return e
 			}
@@ -579,7 +579,7 @@ type migratedRepo struct {
 }
 
 // migrateRepositories re-creates the source repositories here and returns the
-// hosted ones, which are the only ones holding artifacts worth transferring.
+// hosted and proxy ones, which hold artifacts (or a proxy cache) worth copying.
 func (s *NexusMigrationService) migrateRepositories(ctx context.Context, client *nexusclient.Client,
 	job *domain.MigrationJob, p *progress,
 ) ([]migratedRepo, error) {
@@ -614,7 +614,7 @@ func (s *NexusMigrationService) migrateRepositories(ctx context.Context, client 
 	}
 	localNames := make(map[string]string, len(source))
 
-	var hosted []migratedRepo
+	var blobSrcs []migratedRepo
 	for _, src := range ordered {
 		if err := checkPaused(ctx); err != nil {
 			return nil, err
@@ -632,11 +632,15 @@ func (s *NexusMigrationService) migrateRepositories(ctx context.Context, client 
 		localNames[src.Name] = localName
 		p.doneRepos++
 		p.flush(bg)
-		if src.Type == "hosted" {
-			hosted = append(hosted, migratedRepo{src: src, localName: localName})
+		if copyableBlobType(src.Type) {
+			blobSrcs = append(blobSrcs, migratedRepo{src: src, localName: localName})
 		}
 	}
-	return hosted, nil
+	return blobSrcs, nil
+}
+
+func copyableBlobType(t string) bool {
+	return t == "hosted" || t == "proxy"
 }
 
 // migratedRepoName is the name the source repository is created under here.
@@ -747,23 +751,27 @@ func reportMissingAllowlist(bg context.Context, allow map[string]struct{}, sourc
 	}
 }
 
-// blobTargets is the hosted repositories artifacts will copy into. When the
-// Repositories stage ran, that is its hosted result — re-checked against the
-// destination, because ensureRepository leaves an already-present repo of the
-// wrong type or format untouched and used to hand it to migrateAssets anyway.
-// When Repositories is off, the list is rebuilt from the source (hostedForBlobs).
+// blobTargets is the hosted and proxy repositories artifacts will copy into.
+// When the Repositories stage ran, that is its blob-source result — re-checked
+// against the destination, because ensureRepository leaves an already-present
+// repo of the wrong type or format untouched and used to hand it to
+// migrateAssets anyway. When Repositories is off, the list is rebuilt from the
+// source (existingBlobSources). Groups are not in this list: they have no
+// artifacts of their own.
 func (s *NexusMigrationService) blobTargets(ctx context.Context, client *nexusclient.Client,
 	job *domain.MigrationJob, fromRepos []migratedRepo, p *progress,
 ) ([]migratedRepo, error) {
 	if !job.MigrateRepos {
-		return s.hostedForBlobs(ctx, client, job, p)
+		return s.existingBlobSources(ctx, client, job, p)
 	}
 	return s.filterBlobDestinations(ctx, fromRepos, p)
 }
 
-// hostedForBlobs lists hosted repositories on the source that already exist
-// here, so a blobs-only job can copy artifacts without recreating definitions.
-func (s *NexusMigrationService) hostedForBlobs(ctx context.Context, client *nexusclient.Client,
+// existingBlobSources lists hosted and proxy repositories on the source that
+// already exist here, so a blobs-only job can copy artifacts without recreating
+// definitions. A proxy cache is copied too: the upstream may be gone by the
+// time Nexspence is asked to serve the same path.
+func (s *NexusMigrationService) existingBlobSources(ctx context.Context, client *nexusclient.Client,
 	job *domain.MigrationJob, p *progress,
 ) ([]migratedRepo, error) {
 	bg := context.Background()
@@ -776,9 +784,9 @@ func (s *NexusMigrationService) hostedForBlobs(ctx context.Context, client *nexu
 	allow = expandRepoAllowSet(allow, source)
 	reportMissingAllowlist(bg, allow, source, p)
 
-	var hosted []migratedRepo
+	var out []migratedRepo
 	for _, src := range source {
-		if src.Type != "hosted" || !repoAllowed(allow, src.Name) {
+		if !copyableBlobType(src.Type) || !repoAllowed(allow, src.Name) {
 			continue
 		}
 		format, ok := nexusFormats[src.Format]
@@ -792,10 +800,10 @@ func (s *NexusMigrationService) hostedForBlobs(ctx context.Context, client *nexu
 			return nil, err
 		}
 		if okDest {
-			hosted = append(hosted, m)
+			out = append(out, m)
 		}
 	}
-	return hosted, nil
+	return out, nil
 }
 
 func (s *NexusMigrationService) filterBlobDestinations(ctx context.Context, candidates []migratedRepo, p *progress) ([]migratedRepo, error) {
@@ -817,9 +825,9 @@ func (s *NexusMigrationService) filterBlobDestinations(ctx context.Context, cand
 }
 
 // acceptBlobDest reports whether artifacts for m may be written here. A
-// missing destination, a non-hosted one, or a format mismatch is a per-item
-// skip: dumping npm bytes into a maven hosted repo (or a proxy of the same
-// name) is worse than leaving the artifacts behind.
+// missing destination, a type mismatch, or a format mismatch is a per-item
+// skip: dumping npm bytes into a maven hosted repo (or a hosted cache into a
+// proxy of the same name) is worse than leaving the artifacts behind.
 func (s *NexusMigrationService) acceptBlobDest(ctx context.Context, m migratedRepo, format domain.RepoFormat, p *progress) (bool, error) {
 	bg := context.Background()
 	existing, err := s.deps.Repos.Get(ctx, m.localName)
@@ -830,8 +838,8 @@ func (s *NexusMigrationService) acceptBlobDest(ctx context.Context, m migratedRe
 		p.fail(bg, "repository %q: artifacts skipped — destination does not exist (enable Repositories, or create it first)", m.src.Name)
 		return false, nil
 	}
-	if existing.Type != domain.TypeHosted {
-		p.fail(bg, "repository %q: artifacts skipped — destination is %s, not hosted", m.src.Name, existing.Type)
+	if string(existing.Type) != m.src.Type {
+		p.fail(bg, "repository %q: artifacts skipped — destination is %s, source is %s", m.src.Name, existing.Type, m.src.Type)
 		return false, nil
 	}
 	if existing.Format != format {
@@ -1030,6 +1038,9 @@ func (s *NexusMigrationService) planAssets(ctx context.Context, client *nexuscli
 				if pa.contentType == "" {
 					pa.contentType = "application/octet-stream"
 				}
+				if src.Format == "pypi" && src.Type == "hosted" {
+					pa.path, pa.coords = hostedPypiDest(pa.path, pa.coords)
+				}
 				planned = append(planned, pa)
 			}
 		}
@@ -1040,16 +1051,79 @@ func (s *NexusMigrationService) planAssets(ctx context.Context, client *nexuscli
 	}
 
 	// The Components API only lists assets it can group under a component;
-	// anything else (#350: both maven-metadata.xml shapes and their checksum
-	// sidecars) is invisible to the plan. Reconcile against the FULL asset
-	// listing so nothing vanishes without a trace. OCI repositories are
-	// exempt: their blob assets are deliberately unplanned — they come across
-	// with the manifests that name them.
+	// anything else is invisible to that plan. OCI repositories are exempt:
+	// their blob assets are deliberately unplanned — they come across with
+	// the manifests that name them.
 	if !isOCI {
-		s.reconcilePlanAgainstAssetListing(ctx, client, m, planned, p)
+		if src.Type == "proxy" {
+			// A proxy cache is the bytes. Catalog files (index.yaml,
+			// maven-metadata.xml) are part of that cache: the destination
+			// proxy will not regenerate them if the upstream is gone.
+			planned = s.appendUnplannedAssets(ctx, client, m, planned, false)
+		} else if src.Format == "pypi" {
+			// Nexus lists wheels under /packages/<name>/<version>/<file> and
+			// often omits them from the Components API. Copy those files;
+			// skip /simple/ pages, which Nexspence rebuilds.
+			planned = s.appendUnplannedAssets(ctx, client, m, planned, true)
+		} else {
+			s.reconcilePlanAgainstAssetListing(ctx, client, m, planned, p)
+		}
 	}
 
 	return planned, nil
+}
+
+// appendUnplannedAssets adds every asset the component listing missed, so a
+// proxy cache is copied whole. A source without the assets endpoint leaves the
+// component plan as-is.
+func (s *NexusMigrationService) appendUnplannedAssets(ctx context.Context,
+	client *nexusclient.Client, m migratedRepo, planned []plannedAsset, skipGenerated bool,
+) []plannedAsset {
+	known := make(map[string]bool, len(planned))
+	for _, pa := range planned {
+		known[pa.path] = true
+	}
+	token := ""
+	for {
+		if err := checkPaused(ctx); err != nil {
+			return planned
+		}
+		assets, next, err := client.ListAssets(ctx, m.src.Name, token)
+		if err != nil {
+			s.logf(ctx, "migration: asset listing unavailable for %s — extra cache files skipped: %v", m.src.Name, err)
+			return planned
+		}
+		for _, a := range assets {
+			ap := normalizeAssetPath(a.Path)
+			coords := base.Coords{}
+			if m.src.Format == "pypi" && m.src.Type == "hosted" {
+				ap, coords = hostedPypiDest(ap, coords)
+			}
+			if known[ap] || a.DownloadURL == "" {
+				continue
+			}
+			if skipGenerated && isGeneratedCatalogPath(m.src.Format, ap) {
+				continue
+			}
+			ct := a.ContentType
+			if ct == "" {
+				ct = "application/octet-stream"
+			}
+			planned = append(planned, plannedAsset{
+				repo:        m.localName,
+				path:        ap,
+				downloadURL: a.DownloadURL,
+				contentType: ct,
+				size:        a.SizeBytes,
+				coords:      coords,
+			})
+			known[ap] = true
+		}
+		if next == "" {
+			return planned
+		}
+		token = next
+	}
 }
 
 // reconcilePlanAgainstAssetListing walks GET /service/rest/v1/assets and
@@ -1077,7 +1151,7 @@ func (s *NexusMigrationService) reconcilePlanAgainstAssetListing(ctx context.Con
 		}
 		for _, a := range assets {
 			ap := normalizeAssetPath(a.Path)
-			if known[ap] || isGeneratedCatalogPath(ap) {
+			if known[ap] || isGeneratedCatalogPath(m.src.Format, ap) {
 				continue
 			}
 			p.fail(ctx, "repo %s: asset %s has no owning component and was not planned for transfer", m.src.Name, ap)
@@ -1089,9 +1163,10 @@ func (s *NexusMigrationService) reconcilePlanAgainstAssetListing(ctx context.Con
 	}
 }
 
-// isGeneratedCatalogPath reports whether the path is a catalog file Nexspence
-// rebuilds from components (Maven metadata, Helm index.yaml, checksums).
-func isGeneratedCatalogPath(p string) bool {
+// isGeneratedCatalogPath reports whether the path is a catalog Nexspence
+// rebuilds from stored components (Maven metadata, Helm index.yaml, npm
+// packuments, PyPI simple indexes, and checksum sidecars).
+func isGeneratedCatalogPath(format, p string) bool {
 	name := path.Base(p)
 	switch name {
 	case "maven-metadata.xml", "index.yaml":
@@ -1104,7 +1179,63 @@ func isGeneratedCatalogPath(p string) bool {
 			}
 		}
 	}
-	return false
+	return (format == "npm" && isNpmPackumentPath(p)) ||
+		(format == "pypi" && isPypiSimpleIndexPath(p))
+}
+
+// isNpmPackumentPath reports the npm registry document for a package
+// (GET /lodash or GET /@scope/name). Nexus lists it as an asset with no
+// component; Nexspence rebuilds it from tarball components on every GET.
+func isNpmPackumentPath(p string) bool {
+	if p == "/" || p == "" || strings.Contains(p, "/-/") || strings.HasPrefix(p, "/-") {
+		return false
+	}
+	return true
+}
+
+// isPypiSimpleIndexPath reports PEP 503 index HTML (GET /simple/ or
+// GET /simple/<package>/). Nexspence rebuilds both from stored wheels.
+func isPypiSimpleIndexPath(p string) bool {
+	p = strings.TrimSuffix(p, "/")
+	if p == "/simple" {
+		return true
+	}
+	rest, ok := strings.CutPrefix(p, "/simple/")
+	if !ok || rest == "" || strings.Contains(rest, "/") {
+		return false
+	}
+	return true
+}
+
+// hostedPypiDest maps a Nexus hosted PyPI path onto Nexspence's twine layout
+// (/packages/<pep503-name>/<filename>) and fills coords when the Components
+// API did not.
+func hostedPypiDest(p string, coords base.Coords) (string, base.Coords) {
+	p = normalizeAssetPath(p)
+	rest, ok := strings.CutPrefix(p, "/packages/")
+	if !ok || rest == "" {
+		return p, coords
+	}
+	parts := strings.Split(rest, "/")
+	if len(parts) < 2 {
+		return p, coords
+	}
+	name := pep503Name(parts[0])
+	file := parts[len(parts)-1]
+	if coords.Name == "" {
+		coords.Name = name
+	} else {
+		coords.Name = pep503Name(coords.Name)
+	}
+	if coords.Version == "" && len(parts) >= 3 {
+		coords.Version = parts[1]
+	}
+	return "/packages/" + name + "/" + file, coords
+}
+
+func pep503Name(s string) string {
+	s = strings.ToLower(s)
+	return strings.NewReplacer("_", "-", ".", "-").Replace(s)
 }
 
 // transferAsset brings one planned unit across, skipping whatever is already

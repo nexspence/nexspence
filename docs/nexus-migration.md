@@ -9,14 +9,14 @@ A migration is a **job**. You create one, it runs in the background, and you wat
 | Item | Detail |
 |------|--------|
 | Repositories | Hosted, proxy and group definitions — format, type, group membership, proxy remote URL |
-| Artifacts | Every component in each **hosted** repository, streamed through the same storage path an upload takes |
+| Artifacts | Every component in each **hosted** repository, and the cached files in each **proxy**, streamed through the same storage path an upload (or a proxy fetch) takes |
 | Container images | Manifests, image indexes and the blobs they reference, re-created so the image is pullable byte-for-byte |
 | Privileges | Everything except Nexus built-ins, which this instance ships its own copies of |
 | Roles | Including nested roles, flattened (see below) |
 | Users | Local accounts with a temporary password; LDAP/OIDC/SAML accounts as external references |
 | Routing rules | `ALLOW` / `BLOCK` rules with their regex matchers |
 
-**Not migrated:** cleanup policies and task schedules — Nexus OSS does not expose either through its REST API. Proxy repository *caches* are not copied either: a proxy re-fetches from its own upstream, so copying its cache would only duplicate bytes that Nexspence would fetch anyway.
+**Not migrated:** cleanup policies and task schedules — Nexus OSS does not expose either through its REST API. Group repositories have no artifacts of their own; selecting a group copies artifacts from its hosted and proxy members.
 
 ## Running a migration
 
@@ -36,11 +36,11 @@ curl -X POST https://nexspence.example.com/api/v1/migration/preview \
 
 On success the UI lists those repositories as checkboxes. Leave them all ticked for a full sync, or pick one or several. **Repositories** and **Artifacts** cannot start from the UI until the connection has been tested. The API still treats an omitted or empty `scope.repositories` as every repository, so a script can request a full sync without a preview.
 
-Groups have no artifacts of their own. Selecting a group also migrates its members (and copies hosted artifacts from those members), because a group cannot be created empty.
+Groups have no artifacts of their own. Selecting a group also migrates its members (and copies hosted artifacts and proxy caches from those members), because a group cannot be created empty.
 
 ### 2. Choose the scope
 
-Every stage is an independent flag. A repositories-only run touches nothing else; a security-only run creates no repositories. **Artifacts do not require Repositories**: if matching hosted repositories already exist here — created however they were — uncheck Repositories and only the artifacts are copied. A destination that is missing is counted as an error and skipped.
+Every stage is an independent flag. A repositories-only run touches nothing else; a security-only run creates no repositories. **Artifacts do not require Repositories**: if matching hosted or proxy repositories already exist here — created however they were — uncheck Repositories and only the artifacts (including proxy caches) are copied. A destination that is missing, or that has a different type than the source, is counted as an error and skipped.
 
 A full migration (every stage, every repository):
 
@@ -81,7 +81,7 @@ curl -X POST https://nexspence.example.com/api/v1/migration/jobs \
   }'
 ```
 
-Copy artifacts only, into hosted repositories that already exist:
+Copy artifacts only, into hosted or proxy repositories that already exist:
 
 ```bash
 curl -X POST https://nexspence.example.com/api/v1/migration/jobs \
@@ -112,7 +112,7 @@ The job card shows repositories done, assets done, and an error count. `GET /api
 The sequence is fixed, because each stage depends on the one before it.
 
 1. **Repositories** — hosted, then proxy, then group, so a group's members already exist when the group naming them is created. A member that was not migrated is left out of the group rather than blocking it. When `scope.repositories` is set, only those names are created.
-2. **Artifacts** — hosted repositories only. Runs even when Repositories is off, copying into matching hosted destinations that already exist here.
+2. **Artifacts** — hosted repositories and proxy caches. Runs even when Repositories is off, copying into matching hosted or proxy destinations that already exist here. A proxy cache is copied rather than re-fetched, so a dead or archived upstream does not leave the new proxy empty.
 3. **Privileges** → **Roles** → **Users** — a role references privileges by name and a user references roles by name, so each must exist before the thing that names it.
 4. **Routing rules** — independent of everything above.
 
@@ -160,8 +160,8 @@ Common entries:
 |-------------|---------|
 | `format "rubygems" has no Nexspence equivalent` | The source has a repository of a format Nexspence does not serve. It is skipped; everything else still migrates. |
 | `member "x" was not migrated and is left out` | A group named a member that could not be created (usually an unsupported format, or a name left off `scope.repositories`). |
-| `destination does not exist` | Artifacts-only, and no hosted repository of that name is here yet. Enable Repositories, or create it first. |
-| `destination is …, not hosted` | Same name exists here as a proxy or group; artifacts are not written into it. |
+| `destination does not exist` | Artifacts-only, and no hosted or proxy repository of that name is here yet. Enable Repositories, or create it first. |
+| `destination is …, source is …` | Same name exists here as a different type; artifacts are not written into it. |
 | `destination format is …` | Same name exists here under a different format; artifacts are not written into it. |
 | `matcher "…" does not compile` | A routing rule is stored whole or not at all — a half-applied `ALLOW` rule would quietly change what the source permitted. |
 

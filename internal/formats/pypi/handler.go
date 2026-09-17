@@ -195,15 +195,11 @@ func (h *Handler) servePackageIndex(c *gin.Context, repoName, pkgName string) {
 		html.EscapeString(pkgName), html.EscapeString(pkgName))
 
 	for _, comp := range page.Items {
-		// Get assets for this component
-		assetPage, err := h.deps.Assets.List(c.Request.Context(), repoName, 100, 0)
+		assets, err := h.deps.Assets.ListByComponentID(c.Request.Context(), comp.ID)
 		if err != nil {
 			continue
 		}
-		for _, a := range assetPage.Items {
-			if a.ComponentID != comp.ID {
-				continue
-			}
+		for _, a := range assets {
 			filename := path.Base(a.Path)
 			href := h.deps.BaseURL + "/repository/" + repoName + a.Path
 			sha := ""

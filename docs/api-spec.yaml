@@ -1197,11 +1197,12 @@ paths:
            The Admin UI requires a tested connection before Repositories or
            Artifacts can start, so an operator cannot accidentally omit the
            list. A group in the list also migrates its members — a group
-           cannot be created empty, and artifacts live on the hosted members.
-        2. Artifacts — hosted repositories only; independent of the Repositories
-           flag. When Repositories is off, artifacts copy into hosted
-           destinations that already exist here. A proxy re-fetches from its own
-           upstream, so its cache is not copied. For a registry repository
+           cannot be created empty, and artifacts live on the hosted and proxy
+           members.
+        2. Artifacts — hosted repositories and proxy caches; independent of the
+           Repositories flag. When Repositories is off, artifacts copy into
+           hosted or proxy destinations that already exist here. A proxy cache
+           is copied rather than re-fetched from upstream. For a registry repository
            (docker/oci) the blobs are read out of each manifest rather than out
            of the component listing, which reports only the manifest and names
            blobs under a placeholder image; blobs are stored before the manifest

@@ -11,11 +11,16 @@ export function isHostedRepo(r: PreviewRepo) {
   return r.type === 'hosted'
 }
 
-/** Drop names the current scope cannot use (proxy/group when only artifacts run). */
-export function scopedRepoSelection(repos: PreviewRepo[], selected: string[], hostedOnly: boolean) {
-  if (!hostedOnly) return selected
-  const hosted = new Set(repos.filter(isHostedRepo).map(r => r.name))
-  return selected.filter(n => hosted.has(n))
+/** Hosted packages and proxy caches; groups have none of their own. */
+export function isBlobSourceRepo(r: PreviewRepo) {
+  return isHostedRepo(r) || r.type === 'proxy'
+}
+
+/** Drop names the current scope cannot use (groups when only artifacts run). */
+export function scopedRepoSelection(repos: PreviewRepo[], selected: string[], blobSourcesOnly: boolean) {
+  if (!blobSourcesOnly) return selected
+  const keep = new Set(repos.filter(isBlobSourceRepo).map(r => r.name))
+  return selected.filter(n => keep.has(n))
 }
 
 /** Block a Repositories/Artifacts job that would otherwise copy the whole instance. */
@@ -31,7 +36,7 @@ export function validateMigrationRepoScope(opts: {
     return 'Test the connection to pick repositories, or uncheck Repositories and Artifacts'
   }
   if (opts.migrateBlobs && !opts.migrateRepos && opts.previewRepoCount === 0) {
-    return 'No hosted repositories to copy artifacts from'
+    return 'No hosted or proxy repositories to copy artifacts from'
   }
   if (opts.previewRepoCount > 0 && opts.selectedCount === 0) {
     return 'Select at least one repository, or uncheck Repositories and Artifacts'
@@ -44,20 +49,20 @@ export function MigrationRepoPicker({
   repos,
   selected,
   onChange,
-  hostedOnly = false,
+  blobSourcesOnly = false,
 }: {
   repos: PreviewRepo[]
   selected: string[]
   onChange: (names: string[]) => void
-  /** Artifacts-only: proxy/group are listed but cannot be chosen. */
-  hostedOnly?: boolean
+  /** Artifacts-only: groups are listed but cannot be chosen. */
+  blobSourcesOnly?: boolean
 }) {
   const [q, setQ] = useState('')
-  const hostedNames = useMemo(() => repos.filter(isHostedRepo).map(r => r.name), [repos])
-  const hostedSet = useMemo(() => new Set(hostedNames), [hostedNames])
-  const canSelect = (r: PreviewRepo) => !hostedOnly || isHostedRepo(r)
+  const blobNames = useMemo(() => repos.filter(isBlobSourceRepo).map(r => r.name), [repos])
+  const blobSet = useMemo(() => new Set(blobNames), [blobNames])
+  const canSelect = (r: PreviewRepo) => !blobSourcesOnly || isBlobSourceRepo(r)
   const selectedSet = useMemo(() => new Set(selected), [selected])
-  const selectedSelectable = hostedOnly ? selected.filter(n => hostedSet.has(n)) : selected
+  const selectedSelectable = blobSourcesOnly ? selected.filter(n => blobSet.has(n)) : selected
   const needle = q.trim().toLowerCase()
   const visible = needle
     ? repos.filter(r =>
@@ -87,7 +92,7 @@ export function MigrationRepoPicker({
     ? selectedSelectable.filter(n => !visible.some(r => r.name === n)).length
     : 0
 
-  const selectedGroup = !hostedOnly && repos.some(r => r.type === 'group' && selectedSet.has(r.name))
+  const selectedGroup = !blobSourcesOnly && repos.some(r => r.type === 'group' && selectedSet.has(r.name))
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -96,8 +101,8 @@ export function MigrationRepoPicker({
           Repositories
         </span>
         <span style={{ fontSize: 11, color: 'var(--holo-text-faint)' }}>
-          {hostedOnly
-            ? `${selectedSelectable.length} of ${hostedNames.length} hosted selected`
+          {blobSourcesOnly
+            ? `${selectedSelectable.length} of ${blobNames.length} selected`
             : `${selected.length} of ${repos.length} selected`}
         </span>
       </div>
@@ -144,9 +149,9 @@ export function MigrationRepoPicker({
           )
         })}
       </div>
-      {hostedOnly && (
+      {blobSourcesOnly && (
         <div style={{ fontSize: 12, color: 'var(--holo-text-faint)', lineHeight: 1.45 }}>
-          Artifacts copy only from hosted repositories. Proxy and group cannot be selected.
+          Artifacts copy from hosted repositories and proxy caches. Groups have none of their own.
         </div>
       )}
       {selectedGroup && (
