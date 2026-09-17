@@ -1055,17 +1055,18 @@ func (s *NexusMigrationService) planAssets(ctx context.Context, client *nexuscli
 	// their blob assets are deliberately unplanned — they come across with
 	// the manifests that name them.
 	if !isOCI {
-		if src.Type == "proxy" {
+		switch {
+		case src.Type == "proxy":
 			// A proxy cache is the bytes. Catalog files (index.yaml,
 			// maven-metadata.xml) are part of that cache: the destination
 			// proxy will not regenerate them if the upstream is gone.
 			planned = s.appendUnplannedAssets(ctx, client, m, planned, false)
-		} else if src.Format == "pypi" {
+		case src.Format == "pypi":
 			// Nexus lists wheels under /packages/<name>/<version>/<file> and
 			// often omits them from the Components API. Copy those files;
 			// skip /simple/ pages, which Nexspence rebuilds.
 			planned = s.appendUnplannedAssets(ctx, client, m, planned, true)
-		} else {
+		default:
 			s.reconcilePlanAgainstAssetListing(ctx, client, m, planned, p)
 		}
 	}
