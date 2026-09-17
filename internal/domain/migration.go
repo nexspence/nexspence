@@ -40,7 +40,7 @@ type MigrationJob struct {
 	// configured is a permanently-unusable login (#342).
 	UserRealms []string
 	// Repositories names the source repositories the job is limited to.
-	// Empty means every repository on the source — the original behaviour,
+	// Empty means every repository on the source — the original behavior,
 	// kept so a job created before this field still copies the whole instance.
 	Repositories        []string
 	MigrateBlobs        bool
