@@ -1053,9 +1053,9 @@ func (s *NexusMigrationService) planAssets(ctx context.Context, client *nexuscli
 }
 
 // reconcilePlanAgainstAssetListing walks GET /service/rest/v1/assets and
-// records every asset the component-based plan missed. maven-metadata.xml and
-// its sidecars are the known — and by design unmigrated — population: both
-// shapes are generated dynamically from stored components on every GET, so a
+// records every asset the component-based plan missed. Generated catalogs
+// (maven-metadata.xml, Helm index.yaml, and their checksum sidecars) are
+// skipped: Nexspence rebuilds them from stored components on every GET, so a
 // literal copy would only go stale. Anything else is counted through the
 // job's error path. A source without the endpoint skips the check.
 func (s *NexusMigrationService) reconcilePlanAgainstAssetListing(ctx context.Context,
@@ -1077,7 +1077,7 @@ func (s *NexusMigrationService) reconcilePlanAgainstAssetListing(ctx context.Con
 		}
 		for _, a := range assets {
 			ap := normalizeAssetPath(a.Path)
-			if known[ap] || isMavenMetadataSidecarPath(ap) {
+			if known[ap] || isGeneratedCatalogPath(ap) {
 				continue
 			}
 			p.fail(ctx, "repo %s: asset %s has no owning component and was not planned for transfer", m.src.Name, ap)
@@ -1089,16 +1089,19 @@ func (s *NexusMigrationService) reconcilePlanAgainstAssetListing(ctx context.Con
 	}
 }
 
-// isMavenMetadataSidecarPath reports whether the path names an aggregate or
-// per-version maven-metadata.xml or one of its checksum sidecars.
-func isMavenMetadataSidecarPath(p string) bool {
+// isGeneratedCatalogPath reports whether the path is a catalog file Nexspence
+// rebuilds from components (Maven metadata, Helm index.yaml, checksums).
+func isGeneratedCatalogPath(p string) bool {
 	name := path.Base(p)
-	if name == "maven-metadata.xml" {
+	switch name {
+	case "maven-metadata.xml", "index.yaml":
 		return true
 	}
-	for _, ext := range []string{".sha1", ".md5", ".sha256"} {
-		if name == "maven-metadata.xml"+ext {
-			return true
+	for _, stem := range []string{"maven-metadata.xml", "index.yaml"} {
+		for _, ext := range []string{".sha1", ".md5", ".sha256"} {
+			if name == stem+ext {
+				return true
+			}
 		}
 	}
 	return false

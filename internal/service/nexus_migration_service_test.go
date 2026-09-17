@@ -1811,6 +1811,34 @@ func TestNexusMigration_MavenMetadataAssetsAreNotErrors(t *testing.T) {
 		"maven-metadata.xml is generated dynamically, its absence from the plan is by design: %v", done.LastError)
 }
 
+func TestNexusMigration_HelmIndexYamlIsNotAnError(t *testing.T) {
+	fake := &fakeNexus{
+		settings: `[{"name":"helm-hosted","format":"helm","type":"hosted","online":true}]`,
+		components: map[string]string{
+			"helm-hosted": `{"items":[],"continuationToken":null}`,
+		},
+		assetPages: map[string]string{
+			"helm-hosted": `{"items":[
+				{"path":"index.yaml","downloadUrl":"%BASE%/repository/helm-hosted/index.yaml","contentType":"text/yaml","fileSize":20}
+			],"continuationToken":null}`,
+		},
+	}
+	h := newMigHarness(t, fake)
+	fake.assetPages["helm-hosted"] = strings.ReplaceAll(fake.assetPages["helm-hosted"], "%BASE%", h.nexus.URL)
+
+	job := h.startJob(t, func(j *domain.MigrationJob) {
+		j.MigrateUsers = false
+		j.MigratePrivileges = false
+		j.MigrateRoles = false
+		j.MigrateRoutingRules = false
+	})
+	done := h.waitForStatus(t, job.ID, domain.MigrationDone)
+
+	assert.Zero(t, done.ErrorCount)
+	require.Nil(t, done.LastError)
+	assert.Equal(t, int64(0), done.DoneAssets)
+}
+
 // An older Nexus without the assets endpoint (or a hardened one refusing it)
 // must not fail the migration — the completeness check is best-effort.
 func TestNexusMigration_AssetListingUnavailable_Tolerated(t *testing.T) {
