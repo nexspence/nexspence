@@ -42,7 +42,7 @@ func NewBlobStoreFromConfig(ctx context.Context, cfg *nexspencecfg.Config) (Blob
 	default: // "local" or empty
 		basePath := cfg.Storage.Local.BasePath
 		if basePath == "" {
-			basePath = "./data/blobs"
+			basePath = DefaultLocalBasePath
 		}
 		return NewLocalBlobStore(basePath)
 	}

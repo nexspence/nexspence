@@ -31,6 +31,26 @@ type ServiceStatus struct {
 	CheckedAt string `json:"checked_at"`
 }
 
+// SystemInfo is GET /api/v1/system/info.
+type SystemInfo struct {
+	Version string            `json:"version"`
+	Product string            `json:"product"`
+	Storage SystemStorageInfo `json:"storage"`
+}
+
+// SystemStorageInfo is the effective storage configuration the UI uses to
+// suggest a local blob-store path. Empty config values are normalized to the
+// same defaults the storage layer applies at runtime.
+type SystemStorageInfo struct {
+	DefaultType string                 `json:"default_type"`
+	Local       SystemLocalStorageInfo `json:"local"`
+}
+
+// SystemLocalStorageInfo is the local-backend subset of SystemStorageInfo.
+type SystemLocalStorageInfo struct {
+	BasePath string `json:"base_path"`
+}
+
 // SystemHandler serves system-level diagnostic endpoints.
 type SystemHandler struct {
 	cfg        *config.Config
@@ -40,6 +60,7 @@ type SystemHandler struct {
 	saml       auth.SAMLAuthenticator // nil when SAML disabled
 	blobStores repository.BlobStoreRepo
 	log        logger.Logger
+	version    string
 }
 
 // NewSystemHandler constructs a SystemHandler from the config, DB pool, and optional LDAP/OIDC authenticators.
@@ -64,6 +85,32 @@ func (h *SystemHandler) WithSAML(s auth.SAMLAuthenticator) *SystemHandler {
 func (h *SystemHandler) WithLogger(log logger.Logger) *SystemHandler {
 	h.log = log
 	return h
+}
+
+// WithVersion sets the product version reported by Info; returns the handler for chaining.
+func (h *SystemHandler) WithVersion(version string) *SystemHandler {
+	h.version = version
+	return h
+}
+
+// Info handles GET /api/v1/system/info.
+func (h *SystemHandler) Info(c *gin.Context) {
+	defaultType := h.cfg.Storage.DefaultType
+	if defaultType == "" {
+		defaultType = "local"
+	}
+	basePath := h.cfg.Storage.Local.BasePath
+	if basePath == "" {
+		basePath = storage.DefaultLocalBasePath
+	}
+	c.JSON(http.StatusOK, SystemInfo{
+		Version: h.version,
+		Product: "Nexspence",
+		Storage: SystemStorageInfo{
+			DefaultType: defaultType,
+			Local:       SystemLocalStorageInfo{BasePath: basePath},
+		},
+	})
 }
 
 // Services handles GET /api/v1/system/services.

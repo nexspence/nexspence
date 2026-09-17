@@ -105,7 +105,7 @@ func TestNewFromConfig_Local(t *testing.T) {
 }
 
 func TestNewFromConfig_LocalEmpty_DefaultPath(t *testing.T) {
-	// Empty type + no path → uses "./data/blobs" (creates it relative to cwd)
+	// Empty type + no path → uses DefaultLocalBasePath (creates it relative to cwd)
 	bs, err := storage.NewFromConfig(context.Background(), "", map[string]any{})
 	require.NoError(t, err)
 	require.NotNil(t, bs)

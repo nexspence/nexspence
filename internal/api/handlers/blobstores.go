@@ -254,6 +254,12 @@ func (h *BlobStoreHandler) Create(c *gin.Context) {
 			return
 		}
 	}
+	if isLocalBlobStoreType(bs.Type) {
+		if err := storage.ProbeLocalWritable(localConfigPath(bs.Config)); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+	}
 
 	if err := h.repo.Create(c.Request.Context(), &bs); err != nil {
 		if conflictOnDuplicateName(c, err) {
@@ -297,6 +303,16 @@ func (h *BlobStoreHandler) Update(c *gin.Context) {
 	if updates.Type == "azure" {
 		if msg := validateAzureConfig(updates.Config); msg != "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": msg})
+			return
+		}
+	}
+	// Probe only when the operator actually moved the store. Every edit
+	// merges the stored config, so an unconditional check would also
+	// refuse a quota change while the volume is temporarily missing.
+	if isLocalBlobStoreType(updates.Type) && updates.Config != nil &&
+		localConfigPath(updates.Config) != localConfigPath(existing.Config) {
+		if err := storage.ProbeLocalWritable(localConfigPath(updates.Config)); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 	}
@@ -581,6 +597,17 @@ func (h *BlobStoreHandler) TestConnection(c *gin.Context) {
 		}
 	}
 
+	// Exists() on a local store is a read of a directory that may already
+	// exist on a read-only volume; a write probe is what the operator needs.
+	if isLocalBlobStoreType(req.Type) {
+		if err := storage.ProbeLocalWritable(localConfigPath(req.Config)); err != nil {
+			c.JSON(http.StatusOK, gin.H{"ok": false, "error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"ok": true})
+		return
+	}
+
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 	defer cancel()
 
@@ -647,4 +674,18 @@ func (h *BlobStoreHandler) Compact(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, result)
+}
+
+// isLocalBlobStoreType reports whether t is a filesystem store. The rest of
+// the storage layer treats an empty type as local (see newFromDescriptor).
+func isLocalBlobStoreType(t string) bool {
+	return t == "local" || t == ""
+}
+
+func localConfigPath(cfg map[string]any) string {
+	path, _ := cfg["path"].(string)
+	if path == "" {
+		return storage.DefaultLocalBasePath
+	}
+	return path
 }

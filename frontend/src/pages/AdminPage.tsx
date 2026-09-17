@@ -22,7 +22,14 @@ interface UsageResp {
   memberTotalUsed?: number
   memberTotalQuota?: number
 }
-interface SystemInfo { version: string; product: string }
+interface SystemInfo {
+  version: string
+  product: string
+  storage?: {
+    default_type: string
+    local: { base_path: string }
+  }
+}
 
 type AdminTab = 'info' | 'blobs' | 'backup' | 'monitoring' | 'migration' | 'routing-rules' | 'replication' | 'saml' | 'promotion'
 const VALID_TABS: AdminTab[] = ['info', 'blobs', 'backup', 'monitoring', 'migration', 'routing-rules', 'replication', 'saml', 'promotion']
@@ -38,6 +45,13 @@ function fmtBytes(b: number) {
   if (b < 1024 * 1024) return (b / 1024).toFixed(1) + ' KB'
   if (b < 1024 * 1024 * 1024) return fmtMB(b)
   return fmtGB(b)
+}
+
+const DEFAULT_LOCAL_BASE_PATH = './data/blobs'
+
+function joinLocalBlobPath(basePath: string, name: string): string {
+  const base = basePath.replace(/\/+$/, '') || DEFAULT_LOCAL_BASE_PATH
+  return name ? `${base}/${name}` : `${base}/`
 }
 
 function SamlTab() {
@@ -1578,7 +1592,13 @@ export default function AdminPage() {
       {tab === 'promotion' && <PromotionTab />}
 
       {detailName && <BlobStoreDetailModal name={detailName} blobStores={blobs} onClose={() => setDetailName(null)} />}
-      {createOpen && <CreateBlobStoreModal blobStores={blobs} onClose={() => setCreateOpen(false)} />}
+      {createOpen && (
+        <CreateBlobStoreModal
+          blobStores={blobs}
+          localBasePath={info?.storage?.local.base_path || DEFAULT_LOCAL_BASE_PATH}
+          onClose={() => setCreateOpen(false)}
+        />
+      )}
     </div>
   )
 }
@@ -2086,11 +2106,12 @@ function BlobStoreDetailModal({ name, blobStores: _blobStores, onClose }: { name
 }
 
 // ── CreateBlobStoreModal ──────────────────────────────────────────
-function CreateBlobStoreModal({ blobStores, onClose }: { blobStores: BlobStore[]; onClose: () => void }) {
+function CreateBlobStoreModal({ blobStores, localBasePath, onClose }: { blobStores: BlobStore[]; localBasePath: string; onClose: () => void }) {
   const qc = useQueryClient()
   const [name, setName] = useState('')
   const [type, setType] = useState<'local' | 's3' | 'azure' | 'group'>('local')
-  const [path, setPath] = useState('./data/blobs/')
+  const [pathTouched, setPathTouched] = useState(false)
+  const [path, setPath] = useState(() => joinLocalBlobPath(localBasePath, ''))
   const [bucket, setBucket] = useState('')
   const [region, setRegion] = useState('us-east-1')
   const [endpoint, setEndpoint] = useState('')
@@ -2118,6 +2139,15 @@ function CreateBlobStoreModal({ blobStores, onClose }: { blobStores: BlobStore[]
   const testReqSeq = useRef(0)
   const [groupFillPolicy, setGroupFillPolicy] = useState<'round_robin' | 'write_to_first_fill'>('round_robin')
   const [groupMemberIds, setGroupMemberIds] = useState<string[]>([])
+
+  useEffect(() => {
+    if (pathTouched) return
+    const next = joinLocalBlobPath(localBasePath, name)
+    if (path === next) return
+    testReqSeq.current++
+    setTestResult(null)
+    setPath(next)
+  }, [localBasePath, name, pathTouched, path])
 
   const mut = useMutation({
     mutationFn: () => {
@@ -2192,7 +2222,14 @@ function CreateBlobStoreModal({ blobStores, onClose }: { blobStores: BlobStore[]
         {type === 'local' && (
           <div>
             <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--holo-text-dim)', marginBottom: 4, display: 'block' }}>Path</label>
-            <HoloInput value={path} onChange={e => { testReqSeq.current++; setTestResult(null); setPath(e.target.value) }} placeholder="./data/blobs/fast-ssd" />
+            <HoloInput
+              value={path}
+              onChange={e => { testReqSeq.current++; setTestResult(null); setPathTouched(true); setPath(e.target.value) }}
+              placeholder={joinLocalBlobPath(localBasePath, 'fast-ssd')}
+            />
+            <div style={{ color: 'var(--holo-text-faint)', fontSize: 11, marginTop: 4 }}>
+              This server stores blobs under {localBasePath}. A path outside that directory must be writable by Nexspence.
+            </div>
           </div>
         )}
         {type === 's3' && (

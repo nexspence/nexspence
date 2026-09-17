@@ -56,7 +56,7 @@ func PhysicalStoreIdentity(desc BlobStoreDescriptor) string {
 	case "local", "":
 		path := strVal(desc.Config, "path")
 		if path == "" {
-			path = "./data/blobs"
+			path = DefaultLocalBasePath
 		}
 		return "local|" + path
 	default:
@@ -230,7 +230,7 @@ func newFromDescriptor(ctx context.Context, desc BlobStoreDescriptor) (BlobStore
 	case "local", "":
 		path := strVal(desc.Config, "path")
 		if path == "" {
-			path = "./data/blobs"
+			path = DefaultLocalBasePath
 		}
 		return NewLocalBlobStore(path)
 	default:

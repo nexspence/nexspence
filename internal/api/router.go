@@ -320,7 +320,7 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 	accessGraphH := handlers.NewAccessGraphHandler(userRepo, roleRepo, privilegeRepo, csRepo)
 	rrSvc := service.NewRoutingRuleService(rrRepo)
 	rrH := handlers.NewRoutingRuleHandler(rrSvc)
-	systemH := handlers.NewSystemHandler(cfg, pool, ldapSvc, oidcSvc).WithBlobStores(blobRepo).WithSAML(samlSvc).WithLogger(log)
+	systemH := handlers.NewSystemHandler(cfg, pool, ldapSvc, oidcSvc).WithBlobStores(blobRepo).WithSAML(samlSvc).WithLogger(log).WithVersion(version)
 	nexusMigSvc := service.NewNexusMigrationService(service.NexusMigrationConfig{
 		Jobs:          migrationRepo,
 		Repos:         repoSvc,
@@ -718,12 +718,7 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 		admin.POST("/api/v1/repositories/import", backupH.ImportRepo)
 
 		// System info + service health
-		admin.GET("/api/v1/system/info", func(c *gin.Context) {
-			c.JSON(http.StatusOK, gin.H{
-				"version": version,
-				"product": "Nexspence",
-			})
-		})
+		admin.GET("/api/v1/system/info", systemH.Info)
 		admin.GET("/api/v1/system/services", systemH.Services)
 	}
 

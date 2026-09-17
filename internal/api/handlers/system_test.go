@@ -15,6 +15,7 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/auth"
 	"github.com/nexspence-oss/nexspence/internal/config"
 	"github.com/nexspence-oss/nexspence/internal/domain"
+	"github.com/nexspence-oss/nexspence/internal/storage"
 	"github.com/nexspence-oss/nexspence/internal/testutil"
 )
 
@@ -338,6 +339,39 @@ func TestSystem_Services_S3BlobStoreProbe(t *testing.T) {
 	// The local blob store must NOT produce its own S3 endpoint check.
 	_, hasLocalS3 := findService(svcs, "S3 · ")
 	assert.False(t, hasLocalS3)
+}
+
+func TestSystem_Info_NormalizesEmptyStorage(t *testing.T) {
+	cfg := &config.Config{}
+	h := handlers.NewSystemHandler(cfg, newUnreachablePool(t), nil, nil).WithVersion("1.2.3")
+	r := gin.New()
+	r.GET("/api/v1/system/info", h.Info)
+
+	rec := do(t, r, http.MethodGet, "/api/v1/system/info", nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	var got handlers.SystemInfo
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	assert.Equal(t, "1.2.3", got.Version)
+	assert.Equal(t, "Nexspence", got.Product)
+	assert.Equal(t, "local", got.Storage.DefaultType)
+	assert.Equal(t, storage.DefaultLocalBasePath, got.Storage.Local.BasePath)
+}
+
+func TestSystem_Info_ReportsConfiguredBasePath(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Storage.DefaultType = "s3"
+	cfg.Storage.Local.BasePath = "/blobs"
+	h := handlers.NewSystemHandler(cfg, newUnreachablePool(t), nil, nil).WithVersion("9.9.9")
+	r := gin.New()
+	r.GET("/api/v1/system/info", h.Info)
+
+	rec := do(t, r, http.MethodGet, "/api/v1/system/info", nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	var got handlers.SystemInfo
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	assert.Equal(t, "9.9.9", got.Version)
+	assert.Equal(t, "s3", got.Storage.DefaultType)
+	assert.Equal(t, "/blobs", got.Storage.Local.BasePath)
 }
 
 // assertErr is a tiny error helper to avoid importing errors in many spots.
