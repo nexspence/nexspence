@@ -34,9 +34,15 @@ curl -X POST https://nexspence.example.com/api/v1/migration/preview \
 
 `200` with `{"reachable":true,"repoCount":N,"repos":[…]}`, `422` if the URL is missing or is not an absolute `http(s)` URL, `502` if the source could not be reached — with the underlying error, not a generic failure.
 
+On success the UI lists those repositories as checkboxes. Leave them all ticked for a full sync, or pick one or several. **Repositories** and **Artifacts** cannot start from the UI until the connection has been tested. The API still treats an omitted or empty `scope.repositories` as every repository, so a script can request a full sync without a preview.
+
+Groups have no artifacts of their own. Selecting a group also migrates its members (and copies hosted artifacts from those members), because a group cannot be created empty.
+
 ### 2. Choose the scope
 
-Every stage is an independent flag. A repositories-only run touches nothing else; a security-only run creates no repositories.
+Every stage is an independent flag. A repositories-only run touches nothing else; a security-only run creates no repositories. **Artifacts do not require Repositories**: if matching hosted repositories already exist here — created however they were — uncheck Repositories and only the artifacts are copied. A destination that is missing is counted as an error and skipped.
+
+A full migration (every stage, every repository):
 
 ```bash
 curl -X POST https://nexspence.example.com/api/v1/migration/jobs \
@@ -55,7 +61,47 @@ curl -X POST https://nexspence.example.com/api/v1/migration/jobs \
   }'
 ```
 
-Every flag defaults to `true`. `migratePolicies` is the older, coarser switch kept for API compatibility: when a request does not name the three security scopes, they fall back to it.
+Create selected repositories and copy their artifacts:
+
+```bash
+curl -X POST https://nexspence.example.com/api/v1/migration/jobs \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{
+    "sourceUrl": "https://nexus.example.com",
+    "credentials": {"username": "admin", "password": "…"},
+    "scope": {
+      "migrateRepos": true,
+      "migrateBlobs": true,
+      "migratePrivileges": false,
+      "migrateRoles": false,
+      "migrateUsers": false,
+      "migrateRoutingRules": false,
+      "repositories": ["docker-local", "npm-local"]
+    }
+  }'
+```
+
+Copy artifacts only, into hosted repositories that already exist:
+
+```bash
+curl -X POST https://nexspence.example.com/api/v1/migration/jobs \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{
+    "sourceUrl": "https://nexus.example.com",
+    "credentials": {"username": "admin", "password": "…"},
+    "scope": {
+      "migrateRepos": false,
+      "migrateBlobs": true,
+      "migratePrivileges": false,
+      "migrateRoles": false,
+      "migrateUsers": false,
+      "migrateRoutingRules": false,
+      "repositories": ["docker-local", "npm-local"]
+    }
+  }'
+```
+
+Every flag defaults to `true`. `scope.repositories` omitted or empty means every repository on the source. `migratePolicies` is the older, coarser switch kept for API compatibility: when a request does not name the three security scopes, they fall back to it.
 
 ### 3. Watch it
 
@@ -65,8 +111,8 @@ The job card shows repositories done, assets done, and an error count. `GET /api
 
 The sequence is fixed, because each stage depends on the one before it.
 
-1. **Repositories** — hosted, then proxy, then group, so a group's members already exist when the group naming them is created. A member that was not migrated is left out of the group rather than blocking it.
-2. **Artifacts** — hosted repositories only.
+1. **Repositories** — hosted, then proxy, then group, so a group's members already exist when the group naming them is created. A member that was not migrated is left out of the group rather than blocking it. When `scope.repositories` is set, only those names are created.
+2. **Artifacts** — hosted repositories only. Runs even when Repositories is off, copying into matching hosted destinations that already exist here.
 3. **Privileges** → **Roles** → **Users** — a role references privileges by name and a user references roles by name, so each must exist before the thing that names it.
 4. **Routing rules** — independent of everything above.
 
@@ -113,7 +159,10 @@ Common entries:
 | `lastError` | Meaning |
 |-------------|---------|
 | `format "rubygems" has no Nexspence equivalent` | The source has a repository of a format Nexspence does not serve. It is skipped; everything else still migrates. |
-| `member "x" was not migrated and is left out` | A group named a member that could not be created (usually an unsupported format). |
+| `member "x" was not migrated and is left out` | A group named a member that could not be created (usually an unsupported format, or a name left off `scope.repositories`). |
+| `destination does not exist` | Artifacts-only, and no hosted repository of that name is here yet. Enable Repositories, or create it first. |
+| `destination is …, not hosted` | Same name exists here as a proxy or group; artifacts are not written into it. |
+| `destination format is …` | Same name exists here under a different format; artifacts are not written into it. |
 | `matcher "…" does not compile` | A routing rule is stored whole or not at all — a half-applied `ALLOW` rule would quietly change what the source permitted. |
 
 ## Requirements and limits

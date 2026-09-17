@@ -242,6 +242,48 @@ func TestMigration_CreateJob_OK_ExplicitScope(t *testing.T) {
 	assert.Equal(t, true, got["migrateRoutingRules"])
 }
 
+func TestMigration_CreateJob_OK_RepositoryAllowlist(t *testing.T) {
+	r, repo := mountMigration(t)
+	rec := do(t, r, http.MethodPost, "/api/v1/migration/jobs", map[string]any{
+		"sourceUrl": "https://nexus.example.com",
+		"scope": map[string]any{
+			"migrateUsers":        false,
+			"migratePrivileges":   false,
+			"migrateRoles":        false,
+			"migrateRoutingRules": false,
+			"repositories":        []string{" npm-hosted ", "", "npm-hosted", "pypi-hosted"},
+		},
+	})
+	require.Equal(t, http.StatusCreated, rec.Code)
+	var got map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	assert.Equal(t, []any{"npm-hosted", "pypi-hosted"}, got["repositories"])
+
+	stored, err := repo.Get(testContext(), got["id"].(string))
+	require.NoError(t, err)
+	assert.Equal(t, []string{"npm-hosted", "pypi-hosted"}, stored.Repositories)
+}
+
+func TestMigration_CreateJob_OK_EmptyRepositoriesMeansAll(t *testing.T) {
+	r, repo := mountMigration(t)
+	rec := do(t, r, http.MethodPost, "/api/v1/migration/jobs", map[string]any{
+		"sourceUrl": "https://nexus.example.com",
+		"scope": map[string]any{
+			"migrateUsers": false,
+			"repositories": []string{"", "  "},
+		},
+	})
+	require.Equal(t, http.StatusCreated, rec.Code)
+	var got map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	_, present := got["repositories"]
+	assert.False(t, present, "an all-empty list is stored as every repository")
+
+	stored, err := repo.Get(testContext(), got["id"].(string))
+	require.NoError(t, err)
+	assert.Empty(t, stored.Repositories)
+}
+
 // This is the reported bug: a job could be created and then nothing ever ran it.
 func TestMigration_CreateJob_StartsTheRun(t *testing.T) {
 	r, repo := mountMigration(t)

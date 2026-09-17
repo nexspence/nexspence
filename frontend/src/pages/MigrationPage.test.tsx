@@ -83,6 +83,13 @@ describe('MigrationPage', () => {
     const user = userEvent.setup()
     let posted: unknown = null
     server.use(
+      http.post('/api/v1/migration/preview', () =>
+        HttpResponse.json({
+          reachable: true,
+          repoCount: 1,
+          repos: [{ name: 'raw-hosted', format: 'raw', type: 'hosted' }],
+        }),
+      ),
       http.post('/api/v1/migration/jobs', async ({ request }) => {
         posted = await request.json()
         return HttpResponse.json({ id: 'new-job' }, { status: 201 })
@@ -94,11 +101,11 @@ describe('MigrationPage', () => {
     expect(await screen.findByRole('heading', { name: 'New Migration Job' })).toBeInTheDocument()
 
     await user.type(screen.getByPlaceholderText('https://nexus.example.com'), 'https://src.example.com')
-    // Fill password field (the only type=password input)
     const pwd = document.querySelector('input[type="password"]') as HTMLInputElement
     await user.type(pwd, 'secret')
+    await user.click(screen.getByRole('button', { name: /Test connection/ }))
+    expect(await screen.findByRole('checkbox', { name: /raw-hosted/ })).toBeChecked()
 
-    // Submit the form (modal submit button is type=submit inside the form)
     const submit = pwd.closest('form')!.querySelector('button[type="submit"]') as HTMLButtonElement
     await user.click(submit)
     await waitFor(() => expect(posted).toBeTruthy())
@@ -108,6 +115,13 @@ describe('MigrationPage', () => {
   it('shows an error when create fails', async () => {
     const user = userEvent.setup()
     server.use(
+      http.post('/api/v1/migration/preview', () =>
+        HttpResponse.json({
+          reachable: true,
+          repoCount: 1,
+          repos: [{ name: 'raw-hosted', format: 'raw', type: 'hosted' }],
+        }),
+      ),
       http.post('/api/v1/migration/jobs', () =>
         HttpResponse.json({ error: 'bad creds' }, { status: 400 }),
       ),
@@ -119,6 +133,8 @@ describe('MigrationPage', () => {
     await user.type(screen.getByPlaceholderText('https://nexus.example.com'), 'https://src.example.com')
     const pwd = document.querySelector('input[type="password"]') as HTMLInputElement
     await user.type(pwd, 'secret')
+    await user.click(screen.getByRole('button', { name: /Test connection/ }))
+    expect(await screen.findByRole('checkbox', { name: /raw-hosted/ })).toBeChecked()
     const submit = pwd.closest('form')!.querySelector('button[type="submit"]') as HTMLButtonElement
     await user.click(submit)
     expect(await screen.findByText(/bad creds|Failed to create migration job/)).toBeInTheDocument()
@@ -230,6 +246,8 @@ describe('MigrationPage — test connection', () => {
 
     expect(await screen.findByText(/Connected — 2 repositories/)).toBeInTheDocument()
     expect(screen.getByText(/raw-hosted/)).toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: /raw-hosted/ })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: /maven-central/ })).toBeChecked()
     expect(sent).toEqual({
       sourceUrl: 'https://src.example.com',
       username: 'admin',
@@ -274,10 +292,17 @@ describe('MigrationPage — test connection', () => {
 
   it('sends the scopes the operator selected', async () => {
     const user = userEvent.setup()
-    let posted: { scope?: Record<string, boolean> } | null = null
+    let posted: { scope?: Record<string, unknown> } | null = null
     server.use(
+      http.post('/api/v1/migration/preview', () =>
+        HttpResponse.json({
+          reachable: true,
+          repoCount: 1,
+          repos: [{ name: 'raw-hosted', format: 'raw', type: 'hosted' }],
+        }),
+      ),
       http.post('/api/v1/migration/jobs', async ({ request }) => {
-        posted = (await request.json()) as { scope?: Record<string, boolean> }
+        posted = (await request.json()) as { scope?: Record<string, unknown> }
         return HttpResponse.json({ id: 'new-job' }, { status: 201 })
       }),
     )
@@ -286,6 +311,8 @@ describe('MigrationPage — test connection', () => {
     await user.type(screen.getByPlaceholderText('https://nexus.example.com'), 'https://src.example.com')
     const pwd = document.querySelector('input[type="password"]') as HTMLInputElement
     await user.type(pwd, 'secret')
+    await user.click(screen.getByRole('button', { name: /Test connection/ }))
+    expect(await screen.findByRole('checkbox', { name: /raw-hosted/ })).toBeChecked()
     await user.click(screen.getByRole('checkbox', { name: /Users/ }))
     await user.click(screen.getByRole('checkbox', { name: /Routing rules/ }))
 
@@ -301,6 +328,7 @@ describe('MigrationPage — test connection', () => {
       migrateRoles: true,
       migrateRoutingRules: false,
       userRealms: ['default'],
+      repositories: ['raw-hosted'],
     })
   })
 
@@ -310,6 +338,13 @@ describe('MigrationPage — test connection', () => {
     const user = userEvent.setup()
     let posted: { scope?: { userRealms?: string[] } } | null = null
     server.use(
+      http.post('/api/v1/migration/preview', () =>
+        HttpResponse.json({
+          reachable: true,
+          repoCount: 1,
+          repos: [{ name: 'raw-hosted', format: 'raw', type: 'hosted' }],
+        }),
+      ),
       http.post('/api/v1/migration/jobs', async ({ request }) => {
         posted = (await request.json()) as { scope?: { userRealms?: string[] } }
         return HttpResponse.json({ id: 'new-job' }, { status: 201 })
@@ -320,6 +355,8 @@ describe('MigrationPage — test connection', () => {
     await user.type(screen.getByPlaceholderText('https://nexus.example.com'), 'https://src.example.com')
     const pwd = document.querySelector('input[type="password"]') as HTMLInputElement
     await user.type(pwd, 'secret')
+    await user.click(screen.getByRole('button', { name: /Test connection/ }))
+    expect(await screen.findByRole('checkbox', { name: /raw-hosted/ })).toBeChecked()
 
     expect(screen.getByRole('checkbox', { name: 'Local' })).toBeChecked()
     await user.click(screen.getByRole('checkbox', { name: 'LDAP' }))
@@ -329,6 +366,90 @@ describe('MigrationPage — test connection', () => {
 
     await waitFor(() => expect(posted).toBeTruthy())
     expect(posted!.scope!.userRealms).toEqual(['default', 'LDAP'])
+  })
+
+  it('sends the repositories the operator picked after a preview', async () => {
+    const user = userEvent.setup()
+    let posted: { scope?: { repositories?: string[] } } | null = null
+    server.use(
+      http.post('/api/v1/migration/preview', () =>
+        HttpResponse.json({
+          reachable: true,
+          repoCount: 2,
+          repos: [
+            { name: 'raw-hosted', format: 'raw', type: 'hosted' },
+            { name: 'maven-central', format: 'maven2', type: 'proxy' },
+          ],
+        }),
+      ),
+      http.post('/api/v1/migration/jobs', async ({ request }) => {
+        posted = (await request.json()) as { scope?: { repositories?: string[] } }
+        return HttpResponse.json({ id: 'new-job' }, { status: 201 })
+      }),
+    )
+    await openModal(user)
+
+    await user.type(screen.getByPlaceholderText('https://nexus.example.com'), 'https://src.example.com')
+    const pwd = document.querySelector('input[type="password"]') as HTMLInputElement
+    await user.type(pwd, 'secret')
+    await user.click(screen.getByRole('button', { name: /Test connection/ }))
+    expect(await screen.findByRole('checkbox', { name: /maven-central/ })).toBeChecked()
+    await user.click(screen.getByRole('checkbox', { name: /maven-central/ }))
+
+    const submit = pwd.closest('form')!.querySelector('button[type="submit"]') as HTMLButtonElement
+    await user.click(submit)
+
+    await waitFor(() => expect(posted).toBeTruthy())
+    expect(posted!.scope!.repositories).toEqual(['raw-hosted'])
+  })
+
+  it('blocks start when every repository is unchecked after a preview', async () => {
+    const user = userEvent.setup()
+    let posted = false
+    server.use(
+      http.post('/api/v1/migration/preview', () =>
+        HttpResponse.json({
+          reachable: true,
+          repoCount: 1,
+          repos: [{ name: 'raw-hosted', format: 'raw', type: 'hosted' }],
+        }),
+      ),
+      http.post('/api/v1/migration/jobs', () => {
+        posted = true
+        return HttpResponse.json({ id: 'new-job' }, { status: 201 })
+      }),
+    )
+    await openModal(user)
+
+    await user.type(screen.getByPlaceholderText('https://nexus.example.com'), 'https://src.example.com')
+    const pwd = document.querySelector('input[type="password"]') as HTMLInputElement
+    await user.type(pwd, 'secret')
+    await user.click(screen.getByRole('button', { name: /Test connection/ }))
+    await user.click(await screen.findByRole('checkbox', { name: /raw-hosted/ }))
+    const submit = pwd.closest('form')!.querySelector('button[type="submit"]') as HTMLButtonElement
+    await user.click(submit)
+    expect(await screen.findByText(/Select at least one repository/)).toBeInTheDocument()
+    expect(posted).toBe(false)
+  })
+
+  it('blocks start when repositories are on and the connection was not tested', async () => {
+    const user = userEvent.setup()
+    let posted = false
+    server.use(
+      http.post('/api/v1/migration/jobs', () => {
+        posted = true
+        return HttpResponse.json({ id: 'new-job' }, { status: 201 })
+      }),
+    )
+    await openModal(user)
+
+    await user.type(screen.getByPlaceholderText('https://nexus.example.com'), 'https://src.example.com')
+    const pwd = document.querySelector('input[type="password"]') as HTMLInputElement
+    await user.type(pwd, 'secret')
+    const submit = pwd.closest('form')!.querySelector('button[type="submit"]') as HTMLButtonElement
+    await user.click(submit)
+    expect(await screen.findByText(/Test the connection to pick repositories/)).toBeInTheDocument()
+    expect(posted).toBe(false)
   })
 
   it('hides the realm picker when user migration is off', async () => {

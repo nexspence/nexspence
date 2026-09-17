@@ -9,6 +9,7 @@ export interface MigrationJob {
   assetsDone: number
   errorCount: number
   lastError?: string
+  repositories?: string[]
   createdAt: string
   updatedAt: string
 }

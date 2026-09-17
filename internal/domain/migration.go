@@ -38,7 +38,11 @@ type MigrationJob struct {
 	// means local-only — the only realm guaranteed to make sense on a fresh
 	// target: an externally-authenticated account migrated without its provider
 	// configured is a permanently-unusable login (#342).
-	UserRealms          []string
+	UserRealms []string
+	// Repositories names the source repositories the job is limited to.
+	// Empty means every repository on the source — the original behaviour,
+	// kept so a job created before this field still copies the whole instance.
+	Repositories        []string
 	MigrateBlobs        bool
 	MigratePolicies     bool
 	MigratePrivileges   bool

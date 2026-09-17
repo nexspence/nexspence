@@ -502,23 +502,33 @@ func (s *NexusMigrationService) runStages(ctx context.Context, client *nexusclie
 		return nil
 	}
 
+	var hosted []migratedRepo
 	if job.MigrateRepos {
-		var hosted []migratedRepo
 		if err := runStage("repositories", func() error {
 			var e error
-			hosted, e = s.migrateRepositories(ctx, client, p)
+			hosted, e = s.migrateRepositories(ctx, client, job, p)
 			return e
 		}); err != nil {
 			return err
 		}
-		// Blobs genuinely depend on the repository listing — hosted is empty
-		// when that stage failed hard, so there is nothing to transfer.
-		if job.MigrateBlobs && len(hosted) > 0 {
-			if err := runStage("blobs", func() error {
-				return s.migrateAssets(ctx, client, hosted, p)
-			}); err != nil {
-				return err
+	}
+
+	// Artifacts used to live inside the repositories stage, so unchecking
+	// Repositories silently transferred nothing even when Artifacts was on.
+	// The two are independent: a blobs-only job copies into hosted
+	// repositories that already exist here, however they were created.
+	if job.MigrateBlobs {
+		if err := runStage("blobs", func() error {
+			targets, e := s.blobTargets(ctx, client, job, hosted, p)
+			if e != nil {
+				return e
 			}
+			if len(targets) == 0 {
+				return nil
+			}
+			return s.migrateAssets(ctx, client, targets, p)
+		}); err != nil {
+			return err
 		}
 	}
 
@@ -571,7 +581,7 @@ type migratedRepo struct {
 // migrateRepositories re-creates the source repositories here and returns the
 // hosted ones, which are the only ones holding artifacts worth transferring.
 func (s *NexusMigrationService) migrateRepositories(ctx context.Context, client *nexusclient.Client,
-	p *progress,
+	job *domain.MigrationJob, p *progress,
 ) ([]migratedRepo, error) {
 	bg := context.Background()
 
@@ -579,18 +589,21 @@ func (s *NexusMigrationService) migrateRepositories(ctx context.Context, client 
 	if err != nil {
 		return nil, fmt.Errorf("list repositories on the source Nexus: %w", err)
 	}
-	p.setTotals(bg, len(source), p.totalAssets)
+	allow := repoAllowSet(job.Repositories)
+	allow = expandRepoAllowSet(allow, source)
+	reportMissingAllowlist(bg, allow, source, p)
 
 	// hosted → proxy → group, so a group's members already exist when the
 	// group naming them is created.
 	ordered := make([]nexusclient.Repository, 0, len(source))
 	for _, want := range []string{"hosted", "proxy", "group"} {
 		for _, r := range source {
-			if r.Type == want {
+			if r.Type == want && repoAllowed(allow, r.Name) {
 				ordered = append(ordered, r)
 			}
 		}
 	}
+	p.setTotals(bg, len(ordered), p.totalAssets)
 
 	// srcByName lets a group expand a nested-group member from SOURCE data,
 	// independent of what has migrated so far; localNames resolves a member
@@ -640,6 +653,192 @@ func migratedRepoName(name string, format domain.RepoFormat) string {
 		return lower
 	}
 	return name
+}
+
+// repoAllowSet is the set of source repository names a job is limited to.
+// nil means every repository (an omitted or empty list).
+func repoAllowSet(names []string) map[string]struct{} {
+	if len(names) == 0 {
+		return nil
+	}
+	set := make(map[string]struct{}, len(names))
+	for _, n := range names {
+		n = strings.TrimSpace(n)
+		if n == "" {
+			continue
+		}
+		set[n] = struct{}{}
+	}
+	if len(set) == 0 {
+		return nil
+	}
+	return set
+}
+
+func repoAllowed(allow map[string]struct{}, name string) bool {
+	if allow == nil {
+		return true
+	}
+	_, ok := allow[name]
+	return ok
+}
+
+// expandRepoAllowSet adds the members of every group on the allowlist, nested
+// groups included. Selecting "helm" without its hosted/proxy members would
+// otherwise fail Create (a group needs at least one member) and copy no
+// artifacts. nil stays nil — every repository, no expansion needed.
+func expandRepoAllowSet(allow map[string]struct{}, source []nexusclient.Repository) map[string]struct{} {
+	if allow == nil {
+		return nil
+	}
+	byName := make(map[string]nexusclient.Repository, len(source))
+	for _, r := range source {
+		byName[r.Name] = r
+	}
+	changed := true
+	for changed {
+		changed = false
+		names := make([]string, 0, len(allow))
+		for n := range allow {
+			names = append(names, n)
+		}
+		for _, n := range names {
+			src, ok := byName[n]
+			if !ok || src.Type != "group" {
+				continue
+			}
+			for _, member := range src.MemberNames {
+				member = strings.TrimSpace(member)
+				if member == "" {
+					continue
+				}
+				if _, have := allow[member]; have {
+					continue
+				}
+				allow[member] = struct{}{}
+				changed = true
+			}
+		}
+	}
+	return allow
+}
+
+// reportMissingAllowlist counts names the operator asked for that the source
+// does not have, so a typo is visible on the job instead of silently copying
+// nothing of that name.
+func reportMissingAllowlist(bg context.Context, allow map[string]struct{}, source []nexusclient.Repository, p *progress) {
+	if allow == nil {
+		return
+	}
+	present := make(map[string]struct{}, len(source))
+	for _, r := range source {
+		present[r.Name] = struct{}{}
+	}
+	// Stable order so lastError is deterministic across runs.
+	names := make([]string, 0, len(allow))
+	for n := range allow {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	for _, n := range names {
+		if _, ok := present[n]; !ok {
+			p.fail(bg, "repository %q: not found on the source", n)
+		}
+	}
+}
+
+// blobTargets is the hosted repositories artifacts will copy into. When the
+// Repositories stage ran, that is its hosted result — re-checked against the
+// destination, because ensureRepository leaves an already-present repo of the
+// wrong type or format untouched and used to hand it to migrateAssets anyway.
+// When Repositories is off, the list is rebuilt from the source (hostedForBlobs).
+func (s *NexusMigrationService) blobTargets(ctx context.Context, client *nexusclient.Client,
+	job *domain.MigrationJob, fromRepos []migratedRepo, p *progress,
+) ([]migratedRepo, error) {
+	if !job.MigrateRepos {
+		return s.hostedForBlobs(ctx, client, job, p)
+	}
+	return s.filterBlobDestinations(ctx, fromRepos, p)
+}
+
+// hostedForBlobs lists hosted repositories on the source that already exist
+// here, so a blobs-only job can copy artifacts without recreating definitions.
+func (s *NexusMigrationService) hostedForBlobs(ctx context.Context, client *nexusclient.Client,
+	job *domain.MigrationJob, p *progress,
+) ([]migratedRepo, error) {
+	bg := context.Background()
+
+	source, err := client.ListRepositoriesWithConfig(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list repositories on the source Nexus: %w", err)
+	}
+	allow := repoAllowSet(job.Repositories)
+	allow = expandRepoAllowSet(allow, source)
+	reportMissingAllowlist(bg, allow, source, p)
+
+	var hosted []migratedRepo
+	for _, src := range source {
+		if src.Type != "hosted" || !repoAllowed(allow, src.Name) {
+			continue
+		}
+		format, ok := nexusFormats[src.Format]
+		if !ok {
+			p.fail(bg, "repository %q: format %q has no Nexspence equivalent", src.Name, src.Format)
+			continue
+		}
+		m := migratedRepo{src: src, localName: migratedRepoName(src.Name, format)}
+		okDest, err := s.acceptBlobDest(ctx, m, format, p)
+		if err != nil {
+			return nil, err
+		}
+		if okDest {
+			hosted = append(hosted, m)
+		}
+	}
+	return hosted, nil
+}
+
+func (s *NexusMigrationService) filterBlobDestinations(ctx context.Context, candidates []migratedRepo, p *progress) ([]migratedRepo, error) {
+	out := make([]migratedRepo, 0, len(candidates))
+	for _, m := range candidates {
+		format, ok := nexusFormats[m.src.Format]
+		if !ok {
+			continue
+		}
+		okDest, err := s.acceptBlobDest(ctx, m, format, p)
+		if err != nil {
+			return nil, err
+		}
+		if okDest {
+			out = append(out, m)
+		}
+	}
+	return out, nil
+}
+
+// acceptBlobDest reports whether artifacts for m may be written here. A
+// missing destination, a non-hosted one, or a format mismatch is a per-item
+// skip: dumping npm bytes into a maven hosted repo (or a proxy of the same
+// name) is worse than leaving the artifacts behind.
+func (s *NexusMigrationService) acceptBlobDest(ctx context.Context, m migratedRepo, format domain.RepoFormat, p *progress) (bool, error) {
+	bg := context.Background()
+	existing, err := s.deps.Repos.Get(ctx, m.localName)
+	if err != nil && !errors.Is(err, repository.ErrNotFound) {
+		return false, err
+	}
+	if existing == nil {
+		p.fail(bg, "repository %q: artifacts skipped — destination does not exist (enable Repositories, or create it first)", m.src.Name)
+		return false, nil
+	}
+	if existing.Type != domain.TypeHosted {
+		p.fail(bg, "repository %q: artifacts skipped — destination is %s, not hosted", m.src.Name, existing.Type)
+		return false, nil
+	}
+	if existing.Format != format {
+		p.fail(bg, "repository %q: artifacts skipped — destination format is %q, source is %q", m.src.Name, existing.Format, m.src.Format)
+		return false, nil
+	}
+	return true, nil
 }
 
 // ensureRepository creates the repository unless one of that name is already

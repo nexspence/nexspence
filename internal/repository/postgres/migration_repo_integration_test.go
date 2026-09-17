@@ -23,6 +23,7 @@ func TestMigrationRepo_CRUD(t *testing.T) {
 		MigrateRepos: true,
 		MigrateUsers: true,
 		UserRealms:   []string{"default", "LDAP"},
+		Repositories: []string{"npm-hosted", "pypi-hosted"},
 	}
 	if err := repo.Create(ctx, job); err != nil {
 		t.Fatalf("Create: %v", err)
@@ -46,6 +47,9 @@ func TestMigrationRepo_CRUD(t *testing.T) {
 	}
 	if len(got.UserRealms) != 2 || got.UserRealms[0] != "default" || got.UserRealms[1] != "LDAP" {
 		t.Fatalf("UserRealms did not round-trip: %+v", got.UserRealms)
+	}
+	if len(got.Repositories) != 2 || got.Repositories[0] != "npm-hosted" || got.Repositories[1] != "pypi-hosted" {
+		t.Fatalf("Repositories did not round-trip: %+v", got.Repositories)
 	}
 
 	if err := repo.UpdateStatus(ctx, job.ID, domain.MigrationRunning); err != nil {

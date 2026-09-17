@@ -39,6 +39,7 @@ type migrationJobResp struct {
 	MigrateRoles        bool     `json:"migrateRoles"`
 	MigrateRoutingRules bool     `json:"migrateRoutingRules"`
 	UserRealms          []string `json:"userRealms,omitempty"`
+	Repositories        []string `json:"repositories,omitempty"`
 	RepositoriesTotal   int      `json:"repositoriesTotal"`
 	RepositoriesDone    int      `json:"repositoriesDone"`
 	AssetsTotal         int64    `json:"assetsTotal"`
@@ -67,6 +68,7 @@ func toJobResp(j domain.MigrationJob) migrationJobResp {
 		MigrateRoles:        j.MigrateRoles,
 		MigrateRoutingRules: j.MigrateRoutingRules,
 		UserRealms:          j.UserRealms,
+		Repositories:        j.Repositories,
 		RepositoriesTotal:   j.TotalRepos,
 		RepositoriesDone:    j.DoneRepos,
 		AssetsTotal:         j.TotalAssets,
@@ -138,6 +140,9 @@ type createJobReq struct {
 		// UserRealms names the source realms user migration pulls accounts
 		// from ("default" = local). Empty means local-only (#342).
 		UserRealms []string `json:"userRealms"`
+		// Repositories limits repository and artifact stages to these source
+		// names. Empty means every repository on the source.
+		Repositories []string `json:"repositories"`
 	} `json:"scope"`
 }
 
@@ -146,6 +151,32 @@ func boolDefault(b *bool, def bool) bool {
 		return def
 	}
 	return *b
+}
+
+// compactNames trims and drops empty entries so a client that sent
+// `[" npm-local ", ""]` is stored as `["npm-local"]`. An all-empty list
+// becomes nil, which the runner reads as "every repository".
+func compactNames(names []string) []string {
+	if names == nil {
+		return nil
+	}
+	out := make([]string, 0, len(names))
+	seen := make(map[string]struct{}, len(names))
+	for _, n := range names {
+		n = strings.TrimSpace(n)
+		if n == "" {
+			continue
+		}
+		if _, ok := seen[n]; ok {
+			continue
+		}
+		seen[n] = struct{}{}
+		out = append(out, n)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // CreateJob handles POST /api/v1/migration/jobs — creates the job and starts it.
@@ -172,6 +203,7 @@ func (h *MigrationHandler) CreateJob(c *gin.Context) {
 		MigrateRoles:        boolDefault(req.Scope.MigrateRoles, policies),
 		MigrateRoutingRules: boolDefault(req.Scope.MigrateRoutingRules, policies),
 		UserRealms:          req.Scope.UserRealms,
+		Repositories:        compactNames(req.Scope.Repositories),
 	}
 
 	if err := h.svc.Create(c.Request.Context(), job, req.Credentials.Password); err != nil {

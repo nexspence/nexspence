@@ -997,6 +997,13 @@ describe('AdminPage — Migration tab', () => {
     let posted: { sourceUrl: string } | null = null
     server.use(
       http.get('/api/v1/migration/jobs', () => HttpResponse.json([])),
+      http.post('/api/v1/migration/preview', () =>
+        HttpResponse.json({
+          reachable: true,
+          repoCount: 1,
+          repos: [{ name: 'raw-hosted', format: 'raw', type: 'hosted' }],
+        }),
+      ),
       http.post('/api/v1/migration/jobs', async ({ request }) => {
         posted = (await request.json()) as { sourceUrl: string }
         return HttpResponse.json({ id: 'job-1' }, { status: 201 })
@@ -1009,6 +1016,8 @@ describe('AdminPage — Migration tab', () => {
     await user.type(screen.getByPlaceholderText('https://nexus.example.com'), 'https://src.com')
     const pwInputs = document.querySelectorAll('input[type="password"]')
     fireEvent.change(pwInputs[0], { target: { value: 'secret' } })
+    await user.click(screen.getByRole('button', { name: /Test connection/ }))
+    expect(await screen.findByText(/1 repository found/)).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /Next/ }))
     await screen.findByText('Step 2 of 3')
     await user.click(screen.getByRole('button', { name: /Next/ }))
@@ -1017,6 +1026,92 @@ describe('AdminPage — Migration tab', () => {
     await user.click(startBtns[startBtns.length - 1])
     await waitFor(() => expect(posted).toBeTruthy())
     expect(posted!.sourceUrl).toBe('https://src.com')
+  })
+
+  it('blocks the scope step when repositories are on and the connection was not tested', async () => {
+    const user = userEvent.setup()
+    server.use(http.get('/api/v1/migration/jobs', () => HttpResponse.json([])))
+    renderAdmin('migration')
+    await screen.findByText('No migration jobs yet')
+    await user.click(screen.getByRole('button', { name: /Start Migration/ }))
+    await screen.findByText('Step 1 of 3')
+    await user.type(screen.getByPlaceholderText('https://nexus.example.com'), 'https://src.com')
+    const pwInputs = document.querySelectorAll('input[type="password"]')
+    fireEvent.change(pwInputs[0], { target: { value: 'secret' } })
+    await user.click(screen.getByRole('button', { name: /Next/ }))
+    await screen.findByText('Step 2 of 3')
+    await user.click(screen.getByRole('button', { name: /Next/ }))
+    expect(await screen.findByText(/Test the connection to pick repositories/)).toBeInTheDocument()
+    expect(screen.getByText('Step 2 of 3')).toBeInTheDocument()
+  })
+
+  it('sends selected repositories after testing the connection', async () => {
+    const user = userEvent.setup()
+    let posted: { scope?: { repositories?: string[] } } | null = null
+    server.use(
+      http.get('/api/v1/migration/jobs', () => HttpResponse.json([])),
+      http.post('/api/v1/migration/preview', () =>
+        HttpResponse.json({
+          reachable: true,
+          repoCount: 2,
+          repos: [
+            { name: 'raw-hosted', format: 'raw', type: 'hosted' },
+            { name: 'maven-central', format: 'maven2', type: 'proxy' },
+          ],
+        }),
+      ),
+      http.post('/api/v1/migration/jobs', async ({ request }) => {
+        posted = (await request.json()) as { scope?: { repositories?: string[] } }
+        return HttpResponse.json({ id: 'job-1' }, { status: 201 })
+      }),
+    )
+    renderAdmin('migration')
+    await screen.findByText('No migration jobs yet')
+    await user.click(screen.getByRole('button', { name: /Start Migration/ }))
+    await screen.findByText('Step 1 of 3')
+    await user.type(screen.getByPlaceholderText('https://nexus.example.com'), 'https://src.com')
+    const pwInputs = document.querySelectorAll('input[type="password"]')
+    fireEvent.change(pwInputs[0], { target: { value: 'secret' } })
+    await user.click(screen.getByRole('button', { name: /Test connection/ }))
+    expect(await screen.findByText(/2 repositories found/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /Next/ }))
+    await screen.findByText('Step 2 of 3')
+    await user.click(await screen.findByRole('checkbox', { name: /maven-central/ }))
+    await user.click(screen.getByRole('button', { name: /Next/ }))
+    await screen.findByText('Step 3 of 3')
+    const startBtns = screen.getAllByRole('button', { name: /Start Migration/ })
+    await user.click(startBtns[startBtns.length - 1])
+    await waitFor(() => expect(posted).toBeTruthy())
+    expect(posted!.scope!.repositories).toEqual(['raw-hosted'])
+  })
+
+  it('blocks next when every repository is unchecked after a preview', async () => {
+    const user = userEvent.setup()
+    server.use(
+      http.get('/api/v1/migration/jobs', () => HttpResponse.json([])),
+      http.post('/api/v1/migration/preview', () =>
+        HttpResponse.json({
+          reachable: true,
+          repoCount: 1,
+          repos: [{ name: 'raw-hosted', format: 'raw', type: 'hosted' }],
+        }),
+      ),
+    )
+    renderAdmin('migration')
+    await screen.findByText('No migration jobs yet')
+    await user.click(screen.getByRole('button', { name: /Start Migration/ }))
+    await screen.findByText('Step 1 of 3')
+    await user.type(screen.getByPlaceholderText('https://nexus.example.com'), 'https://src.com')
+    const pwInputs = document.querySelectorAll('input[type="password"]')
+    fireEvent.change(pwInputs[0], { target: { value: 'secret' } })
+    await user.click(screen.getByRole('button', { name: /Test connection/ }))
+    expect(await screen.findByText(/1 repository found/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /Next/ }))
+    await screen.findByText('Step 2 of 3')
+    await user.click(await screen.findByRole('checkbox', { name: /raw-hosted/ }))
+    await user.click(screen.getByRole('button', { name: /Next/ }))
+    expect(await screen.findByText(/Select at least one repository/)).toBeInTheDocument()
+    expect(screen.getByText('Step 2 of 3')).toBeInTheDocument()
   })
 
   it('validates the wizard source step', async () => {

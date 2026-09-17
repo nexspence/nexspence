@@ -4,6 +4,7 @@ import { ArrowRightLeft, Play, Pause, RefreshCw, Plus, PlugZap } from 'lucide-re
 import { nexspenceApi, apiErrorMessage } from '@/api/client'
 import { HoloCard, HoloButton, HoloPill, HoloInput, HoloModal } from '@/components/holo'
 import { type MigrationJob, shouldPollJobs } from './migrationJobs'
+import { MigrationRepoPicker, validateMigrationRepoScope, type PreviewRepo } from './MigrationRepoPicker'
 
 const STATUS_STYLE: Record<string, { bg: string; color: string }> = {
   pending:   { bg: 'rgba(245,158,11,0.15)',  color: '#f59e0b' },
@@ -53,8 +54,10 @@ export default function MigrationPage() {
 
       <div style={{ background: 'rgba(124,92,255,0.08)', border: '1px solid rgba(124,92,255,0.2)', borderRadius: 10, padding: '12px 16px', fontSize: 13, color: 'rgba(180,160,255,0.9)', lineHeight: 1.6 }}>
         <strong>How it works:</strong> Nexspence connects to your Nexus instance via its REST API and
-        streams repositories, users, roles and all artifacts directly — no downtime required.
-        Jobs are pausable and resumable. Requires Nexus admin credentials.
+        streams repositories, users, roles and artifacts directly — no downtime required.
+        Test the connection, then pick one or several repositories. Artifacts copy into hosted
+        destinations that already exist here, however they were created, so you can skip
+        Repositories when the matching hosted repositories are already present. Jobs are pausable and resumable.
       </div>
 
       {isLoading ? (
@@ -139,7 +142,6 @@ export default function MigrationPage() {
   )
 }
 
-interface PreviewRepo { name: string; format: string; type: string }
 interface PreviewResult { reachable: boolean; repoCount: number; repos: PreviewRepo[] }
 
 /** The stages a job can run, in the order the engine runs them. */
@@ -175,6 +177,7 @@ function CreateMigrationModal({ onClose, onCreated }: { onClose: () => void; onC
   const [testing, setTesting] = useState(false)
   const [preview, setPreview] = useState<PreviewResult | null>(null)
   const [previewError, setPreviewError] = useState('')
+  const [selectedRepos, setSelectedRepos] = useState<string[]>([])
   // Bumped by handleTest and by every field set() feeds into it. A field
   // edited after a test started must not let that test's late response land
   // as if it verified the (now different) details a moment later — same
@@ -188,6 +191,7 @@ function CreateMigrationModal({ onClose, onCreated }: { onClose: () => void; onC
     testReqSeq.current++
     setPreview(null)
     setPreviewError('')
+    setSelectedRepos([])
     setForm(f => ({ ...f, [k]: e.target.value }))
   }
 
@@ -208,7 +212,9 @@ function CreateMigrationModal({ onClose, onCreated }: { onClose: () => void; onC
         password: form.password,
       })
       if (seq !== testReqSeq.current) return // a field changed since this test started
-      setPreview(data as PreviewResult)
+      const result = data as PreviewResult
+      setPreview(result)
+      setSelectedRepos((result.repos ?? []).map(r => r.name))
     } catch (err) {
       if (seq !== testReqSeq.current) return
       setPreviewError(apiErrorMessage(err, 'Could not reach that Nexus'))
@@ -225,12 +231,27 @@ function CreateMigrationModal({ onClose, onCreated }: { onClose: () => void; onC
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
+    const repoErr = validateMigrationRepoScope({
+      migrateRepos: scope.migrateRepos,
+      migrateBlobs: scope.migrateBlobs,
+      previewed: !!preview,
+      previewRepoCount: preview?.repos.length ?? 0,
+      selectedCount: selectedRepos.length,
+    })
+    if (repoErr) {
+      setError(repoErr)
+      return
+    }
     setLoading(true)
     try {
       await nexspenceApi.createMigrationJob({
         sourceUrl: form.sourceUrl,
         credentials: { username: form.username, password: form.password },
-        scope: { ...scope, userRealms },
+        scope: {
+          ...scope,
+          userRealms,
+          ...(preview ? { repositories: selectedRepos } : {}),
+        },
       })
       onCreated()
     } catch (err) {
@@ -259,11 +280,9 @@ function CreateMigrationModal({ onClose, onCreated }: { onClose: () => void; onC
             <div style={{ fontWeight: 600 }}>
               Connected — {preview.repoCount} {preview.repoCount === 1 ? 'repository' : 'repositories'} found
             </div>
-            {preview.repos.length > 0 && (
-              <div style={{ marginTop: 6, fontFamily: 'monospace', fontSize: 12, maxHeight: 120, overflowY: 'auto', lineHeight: 1.6 }}>
-                {preview.repos.map(r => (
-                  <div key={r.name}>{r.name} <span style={{ opacity: 0.7 }}>({r.format}/{r.type})</span></div>
-                ))}
+            {(scope.migrateRepos || scope.migrateBlobs) && preview.repos.length > 0 && (
+              <div style={{ marginTop: 10, color: 'var(--holo-text)' }}>
+                <MigrationRepoPicker repos={preview.repos} selected={selectedRepos} onChange={setSelectedRepos} />
               </div>
             )}
           </div>

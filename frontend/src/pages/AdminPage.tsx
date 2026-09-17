@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState, lazy, Suspense } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Activity, Archive, ArrowRightLeft, ArrowUpCircle, CheckCircle, Database, Download, ExternalLink, GitBranch, HardDrive, Info, Network, Paperclip, Pause, Pencil, Play, Plus, RefreshCw, Share2, Shield, Trash2, Upload, Wifi, X } from 'lucide-react'
+import { Activity, Archive, ArrowRightLeft, ArrowUpCircle, CheckCircle, Database, Download, ExternalLink, GitBranch, HardDrive, Info, Network, Paperclip, Pause, Pencil, Play, PlugZap, Plus, RefreshCw, Share2, Shield, Trash2, Upload, Wifi, X } from 'lucide-react'
 import { nexusApi, nexspenceApi, apiClient, apiErrorMessage, ImportRepoStats, ServiceStatus, RoutingRule, RoutingRuleInput, ReplicationRule, ReplicationHistory, ReplicationRuleInput, AuthConfig } from '@/api/client'
 const MonitoringView = lazy(() => import('@/pages/MonitoringPage').then(m => ({ default: m.MonitoringView })))
 import { Select } from '@/components/Select'
 import { Truncated } from '@/components/Truncated'
 import { HoloButton, HoloInput, HoloModal, HoloTabs, HoloCard, HoloTabItem, Wizard } from '@/components/holo'
+import { MigrationRepoPicker, validateMigrationRepoScope, type PreviewRepo } from '@/pages/MigrationRepoPicker'
 
 interface BlobStore {
   id: string; name: string; type: string; usedBytes: number; quotaBytes?: number; config?: Record<string, unknown>
@@ -2404,6 +2405,7 @@ interface MigrationJobData {
   assetsDone: number
   errorCount: number
   lastError?: string
+  repositories?: string[]
   startedAt?: string
   finishedAt?: string
   createdAt: string
@@ -2458,8 +2460,10 @@ function MigrationTab() {
 
       <div style={{ background: 'rgba(124,92,255,0.08)', border: '1px solid rgba(124,92,255,0.2)', borderRadius: 10, padding: '12px 16px', fontSize: 13, color: 'rgba(180,160,255,0.9)', lineHeight: 1.6 }}>
         <strong>How it works:</strong> Nexspence connects to your Nexus instance via its REST API and
-        streams repositories, users, roles and all artifacts directly — no downtime required.
-        Jobs are pausable and resumable. Requires Nexus admin credentials.
+        streams repositories, users, roles and artifacts directly — no downtime required.
+        Test the connection, then pick one or several repositories. Artifacts copy into hosted
+        destinations that already exist here, however they were created, so you can skip
+        Repositories when the matching hosted repositories are already present. Jobs are pausable and resumable.
       </div>
 
       {isLoading ? (
@@ -2554,6 +2558,11 @@ function MigrationJobCard({ job, onPause, onResume }: { job: MigrationJobData; o
         ].map(s => (
           <span key={s.label} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: s.on ? 'rgba(59,130,246,0.15)' : 'rgba(255,255,255,0.04)', color: s.on ? '#3b82f6' : 'var(--holo-text-faint)', fontWeight: 600 }}>{s.label}</span>
         ))}
+        {job.repositories && job.repositories.length > 0 && (
+          <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: 'rgba(124,92,255,0.15)', color: '#a78bfa', fontWeight: 600 }} title={job.repositories.join(', ')}>
+            {job.repositories.length} repo{job.repositories.length === 1 ? '' : 's'}
+          </span>
+        )}
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
@@ -2597,12 +2606,55 @@ function CreateMigrationJobModal({ onClose, onCreated }: { onClose: () => void; 
   })
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [testing, setTesting] = useState(false)
+  const [preview, setPreview] = useState<{ reachable: boolean; repoCount: number; repos: PreviewRepo[] } | null>(null)
+  const [previewError, setPreviewError] = useState('')
+  const [selectedRepos, setSelectedRepos] = useState<string[]>([])
+  const testReqSeq = useRef(0)
 
-  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
+  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => {
+    testReqSeq.current++
+    setPreview(null)
+    setPreviewError('')
+    setSelectedRepos([])
     setForm(f => ({ ...f, [k]: e.target.value }))
+  }
 
   const toggleScope = (k: keyof typeof scope) =>
     setScope(s => ({ ...s, [k]: !s[k] }))
+
+  const handleTest = async () => {
+    const seq = ++testReqSeq.current
+    setPreview(null)
+    setPreviewError('')
+    setTesting(true)
+    try {
+      const { data } = await nexspenceApi.previewMigration({
+        sourceUrl: form.sourceUrl,
+        username: form.username,
+        password: form.password,
+      })
+      if (seq !== testReqSeq.current) return
+      const result = data as { reachable: boolean; repoCount: number; repos: PreviewRepo[] }
+      setPreview(result)
+      setSelectedRepos((result.repos ?? []).map(r => r.name))
+    } catch (err) {
+      if (seq !== testReqSeq.current) return
+      setPreviewError(apiErrorMessage(err, 'Could not reach that Nexus'))
+    } finally {
+      setTesting(false)
+    }
+  }
+
+  const wantsRepos = scope.migrateRepos || scope.migrateBlobs
+
+  const repoScopeError = () => validateMigrationRepoScope({
+    migrateRepos: scope.migrateRepos,
+    migrateBlobs: scope.migrateBlobs,
+    previewed: !!preview,
+    previewRepoCount: preview?.repos.length ?? 0,
+    selectedCount: selectedRepos.length,
+  })
 
   const validateStep = (stepIdx: number): boolean => {
     setError('')
@@ -2612,12 +2664,16 @@ function CreateMigrationJobModal({ onClose, onCreated }: { onClose: () => void; 
     }
     if (stepIdx === 1) {
       if (!Object.values(scope).some(Boolean)) { setError('Select at least one scope item'); return false }
+      const repoErr = repoScopeError()
+      if (repoErr) { setError(repoErr); return false }
     }
     return true
   }
 
   const handleFinish = async () => {
     setError('')
+    const repoErr = repoScopeError()
+    if (repoErr) { setError(repoErr); return }
     setLoading(true)
     try {
       await nexspenceApi.createMigrationJob({
@@ -2628,6 +2684,7 @@ function CreateMigrationJobModal({ onClose, onCreated }: { onClose: () => void; 
           migrateUsers: scope.migrateUsers,
           migratePolicies: scope.migratePolicies,
           migrateBlobs: scope.migrateBlobs,
+          ...(preview ? { repositories: selectedRepos } : {}),
         },
       })
       onCreated()
@@ -2652,8 +2709,23 @@ function CreateMigrationJobModal({ onClose, onCreated }: { onClose: () => void; 
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
         <label style={LABEL}>Nexus URL *</label>
-        <HoloInput placeholder="https://nexus.example.com" value={form.sourceUrl} onChange={set('sourceUrl')} autoFocus />
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <HoloInput style={{ flex: 1 }} placeholder="https://nexus.example.com" value={form.sourceUrl} onChange={set('sourceUrl')} autoFocus />
+          <HoloButton type="button" onClick={handleTest} disabled={testing || !form.sourceUrl}>
+            <PlugZap size={14} /> {testing ? 'Testing…' : 'Test connection'}
+          </HoloButton>
+        </div>
       </div>
+      {preview && (
+        <div style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.25)', borderRadius: 8, padding: '10px 12px', color: '#86efac', fontSize: 13 }}>
+          Connected — {preview.repoCount} {preview.repoCount === 1 ? 'repository' : 'repositories'} found. Pick which ones on the next step.
+        </div>
+      )}
+      {previewError && (
+        <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 8, padding: '10px 12px', color: '#fca5a5', fontSize: 13, wordBreak: 'break-word' }}>
+          {previewError}
+        </div>
+      )}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
           <label style={LABEL}>Username</label>
@@ -2668,22 +2740,32 @@ function CreateMigrationJobModal({ onClose, onCreated }: { onClose: () => void; 
   )
 
   const step2 = (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      <label style={LABEL}>Migration Scope</label>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-        {scopeItems.map(({ key, label }) => (
-          <label key={key} style={{
-            display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
-            padding: '8px 10px',
-            background: scope[key] ? 'rgba(59,130,246,0.1)' : 'rgba(255,255,255,0.03)',
-            border: `1px solid ${scope[key] ? 'rgba(59,130,246,0.3)' : 'rgba(255,255,255,0.08)'}`,
-            borderRadius: 8, transition: 'background 0.15s, border-color 0.15s', userSelect: 'none',
-          }}>
-            <input type="checkbox" checked={scope[key]} onChange={() => toggleScope(key)} style={{ accentColor: '#3b82f6', width: 14, height: 14 }} />
-            <span style={{ fontSize: 13, color: scope[key] ? 'var(--holo-text)' : 'var(--holo-text-faint)', fontWeight: scope[key] ? 600 : 400 }}>{label}</span>
-          </label>
-        ))}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <label style={LABEL}>Migration Scope</label>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          {scopeItems.map(({ key, label }) => (
+            <label key={key} style={{
+              display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
+              padding: '8px 10px',
+              background: scope[key] ? 'rgba(59,130,246,0.1)' : 'rgba(255,255,255,0.03)',
+              border: `1px solid ${scope[key] ? 'rgba(59,130,246,0.3)' : 'rgba(255,255,255,0.08)'}`,
+              borderRadius: 8, transition: 'background 0.15s, border-color 0.15s', userSelect: 'none',
+            }}>
+              <input type="checkbox" checked={scope[key]} onChange={() => toggleScope(key)} style={{ accentColor: '#3b82f6', width: 14, height: 14 }} />
+              <span style={{ fontSize: 13, color: scope[key] ? 'var(--holo-text)' : 'var(--holo-text-faint)', fontWeight: scope[key] ? 600 : 400 }}>{label}</span>
+            </label>
+          ))}
+        </div>
       </div>
+      {wantsRepos && preview && preview.repos.length > 0 && (
+        <MigrationRepoPicker repos={preview.repos} selected={selectedRepos} onChange={setSelectedRepos} />
+      )}
+      {wantsRepos && !preview && (
+        <div style={{ fontSize: 12, color: 'var(--holo-text-faint)', lineHeight: 1.5 }}>
+          Test the connection on the previous step to pick repositories. Repositories and Artifacts cannot start without it.
+        </div>
+      )}
     </div>
   )
 
@@ -2700,6 +2782,10 @@ function CreateMigrationJobModal({ onClose, onCreated }: { onClose: () => void; 
         <div style={{ fontSize: 12, color: 'var(--holo-text-dim)' }}>
           <b style={{ color: 'var(--holo-text)' }}>Scope:</b>{' '}
           {scopeItems.filter(i => scope[i.key]).map(i => i.label).join(', ') || 'none'}
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--holo-text-dim)' }}>
+          <b style={{ color: 'var(--holo-text)' }}>Repositories:</b>{' '}
+          {preview ? `${selectedRepos.length} selected` : 'test the connection first'}
         </div>
       </div>
     </div>

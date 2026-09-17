@@ -236,6 +236,8 @@ components:
         migratePrivileges:   { type: boolean }
         migrateRoles:        { type: boolean }
         migrateRoutingRules: { type: boolean }
+        userRealms:          { type: array, items: { type: string }, description: "Source realms user migration pulls from. Empty means local-only." }
+        repositories:        { type: array, items: { type: string }, description: "Source repository names to migrate. Empty means every repository." }
         repositoriesTotal:   { type: integer }
         repositoriesDone:    { type: integer }
         assetsTotal:         { type: integer }
@@ -1190,8 +1192,15 @@ paths:
         by its own scope flag and runs in this order:
 
         1. Repositories — hosted, then proxy, then group, so a group's members
-           exist before the group naming them.
-        2. Artifacts — hosted repositories only; a proxy re-fetches from its own
+           exist before the group naming them. `scope.repositories` limits this
+           stage to the named source repositories; omitted or empty means all.
+           The Admin UI requires a tested connection before Repositories or
+           Artifacts can start, so an operator cannot accidentally omit the
+           list. A group in the list also migrates its members — a group
+           cannot be created empty, and artifacts live on the hosted members.
+        2. Artifacts — hosted repositories only; independent of the Repositories
+           flag. When Repositories is off, artifacts copy into hosted
+           destinations that already exist here. A proxy re-fetches from its own
            upstream, so its cache is not copied. For a registry repository
            (docker/oci) the blobs are read out of each manifest rather than out
            of the component listing, which reports only the manifest and names
@@ -1239,6 +1248,8 @@ paths:
                     migratePrivileges:   { type: boolean }
                     migrateRoles:        { type: boolean }
                     migrateRoutingRules: { type: boolean }
+                    userRealms:          { type: array, items: { type: string } }
+                    repositories:        { type: array, items: { type: string }, description: "Source names. Empty or omitted means every repository." }
       responses:
         '201':
           description: Job created and started
