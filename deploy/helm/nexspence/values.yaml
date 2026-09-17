@@ -51,6 +51,11 @@ config:
   # pod CIDR, or "*" to trust every hop (only safe when the server is
   # unreachable except through a proxy you control).
   trustedProxies: []
+  # -- Internal CIDRs the SSRF guard may reach (proxy remotes, webhooks,
+  # replication, Nexus migration). Empty refuses every private/loopback
+  # address. Emitted as NEXSPENCE_OUTBOUND_ALLOWED_INTERNAL_CIDRS (comma-separated).
+  outbound:
+    allowedInternalCidrs: []
   # -- JWT secret (min 32 chars). Leave empty to auto-generate a unique random
   # secret on first install and persist it across upgrades (recommended). Set an
   # explicit value only if you need to share the secret across clusters.

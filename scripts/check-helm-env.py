@@ -35,6 +35,7 @@ RENDERS = [
     ["--set", "storage.type=azure", "--set", "storage.azure.container=c",
      "--set", "storage.azure.accountName=acct"],
     ["--set", "config.docker.subdomainConnector.enabled=true"],
+    ["--set", "config.outbound.allowedInternalCidrs={10.0.0.0/8}"],
     [
         "--set", "config.adminExistingSecret=ext",
         "--set", "config.jwtSecretExistingSecret=ext",
