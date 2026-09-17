@@ -104,7 +104,7 @@ describe('MigrationPage', () => {
     const pwd = document.querySelector('input[type="password"]') as HTMLInputElement
     await user.type(pwd, 'secret')
     await user.click(screen.getByRole('button', { name: /Test connection/ }))
-    expect(await screen.findByRole('checkbox', { name: /raw-hosted/ })).toBeChecked()
+    await user.click(await screen.findByRole('checkbox', { name: /raw-hosted/ }))
 
     const submit = pwd.closest('form')!.querySelector('button[type="submit"]') as HTMLButtonElement
     await user.click(submit)
@@ -134,7 +134,7 @@ describe('MigrationPage', () => {
     const pwd = document.querySelector('input[type="password"]') as HTMLInputElement
     await user.type(pwd, 'secret')
     await user.click(screen.getByRole('button', { name: /Test connection/ }))
-    expect(await screen.findByRole('checkbox', { name: /raw-hosted/ })).toBeChecked()
+    await user.click(await screen.findByRole('checkbox', { name: /raw-hosted/ }))
     const submit = pwd.closest('form')!.querySelector('button[type="submit"]') as HTMLButtonElement
     await user.click(submit)
     expect(await screen.findByText(/bad creds|Failed to create migration job/)).toBeInTheDocument()
@@ -246,8 +246,8 @@ describe('MigrationPage — test connection', () => {
 
     expect(await screen.findByText(/Connected — 2 repositories/)).toBeInTheDocument()
     expect(screen.getByText(/raw-hosted/)).toBeInTheDocument()
-    expect(screen.getByRole('checkbox', { name: /raw-hosted/ })).toBeChecked()
-    expect(screen.getByRole('checkbox', { name: /maven-central/ })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: /raw-hosted/ })).not.toBeChecked()
+    expect(screen.getByRole('checkbox', { name: /maven-central/ })).not.toBeChecked()
     expect(sent).toEqual({
       sourceUrl: 'https://src.example.com',
       username: 'admin',
@@ -312,7 +312,7 @@ describe('MigrationPage — test connection', () => {
     const pwd = document.querySelector('input[type="password"]') as HTMLInputElement
     await user.type(pwd, 'secret')
     await user.click(screen.getByRole('button', { name: /Test connection/ }))
-    expect(await screen.findByRole('checkbox', { name: /raw-hosted/ })).toBeChecked()
+    await user.click(await screen.findByRole('checkbox', { name: /raw-hosted/ }))
     await user.click(screen.getByRole('checkbox', { name: /Users/ }))
     await user.click(screen.getByRole('checkbox', { name: /Routing rules/ }))
 
@@ -356,7 +356,7 @@ describe('MigrationPage — test connection', () => {
     const pwd = document.querySelector('input[type="password"]') as HTMLInputElement
     await user.type(pwd, 'secret')
     await user.click(screen.getByRole('button', { name: /Test connection/ }))
-    expect(await screen.findByRole('checkbox', { name: /raw-hosted/ })).toBeChecked()
+    await user.click(await screen.findByRole('checkbox', { name: /raw-hosted/ }))
 
     expect(screen.getByRole('checkbox', { name: 'Local' })).toBeChecked()
     await user.click(screen.getByRole('checkbox', { name: 'LDAP' }))
@@ -393,8 +393,7 @@ describe('MigrationPage — test connection', () => {
     const pwd = document.querySelector('input[type="password"]') as HTMLInputElement
     await user.type(pwd, 'secret')
     await user.click(screen.getByRole('button', { name: /Test connection/ }))
-    expect(await screen.findByRole('checkbox', { name: /maven-central/ })).toBeChecked()
-    await user.click(screen.getByRole('checkbox', { name: /maven-central/ }))
+    await user.click(await screen.findByRole('checkbox', { name: /raw-hosted/ }))
 
     const submit = pwd.closest('form')!.querySelector('button[type="submit"]') as HTMLButtonElement
     await user.click(submit)
@@ -425,14 +424,14 @@ describe('MigrationPage — test connection', () => {
     const pwd = document.querySelector('input[type="password"]') as HTMLInputElement
     await user.type(pwd, 'secret')
     await user.click(screen.getByRole('button', { name: /Test connection/ }))
-    await user.click(await screen.findByRole('checkbox', { name: /raw-hosted/ }))
+    expect(await screen.findByRole('checkbox', { name: /raw-hosted/ })).not.toBeChecked()
     const submit = pwd.closest('form')!.querySelector('button[type="submit"]') as HTMLButtonElement
     await user.click(submit)
     expect(await screen.findByText(/Select at least one repository/)).toBeInTheDocument()
     expect(posted).toBe(false)
   })
 
-  it('blocks start when repositories are on and the connection was not tested', async () => {
+  it('does not start until the connection is tested', async () => {
     const user = userEvent.setup()
     let posted = false
     server.use(
@@ -447,8 +446,7 @@ describe('MigrationPage — test connection', () => {
     const pwd = document.querySelector('input[type="password"]') as HTMLInputElement
     await user.type(pwd, 'secret')
     const submit = pwd.closest('form')!.querySelector('button[type="submit"]') as HTMLButtonElement
-    await user.click(submit)
-    expect(await screen.findByText(/Test the connection to pick repositories/)).toBeInTheDocument()
+    expect(submit).toBeDisabled()
     expect(posted).toBe(false)
   })
 

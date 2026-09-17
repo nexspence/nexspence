@@ -28,6 +28,22 @@ describe('Wizard', () => {
     await waitFor(() => expect(screen.getByText('Step one body')).toBeInTheDocument())
   })
 
+  it('does not fire Next when nextDisabled returns true', () => {
+    const onValidateStep = vi.fn().mockResolvedValue(true)
+    render(
+      <Wizard
+        steps={steps}
+        onFinish={() => {}}
+        onClose={() => {}}
+        onValidateStep={onValidateStep}
+        nextDisabled={(i) => i === 0}
+      />,
+    )
+    expect(screen.getByRole('button', { name: 'Next →' })).toBeDisabled()
+    expect(onValidateStep).not.toHaveBeenCalled()
+    expect(screen.getByText('Step one body')).toBeInTheDocument()
+  })
+
   it('blocks Next when validation fails', async () => {
     const onValidateStep = vi.fn().mockResolvedValue(false)
     render(<Wizard steps={steps} onFinish={() => {}} onClose={() => {}} onValidateStep={onValidateStep} />)

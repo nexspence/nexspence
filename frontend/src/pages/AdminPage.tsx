@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState, lazy, Suspense } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Activity, Archive, ArrowRightLeft, ArrowUpCircle, CheckCircle, Database, Download, ExternalLink, GitBranch, HardDrive, Info, Network, Paperclip, Pause, Pencil, Play, PlugZap, Plus, RefreshCw, Share2, Shield, Trash2, Upload, Wifi, X } from 'lucide-react'
+import { Activity, Archive, ArrowRightLeft, ArrowUpCircle, CheckCircle, Database, Download, ExternalLink, GitBranch, HardDrive, Info, Network, Paperclip, Pause, Pencil, Play, Plus, RefreshCw, Share2, Shield, Trash2, Upload, Wifi, X } from 'lucide-react'
 import { nexusApi, nexspenceApi, apiClient, apiErrorMessage, ImportRepoStats, ServiceStatus, RoutingRule, RoutingRuleInput, ReplicationRule, ReplicationHistory, ReplicationRuleInput, AuthConfig } from '@/api/client'
 const MonitoringView = lazy(() => import('@/pages/MonitoringPage').then(m => ({ default: m.MonitoringView })))
 import { Select } from '@/components/Select'
 import { Truncated } from '@/components/Truncated'
 import { HoloButton, HoloInput, HoloModal, HoloTabs, HoloCard, HoloTabItem, Wizard } from '@/components/holo'
-import { MigrationRepoPicker, validateMigrationRepoScope, type PreviewRepo } from '@/pages/MigrationRepoPicker'
+import { MigrationRepoPicker, isHostedRepo, scopedRepoSelection, validateMigrationRepoScope, type PreviewRepo } from '@/pages/MigrationRepoPicker'
 
 interface BlobStore {
   id: string; name: string; type: string; usedBytes: number; quotaBytes?: number; config?: Record<string, unknown>
@@ -2544,7 +2544,6 @@ function MigrationJobCard({ job, onPause, onResume }: { job: MigrationJobData; o
   return (
     <HoloCard style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <ArrowRightLeft size={15} style={{ color: 'var(--holo-text-faint)', flexShrink: 0 }} />
         <span style={{ flex: 1, fontSize: 14, fontWeight: 600, color: 'var(--holo-text)', fontFamily: 'monospace', wordBreak: 'break-all' }}>{job.sourceUrl}</span>
         <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 9px', borderRadius: 4, background: st.bg, color: st.color }}>{job.status}</span>
       </div>
@@ -2560,12 +2559,13 @@ function MigrationJobCard({ job, onPause, onResume }: { job: MigrationJobData; o
         ))}
         {job.repositories && job.repositories.length > 0 && (
           <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: 'rgba(124,92,255,0.15)', color: '#a78bfa', fontWeight: 600 }} title={job.repositories.join(', ')}>
-            {job.repositories.length} repo{job.repositories.length === 1 ? '' : 's'}
+            {job.repositories.length === 1 ? job.repositories[0] : `${job.repositories.length} selected`}
           </span>
         )}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: job.migrateRepos ? 'repeat(3, 1fr)' : '1fr 1fr', gap: 12 }}>
+        {job.migrateRepos && (
         <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 8, padding: '10px 12px' }}>
           <div style={{ fontSize: 11, color: 'var(--holo-text-faint)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Repositories</div>
           <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--holo-text)' }}>{job.repositoriesDone}<span style={{ fontSize: 13, color: 'var(--holo-text-faint)', fontWeight: 400 }}>/{job.repositoriesTotal || '?'}</span></div>
@@ -2573,6 +2573,7 @@ function MigrationJobCard({ job, onPause, onResume }: { job: MigrationJobData; o
             <div style={{ height: '100%', width: reposPct + '%', background: 'var(--holo-a)', transition: 'width 0.4s' }} />
           </div>
         </div>
+        )}
         <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 8, padding: '10px 12px' }}>
           <div style={{ fontSize: 11, color: 'var(--holo-text-faint)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Assets</div>
           <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--holo-text)' }}>{job.assetsDone}<span style={{ fontSize: 13, color: 'var(--holo-text-faint)', fontWeight: 400 }}>/{job.assetsTotal || '?'}</span></div>
@@ -2585,6 +2586,12 @@ function MigrationJobCard({ job, onPause, onResume }: { job: MigrationJobData; o
           <div style={{ fontSize: 18, fontWeight: 700, color: job.errorCount > 0 ? '#ef4444' : '#22c55e' }}>{job.errorCount}</div>
         </div>
       </div>
+
+      {job.lastError && (
+        <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 8, padding: '8px 12px', fontSize: 12, color: '#fca5a5', wordBreak: 'break-word' }}>
+          {job.lastError}
+        </div>
+      )}
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <span style={{ fontSize: 12, color: 'var(--holo-text-faint)' }}>Started {job.startedAt ? new Date(job.startedAt).toLocaleString() : new Date(job.createdAt).toLocaleString()}</span>
@@ -2637,7 +2644,7 @@ function CreateMigrationJobModal({ onClose, onCreated }: { onClose: () => void; 
       if (seq !== testReqSeq.current) return
       const result = data as { reachable: boolean; repoCount: number; repos: PreviewRepo[] }
       setPreview(result)
-      setSelectedRepos((result.repos ?? []).map(r => r.name))
+      setSelectedRepos([])
     } catch (err) {
       if (seq !== testReqSeq.current) return
       setPreviewError(apiErrorMessage(err, 'Could not reach that Nexus'))
@@ -2647,13 +2654,16 @@ function CreateMigrationJobModal({ onClose, onCreated }: { onClose: () => void; 
   }
 
   const wantsRepos = scope.migrateRepos || scope.migrateBlobs
+  const hostedOnly = scope.migrateBlobs && !scope.migrateRepos
+  const pickerRepos = preview?.repos ?? []
+  const scopedSelected = scopedRepoSelection(pickerRepos, selectedRepos, hostedOnly)
 
   const repoScopeError = () => validateMigrationRepoScope({
     migrateRepos: scope.migrateRepos,
     migrateBlobs: scope.migrateBlobs,
     previewed: !!preview,
-    previewRepoCount: preview?.repos.length ?? 0,
-    selectedCount: selectedRepos.length,
+    previewRepoCount: hostedOnly ? pickerRepos.filter(isHostedRepo).length : pickerRepos.length,
+    selectedCount: scopedSelected.length,
   })
 
   const validateStep = (stepIdx: number): boolean => {
@@ -2661,6 +2671,7 @@ function CreateMigrationJobModal({ onClose, onCreated }: { onClose: () => void; 
     if (stepIdx === 0) {
       if (!form.sourceUrl.trim()) { setError('Nexus URL is required'); return false }
       if (!form.password.trim()) { setError('Password is required'); return false }
+      if (!preview) { setError('Test the connection before continuing'); return false }
     }
     if (stepIdx === 1) {
       if (!Object.values(scope).some(Boolean)) { setError('Select at least one scope item'); return false }
@@ -2672,6 +2683,7 @@ function CreateMigrationJobModal({ onClose, onCreated }: { onClose: () => void; 
 
   const handleFinish = async () => {
     setError('')
+    if (!preview) { setError('Test the connection before continuing'); return }
     const repoErr = repoScopeError()
     if (repoErr) { setError(repoErr); return }
     setLoading(true)
@@ -2684,7 +2696,7 @@ function CreateMigrationJobModal({ onClose, onCreated }: { onClose: () => void; 
           migrateUsers: scope.migrateUsers,
           migratePolicies: scope.migratePolicies,
           migrateBlobs: scope.migrateBlobs,
-          ...(preview ? { repositories: selectedRepos } : {}),
+          ...(preview ? { repositories: scopedSelected } : {}),
         },
       })
       onCreated()
@@ -2712,7 +2724,7 @@ function CreateMigrationJobModal({ onClose, onCreated }: { onClose: () => void; 
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <HoloInput style={{ flex: 1 }} placeholder="https://nexus.example.com" value={form.sourceUrl} onChange={set('sourceUrl')} autoFocus />
           <HoloButton type="button" onClick={handleTest} disabled={testing || !form.sourceUrl}>
-            <PlugZap size={14} /> {testing ? 'Testing…' : 'Test connection'}
+            {testing ? 'Testing…' : 'Test connection'}
           </HoloButton>
         </div>
       </div>
@@ -2759,7 +2771,7 @@ function CreateMigrationJobModal({ onClose, onCreated }: { onClose: () => void; 
         </div>
       </div>
       {wantsRepos && preview && preview.repos.length > 0 && (
-        <MigrationRepoPicker repos={preview.repos} selected={selectedRepos} onChange={setSelectedRepos} />
+        <MigrationRepoPicker repos={preview.repos} selected={selectedRepos} onChange={setSelectedRepos} hostedOnly={hostedOnly} />
       )}
       {wantsRepos && !preview && (
         <div style={{ fontSize: 12, color: 'var(--holo-text-faint)', lineHeight: 1.5 }}>
@@ -2785,7 +2797,13 @@ function CreateMigrationJobModal({ onClose, onCreated }: { onClose: () => void; 
         </div>
         <div style={{ fontSize: 12, color: 'var(--holo-text-dim)' }}>
           <b style={{ color: 'var(--holo-text)' }}>Repositories:</b>{' '}
-          {preview ? `${selectedRepos.length} selected` : 'test the connection first'}
+          {!preview
+            ? 'test the connection first'
+            : scopedSelected.length === 0
+              ? 'none selected'
+              : scopedSelected.length <= 3
+                ? scopedSelected.join(', ')
+                : `${scopedSelected.length} selected`}
         </div>
       </div>
     </div>
@@ -2801,6 +2819,8 @@ function CreateMigrationJobModal({ onClose, onCreated }: { onClose: () => void; 
       onFinish={handleFinish}
       finishLabel="Start Migration"
       onValidateStep={validateStep}
+      nextDisabled={(stepIdx) => stepIdx === 0 && !preview && !!form.sourceUrl.trim() && !!form.password.trim()}
+      nextDisabledReason={() => 'Test the connection first'}
       onClose={onClose}
       loading={loading}
       error={error}

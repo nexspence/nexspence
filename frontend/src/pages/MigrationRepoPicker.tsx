@@ -7,6 +7,17 @@ export interface PreviewRepo {
   type: string
 }
 
+export function isHostedRepo(r: PreviewRepo) {
+  return r.type === 'hosted'
+}
+
+/** Drop names the current scope cannot use (proxy/group when only artifacts run). */
+export function scopedRepoSelection(repos: PreviewRepo[], selected: string[], hostedOnly: boolean) {
+  if (!hostedOnly) return selected
+  const hosted = new Set(repos.filter(isHostedRepo).map(r => r.name))
+  return selected.filter(n => hosted.has(n))
+}
+
 /** Block a Repositories/Artifacts job that would otherwise copy the whole instance. */
 export function validateMigrationRepoScope(opts: {
   migrateRepos: boolean
@@ -19,6 +30,9 @@ export function validateMigrationRepoScope(opts: {
   if (!opts.previewed) {
     return 'Test the connection to pick repositories, or uncheck Repositories and Artifacts'
   }
+  if (opts.migrateBlobs && !opts.migrateRepos && opts.previewRepoCount === 0) {
+    return 'No hosted repositories to copy artifacts from'
+  }
   if (opts.previewRepoCount > 0 && opts.selectedCount === 0) {
     return 'Select at least one repository, or uncheck Repositories and Artifacts'
   }
@@ -30,13 +44,20 @@ export function MigrationRepoPicker({
   repos,
   selected,
   onChange,
+  hostedOnly = false,
 }: {
   repos: PreviewRepo[]
   selected: string[]
   onChange: (names: string[]) => void
+  /** Artifacts-only: proxy/group are listed but cannot be chosen. */
+  hostedOnly?: boolean
 }) {
   const [q, setQ] = useState('')
+  const hostedNames = useMemo(() => repos.filter(isHostedRepo).map(r => r.name), [repos])
+  const hostedSet = useMemo(() => new Set(hostedNames), [hostedNames])
+  const canSelect = (r: PreviewRepo) => !hostedOnly || isHostedRepo(r)
   const selectedSet = useMemo(() => new Set(selected), [selected])
+  const selectedSelectable = hostedOnly ? selected.filter(n => hostedSet.has(n)) : selected
   const needle = q.trim().toLowerCase()
   const visible = needle
     ? repos.filter(r =>
@@ -45,22 +66,28 @@ export function MigrationRepoPicker({
         r.type.toLowerCase().includes(needle))
     : repos
 
-  const toggle = (name: string) => {
-    onChange(selectedSet.has(name) ? selected.filter(n => n !== name) : [...selected, name])
+  const toggle = (r: PreviewRepo) => {
+    if (!canSelect(r)) return
+    onChange(selectedSet.has(r.name)
+      ? selectedSelectable.filter(n => n !== r.name)
+      : [...selectedSelectable, r.name])
   }
 
   const selectVisible = () => {
-    const next = new Set(selected)
-    for (const r of visible) next.add(r.name)
+    const next = new Set(selectedSelectable)
+    for (const r of visible) {
+      if (canSelect(r)) next.add(r.name)
+    }
     onChange([...next])
   }
 
-  const clearVisible = () => {
-    const drop = new Set(visible.map(r => r.name))
-    onChange(selected.filter(n => !drop.has(n)))
-  }
+  const clearAll = () => onChange([])
 
-  const selectedGroup = repos.some(r => r.type === 'group' && selectedSet.has(r.name))
+  const hiddenSelected = needle
+    ? selectedSelectable.filter(n => !visible.some(r => r.name === n)).length
+    : 0
+
+  const selectedGroup = !hostedOnly && repos.some(r => r.type === 'group' && selectedSet.has(r.name))
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -69,7 +96,9 @@ export function MigrationRepoPicker({
           Repositories
         </span>
         <span style={{ fontSize: 11, color: 'var(--holo-text-faint)' }}>
-          {selected.length} of {repos.length} selected
+          {hostedOnly
+            ? `${selectedSelectable.length} of ${hostedNames.length} hosted selected`
+            : `${selected.length} of ${repos.length} selected`}
         </span>
       </div>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -81,25 +110,45 @@ export function MigrationRepoPicker({
           aria-label="Filter repositories"
         />
         <HoloButton type="button" onClick={selectVisible}>All</HoloButton>
-        <HoloButton type="button" onClick={clearVisible}>None</HoloButton>
+        <HoloButton type="button" onClick={clearAll}>None</HoloButton>
       </div>
+      {hiddenSelected > 0 && (
+        <div style={{ fontSize: 12, color: 'var(--holo-text-faint)', lineHeight: 1.45 }}>
+          {hiddenSelected} selected {hiddenSelected === 1 ? 'is' : 'are'} hidden by the filter
+        </div>
+      )}
       <div style={{ maxHeight: 200, overflowY: 'auto', border: '1px solid var(--holo-border)', borderRadius: 8, padding: '6px 8px' }}>
         {visible.length === 0 ? (
           <div style={{ fontSize: 12, color: 'var(--holo-text-faint)', padding: 8 }}>No repositories match.</div>
-        ) : visible.map(r => (
-          <label
-            key={r.name}
-            style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--holo-text)', cursor: 'pointer', padding: '3px 2px', fontFamily: 'monospace' }}
-          >
-            <input
-              type="checkbox"
-              checked={selectedSet.has(r.name)}
-              onChange={() => toggle(r.name)}
-            />
-            {r.name} <span style={{ opacity: 0.7, fontFamily: 'inherit' }}>({r.format}/{r.type})</span>
-          </label>
-        ))}
+        ) : visible.map(r => {
+          const enabled = canSelect(r)
+          return (
+            <label
+              key={r.name}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 8, fontSize: 13,
+                color: enabled ? 'var(--holo-text)' : 'var(--holo-text-faint)',
+                cursor: enabled ? 'pointer' : 'default',
+                padding: '3px 2px', fontFamily: 'monospace',
+                opacity: enabled ? 1 : 0.55,
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={enabled && selectedSet.has(r.name)}
+                disabled={!enabled}
+                onChange={() => toggle(r)}
+              />
+              {r.name} <span style={{ opacity: 0.7, fontFamily: 'inherit' }}>({r.format}/{r.type})</span>
+            </label>
+          )
+        })}
       </div>
+      {hostedOnly && (
+        <div style={{ fontSize: 12, color: 'var(--holo-text-faint)', lineHeight: 1.45 }}>
+          Artifacts copy only from hosted repositories. Proxy and group cannot be selected.
+        </div>
+      )}
       {selectedGroup && (
         <div style={{ fontSize: 12, color: 'var(--holo-text-faint)', lineHeight: 1.45 }}>
           Groups have no artifacts of their own; selecting one also migrates its members.

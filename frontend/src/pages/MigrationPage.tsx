@@ -1,10 +1,10 @@
 import { useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowRightLeft, Play, Pause, RefreshCw, Plus, PlugZap } from 'lucide-react'
+import { ArrowRightLeft, Play, Pause, RefreshCw, Plus } from 'lucide-react'
 import { nexspenceApi, apiErrorMessage } from '@/api/client'
 import { HoloCard, HoloButton, HoloPill, HoloInput, HoloModal } from '@/components/holo'
 import { type MigrationJob, shouldPollJobs } from './migrationJobs'
-import { MigrationRepoPicker, validateMigrationRepoScope, type PreviewRepo } from './MigrationRepoPicker'
+import { MigrationRepoPicker, isHostedRepo, scopedRepoSelection, validateMigrationRepoScope, type PreviewRepo } from './MigrationRepoPicker'
 
 const STATUS_STYLE: Record<string, { bg: string; color: string }> = {
   pending:   { bg: 'rgba(245,158,11,0.15)',  color: '#f59e0b' },
@@ -80,7 +80,6 @@ export default function MigrationPage() {
             return (
               <HoloCard key={job.id} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <ArrowRightLeft size={15} style={{ color: 'var(--holo-text-faint)', flexShrink: 0 }} />
                   <span style={{ flex: 1, fontSize: 14, fontWeight: 600, color: 'var(--holo-text)', fontFamily: 'monospace', wordBreak: 'break-all' }}>{job.sourceUrl}</span>
                   <HoloPill style={{ background: STATUS_STYLE[job.status]?.bg ?? STATUS_STYLE.pending.bg, color: STATUS_STYLE[job.status]?.color ?? STATUS_STYLE.pending.color, fontSize: 11, fontWeight: 600 }}>{job.status}</HoloPill>
                 </div>
@@ -214,7 +213,7 @@ function CreateMigrationModal({ onClose, onCreated }: { onClose: () => void; onC
       if (seq !== testReqSeq.current) return // a field changed since this test started
       const result = data as PreviewResult
       setPreview(result)
-      setSelectedRepos((result.repos ?? []).map(r => r.name))
+      setSelectedRepos([])
     } catch (err) {
       if (seq !== testReqSeq.current) return
       setPreviewError(apiErrorMessage(err, 'Could not reach that Nexus'))
@@ -231,12 +230,18 @@ function CreateMigrationModal({ onClose, onCreated }: { onClose: () => void; onC
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
+    if (!preview) {
+      setError('Test the connection before starting')
+      return
+    }
+    const hostedOnly = scope.migrateBlobs && !scope.migrateRepos
+    const scopedSelected = scopedRepoSelection(preview.repos, selectedRepos, hostedOnly)
     const repoErr = validateMigrationRepoScope({
       migrateRepos: scope.migrateRepos,
       migrateBlobs: scope.migrateBlobs,
-      previewed: !!preview,
-      previewRepoCount: preview?.repos.length ?? 0,
-      selectedCount: selectedRepos.length,
+      previewed: true,
+      previewRepoCount: hostedOnly ? preview.repos.filter(isHostedRepo).length : preview.repos.length,
+      selectedCount: scopedSelected.length,
     })
     if (repoErr) {
       setError(repoErr)
@@ -250,7 +255,7 @@ function CreateMigrationModal({ onClose, onCreated }: { onClose: () => void; onC
         scope: {
           ...scope,
           userRealms,
-          ...(preview ? { repositories: selectedRepos } : {}),
+          ...(preview ? { repositories: scopedSelected } : {}),
         },
       })
       onCreated()
@@ -270,7 +275,7 @@ function CreateMigrationModal({ onClose, onCreated }: { onClose: () => void; onC
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <HoloInput style={{ flex: 1 }} placeholder="https://nexus.example.com" value={form.sourceUrl} onChange={set('sourceUrl')} required />
             <HoloButton type="button" onClick={handleTest} disabled={testing || !form.sourceUrl}>
-              <PlugZap size={14} /> {testing ? 'Testing…' : 'Test connection'}
+              {testing ? 'Testing…' : 'Test connection'}
             </HoloButton>
           </div>
         </div>
@@ -282,7 +287,7 @@ function CreateMigrationModal({ onClose, onCreated }: { onClose: () => void; onC
             </div>
             {(scope.migrateRepos || scope.migrateBlobs) && preview.repos.length > 0 && (
               <div style={{ marginTop: 10, color: 'var(--holo-text)' }}>
-                <MigrationRepoPicker repos={preview.repos} selected={selectedRepos} onChange={setSelectedRepos} />
+                <MigrationRepoPicker repos={preview.repos} selected={selectedRepos} onChange={setSelectedRepos} hostedOnly={scope.migrateBlobs && !scope.migrateRepos} />
               </div>
             )}
           </div>
@@ -332,7 +337,7 @@ function CreateMigrationModal({ onClose, onCreated }: { onClose: () => void; onC
         {error && <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 8, padding: '10px 12px', color: '#fca5a5', fontSize: 13 }}>{error}</div>}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 8 }}>
           <HoloButton type="button" onClick={onClose}>Cancel</HoloButton>
-          <HoloButton type="submit" variant="primary" disabled={loading}>{loading ? 'Starting…' : 'Start Migration'}</HoloButton>
+          <HoloButton type="submit" variant="primary" disabled={loading || !preview}>{loading ? 'Starting…' : 'Start Migration'}</HoloButton>
         </div>
       </form>
     </HoloModal>

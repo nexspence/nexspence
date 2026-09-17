@@ -10,6 +10,9 @@ export interface WizardProps {
   onFinish: () => void | Promise<void>
   finishLabel?: string
   onValidateStep?: (stepIndex: number) => boolean | Promise<boolean>
+  /** When true, Next/Finish cannot be clicked. Re-evaluated on every render. */
+  nextDisabled?: (stepIndex: number) => boolean
+  nextDisabledReason?: (stepIndex: number) => string | undefined
   onClose: () => void
   loading?: boolean
   error?: string
@@ -20,6 +23,8 @@ export function Wizard({
   onFinish,
   finishLabel = 'Create',
   onValidateStep,
+  nextDisabled,
+  nextDisabledReason,
   onClose,
   loading,
   error,
@@ -100,7 +105,8 @@ export function Wizard({
             type="button"
             className="holo-btn holo-btn--primary"
             onClick={handleNext}
-            disabled={!!loading}
+            disabled={!!loading || !!nextDisabled?.(step)}
+            title={nextDisabled?.(step) ? nextDisabledReason?.(step) : undefined}
           >
             {loading ? 'Loading…' : step === total - 1 ? finishLabel : 'Next →'}
           </button>

@@ -1260,6 +1260,8 @@ func TestNexusMigration_BlobsOnlyCopiesIntoExistingHosted(t *testing.T) {
 	done := h.waitForStatus(t, job.ID, domain.MigrationDone)
 	assert.Zero(t, done.ErrorCount)
 	assert.Equal(t, int64(1), done.DoneAssets)
+	assert.Equal(t, 1, done.TotalRepos)
+	assert.Equal(t, 1, done.DoneRepos)
 
 	stored, err := h.assets.GetByPath(context.Background(), "raw-hosted", "/a.txt")
 	require.NoError(t, err)

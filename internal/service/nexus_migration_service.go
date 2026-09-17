@@ -946,6 +946,10 @@ func (s *NexusMigrationService) migrateAssets(ctx context.Context, client *nexus
 	hosted []migratedRepo, p *progress,
 ) error {
 	bg := context.Background()
+	blobsOnly := p.totalRepos == 0
+	if blobsOnly {
+		p.setTotals(bg, len(hosted), p.totalAssets)
+	}
 
 	for _, m := range hosted {
 		if err := checkPaused(ctx); err != nil {
@@ -954,6 +958,10 @@ func (s *NexusMigrationService) migrateAssets(ctx context.Context, client *nexus
 		planned, err := s.planAssets(ctx, client, m, p)
 		if err != nil {
 			p.fail(bg, "repository %q: listing components: %v", m.src.Name, err)
+			if blobsOnly {
+				p.doneRepos++
+				p.flush(bg)
+			}
 			continue
 		}
 		p.setTotals(bg, p.totalRepos, p.totalAssets+int64(len(planned)))
@@ -967,6 +975,10 @@ func (s *NexusMigrationService) migrateAssets(ctx context.Context, client *nexus
 				continue
 			}
 			p.doneAssets++
+			p.flush(bg)
+		}
+		if blobsOnly {
+			p.doneRepos++
 			p.flush(bg)
 		}
 	}
