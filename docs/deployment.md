@@ -153,7 +153,7 @@ uses OSV.dev and works with nothing installed.
 | `http.cors_origins` | `[]` | Origins allowed to read API responses from a browser. Empty sends no CORS header — correct when the bundled UI shares this origin. `["*"]` lets any site read responses; opt in only for a public instance. |
 | `database.dsn` | `postgres://nexspence:nexspence@localhost:5437/nexspence` | PostgreSQL connection string |
 | `storage.default_type` | `local` | `local`, `s3` or `azure`. Anything else is refused at startup — a typo used to fall back to `local` while the configured bucket or container stayed empty. Switching this on an installation that already holds blobs needs a migration — see [Switching an existing installation to Azure](#switching-an-existing-installation-to-azure). |
-| `storage.local.base_path` | `./data/blobs` | Filesystem path for local blob store |
+| `storage.local.base_path` | `./data/blobs` | Filesystem path for the default local blob store. Additional local stores created in the UI must live under this directory — on Kubernetes it is the blob PVC (`storage.local.mountPath`); a path outside it lands on the read-only container root. |
 | `storage.s3.bucket` | — | S3 bucket name (required when type=s3) |
 | `storage.s3.endpoint` | — | S3 endpoint URL (e.g. `http://minio:9000`) |
 | `storage.s3.force_path_style` | `true` | Required for MinIO / non-AWS S3 |

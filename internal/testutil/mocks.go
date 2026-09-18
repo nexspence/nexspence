@@ -177,6 +177,9 @@ type BlobStoreRepo struct {
 	// Err, when non-nil, is what Create returns — a blob store's name is its
 	// key here and in postgres, where Update cannot rename one.
 	Err error
+	// DeleteErr, when non-nil, is what Delete returns without removing the
+	// store — the seam for a foreign-key conflict the postgres impl translates.
+	DeleteErr error
 }
 
 func NewBlobStoreRepo(stores ...*domain.BlobStore) *BlobStoreRepo {
@@ -243,6 +246,9 @@ func (b *BlobStoreRepo) Update(_ context.Context, s *domain.BlobStore) error {
 func (b *BlobStoreRepo) Delete(_ context.Context, name string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if b.DeleteErr != nil {
+		return b.DeleteErr
+	}
 	delete(b.stores, name)
 	return nil
 }
@@ -1148,6 +1154,24 @@ func (a *AssetRepo) CountByBlobKeyInStore(_ context.Context, blobKey, blobStoreI
 	n := 0
 	for _, v := range a.byID {
 		if v.BlobKey == blobKey && v.BlobStoreID == blobStoreID {
+			n++
+		}
+	}
+	return n, nil
+}
+
+// CountByBlobStoreID mirrors the postgres count used to refuse deleting a
+// store that still holds artifacts — including group members whose repository
+// points at the group, not at this store.
+func (a *AssetRepo) CountByBlobStoreID(_ context.Context, blobStoreID string) (int, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.Err != nil {
+		return 0, a.Err
+	}
+	n := 0
+	for _, v := range a.byID {
+		if v.BlobStoreID == blobStoreID {
 			n++
 		}
 	}

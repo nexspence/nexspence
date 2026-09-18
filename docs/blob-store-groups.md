@@ -49,6 +49,18 @@ Assign the group to a repository just like any other blob store — use the grou
 - **`used_bytes` is per-member** — the group's `usedBytes` field in the list API is 0; use the `/api/v1/blob-stores/:name/usage` endpoint to see aggregate and per-member usage.
 - **Migration** — existing artifacts in member stores are not rebalanced when a group is created or when members are added/removed.
 
+## Deleting a blob store
+
+A blob store can be deleted only when nothing still uses it:
+
+- it is not a member of a group blob store
+- no repository has it as `blob_store_id`
+- no asset still lives on it (group members can hold artifacts even when the repository points at the group)
+
+Otherwise `DELETE /service/rest/v1/blobstores/{name}` returns **409 Conflict** with a message that names the blocker. Blob-store *migration history* does **not** block deletion: those rows are an audit trail (repository name, status, timestamps, byte counters) and stay after the store is gone, with the store reference set to empty.
+
+Deleting a blob store removes the catalog row only. Blobs already on the backing disk, bucket or container are left in place — run Compact (garbage collection) first if you want unreferenced objects removed from storage.
+
 ## Quota and 507 behaviour
 
 `write_to_first_fill`: if the currently active member's quota is full, the next member is tried. If **all** members are at capacity, the upload is rejected with HTTP **507 Insufficient Storage**.

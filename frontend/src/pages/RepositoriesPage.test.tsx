@@ -77,10 +77,9 @@ describe('RepositoriesPage', () => {
     expect(screen.getByText('npm-proxy')).toBeInTheDocument()
     expect(screen.getByText('docker-group')).toBeInTheDocument()
     expect(screen.getByText('3 total')).toBeInTheDocument()
-    // type pills
-    expect(screen.getByText('Hosted')).toBeInTheDocument()
-    expect(screen.getByText('Proxy')).toBeInTheDocument()
-    expect(screen.getByText('Group')).toBeInTheDocument()
+    expect(screen.getAllByText('Hosted').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Proxy').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Group').length).toBeGreaterThan(0)
     // description shown
     expect(screen.getByText('Main maven repo')).toBeInTheDocument()
   })
@@ -92,6 +91,19 @@ describe('RepositoriesPage', () => {
     await user.type(screen.getByPlaceholderText('Filter by name…'), 'npm')
     await waitFor(() => expect(screen.queryByText('maven-hosted')).not.toBeInTheDocument())
     expect(screen.getByText('npm-proxy')).toBeInTheDocument()
+  })
+
+  it('filters by type via the Type control', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<RepositoriesPage />)
+    await screen.findByText('maven-hosted')
+    await user.click(screen.getByRole('radio', { name: 'Proxy' }))
+    expect(screen.getByText('npm-proxy')).toBeInTheDocument()
+    expect(screen.queryByText('maven-hosted')).not.toBeInTheDocument()
+    expect(screen.queryByText('docker-group')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('radio', { name: 'All' }))
+    expect(screen.getByText('maven-hosted')).toBeInTheDocument()
+    expect(screen.getByText('docker-group')).toBeInTheDocument()
   })
 
   it('filters by format via the Select dropdown', async () => {

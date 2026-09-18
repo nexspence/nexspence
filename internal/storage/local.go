@@ -12,6 +12,11 @@ import (
 	"syscall"
 )
 
+// DefaultLocalBasePath is the filesystem root used when storage.local.base_path
+// (or a store's path) is empty. Kept here so config does not import this
+// package — that import would cycle through factory.go.
+const DefaultLocalBasePath = "./data/blobs"
+
 // LocalBlobStore stores blobs as files under a base directory.
 // Key "ab/cd/abcdef123..." maps to <basePath>/ab/cd/abcdef123...
 type LocalBlobStore struct {

@@ -32,7 +32,7 @@ func TestNewBlobStoreFromConfig_LocalExplicit(t *testing.T) {
 func TestNewBlobStoreFromConfig_LocalEmptyPath_UsesDefault(t *testing.T) {
 	cfg := &nexspencecfg.Config{}
 	cfg.Storage.DefaultType = "local"
-	cfg.Storage.Local.BasePath = "" // uses ./data/blobs fallback
+	cfg.Storage.Local.BasePath = "" // uses DefaultLocalBasePath fallback
 	bs, err := storage.NewBlobStoreFromConfig(context.Background(), cfg)
 	require.NoError(t, err)
 	require.NotNil(t, bs)

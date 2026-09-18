@@ -3,6 +3,7 @@ package handlers_test
 import (
 	"encoding/json"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 
@@ -12,6 +13,7 @@ import (
 
 	"github.com/nexspence-oss/nexspence/internal/api/handlers"
 	"github.com/nexspence-oss/nexspence/internal/domain"
+	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/service"
 	"github.com/nexspence-oss/nexspence/internal/testutil"
 )
@@ -102,7 +104,7 @@ func TestBlobStore_Get_NotFound_404(t *testing.T) {
 func TestBlobStore_Create_Local_Success(t *testing.T) {
 	r, repo, _, _, _ := mountBlobStores(t)
 	rec := do(t, r, http.MethodPost, "/service/rest/v1/blobstores/local",
-		map[string]any{"name": "new-local", "config": map[string]any{"path": "/tmp/x"}})
+		map[string]any{"name": "new-local", "config": map[string]any{"path": t.TempDir()}})
 	require.Equal(t, http.StatusCreated, rec.Code)
 	var got domain.BlobStore
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
@@ -140,7 +142,7 @@ func TestBlobStore_Create_EmptyName_400(t *testing.T) {
 func TestBlobStore_Update_Success(t *testing.T) {
 	r, repo, _, _, _ := mountBlobStores(t, &domain.BlobStore{ID: "a", Name: "store-a", Type: "local"})
 	rec := do(t, r, http.MethodPut, "/service/rest/v1/blobstores/local/store-a",
-		map[string]any{"config": map[string]any{"path": "/new/path"}})
+		map[string]any{"config": map[string]any{"path": t.TempDir()}})
 	require.Equal(t, http.StatusOK, rec.Code)
 	updated, _ := repo.Get(testContext(), "store-a")
 	require.NotNil(t, updated)
@@ -177,6 +179,47 @@ func TestBlobStore_Delete_NotPresent_204(t *testing.T) {
 	r, _, _, _, _ := mountBlobStores(t)
 	rec := do(t, r, http.MethodDelete, "/service/rest/v1/blobstores/ghost", nil)
 	assert.Equal(t, http.StatusNoContent, rec.Code)
+}
+
+func TestBlobStore_Delete_LinkedRepository_409(t *testing.T) {
+	store := &domain.BlobStore{ID: "a", Name: "store-a", Type: "local"}
+	r, _, repoRepo, _, _ := mountBlobStores(t, store)
+	bsID := store.ID
+	require.NoError(t, repoRepo.Create(testContext(), &domain.Repository{
+		Name: "maven-central", Format: domain.FormatMaven2, Type: domain.TypeHosted,
+		BlobStoreID: &bsID,
+	}))
+
+	rec := do(t, r, http.MethodDelete, "/service/rest/v1/blobstores/store-a", nil)
+	require.Equal(t, http.StatusConflict, rec.Code, "body=%s", rec.Body.String())
+	assert.Contains(t, rec.Body.String(), "maven-central")
+	assert.NotContains(t, rec.Body.String(), "23503")
+}
+
+func TestBlobStore_Delete_LinkedAssets_409(t *testing.T) {
+	store := &domain.BlobStore{ID: "a", Name: "store-a", Type: "local"}
+	r, _, _, assetRepo, _ := mountBlobStores(t, store)
+	require.NoError(t, assetRepo.Create(testContext(), &domain.Asset{
+		ComponentID: "c1", RepositoryID: "r1", Repository: "other-repo",
+		Path: "/f.bin", BlobKey: "k", BlobStoreID: store.ID, SizeBytes: 1,
+	}))
+
+	rec := do(t, r, http.MethodDelete, "/service/rest/v1/blobstores/store-a", nil)
+	require.Equal(t, http.StatusConflict, rec.Code, "body=%s", rec.Body.String())
+	assert.Contains(t, rec.Body.String(), "asset")
+	assert.NotContains(t, rec.Body.String(), "23503")
+}
+
+func TestBlobStore_Delete_InUseError_409(t *testing.T) {
+	store := &domain.BlobStore{ID: "a", Name: "store-a", Type: "local"}
+	r, blobRepo, _, _, _ := mountBlobStores(t, store)
+	blobRepo.DeleteErr = &repository.InUseError{Constraint: "assets_blob_store_id_fkey"}
+
+	rec := do(t, r, http.MethodDelete, "/service/rest/v1/blobstores/store-a", nil)
+	require.Equal(t, http.StatusConflict, rec.Code, "body=%s", rec.Body.String())
+	assert.Contains(t, rec.Body.String(), "artifact")
+	assert.NotContains(t, rec.Body.String(), "23503")
+	assert.NotContains(t, rec.Body.String(), "assets_blob_store_id_fkey")
 }
 
 // ── Presign / Lifecycle (mock store is not PresignableStore → 400) ───────────
@@ -291,6 +334,81 @@ func TestBlobStore_TestConnection_Local_OK(t *testing.T) {
 	var resp map[string]any
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 	assert.Equal(t, true, resp["ok"])
+}
+
+func TestBlobStore_Create_Local_UnwritablePath_400(t *testing.T) {
+	r, _, _, _, _ := mountBlobStores(t)
+	rec := do(t, r, http.MethodPost, "/service/rest/v1/blobstores/local",
+		map[string]any{"name": "bad-local", "config": map[string]any{"path": unwritableDir(t)}})
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "not writable")
+}
+
+func TestBlobStore_Update_Local_UnwritablePath_400(t *testing.T) {
+	old := t.TempDir()
+	r, repo, _, _, _ := mountBlobStores(t, &domain.BlobStore{
+		ID: "a", Name: "store-a", Type: "local",
+		Config: map[string]any{"path": old},
+	})
+	rec := do(t, r, http.MethodPut, "/service/rest/v1/blobstores/local/store-a",
+		map[string]any{"config": map[string]any{"path": unwritableDir(t)}})
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "not writable")
+	stored, _ := repo.Get(testContext(), "store-a")
+	require.NotNil(t, stored)
+	assert.Equal(t, old, stored.Config["path"])
+}
+
+func TestBlobStore_Update_Local_UnchangedUnreachablePath_QuotaSucceeds(t *testing.T) {
+	const unreachable = "/nonexistent/nxs-unwritable-mount"
+	quota := int64(42)
+	r, repo, _, _, _ := mountBlobStores(t, &domain.BlobStore{
+		ID: "a", Name: "store-a", Type: "local",
+		Config: map[string]any{"path": unreachable},
+	})
+	rec := do(t, r, http.MethodPut, "/service/rest/v1/blobstores/local/store-a",
+		map[string]any{"quotaBytes": quota, "config": map[string]any{"path": unreachable}})
+	require.Equal(t, http.StatusOK, rec.Code)
+	updated, _ := repo.Get(testContext(), "store-a")
+	require.NotNil(t, updated)
+	require.NotNil(t, updated.QuotaBytes)
+	assert.Equal(t, quota, *updated.QuotaBytes)
+	assert.Equal(t, unreachable, updated.Config["path"])
+}
+
+func TestBlobStore_Update_EmptyTypeTreatedAsLocal_RejectsUnwritablePath(t *testing.T) {
+	r, _, _, _, _ := mountBlobStores(t, &domain.BlobStore{
+		ID: "a", Name: "store-a", Type: "",
+		Config: map[string]any{"path": t.TempDir()},
+	})
+	rec := do(t, r, http.MethodPut, "/service/rest/v1/blobstores/local/store-a",
+		map[string]any{"config": map[string]any{"path": unwritableDir(t)}})
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestBlobStore_TestConnection_Local_ExistingUnwritable_NotOK(t *testing.T) {
+	r, _, _, _, _ := mountBlobStores(t)
+	rec := do(t, r, http.MethodPost, "/api/v1/blobstores/test",
+		map[string]any{"type": "local", "config": map[string]any{"path": unwritableDir(t)}})
+	require.Equal(t, http.StatusOK, rec.Code)
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	assert.Equal(t, false, resp["ok"])
+	assert.NotEmpty(t, resp["error"])
+}
+
+func unwritableDir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	require.NoError(t, os.Chmod(dir, 0o555))
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+	f, err := os.CreateTemp(dir, "probe-*")
+	if err == nil {
+		_ = f.Close()
+		_ = os.Remove(f.Name())
+		t.Skip("directory is still writable after chmod 0555")
+	}
+	return dir
 }
 
 func TestBlobStore_TestConnection_S3_MissingBucket_NotOK(t *testing.T) {

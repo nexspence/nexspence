@@ -140,6 +140,16 @@ helm install nexspence \
 
 ---
 
+## Adding further local blob stores
+
+The chart mounts the blob PVC at `storage.local.mountPath` (default `/blobs`)
+and the container root filesystem is otherwise read-only. Additional local blob
+stores created in the UI must use a path under that mount; a path such as
+`/app/data/blobs/<name>` lands on the read-only root and the first upload
+fails.
+
+---
+
 ## S3 / MinIO Blob Store
 
 Set `storage.type=s3` and provide bucket + endpoint. Use this

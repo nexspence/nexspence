@@ -32,7 +32,13 @@ describe('AdminPage — Info tab', () => {
   it('renders status, system info and service connections', async () => {
     server.use(
       http.get('/service/rest/v1/status', () => HttpResponse.json({ status: 'ok', edition: 'OSS', version: '1.9.0' })),
-      http.get('/api/v1/system/info', () => HttpResponse.json({ version: '1.9.0', product: 'Nexspence' })),
+      http.get('/api/v1/system/info', () =>
+        HttpResponse.json({
+          version: '1.9.0',
+          product: 'Nexspence',
+          storage: { default_type: 'local', local: { base_path: './data/blobs' } },
+        }),
+      ),
       http.get('/api/v1/system/services', () =>
         HttpResponse.json([
           { name: 'PostgreSQL', status: 'ok', latency_ms: 12, detail: 'connected', checked_at: new Date().toISOString() },
@@ -279,6 +285,27 @@ describe('AdminPage — Blob Stores tab', () => {
     await waitFor(() => expect(deleted).toBe(true))
   })
 
+  it('detail modal: shows the 409 delete error from the API', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    server.use(
+      http.get('/service/rest/v1/blobstores', () => HttpResponse.json([blobStore])),
+      http.get('/api/v1/blob-stores/:name/usage', () =>
+        HttpResponse.json({ store: blobStore, linkedRepositories: [], totalAssetBytes: 0 }),
+      ),
+      http.delete('/service/rest/v1/blobstores/:name', () =>
+        HttpResponse.json(
+          { error: 'blob store "default" still holds 3 assets — migrate those artifacts to another store or delete them first' },
+          { status: 409 },
+        ),
+      ),
+    )
+    renderAdmin('blobs')
+    fireEvent.click(await screen.findByText('default'))
+    await screen.findByText('Blob Store: default')
+    fireEvent.click(await screen.findByRole('button', { name: /Delete/ }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(/still holds 3 assets/)
+  })
+
   it('detail modal: shows group members for group type', async () => {
     const group = { ...blobStore, type: 'group', config: { fill_policy: 'round_robin' } }
     server.use(
@@ -319,6 +346,32 @@ describe('AdminPage — Blob Stores tab', () => {
     await user.click(screen.getByRole('button', { name: /^Create$/ }))
     await waitFor(() => expect(posted).toBeTruthy())
     expect(posted!.name).toBe('newstore')
+  })
+
+  it('create modal: local path follows server base path and name until edited', async () => {
+    const user = userEvent.setup()
+    server.use(
+      http.get('/service/rest/v1/blobstores', () => HttpResponse.json([])),
+      http.get('/api/v1/system/info', () =>
+        HttpResponse.json({
+          version: '1.9.0',
+          product: 'Nexspence',
+          storage: { default_type: 'local', local: { base_path: '/blobs' } },
+        }),
+      ),
+    )
+    renderAdmin('blobs')
+    await screen.findByText('No blob stores configured')
+    await user.click(screen.getAllByRole('button', { name: /New Blob Store/ })[0])
+    await screen.findByRole('heading', { name: 'New Blob Store' })
+    expect(await screen.findByDisplayValue('/blobs/')).toBeInTheDocument()
+    expect(screen.getByText(/This server stores blobs under \/blobs/)).toBeInTheDocument()
+    await user.type(screen.getByPlaceholderText('e.g. fast-ssd'), 'fast-ssd')
+    expect(screen.getByDisplayValue('/blobs/fast-ssd')).toBeInTheDocument()
+    fireEvent.change(screen.getByDisplayValue('/blobs/fast-ssd'), { target: { value: '/mnt/other' } })
+    await user.type(screen.getByPlaceholderText('e.g. fast-ssd'), '2')
+    expect(screen.getByDisplayValue('/mnt/other')).toBeInTheDocument()
+    expect(screen.queryByDisplayValue('/blobs/fast-ssd2')).not.toBeInTheDocument()
   })
 
   it('create modal: test connection for local store', async () => {

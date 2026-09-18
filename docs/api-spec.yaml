@@ -796,6 +796,17 @@ paths:
         - { name: name, in: path, required: true, schema: { type: string } }
       responses:
         '204': { description: Deleted }
+        '409':
+          description: >
+            The blob store is still in use — as a group member, as a
+            repository's blob_store_id, or by remaining assets. The error
+            body names what blocks deletion and what to do about it.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error: { type: string }
 
   /service/rest/v1/blobstores/{name}/quota-status:
     get:

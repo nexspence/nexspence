@@ -521,3 +521,88 @@ func TestBlobStoreRepo_UpdateUsedBytes_UnknownName_NoError(t *testing.T) {
 		t.Fatalf("UpdateUsedBytes(missing): unexpected error: %v", err)
 	}
 }
+
+func TestBlobStoreRepo_Delete_SurvivesOrphanedMigrationHistory(t *testing.T) {
+	// The original bug: a finished migration row pinned the target store via
+	// blob_store_migrations_target_store_id_fkey even after the repository was
+	// gone. After migration 034 the store deletes and the history row stays,
+	// with the store reference SET NULL.
+	pool := pgtest.Pool(t)
+	pgtest.Truncate(t, pool, "blob_store_migrations", "repositories", "blob_stores")
+	ctx := context.Background()
+	bsRepo := NewBlobStoreRepo(pool)
+	migRepo := NewBlobStoreMigrationRepo(pool)
+	repoRepo := NewRepositoryRepo(pool)
+
+	src := makeLocalBS("hist_src")
+	dst := makeLocalBS("hist_dst")
+	insertBS(t, ctx, bsRepo, src)
+	insertBS(t, ctx, bsRepo, dst)
+
+	r := makeRepo("hist_repo", domain.FormatRaw, domain.TypeHosted, strPtr(src.ID))
+	if err := repoRepo.Create(ctx, r); err != nil {
+		t.Fatalf("create repository: %v", err)
+	}
+
+	m := &domain.BlobStoreMigration{
+		RepositoryName: r.Name, SourceStoreID: src.ID, TargetStoreID: dst.ID, Status: "pending",
+	}
+	if err := migRepo.Create(ctx, m); err != nil {
+		t.Fatalf("create migration: %v", err)
+	}
+	if err := migRepo.FinishMigration(ctx, m.ID, "done", nil); err != nil {
+		t.Fatalf("finish migration: %v", err)
+	}
+
+	if err := repoRepo.Delete(ctx, r.Name); err != nil {
+		t.Fatalf("delete repository: %v", err)
+	}
+
+	if err := bsRepo.Delete(ctx, dst.Name); err != nil {
+		t.Fatalf("delete target store: %v", err)
+	}
+
+	got, err := migRepo.Get(ctx, m.ID)
+	if err != nil {
+		t.Fatalf("Get migration after store delete: %v", err)
+	}
+	if got.RepositoryName != r.Name {
+		t.Errorf("repository_name: got %q, want %q", got.RepositoryName, r.Name)
+	}
+	if got.Status != "done" {
+		t.Errorf("status: got %q, want done", got.Status)
+	}
+	if got.TargetStoreID != "" {
+		t.Errorf("target_store_id: got %q, want empty after SET NULL", got.TargetStoreID)
+	}
+	if got.CreatedAt.IsZero() || got.UpdatedAt.IsZero() {
+		t.Error("timestamps must survive the store delete")
+	}
+}
+
+func TestBlobStoreRepo_Delete_ReferencedByRepository_IsInUse(t *testing.T) {
+	pool := pgtest.Pool(t)
+	pgtest.Truncate(t, pool, "repositories", "blob_stores")
+	ctx := context.Background()
+	bsRepo := NewBlobStoreRepo(pool)
+	repoRepo := NewRepositoryRepo(pool)
+
+	bs := makeLocalBS("inuse_bs")
+	insertBS(t, ctx, bsRepo, bs)
+	r := makeRepo("inuse_repo", domain.FormatRaw, domain.TypeHosted, strPtr(bs.ID))
+	if err := repoRepo.Create(ctx, r); err != nil {
+		t.Fatalf("create repository: %v", err)
+	}
+
+	err := bsRepo.Delete(ctx, bs.Name)
+	if !errors.Is(err, repository.ErrInUse) {
+		t.Fatalf("Delete: want ErrInUse, got %v", err)
+	}
+	var inUse *repository.InUseError
+	if !errors.As(err, &inUse) {
+		t.Fatalf("Delete: want InUseError, got %T", err)
+	}
+	if inUse.Constraint != "repositories_blob_store_id_fkey" {
+		t.Errorf("constraint: got %q, want repositories_blob_store_id_fkey", inUse.Constraint)
+	}
+}

@@ -320,7 +320,7 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 	accessGraphH := handlers.NewAccessGraphHandler(userRepo, roleRepo, privilegeRepo, csRepo)
 	rrSvc := service.NewRoutingRuleService(rrRepo)
 	rrH := handlers.NewRoutingRuleHandler(rrSvc)
-	systemH := handlers.NewSystemHandler(cfg, pool, ldapSvc, oidcSvc).WithBlobStores(blobRepo).WithSAML(samlSvc).WithLogger(log)
+	systemH := handlers.NewSystemHandler(cfg, pool, ldapSvc, oidcSvc).WithBlobStores(blobRepo).WithSAML(samlSvc).WithLogger(log).WithVersion(version)
 	nexusMigSvc := service.NewNexusMigrationService(service.NexusMigrationConfig{
 		Jobs:          migrationRepo,
 		Repos:         repoSvc,
@@ -532,11 +532,6 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 		publicRead.GET("/service/rest/v1/search/assets", componentH.SearchAssets)
 		publicRead.GET("/service/rest/v1/search/assets/download", componentH.SearchAssetsDownload)
 
-		// ── Metrics (authenticated) ───────────────────────────
-		authed.GET("/api/v1/metrics", handlers.MetricsHandler(pool))
-		authed.GET("/api/v1/metrics/history", handlers.HistoryHandler())
-		authed.GET("/api/v1/metrics/repos", handlers.ReposHandler(pool, log))
-
 		// ── API tokens (current user) ─────────────────────────
 		authed.GET("/api/v1/tokens", tokenH.List)
 		authed.POST("/api/v1/tokens", tokenH.Create)
@@ -558,23 +553,6 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 		// ── Cleanup policies (read) ───────────────────────────
 		authed.GET("/service/rest/v1/cleanup-policies", cleanupH.List)
 		authed.GET("/service/rest/v1/cleanup-policies/:id", cleanupH.Get)
-
-		// ── Roles (read) ──────────────────────────────────────
-		authed.GET("/service/rest/v1/security/roles", roleH.List)
-
-		// ── Privileges (read) ─────────────────────────────────
-		authed.GET("/service/rest/v1/security/privileges", privH.List)
-		authed.GET("/service/rest/v1/security/privileges/:id", privH.Get)
-		authed.GET("/service/rest/v1/security/roles/:id/privileges", privH.ListRolePrivileges)
-		authed.GET("/api/v1/security/privilege-role-map", privH.RoleMap)
-
-		// ── Content Selectors (read) ──────────────────────────
-		authed.GET("/service/rest/v1/security/content-selectors", csH.List)
-		authed.GET("/service/rest/v1/security/content-selectors/:id", csH.Get)
-
-		// ── Replication rules (read) ──────────────────────────
-		authed.GET("/api/v1/replication/rules", replH.List)
-		authed.GET("/api/v1/replication/rules/:id/history", replH.ListHistory)
 
 		// ── Promotion (authed) ──────────────────────────────────────
 		authed.GET("/api/v1/promotion/rules", promotionH.ListRules)
@@ -629,19 +607,32 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 		admin.POST("/service/rest/v1/cleanup-policies/:id/run", cleanupH.Run)
 		admin.POST("/api/v1/cleanup-policies/:id/preview", cleanupH.Preview)
 
-		// ── Roles (write) ─────────────────────────────────────
+		// ── Roles (read + write) ───────────────────────────────
+		// List moved here from `authed`: no non-admin frontend caller needs the
+		// role catalog (only SecurityPage/UsersPage, both admin-only pages) —
+		// pentest 2026-09-18 found any authenticated user could read it.
+		admin.GET("/service/rest/v1/security/roles", roleH.List)
 		admin.POST("/service/rest/v1/security/roles", roleH.Create)
 		admin.PUT("/service/rest/v1/security/roles/:id", roleH.Update)
 		admin.DELETE("/service/rest/v1/security/roles/:id", roleH.Delete)
 		admin.PUT("/service/rest/v1/security/users/:userId/roles", roleH.SetUserRoles)
 
-		// ── Privileges (write) ────────────────────────────────
+		// ── Privileges (read + write) ──────────────────────────
+		// Reads moved here from `authed` for the same reason as Roles above —
+		// same pentest finding, same "only SecurityPage" usage.
+		admin.GET("/service/rest/v1/security/privileges", privH.List)
+		admin.GET("/service/rest/v1/security/privileges/:id", privH.Get)
+		admin.GET("/service/rest/v1/security/roles/:id/privileges", privH.ListRolePrivileges)
+		admin.GET("/api/v1/security/privilege-role-map", privH.RoleMap)
 		admin.POST("/service/rest/v1/security/privileges", privH.Create)
 		admin.PUT("/service/rest/v1/security/privileges/:id", privH.Update)
 		admin.DELETE("/service/rest/v1/security/privileges/:id", privH.Delete)
 		admin.PUT("/service/rest/v1/security/roles/:id/privileges", privH.SetRolePrivileges)
 
-		// ── Content Selectors (write) ─────────────────────────
+		// ── Content Selectors (read + write) ───────────────────
+		// Reads moved here from `authed`: only SecurityPage calls them.
+		admin.GET("/service/rest/v1/security/content-selectors", csH.List)
+		admin.GET("/service/rest/v1/security/content-selectors/:id", csH.Get)
 		admin.POST("/service/rest/v1/security/content-selectors", csH.Create)
 		admin.PUT("/service/rest/v1/security/content-selectors/:id", csH.Update)
 		admin.DELETE("/service/rest/v1/security/content-selectors/:id", csH.Delete)
@@ -659,7 +650,12 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 		admin.DELETE("/api/v1/webhooks/:id", webhookH.Delete)
 		admin.POST("/api/v1/webhooks/:id/test", webhookH.Test)
 
-		// ── Replication rules (write) ─────────────────────────
+		// ── Replication rules (read + write) ──────────────────
+		// Reads moved here from `authed` — pentest 2026-09-18 (F2): only
+		// AdminPage calls listReplicationRules/history, no non-admin need,
+		// and target rules can name internal remote registries.
+		admin.GET("/api/v1/replication/rules", replH.List)
+		admin.GET("/api/v1/replication/rules/:id/history", replH.ListHistory)
 		admin.POST("/api/v1/replication/rules", replH.Create)
 		admin.PUT("/api/v1/replication/rules/:id", replH.Update)
 		admin.DELETE("/api/v1/replication/rules/:id", replH.Delete)
@@ -686,6 +682,12 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 		admin.GET("/api/v1/security/scanner", scanH.ScannerStatus)
 
 		// ── System ────────────────────────────────────────────
+		// Metrics moved here from `authed` — pentest 2026-09-18 (F3): the
+		// JSON dashboard metrics are only rendered inside MonitoringPage,
+		// nested under the /admin route; no non-admin caller exists.
+		admin.GET("/api/v1/metrics", handlers.MetricsHandler(pool))
+		admin.GET("/api/v1/metrics/history", handlers.HistoryHandler())
+		admin.GET("/api/v1/metrics/repos", handlers.ReposHandler(pool, log))
 		admin.GET("/service/rest/v1/tasks", tasksH.List)
 		admin.POST("/service/rest/v1/tasks/:id/run", tasksH.Run)
 		admin.GET("/service/rest/v1/security/ldap", ldapH.NexusList)
@@ -718,12 +720,7 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 		admin.POST("/api/v1/repositories/import", backupH.ImportRepo)
 
 		// System info + service health
-		admin.GET("/api/v1/system/info", func(c *gin.Context) {
-			c.JSON(http.StatusOK, gin.H{
-				"version": version,
-				"product": "Nexspence",
-			})
-		})
+		admin.GET("/api/v1/system/info", systemH.Info)
 		admin.GET("/api/v1/system/services", systemH.Services)
 	}
 
