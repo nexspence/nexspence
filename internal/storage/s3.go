@@ -244,6 +244,24 @@ func blobKeyFromObjectKey(objKey string) string {
 
 // ListEntries returns every object's blob key, size and last-modified time.
 func (s *S3BlobStore) ListEntries(ctx context.Context) ([]BlobEntry, error) {
+	return s.listEntries(ctx, nil)
+}
+
+// ListEntriesWithPrefix implements storage.PrefixListableStore: like
+// ListEntries, but scoped to logical keys starting with prefix, using S3's own
+// native Prefix filter instead of listing the whole bucket. objectKey shards
+// every key the same way regardless of its length, so shard(prefix) is the
+// correct native prefix for every real key that starts with prefix — e.g.
+// every "backups/..." key shards under the fixed "ba/ck/" pair, since the
+// shard is derived from the key's own first four characters.
+func (s *S3BlobStore) ListEntriesWithPrefix(ctx context.Context, prefix string) ([]BlobEntry, error) {
+	objPrefix := s.objectKey(prefix)
+	return s.listEntries(ctx, &objPrefix)
+}
+
+// listEntries backs both ListEntries and ListEntriesWithPrefix. objectPrefix,
+// when non-nil, is passed straight to S3 as the native listing Prefix.
+func (s *S3BlobStore) listEntries(ctx context.Context, objectPrefix *string) ([]BlobEntry, error) {
 	var entries []BlobEntry
 	// A chunked OCI upload session's real activity — every AppendBlob call —
 	// only ever rewrites the .append-meta side-object (saveAppendState),
@@ -257,6 +275,7 @@ func (s *S3BlobStore) ListEntries(ctx context.Context) ([]BlobEntry, error) {
 	metaModTimes := make(map[string]time.Time)
 	paginator := s3.NewListObjectsV2Paginator(s.client, &s3.ListObjectsV2Input{
 		Bucket: aws.String(s.bucket),
+		Prefix: objectPrefix,
 	})
 	for paginator.HasMorePages() {
 		page, err := paginator.NextPage(ctx)

@@ -390,9 +390,26 @@ func (s *AzureBlobStore) ListKeys(ctx context.Context) ([]string, error) {
 // correlating .append-meta activity so GC never age-gates on a session's
 // placeholder blob — see the matching comment in s3.go.
 func (s *AzureBlobStore) ListEntries(ctx context.Context) ([]BlobEntry, error) {
+	return s.listEntries(ctx, nil)
+}
+
+// ListEntriesWithPrefix implements storage.PrefixListableStore: like
+// ListEntries, but scoped to logical keys starting with prefix, using Azure's
+// own native Prefix filter instead of listing the whole container. objectKey
+// shards every key the same way regardless of its length, so shard(prefix) is
+// the correct native prefix for every real key that starts with prefix —
+// exactly like the S3 backend, see the matching comment there.
+func (s *AzureBlobStore) ListEntriesWithPrefix(ctx context.Context, prefix string) ([]BlobEntry, error) {
+	objPrefix := s.objectKey(prefix)
+	return s.listEntries(ctx, &objPrefix)
+}
+
+// listEntries backs both ListEntries and ListEntriesWithPrefix. objectPrefix,
+// when non-nil, is passed straight to Azure as the native listing Prefix.
+func (s *AzureBlobStore) listEntries(ctx context.Context, objectPrefix *string) ([]BlobEntry, error) {
 	var entries []BlobEntry
 	metaModTimes := make(map[string]time.Time)
-	pager := s.container.NewListBlobsFlatPager(nil)
+	pager := s.container.NewListBlobsFlatPager(&container.ListBlobsFlatOptions{Prefix: objectPrefix})
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {

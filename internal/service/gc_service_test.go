@@ -114,6 +114,24 @@ func TestGC_OldOrphanCollectedByMinAge(t *testing.T) {
 	assert.False(t, bs.Has("old"))
 }
 
+func TestGC_ScheduledBackupSurvivesPastMinAge(t *testing.T) {
+	assets := testutil.NewAssetRepo()
+	bs := testutil.NewBlobStore()
+	ctx := context.Background()
+	// "backups/" mirrors backup_scheduled.go's own unexported backupKeyPrefix
+	// — scheduled backups (spec 37) are written with no asset row of their
+	// own by design, so without GC's explicit skip this key would look
+	// exactly like any other orphan once it ages past MinAge.
+	require.NoError(t, bs.Put(ctx, "backups/nexspence-backup-20260918-120000.tar.gz", bytes.NewReader([]byte("archive")), 7))
+	bs.SetMTime("backups/nexspence-backup-20260918-120000.tar.gz", time.Now().Add(-48*time.Hour))
+
+	svc := buildGC(assets, bs)
+	result, err := svc.CompactStore(ctx, "default", service.GCOptions{MinAge: 24 * time.Hour})
+	require.NoError(t, err)
+	assert.Equal(t, 0, result.Orphans, "a scheduled backup must never be collected as an orphan")
+	assert.True(t, bs.Has("backups/nexspence-backup-20260918-120000.tar.gz"))
+}
+
 func TestGC_CompactAllIteratesStores(t *testing.T) {
 	assets := testutil.NewAssetRepo()
 	bs := testutil.NewBlobStore()

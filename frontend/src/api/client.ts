@@ -110,6 +110,21 @@ export interface ImportRepoStats {
   conflictMode: string
 }
 
+// Mirrors domain.BackupSettings (internal/domain/types.go).
+export interface BackupSettings {
+  enabled: boolean
+  scheduleCron: string
+  blobStoreId?: string
+  retentionCount: number
+  lastRunAt?: string
+  lastRunKey?: string
+  lastRunError?: string
+  updatedAt?: string
+}
+
+// PUT body: only the editable fields — LastRun* is server-owned.
+export type BackupSettingsInput = Pick<BackupSettings, 'enabled' | 'scheduleCron' | 'blobStoreId' | 'retentionCount'>
+
 export interface BlobStoreMigration {
   id: string;
   repositoryName: string;
@@ -433,6 +448,11 @@ export const nexspenceApi = {
     fd.append('file', file)
     return apiClient.post<{ restored: Record<string, number> }>('/api/v1/backup/restore', fd)
   },
+
+  // Scheduled backup config — see handlers/backup.go Settings/UpdateSettings
+  getBackupSettings: () => apiClient.get<BackupSettings>('/api/v1/backup/settings'),
+  updateBackupSettings: (settings: BackupSettingsInput) =>
+    apiClient.put<void>('/api/v1/backup/settings', settings),
 
   exportRepo: (name: string) =>
     apiClient.get(`/api/v1/repositories/${encodeURIComponent(name)}/export`, { responseType: 'blob' }),

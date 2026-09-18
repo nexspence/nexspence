@@ -279,8 +279,45 @@ func (s *LocalBlobStore) ListKeys(_ context.Context) ([]string, error) {
 
 // ListEntries walks the store and returns each blob's key, size and mtime.
 func (s *LocalBlobStore) ListEntries(_ context.Context) ([]BlobEntry, error) {
+	return s.walkEntries(s.basePath)
+}
+
+// ListEntriesWithPrefix implements storage.PrefixListableStore: like
+// ListEntries, but scoped to logical keys starting with prefix. keyPath shards
+// every key ≥ 4 chars under a fixed two-level directory derived from its own
+// first four characters, so every real key starting with prefix (≥ 4 chars)
+// lives under exactly one shard subdirectory — e.g. every "backups/..." key
+// under <basePath>/ba/ck/ — letting this walk just that one directory instead
+// of the whole tree. Falls back to a full walk + filter for a prefix shorter
+// than 4 chars (not a case any current caller hits, but kept correct).
+func (s *LocalBlobStore) ListEntriesWithPrefix(_ context.Context, prefix string) ([]BlobEntry, error) {
+	root := s.basePath
+	if len(prefix) >= 4 {
+		root = filepath.Join(s.basePath, prefix[:2], prefix[2:4])
+	}
+	entries, err := s.walkEntries(root)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	filtered := entries[:0]
+	for _, e := range entries {
+		if strings.HasPrefix(e.Key, prefix) {
+			filtered = append(filtered, e)
+		}
+	}
+	return filtered, nil
+}
+
+// walkEntries walks root (a store's base directory, or one of its shard
+// subdirectories) and returns each blob's key, size and mtime. Keys are
+// always resolved relative to the store's own basePath, regardless of where
+// the walk started, so a shard-scoped walk still returns real logical keys.
+func (s *LocalBlobStore) walkEntries(root string) ([]BlobEntry, error) {
 	var entries []BlobEntry
-	err := filepath.WalkDir(s.basePath, func(path string, d fs.DirEntry, err error) error {
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return err
 		}

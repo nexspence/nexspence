@@ -43,7 +43,8 @@ func (s *BackupService) writeBlobEntries(ctx context.Context, tw *tar.Writer, as
 			continue
 		}
 		seen[a.BlobKey] = true
-		rc, size, err := s.BlobStore.Get(ctx, a.BlobKey)
+		store := s.storeFor(ctx, a.BlobStoreID)
+		rc, size, err := store.Get(ctx, a.BlobKey)
 		if err != nil {
 			continue
 		}

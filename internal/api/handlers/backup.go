@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/service"
 )
 
@@ -118,4 +119,45 @@ func (h *BackupHandler) ImportRepo(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"imported": stats})
+}
+
+// Settings serves GET /api/v1/backup/settings — the scheduled-backup config.
+func (h *BackupHandler) Settings(c *gin.Context) {
+	if h.svc.Settings == nil {
+		c.JSON(http.StatusOK, domain.BackupSettings{ScheduleCron: "0 3 * * *", RetentionCount: 7})
+		return
+	}
+	s, err := h.svc.Settings.Get(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, s)
+}
+
+// UpdateSettings serves PUT /api/v1/backup/settings. Saving reloads the cron
+// entry immediately — no restart needed for a schedule/destination change.
+func (h *BackupHandler) UpdateSettings(c *gin.Context) {
+	if h.svc.Settings == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "scheduled backup is not configured on this instance"})
+		return
+	}
+	var s domain.BackupSettings
+	if err := c.ShouldBindJSON(&s); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if s.RetentionCount < 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "retentionCount must be >= 0"})
+		return
+	}
+	if err := h.svc.Settings.Upsert(c.Request.Context(), &s); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := h.svc.ReloadSchedule(c.Request.Context()); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "saved, but schedule is invalid: " + err.Error()})
+		return
+	}
+	c.Status(http.StatusNoContent)
 }

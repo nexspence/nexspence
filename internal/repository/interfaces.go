@@ -243,6 +243,20 @@ type CleanupPolicyRepo interface {
 	Delete(ctx context.Context, id string) error
 }
 
+// BackupSettingsRepo persists the singleton scheduled-backup config (spec 37).
+type BackupSettingsRepo interface {
+	// Get always returns a value — the column defaults when the singleton row
+	// has never been written (Enabled=false, so a fresh instance never backs
+	// up until an admin opts in).
+	Get(ctx context.Context) (*domain.BackupSettings, error)
+	// Upsert replaces the editable fields (enabled, scheduleCron, blobStoreId,
+	// retentionCount). Leaves LastRun* untouched — edited via RecordRun only,
+	// so saving the form never wipes run history.
+	Upsert(ctx context.Context, s *domain.BackupSettings) error
+	// RecordRun persists the outcome of a scheduled run. runErr empty means success.
+	RecordRun(ctx context.Context, at time.Time, key, runErr string) error
+}
+
 // AuditQuery holds filter and pagination parameters for AuditRepo.List/Stream.
 type AuditQuery struct {
 	Domain   string     // empty = any

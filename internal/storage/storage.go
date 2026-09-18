@@ -66,6 +66,21 @@ type PresignableStore interface {
 	ConfigureLifecycle(ctx context.Context, expirationDays int32) error
 }
 
+// PrefixListableStore is an optional extension of BlobStore for backends that
+// can filter ListEntries natively by key prefix, instead of listing the whole
+// store and filtering client-side. Check with a type assertion:
+// pl, ok := store.(storage.PrefixListableStore)
+//
+// It exists for callers that only care about one namespace within a store
+// otherwise shared with unrelated product data — e.g. scheduled backups'
+// retention cleanup (spec 37), which would otherwise re-list an entire
+// production bucket on every run just to find its own "backups/" entries.
+type PrefixListableStore interface {
+	// ListEntriesWithPrefix returns every blob whose logical key starts with
+	// prefix, with the same size/mtime semantics as ListEntries.
+	ListEntriesWithPrefix(ctx context.Context, prefix string) ([]BlobEntry, error)
+}
+
 // AppendableBlobStore is an optional extension of BlobStore for backends that
 // can grow a blob in place, without reading back what is already stored.
 // Check with a type assertion: as, ok := store.(storage.AppendableBlobStore)

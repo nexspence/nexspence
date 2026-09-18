@@ -93,6 +93,86 @@ func TestBackup_ExportRestoreRoundtrip(t *testing.T) {
 	assert.Equal(t, int64(len(blobContent)), size)
 }
 
+// TestBackup_ExportRestore_NonDefaultBlobStore is the regression test for the
+// spec 37 fix: before it, Export/Restore always read/wrote through the fixed
+// BlobStore field, silently dropping (Export) or misplacing (Restore) any
+// asset whose blob actually lives in a different physical store (S3/Azure, or
+// any store that isn't the instance default) — the same class of bug already
+// fixed for Cleanup/GC/Replication. Put the blob ONLY in a secondary store,
+// never in svc.BlobStore, wire a Resolver that points at it, and confirm the
+// roundtrip still finds and restores the real bytes.
+func TestBackup_ExportRestore_NonDefaultBlobStore(t *testing.T) {
+	ctx := context.Background()
+	repo := testutil.SimpleRepo("s3repo", "raw")
+
+	src := buildBackupSvc(repo)
+	secondary := testutil.NewBlobStore()
+	src.Resolver = testutil.NewFakeResolver(secondary)
+
+	bs := &domain.BlobStore{ID: "bs-s3-secondary", Name: "s3-secondary", Type: "s3", Config: map[string]any{"bucket": "other"}}
+	require.NoError(t, src.BlobStores.Create(ctx, bs))
+
+	blobKey := "ab/cd/nondefault"
+	blobContent := []byte("lives-in-a-different-store")
+	// Deliberately NOT written to src.BlobStore — only to the resolved store,
+	// exactly like a real asset backed by a non-default blob store.
+	require.NoError(t, secondary.Put(ctx, blobKey, bytes.NewReader(blobContent), int64(len(blobContent))))
+
+	comp := &domain.Component{RepositoryID: repo.ID, Repository: repo.Name, Format: "raw", Name: "f.txt", Version: "1"}
+	require.NoError(t, src.Components.Create(ctx, comp))
+	asset := &domain.Asset{
+		ComponentID: comp.ID, RepositoryID: repo.ID, Repository: repo.Name,
+		Path: "/f.txt", BlobKey: blobKey, BlobStoreID: bs.ID,
+		SizeBytes: int64(len(blobContent)), ContentType: "text/plain",
+	}
+	require.NoError(t, src.Assets.Create(ctx, asset))
+
+	var buf bytes.Buffer
+	require.NoError(t, src.Export(ctx, &buf))
+
+	// Confirm the archive actually contains the blob entry — this is exactly
+	// what the old code silently skipped (Get against the wrong store failed,
+	// writeBlobEntries treated that as "unreadable, omit").
+	gr, err := gzip.NewReader(bytes.NewReader(buf.Bytes()))
+	require.NoError(t, err)
+	tr := tar.NewReader(gr)
+	found := false
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		if hdr.Name == "blobs/"+blobKey {
+			found = true
+			data, _ := io.ReadAll(tr)
+			assert.Equal(t, blobContent, data)
+		}
+	}
+	assert.True(t, found, "archive must contain the blob even though it lives in a non-default store")
+
+	// Restore into a fresh destination that also only has the secondary store
+	// resolvable — proves the write side targets the resolved store too.
+	dst := buildBackupSvc(testutil.SimpleRepo("s3repo", "raw"))
+	dstSecondary := testutil.NewBlobStore()
+	dst.Resolver = testutil.NewFakeResolver(dstSecondary)
+	require.NoError(t, dst.BlobStores.Create(ctx, bs))
+
+	stats, err := dst.Restore(ctx, &buf)
+	require.NoError(t, err)
+	assert.Equal(t, 1, stats.Blobs)
+
+	// The bytes must have landed in the resolved (secondary) store, not the
+	// instance default — which never receives a Put in this test at all.
+	rc, size, err := dstSecondary.Get(ctx, blobKey)
+	require.NoError(t, err, "blob must be written to the resolved destination store")
+	defer rc.Close()
+	assert.Equal(t, int64(len(blobContent)), size)
+
+	_, _, err = dst.BlobStore.Get(ctx, blobKey)
+	assert.Error(t, err, "blob must NOT be written to the instance default store")
+}
+
 func TestBackup_RestoreSkipsExistingRecords(t *testing.T) {
 	ctx := context.Background()
 	repo := testutil.SimpleRepo("repo1", "raw")

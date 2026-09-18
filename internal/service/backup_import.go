@@ -338,10 +338,13 @@ func (s *BackupService) importRepoAssets(ctx context.Context, assets []domain.As
 			}
 		}
 
-		// Restore blob bytes, streamed from the spool rather than held in memory.
+		// Restore blob bytes, streamed from the spool rather than held in
+		// memory, to the asset's actual destination store — not always the
+		// instance default (spec 37 fix; was previously always s.BlobStore).
 		if a.BlobKey != "" {
 			if rc, size, ok := arc.openBlob(a.BlobKey); ok {
-				_ = s.BlobStore.Put(ctx, a.BlobKey, rc, size)
+				store := s.storeFor(ctx, blobStoreID)
+				_ = store.Put(ctx, a.BlobKey, rc, size)
 				_ = rc.Close()
 			}
 		}
@@ -565,10 +568,13 @@ func (s *BackupService) restoreAssets(ctx context.Context, assets []domain.Asset
 			}
 		}
 
-		// Restore blob bytes, streamed from the spool rather than held in memory.
+		// Restore blob bytes, streamed from the spool rather than held in
+		// memory, to the asset's actual destination store — not always the
+		// instance default (spec 37 fix; was previously always s.BlobStore).
 		if a.BlobKey != "" {
 			if rc, size, ok := arc.openBlob(a.BlobKey); ok {
-				_ = s.BlobStore.Put(ctx, a.BlobKey, rc, size)
+				store := s.storeFor(ctx, newBSID)
+				_ = store.Put(ctx, a.BlobKey, rc, size)
 				_ = rc.Close()
 				stats.Blobs++
 			}

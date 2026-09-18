@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, lazy, Suspense } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Activity, Archive, ArrowRightLeft, ArrowUpCircle, CheckCircle, ChevronDown, ChevronUp, Database, Download, ExternalLink, GitBranch, HardDrive, Info, Network, Paperclip, Pause, Pencil, Play, Plus, RefreshCw, Share2, Shield, Trash2, Upload, Wifi, X } from 'lucide-react'
-import { nexusApi, nexspenceApi, apiClient, apiErrorMessage, ImportRepoStats, ServiceStatus, RoutingRule, RoutingRuleInput, ReplicationRule, ReplicationHistory, ReplicationRuleInput, AuthConfig } from '@/api/client'
+import { Activity, Archive, ArrowRightLeft, ArrowUpCircle, CheckCircle, ChevronDown, ChevronUp, Clock, Database, Download, ExternalLink, GitBranch, HardDrive, Info, Network, Paperclip, Pause, Pencil, Play, Plus, RefreshCw, Share2, Shield, Trash2, Upload, Wifi, X } from 'lucide-react'
+import { nexusApi, nexspenceApi, apiClient, apiErrorMessage, ImportRepoStats, ServiceStatus, RoutingRule, RoutingRuleInput, ReplicationRule, ReplicationHistory, ReplicationRuleInput, AuthConfig, BackupSettings, BackupSettingsInput } from '@/api/client'
 const MonitoringView = lazy(() => import('@/pages/MonitoringPage').then(m => ({ default: m.MonitoringView })))
 import { Select } from '@/components/Select'
 import { Truncated } from '@/components/Truncated'
@@ -1044,6 +1044,13 @@ export default function AdminPage() {
   const [restoreBusy, setRestoreBusy] = useState(false)
   const [restoreResult, setRestoreResult] = useState<Record<string, number> | null>(null)
   const [restoreError, setRestoreError] = useState('')
+  const [bsEnabled, setBsEnabled] = useState(false)
+  const [bsSchedule, setBsSchedule] = useState('0 3 * * *')
+  const [bsBlobStoreId, setBsBlobStoreId] = useState('')
+  const [bsRetention, setBsRetention] = useState(7)
+  const [bsSaving, setBsSaving] = useState(false)
+  const [bsSaveError, setBsSaveError] = useState('')
+  const [bsSaveOk, setBsSaveOk] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const importFileRef = useRef<HTMLInputElement>(null)
   const [editingQuota, setEditingQuota] = useState<string | null>(null) // blob store id
@@ -1110,6 +1117,41 @@ export default function AdminPage() {
     queryKey: ['blobstores'],
     queryFn: () => nexusApi.listBlobStores().then(r => r.data),
   })
+
+  const { data: backupSettings, refetch: refetchBackupSettings } = useQuery<BackupSettings>({
+    queryKey: ['backup-settings'],
+    queryFn: () => nexspenceApi.getBackupSettings().then(r => r.data),
+    enabled: tab === 'backup',
+  })
+
+  useEffect(() => {
+    if (!backupSettings) return
+    setBsEnabled(backupSettings.enabled)
+    setBsSchedule(backupSettings.scheduleCron || '0 3 * * *')
+    setBsBlobStoreId(backupSettings.blobStoreId || '')
+    setBsRetention(backupSettings.retentionCount ?? 7)
+  }, [backupSettings])
+
+  const handleSaveBackupSettings = async () => {
+    setBsSaving(true)
+    setBsSaveError('')
+    setBsSaveOk(false)
+    try {
+      const input: BackupSettingsInput = {
+        enabled: bsEnabled,
+        scheduleCron: bsSchedule,
+        blobStoreId: bsBlobStoreId || undefined,
+        retentionCount: bsRetention,
+      }
+      await nexspenceApi.updateBackupSettings(input)
+      setBsSaveOk(true)
+      await refetchBackupSettings()
+    } catch (e) {
+      setBsSaveError(apiErrorMessage(e, 'Failed to save scheduled backup settings'))
+    } finally {
+      setBsSaving(false)
+    }
+  }
 
   const { data: info } = useQuery<SystemInfo>({
     queryKey: ['systemInfo'],
@@ -1340,6 +1382,63 @@ export default function AdminPage() {
                   </span>
                 ))}
               </div>
+            </div>
+          )}
+        </HoloCard>
+
+        {/* ── Scheduled Backup ── */}
+        <HoloCard style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+            <Clock size={15} style={{ color: 'var(--holo-text-dim)' }} />
+            <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--holo-text)' }}>Scheduled Backup</span>
+          </div>
+          <p style={{ fontSize: 12, color: 'var(--holo-text-faint)', margin: 0 }}>
+            Runs a full export on a cron schedule and writes it to a chosen blob store — create a dedicated
+            store above first (not assigned to any repository) if you want backups kept separate from artifact storage.
+          </p>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--holo-text)' }}>
+            <input type="checkbox" checked={bsEnabled} onChange={e => setBsEnabled(e.target.checked)} style={{ accentColor: '#3b82f6', width: 14, height: 14 }} />
+            Enabled
+          </label>
+          <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' as const }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 160 }}>
+              <span style={{ fontSize: 11, color: 'var(--holo-text-faint)' }}>Cron schedule</span>
+              <HoloInput value={bsSchedule} onChange={e => setBsSchedule(e.target.value)} placeholder="0 3 * * *" style={{ fontFamily: 'monospace' }} />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 200 }}>
+              <span style={{ fontSize: 11, color: 'var(--holo-text-faint)' }}>Destination blob store</span>
+              <select className="holo-input" value={bsBlobStoreId} onChange={e => setBsBlobStoreId(e.target.value)}>
+                <option value="">Select a blob store…</option>
+                {blobs.filter(s => s.type !== 'group').map(s => (
+                  <option key={s.id} value={s.id}>{s.name} ({s.type})</option>
+                ))}
+              </select>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 100 }}>
+              <span style={{ fontSize: 11, color: 'var(--holo-text-faint)' }}>Keep last N</span>
+              <HoloInput type="number" min={0} value={bsRetention} onChange={e => setBsRetention(Number(e.target.value))} />
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            <HoloButton variant="primary" onClick={handleSaveBackupSettings} disabled={bsSaving || (bsEnabled && !bsBlobStoreId)}>
+              {bsSaving ? 'Saving…' : 'Save'}
+            </HoloButton>
+            {bsSaveOk && <span style={{ fontSize: 12, color: 'var(--holo-green)' }}>Saved</span>}
+          </div>
+          {bsEnabled && !bsBlobStoreId && (
+            <span style={{ fontSize: 12, color: 'var(--holo-text-faint)' }}>Pick a destination blob store to enable scheduling.</span>
+          )}
+          {bsSaveError && (
+            <div role="alert" style={{ background: 'rgba(255,107,107,0.08)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, padding: '10px 14px', color: 'var(--holo-red)', fontSize: 13 }}>
+              {bsSaveError}
+            </div>
+          )}
+          {(backupSettings?.lastRunAt || backupSettings?.lastRunError) && (
+            <div style={{ fontSize: 12, color: 'var(--holo-text-faint)' }}>
+              Last run: {backupSettings.lastRunAt ? new Date(backupSettings.lastRunAt).toLocaleString() : '—'}
+              {backupSettings.lastRunError
+                ? <span style={{ color: 'var(--holo-red)' }}> — failed: {backupSettings.lastRunError}</span>
+                : backupSettings.lastRunKey ? <span> — {backupSettings.lastRunKey}</span> : null}
             </div>
           )}
         </HoloCard>

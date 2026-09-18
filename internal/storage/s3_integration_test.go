@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -215,6 +216,27 @@ func TestS3BlobStore_ListKeys(t *testing.T) {
 	for _, k := range keys {
 		assert.Contains(t, all, k)
 	}
+}
+
+func TestS3BlobStore_ListEntriesWithPrefix(t *testing.T) {
+	bs := minioPool(t)
+	ctx := context.Background()
+	require.NoError(t, bs.Put(ctx, "backups/nexspence-backup-prefixtest-1.tar.gz", bytes.NewReader([]byte("archive1")), 8))
+	require.NoError(t, bs.Put(ctx, "backups/nexspence-backup-prefixtest-2.tar.gz", bytes.NewReader([]byte("archive2")), 8))
+	// Control key: a normal, non-backup blob real product code would write —
+	// must never show up in a "backups/"-scoped listing.
+	require.NoError(t, bs.Put(ctx, "cc00dd1122334455prefixtest", bytes.NewReader([]byte("unrelated")), 9))
+
+	entries, err := bs.ListEntriesWithPrefix(ctx, "backups/")
+	require.NoError(t, err)
+	var keys []string
+	for _, e := range entries {
+		keys = append(keys, e.Key)
+		assert.True(t, strings.HasPrefix(e.Key, "backups/"), "every returned entry must actually match the requested prefix, got %q", e.Key)
+	}
+	assert.Contains(t, keys, "backups/nexspence-backup-prefixtest-1.tar.gz")
+	assert.Contains(t, keys, "backups/nexspence-backup-prefixtest-2.tar.gz")
+	assert.NotContains(t, keys, "cc00dd1122334455prefixtest")
 }
 
 func TestS3BlobStore_UsedBytes(t *testing.T) {

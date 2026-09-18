@@ -103,6 +103,7 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 	componentRepo := postgres.NewComponentRepo(pool)
 	assetRepo := postgres.NewAssetRepo(pool)
 	cleanupRepo := postgres.NewCleanupPolicyRepo(pool)
+	backupSettingsRepo := postgres.NewBackupSettingsRepo(pool)
 	auditRepo := postgres.NewAuditRepo(pool)
 	userTokenRepo := postgres.NewUserTokenRepo(pool)
 	webhookRepo := postgres.NewWebhookRepo(pool)
@@ -377,7 +378,10 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 		Components: componentRepo,
 		Assets:     assetRepo,
 		BlobStore:  localBlob,
+		Resolver:   blobRegistry,
 	}
+	backupSvc.WithSettings(backupSettingsRepo).WithLocker(locker).WithLogger(log).WithAudit(auditRepo)
+	safego.Go(log, "backup-scheduler", func() { backupSvc.StartScheduler(ctx) })
 	backupH := handlers.NewBackupHandler(backupSvc)
 	rbacMW := handlers.RBACMiddleware(rbacSvc, repoRepo)
 
@@ -732,6 +736,8 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 		// ── Backup / Restore (full system) ───────────────────────
 		admin.GET("/api/v1/backup/export", backupH.Export)
 		admin.POST("/api/v1/backup/restore", backupH.Restore)
+		admin.GET("/api/v1/backup/settings", backupH.Settings)
+		admin.PUT("/api/v1/backup/settings", backupH.UpdateSettings)
 
 		// ── Per-repository Export / Import ───────────────────────
 		admin.GET("/api/v1/repositories/:name/export", backupH.ExportRepo)

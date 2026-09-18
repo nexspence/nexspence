@@ -520,6 +520,20 @@ type CleanupPolicy struct {
 	UpdatedAt       time.Time      `json:"updatedAt"`
 }
 
+// BackupSettings is the (singleton) config for scheduled full-instance
+// backups. Retrieved via BackupSettingsRepo.Get, which always returns a
+// value (column defaults) even before the row has ever been written.
+type BackupSettings struct {
+	Enabled        bool       `json:"enabled"`
+	ScheduleCron   string     `json:"scheduleCron"`
+	BlobStoreID    string     `json:"blobStoreId,omitempty"`
+	RetentionCount int        `json:"retentionCount"`
+	LastRunAt      *time.Time `json:"lastRunAt,omitempty"`
+	LastRunKey     string     `json:"lastRunKey,omitempty"`
+	LastRunError   string     `json:"lastRunError,omitempty"`
+	UpdatedAt      time.Time  `json:"updatedAt"`
+}
+
 // CleanupPreviewAsset is a single asset returned by PreviewPolicy.
 type CleanupPreviewAsset struct {
 	Path           string     `json:"path"`

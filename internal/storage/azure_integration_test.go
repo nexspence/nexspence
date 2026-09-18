@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -204,6 +205,27 @@ func TestAzure_ListEntries_ModTime(t *testing.T) {
 	assert.WithinDuration(t, time.Now(), placeholder, 2*time.Minute,
 		"entry ModTime should reflect the fresh .append-meta touch")
 	require.NoError(t, bs.AbortAppend(ctx, "mod10001"))
+}
+
+func TestAzure_ListEntriesWithPrefix(t *testing.T) {
+	bs := azuriteStore(t)
+	ctx := context.Background()
+	require.NoError(t, bs.Put(ctx, "backups/nexspence-backup-prefixtest-1.tar.gz", bytes.NewReader([]byte("archive1")), 8))
+	require.NoError(t, bs.Put(ctx, "backups/nexspence-backup-prefixtest-2.tar.gz", bytes.NewReader([]byte("archive2")), 8))
+	// Control key: a normal, non-backup blob real product code would write —
+	// must never show up in a "backups/"-scoped listing.
+	require.NoError(t, bs.Put(ctx, "cc00dd1122334455prefixtest", bytes.NewReader([]byte("unrelated")), 9))
+
+	entries, err := bs.ListEntriesWithPrefix(ctx, "backups/")
+	require.NoError(t, err)
+	var keys []string
+	for _, e := range entries {
+		keys = append(keys, e.Key)
+		assert.True(t, strings.HasPrefix(e.Key, "backups/"), "every returned entry must actually match the requested prefix, got %q", e.Key)
+	}
+	assert.Contains(t, keys, "backups/nexspence-backup-prefixtest-1.tar.gz")
+	assert.Contains(t, keys, "backups/nexspence-backup-prefixtest-2.tar.gz")
+	assert.NotContains(t, keys, "cc00dd1122334455prefixtest")
 }
 
 func TestAzure_Presign_Get_Put(t *testing.T) {

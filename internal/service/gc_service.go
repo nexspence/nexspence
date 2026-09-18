@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/robfig/cron/v3"
@@ -247,6 +248,14 @@ func (s *BlobGCService) compact(ctx context.Context, name, storeID, physicalID s
 		}
 		if referenced.has(storeID, physicalID, e.Key) {
 			continue // still referenced in this store
+		}
+		// Scheduled backups (spec 37) are written straight to the store with
+		// no asset row of their own by design — that's what makes them
+		// invisible to GC's own retention/rotation, not a leak. Without this
+		// skip, every backup archive ages into an "orphan" and GC deletes it
+		// out from under backup_settings.retention_count (#490 review).
+		if strings.HasPrefix(e.Key, backupKeyPrefix) {
+			continue
 		}
 		// Age gate: skip blobs younger than the grace period (may be an
 		// in-flight upload whose asset row is not committed yet).

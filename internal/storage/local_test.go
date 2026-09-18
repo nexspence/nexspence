@@ -249,6 +249,33 @@ func TestLocalBlobStore_ListEntries(t *testing.T) {
 	assert.LessOrEqual(t, time.Since(e.ModTime), time.Minute, "mod time must be recent")
 }
 
+func TestLocalBlobStore_ListEntriesWithPrefix(t *testing.T) {
+	store := newLocal(t)
+	ctx := context.Background()
+	require.NoError(t, store.Put(ctx, "backups/nexspence-backup-1.tar.gz", bytes.NewReader([]byte("archive1")), 8))
+	require.NoError(t, store.Put(ctx, "backups/nexspence-backup-2.tar.gz", bytes.NewReader([]byte("archive2")), 8))
+	require.NoError(t, store.Put(ctx, "abcdef01", bytes.NewReader([]byte("hello")), 5)) // unrelated, different shard
+
+	entries, err := store.ListEntriesWithPrefix(ctx, "backups/")
+	require.NoError(t, err)
+	require.Len(t, entries, 2, "must return only the backups/ entries, not the unrelated key")
+	keys := []string{entries[0].Key, entries[1].Key}
+	assert.Contains(t, keys, "backups/nexspence-backup-1.tar.gz")
+	assert.Contains(t, keys, "backups/nexspence-backup-2.tar.gz")
+}
+
+func TestLocalBlobStore_ListEntriesWithPrefix_NoMatches_ShardDirAbsent(t *testing.T) {
+	store := newLocal(t)
+	ctx := context.Background()
+	require.NoError(t, store.Put(ctx, "abcdef01", bytes.NewReader([]byte("hello")), 5))
+
+	// "backups/" shards to a "ba/ck/" directory this store never created —
+	// must report "no entries", not bubble up the underlying ENOENT.
+	entries, err := store.ListEntriesWithPrefix(ctx, "backups/")
+	require.NoError(t, err)
+	assert.Empty(t, entries)
+}
+
 func TestLocalBlobStore_UsedBytes_Empty(t *testing.T) {
 	store := newLocal(t)
 	n, err := store.UsedBytes(context.Background())
