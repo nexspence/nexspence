@@ -140,14 +140,22 @@ func (s *UserService) loginLDAP(ctx context.Context, username, password string, 
 		return "", nil, fmt.Errorf("%w: user account is not active", ErrInvalidInput)
 	}
 
-	if lu.GroupSearchErr != "" {
-		s.log.Warnw("ldap group search failed", "username", username, "err", lu.GroupSearchErr)
-	}
 	s.log.Infow("ldap user authenticated", "username", username, "ldap_groups", lu.Groups, "user_dn", lu.DN)
 
 	// Best-effort: sync roles from LDAP groups (by name, role_mappings, admin_group).
-	if err := s.syncLDAPRoles(ctx, existing.ID, lu.Groups); err != nil {
-		s.log.Warnw("syncLDAPRoles failed", "username", username, "err", err)
+	// Only a completed search is evidence of membership: a failed search or an
+	// unconfigured one says nothing about the user's groups, so REPLACE would
+	// silently wipe manually-assigned roles (#488).
+	switch {
+	case lu.GroupSearchErr != "":
+		s.log.Warnw("ldap group search failed; leaving existing role assignments untouched",
+			"username", username, "err", lu.GroupSearchErr)
+	case !lu.GroupsSearched:
+		// group_base/group_filter not configured → nothing to sync from.
+	default:
+		if err := s.syncLDAPRoles(ctx, existing.ID, lu.Groups); err != nil {
+			s.log.Warnw("syncLDAPRoles failed", "username", username, "err", err)
+		}
 	}
 
 	// Reload roles so the JWT reflects any just-granted nx-admin role.

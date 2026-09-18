@@ -20,6 +20,7 @@ type LDAPUser struct {
 	FirstName      string
 	LastName       string
 	Groups         []string // group names (mapped via GroupAttribute)
+	GroupsSearched bool     // true only when the group search was configured and succeeded; Groups is authoritative
 	GroupSearchErr string   // non-empty when group search failed (diagnostic only)
 }
 
@@ -76,7 +77,14 @@ func (s *LDAPService) dial(_ context.Context) (*ldap.Conn, error) {
 	return conn, nil
 }
 
-func (s *LDAPService) serviceBind(conn *ldap.Conn) error {
+// ldapConn is the slice of *ldap.Conn the bind/search steps need (fakeable in tests).
+type ldapConn interface {
+	Bind(username, password string) error
+	UnauthenticatedBind(username string) error
+	Search(req *ldap.SearchRequest) (*ldap.SearchResult, error)
+}
+
+func (s *LDAPService) serviceBind(conn ldapConn) error {
 	if s.cfg.BindDN == "" {
 		return conn.UnauthenticatedBind("")
 	}
@@ -138,31 +146,40 @@ func (s *LDAPService) Authenticate(ctx context.Context, username, password strin
 	}
 
 	// Fetch group memberships (best-effort; failures are non-fatal).
-	if s.cfg.GroupBase != "" && s.cfg.GroupFilter != "" {
-		if err := s.serviceBind(conn); err != nil {
-			// Non-fatal: record and fall through to search under user credentials.
-			lu.GroupSearchErr = fmt.Sprintf("service rebind failed (searching as user): %v", err)
-		}
-		groupFilter := strings.ReplaceAll(s.cfg.GroupFilter, "{dn}", ldap.EscapeFilter(userDN))
-		groupReq := ldap.NewSearchRequest(
-			s.cfg.GroupBase, ldap.ScopeWholeSubtree, ldap.NeverDerefAliases,
-			0, s.cfg.TimeoutSec, false,
-			groupFilter, []string{s.cfg.GroupAttribute}, nil,
-		)
-		gRes, gErr := conn.Search(groupReq)
-		if gErr != nil {
-			lu.GroupSearchErr = gErr.Error()
-		} else {
-			lu.GroupSearchErr = ""
-			for _, g := range gRes.Entries {
-				if name := g.GetAttributeValue(s.cfg.GroupAttribute); name != "" {
-					lu.Groups = append(lu.Groups, name)
-				}
-			}
-		}
-	}
+	s.fetchGroups(conn, lu)
 
 	return lu, nil
+}
+
+// fetchGroups fills lu.Groups from the configured group search. It sets
+// lu.GroupsSearched only when the search was configured and completed, so a
+// caller can tell "confirmed zero groups" from "no answer" (#488).
+func (s *LDAPService) fetchGroups(conn ldapConn, lu *LDAPUser) {
+	if s.cfg.GroupBase == "" || s.cfg.GroupFilter == "" {
+		return
+	}
+	if err := s.serviceBind(conn); err != nil {
+		// Non-fatal: record and fall through to search under user credentials.
+		lu.GroupSearchErr = fmt.Sprintf("service rebind failed (searching as user): %v", err)
+	}
+	groupFilter := strings.ReplaceAll(s.cfg.GroupFilter, "{dn}", ldap.EscapeFilter(lu.DN))
+	groupReq := ldap.NewSearchRequest(
+		s.cfg.GroupBase, ldap.ScopeWholeSubtree, ldap.NeverDerefAliases,
+		0, s.cfg.TimeoutSec, false,
+		groupFilter, []string{s.cfg.GroupAttribute}, nil,
+	)
+	gRes, gErr := conn.Search(groupReq)
+	if gErr != nil {
+		lu.GroupSearchErr = gErr.Error()
+		return
+	}
+	lu.GroupSearchErr = ""
+	lu.GroupsSearched = true
+	for _, g := range gRes.Entries {
+		if name := g.GetAttributeValue(s.cfg.GroupAttribute); name != "" {
+			lu.Groups = append(lu.Groups, name)
+		}
+	}
 }
 
 // TestConnection verifies reachability and service bind.
