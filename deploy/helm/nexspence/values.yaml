@@ -136,6 +136,18 @@ oidc:
   showLoginButton: true
   cookieSecure: true
   allowedSkewSeconds: 60
+  # -- Google Workspace group lookups via the Admin SDK Directory API. A
+  # Google id_token never carries groups, so without this adminGroup /
+  # roleMappings cannot apply to Google logins. Needs a service account with
+  # domain-wide delegation for admin.directory.group.readonly, impersonating
+  # a Workspace user with directory read rights. Match on group EMAILS.
+  googleAdminSDK:
+    enabled: false
+    # -- Existing Secret holding the service-account JSON key.
+    serviceAccountKeyExistingSecret: ""
+    serviceAccountKeyExistingSecretKey: "key.json"
+    # -- Workspace user the service account impersonates.
+    subjectEmail: ""
   # -- Leave empty to auto-generate and persist across upgrades (same pattern
   # as config.jwtSecret) so an upgrade never rotates it out from under a login
   # in flight.

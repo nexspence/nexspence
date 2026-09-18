@@ -23,6 +23,7 @@ type UserService struct {
 	ldapCfg config.LDAPConfig      // empty when LDAP is disabled
 	oidc    auth.OIDCAuthenticator // nil when OIDC is disabled
 	oidcCfg config.OIDCConfig      // empty when OIDC is disabled
+	groups  auth.GroupLookup       // nil unless a directory lookup (Google Admin SDK) is configured
 	saml    auth.SAMLAuthenticator // nil when SAML is disabled
 	samlCfg config.SAMLConfig      // empty when SAML is disabled
 	log     logger.Logger
@@ -51,6 +52,14 @@ func (s *UserService) WithLDAP(l auth.LDAPAuthenticator, cfg config.LDAPConfig) 
 func (s *UserService) WithOIDC(a auth.OIDCAuthenticator, cfg config.OIDCConfig) *UserService {
 	s.oidc = a
 	s.oidcCfg = cfg
+	return s
+}
+
+// WithGroupLookup attaches a directory lookup that supplies OIDC group
+// membership when the id_token carries none (Google Workspace). When set it
+// is the source of truth for groups on every OIDC login.
+func (s *UserService) WithGroupLookup(l auth.GroupLookup) *UserService {
+	s.groups = l
 	return s
 }
 
@@ -505,7 +514,20 @@ func (s *UserService) LoginOIDC(ctx context.Context, claims *auth.OIDCClaims, ra
 		return "", nil, fmt.Errorf("%w: user account is not active", ErrInvalidInput)
 	}
 
-	if err := s.syncOIDCRoles(ctx, existing.ID, claims.Groups, claims.GroupsPresent); err != nil {
+	groups, groupsPresent := claims.Groups, claims.GroupsPresent
+	if s.groups != nil {
+		// The directory, not the token, is the source of truth. A failed
+		// lookup is "no answer": leave roles as they are rather than lock the
+		// user out or wipe what an admin granted (#483).
+		if found, lerr := s.groups.Groups(ctx, email); lerr != nil {
+			s.log.Warnw("oidc group lookup failed; leaving existing role assignments untouched",
+				"username", username, "err", lerr)
+			groups, groupsPresent = nil, false
+		} else {
+			groups, groupsPresent = found, true
+		}
+	}
+	if err := s.syncOIDCRoles(ctx, existing.ID, groups, groupsPresent); err != nil {
 		s.log.Warnw("syncOIDCRoles failed", "username", username, "err", err)
 	}
 

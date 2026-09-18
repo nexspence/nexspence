@@ -570,3 +570,49 @@ func TestLoad_UnsetEnvKeepsNonEmptyDefault(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "groups", cfg.OIDC.GroupsClaim)
 }
+
+// ── oidc.google_admin_sdk (#483) ─────────────────────────────────────────────
+
+func TestValidateOIDC_GoogleAdminSDK_DisabledIgnoresFields(t *testing.T) {
+	c := validOIDC()
+	c.GoogleAdminSDK = GoogleAdminSDKConfig{Enabled: false}
+	require.NoError(t, ValidateOIDC(c))
+}
+
+func TestValidateOIDC_GoogleAdminSDK_RequiresSubject(t *testing.T) {
+	c := validOIDC()
+	c.GoogleAdminSDK = GoogleAdminSDKConfig{Enabled: true, ServiceAccountKey: `{"client_email":"x"}`}
+	err := ValidateOIDC(c)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "oidc.google_admin_sdk.subject_email")
+}
+
+func TestValidateOIDC_GoogleAdminSDK_RequiresKeyOrKeyFile(t *testing.T) {
+	c := validOIDC()
+	c.GoogleAdminSDK = GoogleAdminSDKConfig{Enabled: true, SubjectEmail: "admin@company.com"}
+	err := ValidateOIDC(c)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "service_account_key")
+}
+
+func TestValidateOIDC_GoogleAdminSDK_KeyFileIsEnough(t *testing.T) {
+	c := validOIDC()
+	c.GoogleAdminSDK = GoogleAdminSDKConfig{Enabled: true, SubjectEmail: "admin@company.com", ServiceAccountKeyFile: "/run/secrets/key.json"}
+	require.NoError(t, ValidateOIDC(c))
+}
+
+func TestLoad_GoogleAdminSDK_FromEnv(t *testing.T) {
+	t.Setenv("NEXSPENCE_OIDC_GOOGLE_ADMIN_SDK_ENABLED", "true")
+	t.Setenv("NEXSPENCE_OIDC_GOOGLE_ADMIN_SDK_SUBJECT_EMAIL", "admin@company.com")
+	t.Setenv("NEXSPENCE_OIDC_GOOGLE_ADMIN_SDK_SERVICE_ACCOUNT_KEY", `{"client_email":"sa@p.iam.gserviceaccount.com"}`)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(""+
+		"database:\n  dsn: \"postgres://u:p@localhost:5432/db?sslmode=disable\"\n"+
+		"auth:\n  jwt_secret: \"a-unique-production-secret-at-least-32b\"\n"), 0o600))
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.True(t, cfg.OIDC.GoogleAdminSDK.Enabled)
+	assert.Equal(t, "admin@company.com", cfg.OIDC.GoogleAdminSDK.SubjectEmail)
+	assert.Contains(t, cfg.OIDC.GoogleAdminSDK.ServiceAccountKey, "sa@p.iam")
+}

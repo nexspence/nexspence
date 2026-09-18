@@ -47,12 +47,14 @@ oidc:
 
 ## Google Workspace
 
-Google **does not emit group membership in the id_token** by default. Use
-one of:
+Google **does not emit group membership in the id_token** — no scope or
+client setting adds it. Use one of:
 
 - **Allowlist mode** (simplest) — gate access by email domain, assign roles
   manually in Nexspence Security → Roles.
-- **Admin SDK integration** — out of Phase 28 scope.
+- **Admin SDK group lookup** — Nexspence asks the Workspace directory for
+  the user's groups on every login and feeds them into `admin_group` /
+  `role_mappings` exactly like a groups claim. See below.
 
 ```yaml
 oidc:
@@ -75,6 +77,46 @@ oidc:
 
 **Google Cloud Console:** APIs & Services → Credentials → Create OAuth
 Client ID → Web application → Authorized redirect URIs.
+
+### Group lookup via the Admin SDK Directory API
+
+1. **Google Cloud Console:** create a Service Account, enable the *Admin SDK
+   API* on the project, and download a JSON key for the account.
+2. **Workspace Admin Console:** Security → Access and data control → API
+   controls → Domain-wide delegation → add the service account's client ID
+   with the scope `https://www.googleapis.com/auth/admin.directory.group.readonly`.
+3. Pick a Workspace user with directory read rights (an admin, or a custom
+   role with *Groups → Read*) for the service account to impersonate.
+
+```yaml
+oidc:
+  # ...the Google block above, plus:
+  groups_claim: ""                       # the token still has none
+  admin_group: "nexspence-admins@company.com"
+  role_mappings:
+    developers@company.com: "release-manager"
+  google_admin_sdk:
+    enabled: true
+    service_account_key_file: "/run/secrets/google-sa.json"
+    # or inline / from the environment:
+    # service_account_key: "${GOOGLE_SA_KEY_JSON}"
+    subject_email: "admin@company.com"   # user the service account impersonates
+```
+
+Groups are matched by their **email address**, not their display name.
+Semantics on login:
+
+- The directory answer is the source of truth: roles are REPLACEd from it on
+  every login, so removing someone from a group takes effect next time they
+  sign in.
+- A lookup that fails (API error, delegation not approved, timeout) is *no
+  answer*, not *no groups*: the login still succeeds and the user's existing
+  role assignments are left untouched. The failure is logged at WARN.
+- A bad key file or missing `subject_email` fails at startup.
+
+Helm: `oidc.googleAdminSDK.enabled=true`, put the JSON key in an existing
+Secret and reference it with `serviceAccountKeyExistingSecret` /
+`serviceAccountKeyExistingSecretKey`, and set `subjectEmail`.
 
 ## Microsoft Entra ID (Azure AD)
 

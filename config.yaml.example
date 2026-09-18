@@ -286,6 +286,16 @@ oidc:
   groups_claim: "groups"              # "roles" for Entra app-roles; empty for Google w/o Admin SDK
   admin_group: ""                     # if set & present in claim → nx-admin
   role_mappings: {}                   # e.g. { "developers": "release-manager" }
+  # Google Workspace: the id_token never carries groups. Look them up in the
+  # directory instead (service account with domain-wide delegation for
+  # admin.directory.group.readonly, impersonating a Workspace admin). Group
+  # EMAILS are what admin_group / role_mappings then match against. A failed
+  # lookup leaves the user's existing roles untouched (never a lockout).
+  google_admin_sdk:
+    enabled: false
+    service_account_key: ""           # JSON key inline (or NEXSPENCE_OIDC_GOOGLE_ADMIN_SDK_SERVICE_ACCOUNT_KEY)
+    service_account_key_file: ""      # ...or a path to the JSON key file
+    subject_email: ""                 # e.g. "admin@company.com"
 
   # Claim name overrides (provider-specific tweaks)
   username_claim: "preferred_username"  # Google: use "email"

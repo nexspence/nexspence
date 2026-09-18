@@ -175,6 +175,13 @@ spec:
                   name: {{ .Values.oidc.clientSecretExistingSecret }}
                   key: {{ .Values.oidc.clientSecretExistingSecretKey | default "client-secret" }}
             {{- end }}
+            {{- if and .Values.oidc.enabled .Values.oidc.googleAdminSDK.enabled }}
+            - name: NEXSPENCE_OIDC_GOOGLE_ADMIN_SDK_SERVICE_ACCOUNT_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.oidc.googleAdminSDK.serviceAccountKeyExistingSecret }}
+                  key: {{ .Values.oidc.googleAdminSDK.serviceAccountKeyExistingSecretKey | default "key.json" }}
+            {{- end }}
           envFrom:
             - configMapRef:
                 name: {{ include "nexspence.fullname" . }}

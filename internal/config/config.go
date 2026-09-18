@@ -274,6 +274,11 @@ type OIDCConfig struct {
 	AdminGroup   string            `mapstructure:"admin_group"`   // claim value → nx-admin
 	RoleMappings map[string]string `mapstructure:"role_mappings"` // claim value → Nexspence role name
 
+	// GoogleAdminSDK looks group membership up in the Workspace directory,
+	// since a Google id_token never carries a groups claim. Group emails
+	// then flow through admin_group / role_mappings like a claim would.
+	GoogleAdminSDK GoogleAdminSDKConfig `mapstructure:"google_admin_sdk"`
+
 	// Claim name overrides (provider-specific).
 	UsernameClaim string `mapstructure:"username_claim"`
 	EmailClaim    string `mapstructure:"email_claim"`
@@ -290,6 +295,16 @@ type OIDCConfig struct {
 	// in Docker: internal=http://keycloak:8080/realms/x, public=http://localhost:8180/realms/x).
 	// Token validation always uses the internal Issuer so iss-claim checks still pass.
 	PublicIssuerURL string `mapstructure:"public_issuer_url"`
+}
+
+// GoogleAdminSDKConfig configures Admin SDK Directory API group lookups for
+// Google Workspace OIDC logins (#483). The service account needs domain-wide
+// delegation for admin.directory.group.readonly and impersonates SubjectEmail.
+type GoogleAdminSDKConfig struct {
+	Enabled               bool   `mapstructure:"enabled"`
+	ServiceAccountKey     string `mapstructure:"service_account_key"`      // JSON key, inline (env/secret friendly)
+	ServiceAccountKeyFile string `mapstructure:"service_account_key_file"` // or a path; inline wins when both set
+	SubjectEmail          string `mapstructure:"subject_email"`            // Workspace user to impersonate
 }
 
 const exampleJWTSecret = "CHANGE_ME_AT_LEAST_32_CHARACTERS_LONG" //nolint:gosec // G101 false positive: this is the known-bad placeholder string we reject at startup, not an actual credential
@@ -382,6 +397,14 @@ func ValidateOIDC(c OIDCConfig) error {
 	keyBytes, err := base64.StdEncoding.DecodeString(c.CookieKey)
 	if err != nil || len(keyBytes) != 32 {
 		return fmt.Errorf("oidc.cookie_key must be base64-encoded 32 bytes")
+	}
+	if g := c.GoogleAdminSDK; g.Enabled {
+		if g.SubjectEmail == "" {
+			return fmt.Errorf("oidc.google_admin_sdk.subject_email is required when oidc.google_admin_sdk.enabled=true")
+		}
+		if g.ServiceAccountKey == "" && g.ServiceAccountKeyFile == "" {
+			return fmt.Errorf("oidc.google_admin_sdk.service_account_key or service_account_key_file is required when oidc.google_admin_sdk.enabled=true")
+		}
 	}
 	return nil
 }
@@ -617,6 +640,15 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("docker.max_upload_bytes", int64(10<<30)) // 10 GiB
 	v.SetDefault("oidc.enabled", false)
 	v.SetDefault("oidc.display_name", "SSO")
+	// Zero-value defaults so these stay reachable from the environment when
+	// no config file is present (same viper caveat as database.dsn above).
+	v.SetDefault("oidc.issuer", "")
+	v.SetDefault("oidc.client_id", "")
+	v.SetDefault("oidc.client_secret", "")
+	v.SetDefault("oidc.redirect_url", "")
+	v.SetDefault("oidc.frontend_base_url", "")
+	v.SetDefault("oidc.admin_group", "")
+	v.SetDefault("oidc.cookie_key", "")
 	v.SetDefault("oidc.public_issuer_url", "")
 	v.SetDefault("oidc.scopes", []string{"openid", "profile", "email", "groups"})
 	v.SetDefault("oidc.provisioning", "jit")
@@ -627,6 +659,10 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("oidc.show_login_button", true)
 	v.SetDefault("oidc.cookie_secure", true)
 	v.SetDefault("oidc.allowed_skew_seconds", 60)
+	v.SetDefault("oidc.google_admin_sdk.enabled", false)
+	v.SetDefault("oidc.google_admin_sdk.service_account_key", "")
+	v.SetDefault("oidc.google_admin_sdk.service_account_key_file", "")
+	v.SetDefault("oidc.google_admin_sdk.subject_email", "")
 	v.SetDefault("saml.enabled", false)
 	v.SetDefault("saml.display_name", "SAML SSO")
 	v.SetDefault("saml.show_login_button", true)

@@ -37,6 +37,12 @@ RENDERS = [
     ["--set", "config.docker.subdomainConnector.enabled=true"],
     ["--set", "config.outbound.allowedInternalCidrs={10.0.0.0/8}"],
     [
+        "--set", "oidc.enabled=true",
+        "--set", "oidc.googleAdminSDK.enabled=true",
+        "--set", "oidc.googleAdminSDK.serviceAccountKeyExistingSecret=gsa",
+        "--set", "oidc.googleAdminSDK.subjectEmail=admin@example.com",
+    ],
+    [
         "--set", "config.adminExistingSecret=ext",
         "--set", "config.jwtSecretExistingSecret=ext",
     ],

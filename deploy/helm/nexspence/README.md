@@ -277,6 +277,26 @@ nothing else in the chart changes behaviour.
 
 ---
 
+## Google Workspace groups (OIDC)
+
+A Google id_token never carries groups, so `oidc.adminGroup` / role mappings
+do nothing for Google logins unless Nexspence looks the groups up itself.
+Create a service account with domain-wide delegation for
+`admin.directory.group.readonly`, store its JSON key in a Secret, and:
+
+```bash
+kubectl create secret generic nexspence-google-sa --from-file=key.json=./sa-key.json
+helm upgrade --install nexspence oci://ghcr.io/nexspence/charts/nexspence \
+  --set oidc.enabled=true \
+  --set oidc.googleAdminSDK.enabled=true \
+  --set oidc.googleAdminSDK.serviceAccountKeyExistingSecret=nexspence-google-sa \
+  --set oidc.googleAdminSDK.subjectEmail=admin@company.com \
+  --set oidc.adminGroup=nexspence-admins@company.com
+```
+
+Groups are matched by email. A failed lookup never locks a user out or
+strips their roles — see `docs/oidc-setup.md`.
+
 ## Scaling (HPA)
 
 ```bash

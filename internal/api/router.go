@@ -160,6 +160,22 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 		}
 		oidcSealer = sealer
 		userSvc.WithOIDC(oidcSvc, cfg.OIDC)
+		// Google Workspace never puts groups in the id_token; when the Admin
+		// SDK lookup is on, the directory answer feeds role sync instead. A
+		// bad service-account key is a startup error, same as a bad issuer.
+		if g := cfg.OIDC.GoogleAdminSDK; g.Enabled {
+			dir, gErr := auth.NewGoogleDirectory(auth.GoogleDirectoryConfig{
+				ServiceAccountKey:     g.ServiceAccountKey,
+				ServiceAccountKeyFile: g.ServiceAccountKeyFile,
+				SubjectEmail:          g.SubjectEmail,
+			})
+			if gErr != nil {
+				log.Error("oidc google admin sdk init failed", "err", gErr)
+				os.Exit(1)
+			}
+			userSvc.WithGroupLookup(dir)
+			log.Info("oidc group lookup via Google Admin SDK enabled", "subject", g.SubjectEmail)
+		}
 	}
 
 	// SAML is optional; fails startup if IdP metadata is unreachable or misconfigured.
