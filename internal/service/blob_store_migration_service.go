@@ -195,7 +195,15 @@ func (s *BlobStoreMigrationService) ResumeAll(ctx context.Context) error {
 	}
 	interrupted := "interrupted by server restart"
 	for _, m := range active {
-		_ = s.migrations.FinishMigration(ctx, m.ID, "cancelled", &interrupted) //nolint:misspell // API/DB status value consumed by frontend (status === 'cancelled')
+		if m.TargetStoreID == "" {
+			// The destination store was deleted while this row was still
+			// pending/running (SET NULL, migration 034). There is nothing left
+			// to copy to; fail it instead of looking up an empty store id.
+			gone := errMigrationTargetGone
+			_ = s.migrations.FinishMigration(ctx, m.ID, "failed", &gone)
+		} else {
+			_ = s.migrations.FinishMigration(ctx, m.ID, "cancelled", &interrupted) //nolint:misspell // API/DB status value consumed by frontend (status === 'cancelled')
+		}
 		// The process that took this lock died without releasing it, and only
 		// runMigration's deferred Release ever would. Clearing it here is what
 		// makes the migration restartable now instead of two hours from now.
@@ -205,6 +213,11 @@ func (s *BlobStoreMigrationService) ResumeAll(ctx context.Context) error {
 	}
 	return nil
 }
+
+// errMigrationTargetGone is the status message when a job's destination store
+// has already been deleted. The history row survives with a NULL target; the
+// job itself cannot.
+const errMigrationTargetGone = "target blob store is no longer available; the store was deleted after this migration was recorded"
 
 // runMigration copies every asset of the repo to the target store. deadline is
 // when the migration's distributed lock expires; a zero deadline means no lock
@@ -238,6 +251,13 @@ func (s *BlobStoreMigrationService) runMigration(ctx context.Context, m *domain.
 		msg := "migration ended without finishing (panic recovered); see the server log for the stack"
 		_ = s.migrations.FinishMigration(context.Background(), m.ID, "failed", &msg)
 	}()
+	if m.TargetStoreID == "" {
+		// Same hole ResumeAll covers: a re-read row (or a job started against a
+		// store that has since been deleted) must not look up an empty id.
+		gone := errMigrationTargetGone
+		_ = s.migrations.FinishMigration(context.Background(), m.ID, "failed", &gone)
+		return
+	}
 
 	// Root span: the migration goroutine runs on context.Background(), cut
 	// loose from the HTTP request that started it (#302). The span hangs off

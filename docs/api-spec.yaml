@@ -794,6 +794,17 @@ paths:
         - { name: name, in: path, required: true, schema: { type: string } }
       responses:
         '204': { description: Deleted }
+        '409':
+          description: >
+            The blob store is still in use — as a group member, as a
+            repository's blob_store_id, or by remaining assets. The error
+            body names what blocks deletion and what to do about it.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error: { type: string }
 
   /service/rest/v1/blobstores/{name}/quota-status:
     get:
@@ -910,6 +921,43 @@ paths:
                 forcePathStyle:   { type: boolean }
       responses:
         '204': { description: Created }
+
+  /service/rest/v1/blobstores/azure:
+    post:
+      tags: [BlobStores]
+      summary: Create Azure Blob Storage blob store
+      description: >
+        Native extension beyond the Nexus surface. Exactly one credential path is
+        required: accountKey (with accountName), connectionString, sasToken, or the
+        host's Entra ID identity (send no credential at all). The container must
+        already exist. Credentials are never returned by a read; responses carry
+        `<key>_set: true` markers instead, and an update that omits a credential
+        keeps the stored one.
+      operationId: createAzureBlobStore
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, config]
+              properties:
+                name: { type: string }
+                quotaBytes: { type: integer, nullable: true }
+                config:
+                  type: object
+                  required: [container]
+                  properties:
+                    container:         { type: string, description: "Existing blob container" }
+                    account_name:      { type: string }
+                    account_key:       { type: string, description: "Shared key; enables presigned URLs" }
+                    connection_string: { type: string, description: "Wins over account_name/account_key/sas_token" }
+                    sas_token:         { type: string, description: "Pre-generated SAS; presigned URLs unavailable" }
+                    endpoint:          { type: string, description: "Custom endpoint (Azurite, sovereign cloud)" }
+                    skip_tls_verify:   { type: boolean }
+      responses:
+        '201': { description: Created }
+        '400': { description: Invalid config or unreachable container }
 
   # ── Cleanup Policies ─────────────────────────────────────────
 

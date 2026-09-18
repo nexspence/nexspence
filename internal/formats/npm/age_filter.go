@@ -190,9 +190,15 @@ func (h *Handler) packumentTimesFor(ctx context.Context, repo *domain.Repository
 func (h *Handler) readCachedBlob(ctx context.Context, asset *domain.Asset) []byte {
 	store := h.deps.BlobStore
 	if asset.BlobStoreID != "" {
-		if meta, err := h.deps.Blobs.GetByID(ctx, asset.BlobStoreID); err == nil && meta != nil {
-			store = base.PhysicalStore(ctx, h.deps, meta)
+		meta, err := h.deps.Blobs.GetByID(ctx, asset.BlobStoreID)
+		if err != nil || meta == nil {
+			return nil
 		}
+		resolved, err := base.PhysicalStore(ctx, h.deps, meta)
+		if err != nil {
+			return nil
+		}
+		store = resolved
 	}
 	rc, _, err := store.Get(ctx, asset.BlobKey)
 	if err != nil {

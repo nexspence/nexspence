@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/nexspence-oss/nexspence/internal/auth"
@@ -121,6 +122,190 @@ func TestReconcileS3BlobStores_Idempotent(t *testing.T) {
 	}
 	def, _ := blobs.Get(context.Background(), "default")
 	assertS3Store(t, def, s3)
+}
+
+func testAzureConfig() config.AzureConfig {
+	return config.AzureConfig{
+		Container:        "nexspence-blobs",
+		AccountName:      "mystorage",
+		AccountKey:       "secret-key",
+		ConnectionString: "",
+		SASToken:         "",
+		Endpoint:         "https://mystorage.blob.core.windows.net",
+		SkipTLSVerify:    false,
+	}
+}
+
+func assertAzureStore(t *testing.T, bs *domain.BlobStore, az config.AzureConfig) {
+	t.Helper()
+	if bs == nil {
+		t.Fatal("blob store is nil")
+	}
+	if bs.Type != "azure" {
+		t.Fatalf("type = %q, want azure", bs.Type)
+	}
+	want := desiredAzureConfig(az)
+	for k, v := range want {
+		if bs.Config[k] != v {
+			t.Fatalf("config[%q] = %v, want %v", k, bs.Config[k], v)
+		}
+	}
+}
+
+func TestReconcileAzureBlobStores_ConvertsSeedLocalToAzure(t *testing.T) {
+	az := testAzureConfig()
+	blobs := testutil.NewBlobStoreRepo(
+		&domain.BlobStore{ID: "bs-default", Name: "default", Type: "local", Config: map[string]any{"path": "./data/blobs/default"}},
+		&domain.BlobStore{ID: "bs-docker", Name: "docker", Type: "local", Config: map[string]any{"path": "./data/blobs/docker"}},
+	)
+	log := logger.New("error", "json")
+
+	if err := reconcileAzureBlobStores(context.Background(), blobs, az, nil, log); err != nil {
+		t.Fatalf("reconcileAzureBlobStores: %v", err)
+	}
+
+	def, _ := blobs.Get(context.Background(), "default")
+	assertAzureStore(t, def, az)
+	dock, _ := blobs.Get(context.Background(), "docker")
+	assertAzureStore(t, dock, az)
+}
+
+func TestReconcileAzureBlobStores_CreatesMissing(t *testing.T) {
+	az := testAzureConfig()
+	blobs := testutil.NewBlobStoreRepo(
+		&domain.BlobStore{ID: "bs-default", Name: "default", Type: "local", Config: map[string]any{"path": "./data/blobs/default"}},
+	)
+	log := logger.New("error", "json")
+
+	if err := reconcileAzureBlobStores(context.Background(), blobs, az, nil, log); err != nil {
+		t.Fatalf("reconcileAzureBlobStores: %v", err)
+	}
+
+	dock, err := blobs.Get(context.Background(), "docker")
+	if err != nil {
+		t.Fatalf("docker store not created: %v", err)
+	}
+	assertAzureStore(t, dock, az)
+}
+
+func TestReconcileAzureBlobStores_Idempotent(t *testing.T) {
+	az := testAzureConfig()
+	blobs := testutil.NewBlobStoreRepo(
+		&domain.BlobStore{ID: "bs-default", Name: "default", Type: "local", Config: map[string]any{"path": "./data/blobs/default"}},
+	)
+	log := logger.New("error", "json")
+
+	for i := 0; i < 2; i++ {
+		if err := reconcileAzureBlobStores(context.Background(), blobs, az, nil, log); err != nil {
+			t.Fatalf("run %d: %v", i, err)
+		}
+	}
+	def, _ := blobs.Get(context.Background(), "default")
+	assertAzureStore(t, def, az)
+}
+
+func TestReconcileAzureBlobStores_OccupiedSeedRejectedWithoutMutation(t *testing.T) {
+	az := testAzureConfig()
+	blobs := testutil.NewBlobStoreRepo(
+		&domain.BlobStore{ID: "bs-default", Name: "default", Type: "local",
+			Config: map[string]any{"path": "./data/blobs/default"}},
+		&domain.BlobStore{ID: "bs-docker", Name: "docker", Type: "local",
+			Config: map[string]any{"path": "./data/blobs/docker"}},
+	)
+	storeID := "bs-default"
+	refs := azureBlobStoreReferences{
+		repositories: testutil.NewRepoRepo(&domain.Repository{ID: "repo-1", Name: "default-repo", BlobStoreID: &storeID}),
+		assets:       testutil.NewAssetRepo(),
+	}
+	err := reconcileAzureBlobStoresWithReferences(context.Background(), blobs, refs, "./data/blobs", az, nil, logger.New("error", "json"))
+	if err == nil || !strings.Contains(err.Error(), `"default" is already used or referenced`) {
+		t.Fatalf("reconcileAzureBlobStores error = %v, want a clear target-change rejection", err)
+	}
+	def, _ := blobs.Get(context.Background(), "default")
+	if def.Type != "local" || def.Config["path"] != "./data/blobs/default" {
+		t.Fatalf("occupied default store was changed: %#v", def)
+	}
+	dock, _ := blobs.Get(context.Background(), "docker")
+	if dock.Type != "local" {
+		t.Fatalf("docker store changed despite preflight rejection: %#v", dock)
+	}
+}
+
+func TestReconcileAzureBlobStores_PreflightRejectionDoesNotPartiallyMutate(t *testing.T) {
+	az := testAzureConfig()
+	blobs := testutil.NewBlobStoreRepo(
+		&domain.BlobStore{ID: "bs-default", Name: "default", Type: "local",
+			Config: map[string]any{"path": "./data/blobs/default"}},
+		&domain.BlobStore{ID: "bs-docker", Name: "docker", Type: "local",
+			Config: map[string]any{"path": "/srv/nexspence/docker"}},
+	)
+	err := reconcileAzureBlobStoresWithReferences(context.Background(), blobs,
+		azureBlobStoreReferences{repositories: testutil.NewRepoRepo(), assets: testutil.NewAssetRepo()},
+		"./data/blobs", az, nil, logger.New("error", "json"))
+	if err == nil {
+		t.Fatal("reconcileAzureBlobStores unexpectedly succeeded")
+	}
+	def, _ := blobs.Get(context.Background(), "default")
+	if def.Type != "local" || def.Config["path"] != "./data/blobs/default" {
+		t.Fatalf("preflight rejection partially mutated default: %#v", def)
+	}
+}
+
+func TestReconcileAzureBlobStores_IndividualConfigurationRejected(t *testing.T) {
+	az := testAzureConfig()
+	blobs := testutil.NewBlobStoreRepo(&domain.BlobStore{ID: "bs-default", Name: "default", Type: "local",
+		Config: map[string]any{"path": "/srv/nexspence/custom-default"}})
+	err := reconcileAzureBlobStoresWithReferences(context.Background(), blobs,
+		azureBlobStoreReferences{repositories: testutil.NewRepoRepo(), assets: testutil.NewAssetRepo()},
+		"./data/blobs", az, nil, logger.New("error", "json"))
+	if err == nil || !strings.Contains(err.Error(), "individual configuration") {
+		t.Fatalf("error = %v, want individual-configuration rejection", err)
+	}
+	got, _ := blobs.Get(context.Background(), "default")
+	if got.Type != "local" || got.Config["path"] != "/srv/nexspence/custom-default" {
+		t.Fatalf("individual store configuration changed: %#v", got)
+	}
+}
+
+func TestReconcileAzureBlobStores_CredentialRotationAllowedForOccupiedStore(t *testing.T) {
+	old := testAzureConfig()
+	rotated := old
+	rotated.AccountKey = "rotated-secret"
+	blobs := testutil.NewBlobStoreRepo(&domain.BlobStore{
+		ID: "bs-default", Name: "default", Type: "azure", UsedBytes: 42,
+		Config: desiredAzureConfig(old),
+	})
+	storeID := "bs-default"
+	refs := azureBlobStoreReferences{
+		repositories: testutil.NewRepoRepo(&domain.Repository{ID: "repo-1", Name: "maven-hosted", BlobStoreID: &storeID}),
+		assets:       testutil.NewAssetRepo(),
+	}
+	if err := reconcileAzureBlobStoresWithReferences(context.Background(), blobs, refs, "./data/blobs", rotated, nil, logger.New("error", "json")); err != nil {
+		t.Fatalf("reconcileAzureBlobStores: %v", err)
+	}
+	got, _ := blobs.Get(context.Background(), "default")
+	assertAzureStore(t, got, rotated)
+	if got.UsedBytes != 42 {
+		t.Fatalf("credential rotation changed usage: %d", got.UsedBytes)
+	}
+}
+
+func TestReconcileAzureBlobStores_StorageTargetChangeRejectedForOccupiedAzureStore(t *testing.T) {
+	old := testAzureConfig()
+	changed := old
+	changed.Container = "different-container"
+	blobs := testutil.NewBlobStoreRepo(&domain.BlobStore{
+		ID: "bs-default", Name: "default", Type: "azure", UsedBytes: 42,
+		Config: desiredAzureConfig(old),
+	})
+	err := reconcileAzureBlobStoresWithReferences(context.Background(), blobs,
+		azureBlobStoreReferences{repositories: testutil.NewRepoRepo(), assets: testutil.NewAssetRepo()},
+		"./data/blobs", changed, nil, logger.New("error", "json"))
+	if err == nil || !strings.Contains(err.Error(), "different storage target") {
+		t.Fatalf("error = %v, want storage-target rejection", err)
+	}
+	got, _ := blobs.Get(context.Background(), "default")
+	assertAzureStore(t, got, old)
 }
 
 // Regression: a fresh deploy seeds the admin row with a placeholder hash (NOT
@@ -246,5 +431,37 @@ func TestEnsureBootstrapAdmin_Disabled_ExistingAdminUntouched(t *testing.T) {
 	got, _ := users.Get(context.Background(), "admin")
 	if got.PasswordHash != seedPlaceholderAdminHash {
 		t.Fatal("disabled bootstrap modified the admin password")
+	}
+}
+
+func TestReconcileAzureBlobStores_FreshSeeds_CustomLocalBasePath(t *testing.T) {
+	blobs := testutil.NewBlobStoreRepo(
+		&domain.BlobStore{ID: "default-id", Name: "default", Type: "local", Config: map[string]any{"path": "./data/blobs/default"}},
+		&domain.BlobStore{ID: "docker-id", Name: "docker", Type: "local", Config: map[string]any{"path": "./data/blobs/docker"}},
+	)
+	az := testAzureConfig()
+	err := reconcileAzureBlobStoresWithReferences(context.Background(), blobs, azureBlobStoreReferences{repositories: testutil.NewRepoRepo(), assets: testutil.NewAssetRepo()}, "/app/data/blobs", az, nil, logger.New("error", "json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range seedBlobStores {
+		bs, err := blobs.Get(context.Background(), name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertAzureStore(t, bs, az)
+	}
+}
+
+func TestAzureStorageTargetEqual_ConnectionStringOverridesSeparateFields(t *testing.T) {
+	old := map[string]any{"container": "blobs", "account_name": "ignored", "endpoint": "https://ignored.example", "connection_string": "DefaultEndpointsProtocol=https;AccountName=actual;AccountKey=YQ==;EndpointSuffix=core.windows.net"}
+	rotated := map[string]any{"container": "blobs", "account_name": "actual", "account_key": "rotated"}
+	if !azureConfigOnlyCredentialsDiffer(old, rotated) {
+		t.Fatal("credential switch with unchanged SDK endpoint rejected")
+	}
+	changed := cloneConfig(old)
+	changed["connection_string"] = "DefaultEndpointsProtocol=https;AccountName=actual;AccountKey=YQ==;EndpointSuffix=core.usgovcloudapi.net"
+	if azureConfigOnlyCredentialsDiffer(old, changed) {
+		t.Fatal("changed connection-string target accepted as credential rotation")
 	}
 }

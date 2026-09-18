@@ -460,3 +460,113 @@ func TestLoad_TrivyFromEnv(t *testing.T) {
 	assert.Equal(t, []string{"mirror1.example.com/trivy-db", "mirror2.example.com/trivy-db"}, cfg.Scan.Trivy.DBRepository,
 		"NEXSPENCE_SCAN_TRIVY_DB_REPOSITORY was not applied")
 }
+
+func TestLoad_AzureStorageFromEnv(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := "" +
+		"database:\n  dsn: \"postgres://u:p@localhost:5432/db?sslmode=disable\"\n" +
+		"auth:\n  jwt_secret: \"a-unique-production-secret-at-least-32b\"\n"
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+
+	t.Setenv("NEXSPENCE_STORAGE_DEFAULT_TYPE", "azure")
+	t.Setenv("NEXSPENCE_STORAGE_AZURE_CONTAINER", "nexspence-blobs")
+	t.Setenv("NEXSPENCE_STORAGE_AZURE_ACCOUNT_NAME", "mystorage")
+	t.Setenv("NEXSPENCE_STORAGE_AZURE_ACCOUNT_KEY", "secret-key")
+	t.Setenv("NEXSPENCE_STORAGE_AZURE_ENDPOINT", "https://mystorage.blob.core.windows.net")
+	t.Setenv("NEXSPENCE_STORAGE_AZURE_SKIP_TLS_VERIFY", "true")
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.Equal(t, "azure", cfg.Storage.DefaultType)
+	assert.Equal(t, "nexspence-blobs", cfg.Storage.Azure.Container)
+	assert.Equal(t, "mystorage", cfg.Storage.Azure.AccountName)
+	assert.Equal(t, "secret-key", cfg.Storage.Azure.AccountKey)
+	assert.Equal(t, "https://mystorage.blob.core.windows.net", cfg.Storage.Azure.Endpoint)
+	assert.True(t, cfg.Storage.Azure.SkipTLSVerify)
+}
+
+func TestValidateStorage(t *testing.T) {
+	for _, tc := range []struct {
+		typ     string
+		wantErr bool
+	}{
+		{"", false},
+		{"local", false},
+		{"s3", false},
+		{"azure", false},
+		{"S3", true},
+		{"azue", true},
+		{"gcs", true},
+	} {
+		err := ValidateStorage(StorageConfig{DefaultType: tc.typ})
+		if tc.wantErr {
+			assert.Error(t, err, "default_type %q must be rejected, not silently treated as local", tc.typ)
+			continue
+		}
+		assert.NoError(t, err, "default_type %q must be accepted", tc.typ)
+	}
+}
+
+// Viper splits map keys on "." (its path delimiter). Alias hostnames always
+// contain dots, so without flattening Unmarshal into map[string]string fails
+// even when the YAML key is quoted — the split is after parse, not a YAML issue.
+func TestLoad_DockerSubdomainAliases_DottedHostnames(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := "" +
+		"database:\n  dsn: \"postgres://u:p@localhost:5432/db?sslmode=disable\"\n" +
+		"auth:\n  jwt_secret: \"a-unique-production-secret-at-least-32b\"\n" +
+		"docker:\n" +
+		"  subdomain_connector:\n" +
+		"    enabled: true\n" +
+		"    base_domain: \"nexspence.example.com\"\n" +
+		"    aliases:\n" +
+		"      \"docker-hub-proxy.example.com\": \"dockerhub-proxy\"\n" +
+		"      hub.nexspence.example.com: dockerhub-proxy\n" +
+		"      docker-group.example.com: docker-group\n"
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{
+		"docker-hub-proxy.example.com": "dockerhub-proxy",
+		"hub.nexspence.example.com":    "dockerhub-proxy",
+		"docker-group.example.com":     "docker-group",
+	}, cfg.Docker.SubdomainConnector.Aliases)
+}
+
+// Viper's env lookup treats an empty value as "unset" unless AllowEmptyEnv is
+// on, so NEXSPENCE_OIDC_GROUPS_CLAIM="" used to leave the non-empty default
+// ("groups") in place — the exact opposite of what an operator disabling the
+// claim asked for, with no error to say so (#482).
+func TestLoad_ExplicitEmptyEnvOverridesNonEmptyDefault(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := "" +
+		"database:\n  dsn: \"postgres://u:p@localhost:5432/db?sslmode=disable\"\n" +
+		"auth:\n  jwt_secret: \"a-unique-production-secret-at-least-32b\"\n"
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+
+	t.Setenv("NEXSPENCE_OIDC_GROUPS_CLAIM", "")
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.Equal(t, "", cfg.OIDC.GroupsClaim,
+		"an env var set to the empty string is an explicit override, not an absent one")
+}
+
+// The other direction must keep working: an env var that is not set at all
+// leaves the default alone.
+func TestLoad_UnsetEnvKeepsNonEmptyDefault(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := "" +
+		"database:\n  dsn: \"postgres://u:p@localhost:5432/db?sslmode=disable\"\n" +
+		"auth:\n  jwt_secret: \"a-unique-production-secret-at-least-32b\"\n"
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+
+	require.NoError(t, os.Unsetenv("NEXSPENCE_OIDC_GROUPS_CLAIM"))
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.Equal(t, "groups", cfg.OIDC.GroupsClaim)
+}

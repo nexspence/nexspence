@@ -222,7 +222,16 @@ type BlobStore interface {
 Implementations:
 - `LocalBlobStore` — atomic writes via temp file + rename; `storage/local.go`
 - `S3BlobStore` — AWS SDK v2; works with MinIO, AWS, Ceph, Backblaze, GCS; `storage/s3.go`
-- **[Phase 10]** `AzureBlobStore` — Azure Blob Storage adapter
+- `AzureBlobStore` — azblob block blobs in one container per store; shared key,
+  connection string, SAS token or Entra ID; streaming `Put`, presign via SAS,
+  O(N) chunked append via staged blocks + `.append-meta` side-blob;
+  `storage/azure.go`. Lifecycle expiry is refused (account-scoped on Azure —
+  manage it filtered to the container); aborting an append leaves staged
+  blocks for the service's ~7-day autocleanup instead of freeing them now.
+  Block IDs are padded to a uniform 64-byte width because Azure rejects a
+  commit list that mixes widths (Azurite does not — no emulator test can
+  catch it), and an Entra ID store caches its user delegation key rather
+  than minting one per presigned URL.
 
 ---
 
@@ -440,7 +449,7 @@ users               — username, password_hash, email, status, source (local|ld
 user_tokens         — user_id, name, token_hash, last_used_at
 roles               — id, name, description, privilege_ids[]
 user_roles          — user_id, role_id
-blob_stores         — name, type (local|s3), config JSONB, used_bytes, quota_bytes
+blob_stores         — name, type (local|s3|group|azure), config JSONB, used_bytes, quota_bytes
 cleanup_policies    — name, format, criteria JSONB (age_days, last_downloaded_days), schedule_cron
 audit_events        — partitioned by month; user_id, domain, action, entity_type, entity_name, result
 migration_jobs      — source_url, source_user, sealed source_password, status, per-scope flags, repo/asset progress, error_count

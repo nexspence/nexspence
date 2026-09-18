@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -12,6 +13,14 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/repository"
 )
 
+// blobStoreMigrationRepo persists blob-store migration jobs.
+//
+// Rows are an audit trail, not a live pointer: repository_name is TEXT with
+// no FK to repositories, and source/target store FKs SET NULL on store
+// delete (migration 034). There is deliberately no Delete method — a finished
+// (or abandoned) job outlives both the repository and the stores it named.
+// Pruning that history because a repository is gone would be a mistake, not a
+// missing cleanup.
 type blobStoreMigrationRepo struct {
 	db *pgxpool.Pool
 }
@@ -29,6 +38,11 @@ func NewBlobStoreMigrationRepo(db *pgxpool.Pool) *blobStoreMigrationRepo {
 const activeMigrationConstraint = "blob_store_migrations_one_active_per_repo"
 
 func (r *blobStoreMigrationRepo) Create(ctx context.Context, m *domain.BlobStoreMigration) error {
+	// An empty target is only a historical state after the destination store
+	// was deleted (SET NULL). A new job always names a real store.
+	if m.TargetStoreID == "" {
+		return fmt.Errorf("target store id is required")
+	}
 	var sourceID *string
 	if m.SourceStoreID != "" {
 		sourceID = &m.SourceStoreID
@@ -139,7 +153,7 @@ func (r *blobStoreMigrationRepo) ListActive(ctx context.Context) ([]domain.BlobS
 const blobStoreMigrationCols = `
 	id, repository_name,
 	COALESCE(source_store_id::text,'') as source_store_id,
-	target_store_id::text,
+	COALESCE(target_store_id::text,'') as target_store_id,
 	status, total_assets, done_assets, total_bytes, done_bytes,
 	error_message, started_at, finished_at, created_at, updated_at`
 

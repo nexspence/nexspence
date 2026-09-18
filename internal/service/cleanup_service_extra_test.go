@@ -398,7 +398,9 @@ func TestExtraCleanup_ReloadPolicy_DisabledRemovesEntry(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	// Mark policy as disabled and reload
-	p.Enabled = false
+	disabled := *p
+	disabled.Enabled = false
+	require.NoError(t, policies.Update(ctx, &disabled))
 	svc.ReloadPolicy(ctx, "p-reload-dis")
 	// Should not panic — entry removed because policy is disabled
 }

@@ -145,6 +145,25 @@ describe('BrowsePage — repo selector & empty states', () => {
     await waitFor(() => expect(lastOffset).toBe('0'))
   })
 
+  it('scrolls the component table instead of clipping rows that miss the viewport', async () => {
+    server.use(
+      http.get('/service/rest/v1/components', () =>
+        HttpResponse.json({
+          items: Array.from({ length: 25 }, (_, i) => ({
+            id: `c${i}`, name: `pkg-${i}`, group: '', version: '1.0', format: 'maven2', assets: [],
+          })),
+          continuationToken: null,
+        }),
+      ),
+    )
+    renderBrowse('?repo=maven-hosted')
+    expect(await screen.findByText('pkg-0')).toBeInTheDocument()
+    expect(screen.getByText('pkg-24')).toBeInTheDocument()
+    const table = screen.getByText('Name').closest('.holo-card') as HTMLElement
+    expect(table.style.overflow).toBe('auto')
+    expect(table.style.minHeight).toBe('0px')
+  })
+
   it('shows access-denied on 403', async () => {
     server.use(
       http.get('/service/rest/v1/components', () => HttpResponse.json({ error: 'denied' }, { status: 403 })),
@@ -299,6 +318,8 @@ describe('BrowsePage — Raw tree', () => {
     expect(await screen.findByText('File details')).toBeInTheDocument()
     expect(screen.getByText('abc123')).toBeInTheDocument()
     expect(screen.getByText('SHA256')).toBeInTheDocument()
+    const tree = screen.getByText('Expand folders to browse. Click a file for details.').closest('.holo-card') as HTMLElement
+    expect(tree.style.overflow).toBe('auto')
     // tag editor section loaded
     expect(await screen.findByText('stable')).toBeInTheDocument()
   })

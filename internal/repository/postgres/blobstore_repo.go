@@ -85,7 +85,7 @@ func (r *blobStoreRepo) Update(ctx context.Context, b *domain.BlobStore) error {
 
 func (r *blobStoreRepo) Delete(ctx context.Context, name string) error {
 	_, err := r.db.Exec(ctx, `DELETE FROM blob_stores WHERE name=$1`, name)
-	return err
+	return translateInUse(err)
 }
 
 func (r *blobStoreRepo) UpdateUsedBytes(ctx context.Context, name string, delta int64) error {

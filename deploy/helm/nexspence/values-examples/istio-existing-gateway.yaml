@@ -1,0 +1,19 @@
+# VirtualService on a Gateway that already exists. The chart does not
+# create a Gateway CR. gatewaySelector is unused in this mode.
+#
+# helm install nexspence deploy/helm/nexspence \
+#   -f values-examples/istio-existing-gateway.yaml
+
+ingress:
+  enabled: false
+
+gateway:
+  istio:
+    enabled: true
+    existingGateway: istio-system/istio-ingressgateway
+    hosts:
+      - "nexspence.example.com"
+    timeout: "300s"
+
+config:
+  baseURL: "https://nexspence.example.com"

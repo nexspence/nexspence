@@ -497,7 +497,7 @@ func (s *UserService) LoginOIDC(ctx context.Context, claims *auth.OIDCClaims, ra
 		return "", nil, fmt.Errorf("%w: user account is not active", ErrInvalidInput)
 	}
 
-	if err := s.syncOIDCRoles(ctx, existing.ID, claims.Groups); err != nil {
+	if err := s.syncOIDCRoles(ctx, existing.ID, claims.Groups, claims.GroupsPresent); err != nil {
 		s.log.Warnw("syncOIDCRoles failed", "username", username, "err", err)
 	}
 
@@ -549,8 +549,19 @@ func (s *UserService) checkProvisioning(email string) error {
 
 // syncOIDCRoles replaces the user's roles with those derived from claims.
 // Collection: admin_group match → nx-admin; role_mappings lookup by claim value
-// (with DN-aware comparison via oidcGroupMatch) → mapped role name.
-func (s *UserService) syncOIDCRoles(ctx context.Context, userID string, groups []string) error {
+// (with DN-aware comparison via oidcGroupMatch) → mapped role name. When the
+// id_token carries no claim under GroupsClaim at all (groupsPresent is
+// false), this is a no-op: the IdP gave no group info for this login, so any
+// manually-assigned roles are left untouched rather than wiped to empty.
+func (s *UserService) syncOIDCRoles(ctx context.Context, userID string, groups []string, groupsPresent bool) error {
+	if !groupsPresent {
+		if s.oidcCfg.GroupsClaim != "" {
+			s.log.Warnw("oidc id_token has no groups claim; leaving existing role assignments untouched",
+				"user", userID, "groups_claim", s.oidcCfg.GroupsClaim)
+		}
+		return nil
+	}
+
 	want := make(map[string]struct{})
 	for _, g := range groups {
 		if s.oidcCfg.AdminGroup != "" && oidcGroupMatch(g, s.oidcCfg.AdminGroup) {
@@ -668,7 +679,7 @@ func (s *UserService) LoginSAML(ctx context.Context, claims *auth.SAMLClaims) (s
 		return "", nil, fmt.Errorf("%w: user account is not active", ErrInvalidInput)
 	}
 
-	if err := s.syncSAMLRoles(ctx, existing.ID, claims.Groups); err != nil {
+	if err := s.syncSAMLRoles(ctx, existing.ID, claims.Groups, claims.GroupsPresent); err != nil {
 		s.log.Warnw("syncSAMLRoles failed", "username", username, "err", err)
 	}
 
@@ -716,8 +727,18 @@ func (s *UserService) checkSAMLProvisioning(email string) error {
 }
 
 // syncSAMLRoles replaces the user's roles derived from SAML groups.
-// REPLACE semantics: IdP is source of truth.
-func (s *UserService) syncSAMLRoles(ctx context.Context, userID string, groups []string) error {
+// REPLACE semantics: IdP is source of truth. When the assertion carries no
+// attribute under GroupsAttribute at all (groupsPresent is false), this is a
+// no-op — see syncOIDCRoles for the same reasoning.
+func (s *UserService) syncSAMLRoles(ctx context.Context, userID string, groups []string, groupsPresent bool) error {
+	if !groupsPresent {
+		if s.samlCfg.GroupsAttribute != "" {
+			s.log.Warnw("saml assertion has no groups attribute; leaving existing role assignments untouched",
+				"user", userID, "groups_attribute", s.samlCfg.GroupsAttribute)
+		}
+		return nil
+	}
+
 	want := make(map[string]struct{})
 	for _, g := range groups {
 		if s.samlCfg.AdminGroup != "" && strings.EqualFold(g, s.samlCfg.AdminGroup) {

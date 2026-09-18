@@ -25,6 +25,36 @@ CREATE TABLE blob_stores (
 );
 
 -- ============================================================
+-- BLOB STORE MIGRATIONS
+-- Audit trail of moving a repository's blobs from one store to another.
+-- repository_name is TEXT (no FK): the row outlives the repository.
+-- Store FKs SET NULL on delete so history does not pin a store forever.
+-- ============================================================
+CREATE TABLE blob_store_migrations (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    repository_name TEXT    NOT NULL,
+    source_store_id UUID    REFERENCES blob_stores(id) ON DELETE SET NULL,
+    target_store_id UUID    REFERENCES blob_stores(id) ON DELETE SET NULL,
+    status          TEXT    NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending','running','cancelled','done','failed')),
+    total_assets    INT     NOT NULL DEFAULT 0,
+    done_assets     INT     NOT NULL DEFAULT 0,
+    total_bytes     BIGINT  NOT NULL DEFAULT 0,
+    done_bytes      BIGINT  NOT NULL DEFAULT 0,
+    error_message   TEXT,
+    started_at      TIMESTAMPTZ,
+    finished_at     TIMESTAMPTZ,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX ON blob_store_migrations (repository_name);
+CREATE INDEX ON blob_store_migrations (status) WHERE status IN ('pending','running');
+CREATE UNIQUE INDEX blob_store_migrations_one_active_per_repo
+    ON blob_store_migrations (repository_name)
+    WHERE status IN ('pending', 'running');
+
+-- ============================================================
 -- REPOSITORIES
 -- ============================================================
 CREATE TABLE repositories (

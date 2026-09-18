@@ -422,9 +422,15 @@ func (h *Handler) recordCachedManifestMeta(ctx context.Context, repo *domain.Rep
 
 	store := h.deps.BlobStore
 	if asset.BlobStoreID != "" {
-		if bsMeta, getErr := h.deps.Blobs.GetByID(ctx, asset.BlobStoreID); getErr == nil {
-			store = base.PhysicalStore(ctx, h.deps, bsMeta)
+		bsMeta, getErr := h.deps.Blobs.GetByID(ctx, asset.BlobStoreID)
+		if getErr != nil || bsMeta == nil {
+			return
 		}
+		resolved, resolveErr := base.PhysicalStore(ctx, h.deps, bsMeta)
+		if resolveErr != nil {
+			return
+		}
+		store = resolved
 	}
 	rc, _, err := store.Get(ctx, asset.BlobKey)
 	if err != nil {
@@ -673,17 +679,14 @@ func (h *Handler) mountBlob(c *gin.Context, repoName, imageName, dgst, from stri
 			// An asset row outlives its bytes: a manual blob delete or a GC pass
 			// can leave the record behind. Answering 201 off one of those would
 			// hand the client a layer that 404s on pull.
-			storeName, present := h.locateBlob(ctx, src)
+			storeName, present, locateErr := h.locateBlob(ctx, src)
+			if locateErr != nil {
+				return locateErr
+			}
 			if !present {
 				return nil
 			}
 			blobStoreID := src.BlobStoreID
-			if storeName == "" {
-				// The store the source names could not be resolved, so let the
-				// registration fall back to the repository's own default, exactly as
-				// a fetch of that asset would.
-				blobStoreID = ""
-			}
 			if _, err := base.RegisterStoredBlob(ctx, h.deps, repo,
 				blobPath(imageName, dgst), "application/octet-stream",
 				base.Coords{Name: imageName, Version: dgst},
@@ -694,6 +697,10 @@ func (h *Handler) mountBlob(c *gin.Context, repoName, imageName, dgst, from stri
 			mounted = true
 			return nil
 		}); lockErr != nil {
+			if errors.Is(lockErr, base.ErrBlobStoreUnavailable) {
+				dockerError(c, http.StatusInternalServerError, "UNKNOWN", lockErr.Error())
+				return true
+			}
 			return false
 		}
 		if !mounted {
@@ -765,21 +772,36 @@ func mountSourceImages(repoName, from string) []string {
 }
 
 // locateBlob reports whether an asset's bytes are really in the store, and
-// returns the name of the store holding them (empty when the asset names no
-// store, or names one that no longer resolves).
-func (h *Handler) locateBlob(ctx context.Context, asset *domain.Asset) (storeName string, present bool) {
+// returns the name of the store holding them. A store id is a hard location:
+// lookup, initialization, and existence-check errors are returned so a failed
+// source store cannot turn a mount into a write against a different store.
+func (h *Handler) locateBlob(ctx context.Context, asset *domain.Asset) (storeName string, present bool, err error) {
 	store := h.deps.BlobStore
 	if asset.BlobStoreID != "" {
-		if meta, err := h.deps.Blobs.GetByID(ctx, asset.BlobStoreID); err == nil && meta != nil {
-			store = base.PhysicalStore(ctx, h.deps, meta)
-			storeName = meta.Name
+		meta, getErr := h.deps.Blobs.GetByID(ctx, asset.BlobStoreID)
+		if getErr != nil {
+			return "", false, fmt.Errorf("%w: asset blob store %q: %w", base.ErrBlobStoreUnavailable, asset.BlobStoreID, getErr)
 		}
+		if meta == nil {
+			return "", false, fmt.Errorf("%w: asset blob store id %q not found", base.ErrBlobStoreUnavailable, asset.BlobStoreID)
+		}
+		store, err = base.PhysicalStore(ctx, h.deps, meta)
+		if err != nil {
+			return "", false, fmt.Errorf("%w: %w", base.ErrBlobStoreUnavailable, err)
+		}
+		storeName = meta.Name
 	}
 	exists, err := store.Exists(ctx, asset.BlobKey)
-	if err != nil || !exists {
-		return "", false
+	if err != nil {
+		if asset.BlobStoreID != "" {
+			return "", false, fmt.Errorf("%w: check asset blob %q: %w", base.ErrBlobStoreUnavailable, asset.BlobKey, err)
+		}
+		return "", false, err
 	}
-	return storeName, true
+	if !exists {
+		return "", false, nil
+	}
+	return storeName, true, nil
 }
 
 // blobLocation is the URL of a stored blob under the same /v2/ prefix — and the

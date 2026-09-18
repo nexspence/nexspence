@@ -120,6 +120,10 @@ type AssetRepo interface {
 	// and still live on blobStoreID. Used to decide whether a physical blob may
 	// be removed from one specific store.
 	CountByBlobKeyInStore(ctx context.Context, blobKey, blobStoreID string) (int, error)
+	// CountByBlobStoreID returns how many assets still live on blobStoreID.
+	// Blob-store delete uses this: a group member can hold assets even when
+	// no repository.blob_store_id points at it.
+	CountByBlobStoreID(ctx context.Context, blobStoreID string) (int, error)
 	// ListRawBrowseAssets returns all assets for the given raw-format repos with metadata for tree building.
 	ListRawBrowseAssets(ctx context.Context, repoNames []string) ([]domain.RawBrowseAsset, error)
 	// ListOCIImageNames returns the distinct image names held by the given OCI

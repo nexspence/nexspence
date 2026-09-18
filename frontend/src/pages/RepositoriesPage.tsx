@@ -82,6 +82,13 @@ const TYPE_LABELS: Record<string, string> = {
   group:  'Group',
 }
 
+const TYPE_FILTERS: { value: '' | 'hosted' | 'proxy' | 'group'; label: string }[] = [
+  { value: '', label: 'All' },
+  { value: 'hosted', label: 'Hosted' },
+  { value: 'proxy', label: 'Proxy' },
+  { value: 'group', label: 'Group' },
+]
+
 export default function RepositoriesPage() {
   const qc = useQueryClient()
   const navigate = useNavigate()
@@ -89,6 +96,7 @@ export default function RepositoriesPage() {
   const signedIn = useAuthStore(s => s.token !== null)
   const [filter, setFilter] = useState('')
   const [formatFilter, setFormatFilter] = useState('')
+  const [typeFilter, setTypeFilter] = useState('')
   const [showCreate, setShowCreate] = useState(false)
   const [editRepo, setEditRepo] = useState<Repository | null>(null)
   const [activeMigrations, setActiveMigrations] = React.useState<Set<string>>(new Set())
@@ -132,10 +140,14 @@ export default function RepositoriesPage() {
     onSettled: () => qc.invalidateQueries({ queryKey: ['repositories'] }),
   })
 
-  const filtered = repos.filter(r =>
-    r.name.toLowerCase().includes(filter.toLowerCase()) ||
-    (r.description ?? '').toLowerCase().includes(filter.toLowerCase())
-  )
+  const q = filter.toLowerCase()
+  const filtered = repos.filter(r => {
+    const textOk =
+      r.name.toLowerCase().includes(q) ||
+      (r.description ?? '').toLowerCase().includes(q)
+    const typeOk = !typeFilter || r.type === typeFilter
+    return textOk && typeOk
+  })
 
   return (
     <div className={styles.page}>
@@ -157,13 +169,27 @@ export default function RepositoriesPage() {
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 12 }}>
+      <div className={styles.toolbar}>
         <HoloInput
-          style={{ flex: 1 }}
+          style={{ flex: 1, minWidth: 0 }}
           placeholder="Filter by name…"
           value={filter}
           onChange={e => setFilter(e.target.value)}
         />
+        <div className={styles.typeFilter} role="radiogroup" aria-label="Type">
+          {TYPE_FILTERS.map(opt => (
+            <button
+              key={opt.value || 'all'}
+              type="button"
+              role="radio"
+              aria-checked={typeFilter === opt.value}
+              className={styles.typeBtn}
+              onClick={() => setTypeFilter(opt.value)}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
         <Select
           options={[
             { value: '', label: 'All formats' },
@@ -171,7 +197,7 @@ export default function RepositoriesPage() {
           ]}
           value={formatFilter}
           onChange={setFormatFilter}
-          style={{ minWidth: 140 }}
+          style={{ minWidth: 140, flexShrink: 0 }}
         />
       </div>
 
@@ -200,6 +226,11 @@ export default function RepositoriesPage() {
               Create your first repository
             </HoloButton>
           )}
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className={styles.empty}>
+          <Database size={40} className={styles.emptyIcon} />
+          <p>No repositories match</p>
         </div>
       ) : (
         <div className={styles.list}>

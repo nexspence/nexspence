@@ -73,8 +73,8 @@ func TestBlobStoreMigration_ResumeAll_MarksActiveAsCancelled(t *testing.T) {
 	ctx := context.Background()
 
 	// Seed two active migrations directly in the repo.
-	m1 := &domain.BlobStoreMigration{RepositoryName: "repo1", Status: "running"}
-	m2 := &domain.BlobStoreMigration{RepositoryName: "repo2", Status: "running"}
+	m1 := &domain.BlobStoreMigration{RepositoryName: "repo1", Status: "running", TargetStoreID: "store-1"}
+	m2 := &domain.BlobStoreMigration{RepositoryName: "repo2", Status: "running", TargetStoreID: "store-1"}
 	require.NoError(t, migRepo.Create(ctx, m1))
 	require.NoError(t, migRepo.Create(ctx, m2))
 
@@ -85,11 +85,31 @@ func TestBlobStoreMigration_ResumeAll_MarksActiveAsCancelled(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, got1)
 	assert.NotEqual(t, "running", got1.Status)
+	assert.NotEqual(t, "pending", got1.Status)
 
 	got2, err := migRepo.GetLatestByRepo(ctx, "repo2")
 	require.NoError(t, err)
 	require.NotNil(t, got2)
 	assert.NotEqual(t, "running", got2.Status)
+	assert.NotEqual(t, "pending", got2.Status)
+}
+
+func TestBlobStoreMigration_ResumeAll_EmptyTargetFails(t *testing.T) {
+	svc, migRepo, _, _ := newMigSvc(t)
+	ctx := context.Background()
+
+	require.NoError(t, migRepo.Create(ctx, &domain.BlobStoreMigration{
+		RepositoryName: "orphaned-repo", Status: "running",
+	}))
+
+	require.NoError(t, svc.ResumeAll(ctx))
+
+	got, err := migRepo.GetLatestByRepo(ctx, "orphaned-repo")
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.Equal(t, "failed", got.Status)
+	require.NotNil(t, got.ErrorMessage)
+	assert.Contains(t, *got.ErrorMessage, "no longer available")
 }
 
 func TestBlobStoreMigration_Start_RepoNotFound(t *testing.T) {
@@ -231,8 +251,8 @@ func TestBlobStoreMigration_ResumeAll_ReleasesStaleLocks(t *testing.T) {
 	svc, migRepo, _, _ := newMigSvc(t)
 	ctx := context.Background()
 
-	require.NoError(t, migRepo.Create(ctx, &domain.BlobStoreMigration{RepositoryName: "repo1", Status: "running"}))
-	require.NoError(t, migRepo.Create(ctx, &domain.BlobStoreMigration{RepositoryName: "repo2", Status: "pending"}))
+	require.NoError(t, migRepo.Create(ctx, &domain.BlobStoreMigration{RepositoryName: "repo1", Status: "running", TargetStoreID: "store-1"}))
+	require.NoError(t, migRepo.Create(ctx, &domain.BlobStoreMigration{RepositoryName: "repo2", Status: "pending", TargetStoreID: "store-1"}))
 
 	lk := &migLocker{}
 	svc.WithLocker(lk)

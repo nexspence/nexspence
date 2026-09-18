@@ -6,9 +6,11 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/storage"
 	"github.com/nexspence-oss/nexspence/internal/testutil"
 )
@@ -78,4 +80,27 @@ func TestBlobStoreMigration_CopyBlob_CopiesUnchangedBlob(t *testing.T) {
 	got, err := io.ReadAll(rc)
 	require.NoError(t, err)
 	require.Equal(t, "original", string(got))
+}
+
+func TestBlobStoreMigration_RunMigration_EmptyTargetFails(t *testing.T) {
+	migRepo := testutil.NewBlobStoreMigrationRepo()
+	m := &domain.BlobStoreMigration{
+		ID: "mig-empty-tgt", RepositoryName: "gone-repo", Status: "pending",
+	}
+	require.NoError(t, migRepo.Create(context.Background(), m))
+
+	svc := NewBlobStoreMigrationService(
+		migRepo,
+		testutil.NewAssetRepo(),
+		testutil.NewRepoRepo(),
+		testutil.NewBlobStoreRepo(),
+		storage.NewRegistry(testutil.NewBlobStore()),
+	)
+	svc.runMigration(context.Background(), m, nil, time.Time{})
+
+	got, err := migRepo.Get(context.Background(), m.ID)
+	require.NoError(t, err)
+	require.Equal(t, "failed", got.Status)
+	require.NotNil(t, got.ErrorMessage)
+	require.Contains(t, *got.ErrorMessage, "no longer available")
 }

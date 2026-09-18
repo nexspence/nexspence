@@ -761,3 +761,56 @@ func TestBlobStoreMigrationRepo_ListActive_EmptyReturnsNoRows(t *testing.T) {
 		t.Errorf("ListActive on empty: got %d rows, want 0", len(active))
 	}
 }
+
+func TestBlobStoreMigrationRepo_Create_EmptyTargetRejected(t *testing.T) {
+	pool := pgtest.Pool(t)
+	pgtest.Truncate(t, pool, "blob_store_migrations", "blob_stores")
+	ctx := context.Background()
+	repo := NewBlobStoreMigrationRepo(pool)
+
+	m := &domain.BlobStoreMigration{
+		RepositoryName: "empty_target_repo", Status: "pending",
+	}
+	if err := repo.Create(ctx, m); err == nil {
+		t.Fatal("Create with empty target: expected error, got nil")
+	}
+}
+
+func TestBlobStoreMigrationRepo_GetLatestByRepo_NullTargetDoesNotBreak(t *testing.T) {
+	pool := pgtest.Pool(t)
+	pgtest.Truncate(t, pool, "blob_store_migrations", "blob_stores")
+	ctx := context.Background()
+	bsRepo := NewBlobStoreRepo(pool)
+	repo := NewBlobStoreMigrationRepo(pool)
+
+	srcID, dstID := makeBSMParents(t, ctx, bsRepo, "null_tgt")
+	m := &domain.BlobStoreMigration{
+		RepositoryName: "null_tgt_repo", SourceStoreID: srcID, TargetStoreID: dstID, Status: "done",
+	}
+	if err := repo.Create(ctx, m); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := repo.FinishMigration(ctx, m.ID, "done", nil); err != nil {
+		t.Fatalf("FinishMigration: %v", err)
+	}
+
+	// Deleting the destination store SET NULLs the FK; scanMigration must still
+	// return the audit fields rather than fail on a NULL uuid.
+	if err := bsRepo.Delete(ctx, "null_tgt_dst"); err != nil {
+		t.Fatalf("Delete target store: %v", err)
+	}
+
+	got, err := repo.GetLatestByRepo(ctx, "null_tgt_repo")
+	if err != nil {
+		t.Fatalf("GetLatestByRepo after SET NULL: %v", err)
+	}
+	if got.TargetStoreID != "" {
+		t.Errorf("TargetStoreID: got %q, want empty", got.TargetStoreID)
+	}
+	if got.RepositoryName != "null_tgt_repo" || got.Status != "done" {
+		t.Errorf("audit fields: name=%q status=%q", got.RepositoryName, got.Status)
+	}
+	if got.SourceStoreID != srcID {
+		t.Errorf("SourceStoreID: got %q, want %q (source store still exists)", got.SourceStoreID, srcID)
+	}
+}

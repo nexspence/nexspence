@@ -71,15 +71,16 @@ func TestGC_Compact_AbortsAtLockDeadline(t *testing.T) {
 	require.NoError(t, store.Put(ctx, "orphan-1", testutil.MakeReader("xxxx"), 4))
 
 	svc := &BlobGCService{Assets: testutil.NewAssetRepo(), Stores: testutil.NewBlobStoreRepo()}
-	referenced, err := svc.referencedSet(ctx)
+	referenced, err := svc.referencedSet(ctx, nil)
 	require.NoError(t, err)
+	physicalID := storage.PhysicalStoreIdentity(storage.BlobStoreDescriptor{ID: "store-1", Type: "local"})
 
-	res := svc.compact(ctx, "default", "store-1", store, referenced, GCOptions{}, expiredDeadline())
+	res := svc.compact(ctx, "default", "store-1", physicalID, store, referenced, GCOptions{}, expiredDeadline())
 	assert.True(t, res.Aborted, "a pass past the GC lock's TTL must stop")
 	assert.Equal(t, 0, res.Orphans, "no orphan is deleted after the deadline")
 	assert.Empty(t, store.Deleted)
 
-	res = svc.compact(ctx, "default", "store-1", store, referenced, GCOptions{}, futureDeadline())
+	res = svc.compact(ctx, "default", "store-1", physicalID, store, referenced, GCOptions{}, futureDeadline())
 	assert.False(t, res.Aborted)
 	assert.Equal(t, 1, res.Orphans, "the ordinary, well-within-TTL pass is unchanged")
 }

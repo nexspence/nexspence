@@ -125,7 +125,7 @@ helm install nexspence \
 
 > `config.jwtSecret` is optional — when omitted, the chart auto-generates a unique random secret on first install and persists it across upgrades. Set it explicitly only to pin a known value or share it across clusters.
 
-Five networking options (nginx, Traefik, Cilium ingress, Istio Gateway, Cilium Gateway API), external PostgreSQL, S3 storage, and HPA — see [deploy/helm/nexspence/README.md](../deploy/helm/nexspence/README.md).
+Five networking options (nginx, Traefik, Cilium ingress, Istio Gateway, Cilium Gateway API), external PostgreSQL, S3 or Azure blob storage, and HPA — see [deploy/helm/nexspence/README.md](../deploy/helm/nexspence/README.md). For AKS with Azure Blob Storage, use the [Workload Identity guide](azure-workload-identity.md).
 
 ---
 
@@ -152,12 +152,19 @@ uses OSV.dev and works with nothing installed.
 | `http.csp` | `""` | Content-Security-Policy for UI/API responses. Empty uses the built-in policy; `"off"` omits the header. Artifact paths are exempt. |
 | `http.cors_origins` | `[]` | Origins allowed to read API responses from a browser. Empty sends no CORS header — correct when the bundled UI shares this origin. `["*"]` lets any site read responses; opt in only for a public instance. |
 | `database.dsn` | `postgres://nexspence:nexspence@localhost:5437/nexspence` | PostgreSQL connection string |
-| `storage.default_type` | `local` | `local` or `s3` |
-| `storage.local.base_path` | `./data/blobs` | Filesystem path for local blob store |
+| `storage.default_type` | `local` | `local`, `s3` or `azure`. Anything else is refused at startup — a typo used to fall back to `local` while the configured bucket or container stayed empty. Switching this on an installation that already holds blobs needs a migration — see [Switching an existing installation to Azure](#switching-an-existing-installation-to-azure). |
+| `storage.local.base_path` | `./data/blobs` | Filesystem path for the default local blob store. Additional local stores created in the UI must live under this directory — on Kubernetes it is the blob PVC (`storage.local.mountPath`); a path outside it lands on the read-only container root. |
 | `storage.s3.bucket` | — | S3 bucket name (required when type=s3) |
 | `storage.s3.endpoint` | — | S3 endpoint URL (e.g. `http://minio:9000`) |
 | `storage.s3.force_path_style` | `true` | Required for MinIO / non-AWS S3 |
 | `storage.s3.skip_tls_verify` | `false` | Accept the endpoint's TLS certificate without verifying it. For an on-prem S3 behind a private CA whose root you cannot install into the container's trust store; the connection carries the credentials and every blob, so prefer trusting the CA. Per-blob-store stores set the same thing with `skip_tls_verify` in their config (System Admin → Blob Stores → *Skip TLS certificate verification*). |
+| `storage.azure.container` | — | Azure blob container (required when type=azure); must already exist |
+| `storage.azure.account_name` | — | Storage account; pair with `account_key`, or leave credentials empty for Entra ID |
+| `storage.azure.account_key` | — | Shared key (enables presigning). Env: `NEXSPENCE_STORAGE_AZURE_ACCOUNT_KEY` |
+| `storage.azure.connection_string` | — | Wins over account name/key/SAS. Env: `NEXSPENCE_STORAGE_AZURE_CONNECTION_STRING` |
+| `storage.azure.sas_token` | — | Pre-generated SAS; disables presigning |
+| `storage.azure.endpoint` | — | Optional custom endpoint (Azurite). Empty uses `https://<account>.blob.core.windows.net` |
+| `storage.azure.skip_tls_verify` | `false` | Same meaning as the S3 option, for an emulator / private CA |
 | `auth.jwt_secret` | — | JWT signing key. **From source / native install: set this (min 32 chars) before production.** The Docker image and Helm chart auto-generate a unique secret when it is unset. |
 | `auth.encryption_key` | — | Optional base64 32-byte key for replication credentials (decouples them from `jwt_secret`; existing rows are re-encrypted automatically at startup). Generate: `openssl rand -base64 32` |
 | `auth.jwt_expiry_hours` | `24` | JWT token lifetime |
@@ -176,6 +183,33 @@ uses OSV.dev and works with nothing installed.
 | `metrics.public` | `false` | Serve `GET /metrics` without authentication. Default requires a Bearer token; see [Prometheus](#prometheus). |
 | `redis.enabled` | `false` | Enable Redis (required for HA) |
 | `redis.addr` | `localhost:6379` | Redis address |
+
+---
+
+## Switching an existing installation to Azure
+
+Setting `storage.default_type: azure` does not move any blobs. On start Nexspence reconciles the two seed blob stores — `default` and `docker` — onto the configured container, so that no local store silently keeps capturing writes. That reconciliation only touches a seed store that is still untouched and empty.
+
+If either store already holds data, is assigned to a repository, or was edited by hand, **the server refuses to start**:
+
+```
+azure blob store sync failed: refusing automatic Azure blob-store target change
+for "default" is already used or referenced; create a new store and use the
+blob-store migration endpoint for repositories that need to move
+```
+
+The same refusal applies with `"default" has an individual configuration or a different storage target` when the store was given a custom path, a quota, or already points somewhere else.
+
+This is deliberate. Repointing a store that holds blobs would leave every existing asset row naming a container that does not have the bytes — reads would come back empty and deletes would silently miss. Move the data explicitly instead:
+
+1. Start the server again with the previous `storage.default_type` so it comes up.
+2. Create a new blob store of type `azure` — System Admin → Blob Stores → Create, or `POST /service/rest/v1/blobstores/azure`.
+3. Migrate each repository onto it: `POST /api/v1/repositories/<repo>/migrate-blob-store` with `{"targetStoreId": "<new-store-id>"}`. Follow progress via `GET /api/v1/repositories/<repo>/blob-store-migration`.
+4. Once no repository references the old seed stores and they are empty, set `storage.default_type: azure`.
+
+A fresh install is unaffected: its seed stores are empty, so they are converted on the first start.
+
+Changing only the credential of a store that already points at the same container (for example rotating an account key, or moving from an account key to workload identity) is **not** a target change and is applied automatically on start.
 
 ---
 

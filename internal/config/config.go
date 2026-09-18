@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"reflect"
 	"strings"
 	"time"
 
+	"github.com/go-viper/mapstructure/v2"
 	"github.com/spf13/viper"
 )
 
@@ -150,12 +152,13 @@ type DatabaseConfig struct {
 	MaxIdleSec int    `mapstructure:"max_idle_sec"`
 }
 
-// StorageConfig selects the default blob store backend and its local/S3 settings.
+// StorageConfig selects the default blob store backend and its local/S3/Azure settings.
 type StorageConfig struct {
-	// Default blob store type: "local" or "s3"
+	// Default blob store type: "local", "s3" or "azure"
 	DefaultType string      `mapstructure:"default_type"`
 	Local       LocalConfig `mapstructure:"local"`
 	S3          S3Config    `mapstructure:"s3"`
+	Azure       AzureConfig `mapstructure:"azure"`
 }
 
 // LocalConfig holds the base path for the local filesystem blob store.
@@ -173,6 +176,22 @@ type S3Config struct {
 	ForcePathStyle  bool   `mapstructure:"force_path_style"`
 	// SkipTLSVerify disables certificate verification against the endpoint,
 	// for an on-prem S3 fronted by a private CA (#403). Off by default.
+	SkipTLSVerify bool `mapstructure:"skip_tls_verify"`
+}
+
+// AzureConfig holds credentials and endpoint settings for the Azure Blob
+// Storage backend. Exactly one credential path is required: ConnectionString,
+// AccountKey (with AccountName), SASToken, or an ambient Entra ID identity
+// via DefaultAzureCredential (which still needs AccountName).
+type AzureConfig struct {
+	Container        string `mapstructure:"container"`
+	AccountName      string `mapstructure:"account_name"`
+	AccountKey       string `mapstructure:"account_key"`
+	ConnectionString string `mapstructure:"connection_string"`
+	SASToken         string `mapstructure:"sas_token"`
+	Endpoint         string `mapstructure:"endpoint"`
+	// SkipTLSVerify mirrors the S3 option of the same name for an
+	// endpoint behind a private CA. Off by default.
 	SkipTLSVerify bool `mapstructure:"skip_tls_verify"`
 }
 
@@ -307,6 +326,19 @@ func (a AuthConfig) EncryptionKeyBytes() []byte {
 		return nil
 	}
 	return b
+}
+
+// ValidateStorage rejects an unknown storage.default_type. Viper has no notion
+// of an enum, so a typo ("S3", "azue") used to fall through to the local
+// backend and every push landed on a container filesystem nobody was watching —
+// with the configured bucket or container sitting there empty.
+func ValidateStorage(s StorageConfig) error {
+	switch s.DefaultType {
+	case "", "local", "s3", "azure":
+		return nil
+	default:
+		return fmt.Errorf("storage.default_type must be \"local\", \"s3\" or \"azure\", got %q", s.DefaultType)
+	}
 }
 
 // ValidateAuth rejects an empty, placeholder, or too-short JWT signing secret.
@@ -533,6 +565,13 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("storage.s3.secret_access_key", "")
 	v.SetDefault("storage.s3.force_path_style", false)
 	v.SetDefault("storage.s3.skip_tls_verify", false)
+	v.SetDefault("storage.azure.container", "")
+	v.SetDefault("storage.azure.account_name", "")
+	v.SetDefault("storage.azure.account_key", "")
+	v.SetDefault("storage.azure.connection_string", "")
+	v.SetDefault("storage.azure.sas_token", "")
+	v.SetDefault("storage.azure.endpoint", "")
+	v.SetDefault("storage.azure.skip_tls_verify", false)
 	v.SetDefault("database.max_conns", 100)
 	v.SetDefault("database.min_conns", 5)
 	v.SetDefault("database.max_idle_sec", 300)
@@ -629,6 +668,12 @@ func Load(path string) (*Config, error) {
 	// Env override: NEXSPENCE_DATABASE_DSN, NEXSPENCE_AUTH_JWT_SECRET, etc.
 	v.SetEnvPrefix("NEXSPENCE")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	// Without this, viper treats an env var set to "" as unset, so an operator
+	// blanking a key that has a non-empty default (oidc.groups_claim is
+	// "groups") silently keeps the default — with no error and no way to tell
+	// from the outside (#482). Only variables that are genuinely present in
+	// the environment are affected; an absent one still yields the default.
+	v.AllowEmptyEnv(true)
 	v.AutomaticEnv()
 
 	if err := v.ReadInConfig(); err != nil {
@@ -642,12 +687,26 @@ func Load(path string) (*Config, error) {
 	}
 
 	var cfg Config
-	if err := v.Unmarshal(&cfg); err != nil {
+	// Viper's key delimiter is ".". Hostname keys in
+	// docker.subdomain_connector.aliases (docker-hub-proxy.example.com) are
+	// therefore split into nested maps, and Unmarshal into map[string]string
+	// fails with: aliases[docker-hub-proxy] expected string, got map.
+	// Quoting the YAML key does not help — the split happens after parse.
+	// Flatten those nested maps back into dotted hostnames. Passing DecodeHook
+	// replaces viper's defaults, so keep the duration and comma-slice hooks.
+	if err := v.Unmarshal(&cfg, viper.DecodeHook(mapstructure.ComposeDecodeHookFunc(
+		mapstructure.StringToTimeDurationHookFunc(),
+		mapstructure.StringToSliceHookFunc(","),
+		flattenDottedStringMapHook(),
+	))); err != nil {
 		return nil, fmt.Errorf("parse config: %w", err)
 	}
 
 	if cfg.Database.DSN == "" {
 		return nil, fmt.Errorf("database.dsn is required (or set NEXSPENCE_DATABASE_DSN)")
+	}
+	if err := ValidateStorage(cfg.Storage); err != nil {
+		return nil, err
 	}
 	if err := ValidateAuth(cfg.Auth); err != nil {
 		return nil, err
@@ -671,4 +730,92 @@ func Load(path string) (*Config, error) {
 	}
 
 	return &cfg, nil
+}
+
+// flattenDottedStringMapHook rebuilds map[string]string keys that viper split
+// on ".". It only runs when unmarshalling into map[string]string.
+func flattenDottedStringMapHook() mapstructure.DecodeHookFunc {
+	return func(_ reflect.Type, to reflect.Type, data any) (any, error) {
+		if to.Kind() != reflect.Map || to.Key().Kind() != reflect.String || to.Elem().Kind() != reflect.String {
+			return data, nil
+		}
+		flat, ok, err := flattenStringMap(data, "")
+		if err != nil || !ok {
+			return data, err
+		}
+		return flat, nil
+	}
+}
+
+func flattenStringMap(data any, prefix string) (map[string]string, bool, error) {
+	switch m := data.(type) {
+	case map[string]string:
+		if prefix == "" {
+			return m, true, nil
+		}
+		out := make(map[string]string, len(m))
+		for k, v := range m {
+			out[joinDotted(prefix, k)] = v
+		}
+		return out, true, nil
+	case map[string]any:
+		out := map[string]string{}
+		for k, v := range m {
+			if err := mergeFlattened(out, joinDotted(prefix, k), v); err != nil {
+				return nil, false, err
+			}
+		}
+		return out, true, nil
+	case map[any]any:
+		out := map[string]string{}
+		for k, v := range m {
+			ks, ok := k.(string)
+			if !ok {
+				return nil, false, fmt.Errorf("expected string map key, got %T", k)
+			}
+			if err := mergeFlattened(out, joinDotted(prefix, ks), v); err != nil {
+				return nil, false, err
+			}
+		}
+		return out, true, nil
+	default:
+		return nil, false, nil
+	}
+}
+
+func mergeFlattened(out map[string]string, key string, v any) error {
+	switch child := v.(type) {
+	case string:
+		out[key] = child
+	case map[string]any:
+		for ck, cv := range child {
+			if err := mergeFlattened(out, joinDotted(key, ck), cv); err != nil {
+				return err
+			}
+		}
+	case map[string]string:
+		for ck, cv := range child {
+			out[joinDotted(key, ck)] = cv
+		}
+	case map[any]any:
+		for ck, cv := range child {
+			ks, ok := ck.(string)
+			if !ok {
+				return fmt.Errorf("%s: expected string map key, got %T", key, ck)
+			}
+			if err := mergeFlattened(out, joinDotted(key, ks), cv); err != nil {
+				return err
+			}
+		}
+	default:
+		return fmt.Errorf("%s: expected string, got %T", key, v)
+	}
+	return nil
+}
+
+func joinDotted(prefix, key string) string {
+	if prefix == "" {
+		return key
+	}
+	return prefix + "." + key
 }
