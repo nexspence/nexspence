@@ -2,6 +2,8 @@ package apt_test
 
 import (
 	"bytes"
+	"context"
+	"fmt"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -216,4 +218,53 @@ func TestApt_PostRootMultipart_Upload(t *testing.T) {
 	r.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Equal(t, "curl-bytes", w.Body.String())
+}
+
+// ── #443: index scope and size ───────────────────────────────────────────────
+
+func TestApt_PackagesIndex_IgnoresDebsOutsidePool(t *testing.T) {
+	// Uploads are always normalised into /pool/, but an asset can still land
+	// elsewhere (restore, migration, a raw import). apt fetches Filename
+	// relative to the repo root, so only /pool/ debs belong in the index.
+	repo := testutil.SimpleRepo("debs-scope", "apt")
+	comps := testutil.NewComponentRepo()
+	assets := testutil.NewAssetRepo()
+	d := formats.Deps{
+		Repos: testutil.NewRepoRepo(repo), Blobs: testutil.NewBlobStoreRepo(),
+		Components: comps, Assets: assets, BlobStore: testutil.NewBlobStore(),
+		BaseURL: "http://localhost:8080",
+	}
+	h := apt.New(d)
+	r := gin.New()
+	r.Any("/repository/:repoName/*path", func(c *gin.Context) { h.ServeHTTP(c) })
+	require.Equal(t, http.StatusCreated, putDeb(r, "debs-scope", "/pool/main/good_1.0_amd64.deb", "a"))
+
+	stray := &domain.Component{Repository: "debs-scope", Name: "stray", Version: "1.0", Format: "apt"}
+	require.NoError(t, comps.Create(context.Background(), stray))
+	require.NoError(t, assets.Create(context.Background(), &domain.Asset{
+		Repository: "debs-scope", ComponentID: stray.ID, Path: "/foo/stray_1.0_amd64.deb", SizeBytes: 1,
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/repository/debs-scope/dists/focal/main/binary-amd64/Packages", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), "Package: good\n")
+	assert.NotContains(t, w.Body.String(), "Package: stray\n")
+}
+
+func TestApt_PackagesIndex_ListsMoreThanOnePage(t *testing.T) {
+	repo := testutil.SimpleRepo("debs-big", "apt")
+	r := setup(repo)
+	const n = 1203
+	for i := 0; i < n; i++ {
+		require.Equal(t, http.StatusCreated,
+			putDeb(r, "debs-big", fmt.Sprintf("/pool/main/pkg%04d_1.0_amd64.deb", i), "x"))
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/repository/debs-big/dists/focal/main/binary-amd64/Packages", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, n, strings.Count(w.Body.String(), "Package: "))
 }

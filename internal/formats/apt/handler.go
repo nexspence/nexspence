@@ -137,23 +137,22 @@ func debArch(filePath string) string {
 // buildPackagesIndex generates the Packages index. arch filters to that
 // architecture (plus "all" debs, per Debian convention); empty = no filter.
 func (h *Handler) buildPackagesIndex(ctx context.Context, repoName, arch string) ([]byte, error) {
-	page, err := h.deps.Components.Search(ctx, domain.SearchParams{
-		Repository: repoName, Limit: 1000,
-	})
+	comps, err := base.AllComponents(ctx, h.deps.Components, repoName)
 	if err != nil {
 		return nil, err
 	}
-	assetPage, err := h.deps.Assets.List(ctx, repoName, 1000, 0)
+	// Only /pool/ debs: that is where apt fetches Filename from (#443).
+	assets, err := h.deps.Assets.ListByRepoAndPath(ctx, repoName, "/pool/")
 	if err != nil {
 		return nil, err
 	}
 	compMap := map[string]*domain.Component{}
-	for i := range page.Items {
-		compMap[page.Items[i].ID] = &page.Items[i]
+	for i := range comps {
+		compMap[comps[i].ID] = &comps[i]
 	}
 
 	var sb strings.Builder
-	for _, a := range assetPage.Items {
+	for _, a := range assets {
 		if !strings.HasSuffix(a.Path, ".deb") {
 			continue
 		}

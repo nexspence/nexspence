@@ -118,23 +118,24 @@ func (h *Handler) serveHosted(c *gin.Context, repoName, p string) {
 // Depends/Imports/License are left generic rather than fabricated, since a
 // wrong dependency line is worse than an absent one.
 func (h *Handler) buildPackagesIndex(ctx context.Context, repoName string) ([]byte, error) {
-	page, err := h.deps.Components.Search(ctx, domain.SearchParams{
-		Repository: repoName, Limit: 1000,
-	})
+	comps, err := base.AllComponents(ctx, h.deps.Components, repoName)
 	if err != nil {
 		return nil, err
 	}
-	assetPage, err := h.deps.Assets.List(ctx, repoName, 1000, 0)
+	// Only src/contrib/ tarballs: R resolves every stanza against
+	// <repo>/src/contrib/<pkg>_<ver>.tar.gz, so anything stored elsewhere
+	// would be an entry that can never install (#443).
+	assets, err := h.deps.Assets.ListByRepoAndPath(ctx, repoName, "/src/contrib/")
 	if err != nil {
 		return nil, err
 	}
 	compMap := map[string]*domain.Component{}
-	for i := range page.Items {
-		compMap[page.Items[i].ID] = &page.Items[i]
+	for i := range comps {
+		compMap[comps[i].ID] = &comps[i]
 	}
 
 	var sb strings.Builder
-	for _, a := range assetPage.Items {
+	for _, a := range assets {
 		if !strings.HasSuffix(a.Path, ".tar.gz") {
 			continue
 		}

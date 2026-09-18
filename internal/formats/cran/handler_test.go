@@ -2,7 +2,9 @@ package cran_test
 
 import (
 	"bytes"
+	"context"
 	"errors"
+	"fmt"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -309,4 +311,56 @@ func TestCRAN_PackagesIndex_BackendError(t *testing.T) {
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
+// ── #443: index scope and size ───────────────────────────────────────────────
+
+func TestCRAN_PackagesIndex_IgnoresTarballsOutsideSrcContrib(t *testing.T) {
+	// Uploads are normalised into /src/contrib/, but an asset can still land
+	// elsewhere (restore, migration, a raw import). R resolves every stanza
+	// against src/contrib/<pkg>_<ver>.tar.gz, so a tarball stored anywhere
+	// else would be an entry that can never install.
+	repo := testutil.SimpleRepo("rpkgs-scope", "cran")
+	comps := testutil.NewComponentRepo()
+	assets := testutil.NewAssetRepo()
+	d := formats.Deps{
+		Repos: testutil.NewRepoRepo(repo), Blobs: testutil.NewBlobStoreRepo(),
+		Components: comps, Assets: assets, BlobStore: testutil.NewBlobStore(),
+		BaseURL: "http://localhost:8080",
+	}
+	h := cran.New(d)
+	r := gin.New()
+	r.Any("/repository/:repoName/*path", func(c *gin.Context) { h.ServeHTTP(c) })
+	require.Equal(t, http.StatusCreated, putPkg(r, "rpkgs-scope", "/src/contrib/good_1.0.tar.gz", "a"))
+
+	stray := &domain.Component{Repository: "rpkgs-scope", Name: "stray", Version: "1.0", Format: "cran"}
+	require.NoError(t, comps.Create(context.Background(), stray))
+	require.NoError(t, assets.Create(context.Background(), &domain.Asset{
+		Repository: "rpkgs-scope", ComponentID: stray.ID, Path: "/foo/stray_1.0.tar.gz", SizeBytes: 1,
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/repository/rpkgs-scope/src/contrib/PACKAGES", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), "Package: good\n")
+	assert.NotContains(t, w.Body.String(), "Package: stray\n")
+}
+
+func TestCRAN_PackagesIndex_ListsMoreThanOnePage(t *testing.T) {
+	// The repository layer pages at 500; the index must walk every page
+	// instead of silently serving the first one.
+	repo := testutil.SimpleRepo("rpkgs-big", "cran")
+	r := setup(repo)
+	const n = 1203
+	for i := 0; i < n; i++ {
+		require.Equal(t, http.StatusCreated,
+			putPkg(r, "rpkgs-big", fmt.Sprintf("/src/contrib/pkg%04d_1.0.tar.gz", i), "x"))
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/repository/rpkgs-big/src/contrib/PACKAGES", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, n, strings.Count(w.Body.String(), "Package: "))
 }

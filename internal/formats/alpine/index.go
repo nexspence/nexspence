@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
+	"github.com/nexspence-oss/nexspence/internal/formats/base"
 )
 
 // maxIndexEntryBytes bounds a member's APKINDEX read during group merge — a
@@ -39,22 +40,22 @@ func (h *Handler) buildIndex(ctx context.Context, repoName, p string) ([]byte, e
 	// "/v3.20/"), mixing every architecture into one index (PR #440 review).
 	prefix := path.Dir(p) + "/"
 
-	page, err := h.deps.Components.Search(ctx, domain.SearchParams{Repository: repoName, Limit: 1000}) // see #443: hardcoded page size shared with apt/cran
+	comps, err := base.AllComponents(ctx, h.deps.Components, repoName)
 	if err != nil {
 		return nil, err
 	}
-	assetPage, err := h.deps.Assets.List(ctx, repoName, 1000, 0) // see #443: hardcoded page size shared with apt/cran
+	assets, err := h.deps.Assets.ListByRepoAndPath(ctx, repoName, prefix)
 	if err != nil {
 		return nil, err
 	}
-	compByID := make(map[string]*domain.Component, len(page.Items))
-	for i := range page.Items {
-		compByID[page.Items[i].ID] = &page.Items[i]
+	compByID := make(map[string]*domain.Component, len(comps))
+	for i := range comps {
+		compByID[comps[i].ID] = &comps[i]
 	}
 
 	var sb strings.Builder
-	for _, a := range assetPage.Items {
-		if !strings.HasSuffix(a.Path, ".apk") || !strings.HasPrefix(a.Path, prefix) {
+	for _, a := range assets {
+		if !strings.HasSuffix(a.Path, ".apk") {
 			continue
 		}
 		comp := compByID[a.ComponentID]

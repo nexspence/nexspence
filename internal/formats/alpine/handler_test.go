@@ -1,6 +1,7 @@
 package alpine
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -228,4 +229,24 @@ func TestApkCoords(t *testing.T) {
 	name, version = apkCoords("weird.apk")
 	assert.Equal(t, "weird", name)
 	assert.Equal(t, "0.0.0", version)
+}
+
+// #443: the repository layer pages at 500; APKINDEX must walk every page.
+func TestAlpine_Index_ListsMoreThanOnePage(t *testing.T) {
+	repo := testutil.SimpleRepo("apks-big", "alpine")
+	r := setup(repo)
+	const n = 1203
+	for i := 0; i < n; i++ {
+		apk := fakeApk([]byte(fmt.Sprintf("c%d", i)), []byte("d"))
+		require.Equal(t, http.StatusCreated,
+			putApk(r, "apks-big", fmt.Sprintf("/x86_64/pkg%04d-1.0-r0.apk", i), apk))
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/repository/apks-big/x86_64/APKINDEX.tar.gz", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+	plain, err := unpackIndexTarGz(w.Body.Bytes())
+	require.NoError(t, err)
+	assert.Equal(t, n, strings.Count(plain, "P:pkg"))
 }
