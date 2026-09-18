@@ -5,8 +5,8 @@
 
 -- +goose Up
 ALTER TABLE migration_jobs
-    ADD COLUMN repositories TEXT[] NOT NULL DEFAULT '{}';
+    ADD COLUMN IF NOT EXISTS repositories TEXT[] NOT NULL DEFAULT '{}';
 
 -- +goose Down
 ALTER TABLE migration_jobs
-    DROP COLUMN repositories;
+    DROP COLUMN IF EXISTS repositories;
