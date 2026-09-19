@@ -36,7 +36,7 @@ func NewSubdomainRewriter(next http.Handler, baseDomain string, aliases map[stri
 	for host, repo := range aliases {
 		host = strings.ToLower(strings.TrimSpace(host))
 		repo = strings.TrimSpace(repo)
-		if host == "" || !isRepoNameLabel(repo) {
+		if host == "" || !isRepositoryName(repo) {
 			continue
 		}
 		m[host] = repo
@@ -111,4 +111,30 @@ func isRepoNameLabel(s string) bool {
 		}
 	}
 	return true
+}
+
+// isRepositoryName reports whether s is safe to splice into /v2/<name>/... as
+// a Nexspence repository name. Dots are allowed (quay.io, ghcr.io,
+// registry-1.docker.io). Slashes and ".." are not — those would change the
+// path shape, which is how an alias typo becomes a rewrite into another route.
+func isRepositoryName(s string) bool {
+	if s == "" || strings.ContainsAny(s, `/\:`) || strings.Contains(s, "..") {
+		return false
+	}
+	prevSep := true
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case c >= 'a' && c <= 'z', c >= '0' && c <= '9':
+			prevSep = false
+		case c == '-' || c == '.':
+			if prevSep {
+				return false
+			}
+			prevSep = true
+		default:
+			return false
+		}
+	}
+	return !prevSep
 }

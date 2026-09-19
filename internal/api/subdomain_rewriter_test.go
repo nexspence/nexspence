@@ -240,3 +240,31 @@ func TestSubdomainRewriter_AliasInvalidTargetIgnored(t *testing.T) {
 
 	assert.Equal(t, "/v2/alpine/manifests/latest", gotPath, "invalid alias target must be a passthrough")
 }
+
+// Repository names like quay.io are valid alias targets. Rejecting the dot
+// dropped the alias, so Host docker-quay-proxy… was not rewritten and Gin
+// dispatched /v2/strimzi/… as repository "strimzi".
+func TestSubdomainRewriter_AliasTargetMayContainDots(t *testing.T) {
+	var gotPath string
+	h := http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) { gotPath = r.URL.Path })
+	rw := api.NewSubdomainRewriter(h, "nexspence.example.com", map[string]string{
+		"docker-quay-proxy.example.org": "quay.io",
+		"docker-ghcr-proxy.example.org": "ghcr.io",
+		"docker-hub-proxy.example.org":  "registry-1.docker.io",
+	})
+
+	req := httptest.NewRequest(http.MethodHead, "/v2/strimzi/kafka/manifests/0.45.1-kafka-3.9.0", nil)
+	req.Host = "docker-quay-proxy.example.org"
+	rw.ServeHTTP(httptest.NewRecorder(), req)
+	assert.Equal(t, "/v2/quay.io/strimzi/kafka/manifests/0.45.1-kafka-3.9.0", gotPath)
+
+	req = httptest.NewRequest(http.MethodHead, "/v2/kafbat/kafka-ui/manifests/latest", nil)
+	req.Host = "docker-ghcr-proxy.example.org"
+	rw.ServeHTTP(httptest.NewRecorder(), req)
+	assert.Equal(t, "/v2/ghcr.io/kafbat/kafka-ui/manifests/latest", gotPath)
+
+	req = httptest.NewRequest(http.MethodGet, "/v2/library/alpine/manifests/latest", nil)
+	req.Host = "docker-hub-proxy.example.org"
+	rw.ServeHTTP(httptest.NewRecorder(), req)
+	assert.Equal(t, "/v2/registry-1.docker.io/library/alpine/manifests/latest", gotPath)
+}
