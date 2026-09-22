@@ -461,6 +461,25 @@ func TestLoad_TrivyFromEnv(t *testing.T) {
 		"NEXSPENCE_SCAN_TRIVY_DB_REPOSITORY was not applied")
 }
 
+func TestLoad_RedisPasswordFromEnv(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := "" +
+		"database:\n  dsn: \"postgres://u:p@localhost:5432/db?sslmode=disable\"\n" +
+		"auth:\n  jwt_secret: \"a-unique-production-secret-at-least-32b\"\n"
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+
+	t.Setenv("NEXSPENCE_REDIS_ENABLED", "true")
+	t.Setenv("NEXSPENCE_REDIS_ADDR", "nexspence-redis-primary:6379")
+	t.Setenv("NEXSPENCE_REDIS_PASSWORD", "s3cret")
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.True(t, cfg.Redis.Enabled)
+	assert.Equal(t, "nexspence-redis-primary:6379", cfg.Redis.Addr)
+	assert.Equal(t, "s3cret", cfg.Redis.Password)
+}
+
 func TestLoad_AzureStorageFromEnv(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")

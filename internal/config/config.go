@@ -695,6 +695,7 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("tracing.environment", "")
 	v.SetDefault("redis.enabled", false)
 	v.SetDefault("redis.addr", "localhost:6379")
+	v.SetDefault("redis.password", "")
 	v.SetDefault("redis.db", 0)
 
 	// Config file
