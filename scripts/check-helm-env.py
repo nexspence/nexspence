@@ -32,6 +32,10 @@ RENDERS = [
         "--set", "scanning.javaDbRepository={ghcr.io/aquasecurity/trivy-java-db:1}",
     ],
     ["--set", "storage.type=s3", "--set", "storage.s3.bucket=b"],
+    # With credentials set: without them the chart omits the two env names
+    # entirely (IRSA / instance profile), which would drop them from this check.
+    ["--set", "storage.type=s3", "--set", "storage.s3.bucket=b",
+     "--set", "storage.s3.accessKey=k", "--set", "storage.s3.secretKey=s"],
     ["--set", "storage.type=azure", "--set", "storage.azure.container=c",
      "--set", "storage.azure.accountName=acct"],
     ["--set", "config.docker.subdomainConnector.enabled=true"],
