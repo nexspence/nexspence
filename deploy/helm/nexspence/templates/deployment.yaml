@@ -175,6 +175,13 @@ spec:
                   name: {{ .Values.oidc.clientSecretExistingSecret }}
                   key: {{ .Values.oidc.clientSecretExistingSecretKey | default "client-secret" }}
             {{- end }}
+            {{- if and .Values.oidc.enabled .Values.oidc.cookieKeyExistingSecret }}
+            - name: NEXSPENCE_OIDC_COOKIE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.oidc.cookieKeyExistingSecret }}
+                  key: {{ .Values.oidc.cookieKeyExistingSecretKey | default "oidc-cookie-key" }}
+            {{- end }}
             {{- if and .Values.oidc.enabled .Values.oidc.googleAdminSDK.enabled }}
             - name: NEXSPENCE_OIDC_GOOGLE_ADMIN_SDK_SERVICE_ACCOUNT_KEY
               valueFrom:

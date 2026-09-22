@@ -45,6 +45,7 @@ jobs:
           helm template check deploy/helm/nexspence --set storage.type=azure --set storage.azure.container=c --set storage.azure.accountName=acct >/dev/null
           helm template check deploy/helm/nexspence --set config.docker.subdomainConnector.enabled=true >/dev/null
           helm template check deploy/helm/nexspence --set config.adminExistingSecret=ext --set config.jwtSecretExistingSecret=ext >/dev/null
+          helm template check deploy/helm/nexspence --set oidc.enabled=true --set oidc.cookieKeyExistingSecret=ext >/dev/null
           helm template check deploy/helm/nexspence --set gateway.istio.enabled=true --set gateway.istio.existingGateway=istio-system/gw >/dev/null
       # An env name that matches no config key is silently ignored by viper, so
       # the value in values.yaml never reaches the server and nothing says so.

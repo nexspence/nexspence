@@ -152,6 +152,9 @@ oidc:
   # as config.jwtSecret) so an upgrade never rotates it out from under a login
   # in flight.
   cookieKey: ""
+  # -- Existing Secret instead of cookieKey / auto-generate.
+  cookieKeyExistingSecret: ""
+  cookieKeyExistingSecretKey: "oidc-cookie-key"
 
 # -- Redis: backs the distributed lock (cleanup/GC/replication/migration cron
 # coordination across replicas) and the login-attempt rate limiter's shared

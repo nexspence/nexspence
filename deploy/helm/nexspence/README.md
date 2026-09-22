@@ -43,7 +43,9 @@ helm dependency update
 
 Then install with exactly one of the networking options below.
 
-> **JWT secret:** `config.jwtSecret` is optional. When omitted, the chart auto-generates a unique random secret on first install and reuses it across upgrades (via a `lookup` of the existing Secret). Point `config.jwtSecretExistingSecret` at a Secret you already have instead — the chart then neither generates nor stores the key. Bootstrap admin (`config.adminExistingSecret`) is the same. See `values-examples/existing-secrets.yaml`. `--set config.jwtSecret=...` is only needed to pin a known value or share it across clusters.
+> **JWT secret:** `config.jwtSecret` is optional. When omitted, the chart auto-generates a unique random secret on first install and reuses it across upgrades (via a `lookup` of the existing Secret). Point `config.jwtSecretExistingSecret` at a Secret you already have instead — the chart then neither generates nor stores the key. Bootstrap admin (`config.adminExistingSecret`) and the OIDC cookie key (`oidc.cookieKeyExistingSecret`) are the same. See `values-examples/existing-secrets.yaml`. `--set config.jwtSecret=...` is only needed to pin a known value or share it across clusters.
+
+> **Rendering without a cluster:** the reuse above is a `lookup`, which only a real install/upgrade can answer, so under `helm template` (Argo CD included) every render mints a new JWT secret and cookie key. Use the existing-Secret options there.
 
 ### nginx ingress-controller
 
