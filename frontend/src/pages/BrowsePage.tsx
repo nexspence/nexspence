@@ -18,6 +18,7 @@ import {
   Tag,
   Trash2,
   Upload,
+  X,
 } from 'lucide-react'
 import axios from 'axios'
 import { nexusApi, nexspenceApi, apiClient, Privilege } from '@/api/client'
@@ -31,13 +32,31 @@ interface Repository {
   format: string
   type: string
 }
+interface ComponentAsset {
+  id: string
+  path: string
+  fileSize: number
+  contentType: string
+  /** Member repository that stores the asset — differs from the browsed one in a group. */
+  repository?: string
+  createdAt?: string
+  lastModified?: string
+  lastDownloaded?: string | null
+  sha256?: string
+  sha1?: string
+  md5?: string
+}
+
 interface Component {
   id: string
   name: string
   group: string
   version: string
   format: string
-  assets?: { id: string; path: string; fileSize: number; contentType: string; lastModified?: string }[]
+  repository?: string
+  createdAt?: string
+  lastDownloaded?: string | null
+  assets?: ComponentAsset[]
 }
 
 interface DockerDetailAsset {
@@ -436,6 +455,31 @@ function formatPushDate(iso: string | undefined | null): string {
   return d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 }
 
+// The URL an asset is served from — the same shape the server computes for
+// downloadUrl, minus the configured base URL so the fetch stays same-origin and
+// carries the session. Only `?` and `#` are escaped: they would end the path,
+// while everything else is stored exactly as the format's handler expects it.
+function assetDownloadPath(repo: string, path: string): string {
+  const clean = path.replace(/^\/+/, '').replace(/[?#]/g, (ch) => encodeURIComponent(ch))
+  return `/repository/${repo}/${clean}`
+}
+
+// Authenticated download: a plain <a href> would go out without the bearer
+// token, so the blob is fetched through the API client and handed to the
+// browser from memory.
+function downloadAsBlob(url: string, filename: string): Promise<void> {
+  return apiClient.get(url, { responseType: 'blob' }).then((res) => {
+    const href = window.URL.createObjectURL(res.data as Blob)
+    const a = document.createElement('a')
+    a.href = href
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    window.URL.revokeObjectURL(href)
+  })
+}
+
 function nexusV2RegistryPath(
   imageRef: string | undefined,
   version: string | undefined,
@@ -687,6 +731,119 @@ function RawTagSection({ componentId, isAdmin: admin }: { componentId: string; i
       queryKey={['componentDetail', componentId]}
       readOnly={!admin}
     />
+  )
+}
+
+function DetailRow({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div style={S.detailRow}>
+      <div style={S.detailLabel}>{label}</div>
+      <div style={mono ? { ...S.detailValue, ...S.path, fontSize: 11 } : S.detailValue}>{value}</div>
+    </div>
+  )
+}
+
+function ComponentAssetDetail({ asset, repo }: { asset: ComponentAsset; repo: string }) {
+  const [downloadError, setDownloadError] = useState<string | null>(null)
+  const downloadUrl = assetDownloadPath(repo, asset.path)
+  const filename = asset.path.split('/').filter(Boolean).pop() || 'download'
+  const checksums: { label: string; value: string | undefined }[] = [
+    { label: 'SHA256', value: asset.sha256 },
+    { label: 'SHA1', value: asset.sha1 },
+    { label: 'MD5', value: asset.md5 },
+  ]
+  return (
+    <div
+      data-testid="component-asset"
+      style={{ borderTop: '1px solid var(--holo-border)', paddingTop: 10, marginTop: 10 }}
+    >
+      <div style={{ ...S.path, wordBreak: 'break-all' as const, marginBottom: 4 }}>{asset.path}</div>
+      <DetailRow label="Content type" value={asset.contentType || '—'} />
+      <DetailRow label="Size" value={formatBytes(asset.fileSize ?? 0)} />
+      <DetailRow label="Created" value={formatDateTime(asset.createdAt)} />
+      <DetailRow label="Updated" value={formatDateTime(asset.lastModified)} />
+      <DetailRow label="Last downloaded" value={formatDateTime(asset.lastDownloaded)} />
+      {checksums.filter((c) => c.value).map((c) => (
+        <DetailRow key={c.label} label={c.label} value={c.value!} mono />
+      ))}
+      <div style={{ ...S.detailActions, marginTop: 10, flexWrap: 'wrap' as const }}>
+        <PanelBtn
+          variant="primary"
+          onClick={() => {
+            setDownloadError(null)
+            downloadAsBlob(downloadUrl, filename).catch((e: unknown) => {
+              const status = (e as { response?: { status?: number } })?.response?.status
+              setDownloadError(status ? `Download failed (HTTP ${status})` : 'Download failed')
+            })
+          }}
+        >
+          <Download size={13} /> Download
+        </PanelBtn>
+        <PanelBtn onClick={() => { void navigator.clipboard.writeText(`${window.location.origin}${downloadUrl}`) }}>
+          <Link size={13} /> Copy link
+        </PanelBtn>
+      </div>
+      {downloadError && (
+        <div role="alert" style={{ fontSize: 12, color: 'var(--holo-red)', marginTop: 6 }}>
+          {downloadError}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Detail panel for the table formats (#535): everything the listing already
+// carries for a component, laid out like the Docker and Raw panels, with a
+// download per asset. It reads the row's own data — no extra request — so it
+// can never show a component from another repository or page.
+function ComponentDetailPanel({
+  comp,
+  repoName,
+  onClose,
+}: {
+  comp: Component
+  repoName: string
+  onClose: () => void
+}) {
+  // In a group the component lives in a member repository; its assets are
+  // served from there, which is also where the listing's RBAC check passed.
+  const compRepo = comp.repository || repoName
+  const assets = comp.assets ?? []
+  return (
+    <div
+      className="holo-card"
+      style={S.detailPanel}
+      role="region"
+      aria-label="Component details"
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') {
+          e.stopPropagation()
+          onClose()
+        }
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+        <h2 style={S.detailTitle}>Component details</h2>
+        <GhostBtn onClick={onClose} title="Close details">
+          <X size={12} />
+        </GhostBtn>
+      </div>
+      <DetailRow label="Name" value={comp.name} />
+      <DetailRow label="Group" value={comp.group || '—'} />
+      <DetailRow label="Version" value={comp.version || '—'} />
+      <DetailRow label="Format" value={comp.format} />
+      <DetailRow label="Repository" value={compRepo} />
+      <DetailRow label="Created" value={formatDateTime(comp.createdAt)} />
+      <DetailRow label="Last downloaded" value={formatDateTime(comp.lastDownloaded)} />
+      <h3 style={{ ...S.detailTitle, fontSize: 13, margin: '16px 0 0' }}>Assets ({assets.length})</h3>
+      {assets.length === 0 ? (
+        <p style={S.muted}>This component has no assets.</p>
+      ) : (
+        assets.map((a) => (
+          <ComponentAssetDetail key={a.id || a.path} asset={a} repo={a.repository || compRepo} />
+        ))
+      )}
+    </div>
   )
 }
 
@@ -1015,16 +1172,7 @@ function RawTreeRows({
     const copyUrl = `${window.location.origin}/repository/${repoName}/${cleanPath}`
 
     function doDownload() {
-      void apiClient.get(downloadUrl, { responseType: 'blob' }).then((res) => {
-        const url = window.URL.createObjectURL(res.data as Blob)
-        const a = document.createElement('a')
-        a.href = url
-        a.download = node.label
-        document.body.appendChild(a)
-        a.click()
-        document.body.removeChild(a)
-        window.URL.revokeObjectURL(url)
-      })
+      void downloadAsBlob(downloadUrl, node.label)
     }
 
     function doCopy() {
@@ -1175,6 +1323,10 @@ export default function BrowsePage() {
   const [treeCollapsed, setTreeCollapsed] = useState<Record<string, boolean>>({})
   const [dockerSelection, setDockerSelection] = useState<DockerLeafSelection | null>(null)
   const [rawSelection, setRawSelection] = useState<RawFileSelection | null>(null)
+  // Only the id is kept: the panel resolves it against the page on screen, so a
+  // refetch that drops the component (deleted, filtered) closes the panel
+  // instead of leaving a detached copy behind.
+  const [detailComponentId, setDetailComponentId] = useState<string | null>(null)
   const [uploadOpen, setUploadOpen] = useState(false)
   const [usageTarget, setUsageTarget] = useState<UsageTarget | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<{
@@ -1348,6 +1500,14 @@ export default function BrowsePage() {
 
   const items = useMemo(() => components?.items ?? [], [components])
   const hasNext = !!components?.continuationToken
+  const detailComponent = useMemo(
+    () => (detailComponentId ? items.find((c) => c.id === detailComponentId) ?? null : null),
+    [items, detailComponentId],
+  )
+  const goToPage = (next: number) => {
+    setPage(next)
+    setDetailComponentId(null)
+  }
 
   // When arriving from Search with ?asset=/?cid=, scroll the matching row into view.
   useEffect(() => {
@@ -1438,6 +1598,7 @@ export default function BrowsePage() {
             setTreeCollapsed({})
             setDockerSelection(null)
             setRawSelection(null)
+            setDetailComponentId(null)
             // Selection must not survive a repo switch: stale IDs from the
             // previous repo would ride into "Promote selected", and the
             // server now refuses such a mixed-repo batch (#255).
@@ -1629,18 +1790,7 @@ export default function BrowsePage() {
                       <div style={S.detailValue}>{repoName}</div>
                     </div>
                     <div style={S.detailActions}>
-                      <PanelBtn variant="primary" onClick={() => {
-                        void apiClient.get(downloadUrl, { responseType: 'blob' }).then((res) => {
-                          const url = window.URL.createObjectURL(res.data as Blob)
-                          const a = document.createElement('a')
-                          a.href = url
-                          a.download = node.label
-                          document.body.appendChild(a)
-                          a.click()
-                          document.body.removeChild(a)
-                          window.URL.revokeObjectURL(url)
-                        })
-                      }}>
+                      <PanelBtn variant="primary" onClick={() => { void downloadAsBlob(downloadUrl, node.label) }}>
                         <Download size={13} /> Download
                       </PanelBtn>
                       <PanelBtn onClick={() => { void navigator.clipboard.writeText(copyUrl) }}>
@@ -1711,7 +1861,8 @@ export default function BrowsePage() {
               <HoloButton onClick={() => setSelectedComponentIDs(new Set())}>Clear</HoloButton>
             </div>
           )}
-          <div className="holo-card" style={S.table}>
+          <div style={S.dockerLayout}>
+          <div className="holo-card" style={{ ...S.table, flex: '2 1 480px', minWidth: 0, maxWidth: '100%' }}>
             <div style={S.thead}>
               <div />
               <Truncated text="Name" />
@@ -1747,18 +1898,41 @@ export default function BrowsePage() {
                 : '—'
               const isHighlighted = (!!highlightComponentId && c.id === highlightComponentId) ||
                 (!!highlightAssetPath && !!c.assets?.some((a) => a.path === highlightAssetPath))
+              const isOpen = detailComponentId === c.id
               return (
                 <div
                   key={c.id}
                   ref={isHighlighted ? highlightRowRef : undefined}
+                  // A click inspects; Promote stays on the checkbox (#535).
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Details for ${c.name}${c.version ? ` ${c.version}` : ''}`}
+                  aria-expanded={isOpen}
+                  onClick={() => setDetailComponentId(c.id)}
+                  onKeyDown={(e) => {
+                    // Keys typed on the checkbox or the delete button belong to them.
+                    if (e.target !== e.currentTarget) return
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      setDetailComponentId(c.id)
+                    }
+                  }}
                   style={{
                     ...S.trow,
+                    cursor: 'pointer',
                     ...(isHighlighted
                       ? { outline: '1px solid rgba(59,130,246,0.6)', background: 'rgba(59,130,246,0.08)' }
                       : {}),
+                    ...(isOpen
+                      ? { outline: '1px solid var(--holo-border-strong)', background: 'var(--holo-bg-3)' }
+                      : {}),
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <div
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    // The selection cell is the Promote affordance, not a way to open details.
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     {signedIn && <input
                       type="checkbox"
                       checked={selectedComponentIDs.has(c.id)}
@@ -1768,6 +1942,7 @@ export default function BrowsePage() {
                         else next.delete(c.id)
                         setSelectedComponentIDs(next)
                       }}
+                      aria-label={`Select ${c.name}${c.version ? ` ${c.version}` : ''} for promotion`}
                       style={{ cursor: 'pointer', accentColor: '#3b82f6' }}
                     />}
                   </div>
@@ -1786,7 +1961,7 @@ export default function BrowsePage() {
                   <Truncated text={formatPushDate(pushedAt)} style={S.muted} />
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     {canDeleteRepo && (
-                      <GhostBtn danger onClick={() => setDeleteTarget({
+                      <GhostBtn danger onClick={(e) => { e.stopPropagation(); setDeleteTarget({
                         path: assetPaths[0] ?? '',
                         paths: assetPaths,
                         repo: repoName,
@@ -1794,7 +1969,7 @@ export default function BrowsePage() {
                         ...(assetPaths.length > 1
                           ? { affectedPaths: assetPaths, heading: 'Delete component?' }
                           : {}),
-                      })} title="Delete">
+                      }) }} title="Delete">
                         <Trash2 size={13} />
                       </GhostBtn>
                     )}
@@ -1803,13 +1978,22 @@ export default function BrowsePage() {
               )
             })}
           </div>
+          {detailComponent && (
+            <ComponentDetailPanel
+              key={detailComponent.id}
+              comp={detailComponent}
+              repoName={repoName}
+              onClose={() => setDetailComponentId(null)}
+            />
+          )}
+          </div>
 
           <div style={S.pager}>
-            <button style={S.pgBtn(page === 0)} disabled={page === 0} onClick={() => setPage((p) => p - 1)}>
+            <button style={S.pgBtn(page === 0)} disabled={page === 0} onClick={() => goToPage(page - 1)}>
               ← Prev
             </button>
             <span style={S.muted}>Page {page + 1}</span>
-            <button style={S.pgBtn(!hasNext)} disabled={!hasNext} onClick={() => setPage((p) => p + 1)}>
+            <button style={S.pgBtn(!hasNext)} disabled={!hasNext} onClick={() => goToPage(page + 1)}>
               Next →
             </button>
           </div>

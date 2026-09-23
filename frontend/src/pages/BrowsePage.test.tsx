@@ -939,3 +939,257 @@ describe('BrowsePage — signed-out visitor', () => {
     expect(window.location.href).toBe('http://localhost/')
   })
 })
+
+// Table formats get the same kind of detail panel as Docker/OCI/Raw (#535): a
+// row click inspects, the checkbox alone selects for Promote.
+describe('BrowsePage — component detail panel', () => {
+  const tableRepos = [
+    fixtures.repository({ id: 'r1', name: 'maven-hosted', format: 'maven2', type: 'hosted' }),
+    fixtures.repository({ id: 'r5', name: 'npm-group', format: 'npm', type: 'group' }),
+    fixtures.repository({ id: 'r6', name: 'maven-group', format: 'maven2', type: 'group' }),
+  ]
+  const leftPad = {
+    id: 'c-npm',
+    name: 'left-pad',
+    group: '',
+    version: '1.3.0',
+    format: 'npm',
+    // Browsing a group lists its members' components: this one lives in the proxy.
+    repository: 'npm-proxy',
+    createdAt: '2026-09-01T10:00:00Z',
+    lastDownloaded: '2026-09-20T10:00:00Z',
+    assets: [
+      {
+        id: 'a-tgz',
+        path: '/left-pad/-/left-pad-1.3.0.tgz',
+        fileSize: 2048,
+        contentType: 'application/x-tgz',
+        repository: 'npm-proxy',
+        createdAt: '2026-09-01T10:00:00Z',
+        lastModified: '2026-09-02T10:00:00Z',
+        lastDownloaded: '2026-09-20T10:00:00Z',
+        sha256: 'sha256-left-pad-digest',
+        sha1: 'sha1-left-pad-digest',
+      },
+      {
+        id: 'a-json',
+        path: '/left-pad',
+        fileSize: 512,
+        contentType: 'application/json',
+        repository: 'npm-proxy',
+      },
+    ],
+  }
+  const mavenJar = {
+    id: 'c-mvn',
+    name: 'pkg-a',
+    group: 'com.example',
+    version: '1.0',
+    format: 'maven2',
+    repository: 'maven-hosted',
+    assets: [
+      { id: 'a1', path: '/com/example/pkg-a/1.0/pkg-a-1.0.jar', fileSize: 4096, contentType: 'application/java-archive', repository: 'maven-hosted', md5: 'md5-pkg-a' },
+    ],
+  }
+
+  beforeEach(() => {
+    server.use(
+      http.get('/service/rest/v1/repositories', () => HttpResponse.json(tableRepos)),
+      http.get('/service/rest/v1/components', ({ request }) => {
+        const url = new URL(request.url)
+        const repo = url.searchParams.get('repository')
+        if (repo === 'npm-group') return HttpResponse.json({ items: [leftPad], continuationToken: null })
+        // A group lists its members' components, so it carries the very same id.
+        if (repo === 'maven-group') return HttpResponse.json({ items: [mavenJar], continuationToken: null })
+        // Every maven page carries the same component id, so a panel that
+        // survived paging would reopen on it rather than disappear.
+        return HttpResponse.json({ items: [mavenJar], continuationToken: url.searchParams.get('offset') === '0' ? '25' : null })
+      }),
+    )
+  })
+
+  function panel() {
+    return screen.queryByRole('region', { name: 'Component details' })
+  }
+
+  it('opens on a row click with the component and its assets', async () => {
+    const user = userEvent.setup()
+    renderBrowse('?repo=npm-group')
+    await screen.findByText('left-pad')
+    expect(panel()).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Details for left-pad 1.3.0' }))
+    const p = await screen.findByRole('region', { name: 'Component details' })
+    expect(within(p).getByText('left-pad')).toBeInTheDocument()
+    expect(within(p).getByText('1.3.0')).toBeInTheDocument()
+    expect(within(p).getByText('npm')).toBeInTheDocument()
+    expect(within(p).getByText('npm-proxy')).toBeInTheDocument()
+    expect(within(p).getByText('Assets (2)')).toBeInTheDocument()
+
+    const assets = within(p).getAllByTestId('component-asset')
+    expect(assets).toHaveLength(2)
+    const tgz = assets[0]
+    expect(within(tgz).getByText('/left-pad/-/left-pad-1.3.0.tgz')).toBeInTheDocument()
+    expect(within(tgz).getByText('application/x-tgz')).toBeInTheDocument()
+    expect(within(tgz).getByText('2.0 KB')).toBeInTheDocument()
+    expect(within(tgz).getByText('sha256-left-pad-digest')).toBeInTheDocument()
+    expect(within(tgz).getByText('sha1-left-pad-digest')).toBeInTheDocument()
+    expect(within(tgz).queryByText('MD5')).not.toBeInTheDocument()
+    expect(within(tgz).getByText('Updated')).toBeInTheDocument()
+    expect(within(tgz).getByText('Last downloaded')).toBeInTheDocument()
+    // No checksum recorded: the rows are left out rather than filled with dashes.
+    expect(within(assets[1]).queryByText('SHA256')).not.toBeInTheDocument()
+    expect(within(assets[1]).getAllByText('—').length).toBeGreaterThan(0)
+  })
+
+  it('keeps Promote on the checkbox: a checkbox click does not open, a row click does not select', async () => {
+    const user = userEvent.setup()
+    renderBrowse('?repo=maven-hosted')
+    await screen.findByText('pkg-a')
+
+    const checkbox = screen.getByRole('checkbox', { name: /Select pkg-a 1.0 for promotion/ })
+    await user.click(checkbox)
+    expect(checkbox).toBeChecked()
+    expect(await screen.findByText('1 selected')).toBeInTheDocument()
+    expect(panel()).not.toBeInTheDocument()
+    await user.click(checkbox)
+    expect(checkbox).not.toBeChecked()
+
+    await user.click(screen.getByRole('button', { name: 'Details for pkg-a 1.0' }))
+    expect(await screen.findByRole('region', { name: 'Component details' })).toBeInTheDocument()
+    expect(checkbox).not.toBeChecked()
+    expect(screen.queryByText(/selected/)).not.toBeInTheDocument()
+  })
+
+  it('does not open the panel from the row delete button', async () => {
+    const user = userEvent.setup()
+    renderBrowse('?repo=maven-hosted')
+    await screen.findByText('pkg-a')
+    await user.click(screen.getByTitle('Delete'))
+    expect(await screen.findByText('Delete file?')).toBeInTheDocument()
+    expect(panel()).not.toBeInTheDocument()
+  })
+
+  it('downloads an asset from the repository that stores it', async () => {
+    const user = userEvent.setup()
+    const fetched: string[] = []
+    const anchors: HTMLAnchorElement[] = []
+    const realCreate = document.createElement.bind(document)
+    vi.spyOn(document, 'createElement').mockImplementation(((tag: string) => {
+      const el = realCreate(tag)
+      if (tag === 'a') {
+        ;(el as HTMLAnchorElement).click = vi.fn()
+        anchors.push(el as HTMLAnchorElement)
+      }
+      return el
+    }) as typeof document.createElement)
+    globalThis.URL.createObjectURL = vi.fn(() => 'blob:x')
+    globalThis.URL.revokeObjectURL = vi.fn()
+    server.use(
+      http.get('/repository/:name/*', ({ request }) => {
+        fetched.push(new URL(request.url).pathname)
+        return HttpResponse.text('tarball')
+      }),
+    )
+    renderBrowse('?repo=npm-group')
+    await user.click(await screen.findByRole('button', { name: 'Details for left-pad 1.3.0' }))
+    const p = await screen.findByRole('region', { name: 'Component details' })
+    const tgz = within(p).getAllByTestId('component-asset')[0]
+    await user.click(within(tgz).getByRole('button', { name: /Download/ }))
+
+    await waitFor(() => expect(anchors.find((a) => a.download)?.download).toBe('left-pad-1.3.0.tgz'))
+    expect(anchors.find((a) => a.download)!.click).toHaveBeenCalled()
+    expect(fetched).toEqual(['/repository/npm-proxy/left-pad/-/left-pad-1.3.0.tgz'])
+  })
+
+  it('reports a failed download instead of failing silently', async () => {
+    const user = userEvent.setup()
+    server.use(http.get('/repository/:name/*', () => new HttpResponse(null, { status: 404 })))
+    renderBrowse('?repo=maven-hosted')
+    await user.click(await screen.findByRole('button', { name: 'Details for pkg-a 1.0' }))
+    const p = await screen.findByRole('region', { name: 'Component details' })
+    expect(within(p).getByText('md5-pkg-a')).toBeInTheDocument()
+    await user.click(within(p).getByRole('button', { name: /Download/ }))
+    expect(await within(p).findByRole('alert')).toHaveTextContent('Download failed (HTTP 404)')
+  })
+
+  it('copies the asset link', async () => {
+    const user = userEvent.setup()
+    const writeText = vi.fn()
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    renderBrowse('?repo=maven-hosted')
+    await user.click(await screen.findByRole('button', { name: 'Details for pkg-a 1.0' }))
+    const p = await screen.findByRole('region', { name: 'Component details' })
+    await user.click(within(p).getByRole('button', { name: /Copy link/ }))
+    expect(writeText).toHaveBeenCalledWith(expect.stringMatching(/\/repository\/maven-hosted\/com\/example\/pkg-a\/1\.0\/pkg-a-1\.0\.jar$/))
+  })
+
+  it('opens with Enter and closes with Escape or the close button', async () => {
+    const user = userEvent.setup()
+    renderBrowse('?repo=maven-hosted')
+    const row = await screen.findByRole('button', { name: 'Details for pkg-a 1.0' })
+    row.focus()
+    await user.keyboard('{Enter}')
+    const p = await screen.findByRole('region', { name: 'Component details' })
+    expect(row).toHaveAttribute('aria-expanded', 'true')
+
+    within(p).getByTitle('Close details').focus()
+    await user.keyboard('{Escape}')
+    expect(panel()).not.toBeInTheDocument()
+
+    row.focus()
+    await user.keyboard(' ')
+    const again = await screen.findByRole('region', { name: 'Component details' })
+    await user.click(within(again).getByTitle('Close details'))
+    expect(panel()).not.toBeInTheDocument()
+  })
+
+  it('does not open from keys typed on the checkbox', async () => {
+    const user = userEvent.setup()
+    renderBrowse('?repo=maven-hosted')
+    await screen.findByText('pkg-a')
+    screen.getByRole('checkbox', { name: /Select pkg-a/ }).focus()
+    await user.keyboard(' ')
+    expect(screen.getByRole('checkbox', { name: /Select pkg-a/ })).toBeChecked()
+    expect(panel()).not.toBeInTheDocument()
+  })
+
+  it('closes on a repository switch', async () => {
+    const user = userEvent.setup()
+    renderBrowse('?repo=maven-hosted')
+    await user.click(await screen.findByRole('button', { name: 'Details for pkg-a 1.0' }))
+    await screen.findByRole('region', { name: 'Component details' })
+
+    await user.click(screen.getByRole('button', { name: /^maven-hosted/ }))
+    const options = await screen.findAllByText('npm-group')
+    await user.click(options[options.length - 1])
+    await screen.findByText('left-pad')
+    expect(panel()).not.toBeInTheDocument()
+  })
+
+  it('closes when switching into a group that lists the same component', async () => {
+    const user = userEvent.setup()
+    renderBrowse('?repo=maven-hosted')
+    await user.click(await screen.findByRole('button', { name: 'Details for pkg-a 1.0' }))
+    await screen.findByRole('region', { name: 'Component details' })
+
+    await user.click(screen.getByRole('button', { name: /^maven-hosted/ }))
+    const options = await screen.findAllByText('maven-group')
+    await user.click(options[options.length - 1])
+    await screen.findByRole('button', { name: /^maven-group/ })
+    await screen.findByText('pkg-a')
+    expect(panel()).not.toBeInTheDocument()
+  })
+
+  it('closes on paging even when the next page lists the same component', async () => {
+    const user = userEvent.setup()
+    renderBrowse('?repo=maven-hosted')
+    await user.click(await screen.findByRole('button', { name: 'Details for pkg-a 1.0' }))
+    await screen.findByRole('region', { name: 'Component details' })
+
+    await user.click(screen.getByRole('button', { name: /Next/ }))
+    expect(await screen.findByText('Page 2')).toBeInTheDocument()
+    await screen.findByText('pkg-a')
+    expect(panel()).not.toBeInTheDocument()
+  })
+})
