@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { RefObject } from 'react';
+import { tint } from '@/theme/color';
 
 export interface MiniChartPoint {
   label: string;
@@ -17,8 +18,8 @@ interface MiniChartProps {
 }
 
 const PAD = { top: 10, right: 12, bottom: 22, left: 46 };
-const TICK_COLOR = '#64748b';
-const GRID_COLOR = 'rgba(255,255,255,0.05)';
+const TICK_COLOR = 'var(--holo-c-slate-500)';
+const GRID_COLOR = 'rgba(var(--holo-ink-rgb), 0.05)';
 
 function useContainerWidth(): [RefObject<HTMLDivElement | null>, number] {
   const ref = useRef<HTMLDivElement | null>(null);
@@ -102,13 +103,13 @@ export function MiniChart({ data, type, color, height = 200, valueFormatter = de
         ) : (
           <path
             d={type === 'area' ? areaPath : linePath}
-            fill={type === 'area' ? `${color}1a` : 'none'}
+            fill={type === 'area' ? tint(color, 0.102) : 'none'}
             stroke={color}
             strokeWidth={2}
           />
         )}
         {hover != null && data[hover] && (
-          <circle cx={x(hover)} cy={y(data[hover].value)} r={3.5} fill={color} stroke="#0d1526" strokeWidth={1.5} />
+          <circle cx={x(hover)} cy={y(data[hover].value)} r={3.5} fill={color} stroke="var(--holo-surface-tooltip)" strokeWidth={1.5} />
         )}
       </svg>
       {hover != null && data[hover] && (
@@ -117,12 +118,12 @@ export function MiniChart({ data, type, color, height = 200, valueFormatter = de
             position: 'absolute',
             left: Math.min(x(hover) + 8, width - 130),
             top: 8,
-            background: '#0d1526',
-            border: '1px solid rgba(255,255,255,0.1)',
+            background: 'var(--holo-surface-tooltip)',
+            border: '1px solid rgba(var(--holo-ink-rgb), 0.1)',
             borderRadius: 8,
             padding: '6px 10px',
             fontSize: 12,
-            color: '#dbeafe',
+            color: 'var(--holo-c-blue-100)',
             pointerEvents: 'none',
             whiteSpace: 'nowrap',
           }}

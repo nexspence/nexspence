@@ -5,6 +5,7 @@ import { Search, Package, ChevronDown, ChevronUp, ChevronsUpDown, ChevronRight, 
 import { nexusApi } from '@/api/client'
 import { Select } from '../components/Select'
 import { HoloCard, HoloButton, HoloInput, HoloPill } from '@/components/holo'
+import { tint } from '@/theme/color'
 
 interface SearchAsset {
   id: string
@@ -38,7 +39,7 @@ const S = {
   title: { fontSize: 20, fontWeight: 700, color: 'var(--holo-text)', margin: '0 0 4px' },
   subtitle: { fontSize: 13, color: 'var(--holo-text-dim)', margin: 0 },
   filterCard: {
-    background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)',
+    background: 'rgba(var(--holo-ink-rgb), 0.03)', border: '1px solid rgba(var(--holo-ink-rgb), 0.08)',
     borderRadius: 12, padding: '20px 20px 16px',
   },
   filterGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12, marginBottom: 14 },
@@ -48,12 +49,12 @@ const S = {
   resultsLabel: { fontSize: 12, color: 'var(--holo-text-faint)', marginLeft: 'auto' as const },
   empty: { flex: 1, display: 'flex', flexDirection: 'column' as const, alignItems: 'center', justifyContent: 'center', gap: 12, color: 'var(--holo-text-faint)', fontSize: 14, paddingTop: 48 },
 
-  group: { background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 12, overflow: 'hidden' as const },
+  group: { background: 'rgba(var(--holo-ink-rgb), 0.02)', border: '1px solid rgba(var(--holo-ink-rgb), 0.07)', borderRadius: 12, overflow: 'hidden' as const },
   groupHeader: {
     display: 'flex', alignItems: 'center', gap: 10,
     padding: '10px 16px',
-    background: 'rgba(255,255,255,0.03)',
-    borderBottom: '1px solid rgba(255,255,255,0.07)',
+    background: 'rgba(var(--holo-ink-rgb), 0.03)',
+    borderBottom: '1px solid rgba(var(--holo-ink-rgb), 0.07)',
   },
   groupName: { fontSize: 13, fontWeight: 600, color: 'var(--holo-text)' },
   groupCount: { fontSize: 11, color: 'var(--holo-text-faint)', marginLeft: 'auto' as const },
@@ -62,39 +63,39 @@ const S = {
   thead: {
     display: 'grid',
     padding: '8px 16px',
-    background: 'rgba(255,255,255,0.02)',
-    borderBottom: '1px solid rgba(255,255,255,0.06)',
-    fontSize: 11, fontWeight: 600, color: 'rgba(229,231,235,0.45)',
+    background: 'rgba(var(--holo-ink-rgb), 0.02)',
+    borderBottom: '1px solid rgba(var(--holo-ink-rgb), 0.06)',
+    fontSize: 11, fontWeight: 600, color: 'var(--holo-tx-fg-45)',
     textTransform: 'uppercase' as const, letterSpacing: '0.05em',
     userSelect: 'none' as const,
   },
   th: (active: boolean) => ({
     display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer',
-    color: active ? '#93c5fd' : 'rgba(229,231,235,0.45)',
+    color: active ? 'var(--holo-c-blue-300)' : 'var(--holo-tx-fg-45)',
   }),
   trow: {
     display: 'grid',
-    padding: '10px 16px', borderBottom: '1px solid rgba(255,255,255,0.04)',
+    padding: '10px 16px', borderBottom: '1px solid rgba(var(--holo-ink-rgb), 0.04)',
     fontSize: 13, color: 'var(--holo-text)', alignItems: 'center',
     cursor: 'pointer',
   },
   expanded: {
     padding: '8px 16px 12px 32px',
-    borderBottom: '1px solid rgba(255,255,255,0.04)',
-    background: 'rgba(0,0,0,0.15)',
+    borderBottom: '1px solid rgba(var(--holo-ink-rgb), 0.04)',
+    background: 'var(--holo-well-15)',
   },
   assetRow: {
     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
     padding: '4px 0', fontSize: 12, gap: 12,
   },
   muted: { fontSize: 12, color: 'var(--holo-text-faint)' },
-  path: { fontSize: 11, color: 'rgba(147,197,253,0.85)', fontFamily: 'monospace' as const, wordBreak: 'break-all' as const },
+  path: { fontSize: 11, color: 'var(--holo-tx-blue-300-85)', fontFamily: 'monospace' as const, wordBreak: 'break-all' as const },
 }
 
 const FORMAT_COLORS: Record<string, string> = {
-  maven2: '#f97316', npm: '#ef4444', docker: '#3b82f6', oci: '#5b8def', pypi: '#a78bfa',
-  go: '#06b6d4', nuget: '#8b5cf6', helm: '#0ea5e9', raw: '#6b7280', apt: '#f59e0b', yum: '#10b981',
-  cran: '#276dc3', alpine: '#0d597f', huggingface: '#ffd21e',
+  maven2: 'var(--holo-c-orange)', npm: 'var(--holo-c-red)', docker: 'var(--holo-c-blue)', oci: 'var(--holo-c-blue-oci)', pypi: 'var(--holo-c-violet-400)',
+  go: 'var(--holo-c-cyan)', nuget: 'var(--holo-c-violet-500)', helm: 'var(--holo-c-sky)', raw: 'var(--holo-c-gray)', apt: 'var(--holo-c-amber)', yum: 'var(--holo-c-emerald)',
+  cran: '#276dc3', alpine: '#0d597f', huggingface: 'var(--holo-c-yellow)',
 }
 
 function fmtSize(b: number | undefined) {
@@ -282,7 +283,7 @@ export default function SearchPage() {
     <div style={S.page}>
       <div style={{ marginBottom: 24 }}>
         <div className="holo-section-label" style={{ marginBottom: 4 }}>WORKSPACE / SEARCH</div>
-        <h1 style={{ fontSize: 20, fontWeight: 700, margin: '0 0 3px', letterSpacing: '-0.01em', lineHeight: 1.2, background: 'linear-gradient(110deg, #7c5cff, #22d3ee 60%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' as const }}>Search</h1>
+        <h1 style={{ fontSize: 20, fontWeight: 700, margin: '0 0 3px', letterSpacing: '-0.01em', lineHeight: 1.2, background: 'linear-gradient(110deg, var(--holo-a), var(--holo-b) 60%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' as const }}>Search</h1>
         <p style={{ fontSize: 12, color: 'var(--holo-text-faint)', margin: 0 }}>Find artifacts across all repositories</p>
       </div>
 
@@ -330,7 +331,7 @@ export default function SearchPage() {
             />
           </div>
           <div style={{ ...S.field, gridColumn: '1 / -1' }}>
-            <label style={{ ...S.label, color: '#7c5cff' }}>Tag</label>
+            <label style={{ ...S.label, color: 'var(--holo-a)' }}>Tag</label>
             <HoloInput
               placeholder="e.g. prod  or  team:backend"
               value={filters.tag}
@@ -380,11 +381,11 @@ export default function SearchPage() {
 
           {[...grouped.entries()].map(([repo, comps]: [string, SearchComponent[]]) => {
             const fmt = comps[0].format
-            const color = FORMAT_COLORS[fmt] ?? '#6b7280'
+            const color = FORMAT_COLORS[fmt] ?? 'var(--holo-c-gray)'
             return (
               <div key={repo} style={S.group}>
                 <div style={S.groupHeader}>
-                  <HoloPill style={{ background: color + '22', color }}>{fmt}</HoloPill>
+                  <HoloPill style={{ background: tint(color, 0.133), color }}>{fmt}</HoloPill>
                   <span style={S.groupName}>{repo}</span>
                   <span style={S.groupCount}>{comps.length} component{comps.length !== 1 ? 's' : ''}</span>
                   <HoloButton
@@ -438,7 +439,7 @@ export default function SearchPage() {
                             {c.name || '—'}
                           </div>
                           <div style={S.muted}>{c.group || '—'}</div>
-                          <div style={{ color: '#a5b4fc', fontFamily: 'monospace', fontSize: 12 }}>{c.version || '—'}</div>
+                          <div style={{ color: 'var(--holo-c-indigo-300)', fontFamily: 'monospace', fontSize: 12 }}>{c.version || '—'}</div>
                           <div style={S.path}>{firstAsset?.path ?? '—'}{hasMulti ? ` +${c.assets!.length - 1}` : ''}</div>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
                             <span style={S.muted}>{fmtDate(firstAsset?.lastModified)} {firstAsset ? `· ${fmtSize(firstAsset.fileSize)}` : ''}</span>
@@ -452,7 +453,7 @@ export default function SearchPage() {
                                 background: 'rgba(124,92,255,0.12)',
                                 border: '1px solid rgba(124,92,255,0.25)',
                                 borderRadius: 4, padding: '2px 6px',
-                                fontSize: 10, color: '#a78bfa', fontFamily: 'monospace',
+                                fontSize: 10, color: 'var(--holo-c-violet-400)', fontFamily: 'monospace',
                               }}>{t}</span>
                             ))}
                           </div>
@@ -476,7 +477,7 @@ export default function SearchPage() {
                                   <div style={{ ...S.muted, marginTop: 8, marginBottom: 4, fontSize: 11, textTransform: 'uppercase' as const, letterSpacing: '0.05em' }}>Digest aliases</div>
                                   {digests.flatMap(d => (d.assets ?? []).map(a => (
                                     <div key={a.id} style={S.assetRow}>
-                                      <span style={{ ...S.path, color: 'rgba(147,197,253,0.5)' }}>{a.path}</span>
+                                      <span style={{ ...S.path, color: 'var(--holo-tx-blue-300-50)' }}>{a.path}</span>
                                       <span style={{ ...S.muted, whiteSpace: 'nowrap' as const }}>{d.version?.slice(0, 19)}… · {fmtSize(a.fileSize)}</span>
                                     </div>
                                   )))}

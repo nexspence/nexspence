@@ -32,6 +32,11 @@ describe('LoginPage', () => {
     expect(screen.getByRole('button', { name: 'Sign in' })).toBeInTheDocument()
   })
 
+  it('offers the theme toggle before sign-in', () => {
+    renderLogin()
+    expect(screen.getByRole('button', { name: /Switch to (light|dark) theme/ })).toBeInTheDocument()
+  })
+
   it('logs in successfully and navigates to /repositories', async () => {
     const user = userEvent.setup()
     renderLogin()

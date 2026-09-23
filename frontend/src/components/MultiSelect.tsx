@@ -78,11 +78,11 @@ export function MultiSelect({ options, value, onChange, placeholder = '— Selec
         zIndex: 100,
         padding: 0,
         display: 'flex', flexDirection: 'column',
-        boxShadow: '0 12px 40px rgba(0,0,0,0.6)',
+        boxShadow: '0 12px 40px var(--holo-shadow-60)',
         maxHeight: 260,
       }}
     >
-      <div style={{ padding: '6px 8px', borderBottom: '1px solid rgba(255,255,255,0.06)', flexShrink: 0 }}>
+      <div style={{ padding: '6px 8px', borderBottom: '1px solid rgba(var(--holo-ink-rgb), 0.06)', flexShrink: 0 }}>
         <input
           autoFocus
           placeholder="Filter…"
@@ -96,7 +96,7 @@ export function MultiSelect({ options, value, onChange, placeholder = '— Selec
       {filtered.length > 0 && (
         <div
           onClick={e => { e.stopPropagation(); toggleAll() }}
-          style={{ padding: '6px 14px', fontSize: 12, color: 'var(--holo-a)', cursor: 'pointer', borderBottom: '1px solid rgba(255,255,255,0.06)', flexShrink: 0 }}
+          style={{ padding: '6px 14px', fontSize: 12, color: 'var(--holo-a)', cursor: 'pointer', borderBottom: '1px solid rgba(var(--holo-ink-rgb), 0.06)', flexShrink: 0 }}
         >
           {allSelected ? 'Deselect all' : 'Select all'}
         </div>
@@ -112,7 +112,7 @@ export function MultiSelect({ options, value, onChange, placeholder = '— Selec
               onClick={e => { e.stopPropagation(); toggle(o.value) }}
               style={{
                 padding: '7px 14px', fontSize: 13, cursor: 'pointer',
-                color: isSel ? '#c4b5fd' : 'var(--holo-text)',
+                color: isSel ? 'var(--holo-c-violet-300)' : 'var(--holo-text)',
                 background: isSel ? 'rgba(124,92,255,0.18)' : 'transparent',
                 border: isSel ? '1px solid rgba(124,92,255,0.35)' : '1px solid transparent',
                 borderRadius: 10, margin: '2px 6px',
@@ -126,7 +126,7 @@ export function MultiSelect({ options, value, onChange, placeholder = '— Selec
                 (e.currentTarget as HTMLDivElement).style.background = isSel ? 'rgba(124,92,255,0.18)' : 'transparent'
               }}
             >
-              {isSel && <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#7c5cff', boxShadow: '0 0 6px #7c5cff', flexShrink: 0, display: 'inline-block' }} />}
+              {isSel && <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--holo-a)', boxShadow: '0 0 6px var(--holo-a)', flexShrink: 0, display: 'inline-block' }} />}
               <span style={{ flex: 1 }}>{o.label}</span>
             </div>
           )
@@ -155,7 +155,7 @@ export function MultiSelect({ options, value, onChange, placeholder = '— Selec
         ) : selectedEntries.map(entry => (
           <span key={entry.value} style={{
             display: 'flex', alignItems: 'center', gap: 4, padding: '1px 6px',
-            background: 'rgba(124,92,255,0.18)', borderRadius: 6, fontSize: 12, color: '#c4b5fd',
+            background: 'rgba(124,92,255,0.18)', borderRadius: 6, fontSize: 12, color: 'var(--holo-c-violet-300)',
             border: '1px solid rgba(124,92,255,0.35)',
           }}>
             {entry.label}

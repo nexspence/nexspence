@@ -1,5 +1,5 @@
 .table {
-  background: rgba(255,255,255,0.02);
+  background: rgba(var(--holo-ink-rgb), 0.02);
   border: 1px solid var(--holo-border);
   border-radius: 12px;
   overflow: hidden;
@@ -8,7 +8,7 @@
 .tableHead {
   display: grid;
   padding: 10px 16px;
-  background: rgba(255,255,255,0.03);
+  background: rgba(var(--holo-ink-rgb), 0.03);
   border-bottom: 1px solid var(--holo-border);
   font-size: 11px;
   font-weight: 600;
@@ -21,7 +21,7 @@
 .tableRow {
   display: grid;
   padding: 11px 16px;
-  border-bottom: 1px solid rgba(255,255,255,0.04);
+  border-bottom: 1px solid rgba(var(--holo-ink-rgb), 0.04);
   align-items: center;
   transition: background 0.1s;
 }

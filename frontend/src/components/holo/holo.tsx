@@ -72,7 +72,7 @@ export function TiltCard({ intensity = 10, style, className = '', children, ...r
     >
       <div style={{
         position: 'absolute', inset: 0, borderRadius: 'inherit', pointerEvents: 'none', zIndex: 2,
-        background: `radial-gradient(circle at ${t.mx}% ${t.my}%, rgba(255,255,255,0.12), transparent 50%)`,
+        background: `radial-gradient(circle at ${t.mx}% ${t.my}%, rgba(var(--holo-ink-rgb), 0.12), transparent 50%)`,
       }} />
       {children}
     </div>

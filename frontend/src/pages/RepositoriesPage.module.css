@@ -20,7 +20,7 @@
   border: 1px solid rgba(124, 92, 255, 0.3);
   border-radius: 10px;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(var(--holo-ink-rgb), 0.03);
 }
 
 .typeBtn {
@@ -51,7 +51,7 @@
 }
 
 .typeBtn:focus-visible {
-  outline: 2px solid #3b82f6;
+  outline: 2px solid var(--holo-c-blue);
   outline-offset: -2px;
 }
 
@@ -67,7 +67,7 @@
   align-items: center;
   gap: 14px;
   padding: 11px 16px;
-  background: rgba(10, 8, 28, 0.97);
+  background: var(--holo-surface-float);
   border: 1px solid rgba(124, 92, 255, 0.2);
   border-radius: 10px;
   cursor: pointer;
@@ -109,7 +109,7 @@
 
 .hint {
   font-size: 11px;
-  color: rgba(229, 231, 235, 0.4);
+  color: var(--holo-tx-fg-40);
   line-height: 1.4;
   margin-top: 2px;
 }
@@ -120,8 +120,8 @@
   gap: 4px;
   max-height: 180px;
   overflow-y: auto;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(var(--holo-ink-rgb), 0.03);
+  border: 1px solid rgba(var(--holo-ink-rgb), 0.08);
   border-radius: 8px;
   padding: 8px;
 }
@@ -141,7 +141,7 @@
 }
 
 .memberItem input[type='checkbox'] {
-  accent-color: #3b82f6;
+  accent-color: var(--holo-c-blue);
   width: 14px;
   height: 14px;
   flex-shrink: 0;
@@ -149,15 +149,15 @@
 
 .memberName {
   font-size: 13px;
-  color: #dbeafe;
+  color: var(--holo-c-blue-100);
   flex: 1;
   word-break: break-all;
 }
 
 .memberType {
   font-size: 10px;
-  color: rgba(229, 231, 235, 0.4);
-  background: rgba(255, 255, 255, 0.06);
+  color: var(--holo-tx-fg-40);
+  background: rgba(var(--holo-ink-rgb), 0.06);
   padding: 1px 6px;
   border-radius: 4px;
 }

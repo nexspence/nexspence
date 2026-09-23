@@ -74,12 +74,12 @@ export function AssignRolesModal({ user, roles, onClose, onSaved }: {
   const headerStyle: React.CSSProperties = {
     padding: '6px 10px', fontSize: 11, fontWeight: 600, color: 'var(--holo-text-dim)',
     textTransform: 'uppercase' as const, letterSpacing: '0.4px',
-    borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(0,0,0,0.2)',
+    borderBottom: '1px solid rgba(var(--holo-ink-rgb), 0.06)', background: 'var(--holo-well-20)',
   }
   const listStyle: React.CSSProperties = { maxHeight: 200, overflowY: 'auto' as const }
   const itemBase: React.CSSProperties = {
     padding: '7px 10px', fontSize: 12, cursor: 'pointer',
-    borderBottom: '1px solid rgba(255,255,255,0.03)',
+    borderBottom: '1px solid rgba(var(--holo-ink-rgb), 0.03)',
   }
   const arrowBtn: React.CSSProperties = {
     width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -95,7 +95,7 @@ export function AssignRolesModal({ user, roles, onClose, onSaved }: {
         {/* Available */}
         <div style={panelStyle}>
           <div style={headerStyle}>Available ({roles.filter(r => !selected.includes(r.id)).length})</div>
-          <div style={{ padding: '4px 6px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+          <div style={{ padding: '4px 6px', borderBottom: '1px solid rgba(var(--holo-ink-rgb), 0.05)' }}>
             <input
               placeholder="Filter…"
               value={leftSearch}
@@ -132,7 +132,7 @@ export function AssignRolesModal({ user, roles, onClose, onSaved }: {
         {/* Selected */}
         <div style={panelStyle}>
           <div style={headerStyle}>Selected ({selected.length})</div>
-          <div style={{ padding: '4px 6px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+          <div style={{ padding: '4px 6px', borderBottom: '1px solid rgba(var(--holo-ink-rgb), 0.05)' }}>
             <input
               placeholder="Filter…"
               value={rightSearch}
@@ -143,15 +143,15 @@ export function AssignRolesModal({ user, roles, onClose, onSaved }: {
           </div>
           <div style={listStyle}>
             {selectedRoles.map(r => (
-              <div key={r.id} style={{ ...itemBase, color: '#c4b5fd', background: 'rgba(124,92,255,0.12)', display: 'flex', alignItems: 'flex-start', gap: 6 }}
+              <div key={r.id} style={{ ...itemBase, color: 'var(--holo-c-violet-300)', background: 'rgba(124,92,255,0.12)', display: 'flex', alignItems: 'flex-start', gap: 6 }}
                 onClick={() => remove(r.id)}
                 onMouseEnter={e => (e.currentTarget as HTMLDivElement).style.background = 'rgba(124,92,255,0.2)'}
                 onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.background = 'rgba(124,92,255,0.12)'}
               >
-                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#7c5cff', flexShrink: 0, display: 'inline-block', marginTop: 4 }} />
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--holo-a)', flexShrink: 0, display: 'inline-block', marginTop: 4 }} />
                 <div>
                   <div style={{ fontWeight: 600 }}>{r.name}</div>
-                  {r.description && <div style={{ fontSize: 11, color: 'rgba(196,181,253,0.6)', marginTop: 1 }}>{r.description}</div>}
+                  {r.description && <div style={{ fontSize: 11, color: 'var(--holo-tx-violet-300-60)', marginTop: 1 }}>{r.description}</div>}
                 </div>
               </div>
             ))}
@@ -380,13 +380,13 @@ export function UsersTab() {
               <div key={user.userId} style={{
                 display: 'grid', gridTemplateColumns: '8px 1fr auto auto auto auto auto',
                 alignItems: 'center', gap: 12, padding: '11px 16px',
-                background: 'rgba(10,8,28,0.97)', border: '1px solid rgba(124,92,255,0.2)',
+                background: 'var(--holo-surface-float)', border: '1px solid rgba(124,92,255,0.2)',
                 borderRadius: 10, transition: 'border-color 0.15s, background 0.15s',
               }}
               onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.borderColor = 'rgba(124,92,255,0.45)'; (e.currentTarget as HTMLDivElement).style.background = 'rgba(124,92,255,0.04)' }}
-              onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.borderColor = 'rgba(124,92,255,0.2)'; (e.currentTarget as HTMLDivElement).style.background = 'rgba(10,8,28,0.97)' }}
+              onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.borderColor = 'rgba(124,92,255,0.2)'; (e.currentTarget as HTMLDivElement).style.background = 'var(--holo-surface-float)' }}
               >
-                <span style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0, display: 'inline-block', background: isActive ? 'var(--holo-green)' : 'rgba(255,255,255,0.2)', boxShadow: isActive ? '0 0 5px var(--holo-green)' : 'none' }} />
+                <span style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0, display: 'inline-block', background: isActive ? 'var(--holo-green)' : 'rgba(var(--holo-ink-rgb), 0.2)', boxShadow: isActive ? '0 0 5px var(--holo-green)' : 'none' }} />
                 <div style={{ minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <User size={13} style={{ color: 'var(--holo-a)', flexShrink: 0 }} />
@@ -521,7 +521,7 @@ function RolesTab() {
       ) : (
         <HoloCard style={{ padding: 0 }}>
           {roles.map((r, i) => (
-            <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', borderBottom: i < roles.length - 1 ? '1px solid rgba(255,255,255,0.06)' : 'none' }}>
+            <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', borderBottom: i < roles.length - 1 ? '1px solid rgba(var(--holo-ink-rgb), 0.06)' : 'none' }}>
               <Shield size={15} style={{ color: 'var(--holo-a)', flexShrink: 0 }} />
               <div style={{ flex: 1 }}>
                 <div style={{ color: 'var(--holo-text)', fontWeight: 600 }}>{r.name}</div>
@@ -551,7 +551,7 @@ export default function UsersPage() {
     <div className={styles.page}>
       <div style={{ marginBottom: 24 }}>
         <div className="holo-section-label" style={{ marginBottom: 4 }}>ADMINISTRATION / USERS</div>
-        <h1 style={{ fontSize: 20, fontWeight: 700, margin: '0 0 3px', letterSpacing: '-0.01em', lineHeight: 1.2, background: 'linear-gradient(110deg, #7c5cff, #22d3ee 60%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' as const }}>Users</h1>
+        <h1 style={{ fontSize: 20, fontWeight: 700, margin: '0 0 3px', letterSpacing: '-0.01em', lineHeight: 1.2, background: 'linear-gradient(110deg, var(--holo-a), var(--holo-b) 60%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' as const }}>Users</h1>
         <p style={{ fontSize: 12, color: 'var(--holo-text-faint)', margin: 0 }}>Manage users and roles</p>
       </div>
       <HoloTabs

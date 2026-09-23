@@ -5,6 +5,7 @@ import { nexusApi } from '@/api/client'
 import { Select } from '../components/Select'
 import { HoloButton, HoloInput, HoloCard, HoloPill } from '@/components/holo'
 import { Truncated } from '@/components/Truncated'
+import { tint } from '@/theme/color'
 
 interface AuditEvent {
   id: number
@@ -24,26 +25,26 @@ const ACTIONS = ['', 'CREATE', 'UPDATE', 'DELETE', 'LOGIN', 'LOGOUT']
 const PAGE_SIZE = 50
 
 const DOMAIN_COLOR: Record<string, string> = {
-  REPOSITORY: '#3b82f6',
-  SECURITY:   '#a78bfa',
-  USER:       '#06b6d4',
-  BLOBSTORE:  '#f59e0b',
-  CLEANUP:    '#ef4444',
-  SYSTEM:     '#6b7280',
+  REPOSITORY: 'var(--holo-c-blue)',
+  SECURITY:   'var(--holo-c-violet-400)',
+  USER:       'var(--holo-c-cyan)',
+  BLOBSTORE:  'var(--holo-c-amber)',
+  CLEANUP:    'var(--holo-c-red)',
+  SYSTEM:     'var(--holo-c-gray)',
 }
 
 const ACTION_COLOR: Record<string, string> = {
-  CREATE: '#22c55e',
-  UPDATE: '#3b82f6',
-  DELETE: '#ef4444',
-  LOGIN:  '#f59e0b',
-  LOGOUT: '#6b7280',
+  CREATE: 'var(--holo-c-green)',
+  UPDATE: 'var(--holo-c-blue)',
+  DELETE: 'var(--holo-c-red)',
+  LOGIN:  'var(--holo-c-amber)',
+  LOGOUT: 'var(--holo-c-gray)',
 }
 
 const RESULT_COLOR: Record<string, string> = {
-  success: '#22c55e',
-  failure: '#ef4444',
-  denied:  '#f59e0b',
+  success: 'var(--holo-c-green)',
+  failure: 'var(--holo-c-red)',
+  denied:  'var(--holo-c-amber)',
 }
 
 function fmt(ts: string) {
@@ -121,7 +122,7 @@ export default function AuditPage() {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
         <div>
           <div className="holo-section-label" style={{ marginBottom: 4 }}>ADMINISTRATION / AUDIT</div>
-          <h1 style={{ fontSize: 20, fontWeight: 700, margin: '0 0 3px', letterSpacing: '-0.01em', lineHeight: 1.2, background: 'linear-gradient(110deg, #7c5cff, #22d3ee 60%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' as const }}>Audit Log</h1>
+          <h1 style={{ fontSize: 20, fontWeight: 700, margin: '0 0 3px', letterSpacing: '-0.01em', lineHeight: 1.2, background: 'linear-gradient(110deg, var(--holo-a), var(--holo-b) 60%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' as const }}>Audit Log</h1>
           <p style={{ fontSize: 12, color: 'var(--holo-text-faint)', margin: 0 }}>All system mutations — repository, user, and security events</p>
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -194,16 +195,16 @@ export default function AuditPage() {
                     <td style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--holo-text-dim)' }}>{fmt(e.eventTime)}</td>
                     <td style={{ fontWeight: 500 }}>{e.username || '—'}</td>
                     <td>
-                      <HoloPill style={{ background: (DOMAIN_COLOR[e.domain] ?? '#6b7280') + '20', color: DOMAIN_COLOR[e.domain] ?? '#6b7280' }}>
+                      <HoloPill style={{ background: tint(DOMAIN_COLOR[e.domain] ?? 'var(--holo-c-gray)', 0.125), color: DOMAIN_COLOR[e.domain] ?? 'var(--holo-c-gray)' }}>
                         {e.domain}
                       </HoloPill>
                     </td>
                     <td>
-                      <HoloPill style={{ background: (ACTION_COLOR[e.action] ?? '#6b7280') + '20', color: ACTION_COLOR[e.action] ?? '#6b7280' }}>
+                      <HoloPill style={{ background: tint(ACTION_COLOR[e.action] ?? 'var(--holo-c-gray)', 0.125), color: ACTION_COLOR[e.action] ?? 'var(--holo-c-gray)' }}>
                         {e.action}
                       </HoloPill>
                     </td>
-                    <td style={{ color: 'rgba(229,231,235,0.7)' }}>
+                    <td style={{ color: 'var(--holo-tx-fg-70)' }}>
                       {e.entityType ? `${e.entityType}: ` : ''}
                       <span style={{ color: 'var(--holo-a)' }}>{e.entityName || '—'}</span>
                     </td>
@@ -214,7 +215,7 @@ export default function AuditPage() {
                     </td>
                     <td style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--holo-text-dim)' }}>{e.remoteIp || '—'}</td>
                     <td>
-                      <HoloPill style={{ background: (RESULT_COLOR[e.result] ?? '#6b7280') + '20', color: RESULT_COLOR[e.result] ?? '#6b7280' }}>
+                      <HoloPill style={{ background: tint(RESULT_COLOR[e.result] ?? 'var(--holo-c-gray)', 0.125), color: RESULT_COLOR[e.result] ?? 'var(--holo-c-gray)' }}>
                         {e.result}
                       </HoloPill>
                     </td>

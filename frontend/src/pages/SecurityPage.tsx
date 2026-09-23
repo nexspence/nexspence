@@ -9,6 +9,7 @@ import { useAuthStore } from '@/store/authStore'
 import { Select } from '../components/Select'
 import { HoloButton, HoloInput, HoloModal, HoloTabs, HoloPill, HoloCard, HoloTabItem } from '@/components/holo'
 import { Truncated } from '@/components/Truncated'
+import { tint } from '@/theme/color'
 
 /* ─── Types ─────────────────────────────────────────────── */
 interface Role { id: string; name: string; description: string; privileges: string[]; roles: string[]; readOnly: boolean; source?: string }
@@ -52,10 +53,10 @@ type GNodeType = 'user' | 'role' | 'privilege' | 'selector'
 const NODE_W = 120, NODE_H = 26, ROW_GAP = 40, ROW_Y0 = 36, SVG_W = 680
 const COL_CX: Record<GNodeType, number> = { user: 70, role: 230, privilege: 390, selector: 560 }
 const NODE_COLORS: Record<GNodeType, {stroke:string;fill:string;text:string}> = {
-  user:      { stroke:'#7c5cff', fill:'#1e1049', text:'#c4b5fd' },
-  role:      { stroke:'#3b82f6', fill:'#0c2340', text:'#93c5fd' },
-  privilege: { stroke:'#f59e0b', fill:'#1c1200', text:'#fde68a' },
-  selector:  { stroke:'#22c55e', fill:'#001c0c', text:'#86efac' },
+  user:      { stroke:'var(--holo-a)', fill:'var(--holo-graph-user-fill)', text:'var(--holo-c-violet-300)' },
+  role:      { stroke:'var(--holo-c-blue)', fill:'var(--holo-graph-role-fill)', text:'var(--holo-c-blue-300)' },
+  privilege: { stroke:'var(--holo-c-amber)', fill:'var(--holo-graph-priv-fill)', text:'var(--holo-c-amber-200)' },
+  selector:  { stroke:'var(--holo-c-green)', fill:'var(--holo-graph-sel-fill)', text:'var(--holo-c-green-300)' },
 }
 
 interface WebhookDef { id: string; name: string; url: string; events: string[]; active: boolean; secret?: string }
@@ -70,18 +71,18 @@ interface Privilege {
 }
 
 const PRIV_TYPE_COLOR: Record<string, string> = {
-  'wildcard': '#3b82f6',
-  'repository-view': '#22c55e',
-  'repository-admin': '#f59e0b',
-  'application': '#a78bfa',
-  'script': '#f97316',
-  'repository-content-selector': '#06b6d4',
+  'wildcard': 'var(--holo-c-blue)',
+  'repository-view': 'var(--holo-c-green)',
+  'repository-admin': 'var(--holo-c-amber)',
+  'application': 'var(--holo-c-violet-400)',
+  'script': 'var(--holo-c-orange)',
+  'repository-content-selector': 'var(--holo-c-cyan)',
 }
 
 // MALICIOUS is deliberately off the red→green CVSS ramp: a compromised package
 // is a different class of alert, not a worse CVE, and reading it as "extra red"
 // is exactly the confusion to avoid.
-const sevColor = (s: string) => s === 'MALICIOUS' ? '#d946ef' : s === 'CRITICAL' ? '#ef4444' : s === 'HIGH' ? '#f97316' : s === 'MEDIUM' ? '#f59e0b' : s === 'LOW' ? '#22c55e' : '#6b7280'
+const sevColor = (s: string) => s === 'MALICIOUS' ? 'var(--holo-c-fuchsia)' : s === 'CRITICAL' ? 'var(--holo-c-red)' : s === 'HIGH' ? 'var(--holo-c-orange)' : s === 'MEDIUM' ? 'var(--holo-c-amber)' : s === 'LOW' ? 'var(--holo-c-green)' : 'var(--holo-c-gray)'
 const monoStyle = { fontFamily: 'monospace' as const, fontSize: 12 }
 const emptyStyle = { textAlign: 'center' as const, color: 'var(--holo-text-faint)', fontSize: 14, padding: 32 }
 
@@ -180,12 +181,12 @@ function PrivilegeTransferList({
   const headerStyle: React.CSSProperties = {
     padding: '6px 10px', fontSize: 11, fontWeight: 600, color: 'var(--holo-text-dim)',
     textTransform: 'uppercase' as const, letterSpacing: '0.4px',
-    borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(0,0,0,0.2)',
+    borderBottom: '1px solid rgba(var(--holo-ink-rgb), 0.06)', background: 'var(--holo-well-20)',
   }
   const listStyle: React.CSSProperties = { maxHeight: 160, overflowY: 'auto' as const }
   const itemBase: React.CSSProperties = {
     padding: '6px 10px', fontSize: 12, cursor: 'pointer',
-    borderBottom: '1px solid rgba(255,255,255,0.03)',
+    borderBottom: '1px solid rgba(var(--holo-ink-rgb), 0.03)',
   }
   const arrowBtn: React.CSSProperties = {
     width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -197,7 +198,7 @@ function PrivilegeTransferList({
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 28px 1fr', gap: 8, alignItems: 'stretch' }}>
       <div style={panelStyle}>
         <div style={headerStyle}>Available ({available.length})</div>
-        <div style={{ padding: '4px 6px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+        <div style={{ padding: '4px 6px', borderBottom: '1px solid rgba(var(--holo-ink-rgb), 0.05)' }}>
           <input
             placeholder="Filter…"
             value={leftSearch}
@@ -229,7 +230,7 @@ function PrivilegeTransferList({
 
       <div style={panelStyle}>
         <div style={headerStyle}>Selected ({selected.length})</div>
-        <div style={{ padding: '4px 6px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+        <div style={{ padding: '4px 6px', borderBottom: '1px solid rgba(var(--holo-ink-rgb), 0.05)' }}>
           <input
             placeholder="Filter…"
             value={rightSearch}
@@ -240,12 +241,12 @@ function PrivilegeTransferList({
         </div>
         <div style={listStyle}>
           {selected.map(p => (
-            <div key={p.id} style={{ ...itemBase, color: '#c4b5fd', background: 'rgba(124,92,255,0.12)', display: 'flex', alignItems: 'center', gap: 6 }}
+            <div key={p.id} style={{ ...itemBase, color: 'var(--holo-c-violet-300)', background: 'rgba(124,92,255,0.12)', display: 'flex', alignItems: 'center', gap: 6 }}
               onClick={() => remove(p.id)}
               onMouseEnter={e => (e.currentTarget as HTMLDivElement).style.background = 'rgba(124,92,255,0.2)'}
               onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.background = 'rgba(124,92,255,0.12)'}
             >
-              <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#7c5cff', flexShrink: 0, display: 'inline-block' }} />
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--holo-a)', flexShrink: 0, display: 'inline-block' }} />
               {p.name}
             </div>
           ))}
@@ -424,11 +425,11 @@ function RolesTab({ roles, loading, onRefresh, admin }: { roles: Role[]; loading
             <div key={r.id} style={{
               display: 'grid', gridTemplateColumns: '20px 1fr auto',
               alignItems: 'center', gap: 12, padding: '11px 16px',
-              background: 'rgba(10,8,28,0.97)', border: '1px solid rgba(124,92,255,0.2)',
+              background: 'var(--holo-surface-float)', border: '1px solid rgba(124,92,255,0.2)',
               borderRadius: 10, transition: 'border-color 0.15s, background 0.15s',
             }}
             onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.borderColor = 'rgba(124,92,255,0.45)'; (e.currentTarget as HTMLDivElement).style.background = 'rgba(124,92,255,0.04)' }}
-            onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.borderColor = 'rgba(124,92,255,0.2)'; (e.currentTarget as HTMLDivElement).style.background = 'rgba(10,8,28,0.97)' }}
+            onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.borderColor = 'rgba(124,92,255,0.2)'; (e.currentTarget as HTMLDivElement).style.background = 'var(--holo-surface-float)' }}
             >
               <Shield size={15} style={{ color: 'var(--holo-a)', flexShrink: 0 }} />
               <div style={{ minWidth: 0 }}>
@@ -445,7 +446,7 @@ function RolesTab({ roles, loading, onRefresh, admin }: { roles: Role[]; loading
                       marginTop: 4, display: 'inline-flex', alignItems: 'center', gap: 5,
                       background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(99,102,241,0.25)',
                       borderRadius: 6, padding: '2px 8px', cursor: 'pointer', fontSize: 11,
-                      color: '#a5b4fc', transition: 'background 0.15s',
+                      color: 'var(--holo-c-indigo-300)', transition: 'background 0.15s',
                     }}
                     onMouseEnter={e => (e.currentTarget.style.background = 'rgba(99,102,241,0.22)')}
                     onMouseLeave={e => (e.currentTarget.style.background = 'rgba(99,102,241,0.12)')}
@@ -467,7 +468,7 @@ function RolesTab({ roles, loading, onRefresh, admin }: { roles: Role[]; loading
                     )}
                     {(rolePrivCache.get(r.id) ?? []).map(p => {
                       const actions = (p.attrs?.actions as string[] | undefined) ?? []
-                      const typeColor = PRIV_TYPE_COLOR[p.type] ?? '#6b7280'
+                      const typeColor = PRIV_TYPE_COLOR[p.type] ?? 'var(--holo-c-gray)'
                       const csName = allSelectors.find(s => s.id === p.contentSelectorId)?.name
                       return (
                         <div key={p.id} style={{
@@ -477,20 +478,20 @@ function RolesTab({ roles, loading, onRefresh, admin }: { roles: Role[]; loading
                           <span style={{
                             fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 3,
                             textTransform: 'uppercase' as const, letterSpacing: '0.4px',
-                            background: typeColor + '22', color: typeColor, whiteSpace: 'nowrap' as const,
+                            background: tint(typeColor, 0.133), color: typeColor, whiteSpace: 'nowrap' as const,
                           }}>
                             {(p.type as string) === 'repository-content-selector' ? 'cs' : p.type.replace('repository-', '')}
                           </span>
                           <span style={{ fontSize: 12, color: 'var(--holo-text)', fontWeight: 500 }}>{p.name}</span>
                           {csName && (
-                            <span style={{ fontSize: 10, color: '#67e8f9', padding: '1px 5px', background: 'rgba(6,182,212,0.1)', borderRadius: 3 }}>
+                            <span style={{ fontSize: 10, color: 'var(--holo-c-cyan-300)', padding: '1px 5px', background: 'rgba(6,182,212,0.1)', borderRadius: 3 }}>
                               {csName}
                             </span>
                           )}
                           {actions.map(a => {
-                            const ac = (a === 'write' || a === 'delete') ? '#f59e0b' : '#22c55e'
+                            const ac = (a === 'write' || a === 'delete') ? 'var(--holo-c-amber)' : 'var(--holo-c-green)'
                             return (
-                              <span key={a} style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3, background: ac + '22', color: ac }}>
+                              <span key={a} style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3, background: tint(ac, 0.133), color: ac }}>
                                 {a}
                               </span>
                             )
@@ -632,7 +633,7 @@ function ScanTab() {
           </HoloButton>
         </div>
         {scanner && (
-          <div style={{ marginTop: 8, fontSize: 12, lineHeight: 1.5, color: scanner.state === 'ready' ? 'var(--holo-text-dim)' : '#f59e0b' }}>
+          <div style={{ marginTop: 8, fontSize: 12, lineHeight: 1.5, color: scanner.state === 'ready' ? 'var(--holo-text-dim)' : 'var(--holo-c-amber)' }}>
             {scanner.message}
             {(scanner.state === 'missing' || scanner.state === 'broken') && (
               <> — see <a href="https://github.com/nexspence/nexspence/blob/main/docs/scanning.md" target="_blank" rel="noreferrer" style={{ color: 'inherit' }}>how to enable image scanning</a></>
@@ -645,11 +646,11 @@ function ScanTab() {
             {elapsed >= 90 ? '; please wait…' : ''}
           </div>
         )}
-        {error && <div role="alert" style={{ marginTop: 10, padding: '8px 12px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, color: '#ef4444', fontSize: 13 }}>{error}</div>}
+        {error && <div role="alert" style={{ marginTop: 10, padding: '8px 12px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, color: 'var(--holo-c-red)', fontSize: 13 }}>{error}</div>}
       </HoloCard>
 
       {result && result.status === 'failed' && result.error && (
-        <div role="alert" style={{ padding: '12px 14px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: 10, color: '#fca5a5', fontSize: 13, lineHeight: 1.45 }}>
+        <div role="alert" style={{ padding: '12px 14px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: 10, color: 'var(--holo-c-red-300)', fontSize: 13, lineHeight: 1.45 }}>
           {result.error}
         </div>
       )}
@@ -668,7 +669,7 @@ function ScanTab() {
 
           {/* Status / meta */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12, color: 'var(--holo-text-dim)' }}>
-            {result.status === 'ok' ? <CheckCircle size={14} style={{ color: '#22c55e' }} /> : <AlertTriangle size={14} style={{ color: '#f59e0b' }} />}
+            {result.status === 'ok' ? <CheckCircle size={14} style={{ color: 'var(--holo-c-green)' }} /> : <AlertTriangle size={14} style={{ color: 'var(--holo-c-amber)' }} />}
             <span>Image: <span style={{ color: 'var(--holo-text)' }}>{result.imageRef || '—'}</span></span>
             <span>·</span>
             <span>Scanned {new Date(result.scannedAt).toLocaleString()}</span>
@@ -690,7 +691,7 @@ function ScanTab() {
             {(['ALL', ...SEVERITY_ORDER]).map(s => (
               <button key={s} onClick={() => setSeverityFilter(s)} style={{
                 padding: '4px 12px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600,
-                background: severityFilter === s ? (s === 'ALL' ? '#3b82f6' : sevColor(s)) : 'rgba(255,255,255,0.06)',
+                background: severityFilter === s ? (s === 'ALL' ? 'var(--holo-c-blue)' : sevColor(s)) : 'rgba(var(--holo-ink-rgb), 0.06)',
                 color: severityFilter === s ? '#fff' : 'var(--holo-text-faint)',
               }}>{s} {s !== 'ALL' && `(${result.summary[s.toLowerCase() as keyof ScanSummary]})`}</button>
             ))}
@@ -714,12 +715,12 @@ function ScanTab() {
                 </thead>
                 <tbody>
                   {filtered.map((f, i) => (
-                    <tr key={f.id + f.pkgName + i} style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                    <tr key={f.id + f.pkgName + i} style={{ borderTop: '1px solid rgba(var(--holo-ink-rgb), 0.05)' }}>
                       <td style={{ padding: '8px 0', ...monoStyle, color: 'var(--holo-a)' }}>{f.id}</td>
-                      <td style={{ padding: '8px 8px 8px 0' }}><HoloPill style={{ background: sevColor(f.severity)+'22', color: sevColor(f.severity) }}>{f.severity}</HoloPill></td>
+                      <td style={{ padding: '8px 8px 8px 0' }}><HoloPill style={{ background: tint(sevColor(f.severity), 0.133), color: sevColor(f.severity) }}>{f.severity}</HoloPill></td>
                       <td style={{ padding: '8px 8px 8px 0', color: 'var(--holo-text)' }}>{f.pkgName}</td>
                       <td style={{ padding: '8px 8px 8px 0', ...monoStyle, color: 'var(--holo-text-dim)' }}>{f.installedVersion}</td>
-                      <td style={{ padding: '8px 8px 8px 0', ...monoStyle, color: '#22c55e' }}>{f.fixedVersion || '—'}</td>
+                      <td style={{ padding: '8px 8px 8px 0', ...monoStyle, color: 'var(--holo-c-green)' }}>{f.fixedVersion || '—'}</td>
                       <Truncated as="td" text={f.title || '—'} style={{ padding: '8px 0', color: 'var(--holo-text-dim)', maxWidth: 280 }} />
                     </tr>
                   ))}
@@ -850,8 +851,8 @@ function VulnDashTab() {
           value={severityFilter}
           onChange={e => setSeverityFilter(e.target.value)}
           style={{
-            padding: '8px 12px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)',
-            background: 'rgba(255,255,255,0.05)', color: 'var(--holo-text)', fontSize: 13,
+            padding: '8px 12px', borderRadius: 8, border: '1px solid rgba(var(--holo-ink-rgb), 0.1)',
+            background: 'rgba(var(--holo-ink-rgb), 0.05)', color: 'var(--holo-text)', fontSize: 13,
           }}
         >
           <option value="">All severities</option>
@@ -876,7 +877,7 @@ function VulnDashTab() {
       </div>
 
       {error && (
-        <div role="alert" style={{ padding: '8px 12px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, color: '#ef4444', fontSize: 13 }}>
+        <div role="alert" style={{ padding: '8px 12px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, color: 'var(--holo-c-red)', fontSize: 13 }}>
           {error}
         </div>
       )}
@@ -908,7 +909,7 @@ function VulnDashTab() {
             </thead>
             <tbody>
               {items.map((row) => (
-                <tr key={row.componentId} style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                <tr key={row.componentId} style={{ borderTop: '1px solid rgba(var(--holo-ink-rgb), 0.05)' }}>
                   <td style={{ padding: '8px 8px 8px 0', color: 'var(--holo-a)' }}>{row.repoName}</td>
                   <td style={{ padding: '8px 8px 8px 0', color: 'var(--holo-text-dim)' }}>{row.format}</td>
                   <td style={{ padding: '8px 8px 8px 0', color: 'var(--holo-text)' }}>{row.name}</td>
@@ -1091,7 +1092,7 @@ function WebhooksTab() {
                 </div>
               ) : (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 18px' }}>
-                  <Webhook size={14} style={{ color: h.active ? '#22c55e' : '#6b7280', flexShrink: 0 }} />
+                  <Webhook size={14} style={{ color: h.active ? 'var(--holo-c-green)' : 'var(--holo-c-gray)', flexShrink: 0 }} />
                   <div style={{ flex: 1 }}>
                     <div style={{ color: 'var(--holo-text)', fontWeight: 600 }}>{h.name}</div>
                     <div style={{ color: 'var(--holo-text-faint)', ...monoStyle }}>{h.url}</div>
@@ -1101,7 +1102,7 @@ function WebhooksTab() {
                   </div>
                   <HoloPill tone={h.active ? 'success' : 'default'}>{h.active ? 'active' : 'inactive'}</HoloPill>
                   {testResults[h.id] !== undefined && (
-                    <span style={{ fontSize: 12, fontFamily: 'monospace', color: testResults[h.id]?.ok ? '#22c55e' : '#ef4444' }}>
+                    <span style={{ fontSize: 12, fontFamily: 'monospace', color: testResults[h.id]?.ok ? 'var(--holo-c-green)' : 'var(--holo-c-red)' }}>
                       {testResults[h.id] === null ? '…' : testResults[h.id]?.msg}
                     </span>
                   )}
@@ -1216,19 +1217,19 @@ function PrivilegesTab({ admin }: { admin: boolean }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           {filteredPrivs.map(p => {
             const actions = (p.attrs?.actions as string[] | undefined) ?? []
-            const typeColor = PRIV_TYPE_COLOR[p.type] ?? '#6b7280'
+            const typeColor = PRIV_TYPE_COLOR[p.type] ?? 'var(--holo-c-gray)'
             const usedInRoles = privRoleMap[p.id] ?? []
             return (
               <div key={p.id} style={{
                 display: 'grid', gridTemplateColumns: 'auto 1fr auto',
                 alignItems: 'center', gap: 12, padding: '11px 16px',
-                background: 'rgba(10,8,28,0.97)', border: '1px solid rgba(124,92,255,0.2)',
+                background: 'var(--holo-surface-float)', border: '1px solid rgba(124,92,255,0.2)',
                 borderRadius: 10, transition: 'border-color 0.15s, background 0.15s',
               }}
               onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.borderColor = 'rgba(124,92,255,0.45)'; (e.currentTarget as HTMLDivElement).style.background = 'rgba(124,92,255,0.04)' }}
-              onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.borderColor = 'rgba(124,92,255,0.2)'; (e.currentTarget as HTMLDivElement).style.background = 'rgba(10,8,28,0.97)' }}
+              onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.borderColor = 'rgba(124,92,255,0.2)'; (e.currentTarget as HTMLDivElement).style.background = 'var(--holo-surface-float)' }}
               >
-                <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 4, textTransform: 'uppercase' as const, letterSpacing: '0.3px', whiteSpace: 'nowrap' as const, background: typeColor + '22', color: typeColor }}>
+                <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 4, textTransform: 'uppercase' as const, letterSpacing: '0.3px', whiteSpace: 'nowrap' as const, background: tint(typeColor, 0.133), color: typeColor }}>
                   {(p.type as string) === 'repository-content-selector' ? 'cs' : p.type.replace('repository-', '')}
                 </span>
                 <div style={{ minWidth: 0 }}>
@@ -1239,11 +1240,11 @@ function PrivilegesTab({ admin }: { admin: boolean }) {
                   {p.description && <div style={{ fontSize: 11, color: 'var(--holo-text-faint)', marginTop: 1 }}>{p.description}</div>}
                   <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' as const, marginTop: 4, alignItems: 'center' }}>
                     {actions.map(a => {
-                      const ac = (a === 'write' || a === 'delete') ? '#f59e0b' : '#22c55e'
-                      return <HoloPill key={a} style={{ background: ac + '22', color: ac, fontSize: 10 }}>{a}</HoloPill>
+                      const ac = (a === 'write' || a === 'delete') ? 'var(--holo-c-amber)' : 'var(--holo-c-green)'
+                      return <HoloPill key={a} style={{ background: tint(ac, 0.133), color: ac, fontSize: 10 }}>{a}</HoloPill>
                     })}
                     {usedInRoles.map(roleName => (
-                      <span key={roleName} style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, background: 'rgba(6,182,212,0.12)', color: '#67e8f9' }}>{roleName}</span>
+                      <span key={roleName} style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, background: 'rgba(6,182,212,0.12)', color: 'var(--holo-c-cyan-300)' }}>{roleName}</span>
                     ))}
                   </div>
                 </div>
@@ -1309,19 +1310,19 @@ function PrivilegesTab({ admin }: { admin: boolean }) {
             onChange={v => setForm(f => ({ ...f, contentSelectorId: v }))}
           />
           {selectedSelector && (
-            <div style={{ marginTop: 6, padding: '6px 10px', background: 'rgba(6,182,212,0.08)', borderRadius: 8, fontSize: 12, color: '#67e8f9', fontFamily: 'monospace' }}>
+            <div style={{ marginTop: 6, padding: '6px 10px', background: 'rgba(6,182,212,0.08)', borderRadius: 8, fontSize: 12, color: 'var(--holo-c-cyan-300)', fontFamily: 'monospace' }}>
               {selectedSelector.expression}
             </div>
           )}
           {selectors.length === 0 && (
-            <div style={{ marginTop: 6, fontSize: 12, color: 'rgba(239,68,68,0.7)' }}>
+            <div style={{ marginTop: 6, fontSize: 12, color: 'var(--holo-tx-red-70)' }}>
               No content selectors defined — create one in the Content Selectors tab first.
             </div>
           )}
         </div>
 
         {saveError && (
-          <div style={{ padding: '8px 12px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, color: '#ef4444', fontSize: 12 }}>{saveError}</div>
+          <div style={{ padding: '8px 12px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, color: 'var(--holo-c-red)', fontSize: 12 }}>{saveError}</div>
         )}
 
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 4 }}>
@@ -1477,11 +1478,11 @@ function ContentSelectorsTab({ admin }: { admin: boolean }) {
               <div key={s.id} style={{
                 display: 'grid', gridTemplateColumns: '1fr auto auto',
                 alignItems: 'center', gap: 12, padding: '11px 16px',
-                background: 'rgba(10,8,28,0.97)', border: '1px solid rgba(124,92,255,0.2)',
+                background: 'var(--holo-surface-float)', border: '1px solid rgba(124,92,255,0.2)',
                 borderRadius: 10, transition: 'border-color 0.15s, background 0.15s',
               }}
               onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.borderColor = 'rgba(124,92,255,0.45)'; (e.currentTarget as HTMLDivElement).style.background = 'rgba(124,92,255,0.04)' }}
-              onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.borderColor = 'rgba(124,92,255,0.2)'; (e.currentTarget as HTMLDivElement).style.background = 'rgba(10,8,28,0.97)' }}
+              onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.borderColor = 'rgba(124,92,255,0.2)'; (e.currentTarget as HTMLDivElement).style.background = 'var(--holo-surface-float)' }}
               >
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--holo-text)' }}>{s.name}</div>
@@ -1490,7 +1491,7 @@ function ContentSelectorsTab({ admin }: { admin: boolean }) {
                 </div>
                 <div>
                   {linkedPriv
-                    ? <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: 'rgba(6,182,212,0.12)', color: '#67e8f9', whiteSpace: 'nowrap' as const }}>{linkedPriv}</span>
+                    ? <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: 'rgba(6,182,212,0.12)', color: 'var(--holo-c-cyan-300)', whiteSpace: 'nowrap' as const }}>{linkedPriv}</span>
                     : <span style={{ color: 'var(--holo-text-faint)', fontSize: 12 }}>—</span>
                   }
                 </div>
@@ -1528,7 +1529,7 @@ function ContentSelectorsTab({ admin }: { admin: boolean }) {
             onChange={e => { setRepoSearch(e.target.value); setForm(f => ({ ...f, repo: '', path: '' })); setRepoOpen(true) }}
           />
           {repoOpen && (
-            <div style={{ maxHeight: 160, overflowY: 'auto', background: 'rgba(8,6,18,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, marginTop: 4 }}>
+            <div style={{ maxHeight: 160, overflowY: 'auto', background: 'var(--holo-surface-float-2)', border: '1px solid rgba(var(--holo-ink-rgb), 0.1)', borderRadius: 8, marginTop: 4 }}>
               <div
                 style={{ padding: '7px 12px', fontSize: 13, cursor: 'pointer', color: 'var(--holo-text-dim)',
                   background: !form.repo ? 'rgba(124,92,255,0.15)' : 'transparent' }}
@@ -1569,7 +1570,7 @@ function ContentSelectorsTab({ admin }: { admin: boolean }) {
             onChange={e => { setPathSearch(e.target.value); setForm(f => ({ ...f, path: '' })); setPathOpen(true) }}
           />
           {form.repo && pathOpen && (
-            <div style={{ maxHeight: 180, overflowY: 'auto', background: 'rgba(8,6,18,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, marginTop: 4 }}>
+            <div style={{ maxHeight: 180, overflowY: 'auto', background: 'var(--holo-surface-float-2)', border: '1px solid rgba(var(--holo-ink-rgb), 0.1)', borderRadius: 8, marginTop: 4 }}>
               <div
                 style={{ padding: '7px 12px', fontSize: 13, cursor: 'pointer', color: 'var(--holo-text-dim)',
                   background: !form.path ? 'rgba(124,92,255,0.15)' : 'transparent' }}
@@ -1604,7 +1605,7 @@ function ContentSelectorsTab({ admin }: { admin: boolean }) {
 
         {/* CEL preview */}
         {(form.repo || form.path) && (
-          <div style={{ padding: '6px 10px', background: 'rgba(59,130,246,0.08)', borderRadius: 8, fontSize: 12, color: '#93c5fd', fontFamily: 'monospace' }}>
+          <div style={{ padding: '6px 10px', background: 'rgba(59,130,246,0.08)', borderRadius: 8, fontSize: 12, color: 'var(--holo-c-blue-300)', fontFamily: 'monospace' }}>
             {buildExpression(form.repo, form.path)}
           </div>
         )}
@@ -1624,7 +1625,7 @@ function ContentSelectorsTab({ admin }: { admin: boolean }) {
         )}
 
         {saveError && (
-          <div style={{ padding: '8px 12px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, color: '#ef4444', fontSize: 12 }}>{saveError}</div>
+          <div style={{ padding: '8px 12px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, color: 'var(--holo-c-red)', fontSize: 12 }}>{saveError}</div>
         )}
 
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
@@ -1786,7 +1787,7 @@ function AccessMapTab() {
     if (!a || !b) return null
     const x1 = a.cx + NODE_W / 2, x2 = b.cx - NODE_W / 2
     return <line x1={x1} y1={a.cy} x2={x2} y2={b.cy}
-      stroke="#334155" strokeWidth={1.5} markerEnd="url(#arr)" opacity={0.7} />
+      stroke="var(--holo-c-slate-700)" strokeWidth={1.5} markerEnd="url(#arr)" opacity={0.7} />
   }
 
   // Sidebar detail panel content. A render helper (not a component) — it only
@@ -1794,7 +1795,7 @@ function AccessMapTab() {
   function renderSidebarDetail() {
     if (!selId || !selType || !graph) return null
     const s = { fontSize:11, color:'var(--holo-text-faint)' }
-    const detailLabel = (t:string) => <div style={{fontSize:9, color:'#475569', textTransform:'uppercase' as const, letterSpacing:1, marginBottom:4, marginTop:10}}>{t}</div>
+    const detailLabel = (t:string) => <div style={{fontSize:9, color:'var(--holo-c-slate-600)', textTransform:'uppercase' as const, letterSpacing:1, marginBottom:4, marginTop:10}}>{t}</div>
 
     if (selType === 'user') {
       const u = graph.users.find(x => x.id === selId)
@@ -1802,11 +1803,11 @@ function AccessMapTab() {
       const roleNames = u.roleIds.map(rid => graph.roles.find(r => r.id === rid)?.name ?? rid)
       return <>
         <div style={{color:NODE_COLORS.user.text, fontSize:9, textTransform:'uppercase' as const, letterSpacing:1, marginBottom:6}}>User</div>
-        <div style={{color:'#e2e8f0', fontWeight:600, marginBottom:2}}>{u.username}</div>
+        <div style={{color:'var(--holo-c-slate-200)', fontWeight:600, marginBottom:2}}>{u.username}</div>
         <div style={s}>{u.email}</div>
         {detailLabel('Roles')}
-        {roleNames.length ? roleNames.map(n => <div key={n} style={{background:'#0c2340', borderRadius:4, padding:'2px 6px', color:'#60a5fa', fontSize:10, marginBottom:2}}>{n}</div>) : <div style={s}>none</div>}
-        {detailLabel('Status')} <div style={{color: u.status==='active'?'#22c55e':'#ef4444', fontSize:10}}>● {u.status}</div>
+        {roleNames.length ? roleNames.map(n => <div key={n} style={{background:'var(--holo-graph-role-fill)', borderRadius:4, padding:'2px 6px', color:'var(--holo-c-blue-400)', fontSize:10, marginBottom:2}}>{n}</div>) : <div style={s}>none</div>}
+        {detailLabel('Status')} <div style={{color: u.status==='active'?'var(--holo-c-green)':'var(--holo-c-red)', fontSize:10}}>● {u.status}</div>
         {detailLabel('Source')} <div style={s}>{u.source}</div>
       </>
     }
@@ -1815,7 +1816,7 @@ function AccessMapTab() {
       if (!r) return null
       return <>
         <div style={{color:NODE_COLORS.role.text, fontSize:9, textTransform:'uppercase' as const, letterSpacing:1, marginBottom:6}}>Role</div>
-        <div style={{color:'#e2e8f0', fontWeight:600, marginBottom:2}}>{r.name}</div>
+        <div style={{color:'var(--holo-c-slate-200)', fontWeight:600, marginBottom:2}}>{r.name}</div>
         {r.description && <div style={s}>{r.description}</div>}
         {detailLabel('Privileges')} <div style={s}>{r.privilegeIds.length} privilege{r.privilegeIds.length!==1?'s':''}</div>
         {r.roleIds.length > 0 && <>{detailLabel('Nested Roles')}<div style={s}>{r.roleIds.length} role{r.roleIds.length!==1?'s':''}</div></>}
@@ -1827,9 +1828,9 @@ function AccessMapTab() {
       const cs = p.contentSelectorId ? graph.selectors.find(s => s.id === p.contentSelectorId) : null
       return <>
         <div style={{color:NODE_COLORS.privilege.text, fontSize:9, textTransform:'uppercase' as const, letterSpacing:1, marginBottom:6}}>Privilege</div>
-        <div style={{color:'#e2e8f0', fontWeight:600, marginBottom:2}}>{p.name}</div>
+        <div style={{color:'var(--holo-c-slate-200)', fontWeight:600, marginBottom:2}}>{p.name}</div>
         {detailLabel('Type')} <div style={s}>{p.type}</div>
-        {cs && <>{detailLabel('Content Selector')}<div style={{color:'#4ade80', fontSize:10}}>{cs.name}</div></>}
+        {cs && <>{detailLabel('Content Selector')}<div style={{color:'var(--holo-c-green-400)', fontSize:10}}>{cs.name}</div></>}
       </>
     }
     // selector
@@ -1837,9 +1838,9 @@ function AccessMapTab() {
     if (!sel) return null
     return <>
       <div style={{color:NODE_COLORS.selector.text, fontSize:9, textTransform:'uppercase' as const, letterSpacing:1, marginBottom:6}}>Content Selector</div>
-      <div style={{color:'#e2e8f0', fontWeight:600, marginBottom:2}}>{sel.name}</div>
+      <div style={{color:'var(--holo-c-slate-200)', fontWeight:600, marginBottom:2}}>{sel.name}</div>
       {detailLabel('Expression')}
-      <div style={{fontFamily:'monospace', fontSize:10, color:'#94a3b8', background:'#0a1120', borderRadius:4, padding:'4px 6px', wordBreak:'break-all'}}>{sel.expression}</div>
+      <div style={{fontFamily:'monospace', fontSize:10, color:'var(--holo-c-slate-400)', background:'var(--holo-surface-code)', borderRadius:4, padding:'4px 6px', wordBreak:'break-all'}}>{sel.expression}</div>
     </>
   }
 
@@ -1849,19 +1850,19 @@ function AccessMapTab() {
     <div style={{display:'flex', flexDirection:'column', gap:12}}>
       {/* Type pills + combobox */}
       <div style={{display:'flex', gap:8, alignItems:'center', flexWrap:'wrap'}}>
-        <span style={{fontSize:10, color:'#475569'}}>Type:</span>
+        <span style={{fontSize:10, color:'var(--holo-c-slate-600)'}}>Type:</span>
         {pills.map(({key, label}) => (
           <div key={key} onClick={() => { setSelType(key); setSelId(null); setSearch(''); setOpen(false) }}
             style={{
-              background: selType===key ? '#1e1049' : '#0a0f1a',
-              border: `1px solid ${selType===key ? '#7c5cff' : '#1e3a5f'}`,
+              background: selType===key ? 'var(--holo-graph-user-fill)' : 'var(--holo-surface-chip)',
+              border: `1px solid ${selType===key ? 'var(--holo-a)' : 'var(--holo-c-navy)'}`,
               borderRadius:5, padding:'4px 10px',
-              color: selType===key ? '#a78bfa' : '#475569',
+              color: selType===key ? 'var(--holo-c-violet-400)' : 'var(--holo-c-slate-600)',
               fontSize:11, cursor:'pointer', fontWeight: selType===key ? 600 : 400,
             }}>{label}</div>
         ))}
         {selId && (
-          <div onClick={reset} style={{background:'transparent', border:'1px solid #334155', borderRadius:5, padding:'4px 10px', color:'#64748b', fontSize:11, cursor:'pointer'}}>× Reset</div>
+          <div onClick={reset} style={{background:'transparent', border:'1px solid var(--holo-c-slate-700)', borderRadius:5, padding:'4px 10px', color:'var(--holo-c-slate-500)', fontSize:11, cursor:'pointer'}}>× Reset</div>
         )}
       </div>
 
@@ -1874,17 +1875,17 @@ function AccessMapTab() {
             onBlur={() => setTimeout(() => setOpen(false), 150)}
             onKeyDown={(e) => e.key === 'Escape' && setOpen(false)}
             placeholder={`Search ${selType}s…`}
-            style={{width:'100%', background:'#0d1829', border:`1px solid ${selType?NODE_COLORS[selType].stroke:'#1e3a5f'}`, borderRadius: open && options.length ? '6px 6px 0 0' : 6, color:'#e2e8f0', fontSize:12, padding:'7px 10px', outline:'none', boxSizing:'border-box'}}
+            style={{width:'100%', background:'var(--holo-surface-panel)', border:`1px solid ${selType?NODE_COLORS[selType].stroke:'var(--holo-c-navy)'}`, borderRadius: open && options.length ? '6px 6px 0 0' : 6, color:'var(--holo-c-slate-200)', fontSize:12, padding:'7px 10px', outline:'none', boxSizing:'border-box'}}
           />
           {open && options.length > 0 && (
-            <div style={{position:'absolute', zIndex:10, width:'100%', background:'#0d1829', border:`1px solid ${NODE_COLORS[selType].stroke}`, borderTop:'none', borderRadius:'0 0 6px 6px', maxHeight:200, overflowY:'auto'}}>
+            <div style={{position:'absolute', zIndex:10, width:'100%', background:'var(--holo-surface-panel)', border:`1px solid ${NODE_COLORS[selType].stroke}`, borderTop:'none', borderRadius:'0 0 6px 6px', maxHeight:200, overflowY:'auto'}}>
               {options.slice(0,20).map(o => (
                 <div key={o.id} onClick={() => pick(selType!, o.id)}
-                  style={{padding:'7px 12px', display:'flex', alignItems:'center', gap:8, cursor:'pointer', borderTop:'1px solid #0d1829'}}
-                  onMouseEnter={e => (e.currentTarget.style.background='#1e1049')}
+                  style={{padding:'7px 12px', display:'flex', alignItems:'center', gap:8, cursor:'pointer', borderTop:'1px solid var(--holo-surface-panel)'}}
+                  onMouseEnter={e => (e.currentTarget.style.background='var(--holo-graph-user-fill)')}
                   onMouseLeave={e => (e.currentTarget.style.background='transparent')}>
-                  <span style={{color:'#e2e8f0', fontSize:11}}>{o.label}</span>
-                  {o.hint && <span style={{color:'#475569', fontSize:10, marginLeft:'auto'}}>{o.hint}</span>}
+                  <span style={{color:'var(--holo-c-slate-200)', fontSize:11}}>{o.label}</span>
+                  {o.hint && <span style={{color:'var(--holo-c-slate-600)', fontSize:10, marginLeft:'auto'}}>{o.hint}</span>}
                 </div>
               ))}
             </div>
@@ -1893,33 +1894,33 @@ function AccessMapTab() {
       )}
 
       {/* Graph area */}
-      {isLoading && <div style={{color:'#475569', fontSize:12}}>Loading graph…</div>}
+      {isLoading && <div style={{color:'var(--holo-c-slate-600)', fontSize:12}}>Loading graph…</div>}
 
-      {isError && <div style={{color:'#ef4444', fontSize:12}}>Failed to load access graph.</div>}
+      {isError && <div style={{color:'var(--holo-c-red)', fontSize:12}}>Failed to load access graph.</div>}
 
       {!isLoading && !isError && hasGraph && chainIds.size === 0 && (
-        <div style={{height:200, border:'1px dashed #1e3a5f', borderRadius:8, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:8}}>
-          <div style={{color:'#1e3a5f', fontSize:24}}>⬡</div>
-          <div style={{color:'#334155', fontSize:12}}>Select a node above to explore the access graph</div>
-          <div style={{color:'#1e3a5f', fontSize:10}}>User → Roles → Privileges → Content Selectors</div>
+        <div style={{height:200, border:'1px dashed var(--holo-c-navy)', borderRadius:8, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:8}}>
+          <div style={{color:'var(--holo-c-navy-text)', fontSize:24}}>⬡</div>
+          <div style={{color:'var(--holo-c-slate-700)', fontSize:12}}>Select a node above to explore the access graph</div>
+          <div style={{color:'var(--holo-c-navy-text)', fontSize:10}}>User → Roles → Privileges → Content Selectors</div>
         </div>
       )}
 
       {!isLoading && !isError && !hasGraph && (
-        <div style={{height:200, border:'1px dashed #1e3a5f', borderRadius:8, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:8}}>
-          <div style={{color:'#1e3a5f', fontSize:24}}>⬡</div>
-          <div style={{color:'#334155', fontSize:12}}>No data — system has no users, roles, or privileges yet</div>
+        <div style={{height:200, border:'1px dashed var(--holo-c-navy)', borderRadius:8, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:8}}>
+          <div style={{color:'var(--holo-c-navy-text)', fontSize:24}}>⬡</div>
+          <div style={{color:'var(--holo-c-slate-700)', fontSize:12}}>No data — system has no users, roles, or privileges yet</div>
         </div>
       )}
 
       {!isLoading && hasGraph && graph && chainIds.size > 0 && (
         <div style={{display:'flex', gap:12, alignItems:'flex-start'}}>
           {/* SVG graph */}
-          <div style={{flex:1, overflowX:'auto', background:'#070b14', borderRadius:8, border:'1px solid #1e3a5f'}}>
+          <div style={{flex:1, overflowX:'auto', background:'var(--bg)', borderRadius:8, border:'1px solid var(--holo-c-navy)'}}>
             <svg width={SVG_W} height={svgH} viewBox={`0 0 ${SVG_W} ${svgH}`} style={{fontFamily:'system-ui', display:'block'}}>
               <defs>
                 <marker id="arr" markerWidth={6} markerHeight={6} refX={3} refY={3} orient="auto">
-                  <path d="M0,0 L0,6 L6,3 z" fill="#334155"/>
+                  <path d="M0,0 L0,6 L6,3 z" fill="var(--holo-c-slate-700)"/>
                 </marker>
               </defs>
               {/* Column labels */}
@@ -1948,7 +1949,7 @@ function AccessMapTab() {
           </div>
           {/* Sidebar */}
           {selId && (
-            <div style={{width:200, background:'#0d1829', border:'1px solid #1e3a5f', borderRadius:8, padding:14, flexShrink:0, fontSize:11}}>
+            <div style={{width:200, background:'var(--holo-surface-panel)', border:'1px solid var(--holo-c-navy)', borderRadius:8, padding:14, flexShrink:0, fontSize:11}}>
               {renderSidebarDetail()}
             </div>
           )}
@@ -1988,7 +1989,7 @@ export default function SecurityPage() {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
         <div>
           <div className="holo-section-label" style={{ marginBottom: 4 }}>ADMINISTRATION / SECURITY</div>
-          <h1 style={{ fontSize: 20, fontWeight: 700, margin: '0 0 3px', letterSpacing: '-0.01em', lineHeight: 1.2, background: 'linear-gradient(110deg, #7c5cff, #22d3ee 60%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' as const }}>Security</h1>
+          <h1 style={{ fontSize: 20, fontWeight: 700, margin: '0 0 3px', letterSpacing: '-0.01em', lineHeight: 1.2, background: 'linear-gradient(110deg, var(--holo-a), var(--holo-b) 60%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' as const }}>Security</h1>
           <p style={{ fontSize: 12, color: 'var(--holo-text-faint)', margin: 0 }}>
             {admin
               ? 'Roles, users, privileges, content selectors and webhooks'

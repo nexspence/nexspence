@@ -41,23 +41,22 @@ body {
     radial-gradient(1200px 800px at 15% 10%, rgba(59, 130, 246, 0.13), transparent 55%),
     radial-gradient(900px 600px at 85% 15%, rgba(96, 165, 250, 0.10), transparent 50%),
     var(--bg);
-  color-scheme: dark;
   -webkit-font-smoothing: antialiased;
   line-height: 1.5;
 }
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: #3b82f6 rgba(255,255,255,0.03);
+  scrollbar-color: var(--holo-c-blue) rgba(var(--holo-ink-rgb), 0.03);
 }
 *::-webkit-scrollbar { width: 6px; height: 6px; }
-*::-webkit-scrollbar-track { background: rgba(255,255,255,0.03); border-radius: 3px; }
+*::-webkit-scrollbar-track { background: rgba(var(--holo-ink-rgb), 0.03); border-radius: 3px; }
 *::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, #3b82f6, #1d4ed8);
+  background: linear-gradient(180deg, var(--holo-c-blue), #1d4ed8);
   border-radius: 3px;
 }
 *::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(180deg, #60a5fa, #3b82f6);
+  background: linear-gradient(180deg, var(--holo-c-blue-400), var(--holo-c-blue));
 }
 
 button { cursor: pointer; font-family: inherit; }

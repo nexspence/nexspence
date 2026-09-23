@@ -26,11 +26,11 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
     if (this.state.error) {
       const msg = (this.state.error as Error).message
       return (
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', gap: 12, color: '#64748b', fontSize: 14 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', gap: 12, color: 'var(--holo-c-slate-500)', fontSize: 14 }}>
           <span style={{ fontSize: 24 }}>⚠</span>
           <span>Something went wrong loading this page.</span>
-          {msg && <code style={{ fontSize: 11, background: 'rgba(255,255,255,0.05)', padding: '4px 10px', borderRadius: 4, color: '#ef4444', maxWidth: 500, textAlign: 'center' as const, wordBreak: 'break-all' as const }}>{msg}</code>}
-          <button onClick={() => { this.setState({ error: null }); window.history.back() }} style={{ marginTop: 8, padding: '6px 16px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.06)', color: '#94a3b8', cursor: 'pointer', fontSize: 13 }}>
+          {msg && <code style={{ fontSize: 11, background: 'rgba(var(--holo-ink-rgb), 0.05)', padding: '4px 10px', borderRadius: 4, color: 'var(--holo-c-red)', maxWidth: 500, textAlign: 'center' as const, wordBreak: 'break-all' as const }}>{msg}</code>}
+          <button onClick={() => { this.setState({ error: null }); window.history.back() }} style={{ marginTop: 8, padding: '6px 16px', borderRadius: 6, border: '1px solid rgba(var(--holo-ink-rgb), 0.15)', background: 'rgba(var(--holo-ink-rgb), 0.06)', color: 'var(--holo-c-slate-400)', cursor: 'pointer', fontSize: 13 }}>
             Go back
           </button>
         </div>
@@ -42,7 +42,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
 
 function PageSkeleton() {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: '#64748b', fontSize: '14px' }}>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: 'var(--holo-c-slate-500)', fontSize: '14px' }}>
       Loading…
     </div>
   )

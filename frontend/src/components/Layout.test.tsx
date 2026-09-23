@@ -8,6 +8,7 @@ import { renderWithProviders, seedAuthAsAdmin, seedAuthAsGuest } from '@/test/re
 import { useAuthStore } from '@/store/authStore'
 import { fixtures } from '@/test/fixtures'
 import { server } from '@/test/msw/server'
+import { useThemeStore } from '@/theme/theme'
 
 function renderLayout() {
   return renderWithProviders(
@@ -65,6 +66,16 @@ describe('Layout', () => {
     await userEvent.click(collapseBtn)
     expect(localStorage.getItem('sidebar-collapsed')).toBe('true')
     expect(screen.getByTitle('Expand sidebar')).toBeInTheDocument()
+  })
+
+  it('switches the color theme from the sidebar and remembers it', async () => {
+    useThemeStore.getState().setTheme('dark')
+    renderLayout()
+    await userEvent.click(screen.getByRole('button', { name: 'Switch to light theme' }))
+    expect(document.documentElement.dataset.theme).toBe('light')
+    expect(localStorage.getItem('nexspence-theme')).toBe('light')
+    expect(screen.getByRole('button', { name: 'Switch to dark theme' })).toBeInTheDocument()
+    useThemeStore.getState().setTheme('dark')
   })
 
   it('opens the Profile modal and can dismiss it', async () => {

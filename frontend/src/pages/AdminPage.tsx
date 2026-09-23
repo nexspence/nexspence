@@ -8,6 +8,7 @@ import { Select } from '@/components/Select'
 import { Truncated } from '@/components/Truncated'
 import { HoloButton, HoloInput, HoloModal, HoloTabs, HoloCard, HoloTabItem, Wizard } from '@/components/holo'
 import { MigrationRepoPicker, isBlobSourceRepo, scopedRepoSelection, validateMigrationRepoScope, type PreviewRepo } from '@/pages/MigrationRepoPicker'
+import { tint } from '@/theme/color'
 
 interface BlobStore {
   id: string; name: string; type: string; usedBytes: number; quotaBytes?: number; config?: Record<string, unknown>
@@ -70,18 +71,18 @@ function SamlTab() {
   const samlSvc = services?.find(s => s.name.startsWith('SAML'))
 
   const row = (label: string, value?: string | null) => (
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '9px 0', borderBottom: '1px solid rgba(255,255,255,0.05)', fontSize: 13, gap: 16 }}>
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '9px 0', borderBottom: '1px solid rgba(var(--holo-ink-rgb), 0.05)', fontSize: 13, gap: 16 }}>
       <span style={{ color: 'var(--holo-text-dim)', flexShrink: 0 }}>{label}</span>
       <span style={{ color: 'var(--holo-text)', fontWeight: 500, wordBreak: 'break-all', textAlign: 'right' as const }}>{value || '—'}</span>
     </div>
   )
 
   const statusDot = (status?: string) => {
-    const color = status === 'ok' ? '#22c55e' : status === 'error' ? '#ef4444' : status === 'warn' ? '#f59e0b' : 'rgba(255,255,255,0.25)'
+    const color = status === 'ok' ? 'var(--holo-c-green)' : status === 'error' ? 'var(--holo-c-red)' : status === 'warn' ? 'var(--holo-c-amber)' : 'rgba(var(--holo-ink-rgb), 0.25)'
     const label = status === 'ok' ? 'Connected' : status === 'error' ? 'Error' : status === 'warn' ? 'Warning' : status === 'disabled' ? 'Disabled' : 'Unknown'
     return (
       <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color }}>
-        <span style={{ width: 7, height: 7, borderRadius: '50%', background: color, boxShadow: status === 'ok' ? `0 0 5px ${color}66` : 'none', flexShrink: 0 }} />
+        <span style={{ width: 7, height: 7, borderRadius: '50%', background: color, boxShadow: status === 'ok' ? `0 0 5px ${tint(color, 0.4)}` : 'none', flexShrink: 0 }} />
         {label}
       </span>
     )
@@ -96,9 +97,9 @@ function SamlTab() {
           SAML 2.0 Service Provider
           <span style={{ marginLeft: 'auto' }}>
             {isLoading ? null : authCfg?.samlEnabled ? (
-              <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 4, background: 'rgba(34,197,94,0.15)', color: '#22c55e' }}>ENABLED</span>
+              <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 4, background: 'rgba(34,197,94,0.15)', color: 'var(--holo-c-green)' }}>ENABLED</span>
             ) : (
-              <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 4, background: 'rgba(255,255,255,0.07)', color: 'var(--holo-text-dim)' }}>DISABLED</span>
+              <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 4, background: 'rgba(var(--holo-ink-rgb), 0.07)', color: 'var(--holo-text-dim)' }}>DISABLED</span>
             )}
           </span>
         </div>
@@ -131,7 +132,7 @@ function SamlTab() {
           </>
         ) : (
           <div style={{ fontSize: 13, color: 'var(--holo-text-faint)', lineHeight: 1.6 }}>
-            SAML SSO is not enabled. Set <code style={{ background: 'rgba(255,255,255,0.06)', padding: '1px 4px', borderRadius: 3 }}>saml.enabled: true</code> in <code style={{ background: 'rgba(255,255,255,0.06)', padding: '1px 4px', borderRadius: 3 }}>config.yaml</code> to activate.
+            SAML SSO is not enabled. Set <code style={{ background: 'rgba(var(--holo-ink-rgb), 0.06)', padding: '1px 4px', borderRadius: 3 }}>saml.enabled: true</code> in <code style={{ background: 'rgba(var(--holo-ink-rgb), 0.06)', padding: '1px 4px', borderRadius: 3 }}>config.yaml</code> to activate.
           </div>
         )}
       </HoloCard>
@@ -230,7 +231,7 @@ function RoutingRulesTab() {
     <span style={{
       fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 4,
       background: mode === 'ALLOW' ? 'rgba(59,130,246,0.15)' : 'rgba(245,158,11,0.15)',
-      color: mode === 'ALLOW' ? '#60a5fa' : '#fbbf24',
+      color: mode === 'ALLOW' ? 'var(--holo-c-blue-400)' : 'var(--holo-c-amber-400)',
       border: `1px solid ${mode === 'ALLOW' ? 'rgba(59,130,246,0.3)' : 'rgba(245,158,11,0.3)'}`,
     }}>{mode}</span>
   )
@@ -255,7 +256,7 @@ function RoutingRulesTab() {
       ) : (
         <table style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: 13 }}>
           <thead>
-            <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+            <tr style={{ borderBottom: '1px solid rgba(var(--holo-ink-rgb), 0.08)' }}>
               {['Name', 'Mode', 'Matchers', 'Actions'].map(h => (
                 <th key={h} style={{ textAlign: 'left' as const, padding: '6px 10px', color: 'var(--holo-text-dim)', fontWeight: 600, fontSize: 11, textTransform: 'uppercase' as const }}>{h}</th>
               ))}
@@ -263,7 +264,7 @@ function RoutingRulesTab() {
           </thead>
           <tbody>
             {rules.map(r => (
-              <tr key={r.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+              <tr key={r.id} style={{ borderBottom: '1px solid rgba(var(--holo-ink-rgb), 0.04)' }}>
                 <td style={{ padding: '8px 10px', color: 'var(--holo-text)', fontWeight: 500 }}>{r.name}</td>
                 <td style={{ padding: '8px 10px' }}>{modeBadge(r.mode)}</td>
                 <td style={{ padding: '8px 10px', color: 'var(--holo-text-dim)', fontFamily: 'monospace', fontSize: 11 }}>
@@ -324,7 +325,7 @@ function RoutingRulesTab() {
                 </HoloButton>
               </div>
             </div>
-            {err && <div style={{ color: '#ef4444', fontSize: 12 }}>{err}</div>}
+            {err && <div style={{ color: 'var(--holo-c-red)', fontSize: 12 }}>{err}</div>}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
               <HoloButton onClick={() => setModalOpen(false)}>Cancel</HoloButton>
               <HoloButton variant="primary" onClick={handleSave} disabled={saving}>
@@ -458,7 +459,7 @@ function ReplicationTab() {
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <span style={{ color: '#94a3b8', fontSize: 13 }}>
+        <span style={{ color: 'var(--holo-c-slate-400)', fontSize: 13 }}>
           Push artifacts from local repositories to remote Nexspence instances on a cron schedule.
         </span>
         <HoloButton onClick={openCreate}>
@@ -466,39 +467,39 @@ function ReplicationTab() {
         </HoloButton>
       </div>
 
-      {isLoading && <p style={{ color: '#64748b' }}>Loading…</p>}
+      {isLoading && <p style={{ color: 'var(--holo-c-slate-500)' }}>Loading…</p>}
 
       {!isLoading && rules.length === 0 && (
-        <p style={{ color: '#64748b', fontSize: 13 }}>No replication rules configured.</p>
+        <p style={{ color: 'var(--holo-c-slate-500)', fontSize: 13 }}>No replication rules configured.</p>
       )}
 
       {rules.map(rule => (
         <HoloCard key={rule.id} style={{ marginBottom: 10 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div>
-              <div style={{ fontWeight: 600, color: '#e2e8f0', marginBottom: 4 }}>{rule.name}</div>
-              <div style={{ fontSize: 12, color: '#64748b' }}>
-                <span style={{ color: '#94a3b8' }}>{rule.source_repo}</span>
+              <div style={{ fontWeight: 600, color: 'var(--holo-c-slate-200)', marginBottom: 4 }}>{rule.name}</div>
+              <div style={{ fontSize: 12, color: 'var(--holo-c-slate-500)' }}>
+                <span style={{ color: 'var(--holo-c-slate-400)' }}>{rule.source_repo}</span>
                 {' → '}
-                <span style={{ color: '#94a3b8' }}>{rule.target_url}/{rule.target_repo}</span>
+                <span style={{ color: 'var(--holo-c-slate-400)' }}>{rule.target_url}/{rule.target_repo}</span>
               </div>
-              <div style={{ fontSize: 11, color: '#475569', marginTop: 4 }}>
+              <div style={{ fontSize: 11, color: 'var(--holo-c-slate-600)', marginTop: 4 }}>
                 <span>cron: {rule.cron_expr}</span>
                 {' · '}
-                <span style={{ color: rule.enabled ? '#22c55e' : '#ef4444' }}>
+                <span style={{ color: rule.enabled ? 'var(--holo-c-green)' : 'var(--holo-c-red)' }}>
                   {rule.enabled ? 'enabled' : 'disabled'}
                 </span>
                 {rule.last_run_at && (
                   <>
                     {' · last run: '}
-                    <span style={{ color: rule.last_run_status === 'ok' ? '#22c55e' : rule.last_run_status === 'error' ? '#ef4444' : '#f59e0b' }}>
+                    <span style={{ color: rule.last_run_status === 'ok' ? 'var(--holo-c-green)' : rule.last_run_status === 'error' ? 'var(--holo-c-red)' : 'var(--holo-c-amber)' }}>
                       {rule.last_run_status}
                     </span>
                     {' '}{fmtDate(rule.last_run_at)}
                   </>
                 )}
                 {testResult[rule.id] && (
-                  <span style={{ marginLeft: 8, color: testResult[rule.id].startsWith('✓') ? '#22c55e' : '#ef4444' }}>
+                  <span style={{ marginLeft: 8, color: testResult[rule.id].startsWith('✓') ? 'var(--holo-c-green)' : 'var(--holo-c-red)' }}>
                     {testResult[rule.id]}
                   </span>
                 )}
@@ -524,15 +525,15 @@ function ReplicationTab() {
           </div>
 
           {expandedId === rule.id && (
-            <div style={{ marginTop: 12, borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 10 }}>
-              {histLoadingId === rule.id && <p style={{ color: '#64748b', fontSize: 12 }}>Loading history…</p>}
+            <div style={{ marginTop: 12, borderTop: '1px solid rgba(var(--holo-ink-rgb), 0.06)', paddingTop: 10 }}>
+              {histLoadingId === rule.id && <p style={{ color: 'var(--holo-c-slate-500)', fontSize: 12 }}>Loading history…</p>}
               {histLoadingId !== rule.id && (history[rule.id]?.length ?? 0) === 0 && (
-                <p style={{ color: '#64748b', fontSize: 12 }}>No runs recorded yet.</p>
+                <p style={{ color: 'var(--holo-c-slate-500)', fontSize: 12 }}>No runs recorded yet.</p>
               )}
               {histLoadingId !== rule.id && (history[rule.id]?.length ?? 0) > 0 && (
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                   <thead>
-                    <tr style={{ color: '#64748b', textAlign: 'left' }}>
+                    <tr style={{ color: 'var(--holo-c-slate-500)', textAlign: 'left' }}>
                       <th style={{ padding: '4px 8px' }}>Started</th>
                       <th style={{ padding: '4px 8px' }}>Duration</th>
                       <th style={{ padding: '4px 8px' }}>Pushed</th>
@@ -544,14 +545,14 @@ function ReplicationTab() {
                   </thead>
                   <tbody>
                     {(history[rule.id] ?? []).map(h => (
-                      <tr key={h.id} style={{ color: '#94a3b8', borderTop: '1px solid rgba(255,255,255,0.04)' }}>
+                      <tr key={h.id} style={{ color: 'var(--holo-c-slate-400)', borderTop: '1px solid rgba(var(--holo-ink-rgb), 0.04)' }}>
                         <td style={{ padding: '4px 8px' }}>{fmtDate(h.started_at)}</td>
                         <td style={{ padding: '4px 8px' }}>{fmtDur(h.duration_ms)}</td>
-                        <td style={{ padding: '4px 8px', color: '#22c55e' }}>{h.pushed_count}</td>
+                        <td style={{ padding: '4px 8px', color: 'var(--holo-c-green)' }}>{h.pushed_count}</td>
                         <td style={{ padding: '4px 8px' }}>{h.skipped_count}</td>
-                        <td style={{ padding: '4px 8px', color: h.failed_count > 0 ? '#ef4444' : '#94a3b8' }}>{h.failed_count}</td>
+                        <td style={{ padding: '4px 8px', color: h.failed_count > 0 ? 'var(--holo-c-red)' : 'var(--holo-c-slate-400)' }}>{h.failed_count}</td>
                         <td style={{ padding: '4px 8px' }}>{fmtBytes(h.transferred_bytes)}</td>
-                        <Truncated as="td" text={h.error || '—'} style={{ padding: '4px 8px', color: '#ef4444', maxWidth: 200 }} />
+                        <Truncated as="td" text={h.error || '—'} style={{ padding: '4px 8px', color: 'var(--holo-c-red)', maxWidth: 200 }} />
                       </tr>
                     ))}
                   </tbody>
@@ -600,7 +601,7 @@ function ReplicationTab() {
               <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--holo-text-dim)', display: 'block', marginBottom: 5 }}>CRON EXPRESSION</label>
               <HoloInput value={form.cron_expr} onChange={e => setForm(f => ({ ...f, cron_expr: e.target.value }))} placeholder="0 2 * * *" style={{ fontFamily: 'monospace' }} />
             </div>
-            <label style={{ fontSize: 12, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <label style={{ fontSize: 12, color: 'var(--holo-c-slate-400)', display: 'flex', alignItems: 'center', gap: 8 }}>
               <input type="checkbox" checked={form.enabled} onChange={e => setForm(f => ({ ...f, enabled: e.target.checked }))} />
               Enabled
             </label>
@@ -745,15 +746,15 @@ function PromotionRuleModal({
             style={{ fontFamily: 'monospace', fontSize: 12 }}
           />
         </div>
-        <label style={{ fontSize: 12, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <label style={{ fontSize: 12, color: 'var(--holo-c-slate-400)', display: 'flex', alignItems: 'center', gap: 8 }}>
           <input type="checkbox" checked={requireScanPass} onChange={e => setRequireScanPass(e.target.checked)} />
           Require scan pass (no HIGH/CRITICAL CVEs)
         </label>
-        <label style={{ fontSize: 12, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <label style={{ fontSize: 12, color: 'var(--holo-c-slate-400)', display: 'flex', alignItems: 'center', gap: 8 }}>
           <input type="checkbox" checked={requireManualApproval} onChange={e => setRequireManualApproval(e.target.checked)} />
           Require manual approval
         </label>
-        {err && <div style={{ color: '#ef4444', fontSize: 12 }}>{err}</div>}
+        {err && <div style={{ color: 'var(--holo-c-red)', fontSize: 12 }}>{err}</div>}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
           <HoloButton onClick={onClose}>Cancel</HoloButton>
           <HoloButton variant="primary" onClick={handleSave} disabled={saving}>
@@ -823,13 +824,13 @@ function PromotionTab() {
 
   const statusColor = (s: PromotionRequest['status']) => {
     const map: Record<string, string> = {
-      pending:   '#f59e0b',
-      approved:  '#3b82f6',
-      rejected:  '#ef4444',
-      completed: '#22c55e',
-      failed:    '#ef4444',
+      pending:   'var(--holo-c-amber)',
+      approved:  'var(--holo-c-blue)',
+      rejected:  'var(--holo-c-red)',
+      completed: 'var(--holo-c-green)',
+      failed:    'var(--holo-c-red)',
     }
-    return map[s] ?? '#94a3b8'
+    return map[s] ?? 'var(--holo-c-slate-400)'
   }
 
   const openCreateRule = () => { setEditingRule(null); setRuleModalOpen(true) }
@@ -858,28 +859,28 @@ function PromotionTab() {
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {rules.map(rule => (
-              <div key={rule.id} style={{ padding: '12px 14px', background: 'rgba(255,255,255,0.03)', borderRadius: 10, border: '1px solid rgba(255,255,255,0.07)' }}>
+              <div key={rule.id} style={{ padding: '12px 14px', background: 'rgba(var(--holo-ink-rgb), 0.03)', borderRadius: 10, border: '1px solid rgba(var(--holo-ink-rgb), 0.07)' }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontWeight: 600, color: 'var(--holo-text)', marginBottom: 4 }}>{rule.name}</div>
-                    <div style={{ fontSize: 12, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <div style={{ fontSize: 12, color: 'var(--holo-c-slate-400)', display: 'flex', alignItems: 'center', gap: 6 }}>
                       <span style={{ color: 'var(--holo-text-dim)' }}>{rule.from_repo}</span>
                       <ArrowUpCircle size={11} style={{ color: 'var(--holo-primary)', flexShrink: 0 }} />
                       <span style={{ color: 'var(--holo-text-dim)' }}>{rule.to_repo}</span>
                     </div>
                     {rule.path_filter && (
-                      <div style={{ fontSize: 11, fontFamily: 'monospace', color: '#94a3b8', marginTop: 4, background: 'rgba(255,255,255,0.04)', padding: '2px 6px', borderRadius: 4, display: 'inline-block' }}>
+                      <div style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--holo-c-slate-400)', marginTop: 4, background: 'rgba(var(--holo-ink-rgb), 0.04)', padding: '2px 6px', borderRadius: 4, display: 'inline-block' }}>
                         {rule.path_filter}
                       </div>
                     )}
                     <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
                       {rule.require_scan_pass && (
-                        <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 4, background: 'rgba(34,197,94,0.12)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.25)' }}>
+                        <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 4, background: 'rgba(34,197,94,0.12)', color: 'var(--holo-c-green)', border: '1px solid rgba(34,197,94,0.25)' }}>
                           Scan Pass
                         </span>
                       )}
                       {rule.require_manual_approval && (
-                        <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 4, background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.25)' }}>
+                        <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 4, background: 'rgba(245,158,11,0.12)', color: 'var(--holo-c-amber)', border: '1px solid rgba(245,158,11,0.25)' }}>
                           Manual Approval
                         </span>
                       )}
@@ -925,7 +926,7 @@ function PromotionTab() {
         ) : (
           <table style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: 13 }}>
             <thead>
-              <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+              <tr style={{ borderBottom: '1px solid rgba(var(--holo-ink-rgb), 0.08)' }}>
                 {['Component', 'Rule', 'Status', 'Requested', 'Actions'].map(h => (
                   <th key={h} style={{ textAlign: 'left' as const, padding: '6px 10px', color: 'var(--holo-text-dim)', fontWeight: 600, fontSize: 11, textTransform: 'uppercase' as const }}>{h}</th>
                 ))}
@@ -933,7 +934,7 @@ function PromotionTab() {
             </thead>
             <tbody>
               {requests.map(req => (
-                <tr key={req.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                <tr key={req.id} style={{ borderBottom: '1px solid rgba(var(--holo-ink-rgb), 0.04)' }}>
                   <td style={{ padding: '8px 10px', fontFamily: 'monospace', fontSize: 11, color: 'var(--holo-text)' }}>
                     {req.component_id.slice(0, 8)}&hellip;
                   </td>
@@ -1145,7 +1146,7 @@ export default function AdminPage() {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
         <div style={{ marginBottom: 20 }}>
           <div className="holo-section-label" style={{ marginBottom: 4 }}>ADMINISTRATION / SYSTEM</div>
-          <h1 style={{ fontSize: 20, fontWeight: 700, margin: '0 0 3px', letterSpacing: '-0.01em', lineHeight: 1.2, background: 'linear-gradient(110deg, #7c5cff, #22d3ee 60%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' as const }}>System Admin</h1>
+          <h1 style={{ fontSize: 20, fontWeight: 700, margin: '0 0 3px', letterSpacing: '-0.01em', lineHeight: 1.2, background: 'linear-gradient(110deg, var(--holo-a), var(--holo-b) 60%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' as const }}>System Admin</h1>
           <p style={{ fontSize: 12, color: 'var(--holo-text-faint)', margin: 0 }}>Server health, blob stores and configuration</p>
         </div>
         <HoloButton onClick={() => { refetchStatus(); refetchBlobs(); refetchServices() }} aria-label="Refresh">
@@ -1186,8 +1187,8 @@ export default function AdminPage() {
               </>
             ) : (
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-                <div style={{ width: 8, height: 8, borderRadius: '50%', background: isOnline ? '#22c55e' : '#ef4444', boxShadow: isOnline ? '0 0 6px #22c55e66' : '0 0 6px #ef444466', flexShrink: 0 }} />
-                <span style={{ fontSize: 14, fontWeight: 600, color: isOnline ? '#22c55e' : '#ef4444' }}>
+                <div style={{ width: 8, height: 8, borderRadius: '50%', background: isOnline ? 'var(--holo-c-green)' : 'var(--holo-c-red)', boxShadow: isOnline ? '0 0 6px #22c55e66' : '0 0 6px #ef444466', flexShrink: 0 }} />
+                <span style={{ fontSize: 14, fontWeight: 600, color: isOnline ? 'var(--holo-c-green)' : 'var(--holo-c-red)' }}>
                   {isOnline ? 'Online' : 'Offline'}
                 </span>
               </div>
@@ -1201,11 +1202,11 @@ export default function AdminPage() {
             </div>
             {info ? (
               <>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.05)', fontSize: 13 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid rgba(var(--holo-ink-rgb), 0.05)', fontSize: 13 }}>
                   <span style={{ color: 'var(--holo-text-dim)' }}>Product</span>
                   <span style={{ color: 'var(--holo-text)', fontWeight: 500 }}>{info.product}</span>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.05)', fontSize: 13 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid rgba(var(--holo-ink-rgb), 0.05)', fontSize: 13 }}>
                   <span style={{ color: 'var(--holo-text-dim)' }}>Version</span>
                   <span style={{ color: 'var(--holo-text)', fontWeight: 500 }}>{info.version}</span>
                 </div>
@@ -1251,10 +1252,10 @@ export default function AdminPage() {
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {services.map(svc => {
-                const color = svc.status === 'ok' ? 'var(--holo-green)' : svc.status === 'error' ? 'var(--holo-red)' : svc.status === 'warn' ? 'var(--holo-amber)' : 'rgba(255,255,255,0.25)'
+                const color = svc.status === 'ok' ? 'var(--holo-green)' : svc.status === 'error' ? 'var(--holo-red)' : svc.status === 'warn' ? 'var(--holo-amber)' : 'rgba(var(--holo-ink-rgb), 0.25)'
                 const glow  = svc.status === 'ok' ? '0 0 5px var(--holo-green)' : svc.status === 'error' ? '0 0 5px var(--holo-red)' : svc.status === 'warn' ? '0 0 5px var(--holo-amber)' : 'none'
                 return (
-                  <div key={svc.name} style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto', alignItems: 'center', gap: 12, padding: '10px 12px', background: 'rgba(255,255,255,0.03)', borderRadius: 8, border: '1px solid rgba(255,255,255,0.06)' }}>
+                  <div key={svc.name} style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto', alignItems: 'center', gap: 12, padding: '10px 12px', background: 'rgba(var(--holo-ink-rgb), 0.03)', borderRadius: 8, border: '1px solid rgba(var(--holo-ink-rgb), 0.06)' }}>
                     <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                       <span style={{ width: 7, height: 7, borderRadius: '50%', background: color, boxShadow: glow, flexShrink: 0, display: 'inline-block' }} />
                       <span style={{ fontSize: 10, fontWeight: 700, color, whiteSpace: 'nowrap' as const }}>{svc.status === 'ok' ? 'OK' : svc.status === 'error' ? 'ERROR' : svc.status === 'warn' ? 'WARN' : 'DISABLED'}</span>
@@ -1263,7 +1264,7 @@ export default function AdminPage() {
                       <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--holo-text)', display: 'flex', alignItems: 'center', gap: 6 }}>
                         {svc.name}
                         {svc.name.startsWith('S3') && (
-                          <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, background: 'rgba(245,158,11,0.15)', color: '#f59e0b', fontWeight: 700 }}>S3</span>
+                          <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, background: 'rgba(245,158,11,0.15)', color: 'var(--holo-c-amber)', fontWeight: 700 }}>S3</span>
                         )}
                       </div>
                       <Truncated text={svc.detail} style={{ fontSize: 11, color: 'var(--holo-text-faint)', marginTop: 2 }} />
@@ -1307,7 +1308,7 @@ export default function AdminPage() {
               )}
               {connector.status === 'disabled' && (
                 <div style={{ marginTop: 10, fontSize: 11, color: 'var(--holo-text-dim)' }}>
-                  Set <code style={{ background: 'rgba(255,255,255,0.06)', padding: '1px 4px', borderRadius: 3 }}>docker.subdomain_connector.enabled: true</code> in <code style={{ background: 'rgba(255,255,255,0.06)', padding: '1px 4px', borderRadius: 3 }}>config.yaml</code>
+                  Set <code style={{ background: 'rgba(var(--holo-ink-rgb), 0.06)', padding: '1px 4px', borderRadius: 3 }}>docker.subdomain_connector.enabled: true</code> in <code style={{ background: 'rgba(var(--holo-ink-rgb), 0.06)', padding: '1px 4px', borderRadius: 3 }}>config.yaml</code>
                 </div>
               )}
             </HoloCard>
@@ -1349,7 +1350,7 @@ export default function AdminPage() {
               <span style={{ color: 'var(--holo-green)', fontWeight: 600, marginBottom: 6, display: 'block' }}>Restore complete</span>
               <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' as const }}>
                 {Object.entries(restoreResult).map(([k, v]) => (
-                  <span key={k} style={{ color: 'rgba(229,231,235,0.7)' }}>
+                  <span key={k} style={{ color: 'var(--holo-tx-fg-70)' }}>
                     <span style={{ color: 'var(--holo-text)', fontWeight: 600 }}>{v}</span> {k}
                   </span>
                 ))}
@@ -1399,7 +1400,7 @@ export default function AdminPage() {
                     ><X size={13} /></button>
                   </span>
                 ) : (
-                  <span style={{ fontSize: 12, color: 'rgba(229,231,235,0.28)' }}>No file selected</span>
+                  <span style={{ fontSize: 12, color: 'var(--holo-tx-fg-28)' }}>No file selected</span>
                 )}
               </div>
             </div>
@@ -1407,7 +1408,7 @@ export default function AdminPage() {
             {/* Target name */}
             <div>
               <label style={{ fontSize: 12, color: 'var(--holo-text-faint)', display: 'block', marginBottom: 6 }}>
-                Target name <span style={{ color: 'rgba(229,231,235,0.35)' }}>— optional, overrides the name in the archive</span>
+                Target name <span style={{ color: 'var(--holo-tx-fg-35)' }}>— optional, overrides the name in the archive</span>
               </label>
               <HoloInput
                 placeholder="leave blank to use the archived name"
@@ -1447,12 +1448,12 @@ export default function AdminPage() {
                 <span style={{ color: 'var(--holo-green)', fontWeight: 600, display: 'block', marginBottom: 4 }}>Import complete</span>
                 Imported <strong>{importResult.imported.components}</strong> components and{' '}
                 <strong>{importResult.imported.assets}</strong> assets into{' '}
-                <code style={{ color: '#93c5fd' }}>{importResult.imported.repository}</code>
+                <code style={{ color: 'var(--holo-c-blue-300)' }}>{importResult.imported.repository}</code>
                 {importResult.imported.blobs > 0 && <>, <strong>{importResult.imported.blobs}</strong> blobs</>}.
               </div>
             )}
             {importError && (
-              <div role="alert" style={{ padding: '10px 14px', borderRadius: 8, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.28)', fontSize: 13, color: '#fca5a5' }}>
+              <div role="alert" style={{ padding: '10px 14px', borderRadius: 8, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.28)', fontSize: 13, color: 'var(--holo-c-red-300)' }}>
                 {importError}
               </div>
             )}
@@ -1480,15 +1481,15 @@ export default function AdminPage() {
             <div className="holo-skeleton holo-skeleton--block" />
           </div>
         ) : blobs.length === 0 ? (
-          <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: '40px 20px', textAlign: 'center' as const, color: 'var(--holo-text-faint)', fontSize: 14, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+          <div style={{ background: 'rgba(var(--holo-ink-rgb), 0.03)', border: '1px solid rgba(var(--holo-ink-rgb), 0.08)', borderRadius: 14, padding: '40px 20px', textAlign: 'center' as const, color: 'var(--holo-text-faint)', fontSize: 14, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
             <Database size={40} style={{ opacity: 0.3 }} />
             <div style={{ fontWeight: 500, color: 'var(--holo-text)' }}>No blob stores configured</div>
             <div style={{ fontSize: 12 }}>Create a blob store to manage artifact storage locations.</div>
             <HoloButton variant="primary" icon={<Plus size={14} />} style={{ marginTop: 4 }} onClick={() => setCreateOpen(true)}>New Blob Store</HoloButton>
           </div>
         ) : (
-          <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--holo-border)', borderRadius: 12, overflow: 'hidden' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 2fr 1fr', padding: '10px 16px', background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid var(--holo-border)', fontSize: 11, fontWeight: 600, color: 'var(--holo-text-faint)', textTransform: 'uppercase' as const, letterSpacing: '0.05em' }}>
+          <div style={{ background: 'rgba(var(--holo-ink-rgb), 0.02)', border: '1px solid var(--holo-border)', borderRadius: 12, overflow: 'hidden' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 2fr 1fr', padding: '10px 16px', background: 'rgba(var(--holo-ink-rgb), 0.03)', borderBottom: '1px solid var(--holo-border)', fontSize: 11, fontWeight: 600, color: 'var(--holo-text-faint)', textTransform: 'uppercase' as const, letterSpacing: '0.05em' }}>
               <div>Name</div>
               <div>Type</div>
               <div>Used</div>
@@ -1497,13 +1498,13 @@ export default function AdminPage() {
             {blobs.map(bs => {
               const usedPct = bs.quotaBytes ? Math.min((bs.usedBytes / bs.quotaBytes) * 100, 100) : 0
               const overQuota = bs.quotaBytes && bs.usedBytes > bs.quotaBytes
-              const barColor = overQuota ? '#ef4444' : usedPct > 80 ? '#f59e0b' : 'var(--holo-a)'
+              const barColor = overQuota ? 'var(--holo-c-red)' : usedPct > 80 ? 'var(--holo-c-amber)' : 'var(--holo-a)'
               const isEditing = editingQuota === bs.id
               return (
                 <div
                   key={bs.id}
                   tabIndex={0}
-                  style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 2fr 1fr', padding: '11px 16px', borderBottom: '1px solid rgba(255,255,255,0.05)', fontSize: 13, color: 'var(--holo-text)', alignItems: 'center', cursor: 'pointer' }}
+                  style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 2fr 1fr', padding: '11px 16px', borderBottom: '1px solid rgba(var(--holo-ink-rgb), 0.05)', fontSize: 13, color: 'var(--holo-text)', alignItems: 'center', cursor: 'pointer' }}
                   onClick={(e) => {
                     // Don't open detail if click is on a button or input
                     const t = e.target as HTMLElement
@@ -1518,7 +1519,7 @@ export default function AdminPage() {
                       <span style={{
                         fontSize: 10, fontWeight: 700, padding: '2px 6px',
                         borderRadius: 4, background: 'rgba(139,92,246,0.15)',
-                        color: '#a78bfa', border: '1px solid rgba(139,92,246,0.3)',
+                        color: 'var(--holo-c-violet-400)', border: '1px solid rgba(139,92,246,0.3)',
                         marginLeft: 6, letterSpacing: '0.05em',
                       }}>GROUP</span>
                     )}
@@ -1531,7 +1532,7 @@ export default function AdminPage() {
                   <div>
                     <div style={{ fontSize: 13 }}>{fmtBytes(bs.usedBytes)}</div>
                     {bs.quotaBytes && (
-                      <div style={{ height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.08)', overflow: 'hidden', marginTop: 4, width: '100%' }}>
+                      <div style={{ height: 4, borderRadius: 2, background: 'rgba(var(--holo-ink-rgb), 0.08)', overflow: 'hidden', marginTop: 4, width: '100%' }}>
                         <div style={{ height: '100%', width: usedPct + '%', background: barColor, transition: 'width 0.3s' }} />
                       </div>
                     )}
@@ -1552,7 +1553,7 @@ export default function AdminPage() {
                         />
                         <span style={{ fontSize: 11, color: 'var(--holo-text-faint)' }}>GB</span>
                         <button
-                          style={{ background: 'rgba(34,197,94,0.15)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 6, padding: '3px 8px', color: '#22c55e', fontSize: 11, cursor: 'pointer' }}
+                          style={{ background: 'rgba(34,197,94,0.15)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 6, padding: '3px 8px', color: 'var(--holo-c-green)', fontSize: 11, cursor: 'pointer' }}
                           onClick={() => quotaMut.mutate({ bs, gb: quotaInput })}
                         >Save</button>
                         <button
@@ -1562,7 +1563,7 @@ export default function AdminPage() {
                       </div>
                     ) : (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span style={overQuota ? { color: '#ef4444', fontSize: 12 } : { fontSize: 12, color: 'var(--holo-text-faint)' }}>
+                        <span style={overQuota ? { color: 'var(--holo-c-red)', fontSize: 12 } : { fontSize: 12, color: 'var(--holo-text-faint)' }}>
                           {bs.quotaBytes ? fmtBytes(bs.quotaBytes) : 'Unlimited'}
                         </span>
                         <button
@@ -1881,14 +1882,14 @@ function BlobStoreDetailModal({ name, blobStores: _blobStores, onClose }: { name
 
           {bs.type === 'group' && (
             <div style={{ marginTop: 16 }}>
-              <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 8 }}>
-                Fill Policy: <strong style={{ color: '#e2e8f0' }}>
+              <div style={{ color: 'var(--holo-c-slate-400)', fontSize: 12, marginBottom: 8 }}>
+                Fill Policy: <strong style={{ color: 'var(--holo-c-slate-200)' }}>
                   {bs.config?.fill_policy === 'write_to_first_fill' ? 'Write to First Fill' : 'Round Robin'}
                 </strong>
               </div>
               {data?.memberTotalUsed !== undefined && (
-                <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 8 }}>
-                  Total used: <strong style={{ color: '#e2e8f0' }}>
+                <div style={{ color: 'var(--holo-c-slate-400)', fontSize: 12, marginBottom: 8 }}>
+                  Total used: <strong style={{ color: 'var(--holo-c-slate-200)' }}>
                     {(data.memberTotalUsed / 1024 / 1024).toFixed(1)} MB
                   </strong>
                   {data.memberTotalQuota !== undefined && (
@@ -1896,12 +1897,12 @@ function BlobStoreDetailModal({ name, blobStores: _blobStores, onClose }: { name
                   )}
                 </div>
               )}
-              <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 6 }}>Members:</div>
+              <div style={{ color: 'var(--holo-c-slate-400)', fontSize: 12, marginBottom: 6 }}>Members:</div>
               {(data?.members ?? []).map(m => (
                 <div key={m.id} style={{ display: 'flex', justifyContent: 'space-between',
-                  fontSize: 12, padding: '4px 8px', background: 'rgba(255,255,255,0.04)', borderRadius: 6, marginBottom: 4 }}>
-                  <span style={{ color: '#e2e8f0' }}>{m.name}</span>
-                  <span style={{ color: '#64748b' }}>
+                  fontSize: 12, padding: '4px 8px', background: 'rgba(var(--holo-ink-rgb), 0.04)', borderRadius: 6, marginBottom: 4 }}>
+                  <span style={{ color: 'var(--holo-c-slate-200)' }}>{m.name}</span>
+                  <span style={{ color: 'var(--holo-c-slate-500)' }}>
                     {(m.usedBytes / 1024 / 1024).toFixed(1)} MB
                     {m.quotaBytes != null ? ` / ${(m.quotaBytes / 1024 / 1024).toFixed(1)} MB` : ''}
                   </span>
@@ -1911,7 +1912,7 @@ function BlobStoreDetailModal({ name, blobStores: _blobStores, onClose }: { name
           )}
 
           {editing && bs && (
-            <div style={{ marginBottom: 16, padding: '12px 14px', background: 'rgba(255,255,255,0.03)', borderRadius: 10, border: '1px solid var(--holo-border)' }}>
+            <div style={{ marginBottom: 16, padding: '12px 14px', background: 'rgba(var(--holo-ink-rgb), 0.03)', borderRadius: 10, border: '1px solid var(--holo-border)' }}>
               <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--holo-text-dim)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', marginBottom: 10 }}>Edit Configuration</div>
               {bs.type === 's3' ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -2032,7 +2033,7 @@ function BlobStoreDetailModal({ name, blobStores: _blobStores, onClose }: { name
           )}
 
           {bs.type !== 'group' && (
-            <div style={{ marginBottom: 16, padding: '12px 14px', background: 'rgba(255,255,255,0.03)', borderRadius: 10, border: '1px solid var(--holo-border)' }}>
+            <div style={{ marginBottom: 16, padding: '12px 14px', background: 'rgba(var(--holo-ink-rgb), 0.03)', borderRadius: 10, border: '1px solid var(--holo-border)' }}>
               <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--holo-text-faint)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
                 Garbage collection
               </div>
@@ -2067,17 +2068,17 @@ function BlobStoreDetailModal({ name, blobStores: _blobStores, onClose }: { name
             Linked Repositories
           </div>
           {linked.length === 0 ? (
-            <div style={{ padding: '20px 16px', background: 'rgba(255,255,255,0.02)', border: '1px dashed var(--holo-border)', borderRadius: 8, textAlign: 'center', color: 'var(--holo-text-faint)', fontSize: 13 }}>
+            <div style={{ padding: '20px 16px', background: 'rgba(var(--holo-ink-rgb), 0.02)', border: '1px dashed var(--holo-border)', borderRadius: 8, textAlign: 'center', color: 'var(--holo-text-faint)', fontSize: 13 }}>
               No repositories use this blob store.
             </div>
           ) : (
-            <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--holo-border)', borderRadius: 10, overflow: 'hidden' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', padding: '8px 14px', background: 'rgba(255,255,255,0.03)', fontSize: 11, fontWeight: 600, color: 'var(--holo-text-faint)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            <div style={{ background: 'rgba(var(--holo-ink-rgb), 0.02)', border: '1px solid var(--holo-border)', borderRadius: 10, overflow: 'hidden' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', padding: '8px 14px', background: 'rgba(var(--holo-ink-rgb), 0.03)', fontSize: 11, fontWeight: 600, color: 'var(--holo-text-faint)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                 <div>Name</div><div>Format</div><div>Type</div><div>Used</div>
               </div>
               {linked.map(r => (
                 <Link key={r.name} to={`/browse?repo=${encodeURIComponent(r.name)}`} style={{ textDecoration: 'none' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', padding: '10px 14px', borderTop: '1px solid rgba(255,255,255,0.05)', fontSize: 13, color: 'var(--holo-text)', cursor: 'pointer' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', padding: '10px 14px', borderTop: '1px solid rgba(var(--holo-ink-rgb), 0.05)', fontSize: 13, color: 'var(--holo-text)', cursor: 'pointer' }}>
                     <div style={{ color: 'var(--holo-a)', fontWeight: 600 }}>{r.name}</div>
                     <div>{r.format}</div>
                     <div>{r.type}</div>
@@ -2351,12 +2352,12 @@ function CreateBlobStoreModal({ blobStores, localBasePath, onClose }: { blobStor
         {type === 'group' && (
           <div>
             <div style={{ marginBottom: 12 }}>
-              <label style={{ display: 'block', marginBottom: 6, color: '#94a3b8', fontSize: 13 }}>
+              <label style={{ display: 'block', marginBottom: 6, color: 'var(--holo-c-slate-400)', fontSize: 13 }}>
                 Fill Policy
               </label>
               <div style={{ display: 'flex', gap: 16 }}>
                 {(['round_robin', 'write_to_first_fill'] as const).map(p => (
-                  <label key={p} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13, color: '#e2e8f0' }}>
+                  <label key={p} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13, color: 'var(--holo-c-slate-200)' }}>
                     <input type="radio" name="groupFillPolicy" value={p}
                       checked={groupFillPolicy === p}
                       onChange={() => setGroupFillPolicy(p)} />
@@ -2366,24 +2367,24 @@ function CreateBlobStoreModal({ blobStores, localBasePath, onClose }: { blobStor
               </div>
             </div>
             <div>
-              <label style={{ display: 'block', marginBottom: 6, color: '#94a3b8', fontSize: 13 }}>
+              <label style={{ display: 'block', marginBottom: 6, color: 'var(--holo-c-slate-400)', fontSize: 13 }}>
                 Members (non-group stores)
               </label>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 160, overflowY: 'auto',
-                background: 'rgba(255,255,255,0.04)', borderRadius: 8, padding: 8, border: '1px solid rgba(255,255,255,0.08)' }}>
+                background: 'rgba(var(--holo-ink-rgb), 0.04)', borderRadius: 8, padding: 8, border: '1px solid rgba(var(--holo-ink-rgb), 0.08)' }}>
                 {blobStores.filter(s => s.type !== 'group').map(s => (
-                  <label key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, color: '#e2e8f0' }}>
+                  <label key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, color: 'var(--holo-c-slate-200)' }}>
                     <input type="checkbox"
                       checked={groupMemberIds.includes(s.id)}
                       onChange={e => setGroupMemberIds(prev =>
                         e.target.checked ? [...prev, s.id] : prev.filter(id => id !== s.id)
                       )} />
                     <span>{s.name}</span>
-                    <span style={{ color: '#64748b', fontSize: 11 }}>{s.type}</span>
+                    <span style={{ color: 'var(--holo-c-slate-500)', fontSize: 11 }}>{s.type}</span>
                   </label>
                 ))}
                 {blobStores.filter(s => s.type !== 'group').length === 0 && (
-                  <span style={{ color: '#64748b', fontSize: 12 }}>No non-group stores available</span>
+                  <span style={{ color: 'var(--holo-c-slate-500)', fontSize: 12 }}>No non-group stores available</span>
                 )}
               </div>
             </div>
@@ -2464,11 +2465,11 @@ interface MigrationJobData {
 }
 
 const MIG_STATUS: Record<string, { bg: string; color: string }> = {
-  pending:   { bg: 'rgba(245,158,11,0.15)',  color: '#f59e0b' },
-  running:   { bg: 'rgba(59,130,246,0.15)',  color: '#3b82f6' },
-  paused:    { bg: 'rgba(107,114,128,0.15)', color: '#9ca3af' },
-  done:      { bg: 'rgba(34,197,94,0.15)',   color: '#22c55e' },
-  error:     { bg: 'rgba(239,68,68,0.15)',   color: '#ef4444' },
+  pending:   { bg: 'rgba(245,158,11,0.15)',  color: 'var(--holo-c-amber)' },
+  running:   { bg: 'rgba(59,130,246,0.15)',  color: 'var(--holo-c-blue)' },
+  paused:    { bg: 'rgba(107,114,128,0.15)', color: 'var(--holo-c-gray-400)' },
+  done:      { bg: 'rgba(34,197,94,0.15)',   color: 'var(--holo-c-green)' },
+  error:     { bg: 'rgba(239,68,68,0.15)',   color: 'var(--holo-c-red)' },
 }
 
 function MigrationTab() {
@@ -2509,7 +2510,7 @@ function MigrationTab() {
         </div>
       </div>
 
-      <div style={{ background: 'rgba(124,92,255,0.08)', border: '1px solid rgba(124,92,255,0.2)', borderRadius: 10, padding: '12px 16px', fontSize: 13, color: 'rgba(180,160,255,0.9)', lineHeight: 1.6 }}>
+      <div style={{ background: 'rgba(124,92,255,0.08)', border: '1px solid rgba(124,92,255,0.2)', borderRadius: 10, padding: '12px 16px', fontSize: 13, color: 'var(--holo-tx-violet-soft-90)', lineHeight: 1.6 }}>
         <strong>How it works:</strong> Nexspence connects to your Nexus instance via its REST API and
         streams repositories, users, roles and artifacts directly — no downtime required.
         Test the connection, then pick one or several repositories. Artifacts copy into hosted
@@ -2541,8 +2542,8 @@ function MigrationTab() {
               <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--holo-text-faint)', textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: 4 }}>
                 Migration History
               </div>
-              <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--holo-border)', borderRadius: 12, overflow: 'hidden' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr 1fr', padding: '10px 16px', background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid var(--holo-border)', fontSize: 11, fontWeight: 600, color: 'var(--holo-text-faint)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              <div style={{ background: 'rgba(var(--holo-ink-rgb), 0.02)', border: '1px solid var(--holo-border)', borderRadius: 12, overflow: 'hidden' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr 1fr', padding: '10px 16px', background: 'rgba(var(--holo-ink-rgb), 0.03)', borderBottom: '1px solid var(--holo-border)', fontSize: 11, fontWeight: 600, color: 'var(--holo-text-faint)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                   <div>Source</div>
                   <div>Status</div>
                   <div>Repos</div>
@@ -2575,7 +2576,7 @@ function MigrationHistoryRow({ job }: { job: MigrationJobData }) {
   const canReveal = job.errorCount > 0 && Boolean(job.lastError)
   const Chevron = open ? ChevronUp : ChevronDown
   return (
-    <div style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+    <div style={{ borderBottom: '1px solid rgba(var(--holo-ink-rgb), 0.04)' }}>
       <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr 1fr', padding: '11px 16px', fontSize: 13, color: 'var(--holo-text)', alignItems: 'center' }}>
         <div>
           <Truncated text={job.sourceUrl} style={{ fontFamily: 'monospace', fontSize: 12, fontWeight: 600, color: 'var(--holo-text)' }} />
@@ -2589,13 +2590,13 @@ function MigrationHistoryRow({ job }: { job: MigrationJobData }) {
               onClick={() => setOpen(v => !v)}
               aria-expanded={open}
               aria-label={`${job.errorCount} errors`}
-              style={{ display: 'flex', alignItems: 'center', gap: 2, padding: 0, border: 0, background: 'none', font: 'inherit', fontSize: 11, fontWeight: 600, color: '#ef4444', cursor: 'pointer' }}
+              style={{ display: 'flex', alignItems: 'center', gap: 2, padding: 0, border: 0, background: 'none', font: 'inherit', fontSize: 11, fontWeight: 600, color: 'var(--holo-c-red)', cursor: 'pointer' }}
             >
               {job.errorCount} errors
               <Chevron size={14} aria-hidden="true" />
             </button>
           ) : job.errorCount > 0 ? (
-            <div style={{ fontSize: 11, color: '#ef4444' }}>{job.errorCount} errors</div>
+            <div style={{ fontSize: 11, color: 'var(--holo-c-red)' }}>{job.errorCount} errors</div>
           ) : null}
         </div>
         <div style={{ fontSize: 13 }}>{job.repositoriesDone}/{job.repositoriesTotal || '?'}</div>
@@ -2606,8 +2607,8 @@ function MigrationHistoryRow({ job }: { job: MigrationJobData }) {
       </div>
       {open && job.lastError && (
         <div style={{ margin: '0 16px 12px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 8, padding: '8px 12px' }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: '#ef4444', marginBottom: 4 }}>Last error</div>
-          <div style={{ fontSize: 12, color: '#fca5a5', wordBreak: 'break-word', fontFamily: 'monospace' }}>{job.lastError}</div>
+          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--holo-c-red)', marginBottom: 4 }}>Last error</div>
+          <div style={{ fontSize: 12, color: 'var(--holo-c-red-300)', wordBreak: 'break-word', fontFamily: 'monospace' }}>{job.lastError}</div>
         </div>
       )}
     </div>
@@ -2632,10 +2633,10 @@ function MigrationJobCard({ job, onPause, onResume }: { job: MigrationJobData; o
           { label: 'Policies', on: job.migratePolicies },
           { label: 'Artifacts', on: job.migrateBlobs },
         ].map(s => (
-          <span key={s.label} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: s.on ? 'rgba(59,130,246,0.15)' : 'rgba(255,255,255,0.04)', color: s.on ? '#3b82f6' : 'var(--holo-text-faint)', fontWeight: 600 }}>{s.label}</span>
+          <span key={s.label} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: s.on ? 'rgba(59,130,246,0.15)' : 'rgba(var(--holo-ink-rgb), 0.04)', color: s.on ? 'var(--holo-c-blue)' : 'var(--holo-text-faint)', fontWeight: 600 }}>{s.label}</span>
         ))}
         {job.repositories && job.repositories.length > 0 && (
-          <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: 'rgba(124,92,255,0.15)', color: '#a78bfa', fontWeight: 600 }} title={job.repositories.join(', ')}>
+          <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: 'rgba(124,92,255,0.15)', color: 'var(--holo-c-violet-400)', fontWeight: 600 }} title={job.repositories.join(', ')}>
             {job.repositories.length === 1 ? job.repositories[0] : `${job.repositories.length} selected`}
           </span>
         )}
@@ -2643,29 +2644,29 @@ function MigrationJobCard({ job, onPause, onResume }: { job: MigrationJobData; o
 
       <div style={{ display: 'grid', gridTemplateColumns: job.migrateRepos ? 'repeat(3, 1fr)' : '1fr 1fr', gap: 12 }}>
         {job.migrateRepos && (
-        <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 8, padding: '10px 12px' }}>
+        <div style={{ background: 'rgba(var(--holo-ink-rgb), 0.02)', borderRadius: 8, padding: '10px 12px' }}>
           <div style={{ fontSize: 11, color: 'var(--holo-text-faint)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Repositories</div>
           <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--holo-text)' }}>{job.repositoriesDone}<span style={{ fontSize: 13, color: 'var(--holo-text-faint)', fontWeight: 400 }}>/{job.repositoriesTotal || '?'}</span></div>
-          <div style={{ height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.08)', overflow: 'hidden', marginTop: 6 }}>
+          <div style={{ height: 4, borderRadius: 2, background: 'rgba(var(--holo-ink-rgb), 0.08)', overflow: 'hidden', marginTop: 6 }}>
             <div style={{ height: '100%', width: reposPct + '%', background: 'var(--holo-a)', transition: 'width 0.4s' }} />
           </div>
         </div>
         )}
-        <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 8, padding: '10px 12px' }}>
+        <div style={{ background: 'rgba(var(--holo-ink-rgb), 0.02)', borderRadius: 8, padding: '10px 12px' }}>
           <div style={{ fontSize: 11, color: 'var(--holo-text-faint)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Assets</div>
           <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--holo-text)' }}>{job.assetsDone}<span style={{ fontSize: 13, color: 'var(--holo-text-faint)', fontWeight: 400 }}>/{job.assetsTotal || '?'}</span></div>
-          <div style={{ height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.08)', overflow: 'hidden', marginTop: 6 }}>
-            <div style={{ height: '100%', width: assetsPct + '%', background: '#22c55e', transition: 'width 0.4s' }} />
+          <div style={{ height: 4, borderRadius: 2, background: 'rgba(var(--holo-ink-rgb), 0.08)', overflow: 'hidden', marginTop: 6 }}>
+            <div style={{ height: '100%', width: assetsPct + '%', background: 'var(--holo-c-green)', transition: 'width 0.4s' }} />
           </div>
         </div>
-        <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 8, padding: '10px 12px' }}>
+        <div style={{ background: 'rgba(var(--holo-ink-rgb), 0.02)', borderRadius: 8, padding: '10px 12px' }}>
           <div style={{ fontSize: 11, color: 'var(--holo-text-faint)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Errors</div>
-          <div style={{ fontSize: 18, fontWeight: 700, color: job.errorCount > 0 ? '#ef4444' : '#22c55e' }}>{job.errorCount}</div>
+          <div style={{ fontSize: 18, fontWeight: 700, color: job.errorCount > 0 ? 'var(--holo-c-red)' : 'var(--holo-c-green)' }}>{job.errorCount}</div>
         </div>
       </div>
 
       {job.lastError && (
-        <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 8, padding: '8px 12px', fontSize: 12, color: '#fca5a5', wordBreak: 'break-word' }}>
+        <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 8, padding: '8px 12px', fontSize: 12, color: 'var(--holo-c-red-300)', wordBreak: 'break-word' }}>
           {job.lastError}
         </div>
       )}
@@ -2806,12 +2807,12 @@ function CreateMigrationJobModal({ onClose, onCreated }: { onClose: () => void; 
         </div>
       </div>
       {preview && (
-        <div style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.25)', borderRadius: 8, padding: '10px 12px', color: '#86efac', fontSize: 13 }}>
+        <div style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.25)', borderRadius: 8, padding: '10px 12px', color: 'var(--holo-c-green-300)', fontSize: 13 }}>
           Connected — {preview.repoCount} {preview.repoCount === 1 ? 'repository' : 'repositories'} found. Pick which ones on the next step.
         </div>
       )}
       {previewError && (
-        <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 8, padding: '10px 12px', color: '#fca5a5', fontSize: 13, wordBreak: 'break-word' }}>
+        <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 8, padding: '10px 12px', color: 'var(--holo-c-red-300)', fontSize: 13, wordBreak: 'break-word' }}>
           {previewError}
         </div>
       )}
@@ -2837,11 +2838,11 @@ function CreateMigrationJobModal({ onClose, onCreated }: { onClose: () => void; 
             <label key={key} style={{
               display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
               padding: '8px 10px',
-              background: scope[key] ? 'rgba(59,130,246,0.1)' : 'rgba(255,255,255,0.03)',
-              border: `1px solid ${scope[key] ? 'rgba(59,130,246,0.3)' : 'rgba(255,255,255,0.08)'}`,
+              background: scope[key] ? 'rgba(59,130,246,0.1)' : 'rgba(var(--holo-ink-rgb), 0.03)',
+              border: `1px solid ${scope[key] ? 'rgba(59,130,246,0.3)' : 'rgba(var(--holo-ink-rgb), 0.08)'}`,
               borderRadius: 8, transition: 'background 0.15s, border-color 0.15s', userSelect: 'none',
             }}>
-              <input type="checkbox" checked={scope[key]} onChange={() => toggleScope(key)} style={{ accentColor: '#3b82f6', width: 14, height: 14 }} />
+              <input type="checkbox" checked={scope[key]} onChange={() => toggleScope(key)} style={{ accentColor: 'var(--holo-c-blue)', width: 14, height: 14 }} />
               <span style={{ fontSize: 13, color: scope[key] ? 'var(--holo-text)' : 'var(--holo-text-faint)', fontWeight: scope[key] ? 600 : 400 }}>{label}</span>
             </label>
           ))}
@@ -2861,10 +2862,10 @@ function CreateMigrationJobModal({ onClose, onCreated }: { onClose: () => void; 
   const step3 = (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <div style={{
-        background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(124,92,255,0.15)',
+        background: 'rgba(var(--holo-ink-rgb), 0.03)', border: '1px solid rgba(124,92,255,0.15)',
         borderRadius: 10, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 6,
       }}>
-        <div style={{ fontSize: 11, fontWeight: 700, color: '#7c5cff', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Summary</div>
+        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--holo-a)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Summary</div>
         <div style={{ fontSize: 12, color: 'var(--holo-text-dim)' }}>
           <b style={{ color: 'var(--holo-text)' }}>Source:</b> {form.sourceUrl || '—'}
         </div>

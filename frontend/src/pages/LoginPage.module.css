@@ -90,3 +90,30 @@
   height: 1px;
   background: rgba(124,92,255,0.2);
 }
+
+.themeToggle {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid var(--holo-border);
+  background: var(--holo-bg-3);
+  color: var(--holo-text-dim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.themeToggle:hover {
+  color: var(--holo-text);
+  border-color: var(--holo-border-strong);
+}
+
+.themeToggle:focus-visible {
+  outline: none;
+  box-shadow: var(--holo-ring);
+}

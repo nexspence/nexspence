@@ -6,6 +6,7 @@ import type { CleanupPreviewResponse } from '@/api/client'
 import { Select } from '../components/Select'
 import { HoloButton, HoloInput, HoloModal, HoloPill, Wizard } from '@/components/holo'
 import { Truncated } from '@/components/Truncated'
+import { tint } from '@/theme/color'
 
 interface CleanupScope {
   repositoryName?: string
@@ -47,11 +48,11 @@ interface PolicyForm {
 const FORMATS = ['*', 'maven2', 'npm', 'docker', 'oci', 'pypi', 'go', 'nuget', 'helm', 'raw', 'apt', 'yum', 'cargo', 'conan', 'cran', 'alpine', 'huggingface']
 
 const FORMAT_COLOR: Record<string, string> = {
-  maven2: '#f97316', npm: '#ef4444', docker: '#3b82f6', oci: '#5b8def', pypi: '#a78bfa',
-  go: '#06b6d4', nuget: '#8b5cf6', helm: '#0ea5e9', raw: '#6b7280',
-  apt: '#f59e0b', yum: '#10b981', cargo: '#fb923c', conan: '#94a3b8',
-  cran: '#276dc3', alpine: '#0d597f', huggingface: '#ffd21e',
-  '*': '#6b7280',
+  maven2: 'var(--holo-c-orange)', npm: 'var(--holo-c-red)', docker: 'var(--holo-c-blue)', oci: 'var(--holo-c-blue-oci)', pypi: 'var(--holo-c-violet-400)',
+  go: 'var(--holo-c-cyan)', nuget: 'var(--holo-c-violet-500)', helm: 'var(--holo-c-sky)', raw: 'var(--holo-c-gray)',
+  apt: 'var(--holo-c-amber)', yum: 'var(--holo-c-emerald)', cargo: 'var(--holo-c-orange-400)', conan: 'var(--holo-c-slate-400)',
+  cran: '#276dc3', alpine: '#0d597f', huggingface: 'var(--holo-c-yellow)',
+  '*': 'var(--holo-c-gray)',
 }
 
 const emptyForm = (): PolicyForm => ({
@@ -136,7 +137,7 @@ function PathBrowserModal({ repoName, current, onSelect, onClose }: {
               border: selected === path ? '1px solid rgba(34,211,238,0.25)' : '1px solid transparent',
               transition: 'background 0.1s',
             }}
-            onMouseEnter={e => { if (selected !== path) (e.currentTarget as HTMLDivElement).style.background = 'rgba(255,255,255,0.04)' }}
+            onMouseEnter={e => { if (selected !== path) (e.currentTarget as HTMLDivElement).style.background = 'rgba(var(--holo-ink-rgb), 0.04)' }}
             onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = selected === path ? 'rgba(34,211,238,0.10)' : 'transparent' }}
           >
             <Folder size={13} style={{ color: 'var(--holo-text-faint)', flexShrink: 0 }} />
@@ -372,7 +373,7 @@ function PolicyModal({
               value: r.name,
               label: r.name,
               badge: (
-                <span style={{ width: 7, height: 7, borderRadius: '50%', background: FORMAT_COLOR[form.format] ?? '#6b7280', flexShrink: 0, display: 'inline-block' }} />
+                <span style={{ width: 7, height: 7, borderRadius: '50%', background: FORMAT_COLOR[form.format] ?? 'var(--holo-c-gray)', flexShrink: 0, display: 'inline-block' }} />
               ),
             })),
           ]}
@@ -384,11 +385,11 @@ function PolicyModal({
             <span style={{
               display: 'inline-flex', alignItems: 'center', gap: 5,
               fontSize: 11, padding: '2px 8px', borderRadius: 999,
-              background: (FORMAT_COLOR[form.format] ?? '#6b7280') + '22',
-              color: FORMAT_COLOR[form.format] ?? '#6b7280',
-              border: `1px solid ${FORMAT_COLOR[form.format] ?? '#6b7280'}44`,
+              background: tint(FORMAT_COLOR[form.format] ?? 'var(--holo-c-gray)', 0.133),
+              color: FORMAT_COLOR[form.format] ?? 'var(--holo-c-gray)',
+              border: `1px solid ${tint(FORMAT_COLOR[form.format] ?? 'var(--holo-c-gray)', 0.267)}`,
             }}>
-              <span style={{ width: 6, height: 6, borderRadius: '50%', background: FORMAT_COLOR[form.format] ?? '#6b7280', display: 'inline-block' }} />
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: FORMAT_COLOR[form.format] ?? 'var(--holo-c-gray)', display: 'inline-block' }} />
               {form.scopeRepository}
               <button
                 type="button"
@@ -421,7 +422,7 @@ function PolicyModal({
             Browse…
           </HoloButton>
         </div>
-        <span style={{ fontSize: 11, color: 'rgba(229,231,235,0.35)' }}>
+        <span style={{ fontSize: 11, color: 'var(--holo-tx-fg-35)' }}>
           Leave empty to match all paths in the repository.
         </span>
       </div>
@@ -515,7 +516,7 @@ function PolicyModal({
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6, gridColumn: '1 / -1' }}>
             <label style={LABEL}>Retain N newest versions</label>
             <HoloInput type="number" min="0" value={form.retainNVersions} onChange={set('retainNVersions')} placeholder="e.g. 3 (0 = disabled)" style={{ MozAppearance: 'textfield' } as CSSProperties} />
-            <span style={{ fontSize: 11, color: 'rgba(229,231,235,0.35)' }}>Keep the N most recent versions of each artifact even if they match other criteria.</span>
+            <span style={{ fontSize: 11, color: 'var(--holo-tx-fg-35)' }}>Keep the N most recent versions of each artifact even if they match other criteria.</span>
           </div>
         </div>
         {scopeSection}
@@ -527,7 +528,7 @@ function PolicyModal({
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <label style={LABEL}>Schedule (cron)</label>
           <HoloInput value={form.scheduleCron} onChange={set('scheduleCron')} placeholder="e.g. 0 2 * * * (default: every 6 hours)" />
-          <span style={{ fontSize: 11, color: 'rgba(229,231,235,0.35)' }}>Leave blank to use the global default. Format: minute hour day month weekday</span>
+          <span style={{ fontSize: 11, color: 'var(--holo-tx-fg-35)' }}>Leave blank to use the global default. Format: minute hour day month weekday</span>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <label style={LABEL}>Options</label>
@@ -629,7 +630,7 @@ function PolicyModal({
           <label style={LABEL}>Schedule (cron)</label>
           <HoloInput value={form.scheduleCron} onChange={set('scheduleCron')}
             placeholder="e.g. 0 2 * * * (default: every 6 hours)" />
-          <span style={{ fontSize: 11, color: 'rgba(229,231,235,0.35)' }}>
+          <span style={{ fontSize: 11, color: 'var(--holo-tx-fg-35)' }}>
             Leave blank to use the global default schedule. Format: minute hour day month weekday
           </span>
         </div>
@@ -663,7 +664,7 @@ function PolicyModal({
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <label style={LABEL}>Retain N newest versions</label>
           <HoloInput type="number" min="0" value={form.retainNVersions} onChange={set('retainNVersions')} placeholder="0 = disabled" style={{ MozAppearance: 'textfield' } as CSSProperties} />
-          <span style={{ fontSize: 11, color: 'rgba(229,231,235,0.35)' }}>Keep the N most recent versions of each artifact even if they match other criteria.</span>
+          <span style={{ fontSize: 11, color: 'var(--holo-tx-fg-35)' }}>Keep the N most recent versions of each artifact even if they match other criteria.</span>
         </div>
 
         {scopeSection}
@@ -751,7 +752,7 @@ export default function CleanupPage() {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
         <div>
           <div className="holo-section-label" style={{ marginBottom: 4 }}>ADMINISTRATION / CLEANUP</div>
-          <h1 style={{ fontSize: 20, fontWeight: 700, margin: '0 0 3px', letterSpacing: '-0.01em', lineHeight: 1.2, background: 'linear-gradient(110deg, #7c5cff, #22d3ee 60%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' as const }}>Cleanup Policies</h1>
+          <h1 style={{ fontSize: 20, fontWeight: 700, margin: '0 0 3px', letterSpacing: '-0.01em', lineHeight: 1.2, background: 'linear-gradient(110deg, var(--holo-a), var(--holo-b) 60%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' as const }}>Cleanup Policies</h1>
           <p style={{ fontSize: 12, color: 'var(--holo-text-faint)', margin: 0, maxWidth: 560 }}>
             Automate deletion of old, unused artifacts by criteria. Attach each policy to one or more
             repositories under Repositories → repository settings — unattached policies do not delete anything.
@@ -774,7 +775,7 @@ export default function CleanupPage() {
             fontSize: 13,
             border: `1px solid ${runResult.tone === 'err' ? 'rgba(239,68,68,0.4)' : runResult.tone === 'warn' ? 'rgba(234,179,8,0.4)' : 'rgba(34,211,153,0.4)'}`,
             background: runResult.tone === 'err' ? 'rgba(239,68,68,0.1)' : runResult.tone === 'warn' ? 'rgba(234,179,8,0.1)' : 'rgba(34,211,153,0.1)',
-            color: runResult.tone === 'err' ? '#fca5a5' : runResult.tone === 'warn' ? '#fde68a' : '#6ee7b7',
+            color: runResult.tone === 'err' ? 'var(--holo-c-red-300)' : runResult.tone === 'warn' ? 'var(--holo-c-amber-200)' : 'var(--holo-c-emerald-300)',
           }}
         >
           {runResult.text}
@@ -792,7 +793,7 @@ export default function CleanupPage() {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           {policies.map(p => {
-            const color = FORMAT_COLOR[p.format] ?? '#6b7280'
+            const color = FORMAT_COLOR[p.format] ?? 'var(--holo-c-gray)'
             const criteria = [
               p.criteria?.lastDownloadedDays && `≥${p.criteria.lastDownloadedDays}d not downloaded`,
               p.criteria?.artifactAgeDays && `age >${p.criteria.artifactAgeDays}d`,
@@ -810,19 +811,19 @@ export default function CleanupPage() {
                   alignItems: 'center',
                   gap: 14,
                   padding: '11px 16px',
-                  background: 'rgba(10,8,28,0.97)',
+                  background: 'var(--holo-surface-float)',
                   border: '1px solid rgba(124,92,255,0.2)',
                   borderRadius: 10,
                   opacity: p.enabled ? 1 : 0.55,
                   transition: 'border-color 0.15s, background 0.15s',
                 }}
                 onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.borderColor = 'rgba(124,92,255,0.45)'; (e.currentTarget as HTMLDivElement).style.background = 'rgba(124,92,255,0.04)' }}
-                onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.borderColor = 'rgba(124,92,255,0.2)'; (e.currentTarget as HTMLDivElement).style.background = 'rgba(10,8,28,0.97)' }}
+                onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.borderColor = 'rgba(124,92,255,0.2)'; (e.currentTarget as HTMLDivElement).style.background = 'var(--holo-surface-float)' }}
               >
                 {/* Status dot */}
                 <span style={{
                   width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
-                  background: p.enabled ? 'var(--holo-green)' : 'rgba(255,255,255,0.2)',
+                  background: p.enabled ? 'var(--holo-green)' : 'rgba(var(--holo-ink-rgb), 0.2)',
                   boxShadow: p.enabled ? '0 0 5px var(--holo-green)' : 'none',
                   display: 'inline-block',
                 }} />
@@ -832,7 +833,7 @@ export default function CleanupPage() {
                   <span style={{
                     fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 4,
                     textTransform: 'uppercase', letterSpacing: '0.3px', whiteSpace: 'nowrap',
-                    background: color + '22', color,
+                    background: tint(color, 0.133), color,
                   }}>
                     {p.format === '*' ? 'all' : p.format}
                   </span>

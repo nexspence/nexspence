@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Activity, Cpu, Database, Download, HardDrive, RefreshCw, TrendingUp, Upload, Trash2 } from 'lucide-react'
 import { MiniChart } from '@/components/holo'
 import { nexusApi, apiClient } from '@/api/client'
+import { tint } from '@/theme/color'
 
 interface MemStats {
   alloc_bytes: number
@@ -44,28 +45,28 @@ interface RepoMetric {
 const S = {
   page:       { display: 'flex', flexDirection: 'column' as const, gap: 20 },
   header:     { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap' as const, gap: 12 },
-  title:      { fontSize: 20, fontWeight: 700, color: '#dbeafe', margin: '0 0 4px' },
-  subtitle:   { fontSize: 13, color: 'rgba(229,231,235,0.5)', margin: 0 },
+  title:      { fontSize: 20, fontWeight: 700, color: 'var(--holo-c-blue-100)', margin: '0 0 4px' },
+  subtitle:   { fontSize: 13, color: 'var(--holo-tx-fg-50)', margin: 0 },
   grid3:      { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14 },
   grid2:      { display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14 },
-  card:       { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: 18 },
-  cardTitle:  { fontSize: 11, fontWeight: 600, color: 'rgba(229,231,235,0.45)', textTransform: 'uppercase' as const, letterSpacing: '0.06em', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 },
-  bigNum:     { fontSize: 28, fontWeight: 700, color: '#dbeafe', lineHeight: 1, marginBottom: 4 },
-  label:      { fontSize: 12, color: 'rgba(229,231,235,0.45)' },
-  row:        { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0', borderBottom: '1px solid rgba(255,255,255,0.05)', fontSize: 13 },
-  rowKey:     { color: 'rgba(229,231,235,0.5)' },
-  rowVal:     { color: '#dbeafe', fontWeight: 600, fontVariantNumeric: 'tabular-nums' as const },
-  iconBtn:    { background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, padding: 8, color: 'rgba(229,231,235,0.7)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 },
-  badge:      (color: string) => ({ fontSize: 11, fontWeight: 600, padding: '2px 7px', borderRadius: 4, background: color + '20', color }),
-  bar:        { height: 6, borderRadius: 3, background: 'rgba(255,255,255,0.07)', overflow: 'hidden' as const, marginTop: 8 },
-  sectionHd:  { fontSize: 14, fontWeight: 600, color: '#dbeafe', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 },
+  card:       { background: 'rgba(var(--holo-ink-rgb), 0.03)', border: '1px solid rgba(var(--holo-ink-rgb), 0.08)', borderRadius: 14, padding: 18 },
+  cardTitle:  { fontSize: 11, fontWeight: 600, color: 'var(--holo-tx-fg-45)', textTransform: 'uppercase' as const, letterSpacing: '0.06em', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 },
+  bigNum:     { fontSize: 28, fontWeight: 700, color: 'var(--holo-c-blue-100)', lineHeight: 1, marginBottom: 4 },
+  label:      { fontSize: 12, color: 'var(--holo-tx-fg-45)' },
+  row:        { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0', borderBottom: '1px solid rgba(var(--holo-ink-rgb), 0.05)', fontSize: 13 },
+  rowKey:     { color: 'var(--holo-tx-fg-50)' },
+  rowVal:     { color: 'var(--holo-c-blue-100)', fontWeight: 600, fontVariantNumeric: 'tabular-nums' as const },
+  iconBtn:    { background: 'rgba(var(--holo-ink-rgb), 0.06)', border: '1px solid rgba(var(--holo-ink-rgb), 0.1)', borderRadius: 8, padding: 8, color: 'var(--holo-tx-fg-70)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 },
+  badge:      (color: string) => ({ fontSize: 11, fontWeight: 600, padding: '2px 7px', borderRadius: 4, background: tint(color, 0.125), color }),
+  bar:        { height: 6, borderRadius: 3, background: 'rgba(var(--holo-ink-rgb), 0.07)', overflow: 'hidden' as const, marginTop: 8 },
+  sectionHd:  { fontSize: 14, fontWeight: 600, color: 'var(--holo-c-blue-100)', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 },
   toggleBtn:  (active: boolean): React.CSSProperties => ({
-    background: active ? 'rgba(59,130,246,0.2)' : 'rgba(255,255,255,0.04)',
-    border: `1px solid ${active ? 'rgba(59,130,246,0.5)' : 'rgba(255,255,255,0.08)'}`,
+    background: active ? 'rgba(59,130,246,0.2)' : 'rgba(var(--holo-ink-rgb), 0.04)',
+    border: `1px solid ${active ? 'rgba(59,130,246,0.5)' : 'rgba(var(--holo-ink-rgb), 0.08)'}`,
     borderRadius: 6,
     padding: '4px 10px',
     fontSize: 12,
-    color: active ? '#93c5fd' : 'rgba(229,231,235,0.5)',
+    color: active ? 'var(--holo-c-blue-300)' : 'var(--holo-tx-fg-50)',
     cursor: 'pointer',
   }),
 }
@@ -132,7 +133,7 @@ function OverviewTab({ data, isLoading, refetch, dataUpdatedAt }: {
   const errorRate = m && m.requests_total > 0
     ? ((m.request_errors / m.requests_total) * 100).toFixed(1)
     : '0.0'
-  const errColor = m && m.request_errors > 0 ? '#f59e0b' : '#22c55e'
+  const errColor = m && m.request_errors > 0 ? 'var(--holo-c-amber)' : 'var(--holo-c-green)'
   const heapPct = m ? Math.min((m.memory.alloc_bytes / (m.memory.sys_bytes || 1)) * 100, 100) : 0
   const lastUpdate = dataUpdatedAt ? new Date(dataUpdatedAt).toLocaleTimeString() : '—'
 
@@ -144,7 +145,7 @@ function OverviewTab({ data, isLoading, refetch, dataUpdatedAt }: {
           <p style={S.subtitle}>Live process counters — auto-refreshes every 10 s</p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{ fontSize: 12, color: 'rgba(229,231,235,0.4)' }}>Updated {lastUpdate}</span>
+          <span style={{ fontSize: 12, color: 'var(--holo-tx-fg-40)' }}>Updated {lastUpdate}</span>
           <button style={S.iconBtn} onClick={() => refetch()} title="Refresh now">
             <RefreshCw size={14} />
           </button>
@@ -160,19 +161,19 @@ function OverviewTab({ data, isLoading, refetch, dataUpdatedAt }: {
         <>
           {/* Top stat cards */}
           <div style={S.grid3}>
-            <StatCard icon={Activity}   color="#3b82f6" title="Total Requests"  value={fmtNum(m.requests_total)} sub="since process start" />
-            <StatCard icon={Upload}     color="#22c55e" title="Artifacts Stored" value={fmtNum(m.artifacts_stored)} sub={fmtBytes(m.bytes_stored) + ' written'} />
-            <StatCard icon={Download}   color="#a78bfa" title="Downloads"        value={fmtNum(m.downloads_total)} sub="artifact fetches" />
-            <StatCard icon={Trash2}     color="#f59e0b" title="Artifacts Deleted" value={fmtNum(m.artifacts_deleted)} sub="since process start" />
+            <StatCard icon={Activity}   color="var(--holo-c-blue)" title="Total Requests"  value={fmtNum(m.requests_total)} sub="since process start" />
+            <StatCard icon={Upload}     color="var(--holo-c-green)" title="Artifacts Stored" value={fmtNum(m.artifacts_stored)} sub={fmtBytes(m.bytes_stored) + ' written'} />
+            <StatCard icon={Download}   color="var(--holo-c-violet-400)" title="Downloads"        value={fmtNum(m.downloads_total)} sub="artifact fetches" />
+            <StatCard icon={Trash2}     color="var(--holo-c-amber)" title="Artifacts Deleted" value={fmtNum(m.artifacts_deleted)} sub="since process start" />
             <StatCard icon={TrendingUp} color={errColor} title="Request Errors"  value={m.request_errors.toString()} sub={errorRate + '% error rate'} />
-            <StatCard icon={Cpu}        color="#06b6d4" title="Goroutines"        value={m.goroutines.toString()} sub={'uptime ' + fmtUptime(m.uptime_seconds)} />
+            <StatCard icon={Cpu}        color="var(--holo-c-cyan)" title="Goroutines"        value={m.goroutines.toString()} sub={'uptime ' + fmtUptime(m.uptime_seconds)} />
           </div>
 
           <div style={S.grid2}>
             {/* Memory */}
             <div style={S.card}>
               <div style={S.sectionHd}>
-                <HardDrive size={15} style={{ color: 'rgba(229,231,235,0.5)' }} />
+                <HardDrive size={15} style={{ color: 'var(--holo-tx-fg-50)' }} />
                 Memory
               </div>
               <div style={{ ...S.row }}>
@@ -181,9 +182,9 @@ function OverviewTab({ data, isLoading, refetch, dataUpdatedAt }: {
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <div style={{ ...S.bar, flex: 1 }}>
-                  <div style={{ height: '100%', width: heapPct + '%', background: heapPct > 80 ? '#ef4444' : '#3b82f6', transition: 'width 0.4s' }} />
+                  <div style={{ height: '100%', width: heapPct + '%', background: heapPct > 80 ? 'var(--holo-c-red)' : 'var(--holo-c-blue)', transition: 'width 0.4s' }} />
                 </div>
-                <span style={{ fontSize: 11, fontWeight: 600, color: heapPct > 80 ? '#ef4444' : '#3b82f6', whiteSpace: 'nowrap' as const }}>{heapPct.toFixed(0)}%{heapPct > 80 ? ' HIGH' : ' OK'}</span>
+                <span style={{ fontSize: 11, fontWeight: 600, color: heapPct > 80 ? 'var(--holo-c-red)' : 'var(--holo-c-blue)', whiteSpace: 'nowrap' as const }}>{heapPct.toFixed(0)}%{heapPct > 80 ? ' HIGH' : ' OK'}</span>
               </div>
               <div style={{ ...S.row, marginTop: 4 }}>
                 <span style={S.rowKey}>Total allocated</span>
@@ -202,7 +203,7 @@ function OverviewTab({ data, isLoading, refetch, dataUpdatedAt }: {
             {/* Throughput summary */}
             <div style={S.card}>
               <div style={S.sectionHd}>
-                <Database size={15} style={{ color: 'rgba(229,231,235,0.5)' }} />
+                <Database size={15} style={{ color: 'var(--holo-tx-fg-50)' }} />
                 Storage Activity
               </div>
               <div style={S.row}>
@@ -232,7 +233,7 @@ function OverviewTab({ data, isLoading, refetch, dataUpdatedAt }: {
           </div>
         </>
       ) : (
-        <p style={{ color: 'rgba(239,68,68,0.7)', fontSize: 14 }}>Failed to load metrics</p>
+        <p style={{ color: 'var(--holo-tx-red-70)', fontSize: 14 }}>Failed to load metrics</p>
       )}
     </>
   )
@@ -259,7 +260,7 @@ function ChartsTab() {
   })
 
   const noData = (
-    <div style={{ height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(229,231,235,0.3)', fontSize: 13 }}>
+    <div style={{ height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--holo-tx-fg-30)', fontSize: 13 }}>
       No data yet — collecting samples every 10s
     </div>
   )
@@ -272,7 +273,7 @@ function ChartsTab() {
         {chartData.length === 0 ? noData : (
           <MiniChart
             type="line"
-            color="#3b82f6"
+            color="var(--holo-c-blue)"
             ariaLabel="Requests per second"
             data={chartData.map(d => ({ label: d.time, value: d.reqPerSec }))}
             valueFormatter={v => v.toFixed(2)}
@@ -286,7 +287,7 @@ function ChartsTab() {
         {chartData.length === 0 ? noData : (
           <MiniChart
             type="line"
-            color="#f59e0b"
+            color="var(--holo-c-amber)"
             ariaLabel="Error rate percent"
             data={chartData.map(d => ({ label: d.time, value: d.errPct }))}
             valueFormatter={v => `${v.toFixed(1)}%`}
@@ -300,7 +301,7 @@ function ChartsTab() {
         {chartData.length === 0 ? noData : (
           <MiniChart
             type="area"
-            color="#22c55e"
+            color="var(--holo-c-green)"
             ariaLabel="Storage bytes"
             data={chartData.map(d => ({ label: d.time, value: d.bytesStored }))}
           />
@@ -326,7 +327,7 @@ function ReposTab() {
   return (
     <div style={S.card}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-        <div style={{ fontSize: 14, fontWeight: 600, color: '#dbeafe' }}>Top Repositories</div>
+        <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--holo-c-blue-100)' }}>Top Repositories</div>
         <div style={{ display: 'flex', gap: 6 }}>
           <button style={S.toggleBtn(sortBy === 'downloads')} onClick={() => setSortBy('downloads')}>Downloads</button>
           <button style={S.toggleBtn(sortBy === 'size')} onClick={() => setSortBy('size')}>Storage</button>
@@ -334,28 +335,28 @@ function ReposTab() {
       </div>
 
       {repos.length === 0 ? (
-        <p style={{ color: 'rgba(229,231,235,0.3)', fontSize: 13 }}>No data yet</p>
+        <p style={{ color: 'var(--holo-tx-fg-30)', fontSize: 13 }}>No data yet</p>
       ) : (
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr>
-              <th style={{ textAlign: 'left', padding: '6px 8px', fontSize: 11, fontWeight: 600, color: 'rgba(229,231,235,0.4)', textTransform: 'uppercase', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>Repository</th>
-              <th style={{ textAlign: 'left', padding: '6px 8px', fontSize: 11, fontWeight: 600, color: 'rgba(229,231,235,0.4)', textTransform: 'uppercase', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>Format</th>
-              <th style={{ textAlign: 'left', padding: '6px 8px', fontSize: 11, fontWeight: 600, color: 'rgba(229,231,235,0.4)', textTransform: 'uppercase', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>Type</th>
-              <th style={{ textAlign: 'right', padding: '6px 8px', fontSize: 11, fontWeight: 600, color: 'rgba(229,231,235,0.4)', textTransform: 'uppercase', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>Downloads</th>
-              <th style={{ textAlign: 'right', padding: '6px 8px', fontSize: 11, fontWeight: 600, color: 'rgba(229,231,235,0.4)', textTransform: 'uppercase', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>Storage Used</th>
+              <th style={{ textAlign: 'left', padding: '6px 8px', fontSize: 11, fontWeight: 600, color: 'var(--holo-tx-fg-40)', textTransform: 'uppercase', borderBottom: '1px solid rgba(var(--holo-ink-rgb), 0.08)' }}>Repository</th>
+              <th style={{ textAlign: 'left', padding: '6px 8px', fontSize: 11, fontWeight: 600, color: 'var(--holo-tx-fg-40)', textTransform: 'uppercase', borderBottom: '1px solid rgba(var(--holo-ink-rgb), 0.08)' }}>Format</th>
+              <th style={{ textAlign: 'left', padding: '6px 8px', fontSize: 11, fontWeight: 600, color: 'var(--holo-tx-fg-40)', textTransform: 'uppercase', borderBottom: '1px solid rgba(var(--holo-ink-rgb), 0.08)' }}>Type</th>
+              <th style={{ textAlign: 'right', padding: '6px 8px', fontSize: 11, fontWeight: 600, color: 'var(--holo-tx-fg-40)', textTransform: 'uppercase', borderBottom: '1px solid rgba(var(--holo-ink-rgb), 0.08)' }}>Downloads</th>
+              <th style={{ textAlign: 'right', padding: '6px 8px', fontSize: 11, fontWeight: 600, color: 'var(--holo-tx-fg-40)', textTransform: 'uppercase', borderBottom: '1px solid rgba(var(--holo-ink-rgb), 0.08)' }}>Storage Used</th>
             </tr>
           </thead>
           <tbody>
             {sorted.map(row => (
               <tr key={row.name}>
-                <td style={{ padding: '8px 8px', borderBottom: '1px solid rgba(255,255,255,0.05)', color: '#dbeafe' }}>{row.name}</td>
-                <td style={{ padding: '8px 8px', borderBottom: '1px solid rgba(255,255,255,0.05)', color: '#dbeafe' }}>{row.format.toUpperCase()}</td>
-                <td style={{ padding: '8px 8px', borderBottom: '1px solid rgba(255,255,255,0.05)', color: '#dbeafe' }}>
-                  <span style={{ background: 'rgba(59,130,246,0.15)', color: '#93c5fd', padding: '1px 6px', borderRadius: 4, fontSize: 11 }}>{row.type}</span>
+                <td style={{ padding: '8px 8px', borderBottom: '1px solid rgba(var(--holo-ink-rgb), 0.05)', color: 'var(--holo-c-blue-100)' }}>{row.name}</td>
+                <td style={{ padding: '8px 8px', borderBottom: '1px solid rgba(var(--holo-ink-rgb), 0.05)', color: 'var(--holo-c-blue-100)' }}>{row.format.toUpperCase()}</td>
+                <td style={{ padding: '8px 8px', borderBottom: '1px solid rgba(var(--holo-ink-rgb), 0.05)', color: 'var(--holo-c-blue-100)' }}>
+                  <span style={{ background: 'rgba(59,130,246,0.15)', color: 'var(--holo-c-blue-300)', padding: '1px 6px', borderRadius: 4, fontSize: 11 }}>{row.type}</span>
                 </td>
-                <td style={{ padding: '8px 8px', borderBottom: '1px solid rgba(255,255,255,0.05)', color: '#dbeafe', textAlign: 'right' }}>{fmtNum(row.downloads)}</td>
-                <td style={{ padding: '8px 8px', borderBottom: '1px solid rgba(255,255,255,0.05)', color: '#dbeafe', textAlign: 'right' }}>{fmtBytes(row.size_bytes)}</td>
+                <td style={{ padding: '8px 8px', borderBottom: '1px solid rgba(var(--holo-ink-rgb), 0.05)', color: 'var(--holo-c-blue-100)', textAlign: 'right' }}>{fmtNum(row.downloads)}</td>
+                <td style={{ padding: '8px 8px', borderBottom: '1px solid rgba(var(--holo-ink-rgb), 0.05)', color: 'var(--holo-c-blue-100)', textAlign: 'right' }}>{fmtBytes(row.size_bytes)}</td>
               </tr>
             ))}
           </tbody>
@@ -377,7 +378,7 @@ export function MonitoringView() {
   return (
     <div style={S.page}>
       {/* Tab bar */}
-      <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid rgba(255,255,255,0.08)', marginBottom: 4 }}>
+      <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid rgba(var(--holo-ink-rgb), 0.08)', marginBottom: 4 }}>
         {TABS.map(t => (
           <button
             key={t.id}
@@ -385,8 +386,8 @@ export function MonitoringView() {
             style={{
               background: 'none',
               border: 'none',
-              borderBottom: tab === t.id ? '2px solid #3b82f6' : '2px solid transparent',
-              color: tab === t.id ? '#dbeafe' : 'rgba(229,231,235,0.45)',
+              borderBottom: tab === t.id ? '2px solid var(--holo-c-blue)' : '2px solid transparent',
+              color: tab === t.id ? 'var(--holo-c-blue-100)' : 'var(--holo-tx-fg-45)',
               padding: '8px 16px',
               fontSize: 14,
               fontWeight: tab === t.id ? 600 : 400,

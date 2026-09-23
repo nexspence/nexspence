@@ -1,0 +1,285 @@
+/**
+ * Color themes.
+ *
+ * The UI ships two themes, picked by data-theme on <html> ("dark" | "light").
+ * Dark is the default and the reference: every token below resolves in dark to
+ * exactly the literal that used to be hardcoded, so the dark UI is unchanged.
+ * The light block overrides the same names.
+ *
+ * public/theme-init.js sets data-theme before the first paint; the toggle in the
+ * sidebar (components/ThemeToggle.tsx, state in theme/theme.ts) changes it later.
+ *
+ * Conventions for new code:
+ *  - white-on-dark overlays (hover fills, hairlines, zebra rows) are
+ *    rgba(var(--holo-ink-rgb), <alpha>) — ink turns dark in the light theme;
+ *  - text uses --holo-text / -dim / -faint, or a --holo-c-* color. The light
+ *    values of --holo-c-* are the darker shade that keeps 4.5:1 on a light
+ *    surface, so a --holo-c-* token is safe as text in both themes;
+ *  - translucent tints of a status color (rgba(239,68,68,0.1) backgrounds and
+ *    borders) read on both backgrounds and stay literal;
+ *  - a translucent version of a token is tint(color, alpha) from theme/color.ts,
+ *    never `color + '22'` (a var() reference cannot take a hex alpha suffix).
+ */
+
+:root {
+  color-scheme: dark;
+  --holo-ink-rgb: 255,255,255;
+
+  /* Palette: status and accent colors. Light values are darkened until text on a light surface reaches WCAG AA. */
+  --holo-c-amber: #f59e0b;
+  --holo-c-amber-200: #fde68a;
+  --holo-c-amber-400: #fbbf24;
+  --holo-c-blue: #3b82f6;
+  --holo-c-blue-100: #dbeafe;
+  --holo-c-blue-200: #bfdbfe;
+  --holo-c-blue-300: #93c5fd;
+  --holo-c-blue-400: #60a5fa;
+  --holo-c-blue-oci: #5b8def;
+  --holo-c-cyan: #06b6d4;
+  --holo-c-cyan-300: #67e8f9;
+  --holo-c-emerald: #10b981;
+  --holo-c-emerald-300: #6ee7b7;
+  --holo-c-fuchsia: #d946ef;
+  --holo-c-gray: #6b7280;
+  --holo-c-gray-400: #9ca3af;
+  --holo-c-green: #22c55e;
+  --holo-c-green-300: #86efac;
+  --holo-c-green-400: #4ade80;
+  --holo-c-green-conda: #44b765;
+  --holo-c-indigo-300: #a5b4fc;
+  --holo-c-navy: #1e3a5f;
+  --holo-c-navy-text: #1e3a5f; /* the same navy where it is (faint, decorative) text */
+  --holo-c-orange: #f97316;
+  --holo-c-orange-400: #fb923c;
+  --holo-c-red: #ef4444;
+  --holo-c-red-300: #fca5a5;
+  --holo-c-red-400: #f87171;
+  --holo-c-red-ruby: #e9573f;
+  --holo-c-sky: #0ea5e9;
+  --holo-c-slate-150: #dbe4f2;
+  --holo-c-slate-200: #e2e8f0;
+  --holo-c-slate-400: #94a3b8;
+  --holo-c-slate-500: #64748b;
+  --holo-c-slate-600: #475569;
+  --holo-c-slate-700: #334155;
+  --holo-c-violet-300: #c4b5fd;
+  --holo-c-violet-400: #a78bfa;
+  --holo-c-violet-500: #8b5cf6;
+  --holo-c-yellow: #ffd21e;
+  /* Surfaces */
+  --holo-surface-chip: #0a0f1a;
+  --holo-surface-code: #0a1120;
+  --holo-surface-float: rgba(10,8,28,0.97);
+  --holo-surface-float-2: rgba(8,6,18,0.95);
+  --holo-surface-panel: #0d1829;
+  --holo-surface-sidebar: rgba(8,6,18,0.6);
+  --holo-surface-sticky: #0c1018;
+  --holo-surface-tooltip: #0d1526;
+  /* Modal / wizard / scrim */
+  --holo-modal-from: rgba(20,16,40,0.95);
+  --holo-modal-to: rgba(10,8,20,0.95);
+  --holo-scrim: rgba(8,6,18,0.65);
+  --holo-wizard-from: rgba(14,12,35,0.99);
+  --holo-wizard-to: rgba(10,8,28,0.99);
+  /* Graph node fills (Security > privilege graph) */
+  --holo-graph-priv-fill: #1c1200;
+  --holo-graph-role-fill: #0c2340;
+  --holo-graph-sel-fill: #001c0c;
+  --holo-graph-user-fill: #1e1049;
+  /* Translucent text. Dark keeps the original alpha; light raises it, since faint text on a light surface drops below AA much sooner. */
+  --holo-tx-blue-300-50: rgba(147,197,253,0.5);
+  --holo-tx-blue-300-85: rgba(147,197,253,0.85);
+  --holo-tx-cyan-100: #22d3ee;
+  --holo-tx-cyan-45: rgba(34,211,238,0.45);
+  --holo-tx-cyan-80: rgba(34,211,238,0.8);
+  --holo-tx-cyan-95: rgba(34,211,238,0.95);
+  --holo-tx-fg-17: rgba(229,231,235,0.17);
+  --holo-tx-fg-28: rgba(229,231,235,0.28);
+  --holo-tx-fg-30: rgba(229,231,235,0.3);
+  --holo-tx-fg-35: rgba(229,231,235,0.35);
+  --holo-tx-fg-40: rgba(229,231,235,0.4);
+  --holo-tx-fg-45: rgba(229,231,235,0.45);
+  --holo-tx-fg-50: rgba(229,231,235,0.5);
+  --holo-tx-fg-70: rgba(229,231,235,0.7);
+  --holo-tx-fg-80: rgba(229,231,235,0.8);
+  --holo-tx-purple-40: rgba(124,92,255,0.4);
+  --holo-tx-purple-45: rgba(124,92,255,0.45);
+  --holo-tx-purple-60: rgba(124,92,255,0.6);
+  --holo-tx-purple-80: rgba(124,92,255,0.8);
+  --holo-tx-purple-90: rgba(124,92,255,0.9);
+  --holo-tx-red-65: rgba(239,68,68,0.65);
+  --holo-tx-red-70: rgba(239,68,68,0.7);
+  --holo-tx-red-90: rgba(239,68,68,0.9);
+  --holo-tx-violet-300-60: rgba(196,181,253,0.6);
+  --holo-tx-violet-soft-90: rgba(180,160,255,0.9);
+  /* Recessed wells (code, table heads) and shadows */
+  --holo-shadow-20: rgba(0,0,0,0.2);
+  --holo-shadow-28: rgba(0,0,0,0.28);
+  --holo-shadow-60: rgba(0,0,0,0.6);
+  --holo-shadow-70: rgba(0,0,0,0.7);
+  --holo-well-15: rgba(0,0,0,0.15);
+  --holo-well-20: rgba(0,0,0,0.2);
+  --holo-well-30: rgba(0,0,0,0.3);
+  --holo-well-35: rgba(0,0,0,0.35);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --holo-ink-rgb: 24,20,56;
+
+  /* index.css tokens */
+  --bg: #f4f3fa;
+  --panel: #ffffff;
+  --border: rgba(24,20,56,0.10);
+  --text: #1f2937;
+  --muted: rgba(31,41,55,0.70);
+  --brand: #2563eb;
+  --ok: #15803d;
+  --warn: #b45309;
+  --danger: #dc2626;
+  --shadow: 0 20px 60px rgba(40,30,90,0.12);
+
+  /* holo.css tokens */
+  --holo-bg:        #f5f4fb;
+  --holo-bg-2:      rgba(255,255,255,0.72);
+  --holo-bg-3:      rgba(24,20,56,0.05);
+  --holo-text:      #17142e;
+  --holo-text-dim:  rgba(23,20,46,0.72);
+  --holo-text-faint:rgba(23,20,46,0.62);
+
+  --holo-a:         #6a4cf0;
+  --holo-b:         #0e7490;
+  --holo-c:         #c026d3;
+  --holo-green:     #047857;
+  --holo-amber:     #a15c00;
+  --holo-red:       #c81e1e;
+
+  --holo-border:        #5b3cd2;
+  --holo-border-strong: #5b3cd2;
+  --holo-ring: 0 0 0 3px #5b3cd2;
+
+  /* Darker stops: the gradient doubles as heading text (.holo-text), and the
+     dark theme's cyan and magenta are unreadable on a light background. */
+  --holo-gradient: linear-gradient(110deg, #6a4cf0 0%, #0e7490 35%, #c026d3 70%, #6a4cf0 100%);
+
+  /* Palette: status and accent colors. */
+  --holo-c-amber: #b45309;
+  --holo-c-amber-200: #92400e;
+  --holo-c-amber-400: #b45309;
+  --holo-c-blue: #2563eb;
+  --holo-c-blue-100: #1e3a8a;
+  --holo-c-blue-200: #1e40af;
+  --holo-c-blue-300: #1d4ed8;
+  --holo-c-blue-400: #1d4ed8;
+  --holo-c-blue-oci: #2f5fcf;
+  --holo-c-cyan: #0e7490;
+  --holo-c-cyan-300: #0e7490;
+  --holo-c-emerald: #047857;
+  --holo-c-emerald-300: #047857;
+  --holo-c-fuchsia: #a21caf;
+  --holo-c-gray: #596070;
+  --holo-c-gray-400: #4b5563;
+  --holo-c-green: #15803d;
+  --holo-c-green-300: #15803d;
+  --holo-c-green-400: #15803d;
+  --holo-c-green-conda: #2f7d46;
+  --holo-c-indigo-300: #4338ca;
+  --holo-c-navy: #c3cde0;
+  --holo-c-navy-text: #636e80;
+  --holo-c-orange: #c2410c;
+  --holo-c-orange-400: #c2410c;
+  --holo-c-red: #c62828;
+  --holo-c-red-300: #b91c1c;
+  --holo-c-red-400: #c62828;
+  --holo-c-red-ruby: #c0392b;
+  --holo-c-sky: #0369a1;
+  --holo-c-slate-150: #1e293b;
+  --holo-c-slate-200: #1e293b;
+  --holo-c-slate-400: #475569;
+  --holo-c-slate-500: #4b5768;
+  --holo-c-slate-600: #5b6778;
+  --holo-c-slate-700: #636e80;
+  --holo-c-violet-300: #5b21b6;
+  --holo-c-violet-400: #6d28d9;
+  --holo-c-violet-500: #6d28d9;
+  --holo-c-yellow: #a16207;
+  /* Surfaces */
+  --holo-surface-chip: #f4f3fa;
+  --holo-surface-code: #f1f5f9;
+  --holo-surface-float: rgba(255,255,255,0.98);
+  --holo-surface-float-2: rgba(255,255,255,0.97);
+  --holo-surface-panel: #ffffff;
+  --holo-surface-sidebar: rgba(255,255,255,0.72);
+  --holo-surface-sticky: #eeedf6;
+  --holo-surface-tooltip: #ffffff;
+  /* Modal / wizard / scrim */
+  --holo-modal-from: rgba(255,255,255,0.99);
+  --holo-modal-to: rgba(247,245,255,0.99);
+  --holo-scrim: rgba(30,24,70,0.28);
+  --holo-wizard-from: #ffffff;
+  --holo-wizard-to: #f7f5ff;
+  /* Graph node fills (Security > privilege graph) */
+  --holo-graph-priv-fill: #fef3c7;
+  --holo-graph-role-fill: #dbeafe;
+  --holo-graph-sel-fill: #dcfce7;
+  --holo-graph-user-fill: #ede9fe;
+  /* Translucent text. */
+  --holo-tx-blue-300-50: #1d4ed8;
+  --holo-tx-blue-300-85: #1d4ed8;
+  --holo-tx-cyan-100: #0e7490;
+  --holo-tx-cyan-45: #0e7490;
+  --holo-tx-cyan-80: #0e7490;
+  --holo-tx-cyan-95: #0e7490;
+  --holo-tx-fg-17: rgba(23,20,46,0.62);
+  --holo-tx-fg-28: rgba(23,20,46,0.62);
+  --holo-tx-fg-30: rgba(23,20,46,0.62);
+  --holo-tx-fg-35: rgba(23,20,46,0.65);
+  --holo-tx-fg-40: rgba(23,20,46,0.67);
+  --holo-tx-fg-45: rgba(23,20,46,0.7);
+  --holo-tx-fg-50: rgba(23,20,46,0.72);
+  --holo-tx-fg-70: rgba(23,20,46,0.82);
+  --holo-tx-fg-80: rgba(23,20,46,0.87);
+  --holo-tx-purple-40: #5b3cd2;
+  --holo-tx-purple-45: #5b3cd2;
+  --holo-tx-purple-60: #5b3cd2;
+  --holo-tx-purple-80: #5b3cd2;
+  --holo-tx-purple-90: #5b3cd2;
+  --holo-tx-red-65: #b91c1c;
+  --holo-tx-red-70: #b91c1c;
+  --holo-tx-red-90: #b91c1c;
+  --holo-tx-violet-300-60: #5b21b6;
+  --holo-tx-violet-soft-90: #5b3cd2;
+  /* Recessed wells (code, table heads) and shadows */
+  --holo-shadow-20: rgba(40,30,90,0.06);
+  --holo-shadow-28: rgba(40,30,90,0.084);
+  --holo-shadow-60: rgba(40,30,90,0.18);
+  --holo-shadow-70: rgba(40,30,90,0.21);
+  --holo-well-15: rgba(30,24,70,0.04);
+  --holo-well-20: rgba(30,24,70,0.05);
+  --holo-well-30: rgba(30,24,70,0.07);
+  --holo-well-35: rgba(30,24,70,0.08);
+}
+
+/* ── Light-theme adjustments that are not a token swap ─────────────────── */
+
+:root[data-theme="light"] body {
+  background:
+    radial-gradient(1200px 800px at 15% 10%, rgba(59, 130, 246, 0.07), transparent 55%),
+    radial-gradient(900px 600px at 85% 15%, rgba(96, 165, 250, 0.06), transparent 50%),
+    var(--bg);
+}
+
+/* The glow behind the app shell is tuned for a near-black page; on a light one
+   at full strength it tints everything purple. The scanlines go entirely. */
+:root[data-theme="light"] .holo-app::before { opacity: 0.35; }
+:root[data-theme="light"] .holo-app::after  { display: none; }
+
+/* Glass cards lose their edge against a light page without a hint of depth. */
+:root[data-theme="light"] .holo-card {
+  border-color: rgba(24,20,56,0.08);
+  box-shadow: 0 1px 2px rgba(40,30,90,0.04), 0 4px 16px rgba(40,30,90,0.04);
+}
+
+:root[data-theme="light"] .holo-input { background: #ffffff; border-color: rgba(24,20,56,0.16); }
+
+:root[data-theme="light"] .holo-table tbody tr:hover { background: #5b3cd2; }

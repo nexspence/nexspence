@@ -38,7 +38,7 @@
 }
 
 .table {
-  background: rgba(255,255,255,0.02);
+  background: rgba(var(--holo-ink-rgb), 0.02);
   border: 1px solid var(--holo-border);
   border-radius: 12px;
   overflow: hidden;
@@ -48,7 +48,7 @@
   display: grid;
   grid-template-columns: 160px 140px 200px 1fr 90px 80px 44px;
   padding: 10px 16px;
-  background: rgba(255,255,255,0.03);
+  background: rgba(var(--holo-ink-rgb), 0.03);
   border-bottom: 1px solid var(--holo-border);
   font-size: 11px;
   font-weight: 600;
@@ -61,7 +61,7 @@
   display: grid;
   grid-template-columns: 160px 140px 200px 1fr 90px 80px 44px;
   padding: 12px 16px;
-  border-bottom: 1px solid rgba(255,255,255,0.04);
+  border-bottom: 1px solid rgba(var(--holo-ink-rgb), 0.04);
   align-items: center;
   transition: background 0.1s;
 }

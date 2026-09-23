@@ -12,7 +12,7 @@
 
 .sidebar {
   height: 100vh;
-  background: rgba(8,6,18,0.6);
+  background: var(--holo-surface-sidebar);
   backdrop-filter: blur(30px);
   border-right: 1px solid rgba(124,92,255,0.15);
   padding: 14px 12px;
@@ -33,7 +33,7 @@
   flex-direction: column;
   gap: 10px;
   scrollbar-width: thin;
-  scrollbar-color: #3b82f6 rgba(255,255,255,0.03);
+  scrollbar-color: var(--holo-c-blue) rgba(var(--holo-ink-rgb), 0.03);
 }
 
 .root.collapsed .sidebar {
@@ -110,7 +110,7 @@
 }
 
 .sectionLabelDocs {
-  color: rgba(34,211,238,0.45);
+  color: var(--holo-tx-cyan-45);
 }
 
 .nav {
@@ -155,7 +155,7 @@
 }
 
 .navBtn:hover {
-  background: rgba(255,255,255,0.04);
+  background: rgba(var(--holo-ink-rgb), 0.04);
   color: var(--holo-text);
 }
 
@@ -169,18 +169,18 @@
 .navBtnDocs {
   background: rgba(34,211,238,0.04);
   border-color: rgba(34,211,238,0.12);
-  color: rgba(34,211,238,0.8);
+  color: var(--holo-tx-cyan-80);
 }
 
 .navBtnDocs:hover {
   background: rgba(34,211,238,0.08);
-  color: rgba(34,211,238,0.95);
+  color: var(--holo-tx-cyan-95);
 }
 
 .navBtnDocs.active {
   background: rgba(34,211,238,0.12);
   border-color: rgba(34,211,238,0.35);
-  color: rgba(34,211,238,1);
+  color: var(--holo-tx-cyan-100);
 }
 
 .divider {
@@ -206,7 +206,7 @@
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #7c5cff, #22d3ee);
+  background: linear-gradient(135deg, var(--holo-a), var(--holo-b));
   border: none;
   display: flex;
   align-items: center;
@@ -242,7 +242,7 @@
 
 .commandBarUserRole {
   font-size: 9px;
-  color: rgba(124,92,255,0.9);
+  color: var(--holo-tx-purple-90);
   display: block;
 }
 
@@ -261,32 +261,75 @@
   max-width: 28px;
   border-radius: 50%;
   border: none;
-  background: rgba(255,255,255,0.05);
+  background: rgba(var(--holo-ink-rgb), 0.05);
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
   cursor: pointer;
-  color: rgba(229,231,235,0.4);
+  color: var(--holo-tx-fg-40);
   transition: color 0.15s, background 0.15s, opacity 0.15s, max-width 0.15s;
 }
 
 .commandBarAction:hover {
-  color: rgba(229,231,235,0.8);
-  background: rgba(255,255,255,0.12);
+  color: var(--holo-tx-fg-80);
+  background: rgba(var(--holo-ink-rgb), 0.12);
 }
 
 .commandBarActionDanger {
   background: rgba(239,68,68,0.08);
-  color: rgba(239,68,68,0.65);
+  color: var(--holo-tx-red-65);
 }
 
 .commandBarActionDanger:hover {
   background: rgba(239,68,68,0.18);
-  color: rgba(239,68,68,0.9);
+  color: var(--holo-tx-red-90);
+}
+
+/* Theme toggle + collapse button. Side by side when expanded; stacked in the
+   48px collapsed rail, where they would not fit next to each other. */
+.footerRow {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.root.collapsed .footerRow {
+  flex-direction: column;
+}
+
+.themeToggle {
+  width: 34px;
+  height: 26px;
+  border-radius: 8px;
+  border: 1px solid rgba(124,92,255,0.15);
+  background: rgba(124,92,255,0.04);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--holo-tx-purple-80);
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.root.collapsed .themeToggle {
+  width: 100%;
+}
+
+.themeToggle:hover {
+  background: rgba(124,92,255,0.10);
+  border-color: rgba(124,92,255,0.3);
+}
+
+.themeToggle:focus-visible {
+  outline: 2px solid var(--holo-c-blue);
+  outline-offset: 2px;
 }
 
 .collapseButton {
+  flex: 1;
+  min-width: 0;
   width: 100%;
   height: 26px;
   border-radius: 8px;
@@ -296,19 +339,19 @@
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  color: rgba(124,92,255,0.45);
+  color: var(--holo-tx-purple-45);
   flex-shrink: 0;
   transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
 
 .collapseButton:hover {
   background: rgba(124,92,255,0.10);
-  color: rgba(124,92,255,0.8);
+  color: var(--holo-tx-purple-80);
   border-color: rgba(124,92,255,0.3);
 }
 
 .collapseButton:focus-visible {
-  outline: 2px solid #3b82f6;
+  outline: 2px solid var(--holo-c-blue);
   outline-offset: 2px;
 }
 
@@ -316,7 +359,7 @@
 .version {
   text-align: center;
   font-size: 8px;
-  color: rgba(229,231,235,0.17);
+  color: var(--holo-tx-fg-17);
   padding: 3px 0 2px;
   overflow: hidden;
   max-height: 20px;
@@ -343,8 +386,8 @@
   left: -999em;
   top: -999em;
   z-index: 200;
-  background: #1e3a5f;
-  color: #e2e8f0;
+  background: var(--holo-c-navy);
+  color: var(--holo-c-slate-200);
   padding: 0.5rem 1rem;
   border-radius: 6px;
   text-decoration: none;
@@ -357,6 +400,6 @@
 
 .navBtn:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 2px #3b82f6;
+  box-shadow: 0 0 0 2px var(--holo-c-blue);
   border-radius: 8px;
 }

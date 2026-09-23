@@ -15,6 +15,7 @@ import logo from '@/assets/logo.png'
 import miniLogo from '@/assets/mini_logo.png'
 import { HoloApp, HoloModal, HoloButton, HoloInput } from '@/components/holo'
 import { Truncated } from '@/components/Truncated'
+import { ThemeToggle } from '@/components/ThemeToggle'
 
 const navItems = [
   { to: '/repositories', icon: Home,       label: 'Repositories' },
@@ -132,7 +133,7 @@ function ProfileModal({ onClose }: { onClose: () => void }) {
     header:    { display: 'flex', alignItems: 'center', justifyContent: 'space-between' },
     title:     { fontSize: 16, fontWeight: 700, color: 'var(--holo-text)', display: 'flex', alignItems: 'center', gap: 8 },
     tokenList: { maxHeight: 240, overflowY: 'auto' as const, display: 'flex', flexDirection: 'column' as const },
-    row:       { display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.06)', minWidth: 0 },
+    row:       { display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 0', borderBottom: '1px solid rgba(var(--holo-ink-rgb), 0.06)', minWidth: 0 },
     rowMeta:   { flex: 1, minWidth: 0 },
     rowName:   { fontWeight: 600, fontSize: 13, color: 'var(--holo-text)' },
     rowDates:  { fontSize: 11, color: 'var(--holo-text-dim)', marginTop: 2, lineHeight: 1.4 },
@@ -186,7 +187,7 @@ function ProfileModal({ onClose }: { onClose: () => void }) {
                 icon={<Plus size={14} />}
                 onClick={create}
                 disabled={creating || !name.trim() || !!expiryError}
-                style={{ background: 'rgba(59,130,246,0.15)', borderColor: 'rgba(59,130,246,0.4)', color: '#60a5fa', whiteSpace: 'nowrap' }}
+                style={{ background: 'rgba(59,130,246,0.15)', borderColor: 'rgba(59,130,246,0.4)', color: 'var(--holo-c-blue-400)', whiteSpace: 'nowrap' }}
               >
                 {creating ? 'Creating…' : 'Create token'}
               </HoloButton>
@@ -205,7 +206,7 @@ function ProfileModal({ onClose }: { onClose: () => void }) {
             <div style={{ fontSize: 13, color: 'var(--holo-green)', fontWeight: 600, marginBottom: 8 }}>
               Token created — copy it now, it won't be shown again
             </div>
-            <code style={{ ...S.mono, fontSize: 12, background: 'rgba(0,0,0,0.3)', padding: '8px 12px', borderRadius: 8, display: 'block', wordBreak: 'break-all' as const, color: 'var(--holo-a)' }}>
+            <code style={{ ...S.mono, fontSize: 12, background: 'var(--holo-well-30)', padding: '8px 12px', borderRadius: 8, display: 'block', wordBreak: 'break-all' as const, color: 'var(--holo-a)' }}>
               {newToken.token}
             </code>
             <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
@@ -213,7 +214,7 @@ function ProfileModal({ onClose }: { onClose: () => void }) {
                 variant="primary"
                 icon={copied ? <Check size={14} /> : <Copy size={14} />}
                 onClick={copyToken}
-                style={copied ? { background: 'rgba(34,211,238,0.2)', borderColor: 'rgba(34,211,238,0.4)', color: '#22d3ee' } : undefined}
+                style={copied ? { background: 'rgba(34,211,238,0.2)', borderColor: 'rgba(34,211,238,0.4)', color: 'var(--holo-b)' } : undefined}
               >
                 {copied ? 'Copied!' : 'Copy'}
               </HoloButton>
@@ -444,13 +445,16 @@ export default function Layout() {
           </div>
         )}
         <span className={styles.version}>Nexspence v{systemInfo?.version ?? '…'}</span>
-        <button
-          className={styles.collapseButton}
-          onClick={toggleCollapse}
-          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        >
-          {collapsed ? <ChevronRight size={13} /> : <ChevronLeft size={13} />}
-        </button>
+        <div className={styles.footerRow}>
+          <ThemeToggle className={styles.themeToggle} />
+          <button
+            className={styles.collapseButton}
+            onClick={toggleCollapse}
+            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          >
+            {collapsed ? <ChevronRight size={13} /> : <ChevronLeft size={13} />}
+          </button>
+        </div>
       </aside>
 
       <main id="main-content" className={styles.main}>

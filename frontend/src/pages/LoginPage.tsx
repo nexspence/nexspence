@@ -4,6 +4,7 @@ import { KeyRound } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
 import { nexusApi, type AuthConfig } from '@/api/client'
 import { HoloApp, HoloButton, HoloInput } from '@/components/holo'
+import { ThemeToggle } from '@/components/ThemeToggle'
 import styles from './LoginPage.module.css'
 import logo from '@/assets/logo.png'
 
@@ -57,6 +58,7 @@ export default function LoginPage() {
   return (
     <HoloApp>
     <div className={styles.container}>
+      <ThemeToggle className={styles.themeToggle} size={15} />
       <div className={styles.card}>
         <div className={styles.logo}>
           <img src={logo} alt="Nexspence" className={styles.logoImg} />

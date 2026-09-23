@@ -9,6 +9,7 @@ import styles from './RepositoriesPage.module.css'
 import { Select } from '../components/Select'
 import { HoloButton, HoloInput, HoloPill, HoloModal, Wizard } from '@/components/holo'
 import { Truncated } from '@/components/Truncated'
+import { tint } from '@/theme/color'
 
 interface Repository {
   id: string
@@ -57,23 +58,23 @@ function cleanupPoliciesForFormat(policies: CleanupPolicyRow[], format: string) 
 }
 
 const FORMAT_COLORS: Record<string, string> = {
-  maven2:    '#f97316',
-  npm:       '#ef4444',
-  docker:    '#3b82f6',
-  oci:       '#5b8def',
-  pypi:      '#a78bfa',
-  go:        '#06b6d4',
-  nuget:     '#8b5cf6',
-  helm:      '#0ea5e9',
-  raw:       '#6b7280',
-  apt:       '#f59e0b',
-  yum:       '#10b981',
-  conda:     '#44b765',
-  rubygems:  '#e9573f',
+  maven2:    'var(--holo-c-orange)',
+  npm:       'var(--holo-c-red)',
+  docker:    'var(--holo-c-blue)',
+  oci:       'var(--holo-c-blue-oci)',
+  pypi:      'var(--holo-c-violet-400)',
+  go:        'var(--holo-c-cyan)',
+  nuget:     'var(--holo-c-violet-500)',
+  helm:      'var(--holo-c-sky)',
+  raw:       'var(--holo-c-gray)',
+  apt:       'var(--holo-c-amber)',
+  yum:       'var(--holo-c-emerald)',
+  conda:     'var(--holo-c-green-conda)',
+  rubygems:  'var(--holo-c-red-ruby)',
   terraform: '#7b42bc',
   cran:      '#276dc3',
   alpine:    '#0d597f',
-  huggingface: '#ffd21e',
+  huggingface: 'var(--holo-c-yellow)',
 }
 
 const TYPE_LABELS: Record<string, string> = {
@@ -155,7 +156,7 @@ export default function RepositoriesPage() {
         <div className="holo-section-label" style={{ marginBottom: 4 }}>WORKSPACE / REPOSITORIES</div>
         <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16 }}>
           <div>
-            <h1 style={{ fontSize: 20, fontWeight: 700, margin: '0 0 3px', letterSpacing: '-0.01em', lineHeight: 1.2, background: 'linear-gradient(110deg, #7c5cff, #22d3ee 60%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' as const }}>Repositories</h1>
+            <h1 style={{ fontSize: 20, fontWeight: 700, margin: '0 0 3px', letterSpacing: '-0.01em', lineHeight: 1.2, background: 'linear-gradient(110deg, var(--holo-a), var(--holo-b) 60%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' as const }}>Repositories</h1>
             <p style={{ fontSize: 12, color: 'var(--holo-text-faint)', margin: 0 }}>{repos.length} total</p>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -206,7 +207,7 @@ export default function RepositoriesPage() {
       ) : isError ? (
         <div className={styles.empty}>
           <Database size={40} className={styles.emptyIcon} />
-          <p style={{ color: '#ef4444', marginBottom: 8 }}>Error loading repositories</p>
+          <p style={{ color: 'var(--holo-c-red)', marginBottom: 8 }}>Error loading repositories</p>
           <p style={{ fontSize: 13, color: 'var(--holo-text-dim)', marginBottom: 16 }}>
             {error instanceof Error ? error.message : 'Unable to access repositories. Check your permissions or contact your administrator.'}
           </p>
@@ -342,15 +343,15 @@ function RepoRow({
     }}>
       <span style={{
         width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
-        background: repo.online ? 'var(--holo-green)' : 'rgba(255,255,255,0.2)',
+        background: repo.online ? 'var(--holo-green)' : 'rgba(var(--holo-ink-rgb), 0.2)',
         boxShadow: repo.online ? '0 0 5px var(--holo-green)' : 'none',
         display: 'inline-block',
       }} />
       <span style={{
         fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 4,
         textTransform: 'uppercase' as const, letterSpacing: '0.3px',
-        background: (FORMAT_COLORS[repo.format] ?? '#6b7280') + '22',
-        color: FORMAT_COLORS[repo.format] ?? '#6b7280',
+        background: tint(FORMAT_COLORS[repo.format] ?? 'var(--holo-c-gray)', 0.133),
+        color: FORMAT_COLORS[repo.format] ?? 'var(--holo-c-gray)',
         whiteSpace: 'nowrap' as const,
       }}>
         {repo.format}
@@ -383,7 +384,7 @@ function RepoRow({
           borderRadius: 10,
           background: 'rgba(59,130,246,0.15)',
           border: '1px solid rgba(59,130,246,0.3)',
-          color: '#60a5fa',
+          color: 'var(--holo-c-blue-400)',
         }}>
           ⟳ migrating
         </span>
@@ -393,7 +394,7 @@ function RepoRow({
           {quota ? formatBytes(quota.usedBytes) : '—'}
         </div>
         {quota?.quotaBytes != null && (
-          <div style={{ height: 3, background: 'rgba(255,255,255,0.08)', borderRadius: 2, overflow: 'hidden', marginTop: 3 }}>
+          <div style={{ height: 3, background: 'rgba(var(--holo-ink-rgb), 0.08)', borderRadius: 2, overflow: 'hidden', marginTop: 3 }}>
             <div style={{
               height: '100%', borderRadius: 2,
               width: `${Math.min(pct ?? 0, 100)}%`,
@@ -1314,7 +1315,7 @@ function EditRepoModal({
               onChange={setBlobStoreId}
             />
             {storeChanged ? (
-              <span className={styles.hint} style={{ color: '#f59e0b' }}>
+              <span className={styles.hint} style={{ color: 'var(--holo-c-amber)' }}>
                 ⚠ Existing artifacts stay on the original store. Only future uploads land on the new one.
               </span>
             ) : (
@@ -1338,7 +1339,7 @@ function EditRepoModal({
                   {migrLoading ? 'Starting…' : 'Migrate Content'}
                 </button>
                 {migrError && (
-                  <p role="alert" style={{ color: '#ef4444', fontSize: 12, marginTop: 4 }}>{migrError}</p>
+                  <p role="alert" style={{ color: 'var(--holo-c-red)', fontSize: 12, marginTop: 4 }}>{migrError}</p>
                 )}
               </div>
             )}
@@ -1352,7 +1353,7 @@ function EditRepoModal({
                 borderRadius: 8,
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                  <span style={{ fontSize: 12, color: '#94a3b8' }}>
+                  <span style={{ fontSize: 12, color: 'var(--holo-c-slate-400)' }}>
                     {migration.status === 'running' || migration.status === 'pending'
                       ? 'Migrating content…'
                       : migration.status === 'cancelled' ? 'Migration cancelled'
@@ -1371,15 +1372,15 @@ function EditRepoModal({
                 </div>
                 {migration.totalAssets > 0 && (
                   <>
-                    <div style={{ height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.1)', overflow: 'hidden', marginBottom: 4 }}>
+                    <div style={{ height: 4, borderRadius: 2, background: 'rgba(var(--holo-ink-rgb), 0.1)', overflow: 'hidden', marginBottom: 4 }}>
                       <div style={{
                         height: '100%',
                         width: `${Math.round((migration.doneAssets / migration.totalAssets) * 100)}%`,
-                        background: migration.status === 'failed' ? '#ef4444' : '#3b82f6',
+                        background: migration.status === 'failed' ? 'var(--holo-c-red)' : 'var(--holo-c-blue)',
                         transition: 'width 0.3s ease',
                       }} />
                     </div>
-                    <div style={{ fontSize: 11, color: '#64748b' }}>
+                    <div style={{ fontSize: 11, color: 'var(--holo-c-slate-500)' }}>
                       {migration.doneAssets} / {migration.totalAssets} assets · {formatBytes(migration.doneBytes)} / {formatBytes(migration.totalBytes)}
                     </div>
                   </>
@@ -1387,7 +1388,7 @@ function EditRepoModal({
               </div>
             )}
             {migration?.status === 'done' && (
-              <div style={{ marginTop: 8, fontSize: 12, color: '#22c55e' }}>
+              <div style={{ marginTop: 8, fontSize: 12, color: 'var(--holo-c-green)' }}>
                 ✓ Migration complete — content is now on the new store
               </div>
             )}

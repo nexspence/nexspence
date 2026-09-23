@@ -44,8 +44,8 @@ export default function OIDCCallbackPage() {
         alignItems: 'center',
         justifyContent: 'center',
         minHeight: '100vh',
-        color: '#dbe4f2',
-        background: '#070b14',
+        color: 'var(--holo-c-slate-150)',
+        background: 'var(--bg)',
       }}
     >
       Finishing sign-in…

@@ -7,14 +7,14 @@ import { type MigrationJob, shouldPollJobs } from './migrationJobs'
 import { MigrationRepoPicker, isBlobSourceRepo, scopedRepoSelection, validateMigrationRepoScope, type PreviewRepo } from './MigrationRepoPicker'
 
 const STATUS_STYLE: Record<string, { bg: string; color: string }> = {
-  pending:   { bg: 'rgba(245,158,11,0.15)',  color: '#f59e0b' },
-  running:   { bg: 'rgba(59,130,246,0.15)',  color: '#3b82f6' },
-  paused:    { bg: 'rgba(107,114,128,0.15)', color: '#9ca3af' },
-  done:      { bg: 'rgba(34,197,94,0.15)',   color: '#22c55e' },
-  error:     { bg: 'rgba(239,68,68,0.15)',   color: '#ef4444' },
+  pending:   { bg: 'rgba(245,158,11,0.15)',  color: 'var(--holo-c-amber)' },
+  running:   { bg: 'rgba(59,130,246,0.15)',  color: 'var(--holo-c-blue)' },
+  paused:    { bg: 'rgba(107,114,128,0.15)', color: 'var(--holo-c-gray-400)' },
+  done:      { bg: 'rgba(34,197,94,0.15)',   color: 'var(--holo-c-green)' },
+  error:     { bg: 'rgba(239,68,68,0.15)',   color: 'var(--holo-c-red)' },
   // Kept for jobs recorded by older builds, which used these two labels.
-  completed: { bg: 'rgba(34,197,94,0.15)',   color: '#22c55e' },
-  failed:    { bg: 'rgba(239,68,68,0.15)',   color: '#ef4444' },
+  completed: { bg: 'rgba(34,197,94,0.15)',   color: 'var(--holo-c-green)' },
+  failed:    { bg: 'rgba(239,68,68,0.15)',   color: 'var(--holo-c-red)' },
 }
 
 export default function MigrationPage() {
@@ -41,7 +41,7 @@ export default function MigrationPage() {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
         <div>
           <div className="holo-section-label" style={{ marginBottom: 4 }}>ADMINISTRATION / MIGRATION</div>
-          <h1 style={{ fontSize: 20, fontWeight: 700, margin: '0 0 3px', letterSpacing: '-0.01em', lineHeight: 1.2, background: 'linear-gradient(110deg, #7c5cff, #22d3ee 60%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' as const }}>Migration from Nexus</h1>
+          <h1 style={{ fontSize: 20, fontWeight: 700, margin: '0 0 3px', letterSpacing: '-0.01em', lineHeight: 1.2, background: 'linear-gradient(110deg, var(--holo-a), var(--holo-b) 60%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' as const }}>Migration from Nexus</h1>
           <p style={{ fontSize: 12, color: 'var(--holo-text-faint)', margin: 0 }}>
             Import repositories, users, and artifacts from a live Nexus instance
           </p>
@@ -52,7 +52,7 @@ export default function MigrationPage() {
         </div>
       </div>
 
-      <div style={{ background: 'rgba(124,92,255,0.08)', border: '1px solid rgba(124,92,255,0.2)', borderRadius: 10, padding: '12px 16px', fontSize: 13, color: 'rgba(180,160,255,0.9)', lineHeight: 1.6 }}>
+      <div style={{ background: 'rgba(124,92,255,0.08)', border: '1px solid rgba(124,92,255,0.2)', borderRadius: 10, padding: '12px 16px', fontSize: 13, color: 'var(--holo-tx-violet-soft-90)', lineHeight: 1.6 }}>
         <strong>How it works:</strong> Nexspence connects to your Nexus instance via its REST API and
         streams repositories, users, roles and artifacts directly — no downtime required.
         Test the connection, then pick one or several repositories. Artifacts copy into hosted
@@ -85,28 +85,28 @@ export default function MigrationPage() {
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
-                  <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 8, padding: '10px 12px' }}>
+                  <div style={{ background: 'rgba(var(--holo-ink-rgb), 0.02)', borderRadius: 8, padding: '10px 12px' }}>
                     <div style={{ fontSize: 11, color: 'var(--holo-text-faint)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Repositories</div>
                     <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--holo-text)' }}>{job.repositoriesDone}<span style={{ fontSize: 13, color: 'var(--holo-text-faint)', fontWeight: 400 }}>/{job.repositoriesTotal || '?'}</span></div>
-                    <div style={{ height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.08)', overflow: 'hidden', marginTop: 6 }}>
+                    <div style={{ height: 4, borderRadius: 2, background: 'rgba(var(--holo-ink-rgb), 0.08)', overflow: 'hidden', marginTop: 6 }}>
                       <div style={{ height: '100%', width: reposPct + '%', background: 'var(--holo-a)', transition: 'width 0.4s' }} />
                     </div>
                   </div>
-                  <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 8, padding: '10px 12px' }}>
+                  <div style={{ background: 'rgba(var(--holo-ink-rgb), 0.02)', borderRadius: 8, padding: '10px 12px' }}>
                     <div style={{ fontSize: 11, color: 'var(--holo-text-faint)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Assets</div>
                     <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--holo-text)' }}>{job.assetsDone}<span style={{ fontSize: 13, color: 'var(--holo-text-faint)', fontWeight: 400 }}>/{job.assetsTotal || '?'}</span></div>
-                    <div style={{ height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.08)', overflow: 'hidden', marginTop: 6 }}>
-                      <div style={{ height: '100%', width: assetsPct + '%', background: '#22c55e', transition: 'width 0.4s' }} />
+                    <div style={{ height: 4, borderRadius: 2, background: 'rgba(var(--holo-ink-rgb), 0.08)', overflow: 'hidden', marginTop: 6 }}>
+                      <div style={{ height: '100%', width: assetsPct + '%', background: 'var(--holo-c-green)', transition: 'width 0.4s' }} />
                     </div>
                   </div>
-                  <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 8, padding: '10px 12px' }}>
+                  <div style={{ background: 'rgba(var(--holo-ink-rgb), 0.02)', borderRadius: 8, padding: '10px 12px' }}>
                     <div style={{ fontSize: 11, color: 'var(--holo-text-faint)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Errors</div>
-                    <div style={{ fontSize: 18, fontWeight: 700, color: job.errorCount > 0 ? '#ef4444' : '#22c55e' }}>{job.errorCount}</div>
+                    <div style={{ fontSize: 18, fontWeight: 700, color: job.errorCount > 0 ? 'var(--holo-c-red)' : 'var(--holo-c-green)' }}>{job.errorCount}</div>
                   </div>
                 </div>
 
                 {job.lastError && (
-                  <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 8, padding: '8px 12px', fontSize: 12, color: '#fca5a5', wordBreak: 'break-word' }}>
+                  <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 8, padding: '8px 12px', fontSize: 12, color: 'var(--holo-c-red-300)', wordBreak: 'break-word' }}>
                     {job.lastError}
                   </div>
                 )}
@@ -281,7 +281,7 @@ function CreateMigrationModal({ onClose, onCreated }: { onClose: () => void; onC
         </div>
 
         {preview && (
-          <div style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.25)', borderRadius: 8, padding: '10px 12px', color: '#86efac', fontSize: 13 }}>
+          <div style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.25)', borderRadius: 8, padding: '10px 12px', color: 'var(--holo-c-green-300)', fontSize: 13 }}>
             <div style={{ fontWeight: 600 }}>
               Connected — {preview.repoCount} {preview.repoCount === 1 ? 'repository' : 'repositories'} found
             </div>
@@ -293,7 +293,7 @@ function CreateMigrationModal({ onClose, onCreated }: { onClose: () => void; onC
           </div>
         )}
         {previewError && (
-          <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 8, padding: '10px 12px', color: '#fca5a5', fontSize: 13, wordBreak: 'break-word' }}>
+          <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 8, padding: '10px 12px', color: 'var(--holo-c-red-300)', fontSize: 13, wordBreak: 'break-word' }}>
             {previewError}
           </div>
         )}
@@ -334,7 +334,7 @@ function CreateMigrationModal({ onClose, onCreated }: { onClose: () => void; onC
             </span>
           </div>
         )}
-        {error && <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 8, padding: '10px 12px', color: '#fca5a5', fontSize: 13 }}>{error}</div>}
+        {error && <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 8, padding: '10px 12px', color: 'var(--holo-c-red-300)', fontSize: 13 }}>{error}</div>}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 8 }}>
           <HoloButton type="button" onClick={onClose}>Cancel</HoloButton>
           <HoloButton type="submit" variant="primary" disabled={loading || !preview}>{loading ? 'Starting…' : 'Start Migration'}</HoloButton>
