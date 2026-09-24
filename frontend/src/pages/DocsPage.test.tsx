@@ -147,7 +147,7 @@ describe('DocsPage', () => {
     const user = userEvent.setup()
     renderWithProviders(<DocsPage />)
     await user.click(screen.getByRole('button', { name: 'Apt / Debian' }))
-    expect(screen.getByText(/Replace "focal main" with your distribution/)).toBeInTheDocument()
+    expect(screen.getByText(/Replace "focal" with your distribution codename.*The component is always "main"/)).toBeInTheDocument()
     // Labeled code blocks appear in the apt install section.
     expect(screen.getByText('Using apt-get:')).toBeInTheDocument()
   })

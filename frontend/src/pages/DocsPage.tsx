@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
 import { BookOpen, Check, Copy } from 'lucide-react'
 import styles from './DocsPage.module.css'
+import { CodeBlock } from '@/components/CodeBlock'
+import { cargo, docker, helm, maven, npm, nuget, pypi } from '@/setup/snippets'
 
 interface CodeExample { label?: string; lang: string; content: string }
 interface FormatSection { title: string; text?: string; note?: string; codes: CodeExample[] }
@@ -19,33 +21,6 @@ interface StepProps {
   screenshot?: { src: string; alt: string; caption?: string }
   code?: { lang: string; content: string }
   note?: string
-}
-
-function CodeBlock({ lang, content }: { lang: string; content: string }) {
-  const [copied, setCopied] = useState(false)
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current) }, [])
-  const copy = () => {
-    void navigator.clipboard.writeText(content).then(() => {
-      setCopied(true)
-      if (timerRef.current) clearTimeout(timerRef.current)
-      timerRef.current = setTimeout(() => setCopied(false), 2000)
-    })
-  }
-  return (
-    <div className={styles.codeBlock}>
-      <div className={styles.codeHeader}>
-        <span className={styles.codeLang}>{lang}</span>
-        <button className={`${styles.copyBtn} ${copied ? styles.copied : ''}`} onClick={copy}>
-          {copied ? <Check size={11} /> : <Copy size={11} />}
-          {copied ? 'Copied!' : 'Copy'}
-        </button>
-      </div>
-      <div className={styles.codeBody}>
-        <pre>{content}</pre>
-      </div>
-    </div>
-  )
 }
 
 function UrlBlock({ url }: { url: string }) {
@@ -142,22 +117,7 @@ const FORMATS: Format[] = [
       {
         title: 'Configure ~/.m2/settings.xml',
         text: 'Route all Maven traffic through Nexspence and set credentials:',
-        codes: [{ lang: 'xml', content: `<settings>
-  <servers>
-    <server>
-      <id>nexspence</id>
-      <username>admin</username>
-      <password>admin123</password>
-    </server>
-  </servers>
-  <mirrors>
-    <mirror>
-      <id>nexspence</id>
-      <url>${base}/repository/maven-public/</url>
-      <mirrorOf>*</mirrorOf>
-    </mirror>
-  </mirrors>
-</settings>` }],
+        codes: [{ lang: 'xml', content: maven.settingsMirror('nexspence', `${base}/repository/maven-public/`, 'admin', 'admin123') }],
       },
       {
         title: 'Publish an Artifact',
@@ -201,18 +161,13 @@ const FORMATS: Format[] = [
       {
         title: 'Publish a Package',
         codes: [
-          { label: 'Using npm publish:', lang: 'bash', content: `npm publish --registry ${base}/repository/npm-hosted/` },
-          { label: 'Using curl (upload tarball):', lang: 'bash', content: `npm pack
-curl -u admin:admin123 \\
-  -H "Content-Type: application/octet-stream" \\
-  -T mypackage-1.0.0.tgz \\
-  "${base}/repository/npm-hosted/mypackage/-/mypackage-1.0.0.tgz"` },
+          { label: 'Using npm publish:', lang: 'bash', content: npm.publish(`${base}/repository/npm-hosted/`) },
         ],
       },
       {
         title: 'Install a Package',
         codes: [
-          { label: 'Using npm:', lang: 'bash', content: `npm install mypackage --registry ${base}/repository/npm-group/` },
+          { label: 'Using npm:', lang: 'bash', content: npm.install(`${base}/repository/npm-group/`) },
           { label: 'Download tarball with curl:', lang: 'bash', content: `curl -u admin:admin123 \\
   -O "${base}/repository/npm-group/mypackage/-/mypackage-1.0.0.tgz"` },
         ],
@@ -234,22 +189,13 @@ curl -u admin:admin123 \\
         },
         {
           title: 'Configure pip (~/.config/pip/pip.conf)',
-          codes: [{ lang: 'ini', content: `[global]
-index-url = ${base}/repository/pypi-group/simple/
-trusted-host = ${host}` }],
+          codes: [{ lang: 'ini', content: pypi.pipConf(`${base}/repository/pypi-group/simple/`, host) }],
         },
         {
           title: 'Publish a Package',
           codes: [
-            { label: 'Using twine:', lang: 'bash', content: `python -m build
-twine upload \\
-  --repository-url ${base}/repository/pypi-hosted/ \\
-  --username admin \\
-  --password admin123 \\
-  dist/*` },
-            { label: 'Using curl:', lang: 'bash', content: `curl -u admin:admin123 \\
-  -F "content=@dist/mypackage-1.0.0.tar.gz" \\
-  "${base}/repository/pypi-hosted/"` },
+            { label: 'Using twine:', lang: 'bash', content: pypi.twineUpload(`${base}/repository/pypi-hosted/`, 'admin', 'admin123') },
+            { label: 'Using curl:', lang: 'bash', content: pypi.curlUpload(`${base}/repository/pypi-hosted/`, 'admin', 'admin123') },
           ],
         },
         {
@@ -277,9 +223,7 @@ twine upload \\
         },
         {
           title: 'Login',
-          codes: [{ lang: 'bash', content: `docker login ${regHost} -u admin -p admin123
-# Or with an API token:
-docker login ${regHost} -u admin -p nxs_your_token_here` }],
+          codes: [{ lang: 'bash', content: `${docker.login(regHost, 'admin', 'admin123')}\n# Or with an API token:\n${docker.login(regHost, 'admin', 'nxs_your_token_here')}` }],
         },
         {
           title: 'Push an Image',
@@ -300,7 +244,7 @@ docker push ${regHost}/docker-hosted/myapp:latest` }],
         },
         {
           title: 'List Tags',
-          codes: [{ lang: 'bash', content: `curl -u admin:admin123 "${base}/v2/myapp/tags/list"` }],
+          codes: [{ lang: 'bash', content: docker.tagsList(base, 'docker-hosted', 'myapp', 'admin', 'admin123') }],
         },
       ]
     },
@@ -418,28 +362,13 @@ curl -u admin:admin123 \\
       },
       {
         title: 'Configure nuget.config',
-        codes: [{ lang: 'xml', content: `<?xml version="1.0" encoding="utf-8"?>
-<configuration>
-  <packageSources>
-    <add key="nexspence" value="${base}/repository/nuget-group/index.json" />
-  </packageSources>
-  <packageSourceCredentials>
-    <nexspence>
-      <add key="Username" value="admin" />
-      <add key="ClearTextPassword" value="admin123" />
-    </nexspence>
-  </packageSourceCredentials>
-</configuration>` }],
+        codes: [{ lang: 'xml', content: nuget.config('nexspence', `${base}/repository/nuget-group/index.json`, 'admin', 'admin123') }],
       },
       {
         title: 'Publish a Package',
         codes: [
-          { label: 'Using dotnet CLI:', lang: 'bash', content: `dotnet nuget push mypackage.1.0.0.nupkg \\
-  --source ${base}/repository/nuget-hosted/ \\
-  --api-key admin:admin123` },
-          { label: 'Using curl:', lang: 'bash', content: `curl -u admin:admin123 \\
-  -F "package=@mypackage.1.0.0.nupkg" \\
-  "${base}/repository/nuget-hosted/"` },
+          { label: 'Add the hosted repository as a source, then push to it (the server authenticates with the source credentials; the API key is ignored):', lang: 'bash', content: `${nuget.addSource('nexspence-hosted', `${base}/repository/nuget-hosted/index.json`, 'admin', 'admin123')}\n\n${nuget.push('nexspence-hosted')}` },
+          { label: 'Using curl:', lang: 'bash', content: nuget.curlUpload(`${base}/repository/nuget-hosted/`, 'admin', 'admin123') },
         ],
       },
       {
@@ -501,19 +430,12 @@ curl -u admin:admin123 \\
       },
       {
         title: 'Add Repository',
-        codes: [{ lang: 'bash', content: `helm repo add nexspence ${base}/repository/helm-hosted/ \\
-  --username admin \\
-  --password admin123
-
-helm repo update` }],
+        codes: [{ lang: 'bash', content: helm.repoAdd('nexspence', `${base}/repository/helm-hosted/`, 'admin', 'admin123') }],
       },
       {
         title: 'Publish a Chart',
         codes: [
-          { label: 'Package then upload with curl:', lang: 'bash', content: `helm package mychart/
-curl -u admin:admin123 \\
-  -T mychart-1.0.0.tgz \\
-  "${base}/repository/helm-hosted/mychart-1.0.0.tgz"` },
+          { label: 'Package then upload with curl:', lang: 'bash', content: helm.curlUpload(`${base}/repository/helm-hosted/`, 'admin', 'admin123') },
           { label: 'Using helm cm-push plugin:', lang: 'bash', content: `helm plugin install https://github.com/chartmuseum/helm-push
 helm cm-push mychart/ nexspence` },
         ],
@@ -541,16 +463,12 @@ helm cm-push mychart/ nexspence` },
       },
       {
         title: 'Configure ~/.cargo/config.toml',
-        codes: [{ lang: 'toml', content: `[registries.nexspence]
-index = "sparse+${base}/repository/cargo-hosted/"
-credential-provider = "cargo:token"
-
-[registry]
-default = "nexspence"` }],
+        codes: [{ lang: 'toml', content: `${cargo.registryConfig('nexspence', cargo.indexUrl(`${base}/repository/cargo-hosted/`))}\n\n[registry]\ndefault = "nexspence"` }],
       },
       {
         title: 'Authenticate',
-        codes: [{ lang: 'bash', content: `cargo login --registry nexspence nxs_your_token_here` }],
+        text: 'cargo sends the token verbatim, so store it with its Bearer prefix:',
+        codes: [{ lang: 'bash', content: cargo.login('nexspence', 'nxs_your_token_here') }],
       },
       {
         title: 'Publish a Crate',
@@ -581,7 +499,7 @@ default = "nexspence"` }],
   | sudo tee /etc/apt/sources.list.d/nexspence.list
 
 sudo apt-get update` }],
-        note: 'Replace "focal main" with your distribution codename and component (e.g. "jammy main", "bullseye contrib").',
+        note: 'Replace "focal" with your distribution codename (e.g. "jammy", "bookworm"). The component is always "main".',
       },
       {
         title: 'Publish a .deb Package',
@@ -747,11 +665,11 @@ conan upload "mylib/1.0" -r=nexspence --confirm` },
     name: 'Terraform',
     icon: '🏗',
     iconUrl: 'https://cdn.simpleicons.org/terraform/7B42BC',
-    description: 'Terraform Registry Protocol v1 for providers and modules. Supports service discovery at /.well-known/terraform.json, version listing, and binary hosting for both hosted and proxy types.',
+    description: 'Terraform Registry Protocol v1 for providers and modules. Supports service discovery at /repository/<name>/.well-known/terraform.json, version listing, and binary hosting for both hosted and proxy types.',
     sections: (base) => [
       {
         title: 'Repository URL',
-        codes: [{ lang: 'text', content: `${base}/repository/terraform-hosted/\nService discovery: ${base}/.well-known/terraform.json` }],
+        codes: [{ lang: 'text', content: `${base}/repository/terraform-hosted/\nService discovery: ${base}/repository/terraform-hosted/.well-known/terraform.json` }],
       },
       {
         title: 'Configure .terraformrc',

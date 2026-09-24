@@ -2,7 +2,7 @@ import { useState } from 'react'
 import * as React from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Database, Download, Plus, Trash2, RefreshCw, Settings2, Power } from 'lucide-react'
+import { Database, Download, Plus, Trash2, RefreshCw, Settings2, Power, Terminal } from 'lucide-react'
 import { nexusApi, nexspenceApi, apiClient, apiErrorMessage, BlobStoreMigration, startBlobStoreMigration, getBlobStoreMigration, cancelBlobStoreMigration, RoutingRule } from '@/api/client'
 import { useAuthStore } from '@/store/authStore'
 import styles from './RepositoriesPage.module.css'
@@ -10,6 +10,7 @@ import { Select } from '../components/Select'
 import { HoloButton, HoloInput, HoloPill, HoloModal, Wizard } from '@/components/holo'
 import { Truncated } from '@/components/Truncated'
 import { tint } from '@/theme/color'
+import { SetMeUpDialog } from '@/components/SetMeUpDialog'
 
 interface Repository {
   id: string
@@ -100,6 +101,7 @@ export default function RepositoriesPage() {
   const [typeFilter, setTypeFilter] = useState('')
   const [showCreate, setShowCreate] = useState(false)
   const [editRepo, setEditRepo] = useState<Repository | null>(null)
+  const [setupRepo, setSetupRepo] = useState<Repository | null>(null)
   const [activeMigrations, setActiveMigrations] = React.useState<Set<string>>(new Set())
 
   const { data: repos = [], isLoading, isError, error, refetch } = useQuery<Repository[]>({
@@ -244,6 +246,7 @@ export default function RepositoriesPage() {
               migrating={activeMigrations.has(repo.name)}
               onClick={() => navigate(`/browse?repo=${repo.name}`)}
               onEdit={() => setEditRepo(repo)}
+              onSetMeUp={() => setSetupRepo(repo)}
               onDelete={() => {
                 if (confirm(`Delete repository "${repo.name}"?`)) {
                   deleteMutation.mutate(repo.name)
@@ -279,11 +282,14 @@ export default function RepositoriesPage() {
         />
       )}
 
+      <SetMeUpDialog repo={setupRepo} onClose={() => setSetupRepo(null)} />
+
       {editRepo && (
         <EditRepoModal
           key={editRepo.id}
           repo={editRepo}
           onClose={() => setEditRepo(null)}
+          onSetMeUp={() => { setSetupRepo(editRepo); setEditRepo(null) }}
           onSaved={() => {
             qc.invalidateQueries({ queryKey: ['repositories'] })
             setEditRepo(null)
@@ -313,7 +319,7 @@ function formatBytes(bytes: number): string {
 }
 
 function RepoRow({
-  repo, isAdmin, storeName, migrating, onClick, onEdit, onDelete, onToggleOnline, onExport,
+  repo, isAdmin, storeName, migrating, onClick, onEdit, onSetMeUp, onDelete, onToggleOnline, onExport,
 }: {
   repo: Repository
   isAdmin: boolean
@@ -321,6 +327,7 @@ function RepoRow({
   migrating?: boolean
   onClick?: () => void
   onEdit: () => void
+  onSetMeUp: () => void
   onDelete: () => void
   onToggleOnline: (online: boolean) => void
   onExport: () => void
@@ -403,8 +410,15 @@ function RepoRow({
           </div>
         )}
       </div>
-      {isAdmin && (
-        <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+        <HoloButton
+          icon={<Terminal size={14} />}
+          onClick={e => { e.stopPropagation(); onSetMeUp() }}
+          onKeyDown={e => e.stopPropagation()}
+          title="Set me up"
+          aria-label={`Set me up: ${repo.name}`}
+        />
+        {isAdmin && (<>
           <HoloButton
             icon={<Power size={14} />}
             onClick={e => { e.stopPropagation(); onToggleOnline(!repo.online) }}
@@ -418,8 +432,8 @@ function RepoRow({
           />
           <HoloButton icon={<Settings2 size={14} />} onClick={e => { e.stopPropagation(); onEdit() }} title="Settings" />
           <HoloButton variant="danger" icon={<Trash2 size={14} />} onClick={e => { e.stopPropagation(); onDelete() }} title="Delete" />
-        </div>
-      )}
+        </>)}
+      </div>
     </div>
   )
 }
@@ -884,12 +898,14 @@ function EditRepoModal({
   repo,
   onClose,
   onSaved,
+  onSetMeUp,
   onMigrationStarted,
   onMigrationEnded,
 }: {
   repo: Repository
   onClose: () => void
   onSaved: () => void
+  onSetMeUp?: () => void
   onMigrationStarted?: (repoName: string) => void
   onMigrationEnded?: (repoName: string) => void
 }) {
@@ -1097,7 +1113,14 @@ function EditRepoModal({
 
   return (
     <HoloModal open={true} onClose={onClose} style={{ minWidth: 640 }} titleId="repo-modal-title">
-      <h2 id="repo-modal-title" style={{ fontSize: 17, fontWeight: 700, color: 'var(--holo-text)', margin: 0 }}>Repository settings</h2>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <h2 id="repo-modal-title" style={{ fontSize: 17, fontWeight: 700, color: 'var(--holo-text)', margin: 0 }}>Repository settings</h2>
+        {onSetMeUp && (
+          <HoloButton icon={<Terminal size={14} />} onClick={onSetMeUp} style={{ marginLeft: 'auto' }}>
+            Set me up
+          </HoloButton>
+        )}
+      </div>
       <form onSubmit={handleSubmit} className={styles.form}>
         <div className={styles.formRow}>
           <label style={LABEL_STYLE}>Name</label>

@@ -360,8 +360,10 @@ describe('BrowsePage — Raw tree', () => {
     await waitFor(() => expect(click).toHaveBeenCalled())
     await user.click(within(panel).getByRole('button', { name: /Copy link/ }))
     expect(writeText).toHaveBeenCalled()
-    await user.click(within(panel).getByRole('button', { name: /Usage/ }))
-    expect(await screen.findByText('Example Usage')).toBeInTheDocument()
+    await user.click(within(panel).getByRole('button', { name: /Set me up/ }))
+    const dialog = await screen.findByRole('dialog', { name: 'Set me up: raw-hosted' })
+    expect(within(dialog).getAllByText(/http:\/\/localhost\/repository\/raw-hosted\//).length).toBeGreaterThan(0)
+    expect(screen.queryByText('Documentation coming soon')).not.toBeInTheDocument()
   })
 
   it('downloads via the hover row buttons', async () => {
@@ -686,7 +688,7 @@ describe('BrowsePage — Docker tree', () => {
     expect(screen.getByRole('button', { name: 'MALICIOUS (1)' })).toBeInTheDocument()
   })
 
-  it('opens Example Usage and Promote from docker panel', async () => {
+  it('opens Set me up (formerly Example Usage) and Promote from docker panel', async () => {
     const user = userEvent.setup()
     seedDocker()
     server.use(
@@ -700,9 +702,13 @@ describe('BrowsePage — Docker tree', () => {
     await user.click(await screen.findByText('Tags'))
     await user.click(await screen.findByText('latest'))
     await screen.findByText('Component details')
-    await user.click(screen.getByRole('button', { name: /Example Usage/ }))
-    expect(await screen.findByText('Documentation coming soon')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Close' }))
+    const panel = screen.getByText('Component details').closest('.holo-card') as HTMLElement
+    await user.click(within(panel).getByRole('button', { name: /Set me up/ }))
+    const dialog = await screen.findByRole('dialog', { name: 'Set me up: docker-hosted' })
+    expect(within(dialog).getByRole('tab', { name: 'docker' })).toHaveAttribute('aria-selected', 'true')
+    expect(within(dialog).getByText(/docker push /)).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('button', { name: 'Close' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     await user.click(screen.getByRole('button', { name: /Promote/ }))
     expect(await screen.findByText(/Promote 1 component/)).toBeInTheDocument()
   })

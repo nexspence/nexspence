@@ -4,7 +4,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { HoloButton, HoloInput, HoloModal } from '@/components/holo'
 import { Truncated } from '@/components/Truncated'
 import {
-  BookOpen,
   ChevronDown,
   ChevronRight,
   Download,
@@ -16,6 +15,7 @@ import {
   RefreshCw,
   ShieldAlert,
   Tag,
+  Terminal,
   Trash2,
   Upload,
   X,
@@ -26,6 +26,7 @@ import { Select, SelectOption } from '../components/Select'
 import { useAuthStore } from '@/store/authStore'
 import { TagEditor } from '@/components/TagEditor'
 import { tint } from '@/theme/color'
+import { SetMeUpDialog } from '@/components/SetMeUpDialog'
 
 interface Repository {
   id: string
@@ -121,11 +122,6 @@ interface RawTreeNode {
   updatedAt?: string
   componentId?: string
   children?: RawTreeNode[]
-}
-
-interface UsageTarget {
-  format: string
-  name: string
 }
 
 interface RawFileSelection {
@@ -1161,7 +1157,7 @@ function RawTreeRows({
   onSelectFile?: (node: RawTreeNode) => void
   showDelete?: boolean
   onDelete?: (node: RawTreeNode) => void
-  onUsage?: (node: RawTreeNode) => void
+  onUsage?: () => void
   repoName: string
 }) {
   const [hovered, setHovered] = useState(false)
@@ -1219,8 +1215,8 @@ function RawTreeRows({
               <Link size={12} />
             </GhostBtn>
             {onUsage && (
-              <GhostBtn onClick={(e) => { e.stopPropagation(); onUsage(node) }} title="Example Usage">
-                <BookOpen size={12} />
+              <GhostBtn onClick={(e) => { e.stopPropagation(); onUsage() }} title="Set me up">
+                <Terminal size={12} />
               </GhostBtn>
             )}
             {showDelete && onDelete && (
@@ -1329,7 +1325,7 @@ export default function BrowsePage() {
   // instead of leaving a detached copy behind.
   const [detailComponentId, setDetailComponentId] = useState<string | null>(null)
   const [uploadOpen, setUploadOpen] = useState(false)
-  const [usageTarget, setUsageTarget] = useState<UsageTarget | null>(null)
+  const [setupOpen, setSetupOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<{
     path: string; repo: string;
     dockerImage?: string; dockerRef?: string;
@@ -1605,10 +1601,16 @@ export default function BrowsePage() {
             // server now refuses such a mixed-repo batch (#255).
             setSelectedComponentIDs(new Set())
             setUploadOpen(false)
+            setSetupOpen(false)
           }}
           placeholder="— Select repository —"
           style={{ minWidth: 240 }}
         />
+        {selectedRepo && (
+          <HoloButton icon={<Terminal size={14} />} onClick={() => setSetupOpen(true)}>
+            Set me up
+          </HoloButton>
+        )}
         {isRaw && selectedRepo?.type === 'hosted' && (isAdmin() || myPrivs.some(p =>
           (p.attrs?.actions as string[] | undefined)?.includes('write')
         )) && (
@@ -1680,8 +1682,8 @@ export default function BrowsePage() {
                 <>
                   <DockerBrowseDetailBody comp={dockerDetail} sel={dockerSelection} />
                   <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    <PanelBtn onClick={() => setUsageTarget({ format: dockerDetail.format, name: dockerDetail.name })}>
-                      <BookOpen size={13} /> Example Usage
+                    <PanelBtn onClick={() => setSetupOpen(true)}>
+                      <Terminal size={13} /> Set me up
                     </PanelBtn>
                     {signedIn && <PanelBtn onClick={async () => {
                       try {
@@ -1748,7 +1750,7 @@ export default function BrowsePage() {
                       setDeleteTarget({ path: node.path, repo: repoName, label: node.path, affectedPaths: paths })
                     }
                   }}
-                  onUsage={(node) => setUsageTarget({ format: selectedRepo?.format ?? 'raw', name: node.label })}
+                  onUsage={() => setSetupOpen(true)}
                   repoName={repoName}
                 />
               ))}
@@ -1797,8 +1799,8 @@ export default function BrowsePage() {
                       <PanelBtn onClick={() => { void navigator.clipboard.writeText(copyUrl) }}>
                         <Link size={13} /> Copy link
                       </PanelBtn>
-                      <PanelBtn onClick={() => setUsageTarget({ format: selectedRepo?.format ?? 'raw', name: node.label })}>
-                        <BookOpen size={13} /> Usage
+                      <PanelBtn onClick={() => setSetupOpen(true)}>
+                        <Terminal size={13} /> Set me up
                       </PanelBtn>
                       {signedIn && node.componentId && (
                         <PanelBtn onClick={async () => {
@@ -2001,36 +2003,7 @@ export default function BrowsePage() {
         </>
       )}
 
-      <HoloModal open={!!usageTarget} onClose={() => setUsageTarget(null)}>
-        {usageTarget && (
-          <div style={{ minWidth: 380, display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <BookOpen size={20} style={{ color: 'var(--holo-c-blue-300)' }} />
-              <div>
-                <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--holo-text)' }}>Example Usage</div>
-                <div style={{ fontSize: 12, color: 'var(--holo-text-faint)', marginTop: 2 }}>
-                  {usageTarget.format} · {usageTarget.name}
-                </div>
-              </div>
-            </div>
-            <div style={{
-              padding: '28px 16px',
-              background: 'rgba(var(--holo-ink-rgb), 0.03)',
-              border: '1px solid rgba(var(--holo-ink-rgb), 0.07)',
-              borderRadius: 8,
-              textAlign: 'center' as const,
-              color: 'var(--holo-text-faint)',
-              fontSize: 13,
-            }}>
-              <Package size={28} style={{ opacity: 0.3, display: 'block', margin: '0 auto 10px' }} />
-              Documentation coming soon
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <HoloButton onClick={() => setUsageTarget(null)}>Close</HoloButton>
-            </div>
-          </div>
-        )}
-      </HoloModal>
+      <SetMeUpDialog repo={setupOpen ? selectedRepo ?? null : null} onClose={() => setSetupOpen(false)} />
 
       <HoloModal open={!!deleteTarget} onClose={() => { setDeleteTarget(null); setDeleteError(null) }}>
           {deleteTarget && <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
