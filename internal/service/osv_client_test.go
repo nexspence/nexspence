@@ -86,3 +86,36 @@ func TestOSVClient_Query_Empty(t *testing.T) {
 		t.Fatalf("expected 0 vulns, got %d", len(vulns))
 	}
 }
+
+// GitHub advisories name the middle tier MODERATE. It must count as MEDIUM, or
+// a promotion rule that fails on medium would never see those findings.
+func TestOSVClient_Query_MapsModerateToMedium(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{
+			"vulns": []map[string]any{
+				{"id": "GHSA-mod-0000-0001", "database_specific": map[string]any{"severity": "MODERATE"}},
+				{"id": "GHSA-mod-0000-0002", "database_specific": map[string]any{"severity": "moderate"}},
+				{"id": "GHSA-none-0000-0003"},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	client := service.NewOSVClient()
+	client.BaseURL = srv.URL
+
+	vulns, err := client.Query(context.Background(), "lodash", "4.17.0", "npm")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := []string{"MEDIUM", "MEDIUM", "UNKNOWN"}
+	if len(vulns) != len(want) {
+		t.Fatalf("expected %d vulns, got %d", len(want), len(vulns))
+	}
+	for i, w := range want {
+		if vulns[i].Severity != w {
+			t.Errorf("vuln %d (%s): severity %q, want %q", i, vulns[i].ID, vulns[i].Severity, w)
+		}
+	}
+}

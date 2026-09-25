@@ -1518,7 +1518,7 @@ sudo systemctl restart nexspence</div></div>
   http://localhost:8081/api/v1/promotion/promote \
   -H "Content-Type: application/json" \
   -d '{
-    "component_id": "abc-123",
+    "component_ids": ["abc-123"],
     "rule_id": "rule-456",
     "note": "Approved for production"
   }'</div></div>

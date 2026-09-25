@@ -115,8 +115,14 @@ func (c *OSVClient) Query(ctx context.Context, name, version, ecosystem string) 
 			}
 		}
 		sev := strings.ToUpper(v.DatabaseSpecific.Severity)
-		if sev == "" {
+		switch sev {
+		case "":
 			sev = "UNKNOWN"
+		case "MODERATE":
+			// GitHub advisories (GHSA-*) name the middle tier MODERATE; count
+			// it as MEDIUM so a promotion rule failing on medium catches it
+			// instead of the finding falling through to unknown.
+			sev = "MEDIUM"
 		}
 		out = append(out, OSVVuln{ID: id, Summary: v.Summary, Severity: sev})
 	}
