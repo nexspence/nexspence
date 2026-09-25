@@ -463,10 +463,17 @@ func TestPromotionService_CopiesComponentExtra(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListByRepoNames: %v", err)
 	}
-	if len(page.Items) != 1 {
-		t.Fatalf("expected 1 promoted component, got %d", len(page.Items))
+	// The tag travels with its digest alias (#541), which carries the same
+	// metadata; the assertions below are about the tag itself.
+	var promoted *domain.Component
+	for i := range page.Items {
+		if page.Items[i].Version == comp.Version {
+			promoted = &page.Items[i]
+		}
 	}
-	promoted := page.Items[0]
+	if promoted == nil {
+		t.Fatalf("promoted tag component missing from target: %+v", page.Items)
+	}
 	if got := promoted.Extra["oci_subject"]; got != subject {
 		t.Errorf("promoted component lost oci_subject: got %v want %s", got, subject)
 	}

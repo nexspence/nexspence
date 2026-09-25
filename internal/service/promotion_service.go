@@ -298,6 +298,7 @@ func (s *PromotionService) Promote(ctx context.Context, ruleID string, component
 	// the caller is told the batch failed. Refusing before any request row
 	// exists also spares reviewers pending requests nobody could legitimately
 	// approve.
+	included := make(map[string]int, len(componentIDs))
 	for _, compID := range componentIDs {
 		comp, cerr := s.componentRepo.Get(ctx, compID)
 		if cerr != nil || comp == nil {
@@ -309,15 +310,23 @@ func (s *PromotionService) Promote(ctx context.Context, ruleID string, component
 		if serr := s.scanGate(ctx, rule, compID); serr != nil {
 			return nil, serr
 		}
+		// An image missing a layer in the source is refused here, before a
+		// request row exists, rather than failing later at copy time (#541).
+		n, xerr := s.imageDependents(ctx, comp)
+		if xerr != nil {
+			return nil, xerr
+		}
+		included[compID] = n
 	}
 
 	var results []domain.PromotionRequest
 	for _, compID := range componentIDs {
 		req := &domain.PromotionRequest{
-			RuleID:      ruleID,
-			ComponentID: compID,
-			Status:      domain.PromotionPending,
-			RequestedBy: requestedByID,
+			RuleID:             ruleID,
+			ComponentID:        compID,
+			Status:             domain.PromotionPending,
+			RequestedBy:        requestedByID,
+			IncludedComponents: included[compID],
 		}
 		if err := s.promotionRepo.CreateRequest(ctx, req); err != nil {
 			return nil, fmt.Errorf("create promotion request: %w", err)
@@ -341,7 +350,9 @@ func (s *PromotionService) Promote(ctx context.Context, ruleID string, component
 						return repository.PromotionOutcome{Status: domain.PromotionFailed,
 							CompletedAt: &now, Error: req.Error}
 					}
-					if copyErr := s.executeCopy(ctx, lockedReq, freshRule); copyErr != nil {
+					included, copyErr := s.executeCopy(ctx, lockedReq, freshRule)
+					req.IncludedComponents = included
+					if copyErr != nil {
 						req.Status = domain.PromotionFailed
 						req.Error = copyErr.Error()
 						return repository.PromotionOutcome{Status: domain.PromotionFailed,
@@ -380,7 +391,7 @@ func (s *PromotionService) Approve(ctx context.Context, requestID, reviewerID st
 				return repository.PromotionOutcome{Status: domain.PromotionFailed,
 					ReviewedBy: &reviewerID, ReviewedAt: &now, CompletedAt: &now, Error: copyErr.Error()}
 			}
-			if cerr := s.executeCopy(ctx, req, rule); cerr != nil {
+			if _, cerr := s.executeCopy(ctx, req, rule); cerr != nil {
 				copyErr = cerr
 				return repository.PromotionOutcome{Status: domain.PromotionFailed,
 					ReviewedBy: &reviewerID, ReviewedAt: &now, CompletedAt: &now, Error: cerr.Error()}
@@ -414,10 +425,16 @@ func (s *PromotionService) Reject(ctx context.Context, requestID, reviewerID, re
 }
 
 // executeCopy copies a component's blobs and metadata from from_repo to to_repo.
+// For a Docker/OCI manifest it copies the whole image — digest alias, config
+// and layer blobs, child manifests of an index — and returns how many such
+// components came along beyond the one requested (see expandImage). The gates
+// are the requested component's: the rule decides whether this image may be
+// promoted, and the blobs are part of it, not separate artifacts a filter
+// written for tags should be able to strip out of it.
 //
 // The copy is not transactional — the rows and blobs go one at a time — so a
 // mid-copy failure compensates explicitly: every asset row and blob THIS call
-// created fresh is removed, and the target component goes too once nothing
+// created fresh is removed, and a target component goes too once nothing
 // references it. Only fresh creations roll back: both ComponentRepo.Create and
 // AssetRepo.Create upsert on conflict, and blindly deleting "what I touched"
 // after an upsert would destroy a legitimate pre-existing component from an
@@ -425,120 +442,87 @@ func (s *PromotionService) Reject(ctx context.Context, requestID, reviewerID, re
 // residual: a pre-existing asset overwritten in place by this call's own upsert
 // keeps the new content — point-in-time rollback of in-place updates is out of
 // scope; what this prevents is the DB-visible half-populated component.
-func (s *PromotionService) executeCopy(ctx context.Context, req *domain.PromotionRequest, rule *domain.PromotionRule) (err error) {
+func (s *PromotionService) executeCopy(ctx context.Context, req *domain.PromotionRequest, rule *domain.PromotionRule) (included int, err error) {
 	comp, err := s.componentRepo.Get(ctx, req.ComponentID)
 	if err != nil || comp == nil {
-		return fmt.Errorf("source component not found: %s", req.ComponentID)
+		return 0, fmt.Errorf("source component not found: %s", req.ComponentID)
 	}
 	// Re-checked at copy time, not just when the request was filed: Approve
 	// runs later, and the component may have moved, the rule changed, or a
 	// scan found something while the request sat pending — the invariants
 	// have to hold when the bytes actually move.
 	if err := s.ruleAppliesTo(ctx, rule, comp); err != nil {
-		return err
+		return 0, err
 	}
 	if err := s.scanGate(ctx, rule, comp.ID); err != nil {
-		return err
+		return 0, err
 	}
 	toRepo, err := s.repoRepo.Get(ctx, rule.ToRepo)
 	if err != nil || toRepo == nil {
-		return fmt.Errorf("target repository not found: %s", rule.ToRepo)
+		return 0, fmt.Errorf("target repository not found: %s", rule.ToRepo)
 	}
 
 	toStore, toBlobStoreID, err := s.resolveStore(ctx, toRepo.BlobStoreID)
 	if err != nil {
-		return fmt.Errorf("target %s: %w", toRepo.Name, err)
+		return 0, fmt.Errorf("target %s: %w", toRepo.Name, err)
 	}
 
 	assets, err := s.assetRepo.ListByComponentID(ctx, req.ComponentID)
 	if err != nil {
-		return fmt.Errorf("list assets: %w", err)
+		return 0, fmt.Errorf("list assets: %w", err)
 	}
 
-	newComp := &domain.Component{
-		RepositoryID: toRepo.ID,
-		Repository:   toRepo.Name,
-		Format:       string(toRepo.Format),
-		Group:        comp.Group,
-		Name:         comp.Name,
-		Version:      comp.Version,
-		Tags:         comp.Tags,
-		Extra:        promotedExtra(comp.Extra),
+	// The whole image is resolved, and checked present in the source, before
+	// the first byte moves: a missing layer fails the promotion with nothing
+	// copied rather than leaving an unpullable half in the target.
+	dependents, err := s.expandImage(ctx, comp, assets)
+	if err != nil {
+		return 0, err
 	}
-	if err := s.componentRepo.Create(ctx, newComp); err != nil {
-		return fmt.Errorf("upsert component in target: %w", err)
-	}
+	units := append([]promotionUnit{{comp: comp, assets: assets}}, dependents...)
 
 	// Compensation state for the deferred rollback: only rows and blobs this
 	// call created fresh (rows go before their bytes — a row whose blob is
 	// already gone is not self-healing, an orphan blob is GC'd).
-	var freshAssetIDs []string
-	var freshBlobKeys []string
+	var rb copyRollback
 	defer func() {
-		if err == nil {
-			return
-		}
-		for _, id := range freshAssetIDs {
-			_ = s.assetRepo.Delete(ctx, id)
-		}
-		for _, key := range freshBlobKeys {
-			_ = toStore.Delete(ctx, key)
-		}
-		remaining, lerr := s.assetRepo.ListByComponentID(ctx, newComp.ID)
-		if lerr == nil && len(remaining) == 0 {
-			_ = s.componentRepo.Delete(ctx, newComp.ID)
+		if err != nil {
+			rb.run(ctx, s, toStore)
 		}
 	}()
 
-	for _, asset := range assets {
-		blobStoreID := asset.BlobStoreID
-		fromStore, _, err := s.resolveStore(ctx, &blobStoreID)
-		if err != nil {
-			return fmt.Errorf("source asset %s: %w", asset.Path, err)
+	var mainComp *domain.Component
+	for i, u := range units {
+		pending := u.assets
+		if u.contentAddressed {
+			if pending, err = s.missingInTarget(ctx, toRepo.Name, u.assets); err != nil {
+				return 0, err
+			}
+			if len(pending) == 0 {
+				continue
+			}
 		}
-
-		newBlobKey := base.BlobKey(toRepo.Name, asset.Path)
-
-		// Fresh or pre-existing decides what the rollback may touch: a fresh
-		// path's blob and row are this call's to delete; a pre-existing one was
-		// only overwritten in place and must survive the compensation.
-		_, preErr := s.assetRepo.GetByPath(ctx, toRepo.Name, asset.Path)
-		fresh := errors.Is(preErr, repository.ErrNotFound)
-		if preErr != nil && !fresh {
-			return fmt.Errorf("check target asset %s: %w", asset.Path, preErr)
-		}
-
-		rc, size, err := fromStore.Get(ctx, asset.BlobKey)
-		if err != nil {
-			return fmt.Errorf("read blob %s: %w", asset.BlobKey, err)
-		}
-		if putErr := toStore.Put(ctx, newBlobKey, rc, size); putErr != nil {
-			_ = rc.Close()
-			return fmt.Errorf("write blob %s: %w", newBlobKey, putErr)
-		}
-		_ = rc.Close()
-		if fresh {
-			freshBlobKeys = append(freshBlobKeys, newBlobKey)
-		}
-
-		newAsset := &domain.Asset{
-			ComponentID:  newComp.ID,
+		newComp := &domain.Component{
 			RepositoryID: toRepo.ID,
 			Repository:   toRepo.Name,
-			Path:         asset.Path,
-			BlobStoreID:  toBlobStoreID,
-			BlobKey:      newBlobKey,
-			SizeBytes:    size,
-			ContentType:  asset.ContentType,
-			SHA256:       asset.SHA256,
-			SHA1:         asset.SHA1,
-			MD5:          asset.MD5,
+			Format:       string(toRepo.Format),
+			Group:        u.comp.Group,
+			Name:         u.comp.Name,
+			Version:      u.comp.Version,
+			Tags:         u.comp.Tags,
+			Extra:        promotedExtra(u.comp.Extra),
 		}
-		if err := s.assetRepo.Create(ctx, newAsset); err != nil {
-			return fmt.Errorf("create asset record: %w", err)
+		if err = s.componentRepo.Create(ctx, newComp); err != nil {
+			return 0, fmt.Errorf("upsert component in target: %w", err)
 		}
-		if fresh {
-			freshAssetIDs = append(freshAssetIDs, newAsset.ID)
+		rb.compIDs = append(rb.compIDs, newComp.ID)
+		if i == 0 {
+			mainComp = newComp
+		}
+		for _, asset := range pending {
+			if err = s.copyAsset(ctx, asset, newComp, toRepo, toStore, toBlobStoreID, &rb); err != nil {
+				return 0, err
+			}
 		}
 	}
 
@@ -548,12 +532,111 @@ func (s *PromotionService) executeCopy(ctx context.Context, req *domain.Promotio
 			Timestamp:  time.Now(),
 			Repository: toRepo.Name,
 			Component: map[string]any{
-				"group":   newComp.Group,
-				"name":    newComp.Name,
-				"version": newComp.Version,
+				"group":   mainComp.Group,
+				"name":    mainComp.Name,
+				"version": mainComp.Version,
 				"format":  string(toRepo.Format),
 			},
 		})
+	}
+	return len(dependents), nil
+}
+
+// copyRollback records what one executeCopy created fresh in the target.
+type copyRollback struct {
+	assetIDs []string
+	blobKeys []string
+	compIDs  []string
+}
+
+// run removes the fresh rows, then their bytes, then every target component
+// the copy touched that nothing references any more.
+func (rb *copyRollback) run(ctx context.Context, s *PromotionService, toStore storage.BlobStore) {
+	for _, id := range rb.assetIDs {
+		_ = s.assetRepo.Delete(ctx, id)
+	}
+	for _, key := range rb.blobKeys {
+		_ = toStore.Delete(ctx, key)
+	}
+	for _, id := range rb.compIDs {
+		remaining, lerr := s.assetRepo.ListByComponentID(ctx, id)
+		if lerr == nil && len(remaining) == 0 {
+			_ = s.componentRepo.Delete(ctx, id)
+		}
+	}
+}
+
+// missingInTarget filters content-addressed assets down to those the target
+// does not already hold. A path that names a digest and already carries the
+// same SHA-256 there is the same bytes — from an earlier promotion of another
+// tag sharing the layer, say — so it is skipped rather than rewritten.
+func (s *PromotionService) missingInTarget(ctx context.Context, toRepo string, assets []domain.Asset) ([]domain.Asset, error) {
+	var out []domain.Asset
+	for _, a := range assets {
+		existing, err := s.assetRepo.GetByPath(ctx, toRepo, a.Path)
+		switch {
+		case errors.Is(err, repository.ErrNotFound) || (err == nil && existing == nil):
+			out = append(out, a)
+		case err != nil:
+			return nil, fmt.Errorf("check target asset %s: %w", a.Path, err)
+		case a.SHA256 == "" || existing.SHA256 != a.SHA256:
+			out = append(out, a)
+		}
+	}
+	return out, nil
+}
+
+// copyAsset copies one source asset's bytes and row into newComp.
+func (s *PromotionService) copyAsset(ctx context.Context, asset domain.Asset, newComp *domain.Component,
+	toRepo *domain.Repository, toStore storage.BlobStore, toBlobStoreID string, rb *copyRollback) error {
+	blobStoreID := asset.BlobStoreID
+	fromStore, _, err := s.resolveStore(ctx, &blobStoreID)
+	if err != nil {
+		return fmt.Errorf("source asset %s: %w", asset.Path, err)
+	}
+
+	newBlobKey := base.BlobKey(toRepo.Name, asset.Path)
+
+	// Fresh or pre-existing decides what the rollback may touch: a fresh
+	// path's blob and row are this call's to delete; a pre-existing one was
+	// only overwritten in place and must survive the compensation.
+	_, preErr := s.assetRepo.GetByPath(ctx, toRepo.Name, asset.Path)
+	fresh := errors.Is(preErr, repository.ErrNotFound)
+	if preErr != nil && !fresh {
+		return fmt.Errorf("check target asset %s: %w", asset.Path, preErr)
+	}
+
+	rc, size, err := fromStore.Get(ctx, asset.BlobKey)
+	if err != nil {
+		return fmt.Errorf("read blob %s: %w", asset.BlobKey, err)
+	}
+	if putErr := toStore.Put(ctx, newBlobKey, rc, size); putErr != nil {
+		_ = rc.Close()
+		return fmt.Errorf("write blob %s: %w", newBlobKey, putErr)
+	}
+	_ = rc.Close()
+	if fresh {
+		rb.blobKeys = append(rb.blobKeys, newBlobKey)
+	}
+
+	newAsset := &domain.Asset{
+		ComponentID:  newComp.ID,
+		RepositoryID: toRepo.ID,
+		Repository:   toRepo.Name,
+		Path:         asset.Path,
+		BlobStoreID:  toBlobStoreID,
+		BlobKey:      newBlobKey,
+		SizeBytes:    size,
+		ContentType:  asset.ContentType,
+		SHA256:       asset.SHA256,
+		SHA1:         asset.SHA1,
+		MD5:          asset.MD5,
+	}
+	if err := s.assetRepo.Create(ctx, newAsset); err != nil {
+		return fmt.Errorf("create asset record: %w", err)
+	}
+	if fresh {
+		rb.assetIDs = append(rb.assetIDs, newAsset.ID)
 	}
 	return nil
 }

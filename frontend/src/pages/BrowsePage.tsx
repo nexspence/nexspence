@@ -2094,12 +2094,19 @@ export default function BrowsePage() {
                         rule_id: selectedRuleID,
                         component_ids: promoteComponentIDs,
                       })
-                      const reqs = res.data.requests as { status: string }[]
+                      const reqs = res.data.requests as { status: string; error?: string; included_components?: number }[]
                       const rule = promotionRules.find(r => r.id === selectedRuleID)
-                      if (rule?.require_manual_approval) {
-                        setPromotionResult(`Approval requested for ${reqs.length} component(s). An admin must approve.`)
+                      // A Docker/OCI tag brings its digest manifest, config and
+                      // layers along (#541); say so, or "1 component" undersells it.
+                      const included = reqs.reduce((n, r) => n + (r.included_components ?? 0), 0)
+                      const withImage = included > 0 ? ` with ${included} image part(s) (manifests, config, layers)` : ''
+                      const failed = reqs.filter(r => r.status === 'failed')
+                      if (failed.length > 0) {
+                        setPromotionResult(`Error: ${failed.length} of ${reqs.length} promotion(s) failed: ${failed[0].error ?? 'unknown error'}`)
+                      } else if (rule?.require_manual_approval) {
+                        setPromotionResult(`Approval requested for ${reqs.length} component(s)${withImage}. An admin must approve.`)
                       } else {
-                        setPromotionResult(`Promoted ${reqs.length} component(s) successfully.`)
+                        setPromotionResult(`Promoted ${reqs.length} component(s)${withImage} successfully.`)
                       }
                       setSelectedComponentIDs(new Set())
                     } catch (e: unknown) {

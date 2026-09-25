@@ -747,4 +747,9 @@ type PromotionRequest struct {
 	CompletedAt *time.Time      `json:"completed_at,omitempty"`
 	Error       string          `json:"error,omitempty"`
 	CreatedAt   time.Time       `json:"created_at"`
+	// IncludedComponents counts the components promoted along with this one
+	// because they belong to the same Docker/OCI image — digest alias, config
+	// and layer blobs, child manifests (#541). Reported by Promote only; it is
+	// not persisted, so listed requests carry zero.
+	IncludedComponents int `json:"included_components,omitempty"`
 }

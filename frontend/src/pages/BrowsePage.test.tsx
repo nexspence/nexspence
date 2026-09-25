@@ -900,6 +900,56 @@ describe('BrowsePage — promote flow', () => {
     await user.click(promoteBtns[promoteBtns.length - 1])
     expect(await screen.findByText(/Error: promote failed/)).toBeInTheDocument()
   })
+
+  // #541: a Docker tag promotes with its digest manifest, config and layers;
+  // the result says how many came along instead of "1 component".
+  it('reports the image parts promoted with a component', async () => {
+    const user = userEvent.setup()
+    server.use(
+      http.get('/service/rest/v1/components', () =>
+        HttpResponse.json({ items: [{ id: 'c1', name: 'pkg-a', group: '', version: '1', format: 'maven2', assets: [] }], continuationToken: null }),
+      ),
+      http.get('/api/v1/components/:id/promotion-rules', () =>
+        HttpResponse.json([{ id: 'pr1', name: 'rel', from_repo: 'maven-hosted', to_repo: 'maven-release', require_scan_pass: false, require_manual_approval: false }]),
+      ),
+      http.post('/api/v1/promotion/promote', () => HttpResponse.json({ requests: [{ status: 'completed', included_components: 4 }] })),
+    )
+    renderBrowse('?repo=maven-hosted')
+    await screen.findByText('pkg-a')
+    await user.click(screen.getAllByRole('checkbox')[0])
+    await user.click(await screen.findByRole('button', { name: /Promote selected/ }))
+    await screen.findByText(/Promote 1 component/)
+    await user.click(screen.getByRole('button', { name: /Select a rule/ }))
+    await user.click(await screen.findByText(/rel \(/))
+    const promoteBtns = screen.getAllByRole('button', { name: /^Promote$/ })
+    await user.click(promoteBtns[promoteBtns.length - 1])
+    expect(await screen.findByText(/Promoted 1 component\(s\) with 4 image part\(s\)/)).toBeInTheDocument()
+  })
+
+  // An auto-approved promotion that failed at copy time comes back 200 with a
+  // failed request; it must not be reported as a success.
+  it('reports a failed request as an error', async () => {
+    const user = userEvent.setup()
+    server.use(
+      http.get('/service/rest/v1/components', () =>
+        HttpResponse.json({ items: [{ id: 'c1', name: 'pkg-a', group: '', version: '1', format: 'maven2', assets: [] }], continuationToken: null }),
+      ),
+      http.get('/api/v1/components/:id/promotion-rules', () =>
+        HttpResponse.json([{ id: 'pr1', name: 'rel', from_repo: 'maven-hosted', to_repo: 'maven-release', require_scan_pass: false, require_manual_approval: false }]),
+      ),
+      http.post('/api/v1/promotion/promote', () => HttpResponse.json({ requests: [{ status: 'failed', error: 'blob sha256:abc is missing' }] })),
+    )
+    renderBrowse('?repo=maven-hosted')
+    await screen.findByText('pkg-a')
+    await user.click(screen.getAllByRole('checkbox')[0])
+    await user.click(await screen.findByRole('button', { name: /Promote selected/ }))
+    await screen.findByText(/Promote 1 component/)
+    await user.click(screen.getByRole('button', { name: /Select a rule/ }))
+    await user.click(await screen.findByText(/rel \(/))
+    const promoteBtns = screen.getAllByRole('button', { name: /^Promote$/ })
+    await user.click(promoteBtns[promoteBtns.length - 1])
+    expect(await screen.findByText(/Error: 1 of 1 promotion\(s\) failed: blob sha256:abc is missing/)).toBeInTheDocument()
+  })
 })
 
 describe('BrowsePage — non-admin', () => {
