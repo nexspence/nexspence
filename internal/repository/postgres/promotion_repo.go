@@ -133,7 +133,7 @@ func (r *promotionRepo) DeleteRule(ctx context.Context, id string) error {
 	return err
 }
 
-const promotionReqFields = `id, rule_id, component_id, status, requested_by, automatic,
+const promotionReqFields = `id, rule_id, component_id, status, requested_by, automatic, published_at,
 	reviewed_by, reviewed_at, completed_at, error, created_at`
 
 func scanPromotionRequest(row pgx.Row) (*domain.PromotionRequest, error) {
@@ -141,7 +141,7 @@ func scanPromotionRequest(row pgx.Row) (*domain.PromotionRequest, error) {
 	var status string
 	var errMsg, requestedBy *string
 	err := row.Scan(
-		&req.ID, &req.RuleID, &req.ComponentID, &status, &requestedBy, &req.Automatic,
+		&req.ID, &req.RuleID, &req.ComponentID, &status, &requestedBy, &req.Automatic, &req.PublishedAt,
 		&req.ReviewedBy, &req.ReviewedAt, &req.CompletedAt, &errMsg, &req.CreatedAt,
 	)
 	if err != nil {
@@ -168,7 +168,8 @@ func (r *promotionRepo) CreateRequest(ctx context.Context, req *domain.Promotion
 
 // CreateAutoRequest inserts an automatic request. The partial unique index
 // idx_promotion_requests_auto_pending admits one pending automatic request per
-// (rule, component); a second pending insert is a no-op that reads the first.
+// (rule, component); a second pending insert updates the first's published_at
+// (forward only) and reads it back instead.
 func (r *promotionRepo) CreateAutoRequest(ctx context.Context, req *domain.PromotionRequest) (bool, error) {
 	req.Automatic = true
 	req.RequestedBy = ""
@@ -176,28 +177,42 @@ func (r *promotionRepo) CreateAutoRequest(ctx context.Context, req *domain.Promo
 	if req.Error != "" {
 		em = &req.Error
 	}
+	var inserted bool
 	err := r.db.QueryRow(ctx,
-		`INSERT INTO promotion_requests (rule_id, component_id, status, requested_by, automatic, completed_at, error)
-		 VALUES ($1,$2,$3,NULL,true,$4,$5)
-		 ON CONFLICT (rule_id, component_id) WHERE automatic AND status = 'pending' DO NOTHING
-		 RETURNING id, created_at`,
-		req.RuleID, req.ComponentID, string(req.Status), req.CompletedAt, em,
-	).Scan(&req.ID, &req.CreatedAt)
-	if err == nil {
-		return true, nil
-	}
-	if !errors.Is(err, pgx.ErrNoRows) {
+		`INSERT INTO promotion_requests
+		   (rule_id, component_id, status, requested_by, automatic, completed_at, error, published_at)
+		 VALUES ($1,$2,$3,NULL,true,$4,$5,$6)
+		 ON CONFLICT (rule_id, component_id) WHERE automatic AND status = 'pending' DO UPDATE
+		 SET published_at = GREATEST(promotion_requests.published_at, EXCLUDED.published_at)
+		 RETURNING id, created_at, published_at, (xmax = 0)`,
+		req.RuleID, req.ComponentID, string(req.Status), req.CompletedAt, em, req.PublishedAt,
+	).Scan(&req.ID, &req.CreatedAt, &req.PublishedAt, &inserted)
+	if err != nil {
 		return false, err
 	}
-	existing, err := scanPromotionRequest(r.db.QueryRow(ctx,
-		`SELECT `+promotionReqFields+` FROM promotion_requests
-		 WHERE rule_id=$1 AND component_id=$2 AND automatic AND status='pending'`,
-		req.RuleID, req.ComponentID))
+	if inserted {
+		return true, nil
+	}
+	existing, err := r.GetRequest(ctx, req.ID)
 	if err != nil {
 		return false, err
 	}
 	*req = *existing
 	return false, nil
+}
+
+// FailPendingAutoRequests settles the pending automatic request of the pair as
+// failed. A reviewer approving it at the same moment holds its row lock; the
+// UPDATE waits, re-reads the status and leaves a settled row alone.
+func (r *promotionRepo) FailPendingAutoRequests(ctx context.Context, ruleID, componentID, reason string) (int, error) {
+	tag, err := r.db.Exec(ctx,
+		`UPDATE promotion_requests SET status = 'failed', completed_at = now(), error = $3
+		 WHERE rule_id = $1 AND component_id = $2 AND automatic AND status = 'pending'`,
+		ruleID, componentID, reason)
+	if err != nil {
+		return 0, err
+	}
+	return int(tag.RowsAffected()), nil
 }
 
 func (r *promotionRepo) GetRequest(ctx context.Context, id string) (*domain.PromotionRequest, error) {

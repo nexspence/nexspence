@@ -73,3 +73,48 @@ func TestStoreArtifact_NotifiesPublishes(t *testing.T) {
 		})
 	}
 }
+
+// Index and side files are not releases: they neither start a promotion nor,
+// for maven-metadata.xml, travel with one.
+func TestStoreArtifact_SideFilesAreNotPublishes(t *testing.T) {
+	ctx := context.Background()
+	for name, tc := range map[string]struct {
+		format string
+		path   string
+		coords base.Coords
+	}{
+		"maven artifact-level metadata": {"maven2", "/com/acme/app/maven-metadata.xml",
+			base.Coords{Group: "com", Name: "acme", Version: "app"}},
+		"maven snapshot metadata": {"maven2", "/com/acme/app/1.0-SNAPSHOT/maven-metadata.xml",
+			base.Coords{Group: "com.acme", Name: "app", Version: "1.0-SNAPSHOT"}},
+		"file without coordinates": {"conan", "/unknown/layout.txt", base.Coords{}},
+		"index placeholder":        {"npm", "/left-pad", base.Coords{Name: "left-pad", Version: "metadata"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			repo := testutil.SimpleRepo("r", tc.format)
+			d, _, _, _ := deps(repo)
+			pub := &recordingPublishes{}
+			d.Publishes = pub
+			_, err := base.StoreArtifact(ctx, d, repo.Name, tc.path, "application/octet-stream",
+				tc.coords, strings.NewReader("body"), 4)
+			require.NoError(t, err)
+			assert.Zero(t, pub.count())
+		})
+	}
+}
+
+func TestIsPublishSideFile(t *testing.T) {
+	for p, want := range map[string]bool{
+		"/com/acme/app/maven-metadata.xml":           true,
+		"/com/acme/app/maven-metadata.xml.sha1":      true,
+		"/com/acme/app/1.0/app-1.0.jar.md5":          true,
+		"/com/acme/app/1.0/app-1.0.jar.sha512":       true,
+		"/com/acme/app/1.0/app-1.0.jar":              false,
+		"/com/acme/app/1.0/app-1.0.pom":              false,
+		"/com/acme/app/1.0/app-1.0-sources.jar.asc":  false,
+		"/com/acme/app/1.0/not-maven-metadata.xml.x": false,
+	} {
+		assert.Equal(t, want, base.IsPublishSideFile(domain.FormatMaven2, p), p)
+	}
+	assert.False(t, base.IsPublishSideFile(domain.FormatRaw, "/maven-metadata.xml"), "only Maven owns the name")
+}

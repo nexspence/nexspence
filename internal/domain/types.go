@@ -808,7 +808,11 @@ type PromotionRequest struct {
 	RequestedBy string `json:"requested_by"`
 	// Automatic marks a request filed by auto-promotion on publish (#542)
 	// rather than by a Promote call.
-	Automatic   bool       `json:"automatic"`
+	Automatic bool `json:"automatic"`
+	// PublishedAt is, for an Automatic request, when the component was last
+	// published as of its last evaluation — the publish a scan must postdate
+	// for Approve to go ahead.
+	PublishedAt *time.Time `json:"published_at,omitempty"`
 	ReviewedBy  *string    `json:"reviewed_by,omitempty"`
 	ReviewedAt  *time.Time `json:"reviewed_at,omitempty"`
 	CompletedAt *time.Time `json:"completed_at,omitempty"`
@@ -832,8 +836,13 @@ type AutoPromotionEntry struct {
 	DueAt           time.Time
 	// Generation changes with every publish into the component; a worker
 	// finishes only the generation it evaluated.
-	Generation     int64
+	Generation int64
+	// Attempts counts transient failures only.
 	Attempts       int
 	WaitingForScan bool
-	Reason         string
+	// Started is whether this generation's start was audited.
+	Started bool
+	Reason  string
+	// ClaimToken names the claim this entry was handed out under.
+	ClaimToken string
 }

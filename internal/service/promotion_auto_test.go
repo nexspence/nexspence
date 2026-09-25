@@ -59,6 +59,7 @@ func newAutoFixture(t *testing.T, format string, rule domain.PromotionRule) *aut
 		now:    time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC),
 	}
 	f.queue = testutil.NewAutoPromotionQueue(f.promo)
+	f.queue.Now = f.clock
 	ctx := context.Background()
 	f.from = testutil.SimpleRepo("src", format)
 	f.to = testutil.SimpleRepo("dst", format)

@@ -279,6 +279,10 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 		scanTrigger = scanSvc
 		safego.Go(log, "scan-cron-scheduler", func() { scanSvc.StartScheduler(ctx, cfg.Scan.Schedule) })
 	}
+	// A rule waiting for a scan re-asks for it only when automatic scanning is
+	// on (it has a queue to go to); whether a format can be scanned at all is
+	// answered either way.
+	promotionSvc.WithAutoPromotionScanner(scanSvc, cfg.Scan.Enabled)
 
 	formatDeps := formats.Deps{
 		Repos:        repoRepo,

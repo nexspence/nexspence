@@ -2850,6 +2850,10 @@ func (r *PromotionRepo) CreateAutoRequest(_ context.Context, req *domain.Promoti
 		for _, v := range r.Requests {
 			if v.Automatic && v.Status == domain.PromotionPending &&
 				v.RuleID == req.RuleID && v.ComponentID == req.ComponentID {
+				if req.PublishedAt != nil && (v.PublishedAt == nil || req.PublishedAt.After(*v.PublishedAt)) {
+					t := *req.PublishedAt
+					v.PublishedAt = &t
+				}
 				*req = *v
 				return false, nil
 			}
@@ -2860,6 +2864,24 @@ func (r *PromotionRepo) CreateAutoRequest(_ context.Context, req *domain.Promoti
 	cp := *req
 	r.Requests[req.ID] = &cp
 	return true, nil
+}
+
+// FailPendingAutoRequests mirrors the postgres UPDATE of the pair's pending
+// automatic request.
+func (r *PromotionRepo) FailPendingAutoRequests(_ context.Context, ruleID, componentID, reason string) (int, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	n := 0
+	now := time.Now()
+	for _, v := range r.Requests {
+		if v.Automatic && v.Status == domain.PromotionPending && v.RuleID == ruleID && v.ComponentID == componentID {
+			v.Status = domain.PromotionFailed
+			v.Error = reason
+			v.CompletedAt = &now
+			n++
+		}
+	}
+	return n, nil
 }
 
 // PutBytes is a test helper that stores raw bytes under key in the BlobStore mock.

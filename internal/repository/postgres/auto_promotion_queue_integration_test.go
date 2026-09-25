@@ -4,11 +4,13 @@ package postgres
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
+	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/testutil/pgtest"
 )
 
@@ -30,113 +32,195 @@ func autoQueueFixture(t *testing.T, ctx context.Context, suffix string) (p promo
 	return p, auto, makePromotionComponent(t, ctx, p.FromRepoID, "1.0-"+suffix)
 }
 
+// rowsFor lists the queue rows of one component (other tests share the table).
+func rowsFor(t *testing.T, q *AutoPromotionQueueRepo, compID string) []domain.AutoPromotionEntry {
+	t.Helper()
+	all, err := q.List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []domain.AutoPromotionEntry
+	for _, e := range all {
+		if e.ComponentID == compID {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// claimFor claims until it gets compID's row (or nothing is left), releasing
+// any other test's rows it picks up on the way.
+func claimFor(t *testing.T, q *AutoPromotionQueueRepo, compID string, lease time.Duration) *domain.AutoPromotionEntry {
+	t.Helper()
+	ctx := context.Background()
+	for i := 0; i < 100; i++ {
+		got, err := q.Claim(ctx, lease, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(got) == 0 {
+			return nil
+		}
+		if got[0].ComponentID == compID {
+			return &got[0]
+		}
+		_ = q.Retry(ctx, got[0], repository.AutoPromotionRetry{Started: got[0].Started, WaitingForScan: got[0].WaitingForScan})
+	}
+	return nil
+}
+
 func TestAutoPromotionQueue_EnqueueClaimFinish(t *testing.T) {
 	ctx := context.Background()
 	q := NewAutoPromotionQueueRepo(pgtest.Pool(t))
 	p, auto, comp := autoQueueFixture(t, ctx, "aq1")
 	t0 := time.Now().UTC().Truncate(time.Microsecond)
 
-	// Only the auto_promote rule gets a row, and a second publish refreshes it.
-	n, err := q.EnqueuePublish(ctx, p.FromRepo, comp, t0, t0.Add(30*time.Second))
+	// Only the auto_promote rule gets a row.
+	n, err := q.EnqueuePublish(ctx, p.FromRepo, comp, t0, time.Hour)
 	if err != nil || n != 1 {
 		t.Fatalf("EnqueuePublish = %d, %v", n, err)
 	}
-	if _, err := q.EnqueuePublish(ctx, p.FromRepo, comp, t0.Add(10*time.Second), t0.Add(40*time.Second)); err != nil {
-		t.Fatal(err)
-	}
-	if n, _ := q.EnqueuePublish(ctx, "no-such-repo", comp, t0, t0); n != 0 {
+	if n, _ := q.EnqueuePublish(ctx, "no-such-repo", comp, t0, 0); n != 0 {
 		t.Fatalf("a repository without auto rules queued %d rows", n)
 	}
-
-	if got, _ := q.Claim(ctx, t0.Add(35*time.Second), time.Minute, 10); len(got) != 0 {
-		t.Fatalf("claimed %d rows before they were due", len(got))
+	if e := claimFor(t, q, comp, time.Minute); e != nil {
+		t.Fatal("claimed a row before it was due")
 	}
-	got, err := q.Claim(ctx, t0.Add(41*time.Second), time.Minute, 10)
-	if err != nil || len(got) != 1 {
-		t.Fatalf("Claim = %+v, %v", got, err)
+	// A second publish refreshes it; an earlier publish time does not win.
+	if _, err := q.EnqueuePublish(ctx, p.FromRepo, comp, t0.Add(-time.Hour), 0); err != nil {
+		t.Fatal(err)
 	}
-	e := got[0]
-	if e.RuleID != auto.ID || e.ComponentID != comp || e.Generation != 2 || !e.LastPublishedAt.Equal(t0.Add(10*time.Second)) {
+	e := claimFor(t, q, comp, time.Minute)
+	if e == nil {
+		t.Fatal("not claimable once due")
+	}
+	if e.RuleID != auto.ID || e.Generation != 2 || !e.LastPublishedAt.Equal(t0) || e.ClaimToken == "" {
 		t.Fatalf("entry = %+v", e)
 	}
-	// Leased: a second claimer gets nothing until the lease runs out.
-	if again, _ := q.Claim(ctx, t0.Add(42*time.Second), time.Minute, 10); len(again) != 0 {
+	// Leased: nobody else gets it.
+	if again := claimFor(t, q, comp, time.Minute); again != nil {
 		t.Fatal("a leased row was claimed twice")
-	}
-	if again, _ := q.Claim(ctx, t0.Add(2*time.Minute), time.Minute, 10); len(again) != 1 {
-		t.Fatal("an expired lease was not reclaimable")
 	}
 
 	// A publish during the evaluation survives the evaluator's Finish.
-	if _, err := q.EnqueuePublish(ctx, p.FromRepo, comp, t0.Add(3*time.Minute), t0.Add(4*time.Minute)); err != nil {
+	if _, err := q.EnqueuePublish(ctx, p.FromRepo, comp, t0.Add(time.Minute), 0); err != nil {
 		t.Fatal(err)
 	}
-	if err := q.Finish(ctx, e.ID, e.Generation); err != nil {
+	if err := q.Finish(ctx, *e); err != nil {
 		t.Fatal(err)
 	}
-	all, _ := q.List(ctx)
-	if len(all) != 1 || all[0].Generation != 3 {
-		t.Fatalf("after a stale Finish: %+v", all)
+	rows := rowsFor(t, q, comp)
+	if len(rows) != 1 || rows[0].Generation != 3 || rows[0].ClaimToken != "" {
+		t.Fatalf("after a stale Finish: %+v", rows)
 	}
-	got, _ = q.Claim(ctx, t0.Add(5*time.Minute), time.Minute, 10)
-	if len(got) != 1 {
+	e = claimFor(t, q, comp, time.Minute)
+	if e == nil {
 		t.Fatal("the refreshed row was not claimable")
 	}
-	if err := q.Finish(ctx, got[0].ID, got[0].Generation); err != nil {
+	if err := q.Finish(ctx, *e); err != nil {
 		t.Fatal(err)
 	}
-	if all, _ := q.List(ctx); len(all) != 0 {
-		t.Fatalf("Finish left %+v", all)
+	if rows := rowsFor(t, q, comp); len(rows) != 0 {
+		t.Fatalf("Finish left %+v", rows)
+	}
+}
+
+// A worker whose lease ran out and whose row someone else claimed can neither
+// finish nor reschedule it.
+func TestAutoPromotionQueue_StaleClaimIgnored(t *testing.T) {
+	ctx := context.Background()
+	q := NewAutoPromotionQueueRepo(pgtest.Pool(t))
+	p, _, comp := autoQueueFixture(t, ctx, "aq5")
+	if _, err := q.EnqueuePublish(ctx, p.FromRepo, comp, time.Now(), 0); err != nil {
+		t.Fatal(err)
+	}
+	stale := claimFor(t, q, comp, time.Millisecond)
+	if stale == nil {
+		t.Fatal("not claimed")
+	}
+	time.Sleep(20 * time.Millisecond)
+	fresh := claimFor(t, q, comp, time.Hour)
+	if fresh == nil || fresh.ClaimToken == stale.ClaimToken {
+		t.Fatalf("reclaim = %+v", fresh)
+	}
+	if err := q.Retry(ctx, *stale, repository.AutoPromotionRetry{DueIn: 10 * time.Hour, Reason: "stale"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := q.Finish(ctx, *stale); err != nil {
+		t.Fatal(err)
+	}
+	rows := rowsFor(t, q, comp)
+	if len(rows) != 1 || rows[0].Reason == "stale" || rows[0].ClaimToken != fresh.ClaimToken {
+		t.Fatalf("a stale claim changed the row: %+v", rows)
+	}
+	if err := q.Finish(ctx, *fresh); err != nil {
+		t.Fatal(err)
 	}
 }
 
 func TestAutoPromotionQueue_RetryAndWake(t *testing.T) {
 	ctx := context.Background()
 	q := NewAutoPromotionQueueRepo(pgtest.Pool(t))
-	p, _, comp := autoQueueFixture(t, ctx, "aq2")
+	p, auto, comp := autoQueueFixture(t, ctx, "aq2")
 	t0 := time.Now().UTC().Truncate(time.Microsecond)
-	if _, err := q.EnqueuePublish(ctx, p.FromRepo, comp, t0, t0); err != nil {
+	if _, err := q.EnqueuePublish(ctx, p.FromRepo, comp, t0, 0); err != nil {
 		t.Fatal(err)
 	}
-	got, _ := q.Claim(ctx, t0, time.Minute, 10)
-	if len(got) != 1 {
+	if queued, err := q.Queued(ctx, auto.ID, comp); err != nil || !queued {
+		t.Fatalf("Queued = %v, %v", queued, err)
+	}
+	e := claimFor(t, q, comp, time.Minute)
+	if e == nil {
 		t.Fatal("not claimed")
 	}
-	e := got[0]
-	if err := q.Retry(ctx, e.ID, e.Generation, t0.Add(time.Hour), true, "waiting for a scan"); err != nil {
+	if err := q.Retry(ctx, *e, repository.AutoPromotionRetry{DueIn: time.Hour, WaitingForScan: true,
+		Started: true, Reason: "waiting for a scan"}); err != nil {
 		t.Fatal(err)
 	}
-	all, _ := q.List(ctx)
-	if len(all) != 1 || all[0].Attempts != 1 || !all[0].WaitingForScan || all[0].Reason != "waiting for a scan" {
-		t.Fatalf("after Retry: %+v", all)
+	rows := rowsFor(t, q, comp)
+	if len(rows) != 1 || rows[0].Attempts != 0 || !rows[0].WaitingForScan || !rows[0].Started ||
+		rows[0].Reason != "waiting for a scan" {
+		t.Fatalf("after Retry: %+v", rows)
 	}
-	if again, _ := q.Claim(ctx, t0.Add(time.Minute), time.Minute, 10); len(again) != 0 {
+	if again := claimFor(t, q, comp, time.Minute); again != nil {
 		t.Fatal("a rescheduled row was claimed early")
 	}
-	if err := q.WakeForScan(ctx, comp, t0.Add(time.Minute)); err != nil {
+	if err := q.WakeForScan(ctx, comp); err != nil {
 		t.Fatal(err)
 	}
-	if again, _ := q.Claim(ctx, t0.Add(time.Minute), time.Minute, 10); len(again) != 1 {
+	e = claimFor(t, q, comp, time.Minute)
+	if e == nil {
 		t.Fatal("WakeForScan did not make the row due")
 	}
+	if err := q.Retry(ctx, *e, repository.AutoPromotionRetry{DueIn: 0, CountAttempt: true, Reason: "db down"}); err != nil {
+		t.Fatal(err)
+	}
+	if rows := rowsFor(t, q, comp); rows[0].Attempts != 1 {
+		t.Fatalf("a transient failure was not counted: %+v", rows)
+	}
 
-	// A Retry for a generation a publish has replaced keeps the publish's due time.
-	if _, err := q.EnqueuePublish(ctx, p.FromRepo, comp, t0.Add(2*time.Minute), t0.Add(3*time.Minute)); err != nil {
+	// A Retry for a generation a publish has replaced keeps the publish's state.
+	e = claimFor(t, q, comp, time.Minute)
+	if _, err := q.EnqueuePublish(ctx, p.FromRepo, comp, t0.Add(time.Minute), time.Hour); err != nil {
 		t.Fatal(err)
 	}
-	if err := q.Retry(ctx, e.ID, e.Generation, t0.Add(10*time.Hour), true, "stale"); err != nil {
+	if err := q.Retry(ctx, *e, repository.AutoPromotionRetry{DueIn: 0, WaitingForScan: true, Reason: "stale"}); err != nil {
 		t.Fatal(err)
 	}
-	all, _ = q.List(ctx)
-	if len(all) != 1 || !all[0].DueAt.Equal(t0.Add(3*time.Minute)) || all[0].WaitingForScan || all[0].Attempts != 0 {
-		t.Fatalf("stale Retry overrode the publish: %+v", all)
+	rows = rowsFor(t, q, comp)
+	if len(rows) != 1 || rows[0].WaitingForScan || rows[0].Attempts != 0 || rows[0].Started ||
+		!rows[0].DueAt.After(time.Now().Add(30*time.Minute)) {
+		t.Fatalf("stale Retry overrode the publish: %+v", rows)
 	}
 	// A component deleted takes its rows with it.
 	if _, err := pgtest.Pool(t).Exec(ctx, `DELETE FROM components WHERE id = $1`, comp); err != nil {
 		t.Fatal(err)
 	}
-	if all, _ := q.List(ctx); len(all) != 0 {
-		t.Fatalf("rows of a deleted component survive: %+v", all)
+	if rows := rowsFor(t, q, comp); len(rows) != 0 {
+		t.Fatalf("rows of a deleted component survive: %+v", rows)
+	}
+	if queued, _ := q.Queued(ctx, auto.ID, comp); queued {
+		t.Fatal("Queued after the row went")
 	}
 }
 
@@ -146,10 +230,11 @@ func TestAutoPromotionQueue_ConcurrentClaimsAreDisjoint(t *testing.T) {
 	pool := pgtest.Pool(t)
 	q := NewAutoPromotionQueueRepo(pool)
 	p, _, _ := autoQueueFixture(t, ctx, "aq3")
-	t0 := time.Now().UTC()
+	ours := map[string]bool{}
 	for i := 0; i < 40; i++ {
-		c := makePromotionComponent(t, ctx, p.FromRepoID, "c"+string(rune('a'+i%26))+string(rune('a'+i/26)))
-		if _, err := q.EnqueuePublish(ctx, p.FromRepo, c, t0, t0); err != nil {
+		c := makePromotionComponent(t, ctx, p.FromRepoID, fmt.Sprintf("c%02d", i))
+		ours[c] = true
+		if _, err := q.EnqueuePublish(ctx, p.FromRepo, c, time.Now(), 0); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -161,13 +246,15 @@ func TestAutoPromotionQueue_ConcurrentClaimsAreDisjoint(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for {
-				got, err := q.Claim(ctx, t0.Add(time.Second), time.Hour, 3)
+				got, err := q.Claim(ctx, time.Hour, 3)
 				if err != nil || len(got) == 0 {
 					return
 				}
 				mu.Lock()
 				for _, e := range got {
-					seen[e.ID]++
+					if ours[e.ComponentID] {
+						seen[e.ID]++
+					}
 				}
 				mu.Unlock()
 			}
@@ -191,15 +278,22 @@ func TestPromotionRepo_CreateAutoRequest(t *testing.T) {
 	pr := NewPromotionRepo(pgtest.Pool(t))
 	p, auto, comp := autoQueueFixture(t, ctx, "aq4")
 
-	first := &domain.PromotionRequest{RuleID: auto.ID, ComponentID: comp, Status: domain.PromotionPending}
+	t1 := time.Now().UTC().Truncate(time.Microsecond)
+	first := &domain.PromotionRequest{RuleID: auto.ID, ComponentID: comp, Status: domain.PromotionPending, PublishedAt: &t1}
 	created, err := pr.CreateAutoRequest(ctx, first)
 	if err != nil || !created {
 		t.Fatalf("first = %v, %v", created, err)
 	}
-	second := &domain.PromotionRequest{RuleID: auto.ID, ComponentID: comp, Status: domain.PromotionPending}
+	t2 := t1.Add(time.Minute)
+	second := &domain.PromotionRequest{RuleID: auto.ID, ComponentID: comp, Status: domain.PromotionPending, PublishedAt: &t2}
 	created, err = pr.CreateAutoRequest(ctx, second)
-	if err != nil || created || second.ID != first.ID || !second.Automatic {
+	if err != nil || created || second.ID != first.ID || !second.Automatic || !second.PublishedAt.Equal(t2) {
 		t.Fatalf("second = %+v, %v, %v", second, created, err)
+	}
+	earlier := t1.Add(-time.Hour)
+	third := &domain.PromotionRequest{RuleID: auto.ID, ComponentID: comp, Status: domain.PromotionPending, PublishedAt: &earlier}
+	if _, err := pr.CreateAutoRequest(ctx, third); err != nil || !third.PublishedAt.Equal(t2) {
+		t.Fatalf("published_at moved back: %+v, %v", third, err)
 	}
 	now := time.Now()
 	failed := &domain.PromotionRequest{RuleID: auto.ID, ComponentID: comp, Status: domain.PromotionFailed,
@@ -220,6 +314,20 @@ func TestPromotionRepo_CreateAutoRequest(t *testing.T) {
 	if got.Automatic || got.RequestedBy != p.UserID {
 		t.Fatalf("manual request = %+v", got)
 	}
+
+	// Failing the pending automatic request leaves the manual one alone.
+	n, err := pr.FailPendingAutoRequests(ctx, auto.ID, comp, "superseded")
+	if err != nil || n != 1 {
+		t.Fatalf("FailPendingAutoRequests = %d, %v", n, err)
+	}
+	got, _ = pr.GetRequest(ctx, first.ID)
+	if got.Status != domain.PromotionFailed || got.Error != "superseded" || got.CompletedAt == nil {
+		t.Fatalf("superseded request = %+v", got)
+	}
+	if got, _ = pr.GetRequest(ctx, manual.ID); got.Status != domain.PromotionPending {
+		t.Fatalf("manual request touched: %+v", got)
+	}
+
 	rule, _ := pr.GetRule(ctx, auto.ID)
 	if !rule.AutoPromote {
 		t.Fatal("auto_promote not stored")

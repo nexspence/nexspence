@@ -87,22 +87,39 @@ func TestAutoPromoteMaven_RealShape(t *testing.T) {
 	token := login(t, "admin", "admin123")
 	ruleID := createAutoRule(t, token, "auto-mvn-a-to-b", "auto-mvn-a", "auto-mvn-b")
 
+	// The target already holds a version of its own, deployed straight to it.
+	code, body := putBody(t, token, "/repository/auto-mvn-b/com/example/auto/0.9.0/auto-0.9.0.jar", "old")
+	require.Equal(t, http.StatusCreated, code, body)
+
+	// What mvn deploy sends: the files, their checksums, and the source's own
+	// artifact-level maven-metadata.xml listing only what it knows about.
 	base := "/com/example/auto/1.0.0/auto-1.0.0"
-	for _, ext := range []string{".jar", ".pom"} {
+	for _, ext := range []string{".jar", ".jar.sha1", ".pom", ".pom.sha1"} {
 		code, body := putBody(t, token, "/repository/auto-mvn-a"+base+ext, "content of "+ext)
 		require.Equal(t, http.StatusCreated, code, "deploy %s: %s", ext, body)
 	}
+	sourceMeta := `<?xml version="1.0" encoding="UTF-8"?><metadata><groupId>com.example</groupId>` +
+		`<artifactId>auto</artifactId><versioning><latest>1.0.0</latest><release>1.0.0</release>` +
+		`<versions><version>1.0.0</version></versions></versioning></metadata>`
+	code, body = putBody(t, token, "/repository/auto-mvn-a/com/example/auto/maven-metadata.xml", sourceMeta)
+	require.Equal(t, http.StatusCreated, code, body)
 
 	assert.Equal(t, "content of .jar", string(eventually(t, token, "/repository/auto-mvn-b"+base+".jar")))
 	assert.Equal(t, "content of .pom", string(eventually(t, token, "/repository/auto-mvn-b"+base+".pom")))
+	// The target's metadata is its own, generated from both versions — not the
+	// source's copy, which would hide 0.9.0.
+	meta := string(eventually(t, token, "/repository/auto-mvn-b/com/example/auto/maven-metadata.xml"))
+	assert.Contains(t, meta, "<version>0.9.0</version>")
+	assert.Contains(t, meta, "<version>1.0.0</version>")
+	time.Sleep(time.Second) // a stray metadata promotion would have run by now
 	reqs := requestsForRule(t, token, ruleID)
-	require.Len(t, reqs, 1, "one promotion for the jar+pom deploy")
+	require.Len(t, reqs, 1, "one promotion for the jar+pom deploy, none for the metadata")
 	assert.True(t, reqs[0].Automatic)
 	assert.Empty(t, reqs[0].RequestedBy)
 	assert.Equal(t, "completed", reqs[0].Status, reqs[0].Error)
 
 	// A file deployed later follows by itself.
-	code, body := putBody(t, token, "/repository/auto-mvn-a"+base+"-sources.jar", "sources")
+	code, body = putBody(t, token, "/repository/auto-mvn-a"+base+"-sources.jar", "sources")
 	require.Equal(t, http.StatusCreated, code, body)
 	assert.Equal(t, "sources", string(eventually(t, token, "/repository/auto-mvn-b"+base+"-sources.jar")))
 }

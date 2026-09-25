@@ -45,9 +45,11 @@ import (
 // base.RegisterStoredBlob), so an auto rule on the target repository is not
 // started by them: there are no chains A→B→C, and hence no cycles.
 //
-// HA: rows are claimed with FOR UPDATE SKIP LOCKED and a lease, so replicas
-// share the queue without a distributed lock and a crashed node's row is
-// picked up once its lease runs out. The copy itself runs under the request's
+// HA: rows are claimed one at a time with FOR UPDATE SKIP LOCKED, a lease and
+// a claim token, so replicas share the queue without a distributed lock, a
+// crashed node's row is picked up once its lease runs out, and a node that
+// outlived its lease cannot finish or reschedule a row someone else now holds.
+// The copy itself runs under the request's
 // row lock (WithPendingRequestLock), so even a row processed twice — a lease
 // outlived by a very large copy — cannot copy twice.
 
@@ -134,6 +136,23 @@ type autoPromotion struct {
 	audit repository.AuditRepo
 	log   logger.Logger
 	opts  AutoPromotionOptions
+
+	// scanner answers whether a format can be scanned at all; nil means the
+	// question is not asked and a scan gate simply waits.
+	scanner AutoScanner
+	// retrigger re-queues the scan a row waits for on every re-check.
+	retrigger bool
+}
+
+// AutoScanner is what auto-promotion needs from the scan service: whether a
+// scan of a format can happen at all, and a way to ask for one again. The
+// automatic scan queue is in memory and bounded — a trigger is dropped when
+// it is full and lost on restart — so a row waiting for a scan re-asks on each
+// re-check instead of trusting the upload's one trigger. *ScanService
+// satisfies it; its TriggerAsync ignores an id already queued.
+type AutoScanner interface {
+	TriggerAsync(componentID string)
+	CoversFormat(ctx context.Context, format string) (ok bool, why string)
 }
 
 // WithAutoPromotion enables auto-promotion on publish over queue and returns s.
@@ -148,6 +167,17 @@ func (s *PromotionService) WithAutoPromotion(queue repository.AutoPromotionQueue
 	return s
 }
 
+// WithAutoPromotionScanner lets a rule's scan gate fail fast on a format no
+// scanner covers, and — with retrigger, which needs automatic scanning on —
+// re-queue the scan it waits for. Call it after WithAutoPromotion.
+func (s *PromotionService) WithAutoPromotionScanner(sc AutoScanner, retrigger bool) *PromotionService {
+	if s.auto != nil {
+		s.auto.scanner = sc
+		s.auto.retrigger = retrigger
+	}
+	return s
+}
+
 // NotifyPublished records that a client published into componentID in
 // repository repoName (formats.PublishNotifier). It is on the upload path: one
 // statement, bounded by a timeout, detached from the request's cancellation (a
@@ -159,20 +189,19 @@ func (s *PromotionService) NotifyPublished(ctx context.Context, repoName, compon
 	}
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), autoNotifyTimeout)
 	defer cancel()
-	now := s.auto.opts.Now()
-	if _, err := s.auto.queue.EnqueuePublish(ctx, repoName, componentID, now, now.Add(s.auto.opts.SettleWindow)); err != nil {
+	if _, err := s.auto.queue.EnqueuePublish(ctx, repoName, componentID, s.auto.opts.Now(), s.auto.opts.SettleWindow); err != nil {
 		s.auto.log.Warnw("auto-promotion: publish not recorded", "repository", repoName, "component", componentID, "err", err)
 	}
 }
 
 // NotifyScanned wakes rows waiting for a scan of componentID; the scan service
 // calls it when it stores a result. Without it the worker still finds the
-// scan on its next backoff-paced re-check — this only makes it prompt.
+// scan on its next re-check — this only makes it prompt.
 func (s *PromotionService) NotifyScanned(ctx context.Context, componentID string) {
 	if s.auto == nil {
 		return
 	}
-	if err := s.auto.queue.WakeForScan(ctx, componentID, s.auto.opts.Now()); err != nil {
+	if err := s.auto.queue.WakeForScan(ctx, componentID); err != nil {
 		s.auto.log.Warnw("auto-promotion: scan wake-up failed", "component", componentID, "err", err)
 	}
 }
@@ -204,21 +233,31 @@ func (s *PromotionService) RunAutoPromotion(ctx context.Context) {
 	}
 }
 
-// ProcessAutoPromotions claims the due rows and evaluates each one; it
-// returns how many it claimed. One pass of RunAutoPromotion.
+// ProcessAutoPromotions evaluates up to BatchSize due rows and returns how
+// many it took. One pass of RunAutoPromotion.
+//
+// Rows are claimed one at a time, each just before it is evaluated: a lease
+// taken for a whole batch would run down while earlier rows copy, and a slow
+// copy would hand the rest of the batch to another replica while this one
+// still meant to work it.
 func (s *PromotionService) ProcessAutoPromotions(ctx context.Context) (int, error) {
 	if s.auto == nil {
 		return 0, nil
 	}
 	o := s.auto.opts
-	entries, err := s.auto.queue.Claim(ctx, o.Now(), o.Lease, o.BatchSize)
-	if err != nil {
-		return 0, err
+	n := 0
+	for n < o.BatchSize && ctx.Err() == nil {
+		entries, err := s.auto.queue.Claim(ctx, o.Lease, 1)
+		if err != nil {
+			return n, err
+		}
+		if len(entries) == 0 {
+			break
+		}
+		n++
+		s.processAutoEntry(ctx, entries[0])
 	}
-	for i := 0; i < len(entries) && ctx.Err() == nil; i++ {
-		s.processAutoEntry(ctx, entries[i])
-	}
-	return len(entries), nil
+	return n, nil
 }
 
 // autoRun is one evaluation of one queue row.
@@ -227,10 +266,13 @@ type autoRun struct {
 	e    domain.AutoPromotionEntry
 	rule *domain.PromotionRule
 	comp *domain.Component
+	// started is whether AUTO_PROMOTE_STARTED has been audited for this
+	// generation (by this run or an earlier one).
+	started bool
 }
 
 func (s *PromotionService) processAutoEntry(ctx context.Context, e domain.AutoPromotionEntry) {
-	r := &autoRun{s: s, e: e}
+	r := &autoRun{s: s, e: e, started: e.Started}
 	o := s.auto.opts
 
 	rule, err := s.promotionRepo.GetRule(ctx, e.RuleID)
@@ -262,12 +304,6 @@ func (s *PromotionService) processAutoEntry(ctx context.Context, e domain.AutoPr
 		return
 	}
 
-	// The window may have been lengthened since the row was queued.
-	if settled := e.LastPublishedAt.Add(o.SettleWindow); o.Now().Before(settled) {
-		r.retry(ctx, settled, false, "settling")
-		return
-	}
-
 	matched, ferr := s.evalPathFilter(*rule, comp)
 	if ferr != nil {
 		r.blocked(ctx, fmt.Errorf("rule %q: %w", rule.Name, ferr))
@@ -282,8 +318,17 @@ func (s *PromotionService) processAutoEntry(ctx context.Context, e domain.AutoPr
 		return
 	}
 
-	if e.Attempts == 0 {
+	// Once per publish, whatever this evaluation goes on to do — reschedule
+	// for the settle window, wait for a scan, or copy.
+	if !r.started {
 		r.auditEvent(ctx, AuditAutoPromoteStarted, "success", nil)
+		r.started = true
+	}
+
+	// The window may have been lengthened since the row was queued.
+	if settled := e.LastPublishedAt.Add(o.SettleWindow); o.Now().Before(settled) {
+		r.retry(ctx, settled.Sub(o.Now()), false, false, "settling")
+		return
 	}
 
 	if rule.RequireScanPass {
@@ -317,10 +362,12 @@ func (s *PromotionService) processAutoEntry(ctx context.Context, e domain.AutoPr
 		return
 	}
 
+	published := e.LastPublishedAt
 	req := &domain.PromotionRequest{
 		RuleID:             rule.ID,
 		ComponentID:        comp.ID,
 		Status:             domain.PromotionPending,
+		PublishedAt:        &published,
 		IncludedComponents: plan.dependents,
 	}
 	created, err := s.promotionRepo.CreateAutoRequest(ctx, req)
@@ -345,9 +392,14 @@ func (s *PromotionService) processAutoEntry(ctx context.Context, e domain.AutoPr
 // Only a scan of this publish counts: one that started no earlier than the
 // component's last asset. Without that, a re-pushed tag or a redeployed
 // SNAPSHOT would pass on the previous content's clean scan while its new
-// content is still unscanned. The scan is not triggered here — every upload
-// already queues one (base.queueForScanning); this waits for it, woken by
-// NotifyScanned or, failing that, by its own backoff.
+// content is still unscanned. Both timestamps come from application clocks —
+// the scanning process stamps scanned_at when it starts, the publishing one
+// stamps last_published_at — which is why the queue keeps last_published_at
+// on that clock rather than the database's.
+//
+// A format no scanner covers is refused at once rather than after ScanWait.
+// Otherwise the scan the upload queued is waited for, re-asked for on every
+// re-check (the automatic queue is lossy), and woken early by NotifyScanned.
 func (r *autoRun) awaitScan(ctx context.Context) bool {
 	s, o := r.s, r.s.auto.opts
 	scan, err := s.scanRepo.GetLatestByComponent(ctx, r.comp.ID)
@@ -355,20 +407,32 @@ func (r *autoRun) awaitScan(ctx context.Context) bool {
 		if scan.Status == domain.ScanStatusFailed {
 			// A scanner that errored found nothing because it looked at
 			// nothing. Nobody is watching an automatic promotion go through,
-			// so it fails closed rather than read that as clean.
+			// so it fails closed rather than read that as clean. (A manual
+			// Promote's scanGate still passes such a scan — it counts
+			// findings, and an errored scan has none; a reviewer is there to
+			// look.)
 			r.blocked(ctx, fmt.Errorf("rule %q requires a scan, and the scan of this publish failed: %s",
 				r.rule.Name, scan.Error))
 			return true
 		}
 		return false
 	}
-	now := o.Now()
-	if now.Sub(r.e.LastPublishedAt) >= o.ScanWait {
+	if sc := s.auto.scanner; sc != nil {
+		if ok, why := sc.CoversFormat(ctx, r.comp.Format); !ok {
+			r.blocked(ctx, fmt.Errorf("rule %q requires a scan, which can never pass here: %s", r.rule.Name, why))
+			return true
+		}
+	}
+	elapsed := o.Now().Sub(r.e.LastPublishedAt)
+	if elapsed >= o.ScanWait {
 		r.blocked(ctx, fmt.Errorf("rule %q requires a scan, but no scan of this publish arrived within %s — "+
-			"check that scanning is enabled and that a scanner covers %s components", r.rule.Name, o.ScanWait, r.comp.Format))
+			"check that scanning is enabled", r.rule.Name, o.ScanWait))
 		return true
 	}
-	r.retry(ctx, now.Add(autoBackoff(r.e.Attempts)), true, "waiting for a scan")
+	if sc := s.auto.scanner; sc != nil && s.auto.retrigger {
+		sc.TriggerAsync(r.comp.ID)
+	}
+	r.retry(ctx, scanRecheck(elapsed), true, false, "waiting for a scan")
 	return true
 }
 
@@ -406,25 +470,40 @@ func (r *autoRun) copyNow(ctx context.Context, req *domain.PromotionRequest) {
 	r.auditEvent(ctx, AuditAutoPromoteCopied, "success", extra)
 }
 
-// blocked records a refusal that is final for this publish: a failed automatic
-// request carrying the reason (what the Promotion requests list shows), an
-// audit event, and the row removed. A later publish into the component queues
-// it afresh.
+// blocked records a refusal that is final for this publish, and removes the
+// row; a later publish into the component queues it afresh.
+//
+// The record is a failed automatic request carrying the reason — what the
+// Promotion requests list shows — plus an audit event. When an automatic
+// request for the pair is still pending from an earlier publish, that request
+// is the one failed: it would otherwise stay approvable, and Approve copies
+// the component as it is now — the content this publish was just refused for.
 func (r *autoRun) blocked(ctx context.Context, reason error) {
 	s := r.s
-	now := time.Now()
-	req := &domain.PromotionRequest{
-		RuleID:      r.e.RuleID,
-		ComponentID: r.e.ComponentID,
-		Status:      domain.PromotionFailed,
-		CompletedAt: &now,
-		Error:       "automatic promotion blocked: " + reason.Error(),
-	}
+	msg := "automatic promotion blocked: " + reason.Error()
 	extra := map[string]any{"reason": reason.Error()}
-	if _, err := s.promotionRepo.CreateAutoRequest(ctx, req); err != nil {
-		s.auto.log.Warnw("auto-promotion: blocked request not recorded", "rule", r.e.RuleID, "component", r.e.ComponentID, "err", err)
+	superseded, ferr := s.promotionRepo.FailPendingAutoRequests(ctx, r.e.RuleID, r.e.ComponentID, msg)
+	if ferr != nil {
+		s.auto.log.Warnw("auto-promotion: pending request not failed", "rule", r.e.RuleID, "component", r.e.ComponentID, "err", ferr)
+	}
+	if superseded > 0 {
+		extra["superseded_pending"] = superseded
 	} else {
-		extra["request_id"] = req.ID
+		now := time.Now()
+		published := r.e.LastPublishedAt
+		req := &domain.PromotionRequest{
+			RuleID:      r.e.RuleID,
+			ComponentID: r.e.ComponentID,
+			Status:      domain.PromotionFailed,
+			CompletedAt: &now,
+			PublishedAt: &published,
+			Error:       msg,
+		}
+		if _, err := s.promotionRepo.CreateAutoRequest(ctx, req); err != nil {
+			s.auto.log.Warnw("auto-promotion: blocked request not recorded", "rule", r.e.RuleID, "component", r.e.ComponentID, "err", err)
+		} else {
+			extra["request_id"] = req.ID
+		}
 	}
 	r.auditEvent(ctx, AuditAutoPromoteBlocked, "failure", extra)
 	s.auto.log.Infow("auto-promotion blocked", "rule", r.e.RuleID, "component", r.e.ComponentID, "reason", reason.Error())
@@ -432,25 +511,32 @@ func (r *autoRun) blocked(ctx context.Context, reason error) {
 }
 
 // retryTransient backs off an evaluation that failed on something that may
-// clear up by itself, and gives up — as blocked — after MaxAttempts.
+// clear up by itself, and gives up — as blocked — after MaxAttempts. Only
+// these failures count as attempts; waiting is not failing.
 func (r *autoRun) retryTransient(ctx context.Context, err error) {
 	if r.e.Attempts+1 >= r.s.auto.opts.MaxAttempts {
 		r.blocked(ctx, fmt.Errorf("giving up after %d attempts: %w", r.e.Attempts+1, err))
 		return
 	}
 	r.s.auto.log.Warnw("auto-promotion: will retry", "rule", r.e.RuleID, "component", r.e.ComponentID, "err", err)
-	r.retry(ctx, r.s.auto.opts.Now().Add(autoBackoff(r.e.Attempts)), false, err.Error())
+	r.retry(ctx, autoBackoff(r.e.Attempts), false, true, err.Error())
 }
 
-func (r *autoRun) retry(ctx context.Context, due time.Time, waitingForScan bool, reason string) {
-	if err := r.s.auto.queue.Retry(ctx, r.e.ID, r.e.Generation, due, waitingForScan, reason); err != nil {
+func (r *autoRun) retry(ctx context.Context, dueIn time.Duration, waitingForScan, countAttempt bool, reason string) {
+	if err := r.s.auto.queue.Retry(ctx, r.e, repository.AutoPromotionRetry{
+		DueIn:          dueIn,
+		WaitingForScan: waitingForScan,
+		Started:        r.started,
+		CountAttempt:   countAttempt,
+		Reason:         reason,
+	}); err != nil {
 		// The lease runs out and the row comes back by itself.
 		r.s.auto.log.Warnw("auto-promotion: reschedule failed", "entry", r.e.ID, "err", err)
 	}
 }
 
 func (r *autoRun) finish(ctx context.Context) {
-	if err := r.s.auto.queue.Finish(ctx, r.e.ID, r.e.Generation); err != nil {
+	if err := r.s.auto.queue.Finish(ctx, r.e); err != nil {
 		r.s.auto.log.Warnw("auto-promotion: finish failed", "entry", r.e.ID, "err", err)
 	}
 }
@@ -497,6 +583,21 @@ func componentLabel(c *domain.Component) string {
 		label = c.Group + ":" + label
 	}
 	return label
+}
+
+// scanRecheck paces the re-checks of a row waiting for a scan by how long it
+// has waited — often at first, when the scan the upload queued is most likely
+// to land, then less so — within autoRetryBase..autoRetryMax. It does not use
+// the attempts counter: waiting is not failing.
+func scanRecheck(waited time.Duration) time.Duration {
+	d := waited / 2
+	if d < autoRetryBase {
+		d = autoRetryBase
+	}
+	if d > autoRetryMax {
+		d = autoRetryMax
+	}
+	return d
 }
 
 // autoBackoff is autoRetryBase doubled per attempt, capped at autoRetryMax.

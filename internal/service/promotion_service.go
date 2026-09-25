@@ -462,6 +462,17 @@ func (s *PromotionService) Approve(ctx context.Context, requestID, reviewerID st
 				return repository.PromotionOutcome{Status: domain.PromotionFailed,
 					ReviewedBy: &reviewerID, ReviewedAt: &now, CompletedAt: &now, Error: copyErr.Error()}
 			}
+			if req.Automatic {
+				if gerr := s.autoApprovalGate(ctx, req, rule); gerr != nil {
+					// Not a verdict on the request — the content it names is
+					// still being looked at. It stays pending.
+					copyErr = gerr
+					return repository.PromotionOutcome{Status: domain.PromotionPending}
+				}
+			}
+			// executeCopy re-runs the rule's gates, the scan gate among them,
+			// against the component as it is now — for every request, since
+			// the content may have changed while it sat pending.
 			if _, cerr := s.executeCopy(ctx, req, rule); cerr != nil {
 				copyErr = cerr
 				return repository.PromotionOutcome{Status: domain.PromotionFailed,
@@ -477,6 +488,42 @@ func (s *PromotionService) Approve(ctx context.Context, requestID, reviewerID st
 		return err
 	}
 	return copyErr
+}
+
+// autoApprovalGate is what an automatic request (#542) must also pass at
+// approval time. The scan gate executeCopy applies reads the component's
+// latest scan, which after a re-pushed tag or a redeployed SNAPSHOT may still
+// be the previous content's clean one. So:
+//
+//   - a publish the worker has not evaluated yet (a queued row for the pair)
+//     holds the approval: that evaluation either confirms this request or
+//     fails it (autoRun.blocked);
+//   - with require_scan_pass, the latest scan must have started no earlier
+//     than the publish the request was last evaluated for, and must not have
+//     errored.
+func (s *PromotionService) autoApprovalGate(ctx context.Context, req *domain.PromotionRequest, rule *domain.PromotionRule) error {
+	if s.auto != nil {
+		queued, err := s.auto.queue.Queued(ctx, req.RuleID, req.ComponentID)
+		if err != nil {
+			return fmt.Errorf("cannot check for a newer publish of component %s: %w", req.ComponentID, err)
+		}
+		if queued {
+			return fmt.Errorf("component %s was published again after this request was filed and is being "+
+				"re-evaluated; approve it once that is done", req.ComponentID)
+		}
+	}
+	if !rule.RequireScanPass || req.PublishedAt == nil {
+		return nil
+	}
+	scan, err := s.scanRepo.GetLatestByComponent(ctx, req.ComponentID)
+	if err != nil || scan == nil || scan.ScannedAt.Before(*req.PublishedAt) {
+		return fmt.Errorf("component %s has no scan of its current content yet; approve it once it has been scanned",
+			req.ComponentID)
+	}
+	if scan.Status == domain.ScanStatusFailed {
+		return fmt.Errorf("the scan of component %s's current content failed: %s", req.ComponentID, scan.Error)
+	}
+	return nil
 }
 
 // Reject rejects a pending promotion request, under the same row lock Approve
@@ -671,8 +718,14 @@ func (s *PromotionService) planCopy(ctx context.Context, comp *domain.Component,
 	var toWrite []domain.Asset
 	for i, u := range plan.units {
 		pending := u.assets
+		if onlyMissing {
+			// A literal maven-metadata.xml a client uploaded is the source's
+			// index; the target generates its own from what it holds, and a
+			// copy would shadow it and hide the target's other versions.
+			pending = withoutSideFiles(domain.RepoFormat(u.comp.Format), pending)
+		}
 		if plan.skipsIdentical(i) {
-			if pending, err = s.missingInTarget(ctx, toRepo.Name, u.assets); err != nil {
+			if pending, err = s.missingInTarget(ctx, toRepo.Name, pending); err != nil {
 				return nil, err
 			}
 		}
@@ -786,6 +839,18 @@ func (s *PromotionService) copyAsset(ctx context.Context, asset domain.Asset, ne
 		rb.assetIDs = append(rb.assetIDs, newAsset.ID)
 	}
 	return nil
+}
+
+// withoutSideFiles drops the format's index and checksum files
+// (base.IsPublishSideFile) from assets.
+func withoutSideFiles(format domain.RepoFormat, assets []domain.Asset) []domain.Asset {
+	out := assets[:0:0]
+	for _, a := range assets {
+		if !base.IsPublishSideFile(format, a.Path) {
+			out = append(out, a)
+		}
+	}
+	return out
 }
 
 // unitAssets flattens every unit's assets: the full set a promotion writes.

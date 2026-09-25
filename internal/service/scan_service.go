@@ -164,6 +164,13 @@ type ScanService struct {
 	// refused because one is behind. What the queue drops, the daily bulk scan
 	// picks up.
 	queue chan string
+	// queued holds the ids sitting in queue, not yet picked up: a second
+	// trigger for one of them is dropped, since the scan still to come will
+	// read the component as it is by then. Auto-promotion re-triggers the scan
+	// it waits for on every re-check (#542), and this keeps that from filling
+	// the queue with duplicates.
+	queuedMu sync.Mutex
+	queued   map[string]bool
 
 	// onScanned, when set, is told about every scan row stored — how a rule
 	// waiting for a scan before auto-promoting (#542) learns it has one.
@@ -203,11 +210,44 @@ func (s *ScanService) TriggerAsync(componentID string) {
 	if componentID == "" || s.queue == nil {
 		return
 	}
+	s.queuedMu.Lock()
+	defer s.queuedMu.Unlock()
+	if s.queued[componentID] {
+		return
+	}
 	select {
 	case s.queue <- componentID:
+		if s.queued == nil {
+			s.queued = map[string]bool{}
+		}
+		s.queued[componentID] = true
 	default:
 		log.Printf("nexor: auto-scan queue full, skipping component=%s (next bulk scan will cover it)", componentID)
 	}
+}
+
+// dequeued marks componentID as picked up: a trigger from now on queues a new
+// scan, which will see content written after this one started.
+func (s *ScanService) dequeued(componentID string) {
+	s.queuedMu.Lock()
+	delete(s.queued, componentID)
+	s.queuedMu.Unlock()
+}
+
+// CoversFormat reports whether an automatic scan can produce a result for a
+// component of format, and if not, a sentence saying why. Auto-promotion asks
+// before waiting for a scan that would never come (#542).
+func (s *ScanService) CoversFormat(ctx context.Context, format string) (bool, string) {
+	if isImageFormat(format) {
+		if st := s.Scanner(ctx); !st.Ready() {
+			return false, "image scanning is not available: " + st.Message
+		}
+		return true, ""
+	}
+	if FormatToEcosystem(format) == "" {
+		return false, fmt.Sprintf("no scanner covers %s components", format)
+	}
+	return true, ""
 }
 
 // StartScheduler drains the automatic-scan queue and runs a full bulk re-scan on
@@ -286,6 +326,7 @@ func (s *ScanService) drainQueue(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case componentID := <-s.queue:
+			s.dequeued(componentID)
 			if s.skipAutoScan(ctx, componentID) {
 				continue
 			}
