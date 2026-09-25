@@ -345,8 +345,56 @@ func RegisterStoredBlob(ctx context.Context, d formats.Deps, repo *domain.Reposi
 		return nil, err
 	}
 
+	// Publish first, scan second: an auto-promotion that requires a scan only
+	// accepts one that started no earlier than the publish it records, and a
+	// scan worker picking the component up the instant it is queued must not
+	// beat that timestamp.
+	notifyPublished(ctx, d, repo, comp, filePath)
 	queueForScanning(d, comp)
 	return asset, nil
+}
+
+// notifyPublished tells auto-promotion (#542) that a client published into
+// comp. Like queueForScanning it sits at the narrow waist, and it filters to
+// what a promotion rule should react to:
+//
+//   - hosted repositories only — a proxy caching an upstream file is not a
+//     publish, and a group write lands in (and is registered against) its
+//     hosted member;
+//   - client writes only — a Nexus migration bringing content across
+//     (WithoutWritePolicy) is not a publish either. Promotion's own copies do
+//     not come through here at all, so a promoted copy never starts a rule on
+//     the target repository: there are no auto-promotion chains, and so no
+//     cycles;
+//   - for Docker/OCI, a manifest pushed by tag. Layers, configs and manifests
+//     pushed by digest are parts of an image, not a release — a client pushes
+//     them before the tag, and the promotion of the tag brings them along
+//     (#541). Triggering on them would start a promotion per blob.
+func notifyPublished(ctx context.Context, d formats.Deps, repo *domain.Repository, comp *domain.Component, filePath string) {
+	if d.Publishes == nil || comp == nil || comp.ID == "" || repo == nil {
+		return
+	}
+	if repo.Type != domain.TypeHosted || writePolicyBypassed(ctx) {
+		return
+	}
+	if repo.Format.IsOCIRegistry() && !isOCITagManifestPath(filePath) {
+		return
+	}
+	d.Publishes.NotifyPublished(ctx, repo.Name, comp.ID)
+}
+
+// isOCITagManifestPath reports whether filePath is "/manifests/<image>/<tag>"
+// with a tag reference rather than a digest.
+func isOCITagManifestPath(filePath string) bool {
+	rest, ok := strings.CutPrefix(filePath, "/manifests/")
+	if !ok {
+		return false
+	}
+	i := strings.LastIndex(rest, "/")
+	if i <= 0 || i == len(rest)-1 {
+		return false
+	}
+	return !strings.Contains(rest[i+1:], ":")
 }
 
 // storeQuotaConfigured reports whether the store this registration lands in has

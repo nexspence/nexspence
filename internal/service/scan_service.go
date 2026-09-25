@@ -164,6 +164,10 @@ type ScanService struct {
 	// refused because one is behind. What the queue drops, the daily bulk scan
 	// picks up.
 	queue chan string
+
+	// onScanned, when set, is told about every scan row stored — how a rule
+	// waiting for a scan before auto-promoting (#542) learns it has one.
+	onScanned func(ctx context.Context, componentID string)
 }
 
 func (s *ScanService) now() time.Time {
@@ -298,6 +302,13 @@ func (s *ScanService) drainQueue(ctx context.Context) {
 // WithScanResults attaches a repository for persisting scan results and returns s.
 func (s *ScanService) WithScanResults(repo repository.ScanResultRepo) *ScanService {
 	s.ScanResults = repo
+	return s
+}
+
+// WithScanCompleted registers fn to be called after each scan result row is
+// stored, and returns s.
+func (s *ScanService) WithScanCompleted(fn func(ctx context.Context, componentID string)) *ScanService {
+	s.onScanned = fn
 	return s
 }
 
@@ -550,6 +561,10 @@ func (s *ScanService) persistScanRow(ctx context.Context, comp *domain.Component
 	}
 	if err := s.ScanResults.Insert(ctx, row); err != nil {
 		log.Printf("nexor: scan result row not inserted component=%s scanner=%s: %v", comp.ID, scanner, err)
+		return
+	}
+	if s.onScanned != nil {
+		s.onScanned(ctx, comp.ID)
 	}
 }
 

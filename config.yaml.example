@@ -153,6 +153,14 @@ gc:
   schedule: "0 3 * * 0"      # cron: weekly, Sunday 03:00
   min_age: "24h"             # only collect orphans older than this (grace period)
 
+# Automatic promotion on publish — applies to promotion rules with
+# auto_promote on ("Promote automatically on publish" in the UI). Every replica
+# runs the worker; the queue is shared through the database.
+promotion:
+  auto_settle_window: "30s"  # promote once no new file has arrived for this long (multi-file uploads move once)
+  auto_scan_wait: "1h"       # a rule requiring a scan waits this long for one, then records the promotion as blocked
+  auto_poll_interval: "5s"   # how often the worker looks for components due for promotion
+
 # Docker / OCI registry settings.
 # The /v2/ blob-upload paths are exempt from http.max_body_mb so large image
 # layers are not truncated, which makes max_upload_bytes the only bound on a

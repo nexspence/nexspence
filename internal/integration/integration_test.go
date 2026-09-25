@@ -19,6 +19,7 @@ import (
 	"os"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -90,6 +91,10 @@ func server(t *testing.T) *httptest.Server {
 		// unauthenticated read, and the public-read tests below would pass for
 		// the wrong reason.
 		cfg.Auth.AnonymousEnabled = true
+		// Auto-promotion (#542) with a window short enough for a test to wait
+		// out, but long enough that a two-file deploy settles as one.
+		cfg.Promotion.AutoSettleWindow = 500 * time.Millisecond
+		cfg.Promotion.AutoPollInterval = 100 * time.Millisecond
 
 		log := logger.New("error", "json")
 		handler := api.NewRouter(context.Background(), cfg, pool, log, "integration-test")

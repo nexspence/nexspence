@@ -31,6 +31,9 @@ type Deps struct {
 	// Scanner is optional — nil disables automatic vulnerability scanning of
 	// uploads.
 	Scanner ScanTrigger
+	// Publishes is optional — nil disables automatic promotion on publish
+	// (#542). It is told about client publishes into hosted repositories only.
+	Publishes PublishNotifier
 	// Tokens mints a bearer token for a caller the request has already
 	// authenticated. It is optional — nil makes the handshakes that need one
 	// answer 503 rather than hand out a token nothing can validate.
@@ -69,6 +72,17 @@ type ScanTrigger interface {
 	// is called on the upload path, so implementations must not block and must
 	// not report failure: a scan that cannot be queued is dropped, not raised.
 	TriggerAsync(componentID string)
+}
+
+// PublishNotifier is told that a client published an asset into a component
+// of a hosted repository, so an auto-promoting rule can pick it up (#542).
+//
+// Like ScanTrigger it is the narrowest view of a service (here
+// *service.PromotionService), declared here to avoid an import cycle. It runs
+// on the upload path: implementations record the publish and return — they
+// never evaluate or copy anything inline, and never fail the upload.
+type PublishNotifier interface {
+	NotifyPublished(ctx context.Context, repoName, componentID string)
 }
 
 // RBACChecker answers whether a caller may act on a path in a repository.

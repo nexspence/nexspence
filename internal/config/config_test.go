@@ -193,6 +193,27 @@ func TestLoad_GCDefaults(t *testing.T) {
 	assert.Equal(t, 24*time.Hour, cfg.GC.MinAge)
 }
 
+func TestLoad_PromotionDefaultsAndEnv(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := "" +
+		"database:\n  dsn: \"postgres://u:p@localhost:5432/db?sslmode=disable\"\n" +
+		"auth:\n  jwt_secret: \"a-unique-production-secret-at-least-32b\"\n"
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.Equal(t, 30*time.Second, cfg.Promotion.AutoSettleWindow)
+	assert.Equal(t, time.Hour, cfg.Promotion.AutoScanWait)
+	assert.Equal(t, 5*time.Second, cfg.Promotion.AutoPollInterval)
+
+	// The Helm chart sets these by environment variable.
+	t.Setenv("NEXSPENCE_PROMOTION_AUTO_SETTLE_WINDOW", "2m")
+	cfg, err = Load(path)
+	require.NoError(t, err)
+	assert.Equal(t, 2*time.Minute, cfg.Promotion.AutoSettleWindow)
+}
+
 // Automatic scanning is on out of the box: an unscanned upload is the state
 // this feature exists to prevent, so opting in is the wrong default.
 func TestLoad_ScanDefaults(t *testing.T) {

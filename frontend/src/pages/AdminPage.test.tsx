@@ -1164,6 +1164,73 @@ describe('AdminPage — Promotion tab', () => {
       expect(sevBox('MEDIUM')).not.toBeChecked()
     })
   })
+
+  // #542: a rule can start by itself on publish.
+  describe('automatic promotion', () => {
+    type RulePayload = { auto_promote: boolean }
+    const reposHandler = http.get('/service/rest/v1/repositories', () =>
+      HttpResponse.json([fixtures.repository({ name: 'maven-hosted' }), fixtures.repository({ id: 'r2', name: 'maven-release' })]),
+    )
+    const autoBox = () => screen.getByRole('checkbox', { name: /Promote automatically on publish/ })
+
+    it('is off by default and posts the choice', async () => {
+      const user = userEvent.setup()
+      let posted: RulePayload | null = null
+      server.use(
+        http.get('/api/v1/promotion/rules', () => HttpResponse.json([])),
+        http.get('/api/v1/promotion/requests', () => HttpResponse.json([])),
+        reposHandler,
+        http.post('/api/v1/promotion/rules', async ({ request }) => {
+          posted = (await request.json()) as RulePayload
+          return HttpResponse.json(promRule, { status: 201 })
+        }),
+      )
+      renderAdmin('promotion')
+      await screen.findByText('No promotion rules configured')
+      await user.click(screen.getByRole('button', { name: /Create Rule/ }))
+      await screen.findByText('Create Promotion Rule')
+      await user.type(screen.getByPlaceholderText('promote-to-release'), 'auto-rule')
+      await user.click(screen.getByRole('button', { name: /Select source repository/ }))
+      await user.click((await screen.findAllByText('maven-hosted'))[0])
+      await user.click(screen.getByRole('button', { name: /Select target repository/ }))
+      await user.click((await screen.findAllByText('maven-release'))[0])
+      expect(autoBox()).not.toBeChecked()
+      expect(screen.getByText(/starts this rule by itself/)).toBeInTheDocument()
+      await user.click(autoBox())
+      await user.click(screen.getByRole('button', { name: /^Create$/ }))
+      await waitFor(() => expect(posted).toBeTruthy())
+      expect(posted!.auto_promote).toBe(true)
+    })
+
+    it('badges an automatic rule, keeps the flag through edit, and marks automatic requests', async () => {
+      const user = userEvent.setup()
+      let put: RulePayload | null = null
+      const autoRule = { ...promRule, auto_promote: true }
+      const autoReq = {
+        ...promReq, id: 'req-2', status: 'failed', automatic: true, requested_by: '',
+        error: 'automatic promotion blocked: scan has 1 high findings',
+      }
+      server.use(
+        http.get('/api/v1/promotion/rules', () => HttpResponse.json([autoRule])),
+        http.get('/api/v1/promotion/requests', () => HttpResponse.json([autoReq])),
+        reposHandler,
+        http.put('/api/v1/promotion/rules/:id', async ({ request }) => {
+          put = (await request.json()) as RulePayload
+          return HttpResponse.json(autoRule)
+        }),
+      )
+      renderAdmin('promotion')
+      expect(await screen.findByText('Auto on Publish')).toBeInTheDocument()
+      expect(await screen.findByText('Auto')).toHaveAttribute('title', 'Filed automatically on publish')
+      expect(screen.getByText('failed')).toHaveAttribute('title', autoReq.error)
+      await user.click(screen.getByRole('button', { name: /Edit/ }))
+      await screen.findByText('Edit — to-release')
+      expect(autoBox()).toBeChecked()
+      await user.click(screen.getByRole('button', { name: /^Save$/ }))
+      await waitFor(() => expect(put).toBeTruthy())
+      expect(put!.auto_promote).toBe(true)
+    })
+  })
 })
 
 describe('AdminPage — Migration tab', () => {

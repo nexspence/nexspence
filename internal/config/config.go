@@ -28,6 +28,7 @@ type Config struct {
 	Cleanup   CleanupConfig   `mapstructure:"cleanup"`
 	GC        GCConfig        `mapstructure:"gc"`
 	Scan      ScanConfig      `mapstructure:"scan"`
+	Promotion PromotionConfig `mapstructure:"promotion"`
 	Audit     AuditConfig     `mapstructure:"audit"`
 	Docker    DockerConfig    `mapstructure:"docker"`
 	Redis     RedisConfig     `mapstructure:"redis"`
@@ -479,6 +480,22 @@ type CleanupConfig struct {
 	DefaultSchedule string `mapstructure:"default_schedule"`
 }
 
+// PromotionConfig tunes automatic promotion on publish (#542), which each
+// promotion rule turns on with auto_promote. The worker runs on every replica;
+// the queue it drains is shared through the database.
+type PromotionConfig struct {
+	// AutoSettleWindow is how long a published component must go without a
+	// new asset before an auto-promoting rule evaluates it, so a multi-file
+	// upload (Maven jar+pom+sources, several wheels) is promoted once, whole.
+	AutoSettleWindow time.Duration `mapstructure:"auto_settle_window"`
+	// AutoScanWait is how long a rule with require_scan_pass waits for a scan
+	// of the publish before the automatic promotion is recorded as blocked.
+	AutoScanWait time.Duration `mapstructure:"auto_scan_wait"`
+	// AutoPollInterval is how often the worker looks for components due for
+	// evaluation.
+	AutoPollInterval time.Duration `mapstructure:"auto_poll_interval"`
+}
+
 // GCConfig configures scheduled blob garbage collection.
 type GCConfig struct {
 	Enabled  bool          `mapstructure:"enabled"`
@@ -631,6 +648,9 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("scan.trivy.java_db_repository", []string{})
 	v.SetDefault("scan.trivy.skip_db_update", false)
 	v.SetDefault("scan.trivy.cache_dir", "")
+	v.SetDefault("promotion.auto_settle_window", "30s")
+	v.SetDefault("promotion.auto_scan_wait", "1h")
+	v.SetDefault("promotion.auto_poll_interval", "5s")
 	v.SetDefault("audit.retention_days", 90)
 	v.SetDefault("audit.soft_cap", int64(1_000_000))
 	v.SetDefault("audit.rotation_interval", "24h")

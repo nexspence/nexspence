@@ -630,6 +630,8 @@ interface PromotionRule {
   // Severities that fail require_scan_pass; absent/empty = the default list.
   scan_fail_severities?: string[]
   require_manual_approval: boolean
+  // Start the rule by itself when a client publishes into from_repo (#542).
+  auto_promote?: boolean
   created_at: string
 }
 
@@ -646,10 +648,19 @@ interface PromotionRequest {
   component_id: string
   status: 'pending' | 'approved' | 'rejected' | 'completed' | 'failed'
   requested_by: string
+  // Filed by auto-promotion on publish rather than by a user (#542).
+  automatic?: boolean
   reviewed_by?: string
   completed_at?: string
   error?: string
   created_at: string
+}
+
+// Badge for automatic promotion — theme tokens only.
+const autoBadgeStyle: React.CSSProperties = {
+  fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 4,
+  background: 'rgba(var(--holo-ink-rgb), 0.05)', color: 'var(--holo-c-violet-400)',
+  border: '1px solid var(--holo-border)',
 }
 
 // ── PromotionRuleModal ────────────────────────────────────────────
@@ -674,6 +685,7 @@ function PromotionRuleModal({
   const [requireScanPass, setRequireScanPass] = useState(false)
   const [scanFailSeverities, setScanFailSeverities] = useState<string[]>(DEFAULT_SCAN_FAIL_SEVERITIES)
   const [requireManualApproval, setRequireManualApproval] = useState(false)
+  const [autoPromote, setAutoPromote] = useState(false)
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
 
@@ -687,6 +699,7 @@ function PromotionRuleModal({
       setRequireScanPass(rule?.require_scan_pass ?? false)
       setScanFailSeverities(effectiveScanFailSeverities(rule))
       setRequireManualApproval(rule?.require_manual_approval ?? false)
+      setAutoPromote(rule?.auto_promote ?? false)
       setErr('')
     }
   }, [open, rule])
@@ -709,6 +722,7 @@ function PromotionRuleModal({
       // rule reverts to the default if the gate is turned back on later.
       scan_fail_severities: requireScanPass ? SCAN_SEVERITIES.filter(s => scanFailSeverities.includes(s)) : [],
       require_manual_approval: requireManualApproval,
+      auto_promote: autoPromote,
     }
     setSaving(true)
     try {
@@ -787,6 +801,16 @@ function PromotionRuleModal({
           <input type="checkbox" checked={requireManualApproval} onChange={e => setRequireManualApproval(e.target.checked)} />
           Require manual approval
         </label>
+        <div>
+          <label style={{ fontSize: 12, color: 'var(--holo-c-slate-400)', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <input type="checkbox" checked={autoPromote} onChange={e => setAutoPromote(e.target.checked)} />
+            Promote automatically on publish
+          </label>
+          <div style={{ fontSize: 11, color: 'var(--holo-text-faint)', margin: '4px 0 0 24px', lineHeight: 1.45 }}>
+            A matching upload to the source repository starts this rule by itself once it has settled — the
+            filter, scan and approval gates above still apply. For Docker, a tag push promotes the whole image.
+          </div>
+        </div>
         {err && <div style={{ color: 'var(--holo-c-red)', fontSize: 12 }}>{err}</div>}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
           <HoloButton onClick={onClose}>Cancel</HoloButton>
@@ -920,6 +944,14 @@ function PromotionTab() {
                           Manual Approval
                         </span>
                       )}
+                      {rule.auto_promote && (
+                        <span
+                          title="Starts by itself when a matching component is published"
+                          style={autoBadgeStyle}
+                        >
+                          Auto on Publish
+                        </span>
+                      )}
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
@@ -978,10 +1010,15 @@ function PromotionTab() {
                     {ruleNameById(req.rule_id)}
                   </td>
                   <td style={{ padding: '8px 10px' }}>
-                    <span style={{ fontWeight: 600, color: statusColor(req.status) }}>{req.status}</span>
+                    <span style={{ fontWeight: 600, color: statusColor(req.status) }} title={req.error || undefined}>{req.status}</span>
                   </td>
                   <td style={{ padding: '8px 10px', color: 'var(--holo-text-faint)', fontSize: 11 }}>
-                    {new Date(req.created_at).toLocaleString()}
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                      {new Date(req.created_at).toLocaleString()}
+                      {req.automatic && (
+                        <span title="Filed automatically on publish" style={autoBadgeStyle}>Auto</span>
+                      )}
+                    </span>
                   </td>
                   <td style={{ padding: '8px 10px' }}>
                     {req.status === 'pending' && (

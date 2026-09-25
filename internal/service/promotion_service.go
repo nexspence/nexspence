@@ -25,6 +25,8 @@ type PromotionService struct {
 	scanRepo      repository.ScanResultRepo
 	blobResolver  StoreResolver
 	webhooks      domain.WebhookDispatcher
+	// auto is nil until WithAutoPromotion enables auto-promotion (#542).
+	auto *autoPromotion
 
 	celEnv *cel.Env
 }
@@ -209,6 +211,9 @@ func (s *PromotionService) CreateRule(ctx context.Context, rule *domain.Promotio
 	if err := normalizeRuleSeverities(rule); err != nil {
 		return err
 	}
+	if err := s.validateAutoPromote(ctx, rule); err != nil {
+		return err
+	}
 	return s.promotionRepo.CreateRule(ctx, rule)
 }
 
@@ -240,7 +245,33 @@ func (s *PromotionService) UpdateRule(ctx context.Context, rule *domain.Promotio
 	if err := normalizeRuleSeverities(rule); err != nil {
 		return err
 	}
+	if err := s.validateAutoPromote(ctx, rule); err != nil {
+		return err
+	}
 	return s.promotionRepo.UpdateRule(ctx, rule)
+}
+
+// validateAutoPromote refuses auto_promote on a rule whose from_repo can never
+// be published into: only a client write into a hosted repository starts an
+// automatic promotion (#542), so on a proxy or group source the switch would
+// look on and do nothing. A from_repo that does not exist is left to the
+// foreign key, as it is for every rule.
+func (s *PromotionService) validateAutoPromote(ctx context.Context, rule *domain.PromotionRule) error {
+	if !rule.AutoPromote {
+		return nil
+	}
+	from, err := s.repoRepo.Get(ctx, rule.FromRepo)
+	if lookupMissing(from, err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("check from_repo %q: %w", rule.FromRepo, err)
+	}
+	if from.Type != domain.TypeHosted {
+		return fmt.Errorf("auto_promote needs a hosted from_repo: %q is a %s repository, which clients do not publish into",
+			from.Name, from.Type)
+	}
+	return nil
 }
 
 // normalizeRuleSeverities validates the rule's scan_fail_severities and
@@ -507,26 +538,15 @@ func (s *PromotionService) executeCopy(ctx context.Context, req *domain.Promotio
 		return 0, fmt.Errorf("target %s: %w", toRepo.Name, err)
 	}
 
-	assets, err := s.assetRepo.ListByComponentID(ctx, req.ComponentID)
-	if err != nil {
-		return 0, fmt.Errorf("list assets: %w", err)
-	}
-
-	// The whole image is resolved, and checked present in the source, before
-	// the first byte moves: a missing layer fails the promotion with nothing
-	// copied rather than leaving an unpullable half in the target.
-	dependents, err := s.expandImage(ctx, comp, assets)
+	plan, err := s.planCopy(ctx, comp, toRepo, req.Automatic)
 	if err != nil {
 		return 0, err
 	}
-	units := append([]promotionUnit{{comp: comp, assets: assets}}, dependents...)
-
-	// The target's write policy (#539) covers the whole expanded image and is
-	// checked before the first byte moves, so a refusal copies nothing.
-	guarded, err := s.checkTargetWritePolicy(ctx, toRepo, unitAssets(units))
-	if err != nil {
-		return 0, err
+	if req.Automatic && plan.empty() {
+		// Everything this promotion would write is already in the target.
+		return plan.dependents, nil
 	}
+	units, guarded := plan.units, plan.guarded
 
 	// Compensation state for the deferred rollback: only rows and blobs this
 	// call created fresh (rows go before their bytes — a row whose blob is
@@ -538,16 +558,10 @@ func (s *PromotionService) executeCopy(ctx context.Context, req *domain.Promotio
 		}
 	}()
 
-	var mainComp *domain.Component
 	for i, u := range units {
-		pending := u.assets
-		if u.contentAddressed {
-			if pending, err = s.missingInTarget(ctx, toRepo.Name, u.assets); err != nil {
-				return 0, err
-			}
-			if len(pending) == 0 {
-				continue
-			}
+		pending := plan.pending[i]
+		if plan.skipsIdentical(i) && len(pending) == 0 {
+			continue
 		}
 		newComp := &domain.Component{
 			RepositoryID: toRepo.ID,
@@ -563,9 +577,6 @@ func (s *PromotionService) executeCopy(ctx context.Context, req *domain.Promotio
 			return 0, fmt.Errorf("upsert component in target: %w", err)
 		}
 		rb.compIDs = append(rb.compIDs, newComp.ID)
-		if i == 0 {
-			mainComp = newComp
-		}
 		for _, asset := range pending {
 			g := guarded[asset.Path]
 			if err = s.withTargetPathLock(ctx, g, base.BlobKey(toRepo.Name, asset.Path), func(ctx context.Context) error {
@@ -583,6 +594,8 @@ func (s *PromotionService) executeCopy(ctx context.Context, req *domain.Promotio
 	}
 
 	if s.webhooks != nil {
+		// The target component carries the source's coordinates.
+		mainComp := units[0].comp
 		s.webhooks.Dispatch(domain.WebhookPayload{
 			Event:      domain.EventArtifactPublished,
 			Timestamp:  time.Now(),
@@ -595,7 +608,85 @@ func (s *PromotionService) executeCopy(ctx context.Context, req *domain.Promotio
 			},
 		})
 	}
-	return len(dependents), nil
+	return plan.dependents, nil
+}
+
+// copyPlan is what one promotion writes into its target: the units, and for
+// each the assets that actually have to be copied.
+type copyPlan struct {
+	units []promotionUnit
+	// pending[i] is the part of units[i].assets to copy.
+	pending [][]domain.Asset
+	// guarded maps a path to copy to whether its write holds the path lock.
+	guarded map[string]bool
+	// dependents is how many units image expansion brought along.
+	dependents int
+	// onlyMissing extends the content-addressed skip to the requested
+	// component's own assets.
+	onlyMissing bool
+}
+
+// skipsIdentical reports whether unit i copies only what the target lacks.
+func (p *copyPlan) skipsIdentical(i int) bool {
+	return p.onlyMissing || p.units[i].contentAddressed
+}
+
+// empty reports whether the plan copies nothing at all.
+func (p *copyPlan) empty() bool {
+	for _, pend := range p.pending {
+		if len(pend) > 0 {
+			return false
+		}
+	}
+	return true
+}
+
+// planCopy works out what promoting comp into toRepo writes, before the first
+// byte moves: the whole image is resolved and checked present in the source
+// (a missing layer fails the promotion with nothing copied rather than leaving
+// an unpullable half in the target, #541), and the target's write policy (#539)
+// is applied to it, so a refusal copies nothing either.
+//
+// onlyMissing is the automatic-promotion form (#542): a component promoted by
+// itself is promoted again whenever it grows — a Maven sources jar deployed
+// after the jar and pom, say — so the assets the target already holds with the
+// same SHA-256 are skipped like an image's content-addressed parts, and the
+// write policy is applied to what is left. An allow_once target then takes the
+// new file, and refuses only a path whose content actually changed. A manual
+// promotion keeps checking every asset, as it always has.
+func (s *PromotionService) planCopy(ctx context.Context, comp *domain.Component, toRepo *domain.Repository, onlyMissing bool) (*copyPlan, error) {
+	assets, err := s.assetRepo.ListByComponentID(ctx, comp.ID)
+	if err != nil {
+		return nil, fmt.Errorf("list assets: %w", err)
+	}
+	dependents, err := s.expandImage(ctx, comp, assets)
+	if err != nil {
+		return nil, err
+	}
+	plan := &copyPlan{
+		units:       append([]promotionUnit{{comp: comp, assets: assets}}, dependents...),
+		dependents:  len(dependents),
+		onlyMissing: onlyMissing,
+	}
+	var toWrite []domain.Asset
+	for i, u := range plan.units {
+		pending := u.assets
+		if plan.skipsIdentical(i) {
+			if pending, err = s.missingInTarget(ctx, toRepo.Name, u.assets); err != nil {
+				return nil, err
+			}
+		}
+		plan.pending = append(plan.pending, pending)
+		toWrite = append(toWrite, pending...)
+	}
+	checked := unitAssets(plan.units)
+	if onlyMissing {
+		checked = toWrite
+	}
+	if plan.guarded, err = s.checkTargetWritePolicy(ctx, toRepo, checked); err != nil {
+		return nil, err
+	}
+	return plan, nil
 }
 
 // copyRollback records what one executeCopy created fresh in the target.

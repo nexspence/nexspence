@@ -379,6 +379,37 @@ type PromotionRepo interface {
 	// leaves the row untouched.
 	WithPendingRequestLock(ctx context.Context, id string,
 		fn func(ctx context.Context, req *domain.PromotionRequest) PromotionOutcome) error
+	// CreateAutoRequest files a request made by auto-promotion (#542): no
+	// requester, Automatic set, and the status/error/completed_at req carries.
+	// At most one automatic request per (rule, component) may be pending: when
+	// req is pending and one already is, nothing is inserted, req is filled
+	// from the existing row and created is false.
+	CreateAutoRequest(ctx context.Context, req *domain.PromotionRequest) (created bool, err error)
+}
+
+// AutoPromotionQueueRepo is the durable queue behind auto-promotion on publish
+// (#542): one row per (auto_promote rule, component) waiting to be evaluated.
+// Rows are claimed with a lease, so several replicas can drain it without two
+// of them working the same row, and a publish into a component that is being
+// evaluated is never lost — it bumps the row's generation, and the worker
+// only removes the generation it evaluated.
+type AutoPromotionQueueRepo interface {
+	// EnqueuePublish records that componentID, in repository fromRepo, received
+	// an asset at publishedAt: every auto_promote rule promoting from fromRepo
+	// gets (or refreshes) a row due at dueAt. Returns how many rows it touched.
+	EnqueuePublish(ctx context.Context, fromRepo, componentID string, publishedAt, dueAt time.Time) (int, error)
+	// Claim leases up to limit rows due at now, until now+lease.
+	Claim(ctx context.Context, now time.Time, lease time.Duration, limit int) ([]domain.AutoPromotionEntry, error)
+	// Finish removes the row if no publish arrived since the claim (the
+	// generation still matches), and otherwise just releases the claim.
+	Finish(ctx context.Context, id string, generation int64) error
+	// Retry releases the claim and, if no publish arrived since it, schedules
+	// the row again at dueAt with one more attempt and the given state.
+	Retry(ctx context.Context, id string, generation int64, dueAt time.Time, waitingForScan bool, reason string) error
+	// WakeForScan makes the component's rows that wait for a scan due at now.
+	WakeForScan(ctx context.Context, componentID string, now time.Time) error
+	// List returns every queued row, oldest due first.
+	List(ctx context.Context) ([]domain.AutoPromotionEntry, error)
 }
 
 // PromotionOutcome is what a WithPendingRequestLock callback decides about the

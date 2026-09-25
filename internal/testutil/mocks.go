@@ -2839,6 +2839,29 @@ func (r *PromotionRepo) WithPendingRequestLock(ctx context.Context, id string,
 	return nil
 }
 
+// CreateAutoRequest mirrors the postgres partial unique index: one pending
+// automatic request per (rule, component).
+func (r *PromotionRepo) CreateAutoRequest(_ context.Context, req *domain.PromotionRequest) (bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	req.Automatic = true
+	req.RequestedBy = ""
+	if req.Status == domain.PromotionPending {
+		for _, v := range r.Requests {
+			if v.Automatic && v.Status == domain.PromotionPending &&
+				v.RuleID == req.RuleID && v.ComponentID == req.ComponentID {
+				*req = *v
+				return false, nil
+			}
+		}
+	}
+	req.ID = r.genID()
+	req.CreatedAt = time.Now()
+	cp := *req
+	r.Requests[req.ID] = &cp
+	return true, nil
+}
+
 // PutBytes is a test helper that stores raw bytes under key in the BlobStore mock.
 func (b *BlobStore) PutBytes(ctx context.Context, key string, data []byte) error {
 	return b.Put(ctx, key, bytes.NewReader(data), int64(len(data)))

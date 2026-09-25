@@ -228,6 +228,16 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 		panic("promotion service init: " + err.Error())
 	}
 	promotionSvc.WithWebhooks(webhookSvc)
+	// Auto-promotion on publish (#542): uploads record into the queue through
+	// formatDeps.Publishes below, and a worker on every replica drains it —
+	// rows are leased with SKIP LOCKED, so replicas never work the same one.
+	promotionSvc.WithAutoPromotion(postgres.NewAutoPromotionQueueRepo(pool), auditRepo, log,
+		service.AutoPromotionOptions{
+			SettleWindow: cfg.Promotion.AutoSettleWindow,
+			ScanWait:     cfg.Promotion.AutoScanWait,
+			PollInterval: cfg.Promotion.AutoPollInterval,
+		})
+	safego.Go(log, "auto-promotion-worker", func() { promotionSvc.RunAutoPromotion(ctx) })
 
 	// Debounced download counter: in-memory aggregation, periodic batched flush.
 	dlCounter := service.NewDownloadCounter(assetRepo, log)
@@ -243,6 +253,7 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 	// every handler keeps a nil copy of it.
 	scanSvc := service.NewScanService(componentRepo, cfg.HTTP.BaseURL).
 		WithScanResults(scanRepo).
+		WithScanCompleted(promotionSvc.NotifyScanned).
 		WithCredentials(cfg.Bootstrap.AdminUsername, cfg.Bootstrap.AdminPassword).
 		WithTrivy(service.TrivyOptions{
 			Enabled:          cfg.Scan.Trivy.Enabled,
@@ -282,6 +293,7 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 		RoutingRules: rrRepo,
 		RBAC:         rbacSvc,
 		Scanner:      scanTrigger,
+		Publishes:    promotionSvc,
 		// Conan's login handshake hands the client a token it then sends as
 		// Bearer, so it has to be the same JWT OptionalAuth validates.
 		Tokens: authSvc,

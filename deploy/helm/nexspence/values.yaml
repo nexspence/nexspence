@@ -106,6 +106,17 @@ config:
       #   aliases:
       #     docker-hub-proxy.example.com: dockerhub-proxy
       aliases: {}
+  # -- Automatic promotion on publish, for promotion rules with
+  # "Promote automatically on publish" on. Durations are Go durations.
+  promotion:
+    # -- How long a published component must go without a new file before it
+    # is promoted, so a multi-file upload (jar + pom + sources) moves once.
+    autoSettleWindow: "30s"
+    # -- How long a rule that requires a scan waits for one before the
+    # promotion is recorded as blocked.
+    autoScanWait: "1h"
+    # -- How often each replica looks for components due for promotion.
+    autoPollInterval: "5s"
 
 # -- OIDC single sign-on. Every field below is sensitive (issuer/redirect_url/
 # admin_group name real internal infrastructure and access-control policy) and
