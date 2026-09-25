@@ -317,6 +317,9 @@ func (s *PromotionService) Promote(ctx context.Context, ruleID string, component
 			return nil, xerr
 		}
 		included[compID] = n
+		if perr := s.targetPolicyGate(ctx, rule, comp); perr != nil {
+			return nil, perr
+		}
 	}
 
 	var results []domain.PromotionRequest
@@ -481,6 +484,13 @@ func (s *PromotionService) executeCopy(ctx context.Context, req *domain.Promotio
 	}
 	units := append([]promotionUnit{{comp: comp, assets: assets}}, dependents...)
 
+	// The target's write policy (#539) covers the whole expanded image and is
+	// checked before the first byte moves, so a refusal copies nothing.
+	guarded, err := s.checkTargetWritePolicy(ctx, toRepo, unitAssets(units))
+	if err != nil {
+		return 0, err
+	}
+
 	// Compensation state for the deferred rollback: only rows and blobs this
 	// call created fresh (rows go before their bytes — a row whose blob is
 	// already gone is not self-healing, an orphan blob is GC'd).
@@ -520,7 +530,16 @@ func (s *PromotionService) executeCopy(ctx context.Context, req *domain.Promotio
 			mainComp = newComp
 		}
 		for _, asset := range pending {
-			if err = s.copyAsset(ctx, asset, newComp, toRepo, toStore, toBlobStoreID, &rb); err != nil {
+			g := guarded[asset.Path]
+			if err = s.withTargetPathLock(ctx, g, base.BlobKey(toRepo.Name, asset.Path), func(ctx context.Context) error {
+				if g {
+					// A client push may have taken the path since the check above.
+					if _, perr := base.CheckWritePolicy(ctx, s.assetRepo, toRepo, asset.Path); perr != nil {
+						return fmt.Errorf("promote %s to %s: %w", asset.Path, toRepo.Name, perr)
+					}
+				}
+				return s.copyAsset(ctx, asset, newComp, toRepo, toStore, toBlobStoreID, &rb)
+			}); err != nil {
 				return 0, err
 			}
 		}
@@ -639,6 +658,75 @@ func (s *PromotionService) copyAsset(ctx context.Context, asset domain.Asset, ne
 		rb.assetIDs = append(rb.assetIDs, newAsset.ID)
 	}
 	return nil
+}
+
+// unitAssets flattens every unit's assets: the full set a promotion writes.
+func unitAssets(units []promotionUnit) []domain.Asset {
+	var out []domain.Asset
+	for _, u := range units {
+		out = append(out, u.assets...)
+	}
+	return out
+}
+
+// checkTargetWritePolicy applies the target repository's write policy (#539)
+// to every asset a promotion is about to copy, before the first byte moves, so
+// a refused promotion leaves nothing half-copied: a read-only target refuses
+// outright, a disable-redeploy one refuses when any non-exempt path is already
+// taken there. Exempt paths (base.RedeployExempt) are digest-addressed OCI
+// blobs and manifests, "latest" with allow_redeploy_latest, maven-metadata.xml
+// and SNAPSHOTs — so an image whose layers the target already holds still
+// promotes, and those identical units are then skipped by missingInTarget.
+// The answer maps each path to whether its copy must hold the path lock
+// (withTargetPathLock).
+func (s *PromotionService) checkTargetWritePolicy(ctx context.Context, toRepo *domain.Repository, assets []domain.Asset) (map[string]bool, error) {
+	guarded := make(map[string]bool, len(assets))
+	for _, asset := range assets {
+		g, err := base.CheckWritePolicy(ctx, s.assetRepo, toRepo, asset.Path)
+		if err != nil {
+			return nil, fmt.Errorf("promote %s to %s: %w", asset.Path, toRepo.Name, err)
+		}
+		guarded[asset.Path] = g
+	}
+	return guarded, nil
+}
+
+// targetPolicyGate is the Promote-time form of checkTargetWritePolicy: a
+// promotion the target's write policy would refuse is refused before a
+// request row is filed, the way #541 refuses an incomplete image. Approve
+// checks again at copy time, since the target can change in between.
+func (s *PromotionService) targetPolicyGate(ctx context.Context, rule *domain.PromotionRule, comp *domain.Component) error {
+	toRepo, _ := s.repoRepo.Get(ctx, rule.ToRepo)
+	if toRepo == nil {
+		// Not this gate's call: a missing target fails at copy time, as it
+		// did before the write policy existed.
+		return nil
+	}
+	if domain.RepoWritePolicy(toRepo) == domain.WritePolicyAllow {
+		return nil
+	}
+	assets, err := s.assetRepo.ListByComponentID(ctx, comp.ID)
+	if err != nil {
+		return fmt.Errorf("list assets: %w", err)
+	}
+	dependents, err := s.expandImage(ctx, comp, assets)
+	if err != nil {
+		return err
+	}
+	units := append([]promotionUnit{{comp: comp, assets: assets}}, dependents...)
+	_, err = s.checkTargetWritePolicy(ctx, toRepo, unitAssets(units))
+	return err
+}
+
+// withTargetPathLock runs one asset's copy under the target path's blob-key
+// lock when the write policy guards that path — the same lock a client push
+// of the path takes in base.StoreArtifact, so a promotion and a push cannot
+// both claim a fresh path.
+func (s *PromotionService) withTargetPathLock(ctx context.Context, guarded bool, blobKey string, copyOne func(context.Context) error) error {
+	if !guarded {
+		return copyOne(ctx)
+	}
+	return s.assetRepo.WithBlobKeyLock(ctx, blobKey, copyOne)
 }
 
 // promotedExtra is the source component's metadata as the promoted copy should

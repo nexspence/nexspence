@@ -1261,7 +1261,9 @@ func (s *NexusMigrationService) transferAsset(ctx context.Context, client *nexus
 	}
 	defer func() { _ = body.Close() }()
 
-	_, err = base.StoreArtifact(ctx, s.deps, a.repo, a.path, a.contentType, a.coords, body, a.size)
+	// A migration copies content that already exists, it is not a client
+	// deploy: the target's write policy (#539) governs clients, not the copy.
+	_, err = base.StoreArtifact(base.WithoutWritePolicy(ctx), s.deps, a.repo, a.path, a.contentType, a.coords, body, a.size)
 	return err
 }
 
@@ -1354,7 +1356,7 @@ func (s *NexusMigrationService) transferOCIManifest(ctx context.Context, client 
 	}
 
 	coords := base.Coords{Name: image, Version: reference}
-	res, err := base.StoreArtifact(ctx, s.deps, repoName, manifestPath, contentType, coords,
+	res, err := base.StoreArtifact(base.WithoutWritePolicy(ctx), s.deps, repoName, manifestPath, contentType, coords,
 		bytes.NewReader(body), int64(len(body)))
 	if err != nil {
 		return err
@@ -1386,7 +1388,7 @@ func (s *NexusMigrationService) ensureOCIBlob(ctx context.Context, client *nexus
 	}
 	defer func() { _ = body.Close() }()
 
-	_, err = base.StoreArtifact(ctx, s.deps, repoName, blobPath, "application/octet-stream",
+	_, err = base.StoreArtifact(base.WithoutWritePolicy(ctx), s.deps, repoName, blobPath, "application/octet-stream",
 		base.Coords{Name: image, Version: digest}, body, 0)
 	return err
 }

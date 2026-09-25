@@ -85,7 +85,7 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 		if _, err := base.StoreArtifact(c.Request.Context(), h.deps,
 			repoName, filePath, ct, coords,
 			c.Request.Body, c.Request.ContentLength); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			c.JSON(base.HTTPStatusForError(err), gin.H{"error": err.Error()})
 			return
 		}
 		c.Status(http.StatusCreated)

@@ -455,7 +455,7 @@ func (h *Handler) handleUpload(c *gin.Context, repoName, p string) {
 	if _, err := base.StoreArtifact(c.Request.Context(), h.deps,
 		repoName, storePath, "application/vnd.debian.binary-package",
 		coords, body, size); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(base.HTTPStatusForError(err), gin.H{"error": err.Error()})
 		return
 	}
 	c.Status(http.StatusCreated)

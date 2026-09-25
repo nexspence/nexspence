@@ -470,6 +470,71 @@ function assignOrDelete(cfg: Record<string, unknown>, key: string, value: string
 const LABEL_STYLE = { fontSize: 12, fontWeight: 500, color: 'var(--holo-text-dim)', textTransform: 'uppercase' as const, letterSpacing: '0.4px' }
 const ERROR_STYLE = { background: 'rgba(255,107,107,0.12)', border: '1px solid rgba(255,107,107,0.3)', borderRadius: 10, padding: '10px 12px', color: 'var(--holo-red)', fontSize: 13 }
 
+/** Hosted-repository write policy (formatConfig.write_policy, #539). */
+type WritePolicy = 'allow' | 'allow_once' | 'deny'
+
+const WRITE_POLICY_OPTIONS: { value: WritePolicy; label: string }[] = [
+  { value: 'allow', label: 'Allow redeploy' },
+  { value: 'allow_once', label: 'Disable redeploy' },
+  { value: 'deny', label: 'Read-only' },
+]
+
+const WRITE_POLICY_HINTS: Record<WritePolicy, string> = {
+  allow: 'A deploy to an existing path replaces the stored artifact.',
+  allow_once: 'Each path can be deployed once; a second deploy of the same version is rejected.',
+  deny: 'Every deploy is rejected. Existing artifacts stay readable.',
+}
+
+/** Formats that have a mutable "latest" tag the policy can exempt. */
+const hasLatestTag = (format: string) => format === 'docker' || format === 'oci'
+
+function readWritePolicy(cfg: Record<string, unknown> | null | undefined): WritePolicy {
+  const v = cfg?.['write_policy']
+  return v === 'allow_once' || v === 'deny' ? v : 'allow'
+}
+
+/**
+ * Writes the policy keys into a formatConfig copy. allow_redeploy_latest is
+ * kept only where it means something (docker/oci under Disable redeploy):
+ * the API refuses it anywhere else.
+ */
+function withWritePolicy(cfg: Record<string, unknown>, format: string, policy: WritePolicy, allowLatest: boolean) {
+  const out: Record<string, unknown> = { ...cfg, write_policy: policy }
+  if (hasLatestTag(format) && policy === 'allow_once' && allowLatest) out.allow_redeploy_latest = true
+  else delete out.allow_redeploy_latest
+  return out
+}
+
+function WritePolicyFields({ format, policy, allowLatest, onPolicyChange, onAllowLatestChange }: {
+  format: string
+  policy: WritePolicy
+  allowLatest: boolean
+  onPolicyChange: (p: WritePolicy) => void
+  onAllowLatestChange: (v: boolean) => void
+}) {
+  return (
+    <div className={styles.formRow}>
+      <label style={LABEL_STYLE}>Deployment policy</label>
+      <Select
+        options={WRITE_POLICY_OPTIONS}
+        value={policy}
+        onChange={v => onPolicyChange(v as WritePolicy)}
+      />
+      <span className={styles.hint}>{WRITE_POLICY_HINTS[policy]}</span>
+      {hasLatestTag(format) && policy === 'allow_once' && (
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--holo-text)', cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={allowLatest}
+            onChange={e => onAllowLatestChange(e.target.checked)}
+          />
+          Allow redeploy of &apos;latest&apos;
+        </label>
+      )}
+    </div>
+  )
+}
+
 function CreateRepoModal({ onClose, onCreated }: {
   onClose: () => void
   onCreated: () => void
@@ -506,6 +571,8 @@ function CreateRepoModal({ onClose, onCreated }: {
     allowAnonymous: false,
     blobStoreId: '',
     routingRuleId: '' as string,
+    writePolicy: 'allow' as WritePolicy,
+    allowRedeployLatest: false,
   })
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -577,6 +644,9 @@ function CreateRepoModal({ onClose, onCreated }: {
         body.proxyConfig = proxyConfig
       }
       if (form.type === 'group') body.formatConfig = { member_names: form.memberNames }
+      if (form.type === 'hosted') {
+        body.formatConfig = withWritePolicy({}, form.format, form.writePolicy, form.allowRedeployLatest)
+      }
       if (form.type === 'group' && form.routingRuleId) {
         body.routingRuleId = form.routingRuleId
       }
@@ -643,6 +713,15 @@ function CreateRepoModal({ onClose, onCreated }: {
           placeholder="Optional description"
         />
       </div>
+      {form.type === 'hosted' && (
+        <WritePolicyFields
+          format={form.format}
+          policy={form.writePolicy}
+          allowLatest={form.allowRedeployLatest}
+          onPolicyChange={p => setField('writePolicy', p)}
+          onAllowLatestChange={v => setField('allowRedeployLatest', v)}
+        />
+      )}
       {form.type === 'proxy' && (
         <div className={styles.formRow}>
           <label style={LABEL_STYLE}>Remote URL *</label>
@@ -961,6 +1040,8 @@ function EditRepoModal({
   const [clearRemotePassword, setClearRemotePassword] = useState(false)
   const hasStoredRemotePassword = repo.proxyConfig?.['remote_password_set'] === true
   const [memberNames, setMemberNames] = useState<string[]>(groupMemberNames(repo))
+  const [writePolicy, setWritePolicy] = useState<WritePolicy>(readWritePolicy(repo.formatConfig))
+  const [allowRedeployLatest, setAllowRedeployLatest] = useState(repo.formatConfig?.['allow_redeploy_latest'] === true)
   const memberCandidates = allRepos.filter(r => r.format === repo.format && r.type !== 'group')
   const originalStoreId = repo.blobStoreId ?? ''
   const storeChanged = blobStoreId !== originalStoreId
@@ -1078,6 +1159,11 @@ function EditRepoModal({
         void _drop
         updateBody.formatConfig = { ...rest, member_names: memberNames }
       }
+      if (repo.type === 'hosted') {
+        // formatConfig is replaced wholesale on update: carry every other key.
+        updateBody.formatConfig = withWritePolicy(
+          (repo.formatConfig ?? {}) as Record<string, unknown>, repo.format, writePolicy, allowRedeployLatest)
+      }
       if (repo.type === 'proxy') {
         const proxyConfig: Record<string, unknown> = {}
         for (const [k, v] of Object.entries(repo.proxyConfig ?? {})) {
@@ -1157,6 +1243,15 @@ function EditRepoModal({
             placeholder="Optional"
           />
         </div>
+        {repo.type === 'hosted' && (
+          <WritePolicyFields
+            format={repo.format}
+            policy={writePolicy}
+            allowLatest={allowRedeployLatest}
+            onPolicyChange={setWritePolicy}
+            onAllowLatestChange={setAllowRedeployLatest}
+          />
+        )}
         {repo.type === 'proxy' && (
           <div className={styles.formRow}>
             <label style={LABEL_STYLE}>Remote URL *</label>

@@ -327,7 +327,7 @@ func (h *Handler) handlePush(c *gin.Context, repoName string) {
 	coords := base.Coords{Name: pkgID, Version: version}
 	if _, err := base.StoreArtifact(c.Request.Context(), h.deps,
 		repoName, filePath, "application/zip", coords, f, fh.Size); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(base.HTTPStatusForError(err), gin.H{"error": err.Error()})
 		return
 	}
 	c.Status(http.StatusCreated)

@@ -356,7 +356,7 @@ func (h *Handler) pushManifest(c *gin.Context, repoName, imageName, reference st
 		repoName, fp, ct, coords,
 		bytes.NewReader(body), int64(len(body)))
 	if err != nil {
-		dockerError(c, http.StatusInternalServerError, "UNKNOWN", err.Error())
+		storeError(c, err)
 		return
 	}
 
@@ -591,6 +591,16 @@ func (h *Handler) handleBlobUploads(c *gin.Context, repoName, imageName, uuid st
 func (h *Handler) initiateUpload(c *gin.Context, repoName, imageName string) {
 	if !requireDockerAuth(c) {
 		return
+	}
+	// A read-only repository refuses the push up front (#539): the mount below
+	// registers an asset without going through StoreArtifact, and an upload
+	// session would only be refused at the final PUT after the client sent
+	// every byte of the layer.
+	if repo, err := h.deps.Repos.Get(c.Request.Context(), repoName); err == nil && repo != nil {
+		if werr := base.CheckWritable(repo); werr != nil {
+			storeError(c, werr)
+			return
+		}
 	}
 	// Cross-repository blob mount: ?mount=<digest>&from=<name>. When it cannot be
 	// served the request falls through to a normal upload session, which the spec
@@ -930,7 +940,7 @@ func (h *Handler) finalizeUpload(c *gin.Context, repoName, imageName, uuid strin
 	if _, err := base.StoreArtifact(c.Request.Context(), h.deps,
 		repoName, fp, "application/octet-stream", coords,
 		body, size); err != nil {
-		dockerError(c, http.StatusInternalServerError, "UNKNOWN", err.Error())
+		storeError(c, err)
 		return
 	}
 	// Delete session only after successful store — allows retry on failure.
@@ -991,6 +1001,21 @@ func digestMismatchStream(claimed string, r io.Reader) (string, error) {
 		return fmt.Sprintf("digest %s does not match content sha256:%s", claimed, actual), nil
 	}
 	return "", nil
+}
+
+// storeError answers a failed base.StoreArtifact in the registry's error
+// format. A write the repository's write policy refuses (#539) is DENIED —
+// the spec's code for "the requested access to the resource is denied" — at
+// 400, the status Nexus answers a Docker redeploy with; docker prints the
+// message, which names the repository. Anything else keeps UNKNOWN at the
+// status base.HTTPStatusForError picks.
+func storeError(c *gin.Context, err error) {
+	status := base.HTTPStatusForError(err)
+	if errors.Is(err, base.ErrRedeployDenied) || errors.Is(err, base.ErrRepositoryReadOnly) {
+		dockerError(c, status, "DENIED", err.Error())
+		return
+	}
+	dockerError(c, status, "UNKNOWN", err.Error())
 }
 
 func dockerError(c *gin.Context, status int, code, message string) {

@@ -187,7 +187,7 @@ func (h *Handler) handleUpload(c *gin.Context, repoName, pathFilename string) {
 	if _, err := base.StoreArtifact(c.Request.Context(), h.deps,
 		repoName, filePath, "application/x-tar", coords,
 		bytes.NewReader(data), size); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(base.HTTPStatusForError(err), gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusCreated, gin.H{"saved": true})

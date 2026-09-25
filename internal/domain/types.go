@@ -133,6 +133,64 @@ func GroupWritableMember(r *Repository) string {
 	return v
 }
 
+// WritePolicy decides whether client writes to a hosted repository may create
+// or replace assets (#539). It lives in formatConfig["write_policy"].
+type WritePolicy string
+
+const (
+	// WritePolicyAllow accepts every write, replacing whatever the path held.
+	// It is the default when the key is absent.
+	WritePolicyAllow WritePolicy = "allow"
+	// WritePolicyAllowOnce accepts the first write of a path and rejects every
+	// later one ("Disable redeploy").
+	WritePolicyAllowOnce WritePolicy = "allow_once"
+	// WritePolicyDeny rejects every client write ("Read-only").
+	WritePolicyDeny WritePolicy = "deny"
+)
+
+const (
+	// WritePolicyKey is the formatConfig key holding a hosted repository's WritePolicy.
+	WritePolicyKey = "write_policy"
+	// AllowRedeployLatestKey is the formatConfig key that, on a docker/oci hosted
+	// repository under WritePolicyAllowOnce, lets the "latest" tag be re-pushed.
+	AllowRedeployLatestKey = "allow_redeploy_latest"
+)
+
+// Valid reports whether p is one of the known policies.
+func (p WritePolicy) Valid() bool {
+	switch p {
+	case WritePolicyAllow, WritePolicyAllowOnce, WritePolicyDeny:
+		return true
+	}
+	return false
+}
+
+// RepoWritePolicy returns the write policy governing client writes to r. Only
+// hosted repositories carry one: proxy caches and groups always answer
+// WritePolicyAllow. An absent, empty or unrecognized value is WritePolicyAllow
+// — the service rejects unknown values on create and update, so an
+// unrecognized one can only come from a row edited behind the API's back.
+func RepoWritePolicy(r *Repository) WritePolicy {
+	if r == nil || r.Type != TypeHosted || r.FormatConfig == nil {
+		return WritePolicyAllow
+	}
+	v, _ := r.FormatConfig[WritePolicyKey].(string)
+	if p := WritePolicy(v); p.Valid() {
+		return p
+	}
+	return WritePolicyAllow
+}
+
+// RepoAllowsRedeployLatest reports whether an OCI-registry repository lets the
+// "latest" tag be replaced while its write policy is WritePolicyAllowOnce.
+func RepoAllowsRedeployLatest(r *Repository) bool {
+	if r == nil || r.FormatConfig == nil || !r.Format.IsOCIRegistry() {
+		return false
+	}
+	v, _ := r.FormatConfig[AllowRedeployLatestKey].(bool)
+	return v
+}
+
 // ── Webhook ──────────────────────────────────────────────────
 
 // WebhookEvent names a repository event that webhooks and the realtime feed may subscribe to.

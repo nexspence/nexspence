@@ -304,7 +304,7 @@ func (h *Handler) publishDoc(c *gin.Context, repoName, pkgName string, doc map[s
 			repoName, filePath, ct, coords,
 			strings.NewReader(string(data)), int64(len(data)))
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			c.JSON(base.HTTPStatusForError(err), gin.H{"error": err.Error()})
 			return
 		}
 		// Keep the published package.json — it is the only place the dependency
