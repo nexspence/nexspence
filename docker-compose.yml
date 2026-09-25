@@ -160,7 +160,7 @@ services:
   # S3 API:  http://localhost:9000
   # Inside Docker network: endpoint = http://minio:9000
   minio:
-    image: quay.io/minio/minio:latest
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
@@ -179,7 +179,7 @@ services:
 
   # Creates bucket "nexspence-blobs" on first start, then exits.
   minio-init:
-    image: quay.io/minio/mc:latest
+    image: pgsty/mc:RELEASE.2026-09-16T00-00-00Z
     depends_on:
       minio:
         condition: service_healthy

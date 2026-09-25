@@ -71,9 +71,12 @@ func startMinio() {
 	}
 
 	resource, err := pool.RunWithOptions(&dockertest.RunOptions{
-		// MinIO publishes its community image on Quay; Docker Hub no longer serves it.
-		Repository: "quay.io/minio/minio",
-		Tag:        "latest",
+		// MinIO stopped publishing community images (Docker Hub, then Quay in
+		// Sep 2026 — pulls now return 401). pgsty/minio is the maintained
+		// build of the same server; the release is pinned so a registry change
+		// cannot silently swap the S3 implementation under these tests.
+		Repository: "pgsty/minio",
+		Tag:        "RELEASE.2026-08-04T00-00-00Z",
 		Cmd:        []string{"server", "/data"},
 		Env: []string{
 			"MINIO_ROOT_USER=" + minioUser,
