@@ -1031,6 +1031,139 @@ describe('AdminPage — Promotion tab', () => {
     await user.click(delBtns[delBtns.length - 1])
     await waitFor(() => expect(deleted).toBe(true))
   })
+
+  // #543: the severities that fail require_scan_pass are chosen per rule.
+  describe('scan fail severities', () => {
+    type RulePayload = { require_scan_pass: boolean; scan_fail_severities: string[] }
+    const reposHandler = http.get('/service/rest/v1/repositories', () =>
+      HttpResponse.json([fixtures.repository({ name: 'maven-hosted' }), fixtures.repository({ id: 'r2', name: 'maven-release' })]),
+    )
+    const sevBox = (name: string) => screen.getByRole('checkbox', { name })
+
+    const openCreate = async (user: ReturnType<typeof userEvent.setup>) => {
+      renderAdmin('promotion')
+      await screen.findByText('No promotion rules configured')
+      await user.click(screen.getByRole('button', { name: /Create Rule/ }))
+      await screen.findByText('Create Promotion Rule')
+      await user.type(screen.getByPlaceholderText('promote-to-release'), 'new-rule')
+      await user.click(screen.getByRole('button', { name: /Select source repository/ }))
+      await user.click((await screen.findAllByText('maven-hosted'))[0])
+      await user.click(screen.getByRole('button', { name: /Select target repository/ }))
+      await user.click((await screen.findAllByText('maven-release'))[0])
+    }
+
+    it('defaults to malicious/critical/high and posts the chosen set', async () => {
+      const user = userEvent.setup()
+      let posted: RulePayload | null = null
+      server.use(
+        http.get('/api/v1/promotion/rules', () => HttpResponse.json([])),
+        http.get('/api/v1/promotion/requests', () => HttpResponse.json([])),
+        reposHandler,
+        http.post('/api/v1/promotion/rules', async ({ request }) => {
+          posted = (await request.json()) as RulePayload
+          return HttpResponse.json(promRule, { status: 201 })
+        }),
+      )
+      await openCreate(user)
+      expect(screen.queryByText('FAIL ON SEVERITIES')).not.toBeInTheDocument()
+      await user.click(screen.getByRole('checkbox', { name: /Require scan pass/ }))
+      expect(screen.getByText('FAIL ON SEVERITIES')).toBeInTheDocument()
+      expect(sevBox('MALICIOUS')).toBeChecked()
+      expect(sevBox('CRITICAL')).toBeChecked()
+      expect(sevBox('HIGH')).toBeChecked()
+      expect(sevBox('MEDIUM')).not.toBeChecked()
+      expect(sevBox('LOW')).not.toBeChecked()
+      expect(sevBox('UNKNOWN')).not.toBeChecked()
+
+      await user.click(sevBox('HIGH'))
+      await user.click(sevBox('MEDIUM'))
+      await user.click(screen.getByRole('button', { name: /^Create$/ }))
+      await waitFor(() => expect(posted).toBeTruthy())
+      expect(posted!.require_scan_pass).toBe(true)
+      expect(posted!.scan_fail_severities).toEqual(['malicious', 'critical', 'medium'])
+    })
+
+    it('refuses to save with no severity selected', async () => {
+      const user = userEvent.setup()
+      let posted = false
+      server.use(
+        http.get('/api/v1/promotion/rules', () => HttpResponse.json([])),
+        http.get('/api/v1/promotion/requests', () => HttpResponse.json([])),
+        reposHandler,
+        http.post('/api/v1/promotion/rules', () => { posted = true; return HttpResponse.json(promRule, { status: 201 }) }),
+      )
+      await openCreate(user)
+      await user.click(screen.getByRole('checkbox', { name: /Require scan pass/ }))
+      for (const sev of ['MALICIOUS', 'CRITICAL', 'HIGH']) await user.click(sevBox(sev))
+      await user.click(screen.getByRole('button', { name: /^Create$/ }))
+      expect(await screen.findByText('Select at least one severity that fails the scan')).toBeInTheDocument()
+      expect(posted).toBe(false)
+    })
+
+    it('sends an empty list when the scan gate is off', async () => {
+      const user = userEvent.setup()
+      let posted: RulePayload | null = null
+      server.use(
+        http.get('/api/v1/promotion/rules', () => HttpResponse.json([])),
+        http.get('/api/v1/promotion/requests', () => HttpResponse.json([])),
+        reposHandler,
+        http.post('/api/v1/promotion/rules', async ({ request }) => {
+          posted = (await request.json()) as RulePayload
+          return HttpResponse.json(promRule, { status: 201 })
+        }),
+      )
+      await openCreate(user)
+      await user.click(screen.getByRole('button', { name: /^Create$/ }))
+      await waitFor(() => expect(posted).toBeTruthy())
+      expect(posted!.require_scan_pass).toBe(false)
+      expect(posted!.scan_fail_severities).toEqual([])
+    })
+
+    it('round-trips a rule\'s own severities through edit', async () => {
+      const user = userEvent.setup()
+      let put: RulePayload | null = null
+      const custom = { ...promRule, scan_fail_severities: ['critical', 'low'] }
+      server.use(
+        http.get('/api/v1/promotion/rules', () => HttpResponse.json([custom])),
+        http.get('/api/v1/promotion/requests', () => HttpResponse.json([])),
+        reposHandler,
+        http.put('/api/v1/promotion/rules/:id', async ({ request }) => {
+          put = (await request.json()) as RulePayload
+          return HttpResponse.json(custom)
+        }),
+      )
+      renderAdmin('promotion')
+      await screen.findByText('to-release')
+      expect(screen.getByText('Scan Pass')).toHaveAttribute('title', 'Fails on: critical, low')
+      await user.click(screen.getByRole('button', { name: /Edit/ }))
+      await screen.findByText('Edit — to-release')
+      expect(sevBox('MALICIOUS')).not.toBeChecked()
+      expect(sevBox('CRITICAL')).toBeChecked()
+      expect(sevBox('HIGH')).not.toBeChecked()
+      expect(sevBox('LOW')).toBeChecked()
+      await user.click(screen.getByRole('button', { name: /^Save$/ }))
+      await waitFor(() => expect(put).toBeTruthy())
+      expect(put!.scan_fail_severities).toEqual(['critical', 'low'])
+    })
+
+    it('shows the default set for a rule without its own list', async () => {
+      const user = userEvent.setup()
+      server.use(
+        http.get('/api/v1/promotion/rules', () => HttpResponse.json([promRule])),
+        http.get('/api/v1/promotion/requests', () => HttpResponse.json([])),
+        reposHandler,
+      )
+      renderAdmin('promotion')
+      await screen.findByText('to-release')
+      expect(screen.getByText('Scan Pass')).toHaveAttribute('title', 'Fails on: malicious, critical, high')
+      await user.click(screen.getByRole('button', { name: /Edit/ }))
+      await screen.findByText('Edit — to-release')
+      expect(sevBox('MALICIOUS')).toBeChecked()
+      expect(sevBox('CRITICAL')).toBeChecked()
+      expect(sevBox('HIGH')).toBeChecked()
+      expect(sevBox('MEDIUM')).not.toBeChecked()
+    })
+  })
 })
 
 describe('AdminPage — Migration tab', () => {

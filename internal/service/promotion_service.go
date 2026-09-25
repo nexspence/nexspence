@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/cel-go/cel"
@@ -205,6 +206,9 @@ func (s *PromotionService) CreateRule(ctx context.Context, rule *domain.Promotio
 			return fmt.Errorf("invalid path_filter CEL expression: must evaluate to a boolean, not %s", ast.OutputType())
 		}
 	}
+	if err := normalizeRuleSeverities(rule); err != nil {
+		return err
+	}
 	return s.promotionRepo.CreateRule(ctx, rule)
 }
 
@@ -233,7 +237,23 @@ func (s *PromotionService) UpdateRule(ctx context.Context, rule *domain.Promotio
 			return fmt.Errorf("invalid path_filter CEL expression: must evaluate to a boolean, not %s", ast.OutputType())
 		}
 	}
+	if err := normalizeRuleSeverities(rule); err != nil {
+		return err
+	}
 	return s.promotionRepo.UpdateRule(ctx, rule)
+}
+
+// normalizeRuleSeverities validates the rule's scan_fail_severities and
+// rewrites them lower-cased, deduplicated and in canonical order. An empty list
+// is accepted and means the default (malicious, critical, high), so a client
+// that predates the field keeps the gate it always had.
+func normalizeRuleSeverities(rule *domain.PromotionRule) error {
+	sevs, err := domain.NormalizeScanSeverities(rule.ScanFailSeverities)
+	if err != nil {
+		return fmt.Errorf("invalid scan_fail_severities: %w", err)
+	}
+	rule.ScanFailSeverities = sevs
+	return nil
 }
 
 // DeleteRule removes the promotion rule with the given id.
@@ -266,10 +286,12 @@ func (s *PromotionService) ListRequests(ctx context.Context, status string) ([]d
 }
 
 // scanGate refuses promotion when the rule demands a clean scan and the
-// component's latest scan is missing or dirty. Malicious is checked alongside
-// the CVE tiers, not folded into them: a malicious-package report has no CVSS
-// level, so a gate reading only Critical/High would pass a compromised
-// release with a spotless CVE record straight into production.
+// component's latest scan is missing or has findings in any severity the rule
+// fails on (EffectiveScanFailSeverities: its own list, or malicious, critical
+// and high). Malicious is a severity of its own, not folded into the CVE
+// tiers: a malicious-package report has no CVSS level, so a gate reading only
+// Critical/High would pass a compromised release with a spotless CVE record
+// straight into production — which is why the default list leads with it.
 func (s *PromotionService) scanGate(ctx context.Context, rule *domain.PromotionRule, compID string) error {
 	if !rule.RequireScanPass {
 		return nil
@@ -278,9 +300,24 @@ func (s *PromotionService) scanGate(ctx context.Context, rule *domain.PromotionR
 	if err != nil || scan == nil {
 		return fmt.Errorf("component %s: scan required but not yet run", compID)
 	}
-	if scan.Malicious > 0 || scan.Critical > 0 || scan.High > 0 {
-		return fmt.Errorf("component %s: scan has %d malicious, %d critical, %d high findings",
-			compID, scan.Malicious, scan.Critical, scan.High)
+	counts := map[string]int{
+		domain.ScanSeverityMalicious: scan.Malicious,
+		domain.ScanSeverityCritical:  scan.Critical,
+		domain.ScanSeverityHigh:      scan.High,
+		domain.ScanSeverityMedium:    scan.Medium,
+		domain.ScanSeverityLow:       scan.Low,
+		domain.ScanSeverityUnknown:   scan.Unknown,
+	}
+	failOn := rule.EffectiveScanFailSeverities()
+	var failed []string
+	for _, sev := range failOn {
+		if n := counts[sev]; n > 0 {
+			failed = append(failed, fmt.Sprintf("%d %s", n, sev))
+		}
+	}
+	if len(failed) > 0 {
+		return fmt.Errorf("component %s: scan has %s findings (rule %q fails on %s)",
+			compID, strings.Join(failed, ", "), rule.Name, strings.Join(failOn, ", "))
 	}
 	return nil
 }

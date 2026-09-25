@@ -22,14 +22,14 @@ func NewPromotionRepo(db *pgxpool.Pool) *promotionRepo {
 }
 
 const promotionRuleFields = `id, name, from_repo, to_repo, path_filter,
-	require_scan_pass, require_manual_approval, created_at, updated_at`
+	require_scan_pass, scan_fail_severities, require_manual_approval, created_at, updated_at`
 
 func scanPromotionRule(row pgx.Row) (*domain.PromotionRule, error) {
 	var r domain.PromotionRule
 	var pf *string
 	err := row.Scan(
 		&r.ID, &r.Name, &r.FromRepo, &r.ToRepo, &pf,
-		&r.RequireScanPass, &r.RequireManualApproval, &r.CreatedAt, &r.UpdatedAt,
+		&r.RequireScanPass, &r.ScanFailSeverities, &r.RequireManualApproval, &r.CreatedAt, &r.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
@@ -38,6 +38,16 @@ func scanPromotionRule(row pgx.Row) (*domain.PromotionRule, error) {
 		r.PathFilter = *pf
 	}
 	return &r, nil
+}
+
+// scanFailSeveritiesArg stores an empty list as NULL: both mean "the default
+// severities", and one spelling keeps the column honest about which rules chose
+// their own.
+func scanFailSeveritiesArg(rule *domain.PromotionRule) []string {
+	if len(rule.ScanFailSeverities) == 0 {
+		return nil
+	}
+	return rule.ScanFailSeverities
 }
 
 func (r *promotionRepo) ListRules(ctx context.Context) ([]domain.PromotionRule, error) {
@@ -93,11 +103,11 @@ func (r *promotionRepo) CreateRule(ctx context.Context, rule *domain.PromotionRu
 	}
 	return r.db.QueryRow(ctx,
 		`INSERT INTO promotion_rules
-		  (name, from_repo, to_repo, path_filter, require_scan_pass, require_manual_approval)
-		 VALUES ($1,$2,$3,$4,$5,$6)
+		  (name, from_repo, to_repo, path_filter, require_scan_pass, require_manual_approval, scan_fail_severities)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7)
 		 RETURNING id, created_at, updated_at`,
 		rule.Name, rule.FromRepo, rule.ToRepo, pf,
-		rule.RequireScanPass, rule.RequireManualApproval,
+		rule.RequireScanPass, rule.RequireManualApproval, scanFailSeveritiesArg(rule),
 	).Scan(&rule.ID, &rule.CreatedAt, &rule.UpdatedAt)
 }
 
@@ -109,10 +119,10 @@ func (r *promotionRepo) UpdateRule(ctx context.Context, rule *domain.PromotionRu
 	_, err := r.db.Exec(ctx,
 		`UPDATE promotion_rules
 		 SET name=$1, from_repo=$2, to_repo=$3, path_filter=$4,
-		     require_scan_pass=$5, require_manual_approval=$6, updated_at=now()
+		     require_scan_pass=$5, require_manual_approval=$6, scan_fail_severities=$8, updated_at=now()
 		 WHERE id=$7`,
 		rule.Name, rule.FromRepo, rule.ToRepo, pf,
-		rule.RequireScanPass, rule.RequireManualApproval, rule.ID,
+		rule.RequireScanPass, rule.RequireManualApproval, rule.ID, scanFailSeveritiesArg(rule),
 	)
 	return err
 }

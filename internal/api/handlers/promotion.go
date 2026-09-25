@@ -90,12 +90,13 @@ func (h *PromotionHandler) ListRules(c *gin.Context) {
 }
 
 type promotionRuleInput struct {
-	Name                  string `json:"name"`
-	FromRepo              string `json:"from_repo"`
-	ToRepo                string `json:"to_repo"`
-	PathFilter            string `json:"path_filter"`
-	RequireScanPass       bool   `json:"require_scan_pass"`
-	RequireManualApproval bool   `json:"require_manual_approval"`
+	Name                  string   `json:"name"`
+	FromRepo              string   `json:"from_repo"`
+	ToRepo                string   `json:"to_repo"`
+	PathFilter            string   `json:"path_filter"`
+	RequireScanPass       bool     `json:"require_scan_pass"`
+	ScanFailSeverities    []string `json:"scan_fail_severities"`
+	RequireManualApproval bool     `json:"require_manual_approval"`
 }
 
 // CreateRule handles POST /api/v1/promotion/rules (admin only)
@@ -107,7 +108,7 @@ func (h *PromotionHandler) CreateRule(c *gin.Context) {
 	}
 	rule := &domain.PromotionRule{
 		Name: inp.Name, FromRepo: inp.FromRepo, ToRepo: inp.ToRepo,
-		PathFilter: inp.PathFilter, RequireScanPass: inp.RequireScanPass,
+		PathFilter: inp.PathFilter, RequireScanPass: inp.RequireScanPass, ScanFailSeverities: inp.ScanFailSeverities,
 		RequireManualApproval: inp.RequireManualApproval,
 	}
 	if err := h.svc.CreateRule(c.Request.Context(), rule); err != nil {
@@ -126,7 +127,7 @@ func (h *PromotionHandler) UpdateRule(c *gin.Context) {
 	}
 	rule := &domain.PromotionRule{
 		ID: c.Param("id"), Name: inp.Name, FromRepo: inp.FromRepo, ToRepo: inp.ToRepo,
-		PathFilter: inp.PathFilter, RequireScanPass: inp.RequireScanPass,
+		PathFilter: inp.PathFilter, RequireScanPass: inp.RequireScanPass, ScanFailSeverities: inp.ScanFailSeverities,
 		RequireManualApproval: inp.RequireManualApproval,
 	}
 	if err := h.svc.UpdateRule(c.Request.Context(), rule); err != nil {

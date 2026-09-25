@@ -1524,7 +1524,7 @@ sudo systemctl restart nexspence</div></div>
   }'</div></div>
   <div class="alert-info" data-i18n="promo.scan.needs"><strong>The scan gate needs a scanner.</strong> For Docker and OCI images that means a Trivy binary you supply — see <a href="#sec-scanning">Image Scanning</a>. Without one, a rule requiring a passing scan refuses every promotion of an image, because there is no scan to pass.</div>
   <div class="alert-info" data-i18n="promo.docker.note"><strong>Docker and OCI images promote whole.</strong> Promoting a tag (or a manifest by digest) also copies its digest manifest, the config and every layer blob — and, for a multi-arch image index, each platform manifest with its blobs — so the target repository can serve <code>docker pull</code>. Blobs the target already holds are skipped. If any referenced blob is missing from the source, the promotion is refused and nothing is copied. The rule's path filter, scan gate and approval apply to the tag you promote, not to each blob.</div>
-  <div class="alert-info" data-i18n="promo.scan.note"><strong>Scan gate:</strong> If <em>Require scan pass</em> is enabled on the rule, components with HIGH or CRITICAL vulnerabilities are blocked from promotion until the issues are resolved.</div>
+  <div class="alert-info" data-i18n="promo.scan.note"><strong>Scan gate:</strong> With <em>Require scan pass</em> on, a component is blocked from promotion while its latest scan has findings in any severity the rule fails on — MALICIOUS, CRITICAL and HIGH by default. Tick MEDIUM, LOW or UNKNOWN to tighten the gate, or untick a severity to loosen it. Over the API: <code>"scan_fail_severities": ["critical", "medium"]</code>; omit the field or send an empty list for the default.</div>
       </section>
       <section id="sec-replication" class="doc-section" hidden>
   <div class="doc-section-title" data-i18n="repl.title">Content Replication</div>
@@ -1977,7 +1977,7 @@ const TRANSLATIONS={
     'promo.s1.title':'Create a Promotion Rule','promo.s1.desc':'<strong>Admin → Promotion → + Create Rule</strong>. Set source, target, optional CEL path filter, and scan requirement.',
     'promo.s2.title':'Request promotion','promo.s2.desc':'In <strong>Browse</strong>, select an artifact and click <strong>Promote</strong>, or use the REST API.',
     'promo.s3.title':'Approve or reject','promo.s3.desc':'Admins review the queue in <strong>Admin → Promotion → Requests</strong>. Approve to copy the artifact to the target repository.',
-    'promo.scan.note':'<strong>Scan gate:</strong> Components with HIGH or CRITICAL vulnerabilities are blocked from promotion until resolved.',
+    'promo.scan.note':'<strong>Scan gate:</strong> With <em>Require scan pass</em> on, a component is blocked from promotion while its latest scan has findings in any severity the rule fails on — MALICIOUS, CRITICAL and HIGH by default. Tick MEDIUM, LOW or UNKNOWN to tighten the gate, or untick a severity to loosen it. Over the API: <code>"scan_fail_severities": ["critical", "medium"]</code>; omit the field or send an empty list for the default.',
     'repl.title':'Content Replication','repl.sub':'Automatically push artifacts from one Nexspence instance to another on a schedule.',
     'repl.s1.title':'Create a Replication Rule','repl.s1.desc':'<strong>Admin → Replication → + Create</strong>. Set source repo, target URL, target repo, credentials, and a cron schedule.',
     'repl.s2.title':'Test the connection','repl.s2.desc':'Click <strong>Test Connection</strong> on the rule card.',
@@ -2350,7 +2350,7 @@ const TRANSLATIONS={
     'promo.s1.title':'Создайте правило продвижения','promo.s1.desc':'<strong>Admin → Promotion → + Create Rule</strong>. Задайте источник, цель, CEL-фильтр и требование сканирования.',
     'promo.s2.title':'Запросите продвижение','promo.s2.desc':'В <strong>Browse</strong> выберите артефакт и нажмите <strong>Promote</strong> или используйте REST API.',
     'promo.s3.title':'Подтвердите или отклоните','promo.s3.desc':'Администраторы просматривают очередь в <strong>Admin → Promotion → Requests</strong> и подтверждают копирование.',
-    'promo.scan.note':'<strong>Проверка сканирования:</strong> Компоненты с HIGH или CRITICAL уязвимостями блокируются до устранения проблем.',
+    'promo.scan.note':'<strong>Проверка сканирования:</strong> Если включено <em>Require scan pass</em>, компонент не продвигается, пока в его последнем скане есть находки уровней, выбранных в правиле, — по умолчанию MALICIOUS, CRITICAL и HIGH. Отметьте MEDIUM, LOW или UNKNOWN, чтобы ужесточить проверку, или снимите отметку, чтобы ослабить. Через API: <code>"scan_fail_severities": ["critical", "medium"]</code>; без поля или с пустым списком действует список по умолчанию.',
     'repl.title':'Репликация контента','repl.sub':'Автоматически переносите артефакты с одного экземпляра Nexspence на другой по расписанию.',
     'repl.s1.title':'Создайте правило репликации','repl.s1.desc':'<strong>Admin → Replication → + Create</strong>. Задайте источник, URL цели, репозиторий, учётные данные и cron-расписание.',
     'repl.s2.title':'Проверьте соединение','repl.s2.desc':'Нажмите <strong>Test Connection</strong> на карточке правила.',

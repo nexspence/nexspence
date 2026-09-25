@@ -776,6 +776,7 @@ type PromotionRule struct {
 	ToRepo                string    `json:"to_repo"`
 	PathFilter            string    `json:"path_filter,omitempty"` // CEL expression; empty = all paths
 	RequireScanPass       bool      `json:"require_scan_pass"`
+	ScanFailSeverities    []string  `json:"scan_fail_severities,omitempty"` // fail require_scan_pass; empty = DefaultScanFailSeverities (#543)
 	RequireManualApproval bool      `json:"require_manual_approval"`
 	CreatedAt             time.Time `json:"created_at"`
 	UpdatedAt             time.Time `json:"updated_at"`

@@ -627,9 +627,18 @@ interface PromotionRule {
   to_repo: string
   path_filter?: string
   require_scan_pass: boolean
+  // Severities that fail require_scan_pass; absent/empty = the default list.
+  scan_fail_severities?: string[]
   require_manual_approval: boolean
   created_at: string
 }
+
+// Buckets a scan result is counted into, in display order (#543).
+const SCAN_SEVERITIES = ['malicious', 'critical', 'high', 'medium', 'low', 'unknown'] as const
+const DEFAULT_SCAN_FAIL_SEVERITIES = ['malicious', 'critical', 'high']
+
+const effectiveScanFailSeverities = (rule: PromotionRule | null | undefined): string[] =>
+  rule?.scan_fail_severities?.length ? rule.scan_fail_severities : DEFAULT_SCAN_FAIL_SEVERITIES
 
 interface PromotionRequest {
   id: string
@@ -663,6 +672,7 @@ function PromotionRuleModal({
   const [toRepo, setToRepo] = useState('')
   const [pathFilter, setPathFilter] = useState('')
   const [requireScanPass, setRequireScanPass] = useState(false)
+  const [scanFailSeverities, setScanFailSeverities] = useState<string[]>(DEFAULT_SCAN_FAIL_SEVERITIES)
   const [requireManualApproval, setRequireManualApproval] = useState(false)
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
@@ -675,6 +685,7 @@ function PromotionRuleModal({
       setToRepo(rule?.to_repo ?? '')
       setPathFilter(rule?.path_filter ?? '')
       setRequireScanPass(rule?.require_scan_pass ?? false)
+      setScanFailSeverities(effectiveScanFailSeverities(rule))
       setRequireManualApproval(rule?.require_manual_approval ?? false)
       setErr('')
     }
@@ -687,12 +698,16 @@ function PromotionRuleModal({
     if (!name.trim()) { setErr('Name is required'); return }
     if (!fromRepo) { setErr('From repository is required'); return }
     if (!toRepo) { setErr('To repository is required'); return }
+    if (requireScanPass && scanFailSeverities.length === 0) { setErr('Select at least one severity that fails the scan'); return }
     const payload = {
       name: name.trim(),
       from_repo: fromRepo,
       to_repo: toRepo,
       path_filter: pathFilter.trim() || undefined,
       require_scan_pass: requireScanPass,
+      // Sent in display order; with the gate off the list is dropped, so the
+      // rule reverts to the default if the gate is turned back on later.
+      scan_fail_severities: requireScanPass ? SCAN_SEVERITIES.filter(s => scanFailSeverities.includes(s)) : [],
       require_manual_approval: requireManualApproval,
     }
     setSaving(true)
@@ -748,8 +763,26 @@ function PromotionRuleModal({
         </div>
         <label style={{ fontSize: 12, color: 'var(--holo-c-slate-400)', display: 'flex', alignItems: 'center', gap: 8 }}>
           <input type="checkbox" checked={requireScanPass} onChange={e => setRequireScanPass(e.target.checked)} />
-          Require scan pass (no HIGH/CRITICAL CVEs)
+          Require scan pass
         </label>
+        {requireScanPass && (
+          <fieldset style={{ border: 'none', margin: '-6px 0 0 24px', padding: 0 }}>
+            <legend style={{ fontSize: 11, fontWeight: 600, color: 'var(--holo-text-dim)', marginBottom: 5, padding: 0 }}>FAIL ON SEVERITIES</legend>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 14px' }}>
+              {SCAN_SEVERITIES.map(sev => (
+                <label key={sev} style={{ fontSize: 12, color: 'var(--holo-c-slate-400)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <input
+                    type="checkbox"
+                    checked={scanFailSeverities.includes(sev)}
+                    onChange={e => setScanFailSeverities(prev =>
+                      e.target.checked ? [...prev, sev] : prev.filter(s => s !== sev))}
+                  />
+                  {sev.toUpperCase()}
+                </label>
+              ))}
+            </div>
+          </fieldset>
+        )}
         <label style={{ fontSize: 12, color: 'var(--holo-c-slate-400)', display: 'flex', alignItems: 'center', gap: 8 }}>
           <input type="checkbox" checked={requireManualApproval} onChange={e => setRequireManualApproval(e.target.checked)} />
           Require manual approval
@@ -875,7 +908,10 @@ function PromotionTab() {
                     )}
                     <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
                       {rule.require_scan_pass && (
-                        <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 4, background: 'rgba(34,197,94,0.12)', color: 'var(--holo-c-green)', border: '1px solid rgba(34,197,94,0.25)' }}>
+                        <span
+                          title={`Fails on: ${effectiveScanFailSeverities(rule).join(', ')}`}
+                          style={{ fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 4, background: 'rgba(34,197,94,0.12)', color: 'var(--holo-c-green)', border: '1px solid rgba(34,197,94,0.25)' }}
+                        >
                           Scan Pass
                         </span>
                       )}
