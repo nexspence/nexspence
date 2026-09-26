@@ -287,10 +287,17 @@ func hostPort(raw string) (string, error) {
 // proxy_username/proxy_password, which authenticate to the outbound forward
 // proxy on the way, not to the registry itself.
 //
-// A request that already carries an Authorization header keeps it — the Docker
-// Hub token flow, for one, sets its own Bearer and must win.
+// Credentials stay on remote_url's host. Helm (and any other format that
+// fetches an absolute origin URL) can point ServeGET at GitHub releases or a
+// sibling subtree; those hosts must not see remote_username. A request that
+// already carries an Authorization header keeps it — the Docker Hub token
+// flow, for one, sets its own Bearer and must win.
 func SetUpstreamAuth(req *http.Request, repo *domain.Repository) {
 	if req == nil || repo == nil || req.Header.Get("Authorization") != "" {
+		return
+	}
+	remote, err := RemoteURL(repo)
+	if err != nil || !requestHostMatchesRemote(req.URL, remote) {
 		return
 	}
 	user := cfgString(repo.ProxyConfig, "remote_username")
@@ -298,4 +305,28 @@ func SetUpstreamAuth(req *http.Request, repo *domain.Repository) {
 		return
 	}
 	req.SetBasicAuth(user, cfgString(repo.ProxyConfig, domain.RemotePasswordKey))
+}
+
+// requestHostMatchesRemote reports whether req is aimed at remote_url's host.
+// Default ports are stripped so "host:443" and bare "host" over https match.
+func requestHostMatchesRemote(reqURL *url.URL, remote string) bool {
+	if reqURL == nil || reqURL.Host == "" {
+		return false
+	}
+	u, err := url.Parse(remote)
+	if err != nil || u.Host == "" {
+		return false
+	}
+	return authHost(reqURL) == authHost(u)
+}
+
+func authHost(u *url.URL) string {
+	host := strings.ToLower(u.Host)
+	switch strings.ToLower(u.Scheme) {
+	case "http":
+		return strings.TrimSuffix(host, ":80")
+	case "https":
+		return strings.TrimSuffix(host, ":443")
+	}
+	return host
 }

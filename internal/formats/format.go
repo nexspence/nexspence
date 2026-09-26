@@ -21,3 +21,11 @@ type FormatHandler interface {
 	// ServeHTTP handles all HTTP requests for this format.
 	ServeHTTP(c *gin.Context)
 }
+
+// GroupMemberKey is set on the gin context of a request a group repository is
+// fanning out to one of its members. A group walks its members until one answers
+// something other than 404, so a member handler may need to report an upstream
+// "not mine" — a Helm remote answering 403 for a chart it does not host, say — as
+// a miss during fan-out, while the same answer to a request addressed straight at
+// the member must reach the client unchanged.
+const GroupMemberKey = "nexspence.group_member"

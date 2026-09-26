@@ -106,6 +106,12 @@ config:
       #   aliases:
       #     docker-hub-proxy.example.com: dockerhub-proxy
       aliases: {}
+  helm:
+    # -- How long a Helm proxy reuses an upstream index.yaml when resolving where
+    # an uncached chart tarball comes from. Empty keeps the server default (5m);
+    # "0s" fetches the index per lookup, at the cost of one download per chart
+    # pull per proxy member. The index served to clients is never cached.
+    indexCacheTTL: ""
   # -- Automatic promotion on publish, for promotion rules with
   # "Promote automatically on publish" on. Durations are Go durations.
   promotion:

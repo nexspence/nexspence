@@ -39,6 +39,9 @@ RENDERS = [
     ["--set", "storage.type=azure", "--set", "storage.azure.container=c",
      "--set", "storage.azure.accountName=acct"],
     ["--set", "config.docker.subdomainConnector.enabled=true"],
+    # Unset by default so the server default applies, which would keep this env
+    # name out of the check.
+    ["--set", "config.helm.indexCacheTTL=30s"],
     ["--set", "config.outbound.allowedInternalCidrs={10.0.0.0/8}"],
     [
         "--set", "oidc.enabled=true",

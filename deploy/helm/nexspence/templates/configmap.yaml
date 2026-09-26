@@ -37,6 +37,9 @@ data:
   NEXSPENCE_METRICS_PUBLIC: {{ .Values.config.metricsPublic | quote }}
   NEXSPENCE_DOCKER_SUBDOMAIN_CONNECTOR_ENABLED: {{ .Values.config.docker.subdomainConnector.enabled | quote }}
   NEXSPENCE_DOCKER_SUBDOMAIN_CONNECTOR_BASE_DOMAIN: {{ .Values.config.docker.subdomainConnector.baseDomain | quote }}
+  {{- with .Values.config.helm.indexCacheTTL }}
+  NEXSPENCE_HELM_INDEX_CACHE_TTL: {{ . | quote }}
+  {{- end }}
   NEXSPENCE_PROMOTION_AUTO_SETTLE_WINDOW: {{ .Values.config.promotion.autoSettleWindow | quote }}
   NEXSPENCE_PROMOTION_AUTO_SCAN_WAIT: {{ .Values.config.promotion.autoScanWait | quote }}
   NEXSPENCE_PROMOTION_AUTO_POLL_INTERVAL: {{ .Values.config.promotion.autoPollInterval | quote }}

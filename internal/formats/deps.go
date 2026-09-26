@@ -2,6 +2,7 @@ package formats
 
 import (
 	"context"
+	"time"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/repository"
@@ -43,6 +44,10 @@ type Deps struct {
 	// image layers are not truncated, which leaves this as their only bound.
 	// 0 disables the cap.
 	MaxUploadBytes int64
+	// HelmIndexCacheTTL is how long a Helm proxy reuses an upstream index.yaml
+	// when resolving where a chart tarball comes from (config helm.index_cache_ttl).
+	// 0 fetches the index per lookup.
+	HelmIndexCacheTTL time.Duration
 }
 
 // TokenIssuer mints a bearer token for an already-authenticated caller.

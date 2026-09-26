@@ -317,6 +317,8 @@ Helm chart repositories follow the Helm HTTP protocol: a repository is simply an
 
 Charts are standard `helm package` tarballs. Hosted repositories accept uploads via HTTP PUT or multipart POST. Proxy repositories cache charts from upstream Helm registries such as `https://charts.helm.sh/stable` or format-specific repos like `https://charts.jetstack.io`.
 
+A proxy also reads the upstream `index.yaml` on the download path, because an entry may point the tarball at another host entirely (charts published on GitHub releases) and that origin is only named in the index. `helm.index_cache_ttl` (default `5m`, `0` to disable) is how long a fetched index answers those lookups; the index served to clients is always live.
+
 ### When to use: hosted vs proxy vs group
 
 | Type | When to use |

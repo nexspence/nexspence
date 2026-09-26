@@ -701,6 +701,38 @@ func TestServeGET_SendsUpstreamBasicAuth(t *testing.T) {
 	assert.Contains(t, gotAuth, "Basic ")
 }
 
+// An absolute origin URL on another host (Helm GitHub releases, a planted
+// index entry) must not receive remote_username. Credentials stay on remote_url.
+func TestServeGET_NoUpstreamAuthOnForeignHost(t *testing.T) {
+	useUnguardedUpstream(t)
+	var foreignAuth string
+	foreign := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		foreignAuth = r.Header.Get("Authorization")
+		_, _ = fmt.Fprint(w, "github-bytes")
+	}))
+	defer foreign.Close()
+
+	remote := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("remote_url host must not be contacted for an off-host origin; got %s", r.URL)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer remote.Close()
+
+	repo := proxyRepo("pforeign", remote.URL)
+	repo.ProxyConfig["remote_username"] = "deploy"
+	repo.ProxyConfig["remote_password"] = "s3cret"
+	d := makeDeps(repo)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/widget-1.0.0.tgz", nil)
+	err := repoproxy.ServeGET(c, d, repo, "/widget-1.0.0.tgz", foreign.URL+"/widget-1.0.0.tgz", base.Coords{Name: "widget", Version: "1.0.0"}, "", 0)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "github-bytes", w.Body.String())
+	assert.Empty(t, foreignAuth, "off-host origin must not receive remote_username")
+}
+
 // Without credentials configured, no Authorization header is invented.
 func TestServeGET_NoUpstreamAuthByDefault(t *testing.T) {
 	useUnguardedUpstream(t)

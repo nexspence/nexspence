@@ -31,6 +31,7 @@ type Config struct {
 	Promotion PromotionConfig `mapstructure:"promotion"`
 	Audit     AuditConfig     `mapstructure:"audit"`
 	Docker    DockerConfig    `mapstructure:"docker"`
+	Helm      HelmConfig      `mapstructure:"helm"`
 	Redis     RedisConfig     `mapstructure:"redis"`
 	Proxy     ProxyConfig     `mapstructure:"proxy"`
 	Outbound  OutboundConfig  `mapstructure:"outbound"`
@@ -555,6 +556,21 @@ type DockerConfig struct {
 	MaxUploadBytes int64 `mapstructure:"max_upload_bytes"`
 }
 
+// HelmConfig holds Helm-specific settings.
+type HelmConfig struct {
+	// IndexCacheTTL is how long a Helm proxy reuses an upstream index.yaml it
+	// already fetched when resolving where a chart tarball comes from. Every
+	// uncached .tgz needs that lookup, so without it the first pull through a
+	// group costs one index download per proxy member — and an index like
+	// Bitnami's is tens of megabytes. A published chart version never changes
+	// its URL, so the window only delays charts published upstream within it.
+	// 0 disables the cache and fetches the index per request.
+	//
+	// The index served to clients at /index.yaml is never cached: the catalog a
+	// client searches must not lag behind upstream.
+	IndexCacheTTL time.Duration `mapstructure:"index_cache_ttl"`
+}
+
 // SubdomainConnectorConfig configures per-repository Docker subdomain routing.
 //
 // Aliases decouple the client-facing hostname from the repository name (#282):
@@ -658,6 +674,7 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("docker.subdomain_connector.enabled", false)
 	v.SetDefault("docker.subdomain_connector.base_domain", "")
 	v.SetDefault("docker.max_upload_bytes", int64(10<<30)) // 10 GiB
+	v.SetDefault("helm.index_cache_ttl", "5m")
 	v.SetDefault("oidc.enabled", false)
 	v.SetDefault("oidc.display_name", "SSO")
 	// Zero-value defaults so these stay reachable from the environment when

@@ -378,6 +378,44 @@ func TestLoad_DockerMaxUploadBytes_Configurable(t *testing.T) {
 	assert.Equal(t, int64(1048576), cfg.Docker.MaxUploadBytes)
 }
 
+// A Helm proxy resolves the origin of every uncached chart out of the upstream
+// index, so the index is fetched on the download path too. The cache that keeps
+// that from being one download per pull ships on, and an operator who would
+// rather pay the traffic than wait out the window can shorten it or set 0.
+func TestLoad_HelmIndexCacheTTL(t *testing.T) {
+	const base = "" +
+		"database:\n  dsn: \"postgres://u:p@localhost:5432/db?sslmode=disable\"\n" +
+		"auth:\n  jwt_secret: \"a-unique-production-secret-at-least-32b\"\n"
+
+	t.Run("default", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "config.yaml")
+		require.NoError(t, os.WriteFile(path, []byte(base), 0o600))
+
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		assert.Equal(t, 5*time.Minute, cfg.Helm.IndexCacheTTL)
+	})
+
+	t.Run("from the config file", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "config.yaml")
+		require.NoError(t, os.WriteFile(path, []byte(base+"helm:\n  index_cache_ttl: 30s\n"), 0o600))
+
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		assert.Equal(t, 30*time.Second, cfg.Helm.IndexCacheTTL)
+	})
+
+	t.Run("from the environment", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "config.yaml")
+		require.NoError(t, os.WriteFile(path, []byte(base), 0o600))
+		t.Setenv("NEXSPENCE_HELM_INDEX_CACHE_TTL", "0s")
+
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		assert.Zero(t, cfg.Helm.IndexCacheTTL, "0 must reach the server as caching off")
+	})
+}
+
 // The bootstrap admin exists so a fresh install has someone to log in as, so
 // it is on by default. Operators who have already created their own accounts
 // turn it off — see TestLoad_BootstrapCanBeDisabled.

@@ -170,6 +170,18 @@ promotion:
 docker:
   max_upload_bytes: 10737418240   # 10 GiB per blob upload session
 
+# Helm settings.
+# A Helm proxy resolves where each uncached chart tarball comes from out of the
+# upstream index.yaml, so that index is fetched on the download path as well as
+# the catalog one. index_cache_ttl is how long a fetched index answers those
+# lookups: without it, the first pull through a group costs one index download
+# per proxy member, and an index like Bitnami's is tens of megabytes. A chart
+# version already published never changes its URL, so the window only delays
+# charts published upstream inside it. 0 fetches the index per lookup.
+# The index served to clients at /index.yaml is never cached.
+helm:
+  index_cache_ttl: "5m"
+
 # Automatic vulnerability scanning.
 # Every upload is queued for a background scan; the queue is bounded and drops
 # rather than delaying an upload, so the periodic full re-scan below is also the

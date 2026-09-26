@@ -16,6 +16,7 @@ func TestRewriteChartURL(t *testing.T) {
 		name       string
 		remoteBase string
 		url        string
+		canonical  string // the entry's own "<name>-<version>.tgz", when it names both
 		want       string
 	}{
 		// ── Case 1: repository-relative ──────────────────────────────
@@ -84,24 +85,52 @@ func TestRewriteChartURL(t *testing.T) {
 			want:       local + "x-1.0.0.tgz",
 		},
 		{
-			name:       "a non-default port is a different upstream",
+			name:       "a non-default port is a different upstream and is proxied by basename",
 			remoteBase: "https://charts.example.com",
 			url:        "https://charts.example.com:8443/x-1.0.0.tgz",
-			want:       "https://charts.example.com:8443/x-1.0.0.tgz",
+			want:       local + "x-1.0.0.tgz",
 		},
 
-		// ── Case 3: unproxyable, handed back absolute ────────────────
+		// ── Case 3: off-host / sibling — proxied by basename (query and .. stay raw)
+
 		{
-			name:       "absolute URL on another host is left alone",
+			name:       "absolute URL on another host is proxied by basename",
 			remoteBase: "https://charts.example.com",
 			url:        "https://github.com/o/r/releases/download/v1/x-1.0.0.tgz",
-			want:       "https://github.com/o/r/releases/download/v1/x-1.0.0.tgz",
+			want:       local + "x-1.0.0.tgz",
 		},
 		{
-			name:       "same host but outside the proxied subtree",
+			name:       "same host but outside the proxied subtree is proxied by basename",
 			remoteBase: "https://charts.example.com/charts-repo",
 			url:        "https://charts.example.com/other-repo/x-1.0.0.tgz",
-			want:       "https://charts.example.com/other-repo/x-1.0.0.tgz",
+			want:       local + "x-1.0.0.tgz",
+		},
+		{
+			// The download handler recovers the origin by the rewritten local path,
+			// so an off-host chart is proxied under the entry's own coordinates.
+			// Taking the origin's basename here made "widget.tgz" collide with any
+			// other entry of that name and file the component at version 0.0.0.
+			name:       "off-host origin is proxied under the entry's canonical name",
+			remoteBase: "https://charts.example.com",
+			url:        "https://github.com/o/r/releases/download/v1.0.0/widget.tgz",
+			canonical:  "widget-1.0.0.tgz",
+			want:       local + "widget-1.0.0.tgz",
+		},
+		{
+			name:       "version prefixed with v in the origin name is canonicalized too",
+			remoteBase: "https://charts.example.com",
+			url:        "https://github.com/o/r/releases/download/v1.0.0/widget-v1.0.0.tgz",
+			canonical:  "widget-1.0.0.tgz",
+			want:       local + "widget-1.0.0.tgz",
+		},
+		{
+			// A subtree-relative entry is served by forwarding the request path, so
+			// its directory must survive even when the entry's name differs.
+			name:       "canonical name does not touch an entry inside the subtree",
+			remoteBase: "https://charts.example.com",
+			url:        "charts/widget.tgz",
+			canonical:  "widget-1.0.0.tgz",
+			want:       local + "charts/widget.tgz",
 		},
 		{
 			// The subtree check must run on the cleaned path. Comparing the raw one
@@ -121,10 +150,10 @@ func TestRewriteChartURL(t *testing.T) {
 			want:       local + "charts/x-1.0.0.tgz",
 		},
 		{
-			name:       "root-relative outside the remote prefix resolves upstream",
+			name:       "root-relative outside the remote prefix is proxied by basename",
 			remoteBase: "https://charts.example.com/base",
 			url:        "/charts/x-1.0.0.tgz",
-			want:       "https://charts.example.com/charts/x-1.0.0.tgz",
+			want:       local + "x-1.0.0.tgz",
 		},
 		{
 			name:       "root-relative with no remote prefix is proxied",
@@ -185,7 +214,7 @@ func TestRewriteChartURL(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, rewriteChartURL(tt.url, tt.remoteBase, local))
+			assert.Equal(t, tt.want, rewriteChartURL(tt.url, tt.remoteBase, local, tt.canonical))
 		})
 	}
 }
