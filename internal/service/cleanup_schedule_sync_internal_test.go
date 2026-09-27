@@ -124,13 +124,13 @@ func TestCleanupScheduledRun_ReadsThePolicyWhenItFires(t *testing.T) {
 	s := newSyncTestCleanupService(policies)
 	ctx := context.Background()
 
-	s.runScheduled(ctx, "p1")
+	s.runScheduled(ctx, "p1", "0 3 * * *")
 	require.Len(t, policies.RunRecords, 1, "an enabled policy runs")
 
 	require.NoError(t, policies.Update(ctx, &domain.CleanupPolicy{ID: "p1", Name: "p1", Enabled: false}))
-	s.runScheduled(ctx, "p1")
+	s.runScheduled(ctx, "p1", "0 3 * * *")
 	require.NoError(t, policies.Delete(ctx, "p1"))
-	s.runScheduled(ctx, "p1")
+	s.runScheduled(ctx, "p1", "0 3 * * *")
 
 	assert.Len(t, policies.RunRecords, 1, "a disabled or deleted policy must not run")
 }
@@ -156,4 +156,22 @@ func TestCleanupScheduler_SyncsPoliciesPeriodically(t *testing.T) {
 	require.Eventually(t, func() bool {
 		return registeredSchedules(s)["policy-1"] == "*/5 * * * *"
 	}, 5*time.Second, 50*time.Millisecond)
+}
+
+// A node still holding the entry for the old schedule must not run the policy
+// at the old time after another node rescheduled it.
+func TestCleanupScheduledRun_SkipsAStaleSchedule(t *testing.T) {
+	policies := testutil.NewCleanupPolicyRepo(&domain.CleanupPolicy{
+		ID: "p1", Name: "p1", Enabled: true, DryRun: true, ScheduleCron: "0 4 * * *",
+		Criteria: map[string]any{"artifactAgeDays": float64(30)},
+		Scope:    domain.CleanupScope{RepositoryName: "raw-c"},
+	})
+	s := newSyncTestCleanupService(policies)
+	ctx := context.Background()
+
+	s.runScheduled(ctx, "p1", "*/5 * * * *")
+	assert.Empty(t, policies.RunRecords, "the entry's schedule is no longer the policy's")
+
+	s.runScheduled(ctx, "p1", "0 4 * * *")
+	assert.Len(t, policies.RunRecords, 1)
 }

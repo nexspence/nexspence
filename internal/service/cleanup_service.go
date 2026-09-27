@@ -207,11 +207,11 @@ func (s *CleanupService) scheduleForLocked(p domain.CleanupPolicy) string {
 func (s *CleanupService) addEntryLocked(p domain.CleanupPolicy) {
 	schedule := s.scheduleForLocked(p)
 	policyID := p.ID
-	job := func() { s.runScheduled(context.Background(), policyID) }
+	job := func() { s.runScheduled(context.Background(), policyID, schedule) }
 
 	id, err := s.cronScheduler.AddFunc(schedule, job)
 	if err != nil {
-		s.log.Warn("cleanup: invalid schedule_cron, falling back to default",
+		s.log.Warnw("cleanup: invalid schedule_cron, falling back to default",
 			"policy", p.Name, "schedule", schedule, "err", err)
 		id, _ = s.cronScheduler.AddFunc(s.defaultSchedule, job)
 	}
@@ -223,8 +223,9 @@ func (s *CleanupService) addEntryLocked(p domain.CleanupPolicy) {
 // runScheduled is a policy's cron job. It reads the policy when it fires
 // rather than using the copy it was registered with: until this node's next
 // syncPolicies, that copy may predate a change saved on another node, and a
-// policy since disabled or deleted must not run.
-func (s *CleanupService) runScheduled(ctx context.Context, policyID string) {
+// policy since disabled or deleted must not run, nor one whose schedule was
+// changed away from the one this entry was registered with.
+func (s *CleanupService) runScheduled(ctx context.Context, policyID, registered string) {
 	p, err := s.policies.Get(ctx, policyID)
 	if err != nil || p == nil {
 		// Deleted on another node (the postgres repo answers a missing row
@@ -234,6 +235,14 @@ func (s *CleanupService) runScheduled(ctx context.Context, policyID string) {
 		return
 	}
 	if !p.Enabled {
+		return
+	}
+	s.mu.Lock()
+	current := s.scheduleForLocked(*p)
+	s.mu.Unlock()
+	if current != registered {
+		// Rescheduled on another node: the entry for the new schedule
+		// arrives with the next syncPolicies.
 		return
 	}
 	if _, err := s.runPolicyLocked(ctx, *p); err != nil {
