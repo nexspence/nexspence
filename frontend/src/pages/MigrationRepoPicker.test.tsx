@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MigrationRepoPicker, scopedRepoSelection, validateMigrationRepoScope, type PreviewRepo } from './MigrationRepoPicker'
+import { MigrationRepoPicker } from './MigrationRepoPicker'
+import { scopedRepoSelection, validateMigrationRepoScope, type PreviewRepo } from './migrationRepoScope'
 
 const repos: PreviewRepo[] = [
   { name: 'raw-hosted', format: 'raw', type: 'hosted' },

@@ -7,7 +7,8 @@ const MonitoringView = lazy(() => import('@/pages/MonitoringPage').then(m => ({ 
 import { Select } from '@/components/Select'
 import { Truncated } from '@/components/Truncated'
 import { HoloButton, HoloInput, HoloModal, HoloTabs, HoloCard, HoloTabItem, Wizard } from '@/components/holo'
-import { MigrationRepoPicker, isBlobSourceRepo, scopedRepoSelection, validateMigrationRepoScope, type PreviewRepo } from '@/pages/MigrationRepoPicker'
+import { MigrationRepoPicker } from '@/pages/MigrationRepoPicker'
+import { isBlobSourceRepo, scopedRepoSelection, validateMigrationRepoScope, type PreviewRepo } from '@/pages/migrationRepoScope'
 import { tint } from '@/theme/color'
 
 interface BlobStore {

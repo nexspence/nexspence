@@ -21,11 +21,11 @@
     "axios": "^1.19.0",
     "clsx": "^2.1.1",
     "date-fns": "^4.4.0",
-    "lucide-react": "^1.45.0",
+    "lucide-react": "^1.47.0",
     "pretty-bytes": "^7.1.3",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
-    "react-router-dom": "^7.18.2",
+    "react-router-dom": "^7.18.4",
     "zustand": "^5.0.12"
   },
   "devDependencies": {
@@ -37,20 +37,20 @@
     "@types/node": "^26.5.1",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
-    "@typescript-eslint/eslint-plugin": "^8.70.0",
-    "@typescript-eslint/parser": "^8.70.0",
+    "@typescript-eslint/eslint-plugin": "^8.70.1",
+    "@typescript-eslint/parser": "^8.70.1",
     "@vitejs/plugin-react": "^6.0.5",
-    "@vitest/coverage-v8": "^5.0.0",
+    "@vitest/coverage-v8": "^5.0.1",
     "eslint": "^10.10.0",
     "eslint-plugin-react-hooks": "^7.1.0",
-    "eslint-plugin-react-refresh": "^0.5.6",
+    "eslint-plugin-react-refresh": "^0.5.7",
     "globals": "^17.12.0",
     "jsdom": "^30.0.1",
     "msw": "^2.15.0",
     "prettier": "^3.9.6",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.70.0",
+    "typescript-eslint": "^8.70.1",
     "vite": "^8.3.0",
-    "vitest": "^5.0.0"
+    "vitest": "^5.0.1"
   }
 }

@@ -4,7 +4,8 @@ import { ArrowRightLeft, Play, Pause, RefreshCw, Plus } from 'lucide-react'
 import { nexspenceApi, apiErrorMessage } from '@/api/client'
 import { HoloCard, HoloButton, HoloPill, HoloInput, HoloModal } from '@/components/holo'
 import { type MigrationJob, shouldPollJobs } from './migrationJobs'
-import { MigrationRepoPicker, isBlobSourceRepo, scopedRepoSelection, validateMigrationRepoScope, type PreviewRepo } from './MigrationRepoPicker'
+import { MigrationRepoPicker } from './MigrationRepoPicker'
+import { isBlobSourceRepo, scopedRepoSelection, validateMigrationRepoScope, type PreviewRepo } from './migrationRepoScope'
 
 const STATUS_STYLE: Record<string, { bg: string; color: string }> = {
   pending:   { bg: 'rgba(245,158,11,0.15)',  color: 'var(--holo-c-amber)' },
