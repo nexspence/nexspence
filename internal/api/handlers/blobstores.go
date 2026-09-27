@@ -736,6 +736,10 @@ func (h *BlobStoreHandler) Compact(c *gin.Context) {
 		opts.MinAge = d
 	}
 	result, err := h.gcSvc.CompactStore(c.Request.Context(), name, opts)
+	if errors.Is(err, service.ErrGroupStoreNotCompactable) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

@@ -56,6 +56,11 @@ type BlobGCService struct {
 	DefaultMinAge time.Duration
 }
 
+// ErrGroupStoreNotCompactable is returned by CompactStore for a group blob
+// store: a group holds no blobs of its own, its members are compacted as
+// separate stores (#550).
+var ErrGroupStoreNotCompactable = errors.New("a group blob store holds no blobs; compact its member stores instead")
+
 const gcLockKey = "nexspence:lock:gc:run"
 const gcLockTTL = 30 * time.Minute
 
@@ -147,6 +152,9 @@ func (s *BlobGCService) CompactStore(ctx context.Context, name string, opts GCOp
 	if err != nil {
 		return nil, fmt.Errorf("get blob store %q: %w", name, err)
 	}
+	if row.Type == "group" {
+		return nil, fmt.Errorf("blob store %q: %w", name, ErrGroupStoreNotCompactable)
+	}
 	store, err := s.Resolver.Get(ctx, storage.BlobStoreDescriptor{
 		ID: row.ID, Type: row.Type, Config: row.Config,
 	})
@@ -201,6 +209,10 @@ func (s *BlobGCService) CompactAll(ctx context.Context, opts GCOptions) ([]*GCRe
 	results := make([]*GCResult, 0, len(rows))
 	for i := range rows {
 		row := rows[i]
+		if row.Type == "group" {
+			// Its members are rows of their own and get compacted there (#550).
+			continue
+		}
 		store, rerr := s.Resolver.Get(ctx, storage.BlobStoreDescriptor{
 			ID: row.ID, Type: row.Type, Config: row.Config,
 		})

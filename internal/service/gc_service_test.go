@@ -347,3 +347,46 @@ func TestGC_CompactStore_SharedAzureContainer_ProtectsOtherLogicalStore(t *testi
 	assert.Equal(t, int64(0), defaultStore.UsedBytes)
 	assert.Equal(t, int64(4), dockerStore.UsedBytes)
 }
+
+// groupStoreRow is a group blob store over the seeded "default" store. A group
+// holds no blobs of its own, so the registry has no physical store for it.
+func groupStoreRow() *domain.BlobStore {
+	return &domain.BlobStore{
+		ID: "00000000-0000-0000-0000-0000000000a1", Name: "grp", Type: "group",
+		Config: map[string]any{"member_ids": []any{defaultStoreID}},
+	}
+}
+
+func TestGC_CompactAll_SkipsGroupStores(t *testing.T) {
+	ctx := context.Background()
+	bs := testutil.NewBlobStore()
+	stores := testutil.NewBlobStoreRepo(
+		&domain.BlobStore{ID: defaultStoreID, Name: "default", Type: "local"},
+		groupStoreRow(),
+	)
+	svc := &service.BlobGCService{
+		Assets:   testutil.NewAssetRepo(),
+		Stores:   stores,
+		Resolver: testutil.NewFakeResolver(bs),
+	}
+
+	results, err := svc.CompactAll(ctx, service.GCOptions{})
+	require.NoError(t, err)
+	require.Len(t, results, 1, "a group store has no blobs of its own; its members are compacted as their own rows")
+	assert.Equal(t, "default", results[0].Store)
+	assert.Empty(t, results[0].Errors)
+}
+
+func TestGC_CompactStore_GroupStoreIsRejected(t *testing.T) {
+	svc := &service.BlobGCService{
+		Assets: testutil.NewAssetRepo(),
+		Stores: testutil.NewBlobStoreRepo(
+			&domain.BlobStore{ID: defaultStoreID, Name: "default", Type: "local"},
+			groupStoreRow(),
+		),
+		Resolver: testutil.NewFakeResolver(testutil.NewBlobStore()),
+	}
+
+	_, err := svc.CompactStore(context.Background(), "grp", service.GCOptions{})
+	require.ErrorIs(t, err, service.ErrGroupStoreNotCompactable)
+}

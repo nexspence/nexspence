@@ -462,6 +462,16 @@ func TestBlobStore_Compact_Delete_Success(t *testing.T) {
 	assert.False(t, blobStore.Has("orphan-key"))
 }
 
+func TestBlobStore_Compact_GroupStore_400(t *testing.T) {
+	r, _, _, _, _ := mountBlobStores(t,
+		&domain.BlobStore{ID: "00000000-0000-0000-0000-000000000001", Name: "default", Type: "local"},
+		&domain.BlobStore{ID: "grp-id", Name: "grp", Type: "group",
+			Config: map[string]any{"member_ids": []any{"00000000-0000-0000-0000-000000000001"}}},
+	)
+	rec := do(t, r, http.MethodPost, "/api/v1/blobstores/grp/compact", nil)
+	assert.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+}
+
 // ── secret_key redaction ──────────────────────────────────────
 
 func s3Store(name, secret string) *domain.BlobStore {
