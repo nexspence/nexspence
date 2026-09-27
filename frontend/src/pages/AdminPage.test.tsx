@@ -788,6 +788,47 @@ describe('AdminPage — Backup tab', () => {
     expect(await screen.findByText(/4 blobs could not be written/)).toBeInTheDocument()
   })
 
+  it('lists what a restore could not bring back', async () => {
+    server.use(
+      http.post('/api/v1/backup/restore', () => HttpResponse.json({
+        restored: {
+          repositories: 0, assets: 5, blobsFailed: 0, failedItems: 102,
+          failures: [{ kind: 'repository', name: 'raw-s3', error: 'pq: insert violates foreign key constraint' }],
+        },
+      })),
+    )
+    renderAdmin('backup')
+    await screen.findByText('System Backup & Restore')
+    const fileInput = document.querySelector('input[type="file"][accept=".tar.gz,.tgz"]') as HTMLInputElement
+    fireEvent.change(fileInput, { target: { files: [new File(['x'], 'b.tar.gz')] } })
+    expect(await screen.findByText(/Restore finished with errors — 102 items could not be restored/)).toBeInTheDocument()
+    expect(screen.queryByText('Restore complete')).not.toBeInTheDocument()
+    expect(screen.getByText('raw-s3')).toBeInTheDocument()
+    expect(screen.getByText(/foreign key constraint/)).toBeInTheDocument()
+    expect(screen.getByText(/101 more/)).toBeInTheDocument()
+  })
+
+  it('lists what an import could not bring back', async () => {
+    const user = userEvent.setup()
+    server.use(
+      http.post('/api/v1/repositories/import', () =>
+        HttpResponse.json({ imported: {
+          repository: 'r', components: 1, assets: 0, blobs: 0, blobsFailed: 0, conflictMode: 'skip',
+          failedItems: 1, failures: [{ kind: 'asset', name: 'r/a.bin', error: 'pq: connection reset' }],
+        } }),
+      ),
+    )
+    renderAdmin('backup')
+    await screen.findByText('Repository Import')
+    const importInput = document.querySelectorAll('input[type="file"][accept=".tar.gz,.tgz"]')[1] as HTMLInputElement
+    fireEvent.change(importInput, { target: { files: [new File(['x'], 'repo.tar.gz')] } })
+    await screen.findByText('repo.tar.gz')
+    await user.click(screen.getByRole('button', { name: /Import Repository/ }))
+    expect(await screen.findByText('Import finished with errors')).toBeInTheDocument()
+    expect(screen.queryByText('Import complete')).not.toBeInTheDocument()
+    expect(screen.getByText('r/a.bin')).toBeInTheDocument()
+  })
+
   it('shows the last scheduled run and its failure', async () => {
     server.use(
       http.get('/api/v1/backup/settings', () =>

@@ -102,13 +102,40 @@ export interface CleanupPreviewResponse {
   totalBytes: number
 }
 
-export interface ImportRepoStats {
+// Mirrors service.RestoreFailure: one archived item that was not brought back.
+export interface RestoreFailure {
+  kind: string
+  name: string
+  error: string
+}
+
+// Mirrors service.FailureReport. failures is capped server-side; failedItems
+// counts them all.
+export interface FailureReport {
+  failedItems?: number
+  failures?: RestoreFailure[]
+}
+
+export interface ImportRepoStats extends FailureReport {
   repository: string
   components: number
   assets: number
   blobs: number
   blobsFailed: number
   conflictMode: string
+}
+
+// Mirrors service.RestoreStats.
+export interface RestoreStats extends FailureReport {
+  blobStores: number
+  repositories: number
+  users: number
+  roles: number
+  cleanupPolicies: number
+  components: number
+  assets: number
+  blobs: number
+  blobsFailed: number
 }
 
 // Mirrors domain.BackupSettings (internal/domain/types.go).
@@ -447,7 +474,7 @@ export const nexspenceApi = {
   restoreBackup: (file: File) => {
     const fd = new FormData()
     fd.append('file', file)
-    return apiClient.post<{ restored: Record<string, number> }>('/api/v1/backup/restore', fd)
+    return apiClient.post<{ restored: RestoreStats }>('/api/v1/backup/restore', fd)
   },
 
   // Scheduled backup config — see handlers/backup.go Settings/UpdateSettings

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, lazy, Suspense } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Activity, Archive, ArrowRightLeft, ArrowUpCircle, CheckCircle, ChevronDown, ChevronUp, Clock, Database, Download, ExternalLink, GitBranch, HardDrive, Info, Network, Paperclip, Pause, Pencil, Play, Plus, RefreshCw, Share2, Shield, Trash2, Upload, Wifi, X } from 'lucide-react'
-import { nexusApi, nexspenceApi, apiClient, apiErrorMessage, ImportRepoStats, ServiceStatus, RoutingRule, RoutingRuleInput, ReplicationRule, ReplicationHistory, ReplicationRuleInput, AuthConfig, BackupSettings, BackupSettingsInput } from '@/api/client'
+import { nexusApi, nexspenceApi, apiClient, apiErrorMessage, ImportRepoStats, RestoreFailure, RestoreStats, ServiceStatus, RoutingRule, RoutingRuleInput, ReplicationRule, ReplicationHistory, ReplicationRuleInput, AuthConfig, BackupSettings, BackupSettingsInput } from '@/api/client'
 const MonitoringView = lazy(() => import('@/pages/MonitoringPage').then(m => ({ default: m.MonitoringView })))
 import { Select } from '@/components/Select'
 import { Truncated } from '@/components/Truncated'
@@ -1098,6 +1098,23 @@ function PromotionTab() {
   )
 }
 
+// FailureList shows the items a restore or import had to leave out. The
+// server caps the list; total counts them all, the rest are in its log.
+function FailureList({ failures, total }: { failures?: RestoreFailure[]; total: number }) {
+  if (!failures || failures.length === 0) return null
+  const more = total - failures.length
+  return (
+    <ul style={{ margin: '8px 0 0', paddingLeft: 18, fontSize: 12, color: 'var(--holo-tx-fg-70)' }}>
+      {failures.map((f, i) => (
+        <li key={i}>
+          {f.kind} <code style={{ color: 'var(--holo-text)' }}>{f.name}</code>: {f.error}
+        </li>
+      ))}
+      {more > 0 && <li>…and {more} more — see the server log.</li>}
+    </ul>
+  )
+}
+
 export default function AdminPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const tabParam = searchParams.get('tab') as AdminTab | null
@@ -1116,7 +1133,7 @@ export default function AdminPage() {
   const [importResult, setImportResult]         = useState<{ imported: ImportRepoStats } | null>(null)
   const [importError, setImportError]           = useState<string | null>(null)
   const [restoreBusy, setRestoreBusy] = useState(false)
-  const [restoreResult, setRestoreResult] = useState<Record<string, number> | null>(null)
+  const [restoreResult, setRestoreResult] = useState<RestoreStats | null>(null)
   const [restoreError, setRestoreError] = useState('')
   const [bsEnabled, setBsEnabled] = useState(false)
   const [bsSchedule, setBsSchedule] = useState('0 3 * * *')
@@ -1209,7 +1226,9 @@ export default function AdminPage() {
   // Kept as the raw input: an emptied field is not "0 = keep all".
   const bsRetentionValid = /^\d+$/.test(bsRetention.trim())
 
-  const restoreFailed = (restoreResult?.blobsFailed ?? 0) > 0
+  const restoreFailedItems = restoreResult?.failedItems ?? 0
+  const restoreFailed = (restoreResult?.blobsFailed ?? 0) > 0 || restoreFailedItems > 0
+  const importFailedItems = importResult?.imported.failedItems ?? 0
 
   const handleSaveBackupSettings = async () => {
     setBsSaving(true)
@@ -1468,15 +1487,20 @@ export default function AdminPage() {
           {restoreResult && (
             <div style={{ background: restoreFailed ? 'rgba(245,158,11,0.08)' : 'rgba(34,197,94,0.08)', border: restoreFailed ? '1px solid rgba(245,158,11,0.3)' : '1px solid rgba(34,197,94,0.25)', borderRadius: 8, padding: '10px 14px', fontSize: 13 }}>
               <span style={{ color: restoreFailed ? 'var(--holo-c-amber-400)' : 'var(--holo-green)', fontWeight: 600, marginBottom: 6, display: 'block' }}>
-                {restoreFailed ? 'Restore finished with errors — some blobs could not be written and their assets were skipped' : 'Restore complete'}
+                {restoreFailedItems > 0
+                  ? `Restore finished with errors — ${restoreFailedItems} items could not be restored`
+                  : restoreFailed
+                    ? 'Restore finished with errors — some blobs could not be written and their assets were skipped'
+                    : 'Restore complete'}
               </span>
               <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' as const }}>
-                {Object.entries(restoreResult).map(([k, v]) => (
+                {Object.entries(restoreResult).filter(([k, v]) => typeof v === 'number' && k !== 'failedItems').map(([k, v]) => (
                   <span key={k} style={{ color: 'var(--holo-tx-fg-70)' }}>
                     <span style={{ color: 'var(--holo-text)', fontWeight: 600 }}>{v}</span> {k}
                   </span>
                 ))}
               </div>
+              <FailureList failures={restoreResult.failures} total={restoreFailedItems} />
             </div>
           )}
         </HoloCard>
@@ -1626,8 +1650,10 @@ export default function AdminPage() {
             </div>
 
             {importResult && (
-              <div style={{ padding: '10px 14px', borderRadius: 8, background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.28)', fontSize: 13, color: 'var(--holo-text)' }}>
-                <span style={{ color: 'var(--holo-green)', fontWeight: 600, display: 'block', marginBottom: 4 }}>Import complete</span>
+              <div style={{ padding: '10px 14px', borderRadius: 8, background: importFailedItems > 0 ? 'rgba(245,158,11,0.08)' : 'rgba(34,197,94,0.08)', border: importFailedItems > 0 ? '1px solid rgba(245,158,11,0.3)' : '1px solid rgba(34,197,94,0.28)', fontSize: 13, color: 'var(--holo-text)' }}>
+                <span style={{ color: importFailedItems > 0 ? 'var(--holo-c-amber-400)' : 'var(--holo-green)', fontWeight: 600, display: 'block', marginBottom: 4 }}>
+                  {importFailedItems > 0 ? 'Import finished with errors' : 'Import complete'}
+                </span>
                 Imported <strong>{importResult.imported.components}</strong> components and{' '}
                 <strong>{importResult.imported.assets}</strong> assets into{' '}
                 <code style={{ color: 'var(--holo-c-blue-300)' }}>{importResult.imported.repository}</code>
@@ -1637,6 +1663,7 @@ export default function AdminPage() {
                     {importResult.imported.blobsFailed} blobs could not be written and their assets were skipped — re-run the import to retry.
                   </span>
                 )}
+                <FailureList failures={importResult.imported.failures} total={importFailedItems} />
               </div>
             )}
             {importError && (

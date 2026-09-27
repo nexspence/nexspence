@@ -109,6 +109,42 @@ type RestoreStats struct {
 	// BlobsFailed counts blobs the archive carried but that could not be
 	// written; their assets are not restored (see putArchivedBlob).
 	BlobsFailed int `json:"blobsFailed"`
+	FailureReport
+}
+
+// maxReportedFailures caps FailureReport.Failures: a restore that fails on
+// every asset of a big repository must not answer with a megabyte of errors.
+// FailedItems still counts them all, and every one is logged.
+const maxReportedFailures = 100
+
+// RestoreFailure names one archived item that a restore or import could not
+// bring back.
+type RestoreFailure struct {
+	Kind  string `json:"kind"` // blobStore | repository | user | role | cleanupPolicy | component | asset
+	Name  string `json:"name"`
+	Error string `json:"error"`
+}
+
+// FailureReport lists what a restore or import had to leave out, so a partial
+// result is not reported as a complete one (#551). Items skipped only because
+// their parent failed (the components and assets of a repository that could
+// not be created) are covered by the parent's entry, not listed one by one.
+type FailureReport struct {
+	FailedItems int              `json:"failedItems"`
+	Failures    []RestoreFailure `json:"failures,omitempty"`
+}
+
+func (r *FailureReport) add(kind, name string, err error) {
+	r.FailedItems++
+	if len(r.Failures) < maxReportedFailures {
+		r.Failures = append(r.Failures, RestoreFailure{Kind: kind, Name: name, Error: err.Error()})
+	}
+}
+
+// recordFailure logs a skipped item and adds it to report.
+func (s *BackupService) recordFailure(report *FailureReport, op, kind, name string, err error) {
+	s.logWarn(op+": item not restored", "kind", kind, "name", name, "err", err)
+	report.add(kind, name, err)
 }
 
 // backupUser carries the password hash in backup archives (json:"-" hides it in normal API responses).
