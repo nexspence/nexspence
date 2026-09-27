@@ -7,7 +7,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/robfig/cron/v3"
 	"go.opentelemetry.io/otel/attribute"
 
@@ -126,7 +125,7 @@ func (s *CleanupService) StartCronScheduler(ctx context.Context, defaultSchedule
 	// delete. Every other node picks the change up here, so the per-policy
 	// lock, not which node saved the policy, decides who runs it (#552).
 	if _, err := s.cronScheduler.AddFunc(cleanupPolicySyncSpec, func() { s.syncPolicies(context.Background()) }); err != nil {
-		s.log.Error("cleanup: failed to start policy sync", "err", err)
+		s.log.Errorw("cleanup: failed to start policy sync", "err", err)
 	}
 
 	s.cronScheduler.Start()
@@ -141,7 +140,7 @@ func (s *CleanupService) StartCronScheduler(ctx context.Context, defaultSchedule
 func (s *CleanupService) syncPolicies(ctx context.Context) {
 	policies, err := s.policies.List(ctx)
 	if err != nil {
-		s.log.Error("cleanup: failed to load policies for scheduler", "err", err)
+		s.log.Errorw("cleanup: failed to load policies for scheduler", "err", err)
 		return
 	}
 
@@ -228,18 +227,17 @@ func (s *CleanupService) addEntryLocked(p domain.CleanupPolicy) {
 func (s *CleanupService) runScheduled(ctx context.Context, policyID string) {
 	p, err := s.policies.Get(ctx, policyID)
 	if err != nil || p == nil {
-		// Deleted (the postgres repo returns an error for a missing row) or
-		// unreadable; either way there is nothing safe to run.
-		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-			s.log.Error("cleanup cron: load policy", "policy", policyID, "err", err)
-		}
+		// Deleted on another node (the postgres repo answers a missing row
+		// with an error) or unreadable: nothing safe to run. The next
+		// syncPolicies drops the entry of a deleted policy.
+		s.log.Warnw("cleanup cron: policy not loaded, run skipped", "policy", policyID, "err", err)
 		return
 	}
 	if !p.Enabled {
 		return
 	}
 	if _, err := s.runPolicyLocked(ctx, *p); err != nil {
-		s.log.Error("cleanup cron error", "policy", p.Name, "err", err)
+		s.log.Errorw("cleanup cron error", "policy", p.Name, "err", err)
 	}
 }
 
