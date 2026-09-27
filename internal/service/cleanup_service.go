@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/robfig/cron/v3"
 	"go.opentelemetry.io/otel/attribute"
 
@@ -33,9 +34,21 @@ type CleanupService struct {
 
 	mu              sync.Mutex
 	cronScheduler   *cron.Cron
-	entryIDs        map[string]cron.EntryID
+	entries         map[string]cleanupCronEntry // policy ID → its cron entry
 	defaultSchedule string
 }
+
+// cleanupCronEntry is a policy's registered cron entry and the schedule it was
+// registered with, so syncPolicies can tell when the stored one has changed.
+type cleanupCronEntry struct {
+	id       cron.EntryID
+	schedule string
+}
+
+// cleanupPolicySyncSpec is how often each node re-reads the policies and
+// brings its cron entries in line with them (see syncPolicies). A var, not a
+// const, so tests can shorten it.
+var cleanupPolicySyncSpec = "@every 1m"
 
 // NewCleanupService constructs a service that runs cleanup policies and schedules them via cron.
 func NewCleanupService(
@@ -53,7 +66,7 @@ func NewCleanupService(
 		blobs:     blobs,
 		blobStore: blobStore,
 		log:       log,
-		entryIDs:  make(map[string]cron.EntryID),
+		entries:   make(map[string]cleanupCronEntry),
 	}
 }
 
@@ -108,17 +121,12 @@ func (s *CleanupService) StartCronScheduler(ctx context.Context, defaultSchedule
 	s.cronScheduler = cron.New(cron.WithChain(cron.Recover(cron.DefaultLogger)))
 	s.mu.Unlock()
 
-	policies, err := s.policies.List(ctx)
-	if err != nil {
-		s.log.Error("cleanup: failed to load policies for scheduler", "err", err)
-	} else {
-		s.mu.Lock()
-		for _, p := range policies {
-			if p.Enabled {
-				s.addEntryLocked(p)
-			}
-		}
-		s.mu.Unlock()
+	s.syncPolicies(ctx)
+	// ReloadPolicy only runs on the node that served the create, update or
+	// delete. Every other node picks the change up here, so the per-policy
+	// lock, not which node saved the policy, decides who runs it (#552).
+	if _, err := s.cronScheduler.AddFunc(cleanupPolicySyncSpec, func() { s.syncPolicies(context.Background()) }); err != nil {
+		s.log.Error("cleanup: failed to start policy sync", "err", err)
 	}
 
 	s.cronScheduler.Start()
@@ -126,8 +134,44 @@ func (s *CleanupService) StartCronScheduler(ctx context.Context, defaultSchedule
 	s.cronScheduler.Stop()
 }
 
+// syncPolicies re-reads every policy and brings the cron entries in line:
+// adds entries for enabled policies this node does not know yet, re-registers
+// those whose schedule changed, and removes those disabled or deleted. A
+// failed read changes nothing, so a database hiccup does not drop schedules.
+func (s *CleanupService) syncPolicies(ctx context.Context) {
+	policies, err := s.policies.List(ctx)
+	if err != nil {
+		s.log.Error("cleanup: failed to load policies for scheduler", "err", err)
+		return
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.cronScheduler == nil {
+		return
+	}
+	want := make(map[string]string, len(policies))
+	for _, p := range policies {
+		if p.Enabled {
+			want[p.ID] = s.scheduleForLocked(p)
+		}
+	}
+	for id, e := range s.entries {
+		if schedule, ok := want[id]; !ok || schedule != e.schedule {
+			s.cronScheduler.Remove(e.id)
+			delete(s.entries, id)
+		}
+	}
+	for _, p := range policies {
+		if _, ok := s.entries[p.ID]; !ok && p.Enabled {
+			s.addEntryLocked(p)
+		}
+	}
+}
+
 // ReloadPolicy updates the cron schedule for a single policy (call after Create/Update/Delete).
-// If the policy is not found or disabled, its cron entry is removed.
+// If the policy is not found or disabled, its cron entry is removed. Other
+// nodes pick the change up on their next syncPolicies.
 func (s *CleanupService) ReloadPolicy(ctx context.Context, policyID string) {
 	// Fetch from DB outside the lock to avoid holding it during I/O.
 	p, _ := s.policies.Get(ctx, policyID)
@@ -140,9 +184,9 @@ func (s *CleanupService) ReloadPolicy(ctx context.Context, policyID string) {
 	}
 
 	// Remove existing entry if present.
-	if eid, ok := s.entryIDs[policyID]; ok {
-		s.cronScheduler.Remove(eid)
-		delete(s.entryIDs, policyID)
+	if e, ok := s.entries[policyID]; ok {
+		s.cronScheduler.Remove(e.id)
+		delete(s.entries, policyID)
 	}
 
 	if p == nil || !p.Enabled {
@@ -151,18 +195,20 @@ func (s *CleanupService) ReloadPolicy(ctx context.Context, policyID string) {
 	s.addEntryLocked(*p)
 }
 
+// scheduleForLocked is the cron expression p is registered with. Caller must
+// hold s.mu.
+func (s *CleanupService) scheduleForLocked(p domain.CleanupPolicy) string {
+	if p.ScheduleCron == "" {
+		return s.defaultSchedule
+	}
+	return p.ScheduleCron
+}
+
 // addEntryLocked registers a cron job for policy p. Caller must hold s.mu.
 func (s *CleanupService) addEntryLocked(p domain.CleanupPolicy) {
-	schedule := p.ScheduleCron
-	if schedule == "" {
-		schedule = s.defaultSchedule
-	}
-
-	job := func() {
-		if _, err := s.runPolicyLocked(context.Background(), p); err != nil {
-			s.log.Error("cleanup cron error", "policy", p.Name, "err", err)
-		}
-	}
+	schedule := s.scheduleForLocked(p)
+	policyID := p.ID
+	job := func() { s.runScheduled(context.Background(), policyID) }
 
 	id, err := s.cronScheduler.AddFunc(schedule, job)
 	if err != nil {
@@ -170,7 +216,31 @@ func (s *CleanupService) addEntryLocked(p domain.CleanupPolicy) {
 			"policy", p.Name, "schedule", schedule, "err", err)
 		id, _ = s.cronScheduler.AddFunc(s.defaultSchedule, job)
 	}
-	s.entryIDs[p.ID] = id
+	// The requested schedule, not the fallback: syncPolicies compares it with
+	// the stored one and must not re-register an invalid schedule every pass.
+	s.entries[p.ID] = cleanupCronEntry{id: id, schedule: schedule}
+}
+
+// runScheduled is a policy's cron job. It reads the policy when it fires
+// rather than using the copy it was registered with: until this node's next
+// syncPolicies, that copy may predate a change saved on another node, and a
+// policy since disabled or deleted must not run.
+func (s *CleanupService) runScheduled(ctx context.Context, policyID string) {
+	p, err := s.policies.Get(ctx, policyID)
+	if err != nil || p == nil {
+		// Deleted (the postgres repo returns an error for a missing row) or
+		// unreadable; either way there is nothing safe to run.
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			s.log.Error("cleanup cron: load policy", "policy", policyID, "err", err)
+		}
+		return
+	}
+	if !p.Enabled {
+		return
+	}
+	if _, err := s.runPolicyLocked(ctx, *p); err != nil {
+		s.log.Error("cleanup cron error", "policy", p.Name, "err", err)
+	}
 }
 
 const cleanupPolicyLockPrefix = "nexspence:lock:cleanup:policy:"
