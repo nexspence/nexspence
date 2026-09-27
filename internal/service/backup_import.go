@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
+	"github.com/nexspence-oss/nexspence/internal/repository"
 )
 
 // backupArchive holds a backup tar.gz decoded in one pass. JSON sections stay
@@ -260,16 +261,19 @@ func (s *BackupService) ImportRepo(ctx context.Context, r io.Reader, targetName,
 		return nil, fmt.Errorf("repository %q not available after creation", finalName)
 	}
 
-	// Pick blob store ID for imported assets.
+	// Imported assets go where the repository's own uploads go: its store, or
+	// the installation default when it has none — never simply the first
+	// store by name (#549).
 	blobStoreID := ""
 	if destRepo.BlobStoreID != nil {
-		blobStoreID = *destRepo.BlobStoreID
+		blobStoreID = strings.TrimSpace(*destRepo.BlobStoreID)
 	}
 	if blobStoreID == "" {
-		bss, _ := s.BlobStores.List(ctx)
-		if len(bss) > 0 {
-			blobStoreID = bss[0].ID
+		def, err := repository.DefaultBlobStore(ctx, s.BlobStores)
+		if err != nil {
+			return nil, fmt.Errorf("destination blob store for %q: %w", finalName, err)
 		}
+		blobStoreID = def.ID
 	}
 	// A repository on a group store records, per asset, the physical member
 	// that holds the bytes — never the group, which has none of its own.

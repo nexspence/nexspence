@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sort"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -252,4 +253,41 @@ func TestBackup_ImportRepo_GroupStoreWithNoRoom_IsAnError(t *testing.T) {
 	_, err := dst.ImportRepo(ctx, buf, "", "skip")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no member")
+}
+
+// nameSortedStores lists blob stores by name, as the Postgres repository does.
+type nameSortedStores struct{ *testutil.BlobStoreRepo }
+
+func (s nameSortedStores) List(ctx context.Context) ([]domain.BlobStore, error) {
+	all, err := s.BlobStoreRepo.List(ctx)
+	sort.Slice(all, func(i, j int) bool { return all[i].Name < all[j].Name })
+	return all, err
+}
+
+// A repository created by the import has no store of its own, so later
+// uploads go to the default store. The imported assets must go there too, not
+// to whichever store sorts first by name (#549).
+func TestBackup_ImportRepo_NewRepo_AssetsGoToTheDefaultStore(t *testing.T) {
+	ctx := context.Background()
+	buf := exportRepoArchive(t)
+
+	dst := buildBackupSvc()
+	backups := testutil.NewBlobStore()
+	dst.Resolver = mapResolver{"bs-backups": backups, defaultStoreID: dst.BlobStore}
+	stores := nameSortedStores{testutil.NewBlobStoreRepo()}
+	require.NoError(t, stores.Create(ctx, &domain.BlobStore{ID: "bs-backups", Name: "backups", Type: "s3"}))
+	dst.BlobStores = stores
+
+	stats, err := dst.ImportRepo(ctx, buf, "imp-copy", "skip")
+	require.NoError(t, err)
+	assert.Equal(t, 1, stats.Assets)
+
+	repo, err := dst.Repos.Get(ctx, "imp-copy")
+	require.NoError(t, err)
+	assert.Nil(t, repo.BlobStoreID, "an imported repository keeps using the default store")
+	asset, err := dst.Assets.GetByPath(ctx, "imp-copy", "/imp.bin")
+	require.NoError(t, err)
+	require.NotNil(t, asset)
+	assert.Equal(t, defaultStoreID, asset.BlobStoreID, "the asset must live where the repository's uploads go")
+	assert.False(t, backups.Has("ee/ff/imp"), "nothing may land in a store the repository does not use")
 }
