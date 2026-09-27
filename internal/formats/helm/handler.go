@@ -392,20 +392,29 @@ func rewriteChartURL(rawURL, remoteBase, localBase, canonicalFile string) string
 		return unproxyable()
 	}
 
-	remotePath := path.Clean("/" + strings.Trim(remote.Path, "/"))
-	absPath := path.Clean("/" + strings.TrimPrefix(abs.Path, "/"))
-	inside := true
-	if remotePath != "/" {
-		if absPath != remotePath && !strings.HasPrefix(absPath, remotePath+"/") {
-			inside = false
-		} else {
-			absPath = strings.TrimPrefix(absPath, remotePath)
-		}
-	}
-	if sameUpstreamHost(abs, remote) && inside {
-		return localBase + strings.TrimPrefix(absPath, "/")
+	if rel, ok := insideRemoteSubtree(abs, remote); ok {
+		return localBase + rel
 	}
 	return proxyViaBasename(abs, localBase, canonicalFile, unproxyable)
+}
+
+// insideRemoteSubtree reports whether abs sits on remote_url's host and under
+// its path prefix. Those entries are fetched by forwarding the request path
+// through remote_url, so an index that lists http:// on an https remote stays
+// on TLS. Off-host and sibling-subtree URLs need the absolute origin instead.
+func insideRemoteSubtree(abs, remote *url.URL) (rel string, ok bool) {
+	if abs == nil || remote == nil || !sameUpstreamHost(abs, remote) {
+		return "", false
+	}
+	remotePath := path.Clean("/" + strings.Trim(remote.Path, "/"))
+	absPath := path.Clean("/" + strings.TrimPrefix(abs.Path, "/"))
+	if remotePath != "/" {
+		if absPath != remotePath && !strings.HasPrefix(absPath, remotePath+"/") {
+			return "", false
+		}
+		absPath = strings.TrimPrefix(absPath, remotePath)
+	}
+	return strings.TrimPrefix(absPath, "/"), true
 }
 
 // proxyViaBasename mints a proxy path for an origin URL we can fetch by its
@@ -457,12 +466,13 @@ func (w forbidAsNotFound) WriteHeader(code int) {
 }
 
 // proxyChartUpstream returns the absolute origin URL ServeGET should fetch for
-// this chart, or empty to use the request path against remote_url. The origin is
-// looked up by the rewritten local path (the same path fetchAndRewriteHelmIndex
-// emits), so a same-host entry named charts/widget.tgz still round-trips. On a
-// group member, a readable index that does not list the path is a 404 — so a
-// Bitnami proxy is not asked for a Cilium tarball. A direct request falls
-// through to path forwarding: some remotes serve versions the index omits.
+// this chart, or empty to use the request path against remote_url. Same-host
+// in-subtree entries store an empty origin so the path stays on remote_url
+// (https stays https even when the index lists http://). Off-host and sibling
+// entries keep the absolute origin. The lookup key is the rewritten local path
+// fetchAndRewriteHelmIndex emits. On a group member, a readable index that
+// does not list the path is a 404. A direct request falls through to path
+// forwarding: some remotes serve versions the index omits.
 func (h *Handler) proxyChartUpstream(c *gin.Context, repo *domain.Repository, reqPath string) (origin, name, version string) {
 	if h.deps.Assets != nil {
 		if _, err := h.deps.Assets.GetByPath(c.Request.Context(), repo.Name, reqPath); err == nil {
@@ -479,11 +489,11 @@ func (h *Handler) proxyChartUpstream(c *gin.Context, repo *domain.Repository, re
 		}
 		return "", "", ""
 	}
-	if !listed || o.url == "" {
+	if !listed {
 		return "", "", ""
 	}
 	origin = o.url
-	if strings.HasSuffix(reqPath, ".prov") {
+	if origin != "" && strings.HasSuffix(reqPath, ".prov") {
 		origin += ".prov"
 	}
 	return origin, o.name, o.version
@@ -560,22 +570,5 @@ func resolvedUpstreamChartURL(rawURL, remoteBase string) string {
 // the reverse — but each scheme's default port is normalized away first, so an entry
 // on "host:443" and a remote of bare "host" are recognized as one upstream.
 func sameUpstreamHost(a, b *url.URL) bool {
-	return normalizedHost(a, b.Scheme) == normalizedHost(b, a.Scheme)
-}
-
-// normalizedHost lowercases u's host and drops the port when it is the default for
-// u's scheme. fallbackScheme supplies the scheme for a protocol-relative reference.
-func normalizedHost(u *url.URL, fallbackScheme string) string {
-	scheme := strings.ToLower(u.Scheme)
-	if scheme == "" {
-		scheme = strings.ToLower(fallbackScheme)
-	}
-	host := strings.ToLower(u.Host)
-	switch scheme {
-	case "http":
-		return strings.TrimSuffix(host, ":80")
-	case "https":
-		return strings.TrimSuffix(host, ":443")
-	}
-	return host
+	return repoproxy.NormalizedHost(a, b.Scheme) == repoproxy.NormalizedHost(b, a.Scheme)
 }

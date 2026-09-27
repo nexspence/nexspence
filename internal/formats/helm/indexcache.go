@@ -17,6 +17,7 @@ package helm
 
 import (
 	"context"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -41,6 +42,9 @@ const (
 
 // chartOrigin is one index.yaml entry as the download path needs it: the
 // rewritten local path is the map key; name/version file the cached component.
+// url is empty for same-host in-subtree entries: ServeGET then forwards the
+// request path through remote_url (so an http listing under an https remote
+// stays on TLS). Off-host and sibling-subtree entries store the absolute origin.
 type chartOrigin struct {
 	name, version, url string
 }
@@ -165,6 +169,13 @@ func chartOriginTable(index map[string]any, remoteBase string) map[string]chartO
 			origin := resolvedUpstreamChartURL(first, remoteBase)
 			if origin == "" {
 				continue
+			}
+			if abs, err := url.Parse(origin); err == nil {
+				if remote, err := url.Parse(remoteBase); err == nil {
+					if _, ok := insideRemoteSubtree(abs, remote); ok {
+						origin = ""
+					}
+				}
 			}
 			rewritten := rewriteChartURL(first, remoteBase, originTableLocalBase, canonicalChartFile(chart, key))
 			if !strings.HasPrefix(rewritten, originTableLocalBase) {

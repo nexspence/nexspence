@@ -3,6 +3,7 @@ package helm_test
 import (
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/formats"
 	"github.com/nexspence-oss/nexspence/internal/formats/helm"
+	"github.com/nexspence-oss/nexspence/internal/formats/repoproxy"
 	"github.com/nexspence-oss/nexspence/internal/testutil"
 )
 
@@ -361,6 +363,79 @@ func TestHelm_Proxy_SameHostNonCanonicalFilename_RoundTrip(t *testing.T) {
 			assert.Equal(t, tc.version, page.Items[0].Version)
 		})
 	}
+}
+
+// TestHelm_Proxy_SameHostHTTPEntryStaysOnHTTPSRemote: an https remote whose
+// index lists http:// on the same host must fetch the tarball through
+// remote_url (TLS), not the http origin, and must still send Basic on that
+// https fetch. Storing the absolute http origin leaked the password in
+// cleartext and skipped TLS.
+func TestHelm_Proxy_SameHostHTTPEntryStaysOnHTTPSRemote(t *testing.T) {
+	var tgzHits int
+	var tgzAuth string
+	var srv *httptest.Server
+	srv = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/index.yaml":
+			u, _ := url.Parse(srv.URL)
+			httpEntry := "http://" + u.Host + "/charts/w-1.0.0.tgz"
+			w.Header().Set("Content-Type", "application/yaml")
+			_, _ = w.Write([]byte("apiVersion: v1\n" +
+				"entries:\n" +
+				"  w:\n" +
+				"  - name: w\n" +
+				"    version: \"1.0.0\"\n" +
+				"    urls:\n" +
+				"    - " + httpEntry + "\n"))
+		case "/charts/w-1.0.0.tgz":
+			tgzHits++
+			tgzAuth = r.Header.Get("Authorization")
+			w.Header().Set("Content-Type", "application/x-tar")
+			_, _ = w.Write([]byte("tls-chart-bytes"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	orig := repoproxy.UpstreamClient
+	repoproxy.UpstreamClient = srv.Client()
+	t.Cleanup(func() { repoproxy.UpstreamClient = orig })
+
+	comps := testutil.NewComponentRepo()
+	repo := &domain.Repository{
+		ID: "helm-https", Name: "helm-https", Format: "helm",
+		Type: domain.TypeProxy, Online: true,
+		ProxyConfig: map[string]any{
+			"remote_url":      srv.URL,
+			"remote_username": "deploy",
+			"remote_password": "s3cret",
+		},
+	}
+	d := formats.Deps{
+		Repos:      testutil.NewRepoRepo(repo),
+		Blobs:      testutil.NewBlobStoreRepo(),
+		Components: comps,
+		Assets:     testutil.NewAssetRepo(),
+		BlobStore:  testutil.NewBlobStore(),
+		BaseURL:    testBaseURL,
+
+		HelmIndexCacheTTL: 5 * time.Minute,
+	}
+	h := helm.New(d)
+	r := gin.New()
+	r.Any("/repository/:repoName/*path", func(c *gin.Context) { h.ServeHTTP(c) })
+
+	chartURL := firstChartURL(t, r, "helm-https")
+	assert.Equal(t, testBaseURL+"/repository/helm-https/charts/w-1.0.0.tgz", chartURL)
+
+	req := httptest.NewRequest(http.MethodGet, strings.TrimPrefix(chartURL, testBaseURL), nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body.String())
+	assert.Equal(t, "tls-chart-bytes", w.Body.String())
+	assert.Equal(t, 1, tgzHits, "the tarball must come from the https remote, not the http listing")
+	assert.Contains(t, tgzAuth, "Basic ", "credentials stay on the https remote_url")
 }
 
 // TestHelm_Proxy_IndexCacheTTL: the origin lookup runs on every uncached tarball

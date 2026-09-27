@@ -1,6 +1,7 @@
 package repoproxy
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -287,17 +288,32 @@ func hostPort(raw string) (string, error) {
 // proxy_username/proxy_password, which authenticate to the outbound forward
 // proxy on the way, not to the registry itself.
 //
-// Credentials stay on remote_url's host. Helm (and any other format that
-// fetches an absolute origin URL) can point ServeGET at GitHub releases or a
-// sibling subtree; those hosts must not see remote_username. A request that
-// already carries an Authorization header keeps it — the Docker Hub token
-// flow, for one, sets its own Bearer and must win.
+// Credentials stay on remote_url's host, plus any extra base registered with
+// WithTrustedAuthBases (Cargo config.json "dl", which came from remote_url).
+// Helm (and any other format that fetches an absolute origin URL) can point
+// ServeGET at GitHub releases or a sibling subtree; those hosts must not see
+// remote_username. A request that already carries an Authorization header
+// keeps it — the Docker Hub token flow, for one, sets its own Bearer and
+// must win.
+//
+// An http request never receives credentials when remote_url is https, and a
+// trusted base that is itself https does not authorize an http request to
+// that host. An index can list the same host over http; Basic there is
+// cleartext. A remote_url that is already http still sends credentials.
 func SetUpstreamAuth(req *http.Request, repo *domain.Repository) {
 	if req == nil || repo == nil || req.Header.Get("Authorization") != "" {
 		return
 	}
 	remote, err := RemoteURL(repo)
-	if err != nil || !requestHostMatchesRemote(req.URL, remote) {
+	if err != nil {
+		return
+	}
+	// Operator configured TLS: never put the password on a cleartext hop,
+	// including a Cargo config.json "dl" that is itself http.
+	if httpsBaseBlocksHTTP(req.URL, remote) {
+		return
+	}
+	if !requestHostMatchesAny(req.URL, authBasesFor(req, remote)...) {
 		return
 	}
 	user := cfgString(repo.ProxyConfig, "remote_username")
@@ -307,22 +323,94 @@ func SetUpstreamAuth(req *http.Request, repo *domain.Repository) {
 	req.SetBasicAuth(user, cfgString(repo.ProxyConfig, domain.RemotePasswordKey))
 }
 
-// requestHostMatchesRemote reports whether req is aimed at remote_url's host.
+type trustedAuthBasesKey struct{}
+
+// WithTrustedAuthBases adds extra URL bases whose hosts may receive
+// remote_username. Cargo passes the registry's own config.json "dl" value,
+// which came from remote_url, not from an untrusted chart URL.
+func WithTrustedAuthBases(ctx context.Context, bases ...string) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	var extra []string
+	for _, b := range bases {
+		if b != "" {
+			extra = append(extra, b)
+		}
+	}
+	if len(extra) == 0 {
+		return ctx
+	}
+	if prev, ok := ctx.Value(trustedAuthBasesKey{}).([]string); ok {
+		extra = append(append([]string{}, prev...), extra...)
+	}
+	return context.WithValue(ctx, trustedAuthBasesKey{}, extra)
+}
+
+func trustedAuthBases(ctx context.Context) []string {
+	if ctx == nil {
+		return nil
+	}
+	v, _ := ctx.Value(trustedAuthBasesKey{}).([]string)
+	return v
+}
+
+func authBasesFor(req *http.Request, remote string) []string {
+	bases := []string{remote}
+	if req != nil {
+		bases = append(bases, trustedAuthBases(req.Context())...)
+	}
+	return bases
+}
+
+// requestHostMatchesAny reports whether req is aimed at one of bases.
 // Default ports are stripped so "host:443" and bare "host" over https match.
-func requestHostMatchesRemote(reqURL *url.URL, remote string) bool {
+// A base that is https does not match an http request.
+func requestHostMatchesAny(reqURL *url.URL, bases ...string) bool {
 	if reqURL == nil || reqURL.Host == "" {
 		return false
 	}
-	u, err := url.Parse(remote)
-	if err != nil || u.Host == "" {
-		return false
+	for _, remote := range bases {
+		u, err := url.Parse(remote)
+		if err != nil || u.Host == "" {
+			continue
+		}
+		if httpsBaseBlocksHTTP(reqURL, remote) {
+			continue
+		}
+		if NormalizedHost(reqURL, "") == NormalizedHost(u, "") {
+			return true
+		}
 	}
-	return authHost(reqURL) == authHost(u)
+	return false
 }
 
-func authHost(u *url.URL) string {
+// httpsBaseBlocksHTTP reports a scheme downgrade: the trusted base is https
+// and the outbound request is http. Matching hosts is not enough; Basic on
+// that hop is cleartext.
+func httpsBaseBlocksHTTP(reqURL *url.URL, base string) bool {
+	if reqURL == nil || !strings.EqualFold(reqURL.Scheme, "http") {
+		return false
+	}
+	u, err := url.Parse(base)
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(u.Scheme, "https")
+}
+
+// NormalizedHost lowercases u's host and drops the default port for its scheme.
+// fallbackScheme is used when u has no scheme (a protocol-relative reference).
+func NormalizedHost(u *url.URL, fallbackScheme string) string {
+	if u == nil {
+		return ""
+	}
+	scheme := strings.ToLower(u.Scheme)
+	if scheme == "" {
+		scheme = strings.ToLower(fallbackScheme)
+	}
 	host := strings.ToLower(u.Host)
-	switch strings.ToLower(u.Scheme) {
+	switch scheme {
 	case "http":
 		return strings.TrimSuffix(host, ":80")
 	case "https":

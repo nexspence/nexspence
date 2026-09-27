@@ -189,3 +189,77 @@ func TestClientFor_InternalProxyAllowed_DirectInternalBlocked(t *testing.T) {
 		t.Fatalf("expected SSRF block error, got: %v", derr)
 	}
 }
+
+func TestSetUpstreamAuth_NoBasicOnSchemeDowngrade(t *testing.T) {
+	repo := mkProxyRepo("auth", map[string]any{
+		"remote_url":      "https://charts.example.com",
+		"remote_username": "deploy",
+		"remote_password": "s3cret",
+	})
+
+	httpReq, err := http.NewRequest(http.MethodGet, "http://charts.example.com/charts/w-1.0.0.tgz", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	SetUpstreamAuth(httpReq, repo)
+	if httpReq.Header.Get("Authorization") != "" {
+		t.Fatal("must not attach Basic on an http request when remote_url is https")
+	}
+
+	httpsReq, err := http.NewRequest(http.MethodGet, "https://charts.example.com/charts/w-1.0.0.tgz", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	SetUpstreamAuth(httpsReq, repo)
+	if httpsReq.Header.Get("Authorization") == "" {
+		t.Fatal("must attach Basic on https to the same host")
+	}
+}
+
+func TestSetUpstreamAuth_TrustedConfigDlHost(t *testing.T) {
+	repo := mkProxyRepo("auth", map[string]any{
+		"remote_url":      "https://index.example.com",
+		"remote_username": "deploy",
+		"remote_password": "s3cret",
+	})
+	dl := "https://static.example.com/api/v1/crates"
+
+	bare, err := http.NewRequest(http.MethodGet, dl+"/serde/1.0.0/download", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	SetUpstreamAuth(bare, repo)
+	if bare.Header.Get("Authorization") != "" {
+		t.Fatal("dl host must not get credentials without WithTrustedAuthBases")
+	}
+
+	req, err := http.NewRequestWithContext(
+		WithTrustedAuthBases(context.Background(), dl),
+		http.MethodGet, dl+"/serde/1.0.0/download", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	SetUpstreamAuth(req, repo)
+	if req.Header.Get("Authorization") == "" {
+		t.Fatal("config.json dl host must receive credentials")
+	}
+}
+
+func TestSetUpstreamAuth_NoBasicOnHTTPDlWhenRemoteIsHTTPS(t *testing.T) {
+	repo := mkProxyRepo("auth", map[string]any{
+		"remote_url":      "https://index.example.com",
+		"remote_username": "deploy",
+		"remote_password": "s3cret",
+	})
+	dl := "http://static.example.com/api/v1/crates"
+	req, err := http.NewRequestWithContext(
+		WithTrustedAuthBases(context.Background(), dl),
+		http.MethodGet, dl+"/serde/1.0.0/download", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	SetUpstreamAuth(req, repo)
+	if req.Header.Get("Authorization") != "" {
+		t.Fatal("https remote_url must not send Basic to an http dl host")
+	}
+}

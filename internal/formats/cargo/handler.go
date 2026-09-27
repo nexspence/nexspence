@@ -89,6 +89,7 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 		} else if name, version, ok := parseDownloadPath(p); ok {
 			if dl := h.upstreamDlBase(c.Request.Context(), repo); dl != "" {
 				upstreamPath = cargoDownloadURL(dl, name, version)
+				c.Request = c.Request.WithContext(repoproxy.WithTrustedAuthBases(c.Request.Context(), dl))
 			}
 		}
 		if err := repoproxy.ServeGET(c, h.deps, repo, p, upstreamPath, coords, "application/octet-stream", maxAge); err != nil {

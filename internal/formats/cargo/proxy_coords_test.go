@@ -192,6 +192,67 @@ func TestCargo_ProxyDownload_FollowsUpstreamConfigDl(t *testing.T) {
 	assert.Equal(t, "1.0.0", comp.Version)
 }
 
+// A private registry can put downloads on a different host than the sparse
+// index. That dl URL comes from the registry's own config.json, so it is
+// trusted the same way remote_url is — otherwise the crate GET is 401.
+func TestCargo_ProxyDownload_SendsAuthToConfigDlHost(t *testing.T) {
+	var gotAuth string
+	dlHost := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		if u, p, ok := r.BasicAuth(); !ok || u != "deploy" || p != "s3cret" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		if r.URL.Path == "/api/v1/crates/serde/1.0.0/download" {
+			_, _ = w.Write([]byte("crate-bytes"))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	t.Cleanup(dlHost.Close)
+
+	indexHost := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/config.json" {
+			_, _ = w.Write([]byte(`{"dl":"` + dlHost.URL + `/api/v1/crates","api":"` + dlHost.URL + `"}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	t.Cleanup(indexHost.Close)
+
+	orig := repoproxy.UpstreamClient
+	repoproxy.UpstreamClient = &http.Client{}
+	t.Cleanup(func() { repoproxy.UpstreamClient = orig })
+
+	repo := &domain.Repository{
+		ID: "repo-cargo-auth", Name: "cargo-auth", Format: domain.RepoFormat("cargo"),
+		Type: domain.TypeProxy, Online: true,
+		ProxyConfig: map[string]any{
+			"remote_url":      indexHost.URL,
+			"remote_username": "deploy",
+			"remote_password": "s3cret",
+		},
+	}
+	d := formats.Deps{
+		Repos:      testutil.NewRepoRepo(repo),
+		Blobs:      testutil.NewBlobStoreRepo(),
+		Components: testutil.NewComponentRepo(),
+		Assets:     testutil.NewAssetRepo(),
+		BlobStore:  testutil.NewBlobStore(),
+		BaseURL:    "http://localhost:8080",
+	}
+	h := cargo.New(d)
+	r := gin.New()
+	r.Any("/repository/:repoName/*path", func(c *gin.Context) { h.ServeHTTP(c) })
+
+	req := httptest.NewRequest(http.MethodGet, "/repository/cargo-auth/api/v1/crates/serde/1.0.0/download", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body.String())
+	assert.Equal(t, "crate-bytes", w.Body.String())
+	assert.Contains(t, gotAuth, "Basic ", "config.json dl host must receive remote_username")
+}
+
 func findCargoComponent(d formats.Deps, repo, name string) (*domain.Component, error) {
 	page, err := d.Components.Search(nil, domain.SearchParams{Repository: repo, Name: name, Limit: 10}) //nolint:staticcheck // mock ignores ctx
 	if err != nil {
