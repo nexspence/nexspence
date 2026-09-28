@@ -248,6 +248,27 @@ func (h *Handler) collectTags(ctx context.Context, repoName, imageName string) (
 
 // ─── Manifests ─────────────────────────────────────────────────────────────
 
+// unauthorizedAsNotFound maps an upstream 401 to 404 so group first-non-404
+// fan-out continues. Docker Hub answers a name it does not host with 401
+// insufficient_scope. 403 stays 403: on this protocol that status is a refusal,
+// not "some other registry has the blob".
+type unauthorizedAsNotFound struct{ gin.ResponseWriter }
+
+func (w unauthorizedAsNotFound) WriteHeader(code int) {
+	if code == http.StatusUnauthorized {
+		code = http.StatusNotFound
+	}
+	w.ResponseWriter.WriteHeader(code)
+}
+
+// maskUpstreamAuthMiss installs unauthorizedAsNotFound while a group is
+// walking members. A request addressed at the member itself is left alone.
+func maskUpstreamAuthMiss(c *gin.Context) {
+	if c.GetBool(formats.GroupMemberKey) {
+		c.Writer = unauthorizedAsNotFound{ResponseWriter: c.Writer}
+	}
+}
+
 func (h *Handler) handleManifests(c *gin.Context, repoName, imageName, reference string) {
 	repo, _ := h.deps.Repos.Get(c.Request.Context(), repoName)
 	switch c.Request.Method {
@@ -264,6 +285,12 @@ func (h *Handler) handleManifests(c *gin.Context, repoName, imageName, reference
 			if !strings.HasPrefix(reference, "sha256:") {
 				maxAge = repoproxy.MetadataMaxAge(repo)
 			}
+			// A registry that does not host this image often answers 401
+			// (Docker Hub insufficient_scope) rather than 404. During group
+			// fan-out that is a miss: the next member may hold it. A direct
+			// pull keeps the 401, so a wrong upstream credential is not
+			// reported as "no such image".
+			maskUpstreamAuthMiss(c)
 			if err := repoproxy.ServeGET(c, h.deps, repo, cachePath, upPath, coords, ct, maxAge); err != nil {
 				dockerError(c, http.StatusBadGateway, "UNKNOWN", err.Error())
 				return
@@ -496,6 +523,10 @@ func (h *Handler) handleBlobs(c *gin.Context, repoName, imageName, digest string
 			upPath := "/v2/" + imageName + "/blobs/" + digest
 			coords := base.Coords{Name: imageName, Version: digest}
 			// Blobs are content-addressed by digest — immutable, never revalidate.
+			// Same 401-as-miss rule as manifests: a group pull fetches layers
+			// through the group too, and the member that 401s on the manifest
+			// 401s on the blob.
+			maskUpstreamAuthMiss(c)
 			if err := repoproxy.ServeGET(c, h.deps, repo, cachePath, upPath, coords, "application/octet-stream", 0); err != nil {
 				dockerError(c, http.StatusBadGateway, "UNKNOWN", err.Error())
 			}

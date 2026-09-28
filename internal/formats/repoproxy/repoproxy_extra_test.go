@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -489,6 +490,228 @@ func TestServeGET_DockerHubLike_401_Token_200(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.GreaterOrEqual(t, calls, 2, "should have made at least 2 upstream calls (401 + retry)")
+}
+
+// A public GHCR package answers the first request with 401 and a Bearer
+// challenge. The proxy has to take that anonymous token itself: the client is
+// talking to Nexspence, not to ghcr.io.
+func TestServeGET_GHCRLike_401_Token_200(t *testing.T) {
+	useUnguardedUpstream(t)
+
+	tokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "repository:fallen-up/charts/nexspence:pull", r.URL.Query().Get("scope"))
+		assert.Equal(t, "ghcr.io", r.URL.Query().Get("service"))
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{"token": "ghcr-anon"})
+	}))
+	defer tokenServer.Close()
+
+	calls := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if r.Header.Get("Authorization") == "" {
+			w.Header().Set("WWW-Authenticate", fmt.Sprintf(
+				`Bearer realm="%s",service="ghcr.io",scope="repository:fallen-up/charts/nexspence:pull"`,
+				tokenServer.URL,
+			))
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		assert.Equal(t, "Bearer ghcr-anon", r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "application/vnd.oci.image.manifest.v1+json")
+		_, _ = fmt.Fprint(w, `{"schemaVersion":2}`)
+	}))
+	defer upstream.Close()
+
+	repo := proxyRepo("ghcr", upstream.URL)
+	repo.Format = domain.FormatOCI
+	d := makeDeps(repo)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v2/fallen-up/charts/nexspence/manifests/v2.9.0", nil)
+	err := repoproxy.ServeGET(c, d, repo, "/v2/fallen-up/charts/nexspence/manifests/v2.9.0", "", base.Coords{Name: "nexspence"}, "application/json", 0)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, 2, calls)
+}
+
+// A Bearer realm on a non-registry format is the upstream's choice of URL.
+// Helm already fetches absolute origins through this function; following the
+// realm there is the foreign-host GET the credential rules exist to prevent.
+func TestServeGET_NonRegistryBearer401IsNotFollowed(t *testing.T) {
+	useUnguardedUpstream(t)
+
+	tokenHits := 0
+	tokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		tokenHits++
+		w.WriteHeader(http.StatusOK)
+		_, _ = fmt.Fprint(w, `{"token":"nope"}`)
+	}))
+	defer tokenServer.Close()
+
+	calls := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		w.Header().Set("WWW-Authenticate", fmt.Sprintf(
+			`Bearer realm="%s",service="charts.example",scope="repository:widget:pull"`, tokenServer.URL))
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte("no"))
+	}))
+	defer upstream.Close()
+
+	repo := proxyRepo("helmcharts", upstream.URL)
+	repo.Format = domain.FormatHelm
+	d := makeDeps(repo)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/widget-1.0.0.tgz", nil)
+	err := repoproxy.ServeGET(c, d, repo, "/widget-1.0.0.tgz", "", base.Coords{Name: "widget"}, "", 0)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+	assert.Equal(t, 1, calls)
+	assert.Equal(t, 0, tokenHits)
+}
+
+// remote_username stays on the registry host. The anonymous token request and
+// the retry that carries the token must not see it, even when the registry
+// answers the first request — the one that does send Basic — with 401.
+func TestServeGET_OCIBearerRetryDoesNotSendBasic(t *testing.T) {
+	useUnguardedUpstream(t)
+
+	tokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Empty(t, r.Header.Get("Authorization"))
+		assert.NotContains(t, r.URL.String(), "s3cret")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"token":"anon"}`)
+	}))
+	defer tokenServer.Close()
+
+	var sawBasic, sawBearer bool
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if u, p, ok := r.BasicAuth(); ok {
+			sawBasic = true
+			assert.Equal(t, "deploy", u)
+			assert.Equal(t, "s3cret", p)
+			w.Header().Set("WWW-Authenticate", fmt.Sprintf(
+				`Bearer realm="%s",service="ghcr.io",scope="repository:fallen-up/charts/nexspence:pull"`,
+				tokenServer.URL))
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		assert.Equal(t, "Bearer anon", r.Header.Get("Authorization"))
+		assert.NotContains(t, r.Header.Get("Authorization"), "Basic")
+		sawBearer = true
+		_, _ = fmt.Fprint(w, `{"schemaVersion":2}`)
+	}))
+	defer upstream.Close()
+
+	repo := proxyRepo("ghcr", upstream.URL)
+	repo.Format = domain.FormatOCI
+	repo.ProxyConfig["remote_username"] = "deploy"
+	repo.ProxyConfig["remote_password"] = "s3cret"
+	d := makeDeps(repo)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v2/fallen-up/charts/nexspence/manifests/v1", nil)
+	err := repoproxy.ServeGET(c, d, repo, "/v2/fallen-up/charts/nexspence/manifests/v1", "", base.Coords{Name: "nexspence"}, "", 0)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.True(t, sawBasic, "first hop to the registry host still presents Basic")
+	assert.True(t, sawBearer, "retry presents the anonymous token, not Basic")
+}
+
+// A challenge that names a realm and omits service must not be filled in with
+// Docker Hub's service. That default belongs to Hub, which omits both.
+func TestServeGET_OCIBearerOmitsEmptyService(t *testing.T) {
+	useUnguardedUpstream(t)
+
+	tokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Empty(t, r.URL.Query().Get("service"))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"token":"anon"}`)
+	}))
+	defer tokenServer.Close()
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") {
+			w.Header().Set("WWW-Authenticate", fmt.Sprintf(
+				`Bearer realm="%s",scope="repository:fallen-up/charts/nexspence:pull"`, tokenServer.URL))
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		_, _ = fmt.Fprint(w, `{"schemaVersion":2}`)
+	}))
+	defer upstream.Close()
+
+	repo := proxyRepo("ghcr", upstream.URL)
+	repo.Format = domain.FormatOCI
+	d := makeDeps(repo)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v2/fallen-up/charts/nexspence/manifests/v1", nil)
+	err := repoproxy.ServeGET(c, d, repo, "/v2/fallen-up/charts/nexspence/manifests/v1", "", base.Coords{Name: "nexspence"}, "", 0)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+// An https remote that challenges with an http realm does not get that URL
+// fetched, and the Bearer is not sent on a cleartext hop.
+func TestServeGET_OCIHttpRealmUnderHTTPSRemoteIsNotFetched(t *testing.T) {
+	tokenHits := 0
+	tokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		tokenHits++
+		w.WriteHeader(http.StatusOK)
+		_, _ = fmt.Fprint(w, `{"token":"cleartext"}`)
+	}))
+	defer tokenServer.Close()
+
+	calls := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		w.Header().Set("WWW-Authenticate", fmt.Sprintf(
+			`Bearer realm="%s",service="ghcr.io",scope="repository:fallen-up/charts/nexspence:pull"`,
+			tokenServer.URL))
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte("no"))
+	}))
+	defer upstream.Close()
+
+	upURL, err := url.Parse(upstream.URL)
+	require.NoError(t, err)
+	orig := repoproxy.UpstreamClient
+	repoproxy.UpstreamClient = &http.Client{Transport: hostRewriteTransport{from: "ghcr.io", to: upURL}}
+	t.Cleanup(func() { repoproxy.UpstreamClient = orig })
+
+	repo := proxyRepo("ghcr", "https://ghcr.io")
+	repo.Format = domain.FormatOCI
+	d := makeDeps(repo)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v2/fallen-up/charts/nexspence/manifests/v1", nil)
+	err = repoproxy.ServeGET(c, d, repo, "/v2/fallen-up/charts/nexspence/manifests/v1", "", base.Coords{Name: "nexspence"}, "", 0)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+	assert.Equal(t, 1, calls)
+	assert.Equal(t, 0, tokenHits)
+}
+
+// hostRewriteTransport sends one registry host to a local server. Every other
+// host, including a token realm, is dialed as written.
+type hostRewriteTransport struct {
+	from string
+	to   *url.URL
+}
+
+func (h hostRewriteTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if req.URL.Hostname() == h.from {
+		cloned := req.Clone(req.Context())
+		u := *cloned.URL
+		u.Scheme = h.to.Scheme
+		u.Host = h.to.Host
+		cloned.URL = &u
+		return http.DefaultTransport.RoundTrip(cloned)
+	}
+	return http.DefaultTransport.RoundTrip(req)
 }
 
 // proxyRoundTripper redirects requests with Docker Hub host to the fake upstream server,

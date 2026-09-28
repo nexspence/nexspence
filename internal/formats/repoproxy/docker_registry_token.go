@@ -12,6 +12,24 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/domain"
 )
 
+// ociBearerChallenge reports a Bearer realm an OCI Distribution repository may
+// follow. Docker Hub is decided separately, by host. Helm, Maven and the rest
+// do not follow a realm an upstream chose.
+func ociBearerChallenge(repo *domain.Repository, parsed bool, realm string) bool {
+	return parsed && realm != "" && repo != nil && repo.Format.IsOCIRegistry()
+}
+
+// bearerRealmAllowed reports whether the token URL may be fetched for a
+// non-Hub registry. An http realm under an https remote_url is the cleartext
+// hop SetUpstreamAuth already refuses for Basic.
+func bearerRealmAllowed(realm, baseRemote string) bool {
+	u, err := url.Parse(realm)
+	if err != nil || u.Hostname() == "" {
+		return false
+	}
+	return !httpsBaseBlocksHTTP(u, baseRemote)
+}
+
 // isDockerRegistryRemote reports whether remote_url points at Docker Hub registry
 // (anonymous pulls require a Bearer token from auth.docker.io).
 func isDockerRegistryRemote(baseRemote string) bool {
@@ -92,17 +110,19 @@ func scopeFromRegistryV2URL(u *url.URL) string {
 }
 
 func fetchDockerRegistryToken(ctx context.Context, client *http.Client, realm, service, scope string) (string, error) {
+	// Realm and service are the caller's. Docker Hub is the registry that omits
+	// them; filling registry.docker.io in here would aim a GHCR challenge that
+	// forgot service at Docker Hub's token service.
 	if realm == "" {
-		realm = "https://auth.docker.io/token"
-	}
-	if service == "" {
-		service = "registry.docker.io"
+		return "", fmt.Errorf("empty token realm")
 	}
 	if scope == "" {
 		return "", fmt.Errorf("empty token scope")
 	}
 	q := url.Values{}
-	q.Set("service", service)
+	if service != "" {
+		q.Set("service", service)
+	}
 	q.Set("scope", scope)
 
 	tokenURL := realm
@@ -146,9 +166,20 @@ func fetchDockerRegistryToken(ctx context.Context, client *http.Client, realm, s
 }
 
 // fetchUpstreamWithDockerHubAuth performs the HTTP request with the repo's
-// upstream credentials (SetUpstreamAuth); on 401 from Docker Hub it obtains
-// an anonymous Bearer token and retries once. This prevents the registry client from
-// following Hub's WWW-Authenticate challenge with Nexspence credentials (wrong host).
+// upstream credentials (SetUpstreamAuth). On 401 it takes an anonymous Bearer
+// token from the registry's own challenge and retries once, so a public OCI
+// registry (GHCR, Docker Hub) can be pulled through the proxy without the
+// client following that challenge itself — the challenge names the upstream
+// token realm, and a client talking to Nexspence would present the token to
+// the wrong host.
+//
+// Only a Docker Hub remote, or a repository whose format speaks OCI
+// Distribution, follows that challenge. Any other format keeps the 401: a Helm
+// index can name an absolute URL, and a Bearer realm on it must not become a
+// GET this process makes. The token request carries no remote_username. An
+// http realm is not fetched when remote_url is https — same rule as Basic on
+// a scheme downgrade. Docker Hub is the registry that omits realm or service;
+// every other registry must spell the realm out.
 func fetchUpstreamWithDockerHubAuth(ctx context.Context, repo *domain.Repository, client *http.Client, method, upstreamURL, baseRemote string, hdr http.Header) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, method, upstreamURL, nil)
 	if err != nil {
@@ -166,25 +197,39 @@ func fetchUpstreamWithDockerHubAuth(ctx context.Context, repo *domain.Repository
 	if err != nil {
 		return nil, err
 	}
-	if resp.StatusCode != http.StatusUnauthorized || !isDockerRegistryRemote(baseRemote) {
+	if resp.StatusCode != http.StatusUnauthorized {
 		return resp, nil
 	}
 
 	realm, service, scope, ok := parseDockerBearerChallenge(resp.Header)
+	hub := isDockerRegistryRemote(baseRemote)
+	if !hub && !ociBearerChallenge(repo, ok, realm) {
+		return resp, nil
+	}
+
 	upu, parseErr := url.Parse(upstreamURL)
 	if parseErr != nil {
 		_, _ = io.Copy(io.Discard, resp.Body)
 		_ = resp.Body.Close()
 		return nil, parseErr
 	}
+	// remote_url is https and this hop is http: do not attach a Bearer either.
+	// The body stays with the caller, same as the other early returns.
+	if httpsBaseBlocksHTTP(upu, baseRemote) {
+		return resp, nil
+	}
 	if scope == "" {
 		scope = scopeFromRegistryV2URL(upu)
 	}
-	if !ok || realm == "" {
-		realm = "https://auth.docker.io/token"
-	}
-	if service == "" {
-		service = "registry.docker.io"
+	if hub {
+		if realm == "" {
+			realm = "https://auth.docker.io/token"
+		}
+		if service == "" {
+			service = "registry.docker.io"
+		}
+	} else if !bearerRealmAllowed(realm, baseRemote) {
+		return resp, nil
 	}
 
 	_, _ = io.Copy(io.Discard, resp.Body)

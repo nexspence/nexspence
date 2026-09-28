@@ -593,3 +593,65 @@ func TestGroupMerge_OCIReferrers_ArtifactTypeFilterAppliesThroughGroup(t *testin
 	assert.Equal(t, []string{sig}, digestsOf(idx), "only the cosign signature matches the filter")
 	assert.NotContains(t, digestsOf(idx), sbom)
 }
+
+// A public chart that lives only on a later member must still pull through the
+// group. Docker Hub answers a name it does not host with 401, not 404, and GHCR
+// answers a public package with 401 plus a Bearer challenge. Neither may stop
+// the walk, and the member that holds the chart must be the one that serves it.
+func TestGroup_OCIPullSkipsUnauthorizedMember(t *testing.T) {
+	token := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"token":"anon"}`))
+	}))
+	t.Cleanup(token.Close)
+
+	hub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("WWW-Authenticate", fmt.Sprintf(
+			`Bearer realm="%s",service="registry.docker.io",scope="repository:fallen-up/charts/nexspence:pull",error="insufficient_scope"`,
+			token.URL))
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"errors":[{"code":"UNAUTHORIZED","message":"authentication required"}]}`))
+	}))
+	t.Cleanup(hub.Close)
+
+	ghcr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") {
+			w.Header().Set("WWW-Authenticate", fmt.Sprintf(
+				`Bearer realm="%s",service="ghcr.io",scope="repository:fallen-up/charts/nexspence:pull"`,
+				token.URL))
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "application/vnd.oci.image.manifest.v1+json")
+		_, _ = w.Write([]byte(ociImageManifest))
+	}))
+	t.Cleanup(ghcr.Close)
+
+	r := ociGroupEngine(
+		ociGroup("helm-oci", "helm-oci-remote-dockerhub", "helm-oci-remote-ghcr"),
+		proxyOCI("helm-oci-remote-dockerhub", hub.URL),
+		proxyOCI("helm-oci-remote-ghcr", ghcr.URL),
+	)
+
+	req := httptest.NewRequest(http.MethodGet,
+		"/repository/helm-oci/v2/fallen-up/charts/nexspence/manifests/v2.9.0-1-gd16755e", nil)
+	req.Header.Set("Accept", "application/vnd.oci.image.manifest.v1+json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Equal(t, "helm-oci-remote-ghcr", w.Header().Get("X-Nexspence-Source"))
+	assert.Contains(t, w.Body.String(), `"schemaVersion": 2`)
+
+	blob := httptest.NewRequest(http.MethodGet,
+		"/repository/helm-oci/v2/fallen-up/charts/nexspence/blobs/sha256:bb", nil)
+	bw := httptest.NewRecorder()
+	r.ServeHTTP(bw, blob)
+	require.Equal(t, http.StatusOK, bw.Code, bw.Body.String())
+	assert.Equal(t, "helm-oci-remote-ghcr", bw.Header().Get("X-Nexspence-Source"))
+
+	direct := httptest.NewRequest(http.MethodGet,
+		"/repository/helm-oci-remote-dockerhub/v2/fallen-up/charts/nexspence/manifests/v2.9.0-1-gd16755e", nil)
+	dw := httptest.NewRecorder()
+	r.ServeHTTP(dw, direct)
+	assert.Equal(t, http.StatusUnauthorized, dw.Code, "a direct pull keeps the upstream 401")
+}
