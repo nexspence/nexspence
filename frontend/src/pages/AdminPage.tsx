@@ -1147,6 +1147,7 @@ export default function AdminPage() {
   const importFileRef = useRef<HTMLInputElement>(null)
   const [editingQuota, setEditingQuota] = useState<string | null>(null) // blob store id
   const [quotaInput, setQuotaInput] = useState('')
+  const [quotaError, setQuotaError] = useState('')
   const [detailName, setDetailName] = useState<string | null>(null) // open detail modal for this blob store
   const [createOpen, setCreateOpen] = useState(false)
   const qc = useQueryClient()
@@ -1276,8 +1277,13 @@ export default function AdminPage() {
       const bytes = gb.trim() === '' ? null : Math.round(parseFloat(gb) * 1024 * 1024 * 1024)
       return nexusApi.updateBlobStore(bs.type, bs.name, { quotaBytes: bytes })
     },
+    onMutate: () => setQuotaError(''),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['blobstores'] }); setEditingQuota(null) },
+    // Keep the editor open and say why, instead of silently ignoring the failure.
+    onError: (e: unknown) => setQuotaError(apiErrorMessage(e, 'Failed to save quota')),
   })
+
+  const closeQuotaEditor = () => { setEditingQuota(null); setQuotaError('') }
 
   const isOnline = status?.status === 'ok'
 
@@ -1754,27 +1760,32 @@ export default function AdminPage() {
                   </div>
                   <div>
                     {isEditing ? (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <HoloInput
-                          type="number" min="0" step="0.1" autoFocus
-                          value={quotaInput}
-                          onChange={e => setQuotaInput(e.target.value)}
-                          placeholder="GB"
-                          style={{ width: 72 }}
-                          onKeyDown={e => {
-                            if (e.key === 'Enter') quotaMut.mutate({ bs, gb: quotaInput })
-                            if (e.key === 'Escape') setEditingQuota(null)
-                          }}
-                        />
-                        <span style={{ fontSize: 11, color: 'var(--holo-text-faint)' }}>GB</span>
-                        <button
-                          style={{ background: 'rgba(34,197,94,0.15)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 6, padding: '3px 8px', color: 'var(--holo-c-green)', fontSize: 11, cursor: 'pointer' }}
-                          onClick={() => quotaMut.mutate({ bs, gb: quotaInput })}
-                        >Save</button>
-                        <button
-                          style={{ background: 'none', border: 'none', color: 'var(--holo-text-faint)', cursor: 'pointer', padding: 2 }}
-                          onClick={() => setEditingQuota(null)}
-                        ><X size={12} /></button>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <HoloInput
+                            type="number" min="0" step="0.1" autoFocus
+                            value={quotaInput}
+                            onChange={e => setQuotaInput(e.target.value)}
+                            placeholder="GB"
+                            style={{ width: 72 }}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') quotaMut.mutate({ bs, gb: quotaInput })
+                              if (e.key === 'Escape') closeQuotaEditor()
+                            }}
+                          />
+                          <span style={{ fontSize: 11, color: 'var(--holo-text-faint)' }}>GB</span>
+                          <button
+                            style={{ background: 'rgba(34,197,94,0.15)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 6, padding: '3px 8px', color: 'var(--holo-c-green)', fontSize: 11, cursor: 'pointer' }}
+                            onClick={() => quotaMut.mutate({ bs, gb: quotaInput })}
+                          >Save</button>
+                          <button
+                            style={{ background: 'none', border: 'none', color: 'var(--holo-text-faint)', cursor: 'pointer', padding: 2 }}
+                            onClick={closeQuotaEditor}
+                          ><X size={12} /></button>
+                        </div>
+                        {quotaError && (
+                          <div role="alert" style={{ fontSize: 11, color: 'var(--holo-c-red)' }}>{quotaError}</div>
+                        )}
                       </div>
                     ) : (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -1786,6 +1797,7 @@ export default function AdminPage() {
                           style={{ background: 'none', border: 'none', color: 'var(--holo-text-faint)', cursor: 'pointer', padding: 2, display: 'flex', alignItems: 'center' }}
                           onClick={() => {
                             setEditingQuota(bs.id)
+                            setQuotaError('')
                             setQuotaInput(bs.quotaBytes ? (bs.quotaBytes / 1024 / 1024 / 1024).toFixed(1) : '')
                           }}
                         ><Pencil size={11} /></button>

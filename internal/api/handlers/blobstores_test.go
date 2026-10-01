@@ -590,6 +590,49 @@ func TestBlobStoreHandler_Update_DropsSecretKeySetMarker(t *testing.T) {
 	assert.Equal(t, "sup3rs3cret", stored.Config["secret_key"])
 }
 
+// The Admin UI's quota editor sends only quotaBytes (#568). A request without
+// a config must keep the stored one: wiping it took S3 stores offline, moved
+// local stores to the default path and made group stores fail validation.
+func TestBlobStoreHandler_Update_QuotaOnly_KeepsConfig(t *testing.T) {
+	localPath := t.TempDir()
+	member := &domain.BlobStore{ID: "m1", Name: "member", Type: "local",
+		Config: map[string]any{"path": t.TempDir()}}
+	cases := []struct {
+		store *domain.BlobStore
+		want  map[string]any
+	}{
+		{
+			store: s3Store("archive", "sup3rs3cret"),
+			want:  map[string]any{"bucket": "artifacts", "access_key": "AKIAEXAMPLE", "secret_key": "sup3rs3cret"},
+		},
+		{
+			store: &domain.BlobStore{ID: "loc", Name: "loc", Type: "local", Config: map[string]any{"path": localPath}},
+			want:  map[string]any{"path": localPath},
+		},
+		{
+			store: &domain.BlobStore{ID: "grp", Name: "grp", Type: "group",
+				Config: map[string]any{"fill_policy": "round_robin", "member_ids": []any{"m1"}}},
+			want: map[string]any{"fill_policy": "round_robin", "member_ids": []any{"m1"}},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.store.Type, func(t *testing.T) {
+			r, blobs, _, _, _ := mountBlobStores(t, member, tc.store)
+			quota := int64(5 << 30)
+			rec := do(t, r, http.MethodPut, "/service/rest/v1/blobstores/"+tc.store.Type+"/"+tc.store.Name,
+				map[string]any{"quotaBytes": quota})
+			require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+			assert.NotContains(t, rec.Body.String(), "sup3rs3cret")
+
+			stored, err := blobs.Get(testContext(), tc.store.Name)
+			require.NoError(t, err)
+			require.NotNil(t, stored.QuotaBytes)
+			assert.Equal(t, quota, *stored.QuotaBytes)
+			assert.Equal(t, tc.want, stored.Config)
+		})
+	}
+}
+
 // ── Usage recompute ──────────────────────────────────────────────────────────
 
 // Counters inflated by the old per-asset accounting (#146) are repaired on

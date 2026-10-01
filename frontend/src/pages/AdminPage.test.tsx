@@ -210,6 +210,27 @@ describe('AdminPage — Blob Stores tab', () => {
     expect((put! as { quotaBytes: number }).quotaBytes).toBe(20 * 1024 * 1024 * 1024)
   })
 
+  it('shows the API error when saving a quota fails', async () => {
+    server.use(
+      http.get('/service/rest/v1/blobstores', () => HttpResponse.json([blobStore])),
+      http.put('/service/rest/v1/blobstores/:type/:name', () =>
+        HttpResponse.json({ error: 'quota rejected by server' }, { status: 400 }),
+      ),
+    )
+    renderAdmin('blobs')
+    await screen.findByText('default')
+    fireEvent.click(screen.getByTitle('Edit quota'))
+    fireEvent.change(screen.getByPlaceholderText('GB'), { target: { value: '20' } })
+    fireEvent.click(screen.getByText('Save'))
+    expect(await screen.findByRole('alert')).toHaveTextContent('quota rejected by server')
+    // The editor stays open so the operator can correct the value.
+    expect(screen.getByPlaceholderText('GB')).toBeInTheDocument()
+
+    // Closing the editor clears the stale error.
+    fireEvent.keyDown(screen.getByPlaceholderText('GB'), { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument())
+  })
+
   it('cancels quota edit via Escape and X', async () => {
     server.use(http.get('/service/rest/v1/blobstores', () => HttpResponse.json([blobStore])))
     renderAdmin('blobs')

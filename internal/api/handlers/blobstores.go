@@ -91,9 +91,10 @@ func (h *BlobStoreHandler) Get(c *gin.Context) {
 // secret_key, account_key, connection_string or sas_token means "unchanged"
 // rather than "clear it". Sending an explicit empty value clears the credential.
 // The read-only *_set markers a client may echo back are always dropped.
+// A request with no config at all (e.g. a quota-only edit) keeps the stored one.
 func mergeBlobStoreConfig(stored, updates map[string]any) map[string]any {
 	if updates == nil {
-		return nil
+		return stored
 	}
 	secrets := domain.BlobStoreSecretKeys()
 	isMarker := func(k string) bool {
