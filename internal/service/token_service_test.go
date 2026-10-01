@@ -130,6 +130,58 @@ func TestTokenService_Delete_RevokesToken(t *testing.T) {
 	}
 }
 
+// AuthenticateToken hands back the record itself, so callers that mint a JWT
+// from the token can bind it to the token's id and expiry (#566).
+func TestTokenService_AuthenticateToken_ReturnsRecord(t *testing.T) {
+	u := activeUser("u1", "alice")
+	svc, _, _ := newTokenSvc(t, u)
+
+	exp := time.Now().Add(time.Hour)
+	tok, _ := svc.Create(context.Background(), "u1", "ci", []string{"read"}, &exp)
+
+	gotUser, rec, err := svc.AuthenticateToken(context.Background(), tok.Token)
+	if err != nil {
+		t.Fatalf("AuthenticateToken: %v", err)
+	}
+	if gotUser.ID != "u1" || rec.ID != tok.ID || rec.ExpiresAt == nil || !rec.ExpiresAt.Equal(exp) {
+		t.Fatalf("unexpected result: user=%+v token=%+v", gotUser, rec)
+	}
+	if len(rec.Scopes) != 1 || rec.Scopes[0] != "read" {
+		t.Fatalf("scopes lost: %v", rec.Scopes)
+	}
+}
+
+func TestTokenService_Active(t *testing.T) {
+	alice := activeUser("u1", "alice")
+	bob := activeUser("u2", "bob")
+	svc, _, _ := newTokenSvc(t, alice, bob)
+	ctx := context.Background()
+
+	live, _ := svc.Create(ctx, "u1", "live", nil, nil)
+	past := time.Now().Add(-time.Minute)
+	expired, _ := svc.Create(ctx, "u1", "expired", nil, &past)
+	deleted, _ := svc.Create(ctx, "u1", "deleted", nil, nil)
+	if err := svc.Delete(ctx, deleted.ID); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+
+	if !svc.Active(ctx, live.ID, "u1") {
+		t.Error("live token reported inactive")
+	}
+	if svc.Active(ctx, live.ID, "u2") {
+		t.Error("token reported active for a user who does not own it")
+	}
+	if svc.Active(ctx, expired.ID, "u1") {
+		t.Error("expired token reported active")
+	}
+	if svc.Active(ctx, deleted.ID, "u1") {
+		t.Error("deleted token reported active")
+	}
+	if svc.Active(ctx, "", "u1") {
+		t.Error("empty id reported active")
+	}
+}
+
 func TestTokenService_ListByUser_ScopedToOwner(t *testing.T) {
 	alice := activeUser("u1", "alice")
 	bob := activeUser("u2", "bob")

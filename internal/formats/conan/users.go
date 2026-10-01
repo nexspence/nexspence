@@ -16,9 +16,13 @@ package conan
 // conans/server/rest/controller/v2/.
 
 import (
+	"errors"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
+
+	"github.com/nexspence-oss/nexspence/internal/formats"
 )
 
 // usersPath reports whether p is one of the credential routes, and which.
@@ -61,11 +65,21 @@ func (h *Handler) serveUsers(c *gin.Context, p string) {
 		return
 	}
 
+	// A JWT is not a login credential. Trading one for a fresh JWT would let a
+	// session renew itself forever, outliving the API token it came from
+	// (#567). The Conan client always logs in with Basic and only sends the
+	// Bearer on later requests (check_credentials included, served above).
+	if _, isJWT := c.Get("claims"); isJWT {
+		c.Header("WWW-Authenticate", `Basic realm="Nexspence"`)
+		c.Status(http.StatusUnauthorized)
+		return
+	}
+
 	if h.deps.Tokens == nil {
 		c.String(http.StatusServiceUnavailable, "token issuer not configured")
 		return
 	}
-	token, err := h.deps.Tokens.GenerateToken(userID, username, roles)
+	token, err := h.issue(c, userID, username, roles)
 	if err != nil {
 		// Deliberately not 401: the credentials were fine, we failed to sign.
 		// Reporting it as an auth failure would send the user off to check a
@@ -74,6 +88,43 @@ func (h *Handler) serveUsers(c *gin.Context, p string) {
 		return
 	}
 	c.String(http.StatusOK, token)
+}
+
+// errCannotRestrict is returned when the configured issuer cannot carry the
+// API token's restriction into the minted token.
+var errCannotRestrict = errors.New("token issuer cannot carry the API token's restrictions")
+
+// issue mints the login token under the same rules as /v2/token. A caller
+// that logged in with an nxs_ API token gets a JWT bound to it — its scopes,
+// its id (so deleting the token revokes the JWT) and an expiry no later than
+// the token's (#566, #567). An issuer that cannot carry that restriction
+// fails the login rather than widening it into a full-power session.
+func (h *Handler) issue(c *gin.Context, userID, username string, roles []string) (string, error) {
+	var scopes []string
+	if v, ok := c.Get("tokenScopes"); ok {
+		scopes, _ = v.([]string)
+	}
+	if v, ok := c.Get("apiTokenID"); ok {
+		tokenID, _ := v.(string)
+		ai, ok := h.deps.Tokens.(formats.APITokenIssuer)
+		if !ok {
+			return "", errCannotRestrict
+		}
+		var expiresAt *time.Time
+		if e, ok := c.Get("apiTokenExpiresAt"); ok {
+			expiresAt, _ = e.(*time.Time)
+		}
+		token, _, err := ai.GenerateAPITokenJWT(userID, username, roles, scopes, tokenID, expiresAt)
+		return token, err
+	}
+	if len(scopes) > 0 {
+		si, ok := h.deps.Tokens.(formats.ScopedTokenIssuer)
+		if !ok {
+			return "", errCannotRestrict
+		}
+		return si.GenerateScopedToken(userID, username, roles, scopes)
+	}
+	return h.deps.Tokens.GenerateToken(userID, username, roles)
 }
 
 // caller reads the authenticated identity OptionalAuth left on the context.

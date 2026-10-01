@@ -65,6 +65,22 @@ type TokenIssuer interface {
 	GenerateToken(userID, username string, roles []string) (string, error)
 }
 
+// ScopedTokenIssuer is implemented by token issuers that can embed an API
+// token's scopes into the minted token (*auth.Service does). A login
+// handshake authenticated with a scoped token must mint through it, so the
+// session is no wider than the token it came from (#292, #567).
+type ScopedTokenIssuer interface {
+	GenerateScopedToken(userID, username string, roles, scopes []string) (string, error)
+}
+
+// APITokenIssuer is implemented by token issuers that can bind the minted
+// token to the API token the caller logged in with (*auth.Service does): it
+// carries the token's scopes, names the token so deleting it revokes the
+// session, and expires no later than the token (#566, #567).
+type APITokenIssuer interface {
+	GenerateAPITokenJWT(userID, username string, roles, scopes []string, tokenID string, tokenExpiresAt *time.Time) (string, time.Time, error)
+}
+
 // ScanTrigger requests a background vulnerability scan of a stored component.
 //
 // It is the narrowest possible view of *service.ScanService, declared here for

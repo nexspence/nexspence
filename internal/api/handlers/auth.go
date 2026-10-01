@@ -11,6 +11,7 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/auth"
 	"github.com/nexspence-oss/nexspence/internal/auth/loginguard"
 	"github.com/nexspence-oss/nexspence/internal/config"
+	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/logger"
 	"github.com/nexspence-oss/nexspence/internal/service"
 )
@@ -199,6 +200,8 @@ func requireAdmin(c *gin.Context) bool {
 // was rejected by the per-user revocation cutoff, it returns ok=false,
 // revoked=true so callers can emit a precise "token invalidated" response;
 // revoked is false for every other failure (bad/expired JWT, bad API token).
+// A JWT exchanged from an API token (tid claim) is also revoked once that
+// token is deleted, expired or no longer the user's (#566).
 func authenticateBearer(c *gin.Context, users *service.UserService, tokens *service.TokenService, raw string) (ok, revoked bool) {
 	if claims, err := users.ValidateToken(raw); err == nil {
 		// An anonymous registry token (issued by /v2/token to credential-less
@@ -214,6 +217,11 @@ func authenticateBearer(c *gin.Context, users *service.UserService, tokens *serv
 		if !jwtNotRevoked(c, users, claims) {
 			return false, true
 		}
+		// One indexed lookup, only for JWTs traded for an API token. Without
+		// a token service nothing can vouch for the token: fail closed.
+		if claims.TokenID != "" && (tokens == nil || !tokens.Active(c.Request.Context(), claims.TokenID, claims.UserID)) {
+			return false, true
+		}
 		c.Set("claims", claims)
 		c.Set("username", claims.Username)
 		c.Set("userID", claims.UserID)
@@ -224,15 +232,29 @@ func authenticateBearer(c *gin.Context, users *service.UserService, tokens *serv
 	if tokens == nil {
 		return false, false
 	}
-	u, scopes, err := tokens.Authenticate(c.Request.Context(), raw)
+	u, tok, err := tokens.AuthenticateToken(c.Request.Context(), raw)
 	if err != nil || u == nil {
 		return false, false
 	}
+	setAPITokenAuth(c, u, tok)
+	return true, false
+}
+
+// setAPITokenAuth populates the context for a request authenticated with an
+// nxs_ API token: the owner's identity, the token's scopes, and the token's
+// id and expiry ("apiTokenID", "apiTokenExpiresAt" — the latter only when the
+// token expires). A handshake that mints a JWT from the credential (Conan's
+// authenticate) needs those to bind the JWT to the token, so that deleting
+// the token revokes it and it never outlives the token (#566, #567).
+func setAPITokenAuth(c *gin.Context, u *domain.User, tok *domain.UserToken) {
 	c.Set("username", u.Username)
 	c.Set("userID", u.ID)
 	c.Set("roles", u.Roles)
-	setTokenScopes(c, scopes)
-	return true, false
+	setTokenScopes(c, tok.Scopes)
+	c.Set("apiTokenID", tok.ID)
+	if tok.ExpiresAt != nil {
+		c.Set("apiTokenExpiresAt", tok.ExpiresAt)
+	}
 }
 
 // setTokenScopes stashes a non-empty scope list for the request's
@@ -316,11 +338,8 @@ func AuthMiddleware(users *service.UserService, tokens *service.TokenService, gu
 				// An API token can also be supplied via Basic auth with any
 				// username (convention: username=<token-name-or-user>, password=token).
 				if tokens != nil && strings.HasPrefix(password, service.TokenPrefix) {
-					if u, scopes, err := tokens.Authenticate(c.Request.Context(), password); err == nil && u != nil {
-						c.Set("username", u.Username)
-						c.Set("userID", u.ID)
-						c.Set("roles", u.Roles)
-						setTokenScopes(c, scopes)
+					if u, tok, err := tokens.AuthenticateToken(c.Request.Context(), password); err == nil && u != nil {
+						setAPITokenAuth(c, u, tok)
 						if !enforceTokenScopes(c) {
 							return
 						}
@@ -443,15 +462,18 @@ func DockerV2Auth(
 
 		if strings.HasPrefix(authHeader, "Bearer ") {
 			raw := strings.TrimPrefix(authHeader, "Bearer ")
-			if _, err := users.ValidateToken(raw); err == nil {
+			// The anonymous token names no user, so authenticateBearer would
+			// leave it unauthenticated; for the ping, signature-valid is enough.
+			if claims, err := users.ValidateToken(raw); err == nil && claims.UserID == "" {
 				c.Status(http.StatusOK)
 				return
 			}
-			if tokens != nil {
-				if _, _, err := tokens.Authenticate(c.Request.Context(), raw); err == nil {
-					c.Status(http.StatusOK)
-					return
-				}
+			// Every other bearer gets the same revocation checks as the data
+			// and management routes: a JWT past its user's cutoff, or traded
+			// for an API token since deleted (#566), must not pass the ping.
+			if ok, _ := authenticateBearer(c, users, tokens, raw); ok {
+				c.Status(http.StatusOK)
+				return
 			}
 		} else if strings.HasPrefix(authHeader, "Basic ") {
 			if username, password, ok := c.Request.BasicAuth(); ok {
@@ -530,11 +552,8 @@ func OptionalAuth(users *service.UserService, tokens *service.TokenService, guar
 		if username, password, ok := c.Request.BasicAuth(); ok && username != "" {
 			ctx := c.Request.Context()
 			if tokens != nil && strings.HasPrefix(password, service.TokenPrefix) {
-				if u, scopes, err := tokens.Authenticate(ctx, password); err == nil && u != nil {
-					c.Set("username", u.Username)
-					c.Set("userID", u.ID)
-					c.Set("roles", u.Roles)
-					setTokenScopes(c, scopes)
+				if u, tok, err := tokens.AuthenticateToken(ctx, password); err == nil && u != nil {
+					setAPITokenAuth(c, u, tok)
 					c.Next()
 					return
 				}
