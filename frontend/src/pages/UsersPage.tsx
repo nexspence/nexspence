@@ -61,7 +61,7 @@ export function AssignRolesModal({ user, roles, onClose, onSaved }: {
   const save = async () => {
     setSaving(true); setErr('')
     try {
-      await apiClient.put(`/service/rest/v1/security/users/${user.userId}/roles`, { roleIds: selected })
+      await nexusApi.setUserRoles(user.userId, selected)
       onSaved()
     } catch (e) {
       setErr(apiErrorMessage(e, 'Failed to save roles'))

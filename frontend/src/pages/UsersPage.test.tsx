@@ -261,6 +261,29 @@ describe('UsersPage', () => {
     expect((putBody! as { roleIds: string[] }).roleIds).toEqual([])
   })
 
+  // #570: saving roles for "bob#2" must not re-assign the roles of "bob".
+  it('saves roles for a user whose id contains # by the full id', async () => {
+    const user = userEvent.setup()
+    server.use(
+      http.get('/service/rest/v1/security/users', () =>
+        HttpResponse.json([userItem({ id: 'u-9', userId: 'bob#2', emailAddress: 'bob2@test.com' })]),
+      ),
+    )
+    let putUrl = ''
+    server.use(
+      http.put('/service/rest/v1/security/users/:userId/roles', ({ request }) => {
+        putUrl = request.url
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+    renderWithProviders(<UsersPage />)
+    await screen.findByText('bob#2')
+    await user.click(screen.getAllByTitle('Assign roles')[0])
+    await screen.findByText(/Assign Roles — bob#2/)
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(putUrl).toMatch(/\/security\/users\/bob%232\/roles$/))
+  })
+
   it('shows an error when saving roles fails', async () => {
     const user = userEvent.setup()
     server.use(

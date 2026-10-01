@@ -266,20 +266,20 @@ export const nexusApi = {
   listRepositories: (params?: { format?: string; type?: string }) =>
     apiClient.get('/service/rest/v1/repositories', { params }),
   getRepository: (name: string) =>
-    apiClient.get(`/service/rest/v1/repositories/${name}`),
+    apiClient.get(`/service/rest/v1/repositories/${encodeURIComponent(name)}`),
   createRepository: (format: string, type: string, data: unknown) =>
     apiClient.post(`/service/rest/v1/repositories/${format}/${type}`, data),
   deleteRepository: (name: string) =>
-    apiClient.delete(`/service/rest/v1/repositories/${name}`),
+    apiClient.delete(`/service/rest/v1/repositories/${encodeURIComponent(name)}`),
   updateRepository: (
     format: string,
     type: string,
     name: string,
     data: Record<string, unknown>,
   ) =>
-    apiClient.put(`/service/rest/v1/repositories/${format}/${type}/${name}`, data),
+    apiClient.put(`/service/rest/v1/repositories/${format}/${type}/${encodeURIComponent(name)}`, data),
   patchRepository: (name: string, patch: { online: boolean }) =>
-    apiClient.patch(`/service/rest/v1/repositories/${name}`, patch),
+    apiClient.patch(`/service/rest/v1/repositories/${encodeURIComponent(name)}`, patch),
 
   // Components
   listComponents: (repository: string, continuationToken?: string) =>
@@ -299,13 +299,13 @@ export const nexusApi = {
   // Users
   listUsers: () => apiClient.get('/service/rest/v1/security/users'),
   getUser: (userId: string) =>
-    apiClient.get(`/service/rest/v1/security/users/${userId}`),
+    apiClient.get(`/service/rest/v1/security/users/${encodeURIComponent(userId)}`),
   createUser: (data: unknown) =>
     apiClient.post('/service/rest/v1/security/users', data),
   updateUser: (userId: string, data: unknown) =>
-    apiClient.put(`/service/rest/v1/security/users/${userId}`, data),
+    apiClient.put(`/service/rest/v1/security/users/${encodeURIComponent(userId)}`, data),
   deleteUser: (userId: string) =>
-    apiClient.delete(`/service/rest/v1/security/users/${userId}`),
+    apiClient.delete(`/service/rest/v1/security/users/${encodeURIComponent(userId)}`),
   // The backend binds {oldPassword, newPassword} as JSON. oldPassword is
   // omitted on the admin path (resetting another user's password), where the
   // handler does not ask for it; the self path (/api/v1/me/change-password)
@@ -327,7 +327,7 @@ export const nexusApi = {
   deleteRole: (id: string) =>
     apiClient.delete(`/service/rest/v1/security/roles/${id}`),
   setUserRoles: (userId: string, roleIds: string[]) =>
-    apiClient.put(`/service/rest/v1/security/users/${userId}/roles`, { roleIds }),
+    apiClient.put(`/service/rest/v1/security/users/${encodeURIComponent(userId)}/roles`, { roleIds }),
 
   // Role privileges
   listRolePrivileges: (roleId: string) =>
@@ -357,22 +357,22 @@ export const nexusApi = {
   deleteContentSelector: (id: string) =>
     apiClient.delete(`/service/rest/v1/security/content-selectors/${id}`),
   attachContentSelector: (privilegeName: string, selectorId: string) =>
-    apiClient.put(`/service/rest/v1/security/privileges/${privilegeName}/content-selector/${selectorId}`),
+    apiClient.put(`/service/rest/v1/security/privileges/${encodeURIComponent(privilegeName)}/content-selector/${selectorId}`),
   detachContentSelector: (privilegeName: string) =>
-    apiClient.delete(`/service/rest/v1/security/privileges/${privilegeName}/content-selector`),
+    apiClient.delete(`/service/rest/v1/security/privileges/${encodeURIComponent(privilegeName)}/content-selector`),
 
   // Blob stores
   listBlobStores: () => apiClient.get('/service/rest/v1/blobstores'),
   createBlobStore: (type: string, data: unknown) =>
     apiClient.post(`/service/rest/v1/blobstores/${type}`, data),
   updateBlobStore: (type: string, name: string, data: unknown) =>
-    apiClient.put(`/service/rest/v1/blobstores/${type}/${name}`, data),
+    apiClient.put(`/service/rest/v1/blobstores/${type}/${encodeURIComponent(name)}`, data),
   deleteBlobStore: (name: string) =>
-    apiClient.delete(`/service/rest/v1/blobstores/${name}`),
+    apiClient.delete(`/service/rest/v1/blobstores/${encodeURIComponent(name)}`),
   getBlobStoreUsage: (name: string) =>
-    apiClient.get(`/api/v1/blob-stores/${name}/usage`),
+    apiClient.get(`/api/v1/blob-stores/${encodeURIComponent(name)}/usage`),
   compactBlobStore: (name: string, opts?: { dryRun?: boolean; minAge?: string }) =>
-    apiClient.post(`/api/v1/blobstores/${name}/compact`, null, {
+    apiClient.post(`/api/v1/blobstores/${encodeURIComponent(name)}/compact`, null, {
       params: {
         dry_run: opts?.dryRun ? 'true' : undefined,
         min_age: opts?.minAge || undefined,
