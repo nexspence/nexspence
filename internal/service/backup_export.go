@@ -119,36 +119,37 @@ func (s *BackupService) writeBlobEntries(ctx context.Context, tw *tar.Writer, as
 	return nil
 }
 
-// collectComponents pages through all components of one repository.
-func (s *BackupService) collectComponents(ctx context.Context, repoName string) []domain.Component {
+// collectComponents pages through all components of one repository. A page
+// that fails to load is an error, not the end of the list: an archive cut
+// short there would pass for a complete backup (#569).
+func (s *BackupService) collectComponents(ctx context.Context, repoName string) ([]domain.Component, error) {
 	var out []domain.Component
 	for offset := 0; ; offset += 500 {
 		page, err := s.Components.List(ctx, repoName, 500, offset)
 		if err != nil {
-			break
+			return nil, fmt.Errorf("list components of %s: %w", repoName, err)
 		}
 		out = append(out, page.Items...)
 		if len(page.Items) < 500 {
-			break
+			return out, nil
 		}
 	}
-	return out
 }
 
-// collectAssets pages through all assets of one repository.
-func (s *BackupService) collectAssets(ctx context.Context, repoName string) []domain.Asset {
+// collectAssets pages through all assets of one repository; a failed page is
+// an error, as in collectComponents.
+func (s *BackupService) collectAssets(ctx context.Context, repoName string) ([]domain.Asset, error) {
 	var out []domain.Asset
 	for offset := 0; ; offset += 500 {
 		page, err := s.Assets.List(ctx, repoName, 500, offset)
 		if err != nil {
-			break
+			return nil, fmt.Errorf("list assets of %s: %w", repoName, err)
 		}
 		out = append(out, page.Items...)
 		if len(page.Items) < 500 {
-			break
+			return out, nil
 		}
 	}
-	return out
 }
 
 // Export writes a gzip-compressed tar archive of all data + blobs to w.
@@ -216,7 +217,11 @@ func (s *BackupService) Export(ctx context.Context, w io.Writer) (retErr error) 
 	// Components: iterate per repository to stay within reasonable query sizes.
 	var allComponents []domain.Component
 	for _, repo := range repos {
-		allComponents = append(allComponents, s.collectComponents(ctx, repo.Name)...)
+		components, err := s.collectComponents(ctx, repo.Name)
+		if err != nil {
+			return err
+		}
+		allComponents = append(allComponents, components...)
 	}
 	if err := writeJSONEntry(tw, "components.json", allComponents); err != nil {
 		return err
@@ -225,7 +230,11 @@ func (s *BackupService) Export(ctx context.Context, w io.Writer) (retErr error) 
 	// Assets: iterate per repository; also stream blobs inline.
 	var allAssets []domain.Asset
 	for _, repo := range repos {
-		allAssets = append(allAssets, s.collectAssets(ctx, repo.Name)...)
+		assets, err := s.collectAssets(ctx, repo.Name)
+		if err != nil {
+			return err
+		}
+		allAssets = append(allAssets, assets...)
 	}
 	if err := writeJSONEntry(tw, "assets.json", allAssets); err != nil {
 		return err
@@ -267,13 +276,19 @@ func (s *BackupService) ExportRepo(ctx context.Context, repoName string, w io.Wr
 	}
 
 	// Components (paginated).
-	allComponents := s.collectComponents(ctx, repoName)
+	allComponents, err := s.collectComponents(ctx, repoName)
+	if err != nil {
+		return err
+	}
 	if err := writeJSONEntry(tw, "components.json", allComponents); err != nil {
 		return err
 	}
 
 	// Assets (paginated).
-	allAssets := s.collectAssets(ctx, repoName)
+	allAssets, err := s.collectAssets(ctx, repoName)
+	if err != nil {
+		return err
+	}
 	if err := writeJSONEntry(tw, "assets.json", allAssets); err != nil {
 		return err
 	}

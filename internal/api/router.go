@@ -401,7 +401,7 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 	}
 	backupSvc.WithSettings(backupSettingsRepo).WithLocker(locker).WithLogger(log).WithAudit(auditRepo)
 	safego.Go(log, "backup-scheduler", func() { backupSvc.StartScheduler(ctx) })
-	backupH := handlers.NewBackupHandler(backupSvc)
+	backupH := handlers.NewBackupHandler(backupSvc).WithLogger(log)
 	rbacMW := handlers.RBACMiddleware(rbacSvc, repoRepo)
 
 	// ── Gin engine ────────────────────────────────────────────
