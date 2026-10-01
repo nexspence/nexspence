@@ -220,6 +220,9 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 	// Read each asset from its own physical store, so replication keeps working
 	// once a repository is pointed at S3 or a second local store.
 	replSvc.WithResolver(blobRepo, blobRegistry)
+	// Every node schedules every enabled rule; the per-rule lock makes only
+	// one of them run it per slot (#574).
+	replSvc.WithLocker(locker)
 	safego.Go(log, "replication-cron-scheduler", func() { replSvc.StartCronScheduler(ctx) })
 
 	promotionSvc, err := service.NewPromotionService(

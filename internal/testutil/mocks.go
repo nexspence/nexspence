@@ -2610,6 +2610,8 @@ type ReplicationRepo struct {
 	mu      sync.Mutex
 	rules   map[string]*domain.ReplicationRule
 	history []domain.ReplicationHistory
+
+	ListErr error // when set, ListRules returns it
 }
 
 func NewReplicationRepo() *ReplicationRepo {
@@ -2619,6 +2621,9 @@ func NewReplicationRepo() *ReplicationRepo {
 func (r *ReplicationRepo) ListRules(_ context.Context) ([]domain.ReplicationRule, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.ListErr != nil {
+		return nil, r.ListErr
+	}
 	out := make([]domain.ReplicationRule, 0, len(r.rules))
 	for _, v := range r.rules {
 		out = append(out, *v)
