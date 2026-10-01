@@ -244,7 +244,7 @@ export default function RepositoriesPage() {
               isAdmin={isAdmin}
               storeName={repo.blobStoreId ? storeNameById.get(repo.blobStoreId) : undefined}
               migrating={activeMigrations.has(repo.name)}
-              onClick={() => navigate(`/browse?repo=${repo.name}`)}
+              onClick={() => navigate(`/browse?repo=${encodeURIComponent(repo.name)}`)}
               onEdit={() => setEditRepo(repo)}
               onSetMeUp={() => setSetupRepo(repo)}
               onDelete={() => {

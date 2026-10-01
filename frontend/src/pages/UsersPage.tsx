@@ -30,9 +30,14 @@ interface RoleItem {
 }
 
 /* ─── Role assign modal ─────────────────────────────────────── */
-export function AssignRolesModal({ user, roles, onClose, onSaved }: {
+export function AssignRolesModal({ user, roles, rolesStatus, onClose, onSaved }: {
   user: UserItem
   roles: RoleItem[]
+  // Status of the roles query. The initial selection is derived from `roles`
+  // once, on mount, and Save replaces the user's whole role list, so Save
+  // stays disabled until the roles have loaded (the parent remounts the modal
+  // via `key` when they arrive).
+  rolesStatus: 'pending' | 'error' | 'success'
   onClose: () => void
   onSaved: () => void
 }) {
@@ -61,7 +66,7 @@ export function AssignRolesModal({ user, roles, onClose, onSaved }: {
   const save = async () => {
     setSaving(true); setErr('')
     try {
-      await apiClient.put(`/service/rest/v1/security/users/${user.userId}/roles`, { roleIds: selected })
+      await nexusApi.setUserRoles(user.userId, selected)
       onSaved()
     } catch (e) {
       setErr(apiErrorMessage(e, 'Failed to save roles'))
@@ -165,11 +170,13 @@ export function AssignRolesModal({ user, roles, onClose, onSaved }: {
         </div>
       </div>
 
+      {rolesStatus === 'pending' && <div style={{ marginTop: 12, fontSize: 13, color: 'var(--holo-text-dim)' }}>Loading roles…</div>}
+      {rolesStatus === 'error' && <div role="alert" style={{ marginTop: 12, padding: '8px 12px', background: 'rgba(255,107,107,0.08)', border: '1px solid rgba(255,107,107,0.2)', borderRadius: 8, fontSize: 13, color: 'var(--holo-red)' }}>Failed to load roles</div>}
       {err && <div role="alert" style={{ marginTop: 12, padding: '8px 12px', background: 'rgba(255,107,107,0.08)', border: '1px solid rgba(255,107,107,0.2)', borderRadius: 8, fontSize: 13, color: 'var(--holo-red)' }}>{err}</div>}
 
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
         <HoloButton type="button" onClick={onClose}>Cancel</HoloButton>
-        <HoloButton variant="primary" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save'}</HoloButton>
+        <HoloButton variant="primary" onClick={save} disabled={saving || rolesStatus !== 'success'}>{saving ? 'Saving…' : 'Save'}</HoloButton>
       </div>
     </HoloModal>
   )
@@ -325,10 +332,14 @@ export function UsersTab() {
     queryFn: () => nexusApi.listUsers().then(r => r.data),
   })
 
-  const { data: roles = [] } = useQuery<RoleItem[]>({
+  const rolesQuery = useQuery<RoleItem[]>({
     queryKey: ['roles'],
     queryFn: () => nexusApi.listRoles().then(r => r.data),
   })
+  const roles = rolesQuery.data ?? []
+  // A failed background refetch flips status to 'error' but keeps the data;
+  // roles that have loaded once are still good to edit against.
+  const rolesStatus = rolesQuery.data !== undefined ? 'success' : rolesQuery.status
 
   const deleteMutation = useMutation({
     mutationFn: (username: string) => nexusApi.deleteUser(username),
@@ -429,7 +440,7 @@ export function UsersTab() {
       )}
 
       {assignUser && (
-        <AssignRolesModal user={assignUser} roles={roles} onClose={() => setAssignUser(null)} onSaved={() => {
+        <AssignRolesModal key={rolesStatus} user={assignUser} roles={roles} rolesStatus={rolesStatus} onClose={() => setAssignUser(null)} onSaved={() => {
           setAssignUser(null)
           qc.invalidateQueries({ queryKey: ['users'] })
         }} />

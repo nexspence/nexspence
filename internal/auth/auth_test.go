@@ -5,6 +5,7 @@ import (
 	"crypto/rsa"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/assert"
@@ -189,6 +190,48 @@ func TestValidateToken_TamperedSignature(t *testing.T) {
 	tampered := parts[0] + "." + parts[1] + "." + swapped
 	_, err = s.ValidateToken(tampered)
 	assert.ErrorIs(t, err, auth.ErrInvalidToken)
+}
+
+// A JWT traded for an API token names that token (tid) so a deletion can
+// revoke it, and never outlives the token itself (#566).
+func TestGenerateAPITokenJWT_BindsTokenAndCapsExpiry(t *testing.T) {
+	s := newSvc() // jwt expiry: 1 h
+	soon := time.Now().Add(10 * time.Minute)
+	token, exp, err := s.GenerateAPITokenJWT("uid-20", "hank", []string{"viewer"}, []string{"read"}, "tok-1", &soon)
+	require.NoError(t, err)
+	claims, err := s.ValidateToken(token)
+	require.NoError(t, err)
+	assert.Equal(t, "tok-1", claims.TokenID)
+	assert.Equal(t, []string{"read"}, claims.Scopes)
+	assert.Equal(t, "uid-20", claims.UserID)
+	assert.Equal(t, []string{"viewer"}, claims.Roles)
+	assert.WithinDuration(t, soon, claims.ExpiresAt.Time, time.Second, "exp must be capped at the token's expiry")
+	assert.WithinDuration(t, soon, exp, time.Second, "the returned expiry must match the claim")
+}
+
+func TestGenerateAPITokenJWT_TokenOutlivesJWT_UsesConfiguredExpiry(t *testing.T) {
+	s := newSvc()
+	later := time.Now().Add(48 * time.Hour)
+	for _, tokenExp := range []*time.Time{nil, &later} {
+		token, exp, err := s.GenerateAPITokenJWT("uid-21", "ivy", nil, nil, "tok-2", tokenExp)
+		require.NoError(t, err)
+		claims, err := s.ValidateToken(token)
+		require.NoError(t, err)
+		assert.WithinDuration(t, time.Now().Add(time.Hour), claims.ExpiresAt.Time, 5*time.Second)
+		assert.WithinDuration(t, claims.ExpiresAt.Time, exp, time.Second)
+		assert.Empty(t, claims.Scopes)
+		assert.Equal(t, "tok-2", claims.TokenID)
+	}
+}
+
+// Password and SSO JWTs carry no tid — the bearer check keys off its absence.
+func TestGenerateToken_HasNoTokenID(t *testing.T) {
+	s := newSvc()
+	token, err := s.GenerateToken("uid-22", "jack", nil)
+	require.NoError(t, err)
+	claims, err := s.ValidateToken(token)
+	require.NoError(t, err)
+	assert.Empty(t, claims.TokenID)
 }
 
 func TestHashPassword_TooLong_Error(t *testing.T) {

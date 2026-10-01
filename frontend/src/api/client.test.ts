@@ -990,3 +990,41 @@ describe('cancelBlobStoreMigration', () => {
     await expect(cancelBlobStoreMigration('maven-hosted')).resolves.toBeUndefined()
   })
 })
+
+// #570: a name containing '#', '?', '%' or '/' must travel as one path
+// segment. Unencoded, the browser cuts it at '#' and the request reaches a
+// different object ("demo#2" → DELETE …/repositories/demo).
+describe('name path parameters are URL-encoded (#570)', () => {
+  const cases: [string, () => Promise<unknown>, string][] = [
+    ['getRepository', () => nexusApi.getRepository('demo#2'), 'GET /service/rest/v1/repositories/demo%232'],
+    ['deleteRepository', () => nexusApi.deleteRepository('demo#2'), 'DELETE /service/rest/v1/repositories/demo%232'],
+    ['patchRepository', () => nexusApi.patchRepository('demo#2', { online: false }), 'PATCH /service/rest/v1/repositories/demo%232'],
+    ['updateRepository', () => nexusApi.updateRepository('raw', 'hosted', 'demo#2', {}), 'PUT /service/rest/v1/repositories/raw/hosted/demo%232'],
+    ['getUser', () => nexusApi.getUser('bob#2'), 'GET /service/rest/v1/security/users/bob%232'],
+    ['updateUser', () => nexusApi.updateUser('bob#2', {}), 'PUT /service/rest/v1/security/users/bob%232'],
+    ['deleteUser', () => nexusApi.deleteUser('bob#2'), 'DELETE /service/rest/v1/security/users/bob%232'],
+    ['setUserRoles', () => nexusApi.setUserRoles('bob#2', []), 'PUT /service/rest/v1/security/users/bob%232/roles'],
+    ['attachContentSelector', () => nexusApi.attachContentSelector('priv#2', 'sel-1'), 'PUT /service/rest/v1/security/privileges/priv%232/content-selector/sel-1'],
+    ['detachContentSelector', () => nexusApi.detachContentSelector('priv#2'), 'DELETE /service/rest/v1/security/privileges/priv%232/content-selector'],
+    ['updateBlobStore', () => nexusApi.updateBlobStore('file', 'store#2', {}), 'PUT /service/rest/v1/blobstores/file/store%232'],
+    ['deleteBlobStore', () => nexusApi.deleteBlobStore('store#2'), 'DELETE /service/rest/v1/blobstores/store%232'],
+    ['getBlobStoreUsage', () => nexusApi.getBlobStoreUsage('store#2'), 'GET /api/v1/blob-stores/store%232/usage'],
+    ['compactBlobStore', () => nexusApi.compactBlobStore('store#2'), 'POST /api/v1/blobstores/store%232/compact'],
+    ['a name with ? and %', () => nexusApi.deleteRepository('a?b%c'), 'DELETE /service/rest/v1/repositories/a%3Fb%25c'],
+    ['a name with /', () => nexusApi.deleteUser('a/b'), 'DELETE /service/rest/v1/security/users/a%2Fb'],
+  ]
+
+  it.each(cases)('%s sends the name as one encoded segment', async (_name, call, want) => {
+    let got = ''
+    server.use(
+      http.all('*', ({ request }) => {
+        // request.url keeps the encoding the client produced.
+        const path = request.url.replace(/^https?:\/\/[^/]+/, '').split('?')[0]
+        got = `${request.method} ${path}`
+        return HttpResponse.json({})
+      }),
+    )
+    await call()
+    expect(got).toBe(want)
+  })
+})

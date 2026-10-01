@@ -54,7 +54,7 @@ export function hostnameOf(base: string): string {
 
 /** The repository's client URL, with a trailing slash. */
 export function repoUrl(base: string, name: string): string {
-  return `${trimBase(base)}/repository/${name}/`
+  return `${trimBase(base)}/repository/${encodeURIComponent(name)}/`
 }
 
 /** uv reads index credentials from UV_INDEX_<NAME>_USERNAME: the name upper-cased, non-alphanumerics as _. */
@@ -489,7 +489,7 @@ const BUILDERS: Record<string, (c: Ctx) => SetupClient[]> = {
   apt: (c) => {
     const sections: SetupSection[] = [
       { title: 'Add the source', text: 'Any distribution codename works; the component is always main.', codes: [code('bash', `echo "deb [trusted=yes] ${c.url} stable main" \\\n  | sudo tee /etc/apt/sources.list.d/${c.name}.list`)] },
-      { title: 'Credentials — /etc/apt/auth.conf.d/' + c.name + '.conf', codes: [code('text', `machine ${c.host}/repository/${c.name}/\nlogin ${c.user}\npassword ${c.secret}`)] },
+      { title: 'Credentials — /etc/apt/auth.conf.d/' + c.name + '.conf', codes: [code('text', `machine ${c.host}/repository/${encodeURIComponent(c.name)}/\nlogin ${c.user}\npassword ${c.secret}`)] },
       { title: 'Install', codes: [code('bash', 'sudo apt-get update\nsudo apt-get install mypackage')] },
     ]
     if (c.hosted) sections.push({ title: 'Upload a .deb', codes: [code('bash', `curl -u ${c.user}:${c.secret} \\\n  -T mypackage_1.0_amd64.deb \\\n  "${c.url}"`)] })

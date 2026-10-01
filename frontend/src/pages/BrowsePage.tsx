@@ -22,6 +22,7 @@ import {
 } from 'lucide-react'
 import axios from 'axios'
 import { nexusApi, nexspenceApi, apiClient, Privilege } from '@/api/client'
+import { repositoryPath } from '@/api/repositoryPath'
 import { Select, SelectOption } from '../components/Select'
 import { useAuthStore } from '@/store/authStore'
 import { TagEditor } from '@/components/TagEditor'
@@ -452,15 +453,6 @@ function formatPushDate(iso: string | undefined | null): string {
   return d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 }
 
-// The URL an asset is served from — the same shape the server computes for
-// downloadUrl, minus the configured base URL so the fetch stays same-origin and
-// carries the session. Only `?` and `#` are escaped: they would end the path,
-// while everything else is stored exactly as the format's handler expects it.
-function assetDownloadPath(repo: string, path: string): string {
-  const clean = path.replace(/^\/+/, '').replace(/[?#]/g, (ch) => encodeURIComponent(ch))
-  return `/repository/${repo}/${clean}`
-}
-
 // Authenticated download: a plain <a href> would go out without the bearer
 // token, so the blob is fetched through the API client and handed to the
 // browser from memory.
@@ -742,7 +734,7 @@ function DetailRow({ label, value, mono = false }: { label: string; value: strin
 
 function ComponentAssetDetail({ asset, repo }: { asset: ComponentAsset; repo: string }) {
   const [downloadError, setDownloadError] = useState<string | null>(null)
-  const downloadUrl = assetDownloadPath(repo, asset.path)
+  const downloadUrl = repositoryPath(repo, asset.path)
   const filename = asset.path.split('/').filter(Boolean).pop() || 'download'
   const checksums: { label: string; value: string | undefined }[] = [
     { label: 'SHA256', value: asset.sha256 },
@@ -1164,9 +1156,8 @@ function RawTreeRows({
 
   if (node.kind === 'file') {
     const selected = selectedPath === node.path
-    const cleanPath = node.path.replace(/^\//, '')
-    const downloadUrl = `/repository/${repoName}/${cleanPath}`
-    const copyUrl = `${window.location.origin}/repository/${repoName}/${cleanPath}`
+    const downloadUrl = repositoryPath(repoName, node.path)
+    const copyUrl = `${window.location.origin}${downloadUrl}`
 
     function doDownload() {
       void downloadAsBlob(downloadUrl, node.label)
@@ -1759,9 +1750,8 @@ export default function BrowsePage() {
               <h2 style={S.detailTitle}>File details</h2>
               {rawSelection ? (() => {
                 const node = rawSelection.node
-                const cleanPath = node.path.replace(/^\//, '')
-                const downloadUrl = `/repository/${repoName}/${cleanPath}`
-                const copyUrl = `${window.location.origin}/repository/${repoName}/${cleanPath}`
+                const downloadUrl = repositoryPath(repoName, node.path)
+                const copyUrl = `${window.location.origin}${downloadUrl}`
                 return (
                   <>
                     <div style={S.detailRow}>
@@ -2173,8 +2163,7 @@ function RawUploadModal({
     if (!file) return
     const xhr = new XMLHttpRequest()
     xhrRef.current = xhr
-    const path = destPath.replace(/^\//, '')
-    xhr.open('PUT', `/repository/${repoName}/${path}`)
+    xhr.open('PUT', repositoryPath(repoName, destPath))
     xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream')
     const token = localStorage.getItem('nexspence_token')
     if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`)

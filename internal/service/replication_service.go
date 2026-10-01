@@ -572,8 +572,12 @@ func (s *ReplicationService) execute(ctx context.Context, ruleID string, deadlin
 			hist.Error = runErr.Error()
 		}
 	}
-	_ = s.repo.UpdateRuleStatus(ctx, ruleID, status, now)
-	_ = s.repo.AddHistory(ctx, hist)
+	// Record the outcome even when the run was cut by its context: on that
+	// context both writes fail, leaving the rule "running" with no history
+	// row until another run of it finishes (#573).
+	recCtx := context.WithoutCancel(ctx)
+	_ = s.repo.UpdateRuleStatus(recCtx, ruleID, status, now)
+	_ = s.repo.AddHistory(recCtx, hist)
 
 	return runErr
 }

@@ -9,6 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/nexspence-oss/nexspence/internal/auth/loginguard"
+	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/logger"
 	"github.com/nexspence-oss/nexspence/internal/service"
 )
@@ -20,13 +21,14 @@ type TokenIssuer interface {
 	GenerateToken(userID, username string, roles []string) (string, error)
 }
 
-// ScopedTokenIssuer is implemented by issuers that can embed an API token's
-// scopes into the minted JWT (*auth.Service does). When a scoped API token is
-// exchanged at /v2/token, the JWT must carry the restriction forward —
-// otherwise the exchange would be a one-request laundering of a read-only
-// token into a full-power session (#292).
-type ScopedTokenIssuer interface {
-	GenerateScopedToken(userID, username string, roles, scopes []string) (string, error)
+// APITokenIssuer is implemented by issuers that can mint a JWT bound to the
+// API token it is exchanged for (*auth.Service does). The JWT carries the
+// token's scopes — otherwise the exchange would launder a read-only token into
+// a full-power session (#292) — names the token so deleting it revokes the
+// JWT, and expires no later than the token (#566). The returned time is the
+// JWT's expiry.
+type APITokenIssuer interface {
+	GenerateAPITokenJWT(userID, username string, roles, scopes []string, tokenID string, tokenExpiresAt *time.Time) (string, time.Time, error)
 }
 
 // DockerToken serves GET /v2/token — the docker token protocol endpoint the
@@ -53,7 +55,9 @@ type ScopedTokenIssuer interface {
 // in RBACMiddleware, so tokens never need to encode what they may touch. The
 // one exception is an nxs_ API token created with scopes: its restriction is
 // its own, not the protocol's, and it is embedded into the issued JWT so the
-// exchange cannot widen it.
+// exchange cannot widen it. A JWT issued for an nxs_ token is also bound to
+// it (tid claim, exp capped at the token's expiry), so deleting the token
+// revokes the JWT instead of leaving it valid for jwt_expiry_hours (#566).
 //
 // Registered for GET and POST. containerd and BuildKit try the OAuth2 form
 // POST (grant_type=password) first and fall back to GET only on 404/405 —
@@ -72,14 +76,7 @@ func DockerToken(
 	log logger.Logger,
 ) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		issue := func(userID, username string, roles, scopes []string) {
-			var token string
-			var err error
-			if si, ok := issuer.(ScopedTokenIssuer); ok && len(scopes) > 0 {
-				token, err = si.GenerateScopedToken(userID, username, roles, scopes)
-			} else {
-				token, err = issuer.GenerateToken(userID, username, roles)
-			}
+		respond := func(token string, err error, ttl time.Duration) {
 			if err != nil {
 				// Not 401: the caller's credentials were fine, signing failed.
 				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "could not issue token"})
@@ -88,9 +85,25 @@ func DockerToken(
 			c.JSON(http.StatusOK, gin.H{
 				"token":        token,
 				"access_token": token, // OAuth2-style clients read this name
-				"expires_in":   int(tokenTTL / time.Second),
+				"expires_in":   int(ttl / time.Second),
 				"issued_at":    time.Now().UTC().Format(time.RFC3339),
 			})
+		}
+		issue := func(userID, username string, roles []string) {
+			token, err := issuer.GenerateToken(userID, username, roles)
+			respond(token, err, tokenTTL)
+		}
+		// issueForAPIToken mints a JWT bound to the API token. An issuer that
+		// cannot bind it would hand out a JWT the token's deletion cannot
+		// revoke (and that drops its scopes): refuse instead.
+		issueForAPIToken := func(u *domain.User, tok *domain.UserToken) {
+			ai, ok := issuer.(APITokenIssuer)
+			if !ok {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "could not issue token"})
+				return
+			}
+			token, exp, err := ai.GenerateAPITokenJWT(u.ID, u.Username, u.Roles, tok.Scopes, tok.ID, tok.ExpiresAt)
+			respond(token, err, time.Until(exp))
 		}
 
 		username, password, _ := c.Request.BasicAuth()
@@ -107,8 +120,8 @@ func DockerToken(
 		if username != "" {
 			ctx := c.Request.Context()
 			if tokens != nil && strings.HasPrefix(password, service.TokenPrefix) {
-				if u, scopes, err := tokens.Authenticate(ctx, password); err == nil && u != nil {
-					issue(u.ID, u.Username, u.Roles, scopes)
+				if u, tok, err := tokens.AuthenticateToken(ctx, password); err == nil && u != nil {
+					issueForAPIToken(u, tok)
 					return
 				}
 			}
@@ -121,7 +134,7 @@ func DockerToken(
 			_, user, err := users.Login(ctx, username, password)
 			if err == nil {
 				guard.RecordSuccess(ctx, username)
-				issue(user.ID, user.Username, user.Roles, nil)
+				issue(user.ID, user.Username, user.Roles)
 				return
 			}
 			guard.RecordFailure(ctx, username)
@@ -136,6 +149,6 @@ func DockerToken(
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
 			return
 		}
-		issue("", "", nil, nil)
+		issue("", "", nil)
 	}
 }

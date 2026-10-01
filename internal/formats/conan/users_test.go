@@ -37,6 +37,13 @@ func (s *stubIssuer) GenerateToken(userID, username string, roles []string) (str
 // as user (empty user = anonymous), mirroring what handlers.OptionalAuth sets
 // on the real route.
 func setupUsers(repo *domain.Repository, user string, issuer formats.TokenIssuer) *gin.Engine {
+	return setupUsersWith(repo, user, issuer, nil)
+}
+
+// setupUsersWith is setupUsers plus whatever else OptionalAuth would have left
+// on the context for the credential at hand (token scopes, the API token's id
+// and expiry, JWT claims).
+func setupUsersWith(repo *domain.Repository, user string, issuer formats.TokenIssuer, extra func(*gin.Context)) *gin.Engine {
 	d := formats.Deps{
 		Repos:      testutil.NewRepoRepo(repo),
 		Blobs:      testutil.NewBlobStoreRepo(),
@@ -53,6 +60,9 @@ func setupUsers(repo *domain.Repository, user string, issuer formats.TokenIssuer
 			c.Set("username", user)
 			c.Set("userID", "u-"+user)
 			c.Set("roles", []string{"nx-deployer"})
+		}
+		if extra != nil {
+			extra(c)
 		}
 		h.ServeHTTP(c)
 	})

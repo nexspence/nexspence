@@ -261,6 +261,29 @@ describe('UsersPage', () => {
     expect((putBody! as { roleIds: string[] }).roleIds).toEqual([])
   })
 
+  // #570: saving roles for "bob#2" must not re-assign the roles of "bob".
+  it('saves roles for a user whose id contains # by the full id', async () => {
+    const user = userEvent.setup()
+    server.use(
+      http.get('/service/rest/v1/security/users', () =>
+        HttpResponse.json([userItem({ id: 'u-9', userId: 'bob#2', emailAddress: 'bob2@test.com' })]),
+      ),
+    )
+    let putUrl = ''
+    server.use(
+      http.put('/service/rest/v1/security/users/:userId/roles', ({ request }) => {
+        putUrl = request.url
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+    renderWithProviders(<UsersPage />)
+    await screen.findByText('bob#2')
+    await user.click(screen.getAllByTitle('Assign roles')[0])
+    await screen.findByText(/Assign Roles — bob#2/)
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(putUrl).toMatch(/\/security\/users\/bob%232\/roles$/))
+  })
+
   it('shows an error when saving roles fails', async () => {
     const user = userEvent.setup()
     server.use(
@@ -274,6 +297,61 @@ describe('UsersPage', () => {
     await screen.findByText(/Assign Roles — alice/)
     await user.click(screen.getByRole('button', { name: 'Save' }))
     expect(await screen.findByText('cannot save roles')).toBeInTheDocument()
+  })
+
+  // #571: the modal must not start from an empty selection just because the
+  // roles list had not arrived yet — PUT .../roles replaces the user's roles.
+  it('keeps Save disabled until the roles load, then starts from the user roles', async () => {
+    const user = userEvent.setup()
+    let release!: () => void
+    const held = new Promise<void>(r => { release = r })
+    let putBody: { roleIds: string[] } | null = null
+    server.use(
+      http.get('/service/rest/v1/security/roles', async () => {
+        await held
+        return HttpResponse.json([
+          roleItem(),
+          roleItem({ id: 'role-dev', name: 'developer', description: 'Dev role', readOnly: false }),
+        ])
+      }),
+      http.put('/service/rest/v1/security/users/:userId/roles', async ({ request }) => {
+        putBody = (await request.json()) as { roleIds: string[] }
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+    renderWithProviders(<UsersPage />)
+    await screen.findByText('alice')
+    await user.click(screen.getAllByTitle('Assign roles')[0])
+    await screen.findByText(/Assign Roles — alice/)
+    expect(screen.getByText('Loading roles…')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+
+    release()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled())
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(putBody).toBeTruthy())
+    expect(putBody!.roleIds).toEqual(['role-admin'])
+  })
+
+  it('keeps Save disabled when the roles fail to load', async () => {
+    const user = userEvent.setup()
+    let put = false
+    server.use(
+      http.get('/service/rest/v1/security/roles', () =>
+        HttpResponse.json({ error: 'boom' }, { status: 500 }),
+      ),
+      http.put('/service/rest/v1/security/users/:userId/roles', () => {
+        put = true
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+    renderWithProviders(<UsersPage />)
+    await screen.findByText('alice')
+    await user.click(screen.getAllByTitle('Assign roles')[0])
+    await screen.findByText(/Assign Roles — alice/)
+    expect(await screen.findByText('Failed to load roles')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+    expect(put).toBe(false)
   })
 
   it('closes the assign-roles modal via Cancel', async () => {

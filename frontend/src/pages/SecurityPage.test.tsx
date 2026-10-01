@@ -178,8 +178,84 @@ describe('SecurityPage', () => {
     await user.click(screen.getByRole('button', { name: 'Edit' }))
     expect(await screen.findByText(/Edit Role: developer/)).toBeInTheDocument()
     const dialog = screen.getByText(/Edit Role: developer/).closest('.holo-modal') as HTMLElement
-    await user.click(within(dialog).getByRole('button', { name: /^Save$/ }))
+    const save = within(dialog).getByRole('button', { name: /^Save$/ })
+    await waitFor(() => expect(save).toBeEnabled())
+    await user.click(save)
     await waitFor(() => expect(saved).toBe(true))
+  })
+
+  // #571: Save must stay disabled until the role's privileges have loaded,
+  // and the role and its privileges go out in one PUT /roles/:id — the
+  // backend replaces the privilege list on that call, so a separate
+  // name-only PUT would briefly (or, on failure, permanently) empty the role.
+  it('keeps Save disabled while the role privileges load, then saves them in one request', async () => {
+    const user = userEvent.setup()
+    let release!: () => void
+    const held = new Promise<void>(r => { release = r })
+    const puts: { url: string; body: unknown }[] = []
+    server.use(
+      http.get('/service/rest/v1/security/roles/:roleId/privileges', async () => {
+        await held
+        return HttpResponse.json([privileges[0]])
+      }),
+      http.put('/service/rest/v1/security/roles/:id', async ({ request }) => {
+        puts.push({ url: new URL(request.url).pathname, body: await request.json() })
+        return HttpResponse.json({ id: 'role-2' })
+      }),
+      http.put('/service/rest/v1/security/roles/:id/privileges', async ({ request }) => {
+        puts.push({ url: new URL(request.url).pathname, body: await request.json() })
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+    renderWithProviders(<SecurityPage />)
+    await screen.findByText('developer')
+    await user.click(screen.getByRole('button', { name: 'Edit' }))
+    const dialog = (await screen.findByText(/Edit Role: developer/)).closest('.holo-modal') as HTMLElement
+    expect(within(dialog).getByText('Loading privileges…')).toBeInTheDocument()
+    const save = within(dialog).getByRole('button', { name: /^Save$/ })
+    expect(save).toBeDisabled()
+
+    release()
+    await waitFor(() => expect(save).toBeEnabled())
+    await user.click(save)
+    await waitFor(() => expect(puts).toHaveLength(1))
+    expect(puts[0].url).toBe('/service/rest/v1/security/roles/role-2')
+    expect(puts[0].body).toMatchObject({ name: 'developer', privileges: ['p1'] })
+  })
+
+  it('does not carry over the previous role privileges when loading this role fails', async () => {
+    const user = userEvent.setup()
+    let puts = 0
+    server.use(
+      http.get('/service/rest/v1/security/roles', () => HttpResponse.json([
+        ...roles,
+        { id: 'role-3', name: 'qa', description: 'QA role', privileges: ['p1'], roles: [], readOnly: false },
+      ])),
+      http.get('/service/rest/v1/security/roles/:roleId/privileges', ({ params }) =>
+        params.roleId === 'role-2'
+          ? HttpResponse.json({ error: 'privileges unavailable' }, { status: 500 })
+          : HttpResponse.json([privileges[0]]),
+      ),
+      http.put('/service/rest/v1/security/roles/:id', () => { puts++; return HttpResponse.json({}) }),
+      http.put('/service/rest/v1/security/roles/:id/privileges', () => { puts++; return new HttpResponse(null, { status: 204 }) }),
+    )
+    renderWithProviders(<SecurityPage />)
+    await screen.findByText('qa')
+    const editButtons = screen.getAllByRole('button', { name: 'Edit' })
+
+    // qa first: its privilege p1 lands in the checklist.
+    await user.click(editButtons[1])
+    let dialog = (await screen.findByText(/Edit Role: qa/)).closest('.holo-modal') as HTMLElement
+    await waitFor(() => expect(within(dialog).getByRole('button', { name: /^Save$/ })).toBeEnabled())
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+
+    // developer's privileges fail to load: the checklist must not keep qa's.
+    await user.click(editButtons[0])
+    dialog = (await screen.findByText(/Edit Role: developer/)).closest('.holo-modal') as HTMLElement
+    expect(await within(dialog).findByText('privileges unavailable')).toBeInTheDocument()
+    expect(within(dialog).getByText('None selected')).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: /^Save$/ })).toBeDisabled()
+    expect(puts).toBe(0)
   })
 
   it('deletes a role from the edit modal after confirm', async () => {
@@ -233,10 +309,33 @@ describe('SecurityPage', () => {
     // pick content selector via portal Select
     await user.click(within(dialog).getByRole('button', { name: /select a content selector/ }))
     await user.click(await screen.findByText('all-maven'))
-    await user.click(within(dialog).getByRole('button', { name: /^Save$/ }))
+    // No action ticked yet: RBAC reads an empty list as "every action" (#565),
+    // so Save stays disabled until at least one action is chosen.
+    const saveBtn = within(dialog).getByRole('button', { name: /^Save$/ })
+    expect(saveBtn).toBeDisabled()
+    await user.click(within(dialog).getByRole('checkbox', { name: 'read' }))
+    expect(saveBtn).toBeEnabled()
+    await user.click(saveBtn)
     await waitFor(() => expect(posted).toBeTruthy())
     expect((posted! as { name: string }).name).toBe('my-priv')
     expect((posted! as { contentSelectorId: string }).contentSelectorId).toBe('cs-1')
+    expect((posted! as { attrs: { actions: string[] } }).attrs.actions).toEqual(['read'])
+  })
+
+  it('disables Save on an edited privilege once every action is cleared', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<SecurityPage />)
+    await screen.findByText('nx-admin')
+    await user.click(screen.getByRole('button', { name: 'Privileges' }))
+    await screen.findByText('read-all')
+    await user.click(screen.getAllByRole('button', { name: 'Edit' })[0])
+    const heading = await screen.findByRole('heading', { name: 'Edit Privilege' })
+    const dialog = heading.closest('.holo-modal') as HTMLElement
+    const saveBtn = within(dialog).getByRole('button', { name: /^Save$/ })
+    expect(saveBtn).toBeEnabled()
+    await user.click(within(dialog).getByRole('checkbox', { name: 'read' }))
+    await user.click(within(dialog).getByRole('checkbox', { name: 'browse' }))
+    expect(saveBtn).toBeDisabled()
   })
 
   it('filters privileges via search', async () => {
@@ -308,6 +407,37 @@ describe('SecurityPage', () => {
     await user.click(within(dialog).getByRole('button', { name: /^Save$/ }))
     await waitFor(() => expect(posted).toBeTruthy())
     expect((posted! as { name: string }).name).toBe('my-cs')
+  })
+
+  // #572: once the picker has a value the legacy textarea is hidden and the
+  // preview shows the picked expression — that is what must be saved, not
+  // the stale legacy text.
+  it('saves the picked repository when editing a legacy selector', async () => {
+    const user = userEvent.setup()
+    let putBody: { expression: string } | null = null
+    server.use(
+      http.get('/service/rest/v1/security/content-selectors', () => HttpResponse.json([
+        { id: 'cs-legacy', name: 'legacy-sel', description: '', expression: 'repository != "maven-hosted"' },
+      ])),
+      http.put('/service/rest/v1/security/content-selectors/:id', async ({ request }) => {
+        putBody = (await request.json()) as { expression: string }
+        return HttpResponse.json({ id: 'cs-legacy' })
+      }),
+    )
+    renderWithProviders(<SecurityPage />)
+    await screen.findByText('nx-admin')
+    await user.click(screen.getByRole('button', { name: 'Content Selectors' }))
+    await screen.findByText('legacy-sel')
+    await user.click(screen.getByRole('button', { name: 'Edit' }))
+    const dialog = (await screen.findByText('Edit Content Selector')).closest('.holo-modal') as HTMLElement
+    expect(within(dialog).getByText(/CEL Expression \(legacy/)).toBeInTheDocument()
+
+    await user.click(within(dialog).getByPlaceholderText('Search repositories…'))
+    await user.click(await within(dialog).findByText('maven-hosted'))
+    expect(await within(dialog).findByText('repository == "maven-hosted"')).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('button', { name: /^Save$/ }))
+    await waitFor(() => expect(putBody).toBeTruthy())
+    expect(putBody!.expression).toBe('repository == "maven-hosted"')
   })
 
   it('deletes a content selector after confirm', async () => {

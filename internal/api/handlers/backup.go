@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
+	"github.com/nexspence-oss/nexspence/internal/logger"
 	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/service"
 )
@@ -19,11 +20,19 @@ import (
 // BackupHandler handles export and restore of all repository data.
 type BackupHandler struct {
 	svc *service.BackupService
+	log logger.Logger
 }
 
 // NewBackupHandler constructs a BackupHandler backed by the given backup service.
 func NewBackupHandler(svc *service.BackupService) *BackupHandler {
 	return &BackupHandler{svc: svc}
+}
+
+// WithLogger wires a logger for export failures, which can no longer be
+// reported in the response status; returns the handler for chaining.
+func (h *BackupHandler) WithLogger(log logger.Logger) *BackupHandler {
+	h.log = log
+	return h
 }
 
 // Export streams a full backup archive (gzipped tar) to the client.
@@ -38,8 +47,41 @@ func (h *BackupHandler) Export(c *gin.Context) {
 	c.Status(http.StatusOK)
 
 	if err := h.svc.Export(c.Request.Context(), c.Writer); err != nil {
-		// Headers already sent; log the error but can't change status code.
-		_ = err
+		h.failExport(c, err)
+	}
+}
+
+// failExport handles an export error after the 200 is on the wire. Blobs that
+// could not be read leave a valid archive that only lacks them — the same one
+// a scheduled run keeps — so it is served and the gap logged. Anything else
+// (a lost component or asset page, a write error) means the archive is not a
+// backup: the connection is closed before the final chunk, so the client sees
+// a broken transfer instead of a complete download (#569). gin.Recovery turns
+// a panic(http.ErrAbortHandler) into a normal return and gin refuses to
+// hijack once body bytes are written, hence the net/http writer underneath.
+// An HTTP/2 connection cannot be hijacked; there the error is only logged.
+func (h *BackupHandler) failExport(c *gin.Context, err error) {
+	_ = c.Error(err)
+	var incomplete *service.IncompleteBackupError
+	if errors.As(err, &incomplete) {
+		if h.log != nil {
+			h.log.Warnw("backup export is incomplete", "path", c.Request.URL.Path, "err", err)
+		}
+		return
+	}
+	if h.log != nil {
+		h.log.Errorw("backup export failed, aborting the download", "path", c.Request.URL.Path, "err", err)
+	}
+	var rw http.ResponseWriter = c.Writer
+	for {
+		u, ok := rw.(interface{ Unwrap() http.ResponseWriter })
+		if !ok {
+			break
+		}
+		rw = u.Unwrap()
+	}
+	if conn, _, herr := http.NewResponseController(rw).Hijack(); herr == nil {
+		_ = conn.Close()
 	}
 }
 
@@ -90,7 +132,7 @@ func (h *BackupHandler) ExportRepo(c *gin.Context) {
 	c.Status(http.StatusOK)
 
 	if err := h.svc.ExportRepo(ctx, name, c.Writer); err != nil {
-		_ = err // headers already sent; cannot change status code
+		h.failExport(c, err)
 	}
 }
 

@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { screen, waitFor, fireEvent, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
+import { Routes, Route, useSearchParams } from 'react-router-dom'
 import RepositoriesPage from './RepositoriesPage'
 import {
   renderWithProviders,
@@ -167,6 +168,40 @@ describe('RepositoriesPage', () => {
     fireEvent.click(row)
     // navigate is internal; just ensure no crash and row still present after click
     expect(screen.getByText('maven-hosted')).toBeInTheDocument()
+  })
+
+  // #570: an unencoded '#' became the URL fragment, so Browse opened "demo".
+  it('row click keeps a name with # intact in the Browse link', async () => {
+    seedRepos([fixtures.repository({ id: 'repo-9', name: 'demo#2', format: 'raw', type: 'hosted' })])
+    function BrowseProbe() {
+      const [params] = useSearchParams()
+      return <div data-testid="browse-repo">{params.get('repo')}</div>
+    }
+    renderWithProviders(
+      <Routes>
+        <Route path="/" element={<RepositoriesPage />} />
+        <Route path="/browse" element={<BrowseProbe />} />
+      </Routes>,
+    )
+    fireEvent.click(await screen.findByText('demo#2'))
+    expect(await screen.findByTestId('browse-repo')).toHaveTextContent(/^demo#2$/)
+  })
+
+  // #570: Delete on "demo#2" must not reach (and delete) "demo".
+  it('deletes a repository whose name contains # by its full name', async () => {
+    seedRepos([fixtures.repository({ id: 'repo-9', name: 'demo#2', format: 'raw', type: 'hosted' })])
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    let deletedUrl = ''
+    server.use(
+      http.delete('/service/rest/v1/repositories/:name', ({ request }) => {
+        deletedUrl = request.url
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+    renderWithProviders(<RepositoriesPage />)
+    await screen.findByText('demo#2')
+    fireEvent.click(screen.getAllByTitle('Delete')[0])
+    await waitFor(() => expect(deletedUrl).toMatch(/\/service\/rest\/v1\/repositories\/demo%232$/))
   })
 
   it('toggles online state', async () => {

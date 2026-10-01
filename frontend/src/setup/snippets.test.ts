@@ -47,6 +47,12 @@ describe('url helpers', () => {
     expect(repoUrl('http://h/', 'r')).toBe('http://h/repository/r/')
     expect(envName('pypi-hosted.v2')).toBe('PYPI_HOSTED_V2')
   })
+
+  // #570: the repository name is one path segment; an unencoded '#' would
+  // point the client at a different repository.
+  it('encodes the repository name in the client URL', () => {
+    expect(repoUrl('http://h/', 'demo#2')).toBe('http://h/repository/demo%232/')
+  })
 })
 
 describe('buildSetupGuide', () => {

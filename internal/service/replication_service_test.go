@@ -472,3 +472,67 @@ func TestReplicationService_Decrypt_GoldenVector(t *testing.T) {
 }
 
 var _ io.Closer = io.NopCloser(nil)
+
+// ctxCheckingReplRepo behaves like a real database on the run's bookkeeping
+// writes: a canceled context fails them. cancelOnRunning cancels the run's
+// context right after the "running" status is written, standing in for a
+// client that hangs up mid-run.
+type ctxCheckingReplRepo struct {
+	*testutil.ReplicationRepo
+	cancelOnRunning context.CancelFunc
+}
+
+func (r *ctxCheckingReplRepo) UpdateRuleStatus(ctx context.Context, id, status string, at time.Time) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := r.ReplicationRepo.UpdateRuleStatus(ctx, id, status, at); err != nil {
+		return err
+	}
+	if status == "running" && r.cancelOnRunning != nil {
+		r.cancelOnRunning()
+	}
+	return nil
+}
+
+func (r *ctxCheckingReplRepo) AddHistory(ctx context.Context, h *domain.ReplicationHistory) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return r.ReplicationRepo.AddHistory(ctx, h)
+}
+
+// A run cut by its context must still record how it ended. Otherwise the rule
+// stays "running" forever and the run leaves no history row (#573).
+func TestReplicationService_RunRule_CanceledRunStillRecordsOutcome(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	repo := &ctxCheckingReplRepo{ReplicationRepo: testutil.NewReplicationRepo(), cancelOnRunning: cancel}
+	svc := service.NewReplicationService(repo, testutil.NewAssetRepo(), testutil.NewBlobStore(),
+		"test-jwt-secret-32-bytes-long!!!", nil, nopReplLog()).WithHTTPClientFactory(plainClient)
+
+	rule := &domain.ReplicationRule{
+		Name: "cut", SourceRepo: "src", TargetURL: "http://127.0.0.1:1",
+		TargetRepo: "dst", CronExpr: "0 3 * * *", Enabled: true,
+	}
+	if err := repo.CreateRule(context.Background(), rule); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := svc.RunRule(ctx, rule.ID); err == nil {
+		t.Fatal("expected the cut run to fail")
+	}
+
+	got, err := repo.GetRule(context.Background(), rule.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.LastRunStatus != "error" {
+		t.Fatalf("last_run_status = %q, want \"error\"", got.LastRunStatus)
+	}
+	history, _ := repo.ListHistory(context.Background(), rule.ID, 10)
+	if len(history) != 1 {
+		t.Fatalf("expected 1 history row for the cut run, got %d", len(history))
+	}
+}

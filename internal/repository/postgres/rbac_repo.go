@@ -36,9 +36,11 @@ func (r *rbacRepo) GetUserPrivilegesWithSelectors(ctx context.Context, userID st
 		if err := rows.Scan(&actionsJSON, &ps.Expression); err != nil {
 			return nil, err
 		}
-		// A privilege whose actions fail to decode grants nothing — the one case
-		// here where silence is a security problem, so it is logged against the
-		// expression that identifies the row (the query selects no id).
+		// A privilege whose actions fail to decode is left with nil Actions,
+		// which actionAllowed reads as "every action" — the one case here where
+		// silence is a security problem, so it is logged against the expression
+		// that identifies the row (the query selects no id). The privilege
+		// handlers reject such rows on write (#565).
 		unmarshalJSONB([]byte(actionsJSON), &ps.Actions, "privileges", ps.Expression, "actions")
 		result = append(result, ps)
 	}

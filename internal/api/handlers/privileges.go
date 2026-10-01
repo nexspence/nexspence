@@ -63,6 +63,10 @@ func (h *PrivilegeHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "type is required"})
 		return
 	}
+	if missingSelectorActions(&p) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": errSelectorActionsRequired})
+		return
+	}
 	if err := h.repo.Create(c.Request.Context(), &p); err != nil {
 		if conflictOnDuplicateName(c, err) {
 			return
@@ -81,6 +85,10 @@ func (h *PrivilegeHandler) Update(c *gin.Context) {
 		return
 	}
 	p.ID = c.Param("id")
+	if missingSelectorActions(&p) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": errSelectorActionsRequired})
+		return
+	}
 	if err := h.repo.Update(c.Request.Context(), &p); err != nil {
 		if conflictOnDuplicateName(c, err) {
 			return
@@ -89,6 +97,32 @@ func (h *PrivilegeHandler) Update(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, p)
+}
+
+const errSelectorActionsRequired = "at least one action is required"
+
+// missingSelectorActions reports whether p is bound to a content selector but
+// names no action. RBAC treats an empty or undecodable attrs.actions as
+// "every action", so such a privilege would silently grant read, write and
+// delete on everything its selector matches (#565). The RBAC query selects on
+// content_selector_id, not on the type, so any type carrying a selector counts.
+// A non-array list, or one with a non-string entry, fails to decode in RBAC
+// and is rejected for the same reason.
+func missingSelectorActions(p *domain.Privilege) bool {
+	hasSelector := p.ContentSelectorID != nil && *p.ContentSelectorID != ""
+	if p.Type != domain.PrivilegeTypeRepositoryContentSelector && !hasSelector {
+		return false
+	}
+	actions, ok := p.Attrs["actions"].([]any)
+	if !ok || len(actions) == 0 {
+		return true
+	}
+	for _, a := range actions {
+		if _, isString := a.(string); !isString {
+			return true
+		}
+	}
+	return false
 }
 
 // Delete handles DELETE /service/rest/v1/security/privileges/:id

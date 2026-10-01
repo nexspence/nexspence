@@ -767,6 +767,34 @@ func TestCleanupLock_IsScopedPerPolicy(t *testing.T) {
 	assert.Equal(t, 2, lk.releases(), "each policy releases its own lock when it finishes")
 }
 
+// A run whose context is canceled while it holds the policy lock (a manual run
+// whose client hung up, a shutdown) must still release the lock. Releasing on
+// the canceled context never reaches Redis, so the lock would sit there for
+// the full cleanupLockTTL and every node would skip the policy (#573).
+func TestCleanup_RunPolicy_CanceledRunStillReleasesLock(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	policies := testutil.NewCleanupPolicyRepo(&domain.CleanupPolicy{
+		ID: "p-cut", Name: "cut", Enabled: true, Format: "*",
+		Criteria: map[string]any{"artifactAgeDays": float64(1)},
+	})
+	repos := testutil.NewRepoRepo(&domain.Repository{
+		Name: "r", ID: "r1", Format: domain.FormatRaw, CleanupPolicyIDs: []string{"p-cut"},
+	})
+
+	lk := &lockRecorder{onAcquire: cancel}
+	svc := service.NewCleanupService(policies, repos, testutil.NewAssetRepo(), testutil.NewBlobStoreRepo(), testutil.NewBlobStore(), nopLog())
+	svc.WithLocker(lk)
+
+	_, _ = svc.RunPolicyResult(ctx, "p-cut")
+
+	lk.mu.Lock()
+	defer lk.mu.Unlock()
+	require.Len(t, lk.releaseCtxErrs, 1, "the lock is released exactly once")
+	assert.NoError(t, lk.releaseCtxErrs[0], "the release must run on a live context")
+}
+
 // lockRecorder is a Locker that records the keys it was asked for. With err set
 // it fails every acquisition, standing in for a lock held elsewhere.
 type lockRecorder struct {
@@ -774,6 +802,11 @@ type lockRecorder struct {
 	err      error
 	keys     []string
 	released int
+	// onAcquire, when set, runs after a successful acquisition — a hook for
+	// canceling the run's context while it holds the lock.
+	onAcquire func()
+	// releaseCtxErrs records ctx.Err() of every Release call.
+	releaseCtxErrs []error
 }
 
 func (lk *lockRecorder) Acquire(_ context.Context, key string, _ time.Duration) (distlock.Lock, error) {
@@ -782,6 +815,9 @@ func (lk *lockRecorder) Acquire(_ context.Context, key string, _ time.Duration) 
 	lk.keys = append(lk.keys, key)
 	if lk.err != nil {
 		return nil, lk.err
+	}
+	if lk.onAcquire != nil {
+		lk.onAcquire()
 	}
 	return &recordedLock{owner: lk}, nil
 }
@@ -802,9 +838,10 @@ func (lk *lockRecorder) releases() int {
 
 type recordedLock struct{ owner *lockRecorder }
 
-func (l *recordedLock) Release(context.Context) error {
+func (l *recordedLock) Release(ctx context.Context) error {
 	l.owner.mu.Lock()
 	defer l.owner.mu.Unlock()
 	l.owner.released++
+	l.owner.releaseCtxErrs = append(l.owner.releaseCtxErrs, ctx.Err())
 	return nil
 }

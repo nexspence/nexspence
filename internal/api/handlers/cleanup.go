@@ -168,7 +168,10 @@ func (h *CleanupHandler) Run(c *gin.Context) {
 		c.JSON(http.StatusAccepted, gin.H{"status": "running all policies"})
 		return
 	}
-	res, err := h.runner.RunPolicyResult(c.Request.Context(), id)
+	// Detached from the request's cancellation: a client that stops waiting
+	// must not cut the run half-way, which in HA also strands the policy's
+	// lock (#573). A client that waits still gets the result.
+	res, err := h.runner.RunPolicyResult(context.WithoutCancel(c.Request.Context()), id)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

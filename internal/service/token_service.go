@@ -111,6 +111,17 @@ func (s *TokenService) Get(ctx context.Context, id string) (*domain.UserToken, e
 // integration the account's full power instead (#292). Empty scopes mean an
 // unrestricted token, matching every token issued before scopes were enforced.
 func (s *TokenService) Authenticate(ctx context.Context, raw string) (*domain.User, []string, error) {
+	u, tok, err := s.AuthenticateToken(ctx, raw)
+	if err != nil {
+		return nil, nil, err
+	}
+	return u, tok.Scopes, nil
+}
+
+// AuthenticateToken is Authenticate returning the token record instead of
+// just its scopes. Callers that mint a JWT from the token need its id and
+// expiry to bind the JWT to it (#566).
+func (s *TokenService) AuthenticateToken(ctx context.Context, raw string) (*domain.User, *domain.UserToken, error) {
 	if !strings.HasPrefix(raw, TokenPrefix) {
 		return nil, nil, fmt.Errorf("not an API token")
 	}
@@ -135,5 +146,23 @@ func (s *TokenService) Authenticate(ctx context.Context, raw string) (*domain.Us
 		return nil, nil, fmt.Errorf("user account disabled")
 	}
 	_ = s.tokens.TouchLastUsed(ctx, tok.ID)
-	return u, tok.Scopes, nil
+	return u, tok, nil
+}
+
+// Active reports whether the API token id still exists, belongs to userID and
+// has not expired. It is the per-request check for a JWT exchanged from that
+// token (the tid claim): deleting or expiring the token must end the JWT too
+// (#566). Any lookup failure counts as inactive — fail closed.
+func (s *TokenService) Active(ctx context.Context, id, userID string) bool {
+	if id == "" {
+		return false
+	}
+	tok, err := s.tokens.Get(ctx, id)
+	if err != nil || tok == nil {
+		return false
+	}
+	if tok.UserID != userID {
+		return false
+	}
+	return tok.ExpiresAt == nil || time.Now().Before(*tok.ExpiresAt)
 }

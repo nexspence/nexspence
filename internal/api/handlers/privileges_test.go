@@ -124,6 +124,56 @@ func TestPrivilegeHandler_Create_RepoError_500(t *testing.T) {
 	assert.Equal(t, http.StatusInternalServerError, rec.Code)
 }
 
+// TestPrivilegeHandler_Create_SelectorWithoutActions_400 covers #565: RBAC
+// treats an empty actions list as "every action", so a selector-bound
+// privilege saved without actions would grant read, write and delete.
+func TestPrivilegeHandler_Create_SelectorWithoutActions_400(t *testing.T) {
+	cases := map[string]map[string]any{
+		"content-selector, empty actions": {
+			"name": "p1", "type": "repository-content-selector", "contentSelectorId": "cs-1",
+			"attrs": map[string]any{"actions": []string{}},
+		},
+		"content-selector, attrs omitted": {
+			"name": "p1", "type": "repository-content-selector", "contentSelectorId": "cs-1",
+		},
+		"content-selector, actions not an array": {
+			"name": "p1", "type": "repository-content-selector", "contentSelectorId": "cs-1",
+			"attrs": map[string]any{"actions": "read"},
+		},
+		"content-selector, non-string action": {
+			"name": "p1", "type": "repository-content-selector", "contentSelectorId": "cs-1",
+			"attrs": map[string]any{"actions": []any{"read", 1}},
+		},
+		"content-selector type without selector id": {
+			"name": "p1", "type": "repository-content-selector",
+		},
+		"other type carrying a selector id": {
+			"name": "p1", "type": "application", "contentSelectorId": "cs-1",
+		},
+	}
+	for name, body := range cases {
+		t.Run(name, func(t *testing.T) {
+			r, privs, _ := mountPrivileges(t)
+			rec := do(t, r, http.MethodPost, "/service/rest/v1/security/privileges", body)
+			require.Equal(t, http.StatusBadRequest, rec.Code)
+			assert.Contains(t, rec.Body.String(), "at least one action is required")
+			items, err := privs.List(testContext())
+			require.NoError(t, err)
+			assert.Empty(t, items)
+		})
+	}
+}
+
+func TestPrivilegeHandler_Create_SelectorWithActions_OK(t *testing.T) {
+	r, _, _ := mountPrivileges(t)
+	rec := do(t, r, http.MethodPost, "/service/rest/v1/security/privileges",
+		map[string]any{
+			"name": "p1", "type": "repository-content-selector", "contentSelectorId": "cs-1",
+			"attrs": map[string]any{"actions": []string{"read", "write"}},
+		})
+	assert.Equal(t, http.StatusCreated, rec.Code)
+}
+
 // ── Update ────────────────────────────────────────────────────
 
 func TestPrivilegeHandler_Update_OK(t *testing.T) {
@@ -150,6 +200,54 @@ func TestPrivilegeHandler_Update_RepoError_500(t *testing.T) {
 	rec := do(t, r, http.MethodPut, "/service/rest/v1/security/privileges/any",
 		map[string]any{"name": "p1", "type": "wildcard"})
 	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+}
+
+func TestPrivilegeHandler_Update_SelectorWithoutActions_400(t *testing.T) {
+	cases := map[string]map[string]any{
+		"empty actions": {
+			"name": "p1", "type": "repository-content-selector", "contentSelectorId": "cs-1",
+			"attrs": map[string]any{"actions": []string{}},
+		},
+		"attrs omitted": {
+			"name": "p1", "type": "repository-content-selector", "contentSelectorId": "cs-1",
+		},
+		"other type carrying a selector id": {
+			"name": "p1", "type": "application", "contentSelectorId": "cs-1",
+		},
+	}
+	selectorID := "cs-1"
+	for name, body := range cases {
+		t.Run(name, func(t *testing.T) {
+			r, privs, _ := mountPrivileges(t)
+			p := &domain.Privilege{
+				ID: "priv-1", Name: "p1", Type: domain.PrivilegeTypeRepositoryContentSelector,
+				ContentSelectorID: &selectorID, Attrs: map[string]any{"actions": []any{"read"}},
+			}
+			require.NoError(t, privs.Create(testContext(), p))
+			rec := do(t, r, http.MethodPut, "/service/rest/v1/security/privileges/"+p.ID, body)
+			require.Equal(t, http.StatusBadRequest, rec.Code)
+			assert.Contains(t, rec.Body.String(), "at least one action is required")
+			got, err := privs.Get(testContext(), p.ID)
+			require.NoError(t, err)
+			assert.Equal(t, []any{"read"}, got.Attrs["actions"])
+		})
+	}
+}
+
+func TestPrivilegeHandler_Update_SelectorWithActions_OK(t *testing.T) {
+	r, privs, _ := mountPrivileges(t)
+	selectorID := "cs-1"
+	p := &domain.Privilege{
+		ID: "priv-1", Name: "p1", Type: domain.PrivilegeTypeRepositoryContentSelector,
+		ContentSelectorID: &selectorID, Attrs: map[string]any{"actions": []any{"write"}},
+	}
+	require.NoError(t, privs.Create(testContext(), p))
+	rec := do(t, r, http.MethodPut, "/service/rest/v1/security/privileges/"+p.ID,
+		map[string]any{
+			"name": "p1", "type": "repository-content-selector", "contentSelectorId": "cs-1",
+			"attrs": map[string]any{"actions": []string{"read"}},
+		})
+	assert.Equal(t, http.StatusOK, rec.Code)
 }
 
 // ── Delete ────────────────────────────────────────────────────

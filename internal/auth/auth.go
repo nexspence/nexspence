@@ -27,6 +27,11 @@ type Claims struct {
 	// exchange instead of silently widening to the full account (#292).
 	// Empty means unrestricted — every JWT issued before scopes existed.
 	Scopes []string `json:"scopes,omitempty"`
+	// TokenID names the API token a JWT was exchanged for (#566). The bearer
+	// check rejects the JWT once that token is deleted or expired, so revoking
+	// a leaked token also ends every session traded for it. Empty for
+	// password and SSO JWTs, which no API token can revoke.
+	TokenID string `json:"tid,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -120,6 +125,36 @@ func (s *Service) GenerateScopedToken(userID, username string, roles, scopes []s
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString(s.secret)
+}
+
+// GenerateAPITokenJWT mints the JWT an nxs_ API token is exchanged for (the
+// /v2/token and Conan login handshakes). It carries the token's scopes, names
+// the token in the tid claim so deleting the token revokes the JWT, and never
+// outlives the token: exp is min(now + jwt expiry, tokenExpiresAt). The
+// returned time is that exp, for protocols that advertise the lifetime.
+func (s *Service) GenerateAPITokenJWT(userID, username string, roles, scopes []string, tokenID string, tokenExpiresAt *time.Time) (string, time.Time, error) {
+	now := time.Now()
+	exp := now.Add(time.Duration(s.expiryHrs) * time.Hour)
+	if tokenExpiresAt != nil && tokenExpiresAt.Before(exp) {
+		exp = *tokenExpiresAt
+	}
+	claims := Claims{
+		UserID:   userID,
+		Username: username,
+		Roles:    roles,
+		Scopes:   scopes,
+		TokenID:  tokenID,
+		RegisteredClaims: jwt.RegisteredClaims{
+			IssuedAt:  jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(exp),
+			Issuer:    "nexspence",
+		},
+	}
+	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(s.secret)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	return token, exp, nil
 }
 
 // ValidateToken parses and validates a JWT, returning its claims.
