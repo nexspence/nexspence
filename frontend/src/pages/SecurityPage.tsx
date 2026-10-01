@@ -265,6 +265,10 @@ function RolesTab({ roles, loading, onRefresh, admin }: { roles: Role[]; loading
   const [editRole, setEditRole] = useState<Role | null>(null)
   const [editForm, setEditForm] = useState({ name: '', description: '' })
   const [editPrivIds, setEditPrivIds] = useState<string[]>([])
+  // Save stays disabled until this role's privileges have actually loaded:
+  // the save replaces the whole list, so saving a checklist that was never
+  // filled from the server would empty the role or copy another role's set.
+  const [editPrivsLoaded, setEditPrivsLoaded] = useState(false)
 
   const [showCreate, setShowCreate] = useState(false)
   const [createForm, setCreateForm] = useState({ name: '', description: '' })
@@ -327,6 +331,9 @@ function RolesTab({ roles, loading, onRefresh, admin }: { roles: Role[]; loading
     const seq = ++editReqSeq.current
     setEditRole(r)
     setEditForm({ name: r.name, description: r.description })
+    setEditPrivIds([])
+    setEditPrivsLoaded(false)
+    setEditError(null)
     setLoadingPrivs(true)
     try {
       const [privList, rolePrivs] = await Promise.all([
@@ -336,6 +343,9 @@ function RolesTab({ roles, loading, onRefresh, admin }: { roles: Role[]; loading
       if (seq !== editReqSeq.current) return // superseded by a newer edit
       setAllPrivs(privList)
       setEditPrivIds(rolePrivs.map(p => p.id))
+      setEditPrivsLoaded(true)
+    } catch (e) {
+      if (seq === editReqSeq.current) setEditError(apiErrorMessage(e, 'Failed to load privileges'))
     } finally {
       if (seq === editReqSeq.current) setLoadingPrivs(false)
     }
@@ -352,8 +362,9 @@ function RolesTab({ roles, loading, onRefresh, admin }: { roles: Role[]; loading
   const saveEdit = useMutation({
     mutationFn: async () => {
       if (!editRole) return
-      await nexusApi.updateRole(editRole.id, editForm)
-      await nexusApi.setRolePrivileges(editRole.id, editPrivIds)
+      // PUT /roles/:id replaces the privilege list too, so send it here in one
+      // request rather than following up with PUT /roles/:id/privileges.
+      await nexusApi.updateRole(editRole.id, { ...editForm, privileges: editPrivIds })
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['roles'] })
@@ -523,7 +534,7 @@ function RolesTab({ roles, loading, onRefresh, admin }: { roles: Role[]; loading
           loadingPrivs={loadingPrivs}
           onSave={() => saveEdit.mutate()}
           saving={saveEdit.isPending}
-          saveDisabled={!editForm.name.trim()}
+          saveDisabled={!editForm.name.trim() || !editPrivsLoaded}
           onCancel={() => { editReqSeq.current++; setEditRole(null); setEditError(null) }}
           onDelete={() => { if (confirm(`Delete role ${editRole.name}?`)) { del.mutate(editRole.id); setEditRole(null) } }}
           error={editError}

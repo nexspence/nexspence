@@ -276,6 +276,61 @@ describe('UsersPage', () => {
     expect(await screen.findByText('cannot save roles')).toBeInTheDocument()
   })
 
+  // #571: the modal must not start from an empty selection just because the
+  // roles list had not arrived yet — PUT .../roles replaces the user's roles.
+  it('keeps Save disabled until the roles load, then starts from the user roles', async () => {
+    const user = userEvent.setup()
+    let release!: () => void
+    const held = new Promise<void>(r => { release = r })
+    let putBody: { roleIds: string[] } | null = null
+    server.use(
+      http.get('/service/rest/v1/security/roles', async () => {
+        await held
+        return HttpResponse.json([
+          roleItem(),
+          roleItem({ id: 'role-dev', name: 'developer', description: 'Dev role', readOnly: false }),
+        ])
+      }),
+      http.put('/service/rest/v1/security/users/:userId/roles', async ({ request }) => {
+        putBody = (await request.json()) as { roleIds: string[] }
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+    renderWithProviders(<UsersPage />)
+    await screen.findByText('alice')
+    await user.click(screen.getAllByTitle('Assign roles')[0])
+    await screen.findByText(/Assign Roles — alice/)
+    expect(screen.getByText('Loading roles…')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+
+    release()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled())
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(putBody).toBeTruthy())
+    expect(putBody!.roleIds).toEqual(['role-admin'])
+  })
+
+  it('keeps Save disabled when the roles fail to load', async () => {
+    const user = userEvent.setup()
+    let put = false
+    server.use(
+      http.get('/service/rest/v1/security/roles', () =>
+        HttpResponse.json({ error: 'boom' }, { status: 500 }),
+      ),
+      http.put('/service/rest/v1/security/users/:userId/roles', () => {
+        put = true
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+    renderWithProviders(<UsersPage />)
+    await screen.findByText('alice')
+    await user.click(screen.getAllByTitle('Assign roles')[0])
+    await screen.findByText(/Assign Roles — alice/)
+    expect(await screen.findByText('Failed to load roles')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+    expect(put).toBe(false)
+  })
+
   it('closes the assign-roles modal via Cancel', async () => {
     const user = userEvent.setup()
     renderWithProviders(<UsersPage />)

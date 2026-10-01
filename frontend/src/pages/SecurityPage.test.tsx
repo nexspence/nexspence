@@ -178,8 +178,84 @@ describe('SecurityPage', () => {
     await user.click(screen.getByRole('button', { name: 'Edit' }))
     expect(await screen.findByText(/Edit Role: developer/)).toBeInTheDocument()
     const dialog = screen.getByText(/Edit Role: developer/).closest('.holo-modal') as HTMLElement
-    await user.click(within(dialog).getByRole('button', { name: /^Save$/ }))
+    const save = within(dialog).getByRole('button', { name: /^Save$/ })
+    await waitFor(() => expect(save).toBeEnabled())
+    await user.click(save)
     await waitFor(() => expect(saved).toBe(true))
+  })
+
+  // #571: Save must stay disabled until the role's privileges have loaded,
+  // and the role and its privileges go out in one PUT /roles/:id — the
+  // backend replaces the privilege list on that call, so a separate
+  // name-only PUT would briefly (or, on failure, permanently) empty the role.
+  it('keeps Save disabled while the role privileges load, then saves them in one request', async () => {
+    const user = userEvent.setup()
+    let release!: () => void
+    const held = new Promise<void>(r => { release = r })
+    const puts: { url: string; body: unknown }[] = []
+    server.use(
+      http.get('/service/rest/v1/security/roles/:roleId/privileges', async () => {
+        await held
+        return HttpResponse.json([privileges[0]])
+      }),
+      http.put('/service/rest/v1/security/roles/:id', async ({ request }) => {
+        puts.push({ url: new URL(request.url).pathname, body: await request.json() })
+        return HttpResponse.json({ id: 'role-2' })
+      }),
+      http.put('/service/rest/v1/security/roles/:id/privileges', async ({ request }) => {
+        puts.push({ url: new URL(request.url).pathname, body: await request.json() })
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+    renderWithProviders(<SecurityPage />)
+    await screen.findByText('developer')
+    await user.click(screen.getByRole('button', { name: 'Edit' }))
+    const dialog = (await screen.findByText(/Edit Role: developer/)).closest('.holo-modal') as HTMLElement
+    expect(within(dialog).getByText('Loading privileges…')).toBeInTheDocument()
+    const save = within(dialog).getByRole('button', { name: /^Save$/ })
+    expect(save).toBeDisabled()
+
+    release()
+    await waitFor(() => expect(save).toBeEnabled())
+    await user.click(save)
+    await waitFor(() => expect(puts).toHaveLength(1))
+    expect(puts[0].url).toBe('/service/rest/v1/security/roles/role-2')
+    expect(puts[0].body).toMatchObject({ name: 'developer', privileges: ['p1'] })
+  })
+
+  it('does not carry over the previous role privileges when loading this role fails', async () => {
+    const user = userEvent.setup()
+    let puts = 0
+    server.use(
+      http.get('/service/rest/v1/security/roles', () => HttpResponse.json([
+        ...roles,
+        { id: 'role-3', name: 'qa', description: 'QA role', privileges: ['p1'], roles: [], readOnly: false },
+      ])),
+      http.get('/service/rest/v1/security/roles/:roleId/privileges', ({ params }) =>
+        params.roleId === 'role-2'
+          ? HttpResponse.json({ error: 'privileges unavailable' }, { status: 500 })
+          : HttpResponse.json([privileges[0]]),
+      ),
+      http.put('/service/rest/v1/security/roles/:id', () => { puts++; return HttpResponse.json({}) }),
+      http.put('/service/rest/v1/security/roles/:id/privileges', () => { puts++; return new HttpResponse(null, { status: 204 }) }),
+    )
+    renderWithProviders(<SecurityPage />)
+    await screen.findByText('qa')
+    const editButtons = screen.getAllByRole('button', { name: 'Edit' })
+
+    // qa first: its privilege p1 lands in the checklist.
+    await user.click(editButtons[1])
+    let dialog = (await screen.findByText(/Edit Role: qa/)).closest('.holo-modal') as HTMLElement
+    await waitFor(() => expect(within(dialog).getByRole('button', { name: /^Save$/ })).toBeEnabled())
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+
+    // developer's privileges fail to load: the checklist must not keep qa's.
+    await user.click(editButtons[0])
+    dialog = (await screen.findByText(/Edit Role: developer/)).closest('.holo-modal') as HTMLElement
+    expect(await within(dialog).findByText('privileges unavailable')).toBeInTheDocument()
+    expect(within(dialog).getByText('None selected')).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: /^Save$/ })).toBeDisabled()
+    expect(puts).toBe(0)
   })
 
   it('deletes a role from the edit modal after confirm', async () => {

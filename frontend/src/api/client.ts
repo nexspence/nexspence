@@ -334,7 +334,7 @@ export const nexusApi = {
     apiClient.get(`/service/rest/v1/security/roles/${roleId}/privileges`),
   setRolePrivileges: (roleId: string, privilegeIds: string[]) =>
     apiClient.put(`/service/rest/v1/security/roles/${roleId}/privileges`, { privilegeIds }),
-  updateRole: (id: string, data: { name: string; description?: string }) =>
+  updateRole: (id: string, data: { name: string; description?: string; privileges?: string[] }) =>
     apiClient.put(`/service/rest/v1/security/roles/${id}`, data),
 
   // Privileges
