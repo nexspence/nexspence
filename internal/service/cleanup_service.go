@@ -280,7 +280,10 @@ func (s *CleanupService) runPolicyLocked(ctx context.Context, p domain.CleanupPo
 	if err != nil {
 		return nil, fmt.Errorf("%w for policy %q: %w", errAcquireLock, p.Name, err)
 	}
-	defer func() { _ = lock.Release(ctx) }()
+	// Released on a context of its own: on the run's canceled context the
+	// release never reaches the lock backend, and the lock would block this
+	// policy on every node until cleanupLockTTL runs out (#573).
+	defer func() { _ = lock.Release(context.WithoutCancel(ctx)) }()
 
 	// The lock expires on its own after cleanupLockTTL whether or not this run
 	// has finished, and nothing renews it — so past that moment another node can

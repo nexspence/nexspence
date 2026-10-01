@@ -326,9 +326,10 @@ func (s *ReplicationService) Running(ruleID string) bool {
 // the same assets. (Per-process is the honest scope of this guard; the cron
 // path has the same property today.)
 func (s *ReplicationService) RunRule(ctx context.Context, ruleID string) error {
-	// Root span: both callers (the manual-trigger handler and cron) launch
-	// this on context.Background(), so it looks like a service method but is
-	// a background job. It is also what makes cross-process propagation work
+	// Root span: every caller (cron, the manual-trigger handler, the
+	// Nexus-compatible tasks endpoint) launches this on a context with no
+	// cancellation of its own, so it looks like a service method but is a
+	// background job. It is also what makes cross-process propagation work
 	// at all — with no span in context, injecting traceparent into the
 	// outgoing requests is silently a no-op (#302).
 	ctx, span := tracing.StartRoot(ctx, "replication.run_rule",
@@ -367,8 +368,12 @@ func (s *ReplicationService) RunRule(ctx context.Context, ruleID string) error {
 			hist.Error = runErr.Error()
 		}
 	}
-	_ = s.repo.UpdateRuleStatus(ctx, ruleID, status, now)
-	_ = s.repo.AddHistory(ctx, hist)
+	// Record the outcome even when the run was cut by its context: on that
+	// context both writes fail, leaving the rule "running" with no history
+	// row until another run of it finishes (#573).
+	recCtx := context.WithoutCancel(ctx)
+	_ = s.repo.UpdateRuleStatus(recCtx, ruleID, status, now)
+	_ = s.repo.AddHistory(recCtx, hist)
 
 	return runErr
 }

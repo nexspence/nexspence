@@ -1,9 +1,11 @@
 package handlers_test
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -242,6 +244,42 @@ func TestCleanupHandler_Run_Single_ReportsCounts(t *testing.T) {
 	assert.False(t, res.Skipped)
 	assert.Equal(t, 1, res.Deleted)
 	assert.Equal(t, int64(42), res.FreedBytes)
+}
+
+// ctxRecordingRunner is a cleanup runner that records whether the context it
+// was handed was already canceled.
+type ctxRecordingRunner struct {
+	ran    int
+	ctxErr error
+}
+
+func (f *ctxRecordingRunner) RunPolicy(context.Context, string) error { return nil }
+func (f *ctxRecordingRunner) RunPolicyResult(ctx context.Context, id string) (*domain.CleanupRunResult, error) {
+	f.ran++
+	f.ctxErr = ctx.Err()
+	return &domain.CleanupRunResult{PolicyID: id}, nil
+}
+func (f *ctxRecordingRunner) RunAll(context.Context) error         { return nil }
+func (f *ctxRecordingRunner) ReloadPolicy(context.Context, string) {}
+func (f *ctxRecordingRunner) PreviewPolicy(context.Context, string) (*domain.CleanupPreviewResult, error) {
+	return &domain.CleanupPreviewResult{}, nil
+}
+
+// A client that gives up on the synchronous single-policy run must not cut the
+// run short: a cut run in HA would also strand its policy lock (#573).
+func TestCleanupHandler_Run_Single_NotCanceledWithClient(t *testing.T) {
+	runner := &ctxRecordingRunner{}
+	h := handlers.NewCleanupHandler(testutil.NewCleanupPolicyRepo(), testutil.NewRepoRepo(), runner, cleanupNopLog())
+	r := gin.New()
+	r.POST("/service/rest/v1/cleanup-policies/:id/run", h.Run)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	req := httptest.NewRequest(http.MethodPost, "/service/rest/v1/cleanup-policies/p1/run", nil).WithContext(ctx)
+	r.ServeHTTP(httptest.NewRecorder(), req)
+
+	require.Equal(t, 1, runner.ran)
+	assert.NoError(t, runner.ctxErr, "the run must not see the client's cancellation")
 }
 
 func TestCleanupHandler_Run_All_202(t *testing.T) {

@@ -109,7 +109,11 @@ func (h *TasksHandler) Run(c *gin.Context) {
 		return
 	}
 
-	ctx := c.Request.Context()
+	// The run outlives a client that stops waiting (a curl -m, a proxy read
+	// timeout, a closed tab): cut on the request's cancellation it would leave
+	// the task "running" with no history, or strand a cleanup lock in HA
+	// (#573). WithoutCancel keeps the request's values, e.g. the trace span.
+	ctx := context.WithoutCancel(c.Request.Context())
 	var err error
 	switch prefix {
 	case "cleanup":

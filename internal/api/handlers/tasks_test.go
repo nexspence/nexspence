@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -23,13 +24,15 @@ type fakeTaskCleanup struct {
 	runErr   error
 	ranID    string
 	ranCount int
+	ctxErr   error
 }
 
 func (f *fakeTaskCleanup) List(_ context.Context) ([]domain.CleanupPolicy, error) {
 	return f.policies, f.listErr
 }
 
-func (f *fakeTaskCleanup) RunPolicy(_ context.Context, id string) error {
+func (f *fakeTaskCleanup) RunPolicy(ctx context.Context, id string) error {
+	f.ctxErr = ctx.Err()
 	f.ranID = id
 	f.ranCount++
 	return f.runErr
@@ -42,13 +45,15 @@ type fakeTaskReplication struct {
 	runErr   error
 	ranID    string
 	ranCount int
+	ctxErr   error
 }
 
 func (f *fakeTaskReplication) ListRules(_ context.Context) ([]domain.ReplicationRule, error) {
 	return f.rules, f.listErr
 }
 
-func (f *fakeTaskReplication) RunRule(_ context.Context, id string) error {
+func (f *fakeTaskReplication) RunRule(ctx context.Context, id string) error {
+	f.ctxErr = ctx.Err()
 	f.ranID = id
 	f.ranCount++
 	return f.runErr
@@ -226,4 +231,28 @@ func TestTasksHandler_Run_ReplicationError_500(t *testing.T) {
 	r := mountTasks(t, &fakeTaskCleanup{}, rp)
 	rec := do(t, r, http.MethodPost, "/service/rest/v1/tasks/replication:id/run", nil)
 	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+}
+
+// A client that stops waiting (curl -m, a proxy read timeout, a closed tab)
+// cancels the request context. The run must not inherit that cancellation, or
+// it dies half-way and leaves the task "running" with no history (#573).
+func TestTasksHandler_Run_NotCanceledWithClient(t *testing.T) {
+	cl := &fakeTaskCleanup{}
+	rp := &fakeTaskReplication{}
+	r := mountTasks(t, cl, rp)
+
+	for _, path := range []string{
+		"/service/rest/v1/tasks/cleanup:c1/run",
+		"/service/rest/v1/tasks/replication:r1/run",
+	} {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		req := httptest.NewRequest(http.MethodPost, path, nil).WithContext(ctx)
+		r.ServeHTTP(httptest.NewRecorder(), req)
+	}
+
+	require.Equal(t, 1, cl.ranCount)
+	require.Equal(t, 1, rp.ranCount)
+	assert.NoError(t, cl.ctxErr, "the cleanup run must not see the client's cancellation")
+	assert.NoError(t, rp.ctxErr, "the replication run must not see the client's cancellation")
 }
