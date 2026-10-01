@@ -373,6 +373,11 @@ func (s *ReplicationService) removeEntryLocked(ruleID string) {
 // addEntryLocked registers a cron job for rule. Caller must hold s.mu.
 func (s *ReplicationService) addEntryLocked(rule domain.ReplicationRule) {
 	ruleID, schedule := rule.ID, rule.CronExpr
+	if schedule == "" {
+		// No schedule: the rule only runs when triggered manually.
+		s.entries[ruleID] = replicationCronEntry{}
+		return
+	}
 	job := func() { s.runScheduled(context.Background(), ruleID, schedule) }
 	id, err := s.cronScheduler.AddFunc(schedule, job)
 	if err != nil {
@@ -401,60 +406,143 @@ func (s *ReplicationService) runScheduled(ctx context.Context, ruleID, registere
 		// for the new schedule arrives, with the next syncRules.
 		return
 	}
-	err = s.RunRule(ctx, ruleID)
-	switch {
-	case errors.Is(err, distlock.ErrLockHeld):
-		s.log.Infow("replication skipped: another node is already running this rule", "rule", rule.Name)
-	case err != nil:
+	// The slot comes from the moment the tick fired, before waiting on the
+	// lock or the database, so neither can move it.
+	slot := replicationSlotStart(registered, time.Now())
+	deadline, release, err := s.acquireRun(ctx, ruleID)
+	if errors.Is(err, ErrReplicationRuleRunning) {
+		s.log.Infow("replication skipped: the rule is already running", "rule", rule.Name, "reason", err)
+		return
+	}
+	if err != nil {
+		s.log.Errorw("replication cron error", "rule", rule.Name, "err", err)
+		return
+	}
+	defer release()
+	// The lock only covers a run in progress. A node whose tick fires after
+	// another node already finished this slot's run would otherwise run it
+	// again — two history rows and twice the traffic per slot (#574). Checked
+	// under the lock, so the other node's history row is already written.
+	if s.ranSince(ctx, ruleID, slot) {
+		s.log.Infow("replication skipped: this slot already ran on another node", "rule", rule.Name)
+		return
+	}
+	if err := s.execute(ctx, ruleID, deadline); err != nil {
 		s.log.Errorw("replication cron error", "rule", rule.Name, "err", err)
 	}
 }
 
+// replicationSlotSkew is how far apart two nodes' clocks may be and still be
+// recognized as firing for the same cron slot (see replicationSlotStart).
+const replicationSlotSkew = 10 * time.Second
+
+// replicationSlotStart is the earliest start time of a run that belongs to
+// the same cron slot as a tick firing at now. Standard specs fire on whole
+// minutes, so the slot is now truncated to the minute, widened by
+// replicationSlotSkew for a node whose clock runs ahead. @every intervals are
+// not aligned across nodes (each counts from its own registration) and may be
+// under a minute, so for them it is half an interval back.
+func replicationSlotStart(schedule string, now time.Time) time.Time {
+	if sched, err := cron.ParseStandard(schedule); err == nil {
+		if every, ok := sched.(cron.ConstantDelaySchedule); ok {
+			return now.Add(-every.Delay / 2)
+		}
+	}
+	return now.Truncate(time.Minute).Add(-replicationSlotSkew)
+}
+
+// ranSince reports whether the rule's latest recorded run started at or after
+// slot. A history read failure is not a reason to skip a run.
+func (s *ReplicationService) ranSince(ctx context.Context, ruleID string, slot time.Time) bool {
+	hist, err := s.repo.ListHistory(ctx, ruleID, 1)
+	if err != nil || len(hist) == 0 {
+		return false
+	}
+	return !hist[0].StartedAt.Before(slot)
+}
+
 // Running reports whether a run of the rule is in flight in this process.
-// The manual-run endpoint asks before answering so a second POST is refused
-// visibly instead of returning 202 for a run that RunRule then drops.
 func (s *ReplicationService) Running(ruleID string) bool {
 	_, busy := s.running.Load(ruleID)
 	return busy
 }
 
-// RunRule executes a single replication rule immediately (used by cron and manual trigger).
+// ErrReplicationRuleRunning is returned when a rule cannot start because a run
+// of it is already in flight, in this process or on another HA node.
+var ErrReplicationRuleRunning = errors.New("replication rule is already running")
+
+// acquireRun takes the rule's in-process guard and, with a locker, its
+// distributed lock. release undoes both and must be called once. deadline is
+// when the lock expires (zero: no lock).
 //
 // One run per rule per process: now that manual runs are detached from the
 // request context they no longer die by accident, so repeated POSTs to
 // .../run would otherwise pile up concurrent runs of the same rule pushing
 // the same assets. Across nodes the rule's distributed lock does the same
-// (#574): a run while another node holds it returns an error wrapping
-// distlock.ErrLockHeld and records nothing.
+// (#574).
+func (s *ReplicationService) acquireRun(ctx context.Context, ruleID string) (deadline time.Time, release func(), err error) {
+	if _, busy := s.running.LoadOrStore(ruleID, struct{}{}); busy {
+		return time.Time{}, nil, fmt.Errorf("%w: %s", ErrReplicationRuleRunning, ruleID)
+	}
+	if s.locker == nil {
+		return time.Time{}, func() { s.running.Delete(ruleID) }, nil
+	}
+	lock, err := s.locker.Acquire(ctx, replicationRuleLockPrefix+ruleID, replicationLockTTL)
+	if err != nil {
+		s.running.Delete(ruleID)
+		if errors.Is(err, distlock.ErrLockHeld) {
+			return time.Time{}, nil, fmt.Errorf("%w on another node: %s: %w", ErrReplicationRuleRunning, ruleID, err)
+		}
+		// Without the lock there is no exclusion: stop rather than push
+		// alongside another node.
+		return time.Time{}, nil, fmt.Errorf("replication: acquire lock for rule %s: %w", ruleID, err)
+	}
+	releaseCtx := context.WithoutCancel(ctx)
+	return time.Now().Add(replicationLockTTL), func() {
+		_ = lock.Release(releaseCtx)
+		s.running.Delete(ruleID)
+	}, nil
+}
+
+// RunRule executes a single replication rule immediately and waits for it.
+// A rule already running here or on another node is refused with an error
+// wrapping ErrReplicationRuleRunning, and records nothing.
 func (s *ReplicationService) RunRule(ctx context.Context, ruleID string) error {
-	// Root span: both callers (the manual-trigger handler and cron) launch
-	// this on context.Background(), so it looks like a service method but is
-	// a background job. It is also what makes cross-process propagation work
-	// at all — with no span in context, injecting traceparent into the
-	// outgoing requests is silently a no-op (#302).
+	deadline, release, err := s.acquireRun(ctx, ruleID)
+	if err != nil {
+		return err
+	}
+	defer release()
+	return s.execute(ctx, ruleID, deadline)
+}
+
+// StartRule claims the rule for a run (in-process guard and distributed lock)
+// and returns the run to execute, typically in a goroutine. Claiming up front
+// lets the manual-run endpoint refuse a rule already running here or on
+// another node with 409, instead of answering 202 for a run that is then
+// dropped. The returned func must be called exactly once.
+func (s *ReplicationService) StartRule(ctx context.Context, ruleID string) (func(context.Context) error, error) {
+	deadline, release, err := s.acquireRun(ctx, ruleID)
+	if err != nil {
+		return nil, err
+	}
+	return func(ctx context.Context) error {
+		defer release()
+		return s.execute(ctx, ruleID, deadline)
+	}, nil
+}
+
+// execute runs a rule the caller has claimed with acquireRun and records its
+// history.
+func (s *ReplicationService) execute(ctx context.Context, ruleID string, deadline time.Time) error {
+	// Root span: every caller (the manual-trigger handler, the tasks endpoint
+	// and cron) runs this as a background job. It is also what makes
+	// cross-process propagation work at all — with no span in context,
+	// injecting traceparent into the outgoing requests is silently a no-op
+	// (#302).
 	ctx, span := tracing.StartRoot(ctx, "replication.run_rule",
 		attribute.String("replication.rule_id", ruleID))
 	defer span.End()
-	if _, busy := s.running.LoadOrStore(ruleID, struct{}{}); busy {
-		return fmt.Errorf("replication rule %s is already running", ruleID)
-	}
-	defer s.running.Delete(ruleID)
-
-	// A zero deadline means no lock and nothing to outlive (single node).
-	var deadline time.Time
-	if s.locker != nil {
-		lock, err := s.locker.Acquire(ctx, replicationRuleLockPrefix+ruleID, replicationLockTTL)
-		if errors.Is(err, distlock.ErrLockHeld) {
-			return fmt.Errorf("replication rule %s is already running on another node: %w", ruleID, err)
-		}
-		if err != nil {
-			// Without the lock there is no exclusion: stop rather than push
-			// alongside another node.
-			return fmt.Errorf("replication: acquire lock for rule %s: %w", ruleID, err)
-		}
-		defer func() { _ = lock.Release(context.WithoutCancel(ctx)) }()
-		deadline = time.Now().Add(replicationLockTTL)
-	}
 
 	rule, err := s.repo.GetRule(ctx, ruleID)
 	if err != nil {

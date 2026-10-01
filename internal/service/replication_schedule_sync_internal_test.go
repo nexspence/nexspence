@@ -272,13 +272,19 @@ func TestReplicationRunRule_LockHeldByAnotherNode_DoesNotRun(t *testing.T) {
 
 	err = s.RunRule(context.Background(), id)
 	require.ErrorIs(t, err, distlock.ErrLockHeld)
+	require.ErrorIs(t, err, ErrReplicationRuleRunning, "callers answer 409 on this")
 	assert.Equal(t, 0, historyCount(t, rules, id), "no history row for a run that never happened")
+
+	run, err := s.StartRule(context.Background(), id)
+	require.ErrorIs(t, err, ErrReplicationRuleRunning, "a manual run is refused up front, not after a 202")
+	assert.Nil(t, run)
+	assert.False(t, s.Running(id), "a refused start leaves no in-process guard behind")
 
 	// The cron path reports it at info level, not as a cron error.
 	s.runScheduled(context.Background(), id, "* * * * *")
 	assert.Equal(t, 0, historyCount(t, rules, id))
 	assert.Zero(t, logs.FilterLevelExact(zapcore.ErrorLevel).Len())
-	assert.Equal(t, 1, logs.FilterMessageSnippet("another node").Len())
+	assert.Equal(t, 1, logs.FilterMessageSnippet("already running").Len())
 
 	require.NoError(t, other.Release(context.Background()))
 	// Once the other node is done, this one runs it (the run itself fails
@@ -352,4 +358,104 @@ func TestReplicationRunRule_StopsPushingAtLockDeadline(t *testing.T) {
 	hist = &domain.ReplicationHistory{}
 	require.NoError(t, s.runRule(ctx, rule, hist, time.Time{}))
 	assert.Equal(t, int32(2), puts.Load(), "no deadline (no locker) pushes everything")
+}
+
+// The lock only covers a run in progress: a node whose tick fires after the
+// other node already finished the slot's run must not run it again (the
+// issue's "two history rows per slot").
+func TestReplicationScheduledRun_SkipsSlotAlreadyRunOnAnotherNode(t *testing.T) {
+	rules := testutil.NewReplicationRepo()
+	id := createRule(t, rules, domain.ReplicationRule{
+		Name: "r", SourceRepo: "src", TargetURL: "http://127.0.0.1:1", TargetRepo: "dst",
+		CronExpr: "* * * * *", Enabled: true,
+	})
+	locker := newSharedLocker()
+	node1 := newSyncTestReplicationService(rules).WithLocker(locker)
+	node2 := newSyncTestReplicationService(rules).WithLocker(locker)
+
+	node1.runScheduled(context.Background(), id, "* * * * *")
+	require.Equal(t, 1, historyCount(t, rules, id))
+	node2.runScheduled(context.Background(), id, "* * * * *")
+
+	assert.Equal(t, 1, historyCount(t, rules, id), "one run per slot across nodes")
+}
+
+func TestReplicationScheduledRun_RunsWhenLastRunWasAnEarlierSlot(t *testing.T) {
+	rules := testutil.NewReplicationRepo()
+	id := createRule(t, rules, domain.ReplicationRule{
+		Name: "r", SourceRepo: "src", TargetURL: "http://127.0.0.1:1", TargetRepo: "dst",
+		CronExpr: "* * * * *", Enabled: true,
+	})
+	require.NoError(t, rules.AddHistory(context.Background(), &domain.ReplicationHistory{
+		RuleID: id, StartedAt: time.Now().Add(-2 * time.Minute),
+	}))
+	s := newSyncTestReplicationService(rules).WithLocker(newSharedLocker())
+
+	s.runScheduled(context.Background(), id, "* * * * *")
+
+	assert.Equal(t, 2, historyCount(t, rules, id))
+}
+
+// The slot guard is for the scheduler only: an admin's manual run goes ahead
+// whatever ran a moment ago.
+func TestReplicationRunRule_ManualRunIgnoresSlot(t *testing.T) {
+	rules := testutil.NewReplicationRepo()
+	id := createRule(t, rules, domain.ReplicationRule{
+		Name: "r", SourceRepo: "src", TargetURL: "http://127.0.0.1:1", TargetRepo: "dst",
+		CronExpr: "* * * * *", Enabled: true,
+	})
+	require.NoError(t, rules.AddHistory(context.Background(), &domain.ReplicationHistory{RuleID: id, StartedAt: time.Now()}))
+	s := newSyncTestReplicationService(rules).WithLocker(newSharedLocker())
+
+	_ = s.RunRule(context.Background(), id)
+
+	assert.Equal(t, 2, historyCount(t, rules, id))
+}
+
+func TestReplicationSlotStart(t *testing.T) {
+	now := time.Date(2026, 9, 30, 11, 14, 30, 0, time.UTC)
+	// Standard specs fire on whole minutes; the slot reaches back by the
+	// allowed clock skew for a node whose clock runs ahead.
+	assert.Equal(t, time.Date(2026, 9, 30, 11, 13, 50, 0, time.UTC), replicationSlotStart("* * * * *", now))
+	assert.Equal(t, time.Date(2026, 9, 30, 11, 13, 50, 0, time.UTC), replicationSlotStart("0 2 * * *", now))
+	// @every intervals are not aligned across nodes (each counts from its
+	// own registration) and may be under a minute: half an interval back.
+	assert.Equal(t, now.Add(-15*time.Second), replicationSlotStart("@every 30s", now))
+	assert.Equal(t, now.Add(-time.Hour), replicationSlotStart("@every 2h", now))
+}
+
+// A rule without a schedule is manual-only: no cron entry and nothing to warn
+// about on every sync.
+func TestReplicationSync_ManualOnlyRuleIsNotScheduled(t *testing.T) {
+	rules := testutil.NewReplicationRepo()
+	createRule(t, rules, domain.ReplicationRule{Name: "manual", Enabled: true})
+	core, logs := observer.New(zapcore.WarnLevel)
+	s := newSyncTestReplicationService(rules)
+	s.log = zap.New(core).Sugar()
+
+	s.syncRules(context.Background())
+	s.syncRules(context.Background())
+
+	assert.Empty(t, s.cronScheduler.Entries())
+	assert.Zero(t, logs.Len())
+}
+
+func TestReplicationStartRule_RefusesOverlappingRunInProcess(t *testing.T) {
+	rules := testutil.NewReplicationRepo()
+	id := createRule(t, rules, domain.ReplicationRule{Name: "r", SourceRepo: "src", TargetURL: "http://127.0.0.1:1", TargetRepo: "dst"})
+	locker := newSharedLocker()
+	s := newSyncTestReplicationService(rules).WithLocker(locker)
+
+	run, err := s.StartRule(context.Background(), id)
+	require.NoError(t, err)
+	assert.True(t, s.Running(id))
+	assert.True(t, locker.isHeld(replicationRuleLockPrefix+id), "the lock is taken before the caller answers")
+
+	_, err = s.StartRule(context.Background(), id)
+	require.ErrorIs(t, err, ErrReplicationRuleRunning)
+
+	_ = run(context.Background())
+	assert.False(t, s.Running(id))
+	assert.False(t, locker.isHeld(replicationRuleLockPrefix+id))
+	assert.Equal(t, 1, historyCount(t, rules, id))
 }

@@ -152,18 +152,24 @@ func (h *ReplicationHandler) ManualRun(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	// One run per rule: RunRule refuses an overlapping run, and that refusal
-	// is invisible from inside the goroutine below — answering 202 for a run
-	// that never starts is worse than saying so.
-	if h.svc.Running(id) {
-		c.JSON(http.StatusConflict, gin.H{"error": "replication rule is already running"})
+	// One run per rule, here or on another HA node: the rule is claimed
+	// before answering, since a refusal inside the goroutine below would be
+	// invisible — answering 202 for a run that never starts is worse than
+	// saying so (#574).
+	run, err := h.svc.StartRule(c.Request.Context(), id)
+	if errors.Is(err, service.ErrReplicationRuleRunning) {
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	// Detached: a run outlives its 202 by design, and the request context is
 	// canceled the moment the handler returns — the run would abort almost
 	// immediately with no visible error (#254).
 	safego.Go(h.log, "replication-manual-run", func() {
-		_ = h.svc.RunRule(context.Background(), id)
+		_ = run(context.Background())
 	})
 	c.JSON(http.StatusAccepted, gin.H{"message": "replication started"})
 }

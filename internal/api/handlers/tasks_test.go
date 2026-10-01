@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"testing"
 	"time"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/nexspence-oss/nexspence/internal/api/handlers"
 	"github.com/nexspence-oss/nexspence/internal/domain"
+	"github.com/nexspence-oss/nexspence/internal/service"
 )
 
 // fakeTaskCleanup implements handlers.taskCleanup (via the exported NewTasksHandler signature).
@@ -219,6 +221,16 @@ func TestTasksHandler_Run_CleanupError_500(t *testing.T) {
 	r := mountTasks(t, cl, &fakeTaskReplication{})
 	rec := do(t, r, http.MethodPost, "/service/rest/v1/tasks/cleanup:id/run", nil)
 	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+}
+
+// A rule already running (here or on another HA node) is a conflict, not a
+// server error (#574).
+func TestTasksHandler_Run_ReplicationAlreadyRunning_409(t *testing.T) {
+	rp := &fakeTaskReplication{runErr: fmt.Errorf("%w on another node", service.ErrReplicationRuleRunning)}
+	r := mountTasks(t, &fakeTaskCleanup{}, rp)
+	rec := do(t, r, http.MethodPost, "/service/rest/v1/tasks/replication:id/run", nil)
+	assert.Equal(t, http.StatusConflict, rec.Code)
+	assert.Contains(t, rec.Body.String(), "another node")
 }
 
 func TestTasksHandler_Run_ReplicationError_500(t *testing.T) {

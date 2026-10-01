@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -9,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
+	"github.com/nexspence-oss/nexspence/internal/service"
 )
 
 // taskCleanup is the minimal interface TasksHandler needs to list and run cleanup policies.
@@ -118,6 +120,11 @@ func (h *TasksHandler) Run(c *gin.Context) {
 		err = h.repl.RunRule(ctx, uuid)
 	default:
 		c.JSON(http.StatusNotFound, gin.H{"error": "task not found"})
+		return
+	}
+	if errors.Is(err, service.ErrReplicationRuleRunning) {
+		// Running already, here or on another HA node (#574).
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 		return
 	}
 	if err != nil {

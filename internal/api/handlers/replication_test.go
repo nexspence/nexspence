@@ -349,9 +349,11 @@ func TestReplicationHandler_ManualRun_ConcurrentRunIs409(t *testing.T) {
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, path, nil))
 	require.Equal(t, http.StatusAccepted, w.Code)
 
-	// The detached run has to reach the guard before the second POST asks.
+	// The rule is claimed before the 202; wait for the detached run to park
+	// in its GetRule (call 2) so the second POST's existence check is call 3.
+	require.True(t, svc.Running(rule.ID))
 	deadline := time.Now().Add(2 * time.Second)
-	for !svc.Running(rule.ID) {
+	for repo.calls.Load() < 2 {
 		if time.Now().After(deadline) {
 			t.Fatal("the detached run never took the guard")
 		}
@@ -362,4 +364,27 @@ func TestReplicationHandler_ManualRun_ConcurrentRunIs409(t *testing.T) {
 	r.ServeHTTP(w2, httptest.NewRequest(http.MethodPost, path, nil))
 	assert.Equal(t, http.StatusConflict, w2.Code)
 	assert.Contains(t, w2.Body.String(), "already running")
+}
+
+// Another HA node holding the rule's lock is refused up front too: a 202 for
+// a run that then drops the lock error would tell the operator it started
+// (#574).
+func TestReplicationHandler_ManualRun_RunningOnAnotherNodeIs409(t *testing.T) {
+	repo := testutil.NewReplicationRepo()
+	svc := service.NewReplicationService(repo, testutil.NewAssetRepo(), testutil.NewBlobStore(), "test-secret", nil, cleanupNopLog()).
+		WithLocker(testutil.NewHeldLocker())
+	h := handlers.NewReplicationHandler(svc, nil)
+	r := gin.New()
+	r.POST("/api/v1/replication/rules/:id/run", h.ManualRun)
+
+	rule := &domain.ReplicationRule{Name: "elsewhere", SourceRepo: "src", TargetURL: "http://127.0.0.1:1/", TargetRepo: "dst"}
+	require.NoError(t, repo.CreateRule(context.Background(), rule))
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/api/v1/replication/rules/"+rule.ID+"/run", nil))
+	assert.Equal(t, http.StatusConflict, w.Code)
+	assert.Contains(t, w.Body.String(), "another node")
+	hist, err := repo.ListHistory(context.Background(), rule.ID, 10)
+	require.NoError(t, err)
+	assert.Empty(t, hist)
 }
