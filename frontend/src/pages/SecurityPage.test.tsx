@@ -233,10 +233,33 @@ describe('SecurityPage', () => {
     // pick content selector via portal Select
     await user.click(within(dialog).getByRole('button', { name: /select a content selector/ }))
     await user.click(await screen.findByText('all-maven'))
-    await user.click(within(dialog).getByRole('button', { name: /^Save$/ }))
+    // No action ticked yet: RBAC reads an empty list as "every action" (#565),
+    // so Save stays disabled until at least one action is chosen.
+    const saveBtn = within(dialog).getByRole('button', { name: /^Save$/ })
+    expect(saveBtn).toBeDisabled()
+    await user.click(within(dialog).getByRole('checkbox', { name: 'read' }))
+    expect(saveBtn).toBeEnabled()
+    await user.click(saveBtn)
     await waitFor(() => expect(posted).toBeTruthy())
     expect((posted! as { name: string }).name).toBe('my-priv')
     expect((posted! as { contentSelectorId: string }).contentSelectorId).toBe('cs-1')
+    expect((posted! as { attrs: { actions: string[] } }).attrs.actions).toEqual(['read'])
+  })
+
+  it('disables Save on an edited privilege once every action is cleared', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<SecurityPage />)
+    await screen.findByText('nx-admin')
+    await user.click(screen.getByRole('button', { name: 'Privileges' }))
+    await screen.findByText('read-all')
+    await user.click(screen.getAllByRole('button', { name: 'Edit' })[0])
+    const heading = await screen.findByRole('heading', { name: 'Edit Privilege' })
+    const dialog = heading.closest('.holo-modal') as HTMLElement
+    const saveBtn = within(dialog).getByRole('button', { name: /^Save$/ })
+    expect(saveBtn).toBeEnabled()
+    await user.click(within(dialog).getByRole('checkbox', { name: 'read' }))
+    await user.click(within(dialog).getByRole('checkbox', { name: 'browse' }))
+    expect(saveBtn).toBeDisabled()
   })
 
   it('filters privileges via search', async () => {
