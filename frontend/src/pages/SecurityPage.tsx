@@ -1426,7 +1426,9 @@ function ContentSelectorsTab({ admin }: { admin: boolean }) {
 
   const save = useMutation({
     mutationFn: async () => {
-      const expression = legacyExpr || buildExpression(form.repo, form.path)
+      // The picker wins once it has a value: the legacy textarea is hidden
+      // then, and the preview shows the picked expression.
+      const expression = (form.repo || form.path) ? buildExpression(form.repo, form.path) : legacyExpr
       if (!expression) throw new Error('Select a repository or path')
       const payload = { name: form.name, description: form.description, expression }
       if (editing) return nexusApi.updateContentSelector(editing.id, payload)

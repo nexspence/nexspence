@@ -310,6 +310,37 @@ describe('SecurityPage', () => {
     expect((posted! as { name: string }).name).toBe('my-cs')
   })
 
+  // #572: once the picker has a value the legacy textarea is hidden and the
+  // preview shows the picked expression — that is what must be saved, not
+  // the stale legacy text.
+  it('saves the picked repository when editing a legacy selector', async () => {
+    const user = userEvent.setup()
+    let putBody: { expression: string } | null = null
+    server.use(
+      http.get('/service/rest/v1/security/content-selectors', () => HttpResponse.json([
+        { id: 'cs-legacy', name: 'legacy-sel', description: '', expression: 'repository != "maven-hosted"' },
+      ])),
+      http.put('/service/rest/v1/security/content-selectors/:id', async ({ request }) => {
+        putBody = (await request.json()) as { expression: string }
+        return HttpResponse.json({ id: 'cs-legacy' })
+      }),
+    )
+    renderWithProviders(<SecurityPage />)
+    await screen.findByText('nx-admin')
+    await user.click(screen.getByRole('button', { name: 'Content Selectors' }))
+    await screen.findByText('legacy-sel')
+    await user.click(screen.getByRole('button', { name: 'Edit' }))
+    const dialog = (await screen.findByText('Edit Content Selector')).closest('.holo-modal') as HTMLElement
+    expect(within(dialog).getByText(/CEL Expression \(legacy/)).toBeInTheDocument()
+
+    await user.click(within(dialog).getByPlaceholderText('Search repositories…'))
+    await user.click(await within(dialog).findByText('maven-hosted'))
+    expect(await within(dialog).findByText('repository == "maven-hosted"')).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('button', { name: /^Save$/ }))
+    await waitFor(() => expect(putBody).toBeTruthy())
+    expect(putBody!.expression).toBe('repository == "maven-hosted"')
+  })
+
   it('deletes a content selector after confirm', async () => {
     const user = userEvent.setup()
     let deleted = false
