@@ -76,7 +76,17 @@ func (h *RoleHandler) Update(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	if err := h.roles.SetPrivileges(c.Request.Context(), ro.ID, ro.Privileges); err != nil {
+	// No "privileges" key means "unchanged": a client that edits only the
+	// name and description must not empty the role. An explicit list, empty
+	// included, replaces it.
+	if ro.Privileges == nil {
+		ids, err := h.roles.ListPrivilegeIDsByRole(c.Request.Context(), ro.ID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		ro.Privileges = ids
+	} else if err := h.roles.SetPrivileges(c.Request.Context(), ro.ID, ro.Privileges); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

@@ -76,6 +76,29 @@ func TestRoleHandler_Update(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rec.Code)
 }
 
+// A body without "privileges" (a rename from a client that edits only name
+// and description) must leave the role's privileges alone instead of
+// emptying them; an explicit list, empty included, still replaces them.
+func TestRoleHandler_Update_WithoutPrivileges_KeepsThem(t *testing.T) {
+	r, roles, _ := mountRoles(t)
+	ro := &domain.Role{Name: "ops"}
+	require.NoError(t, roles.Create(testContext(), ro))
+	require.NoError(t, roles.SetPrivileges(testContext(), ro.ID, []string{"p1", "p2"}))
+
+	rec := do(t, r, http.MethodPut, "/service/rest/v1/security/roles/"+ro.ID,
+		map[string]any{"name": "ops2", "description": "renamed"})
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.ElementsMatch(t, []string{"p1", "p2"}, roles.PrivilegesOf(ro.ID))
+	var got domain.Role
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	assert.ElementsMatch(t, []string{"p1", "p2"}, got.Privileges)
+
+	rec = do(t, r, http.MethodPut, "/service/rest/v1/security/roles/"+ro.ID,
+		map[string]any{"name": "ops2", "privileges": []string{}})
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Empty(t, roles.PrivilegesOf(ro.ID))
+}
+
 func TestRoleHandler_Delete(t *testing.T) {
 	r, roles, _ := mountRoles(t)
 	ro := &domain.Role{Name: "temp"}
@@ -151,7 +174,7 @@ func TestRoleHandler_Update_SetPrivileges_RepoError_500(t *testing.T) {
 	r, roles, _ := mountRoles(t)
 	roles.SetPrivilegesErr = errors.New("privilege store down")
 	rec := do(t, r, http.MethodPut, "/service/rest/v1/security/roles/any-id",
-		map[string]any{"name": "ops2"})
+		map[string]any{"name": "ops2", "privileges": []string{"p1"}})
 	assert.Equal(t, http.StatusInternalServerError, rec.Code)
 }
 
