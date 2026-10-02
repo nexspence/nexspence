@@ -19,6 +19,7 @@ import (
 	"context"
 	"encoding/json"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -33,6 +34,7 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/formats"
 	"github.com/nexspence-oss/nexspence/internal/formats/base"
 	"github.com/nexspence-oss/nexspence/internal/formats/repoproxy"
+	"github.com/nexspence-oss/nexspence/internal/repository"
 )
 
 // Handler serves the NuGet v2/v3 repository protocol.
@@ -116,24 +118,49 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 	case c.Request.Method == http.MethodPut && p == "/v2/package":
 		h.handlePush(c, repoName)
 
-	// v2 delete: DELETE /v2/packages/:id/:ver
-	case c.Request.Method == http.MethodDelete && strings.HasPrefix(p, "/v2/packages/"):
-		rest := strings.TrimPrefix(p, "/v2/packages/")
-		parts := strings.SplitN(rest, "/", 2)
-		if len(parts) != 2 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "expected /v2/packages/:id/:version"})
-			return
-		}
-		filePath := "/" + parts[0] + "/" + parts[1] + "/" + parts[0] + "." + parts[1] + ".nupkg"
-		if err := base.DeleteArtifact(c.Request.Context(), h.deps, repoName, filePath); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-		c.Status(http.StatusNoContent)
+	// v2 delete: DELETE {PackagePublish}/:id/:ver. The service index
+	// advertises PackagePublish as /v2/package, so that is what
+	// `dotnet nuget delete` sends; /v2/packages/ stays for existing callers.
+	case c.Request.Method == http.MethodDelete &&
+		(strings.HasPrefix(p, "/v2/package/") || strings.HasPrefix(p, "/v2/packages/")):
+		h.handleDelete(c, repoName, p)
 
 	default:
 		c.Status(http.StatusMethodNotAllowed)
 	}
+}
+
+// handleDelete removes one package version (#589). The id is lowercased as
+// push stores it; the client sends it as the user typed it. The version lists
+// are built from components, so the component goes too — a listed version
+// whose package is gone makes restore report the whole feed as invalid.
+func (h *Handler) handleDelete(c *gin.Context, repoName, p string) {
+	rest := strings.TrimPrefix(strings.TrimPrefix(p, "/v2/packages/"), "/v2/package/")
+	parts := strings.SplitN(rest, "/", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "expected /v2/package/:id/:version"})
+		return
+	}
+	ctx := c.Request.Context()
+	id, version := strings.ToLower(parts[0]), parts[1]
+	filePath := "/" + id + "/" + version + "/" + id + "." + version + ".nupkg"
+	if _, err := h.deps.Assets.GetByPath(ctx, repoName, filePath); err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "package not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := base.DeleteArtifact(ctx, h.deps, repoName, filePath); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := h.deps.Components.DeleteOrphans(ctx, repoName); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.Status(http.StatusNoContent)
 }
 
 func (h *Handler) serveIndex(c *gin.Context, repoName string) {
