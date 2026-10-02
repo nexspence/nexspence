@@ -4,7 +4,9 @@ package domain
 
 import (
 	"regexp"
+	"strings"
 	"time"
+	"unicode"
 )
 
 // ── Repository ───────────────────────────────────────────────
@@ -67,6 +69,42 @@ var AllFormats = []RepoFormat{
 	FormatCRAN,
 	FormatAlpine,
 	FormatHuggingFace,
+}
+
+// Valid reports whether the server serves format f.
+func (f RepoFormat) Valid() bool {
+	for _, known := range AllFormats {
+		if f == known {
+			return true
+		}
+	}
+	return false
+}
+
+// Valid reports whether t is a repository type: hosted, proxy or group.
+func (t RepoType) Valid() bool {
+	switch t {
+	case TypeHosted, TypeProxy, TypeGroup:
+		return true
+	}
+	return false
+}
+
+// IsAddressableName reports whether a repository name survives being spliced
+// into a URL as one path segment. A slash splits it, "?" and "#" end the path,
+// "%" is decoded, whitespace and control characters are dropped or refused by
+// clients, and "." or ".." are resolved away — each makes a request land on
+// another repository or nowhere (#592).
+func IsAddressableName(name string) bool {
+	if name == "." || name == ".." {
+		return false
+	}
+	for _, r := range name {
+		if unicode.IsSpace(r) || unicode.IsControl(r) || strings.ContainsRune(`/\?#%`, r) {
+			return false
+		}
+	}
+	return true
 }
 
 // IsOCIRegistry reports whether a repository of this format speaks the OCI

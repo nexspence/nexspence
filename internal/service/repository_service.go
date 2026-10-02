@@ -91,6 +91,14 @@ func (s *RepositoryService) Create(ctx context.Context, r *domain.Repository) er
 	if r.Type == "" {
 		return fmt.Errorf("%w: type is required", ErrInvalidInput)
 	}
+	// Unknown values would otherwise first be refused by the table's CHECK
+	// constraints, as a 500 carrying the raw driver error (#593).
+	if !r.Format.Valid() {
+		return fmt.Errorf("%w: unknown format %q", ErrInvalidInput, r.Format)
+	}
+	if !r.Type.Valid() {
+		return fmt.Errorf("%w: unknown type %q — use hosted, proxy or group", ErrInvalidInput, r.Type)
+	}
 	if err := validateNameForFormat(r.Name, r.Format); err != nil {
 		return err
 	}
@@ -356,6 +364,12 @@ var reservedV2Names = map[string]bool{
 // this runs on create, where the trap is sprung.
 func validateNameForFormat(name string, format domain.RepoFormat) error {
 	if !format.IsOCIRegistry() {
+		if !domain.IsAddressableName(name) {
+			return fmt.Errorf(
+				"%w: %q cannot be used in a URL — a repository name must not be \".\" or \"..\" "+
+					"or contain a space, a control character or one of / \\ ? # %%",
+				ErrInvalidInput, name)
+		}
 		return nil
 	}
 	if !domain.IsDockerPathComponent(name) {
