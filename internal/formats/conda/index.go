@@ -16,7 +16,7 @@ type pkgEntry struct {
 	Name        string   `json:"name"`
 	Version     string   `json:"version"`
 	Build       string   `json:"build,omitempty"`
-	BuildNumber int      `json:"build_number,omitempty"`
+	BuildNumber int      `json:"build_number"` // required by conda and libmamba, 0 included (#591)
 	Depends     []string `json:"depends,omitempty"`
 	MD5         string   `json:"md5,omitempty"`
 	SHA256      string   `json:"sha256,omitempty"`

@@ -652,3 +652,40 @@ func TestConda_ProxyRepodata_UpstreamConnError(t *testing.T) {
 	r.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusBadGateway, w.Code)
 }
+
+// #591: build number 0 is the first build of any package. conda refuses a
+// record without build_number and micromamba skips it, so 0 is served too.
+func TestConda_Repodata_KeepsBuildNumberZero(t *testing.T) {
+	d := formats.Deps{
+		Repos:      testutil.NewRepoRepo(hostedRepo("conda-bn0")),
+		Blobs:      testutil.NewBlobStoreRepo(),
+		Components: testutil.NewComponentRepo(),
+		Assets:     testutil.NewAssetRepo(),
+		BlobStore:  testutil.NewBlobStore(),
+		BaseURL:    "http://localhost:8080",
+	}
+	h := conda.New(d)
+	r := gin.New()
+	r.Any("/repository/:repoName/*path", func(c *gin.Context) { h.ServeHTTP(c) })
+
+	body := mustDecodeHex(realTarBz2Hex) // info/index.json says build_number 0
+	req := httptest.NewRequest(http.MethodPut,
+		"/repository/conda-bn0/linux-64/numpy-1.24.0-py311_0.tar.bz2", bytes.NewReader(body))
+	req.ContentLength = int64(len(body))
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusCreated, w.Code)
+
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/repository/conda-bn0/linux-64/repodata.json", nil))
+	require.Equal(t, http.StatusOK, w.Code)
+	var doc struct {
+		Packages map[string]map[string]any `json:"packages"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &doc))
+	rec, ok := doc.Packages["numpy-1.24.0-py311_0.tar.bz2"]
+	require.True(t, ok, "package listed: %s", w.Body.String())
+	bn, present := rec["build_number"]
+	require.True(t, present, "build_number must be present: %v", rec)
+	assert.Equal(t, float64(0), bn)
+}
