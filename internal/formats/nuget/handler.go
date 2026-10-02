@@ -130,8 +130,8 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 	}
 }
 
-// handleDelete removes one package version (#589). The id is lowercased as
-// push stores it; the client sends it as the user typed it. The version lists
+// handleDelete removes one package version (#589). The id and version are
+// matched the way NuGet compares them, not as the user typed them. The version lists
 // are built from components, so the component goes too — a listed version
 // whose package is gone makes restore report the whole feed as invalid.
 func (h *Handler) handleDelete(c *gin.Context, repoName, p string) {
@@ -142,19 +142,21 @@ func (h *Handler) handleDelete(c *gin.Context, repoName, p string) {
 		return
 	}
 	ctx := c.Request.Context()
-	id, version := strings.ToLower(parts[0]), parts[1]
-	filePath := "/" + id + "/" + version + "/" + id + "." + version + ".nupkg"
-	if _, err := h.deps.Assets.GetByPath(ctx, repoName, filePath); err != nil {
-		if errors.Is(err, repository.ErrNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "package not found"})
-			return
-		}
+	// Every stored casing of the version: they are one NuGet version (#590).
+	paths, err := h.storedNupkgPaths(ctx, repoName, parts[0], parts[1], false)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	if err := base.DeleteArtifact(ctx, h.deps, repoName, filePath); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if len(paths) == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "package not found"})
 		return
+	}
+	for _, filePath := range paths {
+		if err := base.DeleteArtifact(ctx, h.deps, repoName, filePath); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
 	}
 	if err := h.deps.Components.DeleteOrphans(ctx, repoName); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -191,11 +193,68 @@ func (h *Handler) serveVersionList(c *gin.Context, repoName, pkgID string) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	// The flat container lists lowercased normalized versions, each once.
+	comps = distinctVersions(comps)
 	versions := make([]string, 0, len(comps))
 	for _, comp := range comps {
-		versions = append(versions, comp.Version)
+		versions = append(versions, versionKey(comp.Version))
 	}
 	c.JSON(http.StatusOK, gin.H{"versions": versions})
+}
+
+// distinctVersions keeps the first component of each NuGet version. A
+// version pushed before #590 is stored as written, so 1.0.0-Beta and
+// 1.0.0-BETA may both exist; they are one version.
+func distinctVersions(comps []domain.Component) []domain.Component {
+	seen := make(map[string]bool, len(comps))
+	out := comps[:0:0]
+	for _, comp := range comps {
+		k := versionKey(comp.Version)
+		if seen[k] {
+			continue
+		}
+		seen[k] = true
+		out = append(out, comp)
+	}
+	return out
+}
+
+// storedNupkgPaths returns where the packages of one NuGet version are stored:
+// the normalized path every push uses since #590, and the paths of packages
+// pushed before it, stored under the version as written in their nuspec.
+// With firstOnly, a package at the normalized path ends the search.
+func (h *Handler) storedNupkgPaths(ctx context.Context, repoName, id, version string, firstOnly bool) ([]string, error) {
+	var out []string
+	normalized := nupkgPath(id, version)
+	switch _, err := h.deps.Assets.GetByPath(ctx, repoName, normalized); {
+	case err == nil:
+		out = append(out, normalized)
+		if firstOnly {
+			return out, nil
+		}
+	case !errors.Is(err, repository.ErrNotFound):
+		return nil, err
+	}
+	comps, err := h.packageVersions(ctx, repoName, id)
+	if err != nil {
+		return nil, err
+	}
+	key := versionKey(version)
+	for _, comp := range comps {
+		if versionKey(comp.Version) != key {
+			continue
+		}
+		assets, err := h.deps.Assets.ListByComponentID(ctx, comp.ID)
+		if err != nil {
+			return nil, err
+		}
+		for _, a := range assets {
+			if strings.HasSuffix(a.Path, ".nupkg") && a.Path != normalized {
+				out = append(out, a.Path)
+			}
+		}
+	}
+	return out, nil
 }
 
 // proxyCoords derives component coordinates for a proxied path. A cached
@@ -240,10 +299,17 @@ func (h *Handler) serveFlatContainerDownload(c *gin.Context, repoName, p string)
 		c.JSON(http.StatusNotFound, gin.H{"error": "invalid nupkg path"})
 		return
 	}
-	pkgID, version := parts[0], parts[1]
-	filePath := "/" + pkgID + "/" + version + "/" + pkgID + "." + version + ".nupkg"
+	paths, err := h.storedNupkgPaths(c.Request.Context(), repoName, parts[0], parts[1], true)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if len(paths) == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "package not found"})
+		return
+	}
 
-	rc, asset, err := base.FetchArtifact(c.Request.Context(), h.deps, repoName, filePath)
+	rc, asset, err := base.FetchArtifact(c.Request.Context(), h.deps, repoName, paths[0])
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
@@ -269,15 +335,17 @@ func (h *Handler) serveRegistration(c *gin.Context, repoName, p string) {
 	}
 
 	base2 := h.deps.BaseURL + "/repository/" + repoName
+	comps = distinctVersions(comps)
 	items := make([]gin.H, 0, len(comps))
 	for _, comp := range comps {
-		entryURL := base2 + "/v3/registration/" + pkgID + "/" + comp.Version + ".json"
+		version := versionKey(comp.Version)
+		entryURL := base2 + "/v3/registration/" + pkgID + "/" + version + ".json"
 		items = append(items, gin.H{
 			"@id":            entryURL,
-			"packageContent": base2 + "/v3/flatcontainer/" + pkgID + "/" + comp.Version + "/" + pkgID + "." + comp.Version + ".nupkg",
+			"packageContent": base2 + "/v3/flatcontainer" + nupkgPath(pkgID, version),
 			"catalogEntry": gin.H{
 				"id":        comp.Name,
-				"version":   comp.Version,
+				"version":   version,
 				"listed":    true,
 				"published": comp.CreatedAt.UTC().Format(time.RFC3339),
 			},
@@ -290,8 +358,8 @@ func (h *Handler) serveRegistration(c *gin.Context, repoName, p string) {
 		"items": []gin.H{{
 			"count": len(items),
 			"items": items,
-			"lower": comps[0].Version,
-			"upper": comps[len(comps)-1].Version,
+			"lower": versionKey(comps[0].Version),
+			"upper": versionKey(comps[len(comps)-1].Version),
 		}},
 	})
 }
@@ -321,13 +389,14 @@ func (h *Handler) serveFindPackages(c *gin.Context, repoName, pkgID string) {
 	}
 	base2 := h.deps.BaseURL + "/repository/" + repoName
 	f := feed{XMLNS: "http://www.w3.org/2005/Atom"}
-	for _, comp := range comps {
+	for _, comp := range distinctVersions(comps) {
+		version := versionKey(comp.Version)
 		f.Entries = append(f.Entries, entry{
-			Title: comp.Name + " " + comp.Version,
-			ID:    base2 + "/v2/Packages(Id='" + comp.Name + "',Version='" + comp.Version + "')",
+			Title: comp.Name + " " + version,
+			ID:    base2 + "/v2/Packages(Id='" + comp.Name + "',Version='" + version + "')",
 			Content: content{
 				Type: "application/zip",
-				Src:  base2 + "/v3/flatcontainer/" + strings.ToLower(comp.Name) + "/" + comp.Version + "/" + strings.ToLower(comp.Name) + "." + comp.Version + ".nupkg",
+				Src:  base2 + "/v3/flatcontainer" + nupkgPath(comp.Name, version),
 			},
 		})
 	}
@@ -352,7 +421,10 @@ func (h *Handler) handlePush(c *gin.Context, repoName string) {
 	defer func() { _ = f.Close() }()
 
 	pkgID, version := nupkgCoords(f, fh.Size, fh.Filename)
-	filePath := "/" + pkgID + "/" + version + "/" + pkgID + "." + version + ".nupkg"
+	// Stored under the spec's flat-container path: one NuGet version is one
+	// package, however its nuspec spells it (#590).
+	version = versionKey(version)
+	filePath := nupkgPath(pkgID, version)
 
 	coords := base.Coords{Name: pkgID, Version: version}
 	if _, err := base.StoreArtifact(c.Request.Context(), h.deps,

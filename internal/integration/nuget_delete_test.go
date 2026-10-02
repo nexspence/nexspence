@@ -43,3 +43,28 @@ func TestNuGetHosted_DeleteRemovesTheVersion_RealShape(t *testing.T) {
 	require.Equal(t, http.StatusOK, code)
 	assert.JSONEq(t, `{"versions":[]}`, body)
 }
+
+// #590: one NuGet version is one package, stored and listed as the flat
+// container spec has it — normalized and lowercased.
+func TestNuGetHosted_VersionsAreNormalized_RealShape(t *testing.T) {
+	createHostedRepo(t, "nuget", "nuget-norm", `{}`)
+	token := login(t, "admin", "admin123")
+	for _, f := range []string{"Foo.1.0.0-Beta.nupkg", "Foo.1.0.0-BETA.nupkg", "Foo.1.0.nupkg"} {
+		body, ct := multipartBody(t, nil, "package", f, []byte(f))
+		sendRaw(t, token, http.MethodPut, "/repository/nuget-norm/v2/package", ct, body)
+	}
+
+	code, body := getBody(t, token, "/repository/nuget-norm/v3/flatcontainer/foo/index.json")
+	require.Equal(t, http.StatusOK, code)
+	assert.JSONEq(t, `{"versions":["1.0.0","1.0.0-beta"]}`, body)
+
+	for _, p := range []string{"foo/1.0.0-beta/foo.1.0.0-beta.nupkg", "Foo/1.0.0-Beta/Foo.1.0.0-Beta.nupkg", "foo/1.0/foo.1.0.nupkg"} {
+		code, _ = getBody(t, token, "/repository/nuget-norm/v3/flatcontainer/"+p)
+		assert.Equal(t, http.StatusOK, code, p)
+	}
+
+	require.Equal(t, http.StatusNoContent, deleteStatus(t, token, "/repository/nuget-norm/v2/package/Foo/1.0.0-BETA"))
+	code, body = getBody(t, token, "/repository/nuget-norm/v3/flatcontainer/foo/index.json")
+	require.Equal(t, http.StatusOK, code)
+	assert.JSONEq(t, `{"versions":["1.0.0"]}`, body)
+}

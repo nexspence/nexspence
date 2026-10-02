@@ -130,7 +130,7 @@ func TestNuGetHosted_VersionListsAreExact_RealShape(t *testing.T) {
 
 	code, body := getBody(t, token, "/repository/exact-nuget/v3/flatcontainer/foo/index.json")
 	require.Equal(t, http.StatusOK, code)
-	assert.JSONEq(t, `{"versions":["1.0.0-Beta"]}`, body)
+	assert.JSONEq(t, `{"versions":["1.0.0-beta"]}`, body)
 
 	code, body = getBody(t, token, "/repository/exact-nuget/v3/registration/foo/index.json")
 	require.Equal(t, http.StatusOK, code)
