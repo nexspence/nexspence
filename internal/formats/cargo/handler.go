@@ -198,6 +198,24 @@ func (h *Handler) serveIndexEntry(c *gin.Context, repoName, p string) {
 			"features": map[string]any{},
 			"yanked":   false,
 		}
+		// Crates published before #587 carry no stored metadata and keep the
+		// empty deps and features until they are published again.
+		if deps, ok := comp.Extra[extraDeps]; ok && deps != nil {
+			rec["deps"] = deps
+		}
+		if feats, ok := comp.Extra[extraFeatures]; ok && feats != nil {
+			rec["features"] = feats
+		}
+		if feats2, ok := comp.Extra[extraFeatures2]; ok && feats2 != nil {
+			rec["features2"] = feats2
+			rec["v"] = 2
+		}
+		if links, ok := comp.Extra[extraLinks].(string); ok && links != "" {
+			rec["links"] = links
+		}
+		if rv, ok := comp.Extra[extraRustVersion].(string); ok && rv != "" {
+			rec["rust_version"] = rv
+		}
 		b, _ := json.Marshal(rec)
 		sb.Write(b)
 		sb.WriteByte('\n')
@@ -245,10 +263,7 @@ func (h *Handler) handlePublish(c *gin.Context, repoName string) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "cannot read metadata"})
 		return
 	}
-	var meta struct {
-		Name    string `json:"name"`
-		Version string `json:"vers"`
-	}
+	var meta publishMeta
 	if err := json.Unmarshal(metaBytes, &meta); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid metadata JSON"})
 		return
@@ -266,12 +281,21 @@ func (h *Handler) handlePublish(c *gin.Context, repoName string) {
 	filePath := "/api/v1/crates/" + name + "/" + version + "/" + filename
 
 	coords := base.Coords{Name: name, Version: version}
-	if _, err := base.StoreArtifact(c.Request.Context(), h.deps,
+	res, err := base.StoreArtifact(c.Request.Context(), h.deps,
 		repoName, filePath, "application/x-tar", coords,
-		io.LimitReader(c.Request.Body, int64(crateLen)), int64(crateLen)); err != nil {
+		io.LimitReader(c.Request.Body, int64(crateLen)), int64(crateLen))
+	if err != nil {
 		// crateLen comes from the request body itself, so a body that does not
 		// deliver it is the publisher's error, not ours — see base.ErrSizeMismatch.
 		c.JSON(base.HTTPStatusForError(err), gin.H{"error": err.Error()})
+		return
+	}
+	// The sparse index is built from these: without them a crate is served as
+	// having no dependencies and no features (#587). A publish that cannot
+	// record them fails, so the client retries instead of leaving a crate
+	// nobody can build against.
+	if err := h.deps.Components.UpdateExtra(c.Request.Context(), res.Asset.ComponentID, meta.indexExtra()); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "store crate metadata: " + err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"warnings": gin.H{"invalid_categories": []string{}, "invalid_badges": []string{}, "other": []string{}}})
