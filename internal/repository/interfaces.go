@@ -61,6 +61,7 @@ type AssetRepo interface {
 	//   pathPrefix filters assets whose path starts with that prefix (empty = no filter).
 	//   nameGlob is a glob pattern matched against the full asset path (* = any chars, ? = one char).
 	// retainNVersions — when > 0, the N newest versions of each (group_id, name) are excluded from results.
+	// Hosted docker/oci blobs and digest aliases are never returned: only tag manifests are releases.
 	ListStale(ctx context.Context, format string, repoNames []string, lastDownloadedDays, artifactAgeDays int, pathPrefix, nameGlob string, retainNVersions int, limit int) ([]domain.Asset, error)
 	Create(ctx context.Context, a *domain.Asset) error
 	Delete(ctx context.Context, id string) error

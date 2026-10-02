@@ -1304,7 +1304,7 @@ curl -u admin:nxs_abc123... \
     <tbody>
       <tr><td data-i18n="cl.age.label">Published before</td><td data-i18n="cl.age.desc">Remove artifacts published more than N days ago.</td></tr>
       <tr><td data-i18n="cl.last.label">Last downloaded before</td><td data-i18n="cl.last.desc">Remove artifacts not downloaded in the last N days.</td></tr>
-      <tr><td data-i18n="cl.retain.label">Retain N versions</td><td data-i18n="cl.retain.desc">Keep only the N newest versions of each component. All older versions are eligible for removal.</td></tr>
+      <tr><td data-i18n="cl.retain.label">Retain N versions</td><td data-i18n="cl.retain.desc">Keep only the N newest versions of each component. All older versions are eligible for removal. On hosted docker/oci repositories a version is a tag; layers and digest aliases are never cleanup candidates.</td></tr>
     </tbody>
   </table>
   <div class="step-list">
@@ -1915,7 +1915,7 @@ const TRANSLATIONS={
     'cl.criteria.sep':'Cleanup Criteria','cl.th.criterion':'Criterion','cl.th.desc':'Description',
     'cl.age.label':'Published before','cl.age.desc':'Remove artifacts published more than N days ago.',
     'cl.last.label':'Last downloaded before','cl.last.desc':'Remove artifacts not downloaded in the last N days.',
-    'cl.retain.label':'Retain N versions','cl.retain.desc':'Keep only the N newest versions of each component.',
+    'cl.retain.label':'Retain N versions','cl.retain.desc':'Keep only the N newest versions of each component. On hosted docker/oci repositories a version is a tag; layers and digest aliases are never cleanup candidates.',
     'cl.s1.title':'Create a policy','cl.s1.desc':'Go to <strong>Admin → Cleanup Policies → + Create</strong>. Choose format scope, set criteria, and optionally set a cron schedule.',
     'cl.s2.title':'Attach to repositories','cl.s2.desc':'Open a repository settings (gear icon) and select cleanup policies. Only attached repositories are affected.',
     'cl.s3.title':'Run now or wait for schedule','cl.s3.desc':'Click <strong>Run Now</strong> on the policy card. The default global cron is <code>0 2 * * *</code> (2 AM daily).',
@@ -2289,7 +2289,7 @@ const TRANSLATIONS={
     'cl.criteria.sep':'Критерии очистки','cl.th.criterion':'Критерий','cl.th.desc':'Описание',
     'cl.age.label':'Опубликован до','cl.age.desc':'Удалять артефакты, опубликованные более N дней назад.',
     'cl.last.label':'Последнее скачивание до','cl.last.desc':'Удалять артефакты, не скачивавшиеся последние N дней.',
-    'cl.retain.label':'Оставить N версий','cl.retain.desc':'Хранить только N новейших версий каждого компонента.',
+    'cl.retain.label':'Оставить N версий','cl.retain.desc':'Хранить только N новейших версий каждого компонента. В hosted docker/oci-репозиториях версия — это тег; слои и digest-алиасы cleanup не удаляет.',
     'cl.s1.title':'Создайте политику','cl.s1.desc':'Перейдите в <strong>Admin → Cleanup Policies → + Create</strong>. Выберите формат, задайте критерии и при необходимости расписание cron.',
     'cl.s2.title':'Привяжите к репозиториям','cl.s2.desc':'Откройте настройки репозитория (иконка шестерёнки) и выберите политики очистки.',
     'cl.s3.title':'Запустите сейчас или дождитесь расписания','cl.s3.desc':'Нажмите <strong>Run Now</strong> на карточке политики. Стандартное расписание — <code>0 2 * * *</code> (2:00 ночи ежедневно).',

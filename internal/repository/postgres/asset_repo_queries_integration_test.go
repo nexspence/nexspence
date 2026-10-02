@@ -1530,3 +1530,109 @@ func pathsOf(assets []domain.Asset) []string {
 	}
 	return out
 }
+
+// makeOCIImageRepo lays out one image the way the docker/oci handler does: every
+// layer, config and digest alias is its own component named after the image,
+// next to the tag manifests. Rows are created oldest first: v1, then v2, which
+// reuses v1's base layer.
+func makeOCIImageRepo(t *testing.T, ctx context.Context, suffix string, repoType domain.RepoType) (repoName string) {
+	t.Helper()
+	pool := pgtest.Pool(t)
+
+	bs := &domain.BlobStore{Name: "oci_bs_" + suffix, Type: "local", Config: map[string]any{"path": "/data/oci_" + suffix}}
+	if err := NewBlobStoreRepo(pool).Create(ctx, bs); err != nil {
+		t.Fatalf("blob store: %v", err)
+	}
+	repoName = "oci_repo_" + suffix
+	r := &domain.Repository{Name: repoName, Format: domain.FormatDocker, Type: repoType, BlobStoreID: &bs.ID, Online: true}
+	if err := NewRepositoryRepo(pool).Create(ctx, r); err != nil {
+		t.Fatalf("repository: %v", err)
+	}
+
+	rows := []struct{ version, path string }{
+		{"sha256:base", "/blobs/bb/sha256:base"},
+		{"sha256:cfg1", "/blobs/bb/sha256:cfg1"},
+		{"sha256:man1", "/manifests/bb/sha256:man1"},
+		{"v1", "/manifests/bb/v1"},
+		{"sha256:top", "/blobs/bb/sha256:top"},
+		{"sha256:cfg2", "/blobs/bb/sha256:cfg2"},
+		{"sha256:man2", "/manifests/bb/sha256:man2"},
+		{"v2", "/manifests/bb/v2"},
+	}
+	cRepo, aRepo := NewComponentRepo(pool), NewAssetRepo(pool)
+	for i, row := range rows {
+		comp := &domain.Component{RepositoryID: r.ID, Format: "docker", Name: "bb", Version: row.version}
+		if err := cRepo.Create(ctx, comp); err != nil {
+			t.Fatalf("component %q: %v", row.version, err)
+		}
+		a := &domain.Asset{
+			ComponentID: comp.ID, RepositoryID: r.ID, Path: row.path, BlobStoreID: bs.ID,
+			BlobKey: fmt.Sprintf("bk_oci_%s_%d", suffix, i), SizeBytes: 1024,
+		}
+		if err := aRepo.Create(ctx, a); err != nil {
+			t.Fatalf("asset %q: %v", row.path, err)
+		}
+	}
+	return repoName
+}
+
+func stalePaths(assets []domain.Asset) []string {
+	out := make([]string, 0, len(assets))
+	for _, a := range assets {
+		out = append(out, a.Path)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// #596: on a hosted registry only tag manifests are releases. Layers, configs
+// and digest aliases are still referenced by live tags, so neither the age
+// filter nor retention may pick them, and they do not count toward N.
+func TestAssetRepoQueries_ListStale_HostedOCI_OnlyTagManifests(t *testing.T) {
+	pool := pgtest.Pool(t)
+	pgtest.Truncate(t, pool, "blob_stores", "repositories", "components")
+	ctx := context.Background()
+	repoName := makeOCIImageRepo(t, ctx, "hosted", domain.TypeHosted)
+	repo := NewAssetRepo(pool)
+
+	all, err := repo.ListStale(ctx, "docker", []string{repoName}, 0, 0, "", "", 0, 100)
+	if err != nil {
+		t.Fatalf("ListStale: %v", err)
+	}
+	if got, want := fmt.Sprint(stalePaths(all)), "[/manifests/bb/v1 /manifests/bb/v2]"; got != want {
+		t.Errorf("no retention: candidates = %s, want %s", got, want)
+	}
+
+	retain1, err := repo.ListStale(ctx, "docker", []string{repoName}, 0, 0, "", "", 1, 100)
+	if err != nil {
+		t.Fatalf("ListStale retain 1: %v", err)
+	}
+	if got, want := fmt.Sprint(stalePaths(retain1)), "[/manifests/bb/v1]"; got != want {
+		t.Errorf("retain 1: candidates = %s, want %s", got, want)
+	}
+
+	retain2, err := repo.ListStale(ctx, "docker", []string{repoName}, 0, 0, "", "", 2, 100)
+	if err != nil {
+		t.Fatalf("ListStale retain 2: %v", err)
+	}
+	if len(retain2) != 0 {
+		t.Errorf("retain 2: candidates = %v, want none", stalePaths(retain2))
+	}
+}
+
+// A proxy's cached layers stay evictable: a cold layer is re-fetched from
+// upstream, and excluding them would let the cache grow without bound.
+func TestAssetRepoQueries_ListStale_ProxyOCI_LayersStayEvictable(t *testing.T) {
+	pool := pgtest.Pool(t)
+	pgtest.Truncate(t, pool, "blob_stores", "repositories", "components")
+	ctx := context.Background()
+	repoName := makeOCIImageRepo(t, ctx, "proxy", domain.TypeProxy)
+
+	all, err := NewAssetRepo(pool).ListStale(ctx, "docker", []string{repoName}, 0, 0, "", "", 0, 100)
+	if err != nil {
+		t.Fatalf("ListStale: %v", err)
+	}
+	if len(all) != 8 {
+		t.Errorf("proxy: %d candidates, want all 8: %v", len(all), stalePaths(all))
+	}
+}
