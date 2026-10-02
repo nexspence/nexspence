@@ -149,16 +149,23 @@ func (h *Handler) serveIndex(c *gin.Context, repoName string) {
 	})
 }
 
-func (h *Handler) serveVersionList(c *gin.Context, repoName, pkgID string) {
-	page, err := h.deps.Components.Search(c.Request.Context(), domain.SearchParams{
-		Repository: repoName, Name: strings.ToLower(pkgID), Limit: 200,
+// packageVersions returns the stored versions of exactly pkgID. Ids are
+// stored lowercased on push. Search matches substrings, which would list
+// Foo.Abstractions's versions under Foo and stop at one page (#586).
+func (h *Handler) packageVersions(ctx context.Context, repoName, pkgID string) ([]domain.Component, error) {
+	return base.ExactComponents(ctx, h.deps.Components, domain.SearchParams{
+		Repository: repoName, Name: strings.ToLower(pkgID),
 	})
+}
+
+func (h *Handler) serveVersionList(c *gin.Context, repoName, pkgID string) {
+	comps, err := h.packageVersions(c.Request.Context(), repoName, pkgID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	versions := make([]string, 0, len(page.Items))
-	for _, comp := range page.Items {
+	versions := make([]string, 0, len(comps))
+	for _, comp := range comps {
 		versions = append(versions, comp.Version)
 	}
 	c.JSON(http.StatusOK, gin.H{"versions": versions})
@@ -224,21 +231,19 @@ func (h *Handler) serveRegistration(c *gin.Context, repoName, p string) {
 	pkgID := strings.TrimSuffix(rest, "/index.json")
 	pkgID = strings.Trim(pkgID, "/")
 
-	page, err := h.deps.Components.Search(c.Request.Context(), domain.SearchParams{
-		Repository: repoName, Name: strings.ToLower(pkgID), Limit: 200,
-	})
+	comps, err := h.packageVersions(c.Request.Context(), repoName, pkgID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	if len(page.Items) == 0 {
+	if len(comps) == 0 {
 		c.JSON(http.StatusNotFound, gin.H{"error": "package not found"})
 		return
 	}
 
 	base2 := h.deps.BaseURL + "/repository/" + repoName
-	items := make([]gin.H, 0, len(page.Items))
-	for _, comp := range page.Items {
+	items := make([]gin.H, 0, len(comps))
+	for _, comp := range comps {
 		entryURL := base2 + "/v3/registration/" + pkgID + "/" + comp.Version + ".json"
 		items = append(items, gin.H{
 			"@id":            entryURL,
@@ -258,8 +263,8 @@ func (h *Handler) serveRegistration(c *gin.Context, repoName, p string) {
 		"items": []gin.H{{
 			"count": len(items),
 			"items": items,
-			"lower": page.Items[0].Version,
-			"upper": page.Items[len(page.Items)-1].Version,
+			"lower": comps[0].Version,
+			"upper": comps[len(comps)-1].Version,
 		}},
 	})
 }
@@ -282,16 +287,14 @@ type content struct {
 }
 
 func (h *Handler) serveFindPackages(c *gin.Context, repoName, pkgID string) {
-	page, err := h.deps.Components.Search(c.Request.Context(), domain.SearchParams{
-		Repository: repoName, Name: strings.ToLower(pkgID), Limit: 200,
-	})
+	comps, err := h.packageVersions(c.Request.Context(), repoName, pkgID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	base2 := h.deps.BaseURL + "/repository/" + repoName
 	f := feed{XMLNS: "http://www.w3.org/2005/Atom"}
-	for _, comp := range page.Items {
+	for _, comp := range comps {
 		f.Entries = append(f.Entries, entry{
 			Title: comp.Name + " " + comp.Version,
 			ID:    base2 + "/v2/Packages(Id='" + comp.Name + "',Version='" + comp.Version + "')",

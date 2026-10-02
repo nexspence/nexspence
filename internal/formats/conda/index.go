@@ -10,6 +10,7 @@ import (
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/formats"
+	"github.com/nexspence-oss/nexspence/internal/formats/base"
 )
 
 type pkgEntry struct {
@@ -31,10 +32,12 @@ type repodataDoc struct {
 }
 
 func buildRepodata(ctx context.Context, d formats.Deps, repoName, platform string) (*repodataDoc, error) {
-	page, err := d.Components.Search(ctx, domain.SearchParams{
+	// Every package of exactly this subdir. Search matches substrings and
+	// stops at 500 rows, which listed linux-ppc64le's packages under
+	// linux-ppc64 and cut a large subdir short (#586).
+	comps, err := base.ExactComponents(ctx, d.Components, domain.SearchParams{
 		Repository: repoName,
 		Group:      platform,
-		Limit:      5000,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("conda: list components: %w", err)
@@ -47,7 +50,7 @@ func buildRepodata(ctx context.Context, d formats.Deps, repoName, platform strin
 	}
 
 	prefix := "/" + platform + "/"
-	for _, comp := range page.Items {
+	for _, comp := range comps {
 		assets, err := d.Assets.ListByComponentID(ctx, comp.ID)
 		if err != nil || len(assets) == 0 {
 			continue

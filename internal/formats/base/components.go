@@ -31,3 +31,25 @@ func AllComponents(ctx context.Context, comps repository.ComponentRepo, repoName
 		}
 	}
 }
+
+// ExactComponents walks every Search page of an exact lookup: p.Group and
+// p.Name match whole values. A protocol handler serving one package's index
+// must use it rather than a single substring-matched page, or it lists other
+// packages whose names contain this one and drops its own versions past the
+// first page (#586). Limit and Offset in p are ignored.
+func ExactComponents(ctx context.Context, comps repository.ComponentRepo, p domain.SearchParams) ([]domain.Component, error) {
+	p.Exact = true
+	p.Limit = componentPageSize
+	var out []domain.Component
+	for offset := 0; ; offset += componentPageSize {
+		p.Offset = offset
+		page, err := comps.Search(ctx, p)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, page.Items...)
+		if page.ContinuationToken == nil || len(page.Items) == 0 {
+			return out, nil
+		}
+	}
+}

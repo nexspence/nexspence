@@ -16,6 +16,7 @@
 package terraform
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -127,6 +128,16 @@ func (h *Handler) handleProviderUpload(c *gin.Context, repoName, p string) {
 	c.JSON(http.StatusCreated, gin.H{"saved": true})
 }
 
+// exactComponents returns every stored version of exactly group/name. Modules
+// (group "<ns>/<name>") and providers (group "<ns>") share the table, so a
+// substring match listed module hashicorp/consul/aws under provider
+// hashicorp/aws, and xacme/vpc/aws under acme/vpc/aws (#586).
+func (h *Handler) exactComponents(ctx context.Context, repoName, group, name string) ([]domain.Component, error) {
+	return base.ExactComponents(ctx, h.deps.Components, domain.SearchParams{
+		Repository: repoName, Group: group, Name: name,
+	})
+}
+
 func (h *Handler) handleProviderVersions(c *gin.Context, repoName, p string) {
 	// p = /v1/providers/<ns>/<type>/versions
 	rest := strings.TrimSuffix(strings.TrimPrefix(p, "/v1/providers/"), "/versions")
@@ -137,12 +148,7 @@ func (h *Handler) handleProviderVersions(c *gin.Context, repoName, p string) {
 	}
 	ns, typ := parts[0], parts[1]
 
-	page, err := h.deps.Components.Search(c.Request.Context(), domain.SearchParams{
-		Repository: repoName,
-		Group:      ns,
-		Name:       typ,
-		Limit:      500,
-	})
+	comps, err := h.exactComponents(c.Request.Context(), repoName, ns, typ)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -159,7 +165,7 @@ func (h *Handler) handleProviderVersions(c *gin.Context, repoName, p string) {
 	}
 
 	seen := map[string]*version{}
-	for _, comp := range page.Items {
+	for _, comp := range comps {
 		if _, ok := seen[comp.Version]; !ok {
 			seen[comp.Version] = &version{
 				Version:   comp.Version,
@@ -254,19 +260,14 @@ func (h *Handler) handleModuleVersions(c *gin.Context, repoName, p string) {
 	}
 	ns, name, provider := parts[0], parts[1], parts[2]
 
-	page, err := h.deps.Components.Search(c.Request.Context(), domain.SearchParams{
-		Repository: repoName,
-		Group:      ns + "/" + name,
-		Name:       provider,
-		Limit:      500,
-	})
+	comps, err := h.exactComponents(c.Request.Context(), repoName, ns+"/"+name, provider)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	versions := make([]map[string]string, 0, len(page.Items))
-	for _, comp := range page.Items {
+	versions := make([]map[string]string, 0, len(comps))
+	for _, comp := range comps {
 		versions = append(versions, map[string]string{"version": comp.Version})
 	}
 	c.JSON(http.StatusOK, gin.H{"modules": []map[string]any{{"versions": versions}}})

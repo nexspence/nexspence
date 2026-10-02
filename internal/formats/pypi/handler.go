@@ -151,9 +151,7 @@ func (h *Handler) handleUpload(c *gin.Context, repoName string) {
 }
 
 func (h *Handler) serveSimpleIndex(c *gin.Context, repoName string) {
-	page, err := h.deps.Components.Search(c.Request.Context(), domain.SearchParams{
-		Repository: repoName, Limit: 500,
-	})
+	comps, err := base.AllComponents(c.Request.Context(), h.deps.Components, repoName)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -162,7 +160,7 @@ func (h *Handler) serveSimpleIndex(c *gin.Context, repoName string) {
 	// Deduplicate package names
 	seen := map[string]struct{}{}
 	var names []string
-	for _, comp := range page.Items {
+	for _, comp := range comps {
 		n := normalizePackageName(comp.Name)
 		if _, ok := seen[n]; !ok {
 			seen[n] = struct{}{}
@@ -182,8 +180,11 @@ func (h *Handler) serveSimpleIndex(c *gin.Context, repoName string) {
 
 func (h *Handler) servePackageIndex(c *gin.Context, repoName, pkgName string) {
 	normalized := normalizePackageName(pkgName)
-	page, err := h.deps.Components.Search(c.Request.Context(), domain.SearchParams{
-		Repository: repoName, Name: normalized, Limit: 200,
+	// Names are stored normalized (upload and migration both normalize), so
+	// the lookup is exact. Search matches substrings, which would list
+	// acme-requests's files on requests's page and stop at one page (#586).
+	comps, err := base.ExactComponents(c.Request.Context(), h.deps.Components, domain.SearchParams{
+		Repository: repoName, Name: normalized,
 	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -194,7 +195,7 @@ func (h *Handler) servePackageIndex(c *gin.Context, repoName, pkgName string) {
 	fmt.Fprintf(&sb, "<!DOCTYPE html><html><head><title>Links for %s</title></head><body><h1>Links for %s</h1>\n",
 		html.EscapeString(pkgName), html.EscapeString(pkgName))
 
-	for _, comp := range page.Items {
+	for _, comp := range comps {
 		assets, err := h.deps.Assets.ListByComponentID(c.Request.Context(), comp.ID)
 		if err != nil {
 			continue

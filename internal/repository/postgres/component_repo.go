@@ -108,6 +108,9 @@ func (r *componentRepo) Get(ctx context.Context, id string) (*domain.Component, 
 	return c, err
 }
 
+// Search pages through components. The order is total — group and id break
+// ties between rows sharing a name and version — so offset paging neither
+// skips nor repeats a row.
 func (r *componentRepo) Search(ctx context.Context, p domain.SearchParams) (*domain.Page[domain.Component], error) {
 	args := []any{}
 	i := 1
@@ -132,13 +135,23 @@ func (r *componentRepo) Search(ctx context.Context, p domain.SearchParams) (*dom
 		i++
 	}
 	if p.Group != "" {
-		where += fmt.Sprintf(" AND c.group_id ILIKE $%d", i)
-		args = append(args, "%"+p.Group+"%")
+		if p.Exact {
+			where += fmt.Sprintf(" AND c.group_id = $%d", i)
+			args = append(args, p.Group)
+		} else {
+			where += fmt.Sprintf(" AND c.group_id ILIKE $%d", i)
+			args = append(args, "%"+p.Group+"%")
+		}
 		i++
 	}
 	if p.Name != "" {
-		where += fmt.Sprintf(" AND c.name ILIKE $%d", i)
-		args = append(args, "%"+p.Name+"%")
+		if p.Exact {
+			where += fmt.Sprintf(" AND c.name = $%d", i)
+			args = append(args, p.Name)
+		} else {
+			where += fmt.Sprintf(" AND c.name ILIKE $%d", i)
+			args = append(args, "%"+p.Name+"%")
+		}
 		i++
 	}
 	if p.Version != "" {
@@ -178,7 +191,7 @@ func (r *componentRepo) Search(ctx context.Context, p domain.SearchParams) (*dom
 		FROM components c
 		JOIN repositories rep ON rep.id = c.repository_id
 		%s
-		ORDER BY c.name, c.version
+		ORDER BY c.name, c.version, c.group_id, c.id
 		LIMIT $%d OFFSET $%d`, where, i, i+1)
 	args = append(args, limit+1, offset)
 

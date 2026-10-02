@@ -146,21 +146,25 @@ func (h *Handler) serveIndexEntry(c *gin.Context, repoName, p string) {
 	}
 	crateName := parts[len(parts)-1]
 
-	page, err := h.deps.Components.Search(c.Request.Context(), domain.SearchParams{
-		Repository: repoName, Name: crateName, Limit: 200,
+	// Every version of exactly this crate (names are lowercased on publish).
+	// Search matches substrings, where "_" is a wildcard too: it listed
+	// rvc-serde-json under rvc-serde, and a crate with enough versions whose
+	// name contained this one pushed it off the page entirely (#586).
+	comps, err := base.ExactComponents(c.Request.Context(), h.deps.Components, domain.SearchParams{
+		Repository: repoName, Name: strings.ToLower(crateName),
 	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	if len(page.Items) == 0 {
+	if len(comps) == 0 {
 		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 		return
 	}
 
 	// Sparse index: newline-delimited JSON records
 	var sb strings.Builder
-	for _, comp := range page.Items {
+	for _, comp := range comps {
 		asset, _ := h.deps.Assets.GetByPath(c.Request.Context(), repoName,
 			"/api/v1/crates/"+crateName+"/"+comp.Version+"/"+crateName+"-"+comp.Version+".crate")
 		checksum := ""

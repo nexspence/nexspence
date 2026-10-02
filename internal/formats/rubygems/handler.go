@@ -380,14 +380,12 @@ func (h *Handler) handleYank(c *gin.Context, repoName string) {
 	// The compact index is generated from components, so the yanked version's
 	// component goes too — leaving it would keep advertising a gem whose file
 	// is gone.
-	page, err := h.deps.Components.Search(c.Request.Context(), domain.SearchParams{
-		Repository: repoName, Name: name, Version: version, Limit: 500,
+	comps, err := base.ExactComponents(c.Request.Context(), h.deps.Components, domain.SearchParams{
+		Repository: repoName, Name: name, Version: version,
 	})
 	if err == nil {
-		for _, comp := range page.Items {
-			if comp.Name == name && comp.Version == version {
-				_ = h.deps.Components.Delete(c.Request.Context(), comp.ID)
-			}
+		for _, comp := range comps {
+			_ = h.deps.Components.Delete(c.Request.Context(), comp.ID)
 		}
 	}
 	c.String(http.StatusOK, "Successfully yanked gem: %s (%s)", name, version)

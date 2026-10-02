@@ -12,12 +12,14 @@
 package gomod
 
 import (
+	"context"
 	"net/http"
 	"path"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"golang.org/x/mod/semver"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/formats"
@@ -108,35 +110,37 @@ func (h *Handler) handleGet(c *gin.Context, repoName, p string) {
 	}
 }
 
-func (h *Handler) serveList(c *gin.Context, repoName, modulePath string) {
-	page, err := h.deps.Components.Search(c.Request.Context(), domain.SearchParams{
+// moduleComponents returns the stored versions of exactly modulePath (one
+// version when version is set). Search matches substrings, which would list
+// repo/v2's versions under repo and stop at one page (#586).
+func (h *Handler) moduleComponents(ctx context.Context, repoName, modulePath, version string) ([]domain.Component, error) {
+	return base.ExactComponents(ctx, h.deps.Components, domain.SearchParams{
 		Repository: repoName,
 		Group:      modulePath,
-		Limit:      200,
+		Version:    version,
 	})
+}
+
+func (h *Handler) serveList(c *gin.Context, repoName, modulePath string) {
+	comps, err := h.moduleComponents(c.Request.Context(), repoName, modulePath, "")
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	var sb strings.Builder
-	for _, comp := range page.Items {
+	for _, comp := range comps {
 		sb.WriteString(comp.Version + "\n")
 	}
 	c.Data(http.StatusOK, "text/plain; charset=utf-8", []byte(sb.String()))
 }
 
 func (h *Handler) serveInfo(c *gin.Context, repoName, modulePath, version string) {
-	page, err := h.deps.Components.Search(c.Request.Context(), domain.SearchParams{
-		Repository: repoName,
-		Group:      modulePath,
-		Version:    version,
-		Limit:      1,
-	})
-	if err != nil || len(page.Items) == 0 {
+	comps, err := h.moduleComponents(c.Request.Context(), repoName, modulePath, version)
+	if err != nil || len(comps) == 0 {
 		c.JSON(http.StatusNotFound, gin.H{"error": "version not found"})
 		return
 	}
-	comp := page.Items[0]
+	comp := comps[0]
 	t := comp.CreatedAt
 	c.JSON(http.StatusOK, gin.H{
 		"Version": version,
@@ -159,20 +163,49 @@ func (h *Handler) serveFile(c *gin.Context, repoName, filePath, _, _, kind strin
 }
 
 func (h *Handler) serveLatest(c *gin.Context, repoName, modulePath string) {
-	page, err := h.deps.Components.Search(c.Request.Context(), domain.SearchParams{
-		Repository: repoName,
-		Group:      modulePath,
-		Limit:      200,
-	})
-	if err != nil || len(page.Items) == 0 {
+	comps, err := h.moduleComponents(c.Request.Context(), repoName, modulePath, "")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	latest, ok := latestVersion(comps)
+	if !ok {
 		c.JSON(http.StatusNotFound, gin.H{"error": "no versions found"})
 		return
 	}
-	latest := page.Items[len(page.Items)-1]
 	c.JSON(http.StatusOK, gin.H{
 		"Version": latest.Version,
 		"Time":    latest.CreatedAt.UTC().Format(time.RFC3339),
 	})
+}
+
+// latestVersion picks what the go command would: the highest release, else
+// the highest +incompatible release, else the highest prerelease (every
+// pseudo-version is one). Versions that are not valid semver are skipped.
+func latestVersion(comps []domain.Component) (domain.Component, bool) {
+	rank := func(v string) int {
+		switch {
+		case semver.Prerelease(v) != "":
+			return 0
+		case semver.Build(v) == "+incompatible":
+			return 1
+		default:
+			return 2
+		}
+	}
+	var best domain.Component
+	bestRank := -1
+	for _, comp := range comps {
+		v := comp.Version
+		if !semver.IsValid(v) {
+			continue
+		}
+		r := rank(v)
+		if r > bestRank || (r == bestRank && semver.Compare(v, best.Version) > 0) {
+			best, bestRank = comp, r
+		}
+	}
+	return best, bestRank >= 0
 }
 
 func (h *Handler) handlePut(c *gin.Context, repoName, p string) {

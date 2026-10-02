@@ -753,6 +753,11 @@ type SearchParams struct {
 	Version         string
 	SHA256          string
 	Tag             string // exact match: $Tag = ANY(tags)
+	// Exact matches Group and Name as whole, case-sensitive values instead of
+	// case-insensitive substrings. Protocol handlers serving one package's
+	// index need it: a substring match lists repo/v2 under repo, and
+	// Foo.Abstractions under Foo (#586).
+	Exact bool
 	// Maven
 	MavenGroupID    string
 	MavenArtifactID string

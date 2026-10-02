@@ -41,19 +41,19 @@ func parseDistTags(p string) (pkg, tag string, ok bool) {
 // under. It is not a package version and must never be served as one (#131).
 const sentinelVersion = "metadata"
 
-// packageComponents returns the components of exactly this package. The search
-// filter matches names loosely (ILIKE %name%), so "lib" would otherwise pull in
-// "mylib" — the exact match has to happen here.
+// packageComponents returns every version of exactly this package. A single
+// substring-matched page dropped the package's own versions once it, or the
+// packages whose names contain it, passed the page size (#586).
 func (h *Handler) packageComponents(ctx context.Context, repoName, pkgName string) ([]domain.Component, error) {
-	page, err := h.deps.Components.Search(ctx, domain.SearchParams{
-		Repository: repoName, Name: pkgName, Limit: 200,
+	comps, err := base.ExactComponents(ctx, h.deps.Components, domain.SearchParams{
+		Repository: repoName, Name: pkgName,
 	})
 	if err != nil {
 		return nil, err
 	}
-	out := make([]domain.Component, 0, len(page.Items))
-	for _, comp := range page.Items {
-		if comp.Name == pkgName && comp.Version != sentinelVersion {
+	out := make([]domain.Component, 0, len(comps))
+	for _, comp := range comps {
+		if comp.Version != sentinelVersion {
 			out = append(out, comp)
 		}
 	}

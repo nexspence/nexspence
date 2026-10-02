@@ -869,6 +869,79 @@ func TestComponentRepo_Search_ByName(t *testing.T) {
 	}
 }
 
+// Exact matches whole values, case-sensitively, and "_" is not a wildcard
+// (#586).
+func TestComponentRepo_Search_Exact(t *testing.T) {
+	pool := pgtest.Pool(t)
+	pgtest.Truncate(t, pool, "blob_stores", "repositories")
+	ctx := context.Background()
+
+	p := makeCompParent(t, ctx, "srch_exact")
+	repo := NewComponentRepo(pool)
+	for _, c := range []struct{ group, name string }{
+		{"hashicorp", "aws"}, {"hashicorp/consul", "aws"}, {"hashicorp", "awscc"},
+		{"", "rvc-serde_json"}, {"", "rvc-serde-json"}, {"", "Rvc-Serde-Json"},
+	} {
+		if err := repo.Create(ctx, &domain.Component{
+			RepositoryID: p.RepositoryID, Format: "raw", Group: c.group, Name: c.name, Version: "1.0",
+		}); err != nil {
+			t.Fatalf("Create %s/%s: %v", c.group, c.name, err)
+		}
+	}
+
+	page, err := repo.Search(ctx, domain.SearchParams{Repository: p.RepoName, Group: "hashicorp", Name: "aws", Exact: true, Limit: 10})
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(page.Items) != 1 || page.Items[0].Group != "hashicorp" || page.Items[0].Name != "aws" {
+		t.Errorf("exact hashicorp/aws: got %v", page.Items)
+	}
+
+	page, err = repo.Search(ctx, domain.SearchParams{Repository: p.RepoName, Name: "rvc-serde_json", Exact: true, Limit: 10})
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(page.Items) != 1 || page.Items[0].Name != "rvc-serde_json" {
+		t.Errorf("exact rvc-serde_json: got %v", page.Items)
+	}
+}
+
+// Rows sharing a name and version — a provider and a module both named "aws"
+// at 1.0 — are ordered by group and id too, so offset paging returns each row
+// exactly once.
+func TestComponentRepo_Search_PagingIsStableAcrossTies(t *testing.T) {
+	pool := pgtest.Pool(t)
+	pgtest.Truncate(t, pool, "blob_stores", "repositories")
+	ctx := context.Background()
+
+	p := makeCompParent(t, ctx, "srch_ties")
+	repo := NewComponentRepo(pool)
+	const n = 25
+	for i := 0; i < n; i++ {
+		if err := repo.Create(ctx, &domain.Component{
+			RepositoryID: p.RepositoryID, Format: "raw", Group: fmt.Sprintf("g%02d", n-i), Name: "same", Version: "1.0",
+		}); err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+	}
+	seen := map[string]bool{}
+	for offset := 0; offset < n; offset += 4 {
+		page, err := repo.Search(ctx, domain.SearchParams{Repository: p.RepoName, Name: "same", Limit: 4, Offset: offset})
+		if err != nil {
+			t.Fatalf("Search: %v", err)
+		}
+		for _, c := range page.Items {
+			if seen[c.ID] {
+				t.Errorf("row %s (%s) returned twice", c.ID, c.Group)
+			}
+			seen[c.ID] = true
+		}
+	}
+	if len(seen) != n {
+		t.Errorf("paged %d distinct rows, want %d", len(seen), n)
+	}
+}
+
 func TestComponentRepo_Search_ByVersion(t *testing.T) {
 	pool := pgtest.Pool(t)
 	pgtest.Truncate(t, pool, "blob_stores", "repositories")
