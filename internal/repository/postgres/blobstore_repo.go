@@ -97,9 +97,9 @@ func (r *blobStoreRepo) UpdateUsedBytes(ctx context.Context, name string, delta 
 }
 
 // recomputeUsedBytesSQL restates every store's used_bytes as the bytes it
-// holds: one size per distinct blob key, since several assets routinely name
-// one stored object (an OCI manifest's tag and its digest alias, a
-// cross-repository mount). Rows that disagree about the size of a key — an
+// holds: one size per distinct blob key, since several assets can name one
+// stored object (a cross-repository mount, or an OCI manifest's tag and a
+// digest alias stored before #594). Rows that disagree about the size of a key — an
 // alias left behind by an in-place overwrite — are read at their largest, which
 // is the reading that cannot let a store overfill.
 //

@@ -2,6 +2,7 @@
 package base
 
 import (
+	"bytes"
 	"context"
 	"crypto/md5"  //nolint:gosec // md5/sha1 required for artifact-protocol checksums (Maven .md5/.sha1, npm shasum), not security
 	"crypto/sha1" //nolint:gosec // md5/sha1 required for artifact-protocol checksums (Maven .md5/.sha1, npm shasum), not security
@@ -508,9 +509,9 @@ func queueForScanning(d formats.Deps, comp *domain.Component) {
 
 // usageDelta reports how much the blob store's used_bytes has to move for a
 // registration. The counter is how full the store is, not what its asset rows
-// add up to: several assets routinely name one blob — an OCI manifest's tag and
-// its digest alias, a cross-repository mount — and the store holds one copy of
-// it (issue #146). prev is the asset that held the same path before the upsert,
+// add up to: several assets may name one blob — a cross-repository mount, or an
+// OCI digest alias registered before #594 gave it its own object — and the
+// store holds one copy of it (issue #146). prev is the asset that held the same path before the upsert,
 // or nil if the path is new.
 func usageDelta(ctx context.Context, d formats.Deps, asset, prev *domain.Asset) int64 {
 	if prev != nil && prev.BlobKey == asset.BlobKey && prev.BlobStoreID == asset.BlobStoreID {
@@ -520,8 +521,8 @@ func usageDelta(ctx context.Context, d formats.Deps, asset, prev *domain.Asset) 
 	}
 	// A blob key another asset already carries is already counted. Shared keys
 	// live in one store by construction: a key is derived from (repository,
-	// path), and the two paths that deliberately share one — an OCI digest alias
-	// and a mounted blob — are registered against the store of the asset they
+	// path), and the paths that share one — a mounted blob, or an OCI digest alias
+	// from before #594 — are registered against the store of the asset they
 	// alias. A count that cannot be read counts the bytes: overstating a store
 	// costs a rejected write, understating it overfills the disk.
 	if others, err := d.Assets.CountByBlobKey(ctx, asset.BlobKey, asset.ID); err == nil && others > 0 {
@@ -530,6 +531,39 @@ func usageDelta(ctx context.Context, d formats.Deps, asset, prev *domain.Asset) 
 	// A path that moved to a different key or store leaves its old bytes behind;
 	// they stay counted where they lie until the blob GC reclaims them.
 	return asset.SizeBytes
+}
+
+// StorePinnedCopy writes body as filePath's own object, on the store pin's
+// object lives in, and registers it. It is for a second path holding the same
+// bytes as pin — an OCI manifest's digest alias: sharing pin's blob key would
+// let an overwrite of pin's path change what filePath serves (#594).
+// Re-resolving the store would let a group store round-robin the copy onto
+// another member. The write policy and the publish webhook are left to the
+// caller's write of pin.
+func StorePinnedCopy(ctx context.Context, d formats.Deps, repo *domain.Repository,
+	filePath, contentType string, coords Coords, body []byte, pin *domain.Asset,
+) (*domain.Asset, error) {
+	store, err := AssetPhysicalStore(ctx, d, pin)
+	if err != nil {
+		return nil, err
+	}
+	key := BlobKey(repo.Name, filePath)
+	if err := store.Put(ctx, key, bytes.NewReader(body), int64(len(body))); err != nil {
+		return nil, fmt.Errorf("store blob: %w", err)
+	}
+	sum256 := sha256.Sum256(body)
+	sum1 := sha1.Sum(body) //nolint:gosec // protocol checksum, not security
+	sum5 := md5.Sum(body)  //nolint:gosec // protocol checksum, not security
+	asset, err := RegisterStoredBlob(ctx, d, repo, filePath, contentType, coords, key,
+		hex.EncodeToString(sum256[:]), hex.EncodeToString(sum1[:]), hex.EncodeToString(sum5[:]),
+		int64(len(body)), pin.BlobStoreID, "")
+	if err != nil {
+		if others, cerr := d.Assets.CountByBlobKey(ctx, key, ""); cerr == nil && others == 0 {
+			_ = store.Delete(ctx, key)
+		}
+		return nil, err
+	}
+	return asset, nil
 }
 
 // FetchArtifact retrieves a blob from storage and increments download count.
@@ -543,7 +577,7 @@ func FetchArtifact(ctx context.Context, d formats.Deps, repoName, filePath strin
 		return nil, nil, err
 	}
 
-	fetchStore, err := assetPhysicalStore(ctx, d, asset)
+	fetchStore, err := AssetPhysicalStore(ctx, d, asset)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -567,7 +601,7 @@ func DeleteArtifact(ctx context.Context, d formats.Deps, repoName, filePath stri
 	if err != nil {
 		return err
 	}
-	delStore, err := assetPhysicalStore(ctx, d, asset)
+	delStore, err := AssetPhysicalStore(ctx, d, asset)
 	if err != nil {
 		return err
 	}
@@ -595,9 +629,9 @@ func DeleteArtifact(ctx context.Context, d formats.Deps, repoName, filePath stri
 		if cur == nil || cur.ID != asset.ID || cur.BlobKey != asset.BlobKey || !cur.LastModified.Equal(asset.LastModified) {
 			return nil
 		}
-		// One blob can carry several assets: an OCI manifest push registers the tag
-		// path and the digest-alias path on the same blob key, and a client that
-		// deletes one still pulls the other. Deleting the bytes here would leave the
+		// One blob can carry several assets: a cross-repository mount, or an OCI
+		// manifest's tag and a digest alias registered before #594, and a client
+		// that deletes one still pulls the other. Deleting the bytes here would leave the
 		// survivor — and the referrers index built from it — advertising content that
 		// is gone. A count that cannot be read keeps the blob: an orphan is reclaimed
 		// by the blob GC, whereas bytes deleted under a live asset are lost.
@@ -806,10 +840,10 @@ func PhysicalStore(ctx context.Context, d formats.Deps, bs *domain.BlobStore) (s
 	return store, nil
 }
 
-// assetPhysicalStore resolves the store recorded on an asset. Historical rows
+// AssetPhysicalStore resolves the store recorded on an asset. Historical rows
 // without a store id belong to the installation default; a present id is a
 // hard location and every lookup or registry error is returned.
-func assetPhysicalStore(ctx context.Context, d formats.Deps, asset *domain.Asset) (storage.BlobStore, error) {
+func AssetPhysicalStore(ctx context.Context, d formats.Deps, asset *domain.Asset) (storage.BlobStore, error) {
 	if asset == nil || strings.TrimSpace(asset.BlobStoreID) == "" {
 		return d.BlobStore, nil
 	}

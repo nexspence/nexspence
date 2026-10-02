@@ -391,8 +391,8 @@ func (r *assetRepo) ListAllBlobRefs(ctx context.Context) ([]domain.BlobRef, erro
 }
 
 // SumSizeByRepo returns the bytes the repository occupies: one size per stored
-// object, since several assets can name one — an OCI manifest's tag and its
-// digest alias, a blob mounted from another image in the same repository.
+// object, since several assets can name one — a blob mounted from another
+// image in the same repository, or an OCI digest alias stored before #594.
 // Charging a repository once per asset row put it over its quota at half the
 // bytes it actually stored (issue #146). Rows that disagree about the size of a
 // key are read at their largest, the reading that cannot let a quota overrun.

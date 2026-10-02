@@ -1363,7 +1363,7 @@ func (s *NexusMigrationService) transferOCIManifest(ctx context.Context, client 
 	}
 	s.registerManifestDigestAlias(ctx, plannedAsset{
 		repo: repoName, contentType: contentType, coords: coords,
-	}, res)
+	}, res, body)
 	return nil
 }
 
@@ -1393,10 +1393,11 @@ func (s *NexusMigrationService) ensureOCIBlob(ctx context.Context, client *nexus
 	return err
 }
 
-// registerManifestDigestAlias points the manifest's content digest at the same
-// stored bytes, the way a registry push does: a client that pulls by tag
-// immediately re-fetches the manifest by digest, and gets a 404 without this.
-func (s *NexusMigrationService) registerManifestDigestAlias(ctx context.Context, a plannedAsset, res *base.StoreResult) {
+// registerManifestDigestAlias stores the manifest under its content digest
+// too, the way a registry push does: a client that pulls by tag immediately
+// re-fetches the manifest by digest, and gets a 404 without this. The alias is
+// its own object, so a later re-push of the tag cannot change it (#594).
+func (s *NexusMigrationService) registerManifestDigestAlias(ctx context.Context, a plannedAsset, res *base.StoreResult, body []byte) {
 	digestRef := "sha256:" + res.SHA256
 	if a.coords.Version == digestRef {
 		return // already stored under its digest
@@ -1406,12 +1407,8 @@ func (s *NexusMigrationService) registerManifestDigestAlias(ctx context.Context,
 		return
 	}
 	aliasPath := "/manifests/" + a.coords.Name + "/" + digestRef
-	if _, err := base.RegisterStoredBlob(ctx, s.deps, repo,
-		aliasPath, a.contentType,
-		base.Coords{Name: a.coords.Name, Version: digestRef},
-		res.Asset.BlobKey,
-		res.SHA256, res.SHA1, res.MD5, res.Size,
-		res.Asset.BlobStoreID, "",
+	if _, err := base.StorePinnedCopy(ctx, s.deps, repo, aliasPath, a.contentType,
+		base.Coords{Name: a.coords.Name, Version: digestRef}, body, res.Asset,
 	); err != nil {
 		s.logf(ctx, "migration: cannot register digest alias %s%s: %v", a.repo, aliasPath, err)
 	}

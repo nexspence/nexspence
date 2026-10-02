@@ -379,6 +379,13 @@ func (h *Handler) pushManifest(c *gin.Context, repoName, imageName, reference st
 		}
 	}
 
+	// A tag about to be overwritten may still share its object with the digest
+	// alias of the manifest it holds now — every alias did before #594. Give
+	// that alias its own copy first, or the old digest serves the new bytes.
+	if !strings.Contains(reference, ":") {
+		h.detachDigestAlias(c.Request.Context(), repoName, imageName, fp)
+	}
+
 	res, err := base.StoreArtifact(c.Request.Context(), h.deps,
 		repoName, fp, ct, coords,
 		bytes.NewReader(body), int64(len(body)))
@@ -398,20 +405,12 @@ func (h *Handler) pushManifest(c *gin.Context, repoName, imageName, reference st
 		_ = h.deps.Components.UpdateExtra(c.Request.Context(), res.Asset.ComponentID, extra)
 	}
 
-	// Docker pulls always re-fetch the manifest by content digest after getting it by tag.
-	// Register a second asset record pointing to the same blob under the digest path so
-	// GET /manifests/<img>/sha256:<digest> also resolves correctly.
+	// Docker pulls always re-fetch the manifest by content digest after getting
+	// it by tag, so the manifest is also stored under its digest path.
 	digestRef := "sha256:" + res.SHA256
 	if reference != digestRef {
 		if repo, err2 := h.deps.Repos.Get(c.Request.Context(), repoName); err2 == nil && repo != nil {
-			// Pinned to the store the manifest bytes went to. Re-resolving would
-			// let a group store round-robin the alias onto a different member,
-			// which holds neither the object the alias names nor its size.
-			alias, aerr := base.RegisterStoredBlob(c.Request.Context(), h.deps, repo,
-				manifestPath(imageName, digestRef), ct,
-				base.Coords{Name: imageName, Version: digestRef},
-				res.Asset.BlobKey,
-				res.SHA256, res.SHA1, res.MD5, res.Size, res.Asset.BlobStoreID, "")
+			alias, aerr := h.storeDigestAlias(c.Request.Context(), repo, imageName, digestRef, ct, body, res.Asset)
 			// The alias carries the same metadata: the referrers API resolves a
 			// subject by digest, not by tag.
 			if aerr == nil && alias != nil && len(extra) > 0 {
@@ -424,6 +423,61 @@ func (h *Handler) pushManifest(c *gin.Context, repoName, imageName, reference st
 	c.Header("Docker-Content-Digest", digest)
 	c.Header("Location", "/v2/"+imageName+"/manifests/"+digest)
 	c.Status(http.StatusCreated)
+}
+
+// storeDigestAlias stores a manifest under its digest path as an object of its
+// own. That path's blob key is fixed by the digest, so re-pushing the tag —
+// which overwrites the tag's object in place — cannot change what the digest
+// serves (#594). It goes to the store of pin, the tag's asset.
+func (h *Handler) storeDigestAlias(ctx context.Context, repo *domain.Repository,
+	imageName, digestRef, ct string, body []byte, pin *domain.Asset,
+) (*domain.Asset, error) {
+	return base.StorePinnedCopy(ctx, h.deps, repo, manifestPath(imageName, digestRef), ct,
+		base.Coords{Name: imageName, Version: digestRef}, body, pin)
+}
+
+// detachDigestAlias moves the digest alias of the manifest a tag holds onto an
+// object of its own when it still shares the tag's — the layout every push
+// made before #594. Best effort: on any failure the alias stays as it was.
+func (h *Handler) detachDigestAlias(ctx context.Context, repoName, imageName, tagPath string) {
+	tag, err := h.deps.Assets.GetByPath(ctx, repoName, tagPath)
+	if err != nil || tag == nil || tag.SHA256 == "" {
+		return
+	}
+	digestRef := "sha256:" + tag.SHA256
+	alias, err := h.deps.Assets.GetByPath(ctx, repoName, manifestPath(imageName, digestRef))
+	if err != nil || alias == nil || alias.BlobKey != tag.BlobKey {
+		return
+	}
+	repo, err := h.deps.Repos.Get(ctx, repoName)
+	if err != nil || repo == nil || base.CheckWritable(repo) != nil {
+		return
+	}
+	store, err := base.AssetPhysicalStore(ctx, h.deps, tag)
+	if err != nil {
+		return
+	}
+	rc, _, err := store.Get(ctx, tag.BlobKey)
+	if err != nil {
+		return
+	}
+	body, err := io.ReadAll(io.LimitReader(rc, maxManifestBytes+1))
+	_ = rc.Close()
+	if err != nil || len(body) > maxManifestBytes {
+		return
+	}
+	if sum := sha256.Sum256(body); hex.EncodeToString(sum[:]) != tag.SHA256 {
+		return
+	}
+	// The upsert replaces the component's metadata; carry it over.
+	var extra map[string]any
+	if comp, cerr := h.deps.Components.Get(ctx, alias.ComponentID); cerr == nil && comp != nil {
+		extra = comp.Extra
+	}
+	moved, err := h.storeDigestAlias(ctx, repo, imageName, digestRef, alias.ContentType, body, alias)
+	if err == nil && moved != nil && len(extra) > 0 {
+		_ = h.deps.Components.UpdateExtra(ctx, moved.ComponentID, extra)
+	}
 }
 
 // recordCachedManifestMeta types a manifest that repoproxy has just written to
