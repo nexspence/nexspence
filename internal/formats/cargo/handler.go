@@ -133,8 +133,27 @@ func (h *Handler) serveIndexConfig(c *gin.Context, repoName string) {
 	c.JSON(http.StatusOK, gin.H{
 		"dl":            baseURL + "/api/v1/crates/{crate}/{version}/download",
 		"api":           baseURL,
-		"auth-required": false,
+		"auth-required": h.indexAuthRequired(c.Request.Context(), repoName),
 	})
+}
+
+// indexAuthRequired reports whether an anonymous client is refused reads.
+// Cargo sends its token on index and download requests only when config.json
+// says auth-required: answering false for a private repository let cargo
+// read the index (it retries config.json with the token after a 401) and
+// then download every crate without one, into a 401 (#588). When the answer
+// cannot be worked out, the token is asked for: sending one to a public
+// repository is harmless.
+func (h *Handler) indexAuthRequired(ctx context.Context, repoName string) bool {
+	if h.deps.RBAC == nil {
+		return false
+	}
+	repo, err := h.deps.Repos.Get(ctx, repoName)
+	if err != nil || repo == nil {
+		return true
+	}
+	allowed, err := h.deps.RBAC.CanAccessRepo(ctx, "", nil, repo, "/", "read")
+	return err != nil || !allowed
 }
 
 func (h *Handler) serveIndexEntry(c *gin.Context, repoName, p string) {
