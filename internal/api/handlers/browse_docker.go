@@ -406,16 +406,18 @@ func (h *BrowseHandler) DeleteDockerTag(c *gin.Context) {
 	}
 	deletedDigests := parseManifestDigests(store.Get(ctx, tagAsset.BlobKey))
 
-	// 2. Delete the tag manifest record and its digest alias — two records of one
-	// manifest on one blob. DeleteArtifact keeps a blob alive while another asset
-	// still references it, so the shared blob goes with whichever record is
-	// deleted last and the order of these two no longer matters.
+	// 2. Delete the tag manifest record and its digest alias. DeleteArtifact
+	// keeps a blob alive while another asset still references it, so an alias
+	// that shares the tag's blob (as every alias stored before #594 does) keeps
+	// it until both records are gone. The alias stays while another tag of the
+	// image still resolves to the same manifest: clients fetch it by digest
+	// after resolving that tag (#595).
 	if err := base.DeleteArtifact(ctx, h.deps, repoName, tagPath); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	digestAliasPath := "/manifests/" + imageName + "/sha256:" + tagAsset.SHA256
-	if digestAliasPath != tagPath {
+	if digestAliasPath != tagPath && !h.otherTagHasDigest(ctx, repoName, imageName, tagAsset.SHA256) {
 		if err := base.DeleteArtifact(ctx, h.deps, repoName, digestAliasPath); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -453,6 +455,29 @@ func (h *BrowseHandler) DeleteDockerTag(c *gin.Context) {
 	_ = h.deps.Components.DeleteOrphans(ctx, repoName)
 
 	c.Status(http.StatusNoContent)
+}
+
+// otherTagHasDigest reports whether a tag of imageName still resolves to the
+// manifest with the given sha256. A listing error answers true: keeping an
+// alias nobody needs is harmless, dropping one a tag needs breaks its pulls.
+func (h *BrowseHandler) otherTagHasDigest(ctx context.Context, repoName, imageName, sha256 string) bool {
+	prefix := "/manifests/" + imageName + "/"
+	assets, err := h.deps.Assets.ListByRepoAndPath(ctx, repoName, prefix)
+	if err != nil {
+		return true
+	}
+	for _, a := range assets {
+		ref := strings.TrimPrefix(a.Path, prefix)
+		// A nested image's manifest has a "/" in what follows the prefix; a
+		// digest reference has a ":".
+		if strings.ContainsAny(ref, "/:") {
+			continue
+		}
+		if a.SHA256 == sha256 {
+			return true
+		}
+	}
+	return false
 }
 
 // parseManifestDigests reads an open blob stream (or error) and returns the config+layer digests.

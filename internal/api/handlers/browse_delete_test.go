@@ -224,3 +224,76 @@ func TestBrowse_DeleteDockerTag_RemovesBothRecordsAndTheSharedBlob(t *testing.T)
 	assert.False(t, existsSecondary(t, secondary, "blob-manifest"), "and the blob both shared is gone")
 	assert.False(t, existsSecondary(t, secondary, "blob-cfg"), "the config blob it referenced too")
 }
+
+// #595: v1 and latest resolve to the same manifest and share its digest alias.
+// Deleting v1 must leave the alias — and the config it names — for latest, or
+// a client that re-fetches the manifest by digest cannot pull latest.
+func TestBrowse_DeleteDockerTag_KeepsAliasSharedByAnotherTag(t *testing.T) {
+	r, _, assets, _, secondary, _ := mountBrowseOnSecondaryStore(t)
+	ctx := context.Background()
+
+	manifest := `{"config":{"digest":"sha256:cfg"},"layers":[]}`
+	putSecondary(t, secondary, "blob-v1", manifest)
+	putSecondary(t, secondary, "blob-latest", manifest)
+	putSecondary(t, secondary, "blob-alias", manifest)
+	putSecondary(t, secondary, "blob-cfg", "c")
+	for _, a := range []*domain.Asset{
+		{Repository: "docker-host", Path: "/manifests/da/python/v1", BlobKey: "blob-v1",
+			SHA256: "abc123", BlobStoreID: secondaryStoreID, SizeBytes: 46},
+		{Repository: "docker-host", Path: "/manifests/da/python/latest", BlobKey: "blob-latest",
+			SHA256: "abc123", BlobStoreID: secondaryStoreID, SizeBytes: 46},
+		{Repository: "docker-host", Path: "/manifests/da/python/sha256:abc123", BlobKey: "blob-alias",
+			SHA256: "abc123", BlobStoreID: secondaryStoreID, SizeBytes: 46},
+		{Repository: "docker-host", Path: "/blobs/da/python/sha256:cfg", BlobKey: "blob-cfg",
+			BlobStoreID: secondaryStoreID, SizeBytes: 1},
+	} {
+		require.NoError(t, assets.Create(ctx, a))
+	}
+
+	rec := do(t, r, http.MethodDelete,
+		"/api/v1/browse/repositories/docker-host/docker-tag?image=da/python&ref=v1", nil)
+	require.Equal(t, http.StatusNoContent, rec.Code)
+
+	_, err := assets.GetByPath(ctx, "docker-host", "/manifests/da/python/v1")
+	assert.Error(t, err, "the deleted tag is gone")
+	_, err = assets.GetByPath(ctx, "docker-host", "/manifests/da/python/sha256:abc123")
+	assert.NoError(t, err, "latest still needs the digest alias")
+	assert.True(t, existsSecondary(t, secondary, "blob-alias"))
+	assert.True(t, existsSecondary(t, secondary, "blob-cfg"), "and the config latest names")
+
+	// Deleting the last tag takes the alias with it.
+	rec = do(t, r, http.MethodDelete,
+		"/api/v1/browse/repositories/docker-host/docker-tag?image=da/python&ref=latest", nil)
+	require.Equal(t, http.StatusNoContent, rec.Code)
+	_, err = assets.GetByPath(ctx, "docker-host", "/manifests/da/python/sha256:abc123")
+	assert.Error(t, err, "no tag resolves to the manifest any more")
+	assert.False(t, existsSecondary(t, secondary, "blob-alias"))
+	assert.False(t, existsSecondary(t, secondary, "blob-cfg"))
+}
+
+// A tag of a nested image (da/python/slim) is not a tag of da/python, even when
+// both point at the same manifest.
+func TestBrowse_DeleteDockerTag_NestedImageTagDoesNotKeepAlias(t *testing.T) {
+	r, _, assets, _, secondary, _ := mountBrowseOnSecondaryStore(t)
+	ctx := context.Background()
+
+	manifest := `{"config":{"digest":"sha256:cfg"},"layers":[]}`
+	putSecondary(t, secondary, "blob-tag", manifest)
+	putSecondary(t, secondary, "blob-alias", manifest)
+	for _, a := range []*domain.Asset{
+		{Repository: "docker-host", Path: "/manifests/da/python/3.12", BlobKey: "blob-tag",
+			SHA256: "abc123", BlobStoreID: secondaryStoreID, SizeBytes: 46},
+		{Repository: "docker-host", Path: "/manifests/da/python/sha256:abc123", BlobKey: "blob-alias",
+			SHA256: "abc123", BlobStoreID: secondaryStoreID, SizeBytes: 46},
+		{Repository: "docker-host", Path: "/manifests/da/python/slim/3.12", BlobKey: "blob-nested",
+			SHA256: "abc123", BlobStoreID: secondaryStoreID, SizeBytes: 46},
+	} {
+		require.NoError(t, assets.Create(ctx, a))
+	}
+
+	rec := do(t, r, http.MethodDelete,
+		"/api/v1/browse/repositories/docker-host/docker-tag?image=da/python&ref=3.12", nil)
+	require.Equal(t, http.StatusNoContent, rec.Code)
+	_, err := assets.GetByPath(ctx, "docker-host", "/manifests/da/python/sha256:abc123")
+	assert.Error(t, err, "the alias of da/python goes with its only tag")
+}
