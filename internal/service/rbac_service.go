@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"regexp"
 	"strings"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
@@ -142,22 +143,23 @@ func evalCEL(expr, repoName, path string) bool {
 	return false
 }
 
+// The two clause shapes the evaluator supports, matched as a whole. Reading
+// just the quoted value let any operator through as if it were the positive
+// one — `repository != "x"` granted x, `!path.startsWith("/i/")` granted /i/
+// (GHSA-vpvp-9379-86x6). Anything else is denied.
+var (
+	repoClauseRe = regexp.MustCompile(`^repository\s*==\s*"([^"]*)"$`)
+	pathClauseRe = regexp.MustCompile(`^path\.startsWith\(\s*"([^"]*)"\s*\)$`)
+)
+
 func evalRepoClause(expr, repoName string) bool {
-	// repository == "X"
-	s, e := strings.Index(expr, `"`), strings.LastIndex(expr, `"`)
-	if s < 0 || e <= s {
-		return false
-	}
-	return repoName == expr[s+1:e]
+	m := repoClauseRe.FindStringSubmatch(strings.TrimSpace(expr))
+	return m != nil && m[1] == repoName
 }
 
 func evalPathClause(expr, path string) bool {
-	// path.startsWith("Y")
-	s, e := strings.Index(expr, `"`), strings.LastIndex(expr, `"`)
-	if s < 0 || e <= s {
-		return false
-	}
-	return strings.HasPrefix(path, expr[s+1:e])
+	m := pathClauseRe.FindStringSubmatch(strings.TrimSpace(expr))
+	return m != nil && strings.HasPrefix(path, m[1])
 }
 
 // FilterPaths returns only the paths accessible to the user in the given repo.
@@ -401,7 +403,7 @@ func evalCELRepoOnly(expr, repoName string) bool {
 		return evalRepoClause(expr, repoName)
 	}
 	// Path-only selector: user has access to some artifact(s) — show repo in list.
-	if strings.HasPrefix(expr, "path") {
+	if pathClauseRe.MatchString(expr) {
 		return true
 	}
 	return false

@@ -907,13 +907,13 @@ function GuideContentSelectors() {
       />
       <hr className={styles.divider} />
       <Step num={2} title="CEL expression fields"
-        text="Expressions can reference these fields to match artifacts:"
-        code={{ lang: 'text', content: `format      — repository format  ("maven2", "npm", "docker", "pypi", "helm", …)\npath        — artifact path      ("/com/example/myapp/1.0/myapp-1.0.jar")\nrepository  — repository name   ("maven-releases", "docker-hosted", …)` }}
+        text="A selector is one of three shapes; anything else (other fields, other operators, negation) matches nothing:"
+        code={{ lang: 'text', content: `repository == "NAME"                              — every artifact in one repository\npath.startsWith("/PREFIX/")                       — artifacts under a path, in any repository\nrepository == "NAME" && path.startsWith("/PREFIX/") — both` }}
       />
       <hr className={styles.divider} />
       <Step num={3} title="Example expressions"
         text="Copy any of these into the CEL expression field:"
-        code={{ lang: 'cel', content: `# All artifacts (wildcard)\ntrue\n\n# All Maven artifacts\nformat == "maven2"\n\n# Specific Maven group only\nformat == "maven2" && path.startsWith("/com/mycompany/")\n\n# npm scoped packages only\nformat == "npm" && path.startsWith("/@myorg/")\n\n# Docker images in a specific repository\nformat == "docker" && repository == "docker-hosted"\n\n# Helm charts from any hosted repo\nformat == "helm" && repository.endsWith("-hosted")` }}
+        code={{ lang: 'cel', content: `# Everything in one repository\nrepository == "maven-releases"\n\n# One Maven group, in one repository\nrepository == "maven-releases" && path.startsWith("/com/mycompany/")\n\n# npm scoped packages, in any repository\npath.startsWith("/@myorg/")\n\n# Docker images under a namespace\nrepository == "docker-hosted" && path.startsWith("/team-a/")` }}
       />
       <hr className={styles.divider} />
       <Step num={4} title="Save and use in a Privilege"
