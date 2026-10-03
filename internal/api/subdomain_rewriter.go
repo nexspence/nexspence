@@ -88,7 +88,7 @@ func (w *locationUnrewriter) fix() {
 		return
 	}
 	w.done = true
-	h := w.ResponseWriter.Header()
+	h := w.Header()
 	if loc := h.Get("Location"); strings.HasPrefix(loc, w.prefix) {
 		h.Set("Location", "/v2/"+strings.TrimPrefix(loc, w.prefix))
 	}
