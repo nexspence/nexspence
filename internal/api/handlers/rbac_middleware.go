@@ -26,6 +26,16 @@ func RBACMiddleware(rbacSvc *service.RBACService, repoRepo repository.Repository
 			path = "/"
 		}
 
+		// The selector is judged against this path, but the format handlers
+		// clean it before resolving it: /team-a/../team-b/x would pass a
+		// /team-a/ selector and serve /team-b/x. Refuse the segment outright
+		// rather than normalize, as the group handler does
+		// (GHSA-jcgv-hchv-g397).
+		if hasTraversalSegment(path) {
+			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": `path must not contain a ".." segment`})
+			return
+		}
+
 		action := methodToAction(c.Request.Method)
 
 		// An API token created with scopes promised a restricted session; the
@@ -99,4 +109,15 @@ func methodToAction(method string) string {
 	default:
 		return "read"
 	}
+}
+
+// hasTraversalSegment reports whether p has a ".." path segment. A name that
+// merely contains dots ("we..ird.txt") is an ordinary artifact name and passes.
+func hasTraversalSegment(p string) bool {
+	for _, seg := range strings.Split(p, "/") {
+		if seg == ".." {
+			return true
+		}
+	}
+	return false
 }
