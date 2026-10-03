@@ -60,9 +60,70 @@ func (s *SubdomainRewriter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			rawSuffix := strings.TrimPrefix(r.URL.RawPath, "/v2/")
 			r.URL.RawPath = "/v2/" + repoName + "/" + rawSuffix
 		}
+		// The handlers build Location and Link from the path they received.
+		// The client is still on the subdomain host and sends them back
+		// through here, so the repository would be injected again on every
+		// hop — a push stored its blobs under <repo>/<image> (#607).
+		lw := &locationUnrewriter{ResponseWriter: w, prefix: "/v2/" + repoName + "/"}
+		defer lw.fix()
+		s.next.ServeHTTP(lw, r)
+		return
 	}
 	s.next.ServeHTTP(w, r)
 }
+
+// locationUnrewriter maps the response URLs of a rewritten request back to
+// the client's view: a Location or Link target that starts with the injected
+// "/v2/<repo>/" gets exactly that prefix replaced by "/v2/", so a client that
+// deliberately wrote /v2/<repo>/<image> keeps that image name. Absolute URLs
+// are left alone. The headers are fixed before the first byte goes out.
+type locationUnrewriter struct {
+	http.ResponseWriter
+	prefix string
+	done   bool
+}
+
+func (w *locationUnrewriter) fix() {
+	if w.done {
+		return
+	}
+	w.done = true
+	h := w.ResponseWriter.Header()
+	if loc := h.Get("Location"); strings.HasPrefix(loc, w.prefix) {
+		h.Set("Location", "/v2/"+strings.TrimPrefix(loc, w.prefix))
+	}
+	if links := h.Values("Link"); len(links) > 0 {
+		out := make([]string, len(links))
+		for i, l := range links {
+			if strings.HasPrefix(l, "<"+w.prefix) {
+				l = "</v2/" + strings.TrimPrefix(l, "<"+w.prefix)
+			}
+			out[i] = l
+		}
+		h["Link"] = out
+	}
+}
+
+func (w *locationUnrewriter) WriteHeader(code int) {
+	w.fix()
+	w.ResponseWriter.WriteHeader(code)
+}
+
+func (w *locationUnrewriter) Write(b []byte) (int, error) {
+	w.fix()
+	return w.ResponseWriter.Write(b)
+}
+
+// Flush keeps streaming responses working through the wrapper.
+func (w *locationUnrewriter) Flush() {
+	w.fix()
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+// Unwrap exposes the underlying writer to http.ResponseController.
+func (w *locationUnrewriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
 // extractRepo returns the repository name for the request's Host: an explicit
 // alias when one is configured for the full hostname, else the subdomain when
