@@ -89,6 +89,13 @@ func (s *UserService) Login(ctx context.Context, username, password string) (str
 			if err != nil && !errors.Is(err, repository.ErrNotFound) {
 				return "", nil, err
 			}
+			// The lowercased name can belong to a local or SSO account. A
+			// directory entry of that name must not log in as it, nor rewrite
+			// its profile — the SSO logins refuse the same collision
+			// (GHSA-86xg-jx85-4hj7).
+			if u != nil && u.Source != domain.UserSourceLDAP {
+				return "", nil, fmt.Errorf("%w: %q is a %s account", ErrProvisioningConflict, normalized, u.Source)
+			}
 		}
 		return s.loginLDAP(ctx, normalized, password, u)
 	}
