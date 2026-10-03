@@ -119,9 +119,9 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 }
 
 func (h *Handler) serveIndex(c *gin.Context, repoName string) {
-	page, err := h.deps.Components.Search(c.Request.Context(), domain.SearchParams{
-		Repository: repoName, Limit: 500,
-	})
+	// Every chart version, not one page of 500: a longer index.yaml was cut
+	// short and helm could not resolve the rest (#617).
+	comps, err := base.AllComponents(c.Request.Context(), h.deps.Components, repoName)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -137,7 +137,7 @@ func (h *Handler) serveIndex(c *gin.Context, repoName string) {
 	}
 
 	entries := map[string][]chartEntry{}
-	for _, comp := range page.Items {
+	for _, comp := range comps {
 		tgzName := comp.Name + "-" + comp.Version + ".tgz"
 		url := h.deps.BaseURL + "/repository/" + repoName + "/" + tgzName
 		entries[comp.Name] = append(entries[comp.Name], chartEntry{

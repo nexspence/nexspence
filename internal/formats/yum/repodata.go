@@ -14,10 +14,12 @@ import (
 	"encoding/xml"
 	"fmt"
 	"path"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
+	"github.com/nexspence-oss/nexspence/internal/formats/base"
 )
 
 // repodataDocs is one consistent snapshot of the generated repo metadata.
@@ -67,26 +69,34 @@ func gzipBytes(data []byte) []byte {
 
 // buildRepodata generates the full metadata snapshot for a repo.
 func (h *Handler) buildRepodata(ctx context.Context, repoName string) (*repodataDocs, error) {
-	page, err := h.deps.Components.Search(ctx, domain.SearchParams{
-		Repository: repoName, Limit: 1000,
-	})
+	// Every component and every asset: one page of each cut a repository past
+	// 500 packages (or 1000 files) short, and dnf reported the rest as
+	// nonexistent (#617).
+	comps, err := base.AllComponents(ctx, h.deps.Components, repoName)
 	if err != nil {
 		return nil, err
 	}
-	assetPage, err := h.deps.Assets.List(ctx, repoName, 1000, 0)
+	compMap := make(map[string]*domain.Component, len(comps))
+	ids := make([]string, 0, len(comps))
+	for i := range comps {
+		compMap[comps[i].ID] = &comps[i]
+		ids = append(ids, comps[i].ID)
+	}
+	byComp, err := h.deps.Assets.ListByComponentIDs(ctx, ids)
 	if err != nil {
 		return nil, err
 	}
-	compMap := map[string]*domain.Component{}
-	for i := range page.Items {
-		compMap[page.Items[i].ID] = &page.Items[i]
+	var assets []domain.Asset
+	for _, as := range byComp {
+		assets = append(assets, as...)
 	}
+	sort.Slice(assets, func(i, j int) bool { return assets[i].Path < assets[j].Path })
 
 	primary := primaryXML{XMLNS: "http://linux.duke.edu/metadata/common"}
 	filelists := filelistsXML{XMLNS: "http://linux.duke.edu/metadata/filelists"}
 	other := otherXML{XMLNS: "http://linux.duke.edu/metadata/other"}
 
-	for _, a := range assetPage.Items {
+	for _, a := range assets {
 		if !strings.HasSuffix(a.Path, ".rpm") {
 			continue
 		}
