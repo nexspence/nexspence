@@ -77,6 +77,23 @@ func (h *TokenHandler) Create(c *gin.Context) {
 		return
 	}
 
+	// A scoped API token must not mint a wider one: an unscoped token
+	// carries the account's full power, so a write token could otherwise
+	// turn itself into one that deletes (GHSA-389h-4qc3-698w). Sessions and
+	// unscoped tokens are not capped.
+	if callerScoped(c) {
+		if len(req.Scopes) == 0 {
+			c.JSON(http.StatusForbidden, gin.H{"error": "a scoped token cannot create an unscoped token"})
+			return
+		}
+		for _, sc := range req.Scopes {
+			if !scopesAllow(c, sc) {
+				c.JSON(http.StatusForbidden, gin.H{"error": fmt.Sprintf("token scope does not permit creating a %q token", sc)})
+				return
+			}
+		}
+	}
+
 	var expiresAt *time.Time
 	if req.ExpiresInDays != nil {
 		d := *req.ExpiresInDays
@@ -122,4 +139,15 @@ func (h *TokenHandler) Delete(c *gin.Context) {
 		return
 	}
 	c.Status(http.StatusNoContent)
+}
+
+// callerScoped reports whether the request is authenticated by an API token
+// that carries scopes.
+func callerScoped(c *gin.Context) bool {
+	v, ok := c.Get("tokenScopes")
+	if !ok {
+		return false
+	}
+	scopes, _ := v.([]string)
+	return len(scopes) > 0
 }
