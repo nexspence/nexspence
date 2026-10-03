@@ -2,8 +2,8 @@ package config
 
 import (
 	"path/filepath"
-	"strconv"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 )
