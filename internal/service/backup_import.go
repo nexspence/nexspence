@@ -251,6 +251,10 @@ func (s *BackupService) ImportRepo(ctx context.Context, r io.Reader, targetName,
 		newRepo.ID = ""
 		newRepo.Name = finalName
 		newRepo.BlobStoreID = nil
+		// The archive is input like any create request (#619).
+		if err := validateRepoIdentity(&newRepo); err != nil {
+			return nil, err
+		}
 		if err := s.Repos.Create(ctx, &newRepo); err != nil {
 			return nil, fmt.Errorf("create repository: %w", err)
 		}
@@ -598,6 +602,10 @@ func (s *BackupService) restoreRepos(ctx context.Context, repos []domain.Reposit
 					repo.BlobStoreID = &newID
 				}
 			}
+		}
+		if err := validateRepoIdentity(repo); err != nil {
+			s.recordFailure(&stats.FailureReport, "restore", "repository", repo.Name, err)
+			continue
 		}
 		if err := s.Repos.Create(ctx, repo); err != nil {
 			s.recordFailure(&stats.FailureReport, "restore", "repository", repo.Name, err)
