@@ -545,12 +545,100 @@ func (h *Handler) recordCachedManifestMeta(ctx context.Context, repo *domain.Rep
 }
 
 func (h *Handler) deleteManifest(c *gin.Context, repoName, imageName, reference string) {
+	ctx := c.Request.Context()
 	fp := manifestPath(imageName, reference)
-	if err := base.DeleteArtifact(c.Request.Context(), h.deps, repoName, fp); err != nil {
+	// Deleting by tag only untags: the manifest stays reachable by digest,
+	// which is what a deployment pinned to it pulls.
+	if !strings.Contains(reference, ":") {
+		if err := base.DeleteArtifact(ctx, h.deps, repoName, fp); err != nil {
+			dockerError(c, http.StatusInternalServerError, "UNKNOWN", err.Error())
+			return
+		}
+		c.Status(http.StatusAccepted)
+		return
+	}
+	// Deleting by digest deletes the manifest: the tags that resolve to it go
+	// too, or they stay listed while their digest answers 404 (#620). What the
+	// image no longer needs afterwards — blobs no manifest left is built from,
+	// index children nothing else names — is released with it.
+	tags, err := h.tagsResolvingTo(ctx, repoName, imageName, strings.TrimPrefix(reference, "sha256:"))
+	if err != nil {
 		dockerError(c, http.StatusInternalServerError, "UNKNOWN", err.Error())
 		return
 	}
+	targets := tags
+	targets = append(targets, fp)
+
+	released := map[string][]byte{}
+	for _, fp := range targets {
+		a, err := h.deps.Assets.GetByPath(ctx, repoName, fp)
+		if err != nil || a == nil {
+			continue
+		}
+		body, err := h.readAsset(ctx, a)
+		if err != nil {
+			dockerError(c, http.StatusInternalServerError, "UNKNOWN", err.Error())
+			return
+		}
+		if err := base.DeleteArtifact(ctx, h.deps, repoName, fp); err != nil {
+			dockerError(c, http.StatusInternalServerError, "UNKNOWN", err.Error())
+			return
+		}
+		released[a.SHA256] = body
+	}
+	if len(released) > 0 {
+		release, err := PlanImageRelease(ctx, h.deps.Assets, h.readAsset, repoName, imageName, released)
+		if err != nil {
+			dockerError(c, http.StatusInternalServerError, "UNKNOWN", err.Error())
+			return
+		}
+		for _, fp := range release {
+			if err := base.DeleteArtifact(ctx, h.deps, repoName, fp); err != nil {
+				dockerError(c, http.StatusInternalServerError, "UNKNOWN", err.Error())
+				return
+			}
+		}
+		_ = h.deps.Components.DeleteOrphans(ctx, repoName)
+	}
 	c.Status(http.StatusAccepted)
+}
+
+// tagsResolvingTo returns the tag paths of imageName whose manifest has the
+// given hex sha256.
+func (h *Handler) tagsResolvingTo(ctx context.Context, repoName, imageName, sha string) ([]string, error) {
+	prefix := manifestPath(imageName, "")
+	listed, err := h.deps.Assets.ListByRepoAndPath(ctx, repoName, prefix)
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, a := range listed {
+		ref := strings.TrimPrefix(a.Path, prefix)
+		if ref != "" && !strings.ContainsAny(ref, "/:") && a.SHA256 == sha {
+			out = append(out, a.Path)
+		}
+	}
+	return out, nil
+}
+
+// readAsset returns a stored asset's bytes from the store that holds it.
+func (h *Handler) readAsset(ctx context.Context, a *domain.Asset) ([]byte, error) {
+	store := h.deps.BlobStore
+	if a.BlobStoreID != "" {
+		bs, err := h.deps.Blobs.GetByID(ctx, a.BlobStoreID)
+		if err != nil {
+			return nil, err
+		}
+		if store, err = base.PhysicalStore(ctx, h.deps, bs); err != nil {
+			return nil, err
+		}
+	}
+	rc, _, err := store.Get(ctx, a.BlobKey)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rc.Close() }()
+	return io.ReadAll(rc)
 }
 
 // ─── Blobs ─────────────────────────────────────────────────────────────────

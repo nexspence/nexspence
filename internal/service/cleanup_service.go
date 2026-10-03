@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -13,6 +16,7 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/distlock"
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/formats/base"
+	"github.com/nexspence-oss/nexspence/internal/formats/oci"
 	"github.com/nexspence-oss/nexspence/internal/logger"
 	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/storage"
@@ -399,6 +403,8 @@ func (s *CleanupService) runPolicy(ctx context.Context, p domain.CleanupPolicy, 
 	var deleted int
 	noProgress := 0
 	aborted := false
+	repoCache := map[string]*domain.Repository{}
+	releasedTags := map[string]map[string][]byte{} // repo\x00image → sha256 → manifest
 	for {
 		if pastDeadline(deadline) {
 			log.Warn("cleanup: stopping — the run reached its lock TTL, another node may already hold the lock",
@@ -422,56 +428,20 @@ func (s *CleanupService) runPolicy(ctx context.Context, p domain.CleanupPolicy, 
 				deleted++
 				continue
 			}
-			asset := a
-			// The lock serializes this delete against every other reader-then-actor
-			// on the same blob key — a concurrent mount, a DeleteArtifact call,
-			// another cleanup — and the conditional delete refuses a row that was
-			// downloaded or re-uploaded after the staleness scan: deleting by the
-			// captured ID would erase a live artifact and the next pull would 404.
-			lockErr := s.assets.WithBlobKeyLock(ctx, a.BlobKey, func(ctx context.Context) error {
-				rowDeleted, derr := s.assets.DeleteIfUnchanged(ctx, a.ID, a.BlobKey, a.LastDownloaded, a.LastModified)
-				if derr != nil {
-					log.Warn("cleanup: asset delete failed", "id", a.ID, "err", derr)
-					return nil
-				}
-				if !rowDeleted {
-					log.Info("cleanup: skipped — asset changed after the staleness scan",
-						"id", a.ID, "path", a.Path, "repo", a.Repository)
-					return nil
-				}
+			// A hosted image's tag is read before it goes: what it names is
+			// released after the run once nothing left needs it (#618).
+			image, body, isTag := s.ociTagBody(ctx, repoCache, &a)
+			rowDeleted, bytesFreed := s.deleteStaleAsset(ctx, log, a)
+			if rowDeleted {
 				deleted++
-				// One object can carry several assets — an OCI manifest's tag and its
-				// digest alias, a mounted layer — and expiring one of them says
-				// nothing about the others. Deleting the bytes under a surviving
-				// asset would leave it advertising content that is gone (#144); an
-				// unreadable count keeps them, since an orphan is reclaimed by the
-				// blob GC while bytes deleted under a live asset are lost.
-				others, cerr := s.assets.CountByBlobKey(ctx, a.BlobKey, a.ID)
-				if cerr != nil {
-					log.Warn("cleanup: blob reference count failed, keeping blob",
-						"key", a.BlobKey, "err", cerr)
-					return nil
-				}
-				if others == 0 {
-					if err := s.storeForAsset(ctx, &asset).Delete(ctx, a.BlobKey); err != nil {
-						log.Warn("cleanup: blob delete failed", "key", a.BlobKey, "err", err)
-					} else {
-						// Bytes count as freed on exactly the same condition as
-						// used_bytes moves: the physical delete succeeded. A row
-						// whose blob is shared with a surviving asset, or whose
-						// delete failed, leaves the bytes on disk — reporting them
-						// as freed tells the operator storage was reclaimed that
-						// never was (#368).
-						freed += a.SizeBytes
-						// used_bytes is how full the store is, so it only moves when
-						// bytes actually left it (#146).
-						_ = base.DecrementBlobStoreUsage(ctx, s.blobs, &asset)
+				freed += bytesFreed
+				if isTag {
+					key := a.Repository + "\x00" + image
+					if releasedTags[key] == nil {
+						releasedTags[key] = map[string][]byte{}
 					}
+					releasedTags[key][a.SHA256] = body
 				}
-				return nil
-			})
-			if lockErr != nil {
-				log.Warn("cleanup: blob key lock failed", "key", a.BlobKey, "err", lockErr)
 			}
 		}
 		if !p.DryRun {
@@ -496,6 +466,14 @@ func (s *CleanupService) runPolicy(ctx context.Context, p domain.CleanupPolicy, 
 			}
 			break
 		}
+	}
+
+	// A run past its lock TTL stops touching the repository; the layers of its
+	// expired tags stay until a blob sweep or a later delete releases them.
+	if !p.DryRun && !aborted {
+		d, f := s.releaseImages(ctx, log, releasedTags)
+		deleted += d
+		freed += f
 	}
 
 	// Prune components left without any assets so the repository no longer shows
@@ -616,4 +594,126 @@ func intCriteria(m map[string]any, key string) int {
 		return int(n)
 	}
 	return 0
+}
+
+// deleteStaleAsset deletes one asset a staleness scan picked, and its bytes
+// when no other asset shares them. It reports whether the row went and how
+// many bytes left the store.
+func (s *CleanupService) deleteStaleAsset(ctx context.Context, log logger.Logger, a domain.Asset) (rowDeleted bool, freed int64) {
+	asset := a
+	// The lock serializes this delete against every other reader-then-actor
+	// on the same blob key — a concurrent mount, a DeleteArtifact call,
+	// another cleanup — and the conditional delete refuses a row that was
+	// downloaded or re-uploaded after the staleness scan: deleting by the
+	// captured ID would erase a live artifact and the next pull would 404.
+	lockErr := s.assets.WithBlobKeyLock(ctx, a.BlobKey, func(ctx context.Context) error {
+		ok, derr := s.assets.DeleteIfUnchanged(ctx, a.ID, a.BlobKey, a.LastDownloaded, a.LastModified)
+		if derr != nil {
+			log.Warnw("cleanup: asset delete failed", "id", a.ID, "err", derr)
+			return nil
+		}
+		if !ok {
+			log.Infow("cleanup: skipped — asset changed after the staleness scan",
+				"id", a.ID, "path", a.Path, "repo", a.Repository)
+			return nil
+		}
+		rowDeleted = true
+		// One object can carry several assets — an OCI manifest's tag and its
+		// digest alias, a mounted layer — and expiring one of them says
+		// nothing about the others. Deleting the bytes under a surviving
+		// asset would leave it advertising content that is gone (#144); an
+		// unreadable count keeps them, since an orphan is reclaimed by the
+		// blob GC while bytes deleted under a live asset are lost.
+		others, cerr := s.assets.CountByBlobKey(ctx, a.BlobKey, a.ID)
+		if cerr != nil {
+			log.Warnw("cleanup: blob reference count failed, keeping blob",
+				"key", a.BlobKey, "err", cerr)
+			return nil
+		}
+		if others == 0 {
+			if err := s.storeForAsset(ctx, &asset).Delete(ctx, a.BlobKey); err != nil {
+				log.Warnw("cleanup: blob delete failed", "key", a.BlobKey, "err", err)
+			} else {
+				// Bytes count as freed on exactly the same condition as
+				// used_bytes moves: the physical delete succeeded. A row
+				// whose blob is shared with a surviving asset, or whose
+				// delete failed, leaves the bytes on disk — reporting them
+				// as freed tells the operator storage was reclaimed that
+				// never was (#368).
+				freed = a.SizeBytes
+				// used_bytes is how full the store is, so it only moves when
+				// bytes actually left it (#146).
+				_ = base.DecrementBlobStoreUsage(ctx, s.blobs, &asset)
+			}
+		}
+		return nil
+	})
+	if lockErr != nil {
+		log.Warnw("cleanup: blob key lock failed", "key", a.BlobKey, "err", lockErr)
+	}
+	return rowDeleted, freed
+}
+
+// ociTagBody reads the manifest of a hosted docker/oci tag about to be
+// deleted. isTag is false for every other asset, and when the bytes cannot be
+// read — the tag is still deleted, but nothing is released on its account.
+func (s *CleanupService) ociTagBody(ctx context.Context, repoCache map[string]*domain.Repository, a *domain.Asset) (image string, body []byte, isTag bool) {
+	repo, ok := repoCache[a.Repository]
+	if !ok {
+		repo, _ = s.repos.Get(ctx, a.Repository)
+		repoCache[a.Repository] = repo
+	}
+	if repo == nil || repo.Type != domain.TypeHosted || !repo.Format.IsOCIRegistry() {
+		return "", nil, false
+	}
+	rest, ok := strings.CutPrefix(a.Path, "/manifests/")
+	i := strings.LastIndex(rest, "/")
+	if !ok || i <= 0 || strings.Contains(rest[i+1:], ":") {
+		return "", nil, false
+	}
+	b, err := s.readAsset(ctx, a)
+	if err != nil {
+		return "", nil, false
+	}
+	return rest[:i], b, true
+}
+
+func (s *CleanupService) readAsset(ctx context.Context, a *domain.Asset) ([]byte, error) {
+	rc, _, err := s.storeForAsset(ctx, a).Get(ctx, a.BlobKey)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rc.Close() }()
+	return io.ReadAll(rc)
+}
+
+// releaseImages deletes what the expired tags of each hosted image held that
+// nothing left in the image needs: digest aliases and unshared blobs (#618).
+// An image whose manifests cannot all be read keeps everything.
+func (s *CleanupService) releaseImages(ctx context.Context, log logger.Logger, released map[string]map[string][]byte) (deleted int, freed int64) {
+	keys := make([]string, 0, len(released))
+	for k := range released {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		repoName, image, _ := strings.Cut(key, "\x00")
+		paths, err := oci.PlanImageRelease(ctx, s.assets, s.readAsset, repoName, image, released[key])
+		if err != nil {
+			log.Warnw("cleanup: cannot plan the release of an image, keeping its layers",
+				"repo", repoName, "image", image, "err", err)
+			continue
+		}
+		for _, p := range paths {
+			a, err := s.assets.GetByPath(ctx, repoName, p)
+			if err != nil || a == nil {
+				continue
+			}
+			if ok, f := s.deleteStaleAsset(ctx, log, *a); ok {
+				deleted++
+				freed += f
+			}
+		}
+	}
+	return deleted, freed
 }

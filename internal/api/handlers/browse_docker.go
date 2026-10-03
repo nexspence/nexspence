@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,6 +13,7 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/formats"
 	"github.com/nexspence-oss/nexspence/internal/formats/base"
+	"github.com/nexspence-oss/nexspence/internal/formats/oci"
 	"github.com/nexspence-oss/nexspence/internal/service"
 	"github.com/nexspence-oss/nexspence/internal/storage"
 )
@@ -373,7 +373,7 @@ func (h *BrowseHandler) DeleteByPath(c *gin.Context) {
 
 // DeleteDockerTag handles DELETE /api/v1/browse/repositories/:name/docker-tag
 // Query params: image=da/rbi/python&ref=3.15-rc-alpine3.22
-// Deletes the tag manifest, its digest alias, and blobs not referenced by any remaining tag.
+// Deletes the tag manifest, then its digest alias and blobs unless something left still needs them.
 func (h *BrowseHandler) DeleteDockerTag(c *gin.Context) {
 	repoName := c.Param("name")
 	imageName := c.Query("image")
@@ -398,54 +398,40 @@ func (h *BrowseHandler) DeleteDockerTag(c *gin.Context) {
 
 	// Read through the store that holds this asset: a repository on its own blob
 	// store keeps its manifests there, and reading the default store would return
-	// nothing — leaving deletedDigests empty and the layers below never swept.
-	store, err := h.assetStore(ctx, tagAsset)
+	// nothing — and nothing below would be released.
+	read := func(ctx context.Context, a *domain.Asset) ([]byte, error) {
+		store, err := h.assetStore(ctx, a)
+		if err != nil {
+			return nil, err
+		}
+		rc, _, err := store.Get(ctx, a.BlobKey)
+		if err != nil {
+			return nil, err
+		}
+		defer func() { _ = rc.Close() }()
+		return io.ReadAll(rc)
+	}
+	body, err := read(ctx, tagAsset)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	deletedDigests := parseManifestDigests(store.Get(ctx, tagAsset.BlobKey))
 
-	// 2. Delete the tag manifest record and its digest alias. DeleteArtifact
-	// keeps a blob alive while another asset still references it, so an alias
-	// that shares the tag's blob (as every alias stored before #594 does) keeps
-	// it until both records are gone. The alias stays while another tag of the
-	// image still resolves to the same manifest: clients fetch it by digest
-	// after resolving that tag (#595).
+	// 2. Delete the tag, then whatever of the image nothing left needs: its
+	// digest alias unless another tag still resolves to it (#595), and the
+	// blobs no remaining manifest is built from — shared layers stay.
 	if err := base.DeleteArtifact(ctx, h.deps, repoName, tagPath); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	digestAliasPath := "/manifests/" + imageName + "/sha256:" + tagAsset.SHA256
-	if digestAliasPath != tagPath && !h.otherTagHasDigest(ctx, repoName, imageName, tagAsset.SHA256) {
-		if err := base.DeleteArtifact(ctx, h.deps, repoName, digestAliasPath); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
+	release, err := oci.PlanImageRelease(ctx, h.deps.Assets, read, repoName, imageName,
+		map[string][]byte{tagAsset.SHA256: body})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
 	}
-
-	// 3. Collect digests still referenced by remaining manifests of this image.
-	//    This correctly handles shared layers between tags (e.g. latest and 3.15-rc share base layers).
-	stillUsed := make(map[string]struct{})
-	remaining, _ := h.deps.Assets.ListByRepoAndPath(ctx, repoName, "/manifests/"+imageName+"/")
-	for i := range remaining {
-		ra := remaining[i]
-		store, storeErr := h.assetStore(ctx, &ra)
-		if storeErr != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": storeErr.Error()})
-			return
-		}
-		for _, d := range parseManifestDigests(store.Get(ctx, ra.BlobKey)) {
-			stillUsed[d] = struct{}{}
-		}
-	}
-
-	// 4. Delete blob assets not referenced by any remaining manifest.
-	for _, digest := range deletedDigests {
-		if _, inUse := stillUsed[digest]; inUse {
-			continue
-		}
-		if err := base.DeleteArtifact(ctx, h.deps, repoName, "/blobs/"+imageName+"/"+digest); err != nil {
+	for _, p := range release {
+		if err := base.DeleteArtifact(ctx, h.deps, repoName, p); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
@@ -455,59 +441,6 @@ func (h *BrowseHandler) DeleteDockerTag(c *gin.Context) {
 	_ = h.deps.Components.DeleteOrphans(ctx, repoName)
 
 	c.Status(http.StatusNoContent)
-}
-
-// otherTagHasDigest reports whether a tag of imageName still resolves to the
-// manifest with the given sha256. A listing error answers true: keeping an
-// alias nobody needs is harmless, dropping one a tag needs breaks its pulls.
-func (h *BrowseHandler) otherTagHasDigest(ctx context.Context, repoName, imageName, sha256 string) bool {
-	prefix := "/manifests/" + imageName + "/"
-	assets, err := h.deps.Assets.ListByRepoAndPath(ctx, repoName, prefix)
-	if err != nil {
-		return true
-	}
-	for _, a := range assets {
-		ref := strings.TrimPrefix(a.Path, prefix)
-		// A nested image's manifest has a "/" in what follows the prefix; a
-		// digest reference has a ":".
-		if strings.ContainsAny(ref, "/:") {
-			continue
-		}
-		if a.SHA256 == sha256 {
-			return true
-		}
-	}
-	return false
-}
-
-// parseManifestDigests reads an open blob stream (or error) and returns the config+layer digests.
-func parseManifestDigests(rc io.ReadCloser, _ int64, err error) []string {
-	if err != nil || rc == nil {
-		return nil
-	}
-	data, _ := io.ReadAll(rc)
-	_ = rc.Close()
-	var m struct {
-		Config struct {
-			Digest string `json:"digest"`
-		} `json:"config"`
-		Layers []struct {
-			Digest string `json:"digest"`
-		} `json:"layers"`
-	}
-	if json.Unmarshal(data, &m) != nil {
-		return nil
-	}
-	var out []string
-	if m.Config.Digest != "" {
-		out = append(out, m.Config.Digest)
-	}
-	for _, l := range m.Layers {
-		if l.Digest != "" {
-			out = append(out, l.Digest)
-		}
-	}
-	return out
 }
 
 // DeleteDockerImage handles DELETE /api/v1/browse/repositories/:name/docker-image
