@@ -22,8 +22,8 @@ import (
 // Without a key the repository stays unsigned and only works for apt sources
 // marked [trusted=yes] — which is what #103 is about.
 const (
-	signingKeyField     = "signing_key"
-	signingKeyPassField = "signing_key_passphrase"
+	signingKeyField     = domain.SigningKeyKey
+	signingKeyPassField = domain.SigningKeyPassphraseKey
 )
 
 func configString(repo *domain.Repository, field string) string {

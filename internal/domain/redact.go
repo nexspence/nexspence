@@ -19,6 +19,26 @@ const (
 	SecretKeySetKey = "secret_key_set"
 )
 
+// SigningKeyKey and SigningKeyPassphraseKey are the formatConfig entries
+// holding an apt repository's private signing key and its passphrase.
+const (
+	SigningKeyKey           = "signing_key"
+	SigningKeyPassphraseKey = "signing_key_passphrase"
+)
+
+// formatConfigSecretKeys are every formatConfig entry that carries a secret.
+// Like proxy passwords they are replaced by a "<key>_set" marker in every
+// response, and an update that omits one keeps the stored value
+// (GHSA-pg67-wh39-mx9j).
+var formatConfigSecretKeys = []string{SigningKeyKey, SigningKeyPassphraseKey}
+
+// FormatConfigSecretKeys returns the formatConfig keys treated as secrets.
+func FormatConfigSecretKeys() []string {
+	out := make([]string, len(formatConfigSecretKeys))
+	copy(out, formatConfigSecretKeys)
+	return out
+}
+
 // blobStoreSecretKeys are every blob store config entry that carries a
 // credential. All of them are stripped from API responses and replaced by a
 // "<key>_set" marker; an update that omits one keeps the stored value (see
@@ -81,11 +101,15 @@ func RedactedBlobStores(list []BlobStore) []BlobStore {
 }
 
 // RedactedRepository returns a copy of r with proxy credentials stripped from
-// proxyConfig, so repository payloads can be served to any reader. When a password
+// proxyConfig and signing secrets from formatConfig, so repository payloads
+// can be served to any reader. When a password
 // is stored, ProxyPasswordSetKey is set to true in its place. The input is untouched.
 func RedactedRepository(r Repository) Repository {
 	r.ProxyConfig = redactedConfig(r.ProxyConfig, ProxyPasswordKey, ProxyPasswordSetKey)
 	r.ProxyConfig = redactedConfig(r.ProxyConfig, RemotePasswordKey, RemotePasswordSetKey)
+	for _, k := range formatConfigSecretKeys {
+		r.FormatConfig = redactedConfig(r.FormatConfig, k, k+"_set")
+	}
 	return r
 }
 
