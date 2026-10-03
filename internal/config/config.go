@@ -734,6 +734,34 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("redis.addr", "localhost:6379")
 	v.SetDefault("redis.password", "")
 	v.SetDefault("redis.db", 0)
+	// The same viper gap again: without a default these keys could only be
+	// set from a config file, never from NEXSPENCE_* — LDAP, SAML, the
+	// outbound proxy and TLS were unconfigurable in env-only deployments.
+	// TestLoad_EveryScalarSettingIsReachableFromEnv keeps the list complete.
+	v.SetDefault("http.tls.cert_file", "")
+	v.SetDefault("http.tls.key_file", "")
+	v.SetDefault("ldap.admin_group", "")
+	v.SetDefault("ldap.bind_dn", "")
+	v.SetDefault("ldap.bind_password", "")
+	v.SetDefault("ldap.group_base", "")
+	v.SetDefault("ldap.group_filter", "")
+	v.SetDefault("ldap.host", "")
+	v.SetDefault("ldap.search_base", "")
+	v.SetDefault("proxy.http_proxy", "")
+	v.SetDefault("proxy.https_proxy", "")
+	v.SetDefault("proxy.no_proxy", "")
+	v.SetDefault("proxy.password", "")
+	v.SetDefault("proxy.socks5_proxy", "")
+	v.SetDefault("proxy.username", "")
+	v.SetDefault("saml.acs_url", "")
+	v.SetDefault("saml.admin_group", "")
+	v.SetDefault("saml.frontend_base_url", "")
+	v.SetDefault("saml.hmac_key", "")
+	v.SetDefault("saml.idp_metadata_url", "")
+	v.SetDefault("saml.idp_metadata_xml", "")
+	v.SetDefault("saml.sp_cert_pem", "")
+	v.SetDefault("saml.sp_entity_id", "")
+	v.SetDefault("saml.sp_key_pem", "")
 
 	// Config file
 	v.SetConfigFile(path)
