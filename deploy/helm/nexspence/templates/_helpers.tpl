@@ -45,7 +45,7 @@ Selector labels.
 */}}
 {{- define "nexspence.selectorLabels" -}}
 app.kubernetes.io/name: {{ include "nexspence.name" . }}
-app.kubernetes.io/instance: {{ .Release.Name }}
+app.kubernetes.io/instance: {{ .Release.Name | quote }}
 {{- end }}
 
 {{/*
@@ -121,4 +121,25 @@ of leaving the pod pointing at a port nothing serves.
 {{- fail (printf "config.httpAddr %q has no port; expected something like \":8081\"" $listen) -}}
 {{- end -}}
 {{- $port -}}
+{{- end }}
+
+{{/*
+Workload controller kind: Deployment (default) or StatefulSet (#563).
+*/}}
+{{- define "nexspence.workloadKind" -}}
+{{- $kind := .Values.workloadKind | default "Deployment" -}}
+{{- if not (has $kind (list "Deployment" "StatefulSet")) -}}
+{{- fail (printf "workloadKind must be Deployment or StatefulSet, got %q" $kind) -}}
+{{- end -}}
+{{- $kind -}}
+{{- end }}
+
+{{/*
+"true" when each pod gets its own blob volume: a StatefulSet on
+chart-managed local storage (no existingClaim).
+*/}}
+{{- define "nexspence.perPodBlobs" -}}
+{{- if and (eq (include "nexspence.workloadKind" .) "StatefulSet") (eq .Values.storage.type "local") (not .Values.storage.local.existingClaim) -}}
+true
+{{- end -}}
 {{- end }}

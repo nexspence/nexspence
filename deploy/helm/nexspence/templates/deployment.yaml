@@ -1,5 +1,10 @@
+{{- $kind := include "nexspence.workloadKind" . }}
+{{- $perPodBlobs := include "nexspence.perPodBlobs" . }}
+{{- if and $perPodBlobs (or .Values.autoscaling.enabled (gt (int .Values.replicaCount) 1)) }}
+{{- fail "workloadKind=StatefulSet with chart-managed local storage gives every pod its own blob volume, so more than one replica would split the repository across them. Use one replica, a shared storage.local.existingClaim (ReadWriteMany), or s3/azure storage." }}
+{{- end }}
 apiVersion: apps/v1
-kind: Deployment
+kind: {{ $kind }}
 metadata:
   name: {{ include "nexspence.fullname" . }}
   namespace: {{ .Release.Namespace }}
@@ -8,6 +13,11 @@ metadata:
 spec:
   {{- if not .Values.autoscaling.enabled }}
   replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  {{- if eq $kind "StatefulSet" }}
+  serviceName: {{ include "nexspence.fullname" . }}-headless
+  updateStrategy:
+    type: RollingUpdate
   {{- end }}
   selector:
     matchLabels:
@@ -238,7 +248,7 @@ spec:
           configMap:
             name: {{ include "nexspence.fullname" . }}-file
         {{- end }}
-        {{- if eq .Values.storage.type "local" }}
+        {{- if and (eq .Values.storage.type "local") (not $perPodBlobs) }}
         - name: blobs
           persistentVolumeClaim:
             claimName: {{ .Values.storage.local.existingClaim | default (printf "%s-blobs" (include "nexspence.fullname" .)) }}
@@ -263,3 +273,20 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+  {{- if $perPodBlobs }}
+  # Each pod's own blob volume, kept across restarts and rescheduling.
+  volumeClaimTemplates:
+    - metadata:
+        name: blobs
+        labels:
+          {{- include "nexspence.selectorLabels" . | nindent 10 }}
+      spec:
+        accessModes:
+          - {{ .Values.storage.local.accessMode }}
+        resources:
+          requests:
+            storage: {{ .Values.storage.local.size }}
+        {{- with .Values.storage.local.storageClass }}
+        storageClassName: {{ . }}
+        {{- end }}
+  {{- end }}

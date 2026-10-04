@@ -316,6 +316,31 @@ For multi-replica deployments, use S3 or Azure storage (see above).
 
 ---
 
+## Deployment or StatefulSet
+
+nexspence runs as a Deployment by default. Set `workloadKind: StatefulSet` to run it as a StatefulSet instead:
+
+```yaml
+workloadKind: StatefulSet
+```
+
+On chart-managed local storage, a StatefulSet gives the pod its own blob volume (`volumeClaimTemplates`, PVC `blobs-<release>-nexspence-0`) and a headless Service. The volume stays with the pod across reschedules, and a rollout never has two pods contending for one `ReadWriteOnce` volume.
+
+Per-pod volumes cannot be shared, so the chart refuses `replicaCount > 1` or `autoscaling.enabled` with that layout. To run several replicas as a StatefulSet, use a shared `storage.local.existingClaim` (`ReadWriteMany`) or S3/Azure storage, together with Redis (see Scaling above).
+
+**Switching an existing install** keeps its blobs in two steps:
+
+```bash
+# 1. upgrade to this chart version as a Deployment — marks the blobs PVC to be kept
+helm upgrade <release> nexspence/nexspence -f values.yaml
+# 2. switch, mounting the existing PVC
+helm upgrade <release> nexspence/nexspence -f values.yaml \
+  --set workloadKind=StatefulSet \
+  --set storage.local.existingClaim=<release>-nexspence-blobs
+```
+
+The chart's blobs PVC carries `helm.sh/resource-policy: keep`, so `helm uninstall` leaves it in place as well. Delete it yourself when the data is no longer needed.
+
 ## Monitoring (Prometheus)
 
 The pod serves `GET /metrics` on the same port as the API, so it requires a

@@ -1,0 +1,21 @@
+{{- if eq (include "nexspence.workloadKind" .) "StatefulSet" }}
+# The governing Service a StatefulSet requires: it gives each pod a stable DNS
+# name (<pod>.<name>-headless). Client traffic keeps using the regular Service.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "nexspence.fullname" . }}-headless
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "nexspence.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: {{ .Values.service.targetPort }}
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "nexspence.selectorLabels" . | nindent 4 }}
+{{- end }}

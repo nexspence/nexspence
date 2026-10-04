@@ -13,6 +13,18 @@ imagePullSecrets: []
 
 replicaCount: 1
 
+# -- Workload controller: "Deployment" (default) or "StatefulSet".
+# A StatefulSet gives the pod a stable identity and, on chart-managed local
+# storage, its own blob volume through volumeClaimTemplates — kept across
+# reschedules, and never mounted by two pods at once during a rollout, which a
+# Deployment on a ReadWriteOnce volume can deadlock on. Per-pod volumes cannot
+# be shared, so that layout is limited to one replica; for more, use a shared
+# storage.local.existingClaim (ReadWriteMany) or s3/azure storage.
+# Switching an existing install keeps its blobs in two steps: first upgrade to
+# this chart version as a Deployment (that marks the chart's PVC to be kept),
+# then switch with storage.local.existingClaim="<release>-nexspence-blobs".
+workloadKind: Deployment
+
 serviceAccount:
   # -- Create a ServiceAccount
   create: true

@@ -48,6 +48,8 @@ jobs:
           helm template check deploy/helm/nexspence --set config.adminExistingSecret=ext --set config.jwtSecretExistingSecret=ext >/dev/null
           helm template check deploy/helm/nexspence --set oidc.enabled=true --set oidc.cookieKeyExistingSecret=ext >/dev/null
           helm template check deploy/helm/nexspence --set gateway.istio.enabled=true --set gateway.istio.existingGateway=istio-system/gw >/dev/null
+      - name: Deployment / StatefulSet workloads render as intended
+        run: python3 scripts/test-helm-workload.py
       - name: Bootstrap off must not ship admin credentials
         run: |
           set -euo pipefail
