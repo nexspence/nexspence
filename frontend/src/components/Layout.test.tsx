@@ -220,6 +220,9 @@ describe('Layout ProfileModal change password', () => {
     renderLayout()
     await userEvent.click(screen.getByTitle('API Tokens & Profile'))
     await screen.findByText(/Profile — admin/)
+    // The password form lives in its own category; SSO accounts have none.
+    const tab = screen.queryByRole('tab', { name: 'Password' })
+    if (tab) await userEvent.click(tab)
   }
 
   it('renders change password fields for a local user', async () => {
@@ -239,6 +242,7 @@ describe('Layout ProfileModal change password', () => {
       user: fixtures.user({ source: 'oidc' }) as never,
     })
     await openProfile()
+    expect(screen.queryByRole('tab', { name: 'Password' })).not.toBeInTheDocument()
     expect(screen.getByText('Create API Token')).toBeInTheDocument()
     expect(screen.queryByText('Change Password')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Current password')).not.toBeInTheDocument()
@@ -310,5 +314,51 @@ describe('Layout ProfileModal change password', () => {
     await userEvent.click(screen.getByRole('button', { name: /Change password/ }))
     expect(await screen.findByRole('alert')).toHaveTextContent('at least 8 characters')
     expect(putHandler).not.toHaveBeenCalled()
+  })
+})
+
+describe('Layout ProfileModal categories', () => {
+  beforeEach(() => {
+    server.use(http.get('/api/v1/tokens', () => HttpResponse.json([])))
+  })
+
+  async function open(source: string) {
+    useAuthStore.setState({
+      token: 'tok',
+      user: fixtures.user({ source, email: 'admin@example.com', roles: ['nx-admin'] }) as never,
+    })
+    renderLayout()
+    await userEvent.click(screen.getByTitle('API Tokens & Profile'))
+    await screen.findByText(/Profile — admin/)
+  }
+
+  it('groups the profile into categories, API tokens first', async () => {
+    await open('local')
+    const tabs = screen.getAllByRole('tab').map(t => t.textContent)
+    expect(tabs).toEqual(['API Tokens', 'Password', 'Account'])
+    expect(screen.getByRole('tab', { name: 'API Tokens' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByText('Create API Token')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Current password')).not.toBeInTheDocument()
+  })
+
+  it('keeps the same panel size whichever category is open', async () => {
+    await open('local')
+    const panel = screen.getByRole('tabpanel')
+    const height = panel.style.height
+    expect(height).not.toBe('')
+    for (const name of ['Password', 'Account', 'API Tokens']) {
+      await userEvent.click(screen.getByRole('tab', { name }))
+      expect(screen.getByRole('tabpanel').style.height).toBe(height)
+    }
+  })
+
+  it('shows the account details', async () => {
+    await open('oidc')
+    expect(screen.queryByRole('tab', { name: 'Password' })).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('tab', { name: 'Account' }))
+    const panel = screen.getByRole('tabpanel')
+    expect(panel).toHaveTextContent('admin@example.com')
+    expect(panel).toHaveTextContent('oidc')
+    expect(panel).toHaveTextContent('nx-admin')
   })
 })

@@ -1638,11 +1638,16 @@ export default function AdminPage() {
                 value={importConflict}
                 onChange={setImportConflict}
                 options={[
-                  { value: 'skip',   label: 'Skip — add only absent components/assets if repo exists' },
-                  { value: 'rename', label: 'Rename — create under target name (fails if name is taken)' },
+                  { value: 'skip',   label: 'Skip existing' },
+                  { value: 'rename', label: 'Rename' },
                 ]}
-                style={{ width: 360 }}
+                style={{ width: 300 }}
               />
+              <div style={{ fontSize: 12, color: 'var(--holo-text-faint)', marginTop: 6, maxWidth: 520 }}>
+                {importConflict === 'rename'
+                  ? 'The repository is created under the target name; the import fails if that name is taken.'
+                  : 'If the repository exists, the import adds only the components and assets it does not have yet.'}
+              </div>
             </div>
 
             <div>
@@ -1710,7 +1715,7 @@ export default function AdminPage() {
           </div>
         ) : (
           <div style={{ background: 'rgba(var(--holo-ink-rgb), 0.02)', border: '1px solid var(--holo-border)', borderRadius: 12, overflow: 'hidden' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 2fr 1fr', padding: '10px 16px', background: 'rgba(var(--holo-ink-rgb), 0.03)', borderBottom: '1px solid var(--holo-border)', fontSize: 11, fontWeight: 600, color: 'var(--holo-text-faint)', textTransform: 'uppercase' as const, letterSpacing: '0.05em' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 2fr 1fr', padding: '10px 16px', borderBottom: '1px solid var(--holo-border)', fontSize: 11, fontWeight: 600, color: 'var(--holo-text-faint)', textTransform: 'uppercase' as const, letterSpacing: '0.05em' }}>
               <div>Name</div>
               <div>Type</div>
               <div>Used</div>
@@ -2300,7 +2305,7 @@ function BlobStoreDetailModal({ name, blobStores: _blobStores, onClose }: { name
             </div>
           ) : (
             <div style={{ background: 'rgba(var(--holo-ink-rgb), 0.02)', border: '1px solid var(--holo-border)', borderRadius: 10, overflow: 'hidden' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', padding: '8px 14px', background: 'rgba(var(--holo-ink-rgb), 0.03)', fontSize: 11, fontWeight: 600, color: 'var(--holo-text-faint)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', padding: '8px 14px', fontSize: 11, fontWeight: 600, color: 'var(--holo-text-faint)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                 <div>Name</div><div>Format</div><div>Type</div><div>Used</div>
               </div>
               {linked.map(r => (
@@ -2770,7 +2775,7 @@ function MigrationTab() {
                 Migration History
               </div>
               <div style={{ background: 'rgba(var(--holo-ink-rgb), 0.02)', border: '1px solid var(--holo-border)', borderRadius: 12, overflow: 'hidden' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr 1fr', padding: '10px 16px', background: 'rgba(var(--holo-ink-rgb), 0.03)', borderBottom: '1px solid var(--holo-border)', fontSize: 11, fontWeight: 600, color: 'var(--holo-text-faint)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr 1fr 1fr 1fr', padding: '10px 16px', borderBottom: '1px solid var(--holo-border)', fontSize: 11, fontWeight: 600, color: 'var(--holo-text-faint)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                   <div>Source</div>
                   <div>Status</div>
                   <div>Repos</div>

@@ -32,10 +32,12 @@ const systemItems = [
 
 interface UserToken { id: string; name: string; createdAt: string; lastUsedAt?: string; expiresAt?: string }
 interface NewToken  { id: string; name: string; token: string }
+type ProfileTab = 'tokens' | 'password' | 'account'
 
 function ProfileModal({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient()
   const user = useAuthStore(s => s.user)
+  const [tab, setTab] = useState<ProfileTab>('tokens')
 
   const { data: tokens = [], isLoading } = useQuery<UserToken[]>({
     queryKey: ['my-tokens'],
@@ -139,19 +141,61 @@ function ProfileModal({ onClose }: { onClose: () => void }) {
     rowDates:  { fontSize: 11, color: 'var(--holo-text-dim)', marginTop: 2, lineHeight: 1.4 },
     empty:     { color: 'var(--holo-text-dim)', fontSize: 13, padding: '12px 0' },
     mono:      { fontFamily: 'ui-monospace,monospace' },
+    nav:       { display: 'flex', flexDirection: 'column' as const, gap: 4, width: 150, flexShrink: 0 },
+    navItem:   { textAlign: 'left' as const, padding: '9px 12px', borderRadius: 10, border: '1px solid transparent', background: 'none', color: 'var(--holo-text-dim)', fontSize: 13, fontWeight: 500, cursor: 'pointer' },
+    navItemActive: { background: 'rgba(var(--holo-a-rgb, 139,92,246), 0.14)', borderColor: 'rgba(var(--holo-a-rgb, 139,92,246), 0.35)', color: 'var(--holo-text)', fontWeight: 600 },
+    panel:     { flex: 1, minWidth: 0, height: 480, overflowY: 'auto' as const, paddingRight: 4 },
+    dl:        { display: 'grid', gridTemplateColumns: '110px 1fr', rowGap: 10, columnGap: 12, margin: 0, fontSize: 13 },
+    dt:        { color: 'var(--holo-text-faint)' },
+    dd:        { margin: 0, color: 'var(--holo-text)', minWidth: 0, overflowWrap: 'anywhere' as const },
+    chip:      { fontSize: 11, padding: '2px 8px', borderRadius: 999, background: 'rgba(var(--holo-ink-rgb), 0.08)', border: '1px solid rgba(var(--holo-ink-rgb), 0.12)', color: 'var(--holo-text)' },
   }
 
+  const tabs: { id: ProfileTab; label: string }[] = [
+    { id: 'tokens', label: 'API Tokens' },
+    ...(isLocalAccount ? [{ id: 'password' as const, label: 'Password' }] : []),
+    { id: 'account', label: 'Account' },
+  ]
+  const shown: ProfileTab = tab === 'password' && !isLocalAccount ? 'tokens' : tab
+  const fullName = [user?.firstName, user?.lastName].filter(Boolean).join(' ')
+
   return (
-    <HoloModal open={true} onClose={onClose}>
+    <HoloModal open={true} onClose={onClose} style={{ width: 760, maxWidth: 'calc(100vw - 32px)' }}>
       <div style={S.header}>
         <div style={S.title}>
           <Key size={16} style={{ color: 'var(--holo-a)' }} />
           Profile — {user?.username}
         </div>
-        <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--holo-text-dim)', padding: 4, display: 'flex' }} onClick={onClose}><X size={18} /></button>
+        <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--holo-text-dim)', padding: 4, display: 'flex' }} onClick={onClose} aria-label="Close"><X size={18} /></button>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ display: 'flex', gap: 16, minWidth: 0 }}>
+        {/* Categories on the left; the panel on the right keeps one size, so
+            switching category does not resize or move the dialog. */}
+        <div role="tablist" aria-orientation="vertical" aria-label="Profile sections" style={S.nav}>
+          {tabs.map(t => (
+            <button
+              key={t.id}
+              role="tab"
+              id={`profile-tab-${t.id}`}
+              aria-selected={shown === t.id}
+              aria-controls="profile-panel"
+              onClick={() => setTab(t.id)}
+              style={{ ...S.navItem, ...(shown === t.id ? S.navItemActive : null) }}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        <div
+          role="tabpanel"
+          id="profile-panel"
+          aria-labelledby={`profile-tab-${shown}`}
+          style={S.panel}
+        >
+          {shown === 'tokens' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div className="holo-card" style={{ padding: 16 }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--holo-text)', marginBottom: 10 }}>Create API Token</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 8 }}>
@@ -252,7 +296,12 @@ function ProfileModal({ onClose }: { onClose: () => void }) {
           }
         </div>
 
-        {isLocalAccount && (pwChanged ? (
+            </div>
+          )}
+
+          {shown === 'password' && (
+            <div>
+          {pwChanged ? (
           <div className="holo-card" style={{ padding: 16, background: 'rgba(94,255,184,0.08)', border: '1px solid rgba(94,255,184,0.25)' }}>
             <div style={{ fontSize: 13, color: 'var(--holo-green)', fontWeight: 600 }}>
               Password changed — please sign in again.
@@ -289,7 +338,28 @@ function ProfileModal({ onClose }: { onClose: () => void }) {
               </div>
             </form>
           </div>
-        ))}
+          )}
+            </div>
+          )}
+
+          {shown === 'account' && (
+            <div className="holo-card" style={{ padding: 16 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--holo-text)', marginBottom: 12 }}>Account</div>
+              <dl style={S.dl}>
+                <dt style={S.dt}>Username</dt><dd style={S.dd}>{user?.username}</dd>
+                {fullName && (<><dt style={S.dt}>Name</dt><dd style={S.dd}>{fullName}</dd></>)}
+                {user?.email && (<><dt style={S.dt}>Email</dt><dd style={S.dd}>{user.email}</dd></>)}
+                <dt style={S.dt}>Sign-in</dt><dd style={S.dd}>{user?.source || 'local'}</dd>
+                <dt style={S.dt}>Roles</dt>
+                <dd style={{ ...S.dd, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {(user?.roles ?? []).length === 0
+                    ? <span style={{ color: 'var(--holo-text-dim)' }}>none</span>
+                    : user!.roles.map(r => <span key={r} style={S.chip}>{r}</span>)}
+                </dd>
+              </dl>
+            </div>
+          )}
+        </div>
       </div>
     </HoloModal>
   )

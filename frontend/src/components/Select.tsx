@@ -2,6 +2,7 @@
 import { CSSProperties, FocusEvent, ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { ChevronDown } from 'lucide-react'
+import { menuPlacement, type DropPos } from './menuPlacement'
 
 export interface SelectOption {
   value: string
@@ -31,7 +32,7 @@ export function Select({
 }: SelectProps) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
-  const [dropPos, setDropPos] = useState<{ top: number; left: number; width: number } | null>(null)
+  const [dropPos, setDropPos] = useState<DropPos | null>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
   const pillRef = useRef<HTMLElement | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -46,8 +47,7 @@ export function Select({
   function placeMenu() {
     const pill = pillRef.current
     if (!pill) return
-    const r = pill.getBoundingClientRect()
-    setDropPos({ top: r.bottom + 4, left: r.left, width: r.width })
+    setDropPos(menuPlacement(pill.getBoundingClientRect(), window.innerHeight))
   }
 
   function openMenu() {
@@ -136,6 +136,7 @@ export function Select({
       style={{
         position: 'fixed',
         top: dropPos.top,
+        bottom: dropPos.bottom,
         left: dropPos.left,
         width: dropPos.width,
         borderRadius: 14,
@@ -143,7 +144,7 @@ export function Select({
         padding: 6,
         display: 'flex', flexDirection: 'column', gap: 2,
         boxShadow: '0 12px 40px var(--holo-shadow-60)',
-        maxHeight: 280,
+        maxHeight: dropPos.maxHeight,
         overflowY: 'auto' as const,
       }}
     >

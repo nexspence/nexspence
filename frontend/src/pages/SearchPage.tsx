@@ -62,9 +62,8 @@ const S = {
   COLS: '1.5fr 1fr 1fr 2fr 1fr 1fr',
   thead: {
     display: 'grid',
-    padding: '8px 16px',
-    background: 'rgba(var(--holo-ink-rgb), 0.02)',
-    borderBottom: '1px solid rgba(var(--holo-ink-rgb), 0.06)',
+    padding: '12px 16px 10px',
+    borderBottom: '1px solid rgba(var(--holo-ink-rgb), 0.08)',
     fontSize: 11, fontWeight: 600, color: 'var(--holo-tx-fg-45)',
     textTransform: 'uppercase' as const, letterSpacing: '0.05em',
     userSelect: 'none' as const,

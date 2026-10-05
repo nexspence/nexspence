@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { ChevronDown, X } from 'lucide-react'
+import { menuPlacement } from './menuPlacement'
 
 export interface MultiSelectOption {
   value: string
@@ -17,14 +18,13 @@ interface MultiSelectProps {
 export function MultiSelect({ options, value, onChange, placeholder = '— Select —' }: MultiSelectProps) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
-  const [dropPos, setDropPos] = useState<{ top: number; left: number; width: number } | null>(null)
+  const [dropPos, setDropPos] = useState<ReturnType<typeof menuPlacement> | null>(null)
   const triggerRef = useRef<HTMLDivElement>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
 
   function openMenu() {
     if (!open && triggerRef.current) {
-      const r = triggerRef.current.getBoundingClientRect()
-      setDropPos({ top: r.bottom + 4, left: r.left, width: r.width })
+      setDropPos(menuPlacement(triggerRef.current.getBoundingClientRect(), window.innerHeight))
     }
     setOpen(v => !v)
   }
@@ -72,6 +72,7 @@ export function MultiSelect({ options, value, onChange, placeholder = '— Selec
       style={{
         position: 'fixed',
         top: dropPos.top,
+        bottom: dropPos.bottom,
         left: dropPos.left,
         width: dropPos.width,
         borderRadius: 14,
@@ -79,7 +80,7 @@ export function MultiSelect({ options, value, onChange, placeholder = '— Selec
         padding: 0,
         display: 'flex', flexDirection: 'column',
         boxShadow: '0 12px 40px var(--holo-shadow-60)',
-        maxHeight: 260,
+        maxHeight: Math.min(260, dropPos.maxHeight),
       }}
     >
       <div style={{ padding: '6px 8px', borderBottom: '1px solid rgba(var(--holo-ink-rgb), 0.06)', flexShrink: 0 }}>

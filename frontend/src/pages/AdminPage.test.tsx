@@ -677,6 +677,20 @@ describe('AdminPage — Backup tab', () => {
     expect(screen.getByText('imported-repo')).toBeInTheDocument()
   })
 
+  // The conflict modes used to be one long label each, cut off in the select
+  // and wrapping in its menu. Short names, with the chosen one explained below.
+  it('explains the chosen conflict mode under a short label', async () => {
+    const user = userEvent.setup()
+    renderAdmin('backup')
+    await screen.findByText('Repository Import')
+    expect(screen.getByRole('button', { name: 'Skip existing' })).toBeInTheDocument()
+    expect(screen.getByText(/adds only the components and assets it does not have/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Skip existing' }))
+    await user.click(screen.getByRole('option', { name: 'Rename' }))
+    expect(screen.getByText(/created under the target name/)).toBeInTheDocument()
+    expect(screen.queryByText(/adds only the components and assets it does not have/)).not.toBeInTheDocument()
+  })
+
   it('shows import error and clears file', async () => {
     const user = userEvent.setup()
     server.use(

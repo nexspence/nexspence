@@ -278,7 +278,7 @@
   font: 500 10.5px/1.4 'Geist Mono', monospace;
   color: var(--holo-text-faint); text-transform: uppercase; letter-spacing: 0.06em;
   border-bottom: 1px solid rgba(var(--holo-ink-rgb), 0.08);
-  background: rgba(var(--holo-ink-rgb), 0.02);
+  background: none;
 }
 .holo-table tbody td { padding: 12px; border-bottom: 1px solid rgba(var(--holo-ink-rgb), 0.06); }
 .holo-table tbody tr { transition: background 0.15s; cursor: pointer; }

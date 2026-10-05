@@ -549,12 +549,13 @@ const S = {
     // crushing the fr columns into nothing (the fixed tracks and gaps alone
     // take ~410px).
     minWidth: 640,
-    padding: '10px 16px',
-    background: 'rgba(var(--holo-ink-rgb), 0.03)',
-    borderBottom: '1px solid rgba(var(--holo-ink-rgb), 0.07)',
+    padding: '12px 16px 10px',
+    // No fill: a tinted strip read as a separate rectangle inside the
+    // rounded card. The divider alone separates header from rows.
+    borderBottom: '1px solid rgba(var(--holo-ink-rgb), 0.08)',
     fontSize: 11,
     fontWeight: 600,
-    color: 'var(--holo-text-dim)',
+    color: 'var(--holo-text-faint)',
     textTransform: 'uppercase' as const,
     letterSpacing: '0.05em',
   },
