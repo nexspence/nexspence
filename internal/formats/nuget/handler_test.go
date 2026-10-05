@@ -195,7 +195,8 @@ func realShapeNuGetUpstream(t *testing.T) *httptest.Server {
   "version": "3.0.0",
   "resources": [
     {"@id": "%s/v3-flatcontainer/", "@type": "PackageBaseAddress/3.0.0"},
-    {"@id": "%s/v3/registration5-gz-semver2/", "@type": "RegistrationsBaseUrl/3.6.0"}
+    {"@id": "%s/v3/registration5-gz-semver2/", "@type": "RegistrationsBaseUrl/3.6.0"},
+    {"@id": "https://api.nuget.org/v3-index/repository-signatures/5.0.0/index.json", "@type": "RepositorySignatures/5.0.0"}
   ]
 }`, srv.URL, srv.URL)
 		case "/v3-flatcontainer/newtonsoft.json/index.json":

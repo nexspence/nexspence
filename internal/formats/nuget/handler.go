@@ -525,11 +525,23 @@ func (h *Handler) fetchAndRewriteNuGetIndex(c *gin.Context, repo *domain.Reposit
 	localBase := strings.TrimRight(h.deps.BaseURL, "/") + "/repository/" + repo.Name
 
 	if resources, ok := index["resources"].([]any); ok {
+		kept := resources[:0]
 		for _, r := range resources {
 			res, ok := r.(map[string]any)
 			if !ok {
+				kept = append(kept, r)
 				continue
 			}
+			// The upstream's repository signing certificates. dotnet requires
+			// this resource over https, so rewritten onto an http proxy it
+			// refuses the whole source (NU1301), and pointing at the upstream
+			// breaks clients without internet access. The proxy does not
+			// verify repository signatures, so it does not advertise them;
+			// author signatures inside a .nupkg are still checked (#631).
+			if t, _ := res["@type"].(string); strings.HasPrefix(t, "RepositorySignatures/") {
+				continue
+			}
+			kept = append(kept, res)
 			id, ok := res["@id"].(string)
 			if !ok {
 				continue
@@ -540,6 +552,7 @@ func (h *Handler) fetchAndRewriteNuGetIndex(c *gin.Context, repo *domain.Reposit
 			}
 			res["@id"] = localBase + parsed.RequestURI()
 		}
+		index["resources"] = kept
 	}
 
 	if c.Request.Method == http.MethodHead {
