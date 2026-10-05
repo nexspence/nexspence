@@ -552,8 +552,11 @@ func (h *Handler) fetchAndRewriteNuGetIndex(c *gin.Context, repo *domain.Reposit
 // nugetRemoteOrigin normalizes remote_url to the registry's bare origin: a
 // legacy configuration carried a /v3 suffix (once the only way the index fetch
 // worked), which would double itself onto every already-correct resource path.
+// The service index URL itself (…/v3/index.json) is the feed URL NuGet clients
+// and Nexus use, so it is accepted the same way (#629).
 func nugetRemoteOrigin(remoteBase string) string {
-	return strings.TrimSuffix(strings.TrimRight(remoteBase, "/"), "/v3")
+	base := strings.TrimSuffix(strings.TrimRight(remoteBase, "/"), "/index.json")
+	return strings.TrimSuffix(strings.TrimRight(base, "/"), "/v3")
 }
 
 // remoteURLOf reads the repository's remote_url, empty when unset.
