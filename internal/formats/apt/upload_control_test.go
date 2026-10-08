@@ -20,6 +20,7 @@ import (
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/formats"
+	"github.com/nexspence-oss/nexspence/internal/formats/base"
 	"github.com/nexspence-oss/nexspence/internal/testutil"
 )
 
@@ -368,4 +369,29 @@ func TestUpload_PathLookupFailuresAre500(t *testing.T) {
 	require.Equal(t, http.StatusCreated, e.put("/pool/main/foo_1.0_amd64.deb", debFor(t, "foo", "1.0", "amd64", "", "a")).Code)
 	e.comps.GetErr = errors.New("db down")
 	assert.Equal(t, http.StatusInternalServerError, e.put("/pool/main/foo_1.0_amd64.deb", debFor(t, "foo", "1.0", "amd64", "", "b")).Code)
+}
+
+// Another instance can store the same identity while this one streams; the
+// in-process locks cannot see it. After its own store each upload settles:
+// the earliest file keeps the identity, a later one removes itself.
+func TestSettleIdentity_LaterFileRemovesItself(t *testing.T) {
+	e := newCtlEnv(t, "ctl-settle", "")
+	require.Equal(t, http.StatusCreated, e.put("/pool/main/a/foo_1.0_amd64.deb", debFor(t, "foo", "1.0", "amd64", "", "a")).Code)
+	comps, _ := e.comps.Search(t.Context(), domain.SearchParams{Repository: "ctl-settle"})
+	require.Len(t, comps.Items, 1)
+	// What a second instance's upload leaves behind before it settles.
+	late := &domain.Asset{ComponentID: comps.Items[0].ID, Repository: "ctl-settle", Path: "/pool/main/b/foo_1.0_amd64.deb", SizeBytes: 1}
+	require.NoError(t, e.assets.Create(t.Context(), late))
+
+	h := New(formats.Deps{Repos: testutil.NewRepoRepo(e.repo), Components: e.comps, Assets: e.assets, Blobs: testutil.NewBlobStoreRepo(), BlobStore: testutil.NewBlobStore()})
+	coords := base.Coords{Group: "amd64", Name: "foo", Version: "1.0"}
+	status, err := h.settleIdentity(t.Context(), "ctl-settle", late.Path, coords, "amd64")
+	assert.Equal(t, http.StatusConflict, status)
+	assert.ErrorContains(t, err, "/pool/main/a/foo_1.0_amd64.deb")
+	_, err = e.assets.GetByPath(t.Context(), "ctl-settle", late.Path)
+	assert.Error(t, err, "the later file is gone")
+
+	status, err = h.settleIdentity(t.Context(), "ctl-settle", "/pool/main/a/foo_1.0_amd64.deb", coords, "amd64")
+	assert.Equal(t, 0, status)
+	assert.NoError(t, err, "the winner stays")
 }

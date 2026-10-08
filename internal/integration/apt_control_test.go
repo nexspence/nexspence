@@ -8,13 +8,17 @@ import (
 	"compress/gzip"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/nexspence-oss/nexspence/internal/testutil/pgtest"
 )
 
 // aptDeb builds a minimal real .deb (ar + debian-binary + control.tar.gz +
@@ -143,4 +147,69 @@ func TestAptControlConcurrentClaims_RealShape(t *testing.T) {
 	assert.Equal(t, 1, created, "codes: %v", codes)
 	_, idx := getBody(t, token, "/repository/apt-control-race/dists/stable/main/binary-amd64/Packages")
 	assert.Equal(t, 1, strings.Count(idx, "Package: foo\n"))
+}
+
+// Uploads that are still streaming their body must not hold database
+// connections: with more slow uploads in flight than the pool has
+// connections, the rest of the server keeps answering. (An earlier draft
+// held advisory-lock transactions for the whole upload and hung every
+// request that needed the database.)
+func TestAptControlSlowUploadsDoNotStarveThePool_RealShape(t *testing.T) {
+	createHostedRepo(t, "apt", "apt-control-slow", `{}`)
+	token := login(t, "admin", "admin123")
+	n := int(pgtest.Pool(t).Config().MaxConns) + 2
+
+	type upload struct {
+		w    *io.PipeWriter
+		tail string
+		done chan int
+	}
+	uploads := make([]upload, n)
+	for i := range uploads {
+		ctl := fmt.Sprintf("Package: slow%d\nVersion: 1.0\nArchitecture: amd64\nMaintainer: Foo <foo@example.org>\nDescription: slow\n text\n", i)
+		deb := aptDeb(t, ctl, strings.Repeat("x", 4096))
+		cut := len(deb) - 16 // past the control member, inside data.tar
+		pr, pw := io.Pipe()
+		u := upload{w: pw, tail: deb[cut:], done: make(chan int, 1)}
+		uploads[i] = u
+		req, err := http.NewRequest(http.MethodPut, server(t).URL+fmt.Sprintf("/repository/apt-control-slow/pool/main/slow%d_1.0_amd64.deb", i), pr)
+		require.NoError(t, err)
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.ContentLength = int64(len(deb))
+		go func() {
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				u.done <- 0
+				return
+			}
+			resp.Body.Close()
+			u.done <- resp.StatusCode
+		}()
+		go func(head string) { _, _ = io.WriteString(pw, head) }(deb[:cut])
+	}
+
+	// On failure, abort the stalled bodies so the server can shut down.
+	t.Cleanup(func() {
+		for _, u := range uploads {
+			_ = u.w.CloseWithError(io.ErrUnexpectedEOF)
+		}
+	})
+
+	// Every upload has sent its head and is now waiting for the rest.
+	time.Sleep(500 * time.Millisecond)
+	client := &http.Client{Timeout: 5 * time.Second}
+	req, _ := http.NewRequest(http.MethodGet, server(t).URL+"/repository/apt-control-slow/dists/stable/Release", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := client.Do(req)
+	require.NoError(t, err, "the server must keep answering while %d uploads stream", n)
+	resp.Body.Close()
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+	for _, u := range uploads {
+		_, _ = io.WriteString(u.w, u.tail)
+		_ = u.w.Close()
+	}
+	for i, u := range uploads {
+		assert.Equal(t, http.StatusCreated, <-u.done, "upload %d", i)
+	}
 }

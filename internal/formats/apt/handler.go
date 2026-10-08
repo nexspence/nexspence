@@ -558,6 +558,9 @@ func (h *Handler) handleUpload(c *gin.Context, repoName, p string) {
 		if err != nil {
 			return base.HTTPStatusForError(err), err
 		}
+		if status, err := h.settleIdentity(ctx, repoName, storePath, coords, arch); err != nil {
+			return status, err
+		}
 		if ctl == nil {
 			return http.StatusCreated, nil
 		}
@@ -569,7 +572,7 @@ func (h *Handler) handleUpload(c *gin.Context, repoName, p string) {
 	}
 	// Every upload claims its identity, a filename-named one included:
 	// otherwise a non-deb body could take an identity a real deb holds.
-	status, err := h.withDebLocks(ctx, repoName, storePath, coords, arch, func(ctx context.Context) (int, error) {
+	status, err := h.withDebLocks(ctx, repoName, storePath, coords, arch, func() (int, error) {
 		if status, err := h.claimDebIdentity(ctx, repoName, storePath, coords, arch); err != nil {
 			return status, err
 		}
@@ -585,29 +588,83 @@ func (h *Handler) handleUpload(c *gin.Context, repoName, p string) {
 // withDebLocks runs fn holding the upload's path lock and then its identity
 // lock, always in that order, so two uploads can never wait on each other.
 // The path lock keeps two first uploads of one path from both seeing it free;
-// the identity lock keeps two paths from both claiming one identity. Same-
-// process waiters queue locally first (base.LockLocal), as the write-policy
-// path does.
-func (h *Handler) withDebLocks(ctx context.Context, repoName, storePath string, coords base.Coords, arch string,
-	fn func(context.Context) (int, error),
+// the identity lock keeps two paths from both claiming one identity.
+//
+// These are in-process locks only. fn streams the whole body, and a lock held
+// by a database transaction for that long pins a pool connection per upload:
+// a few concurrent uploads then starve every other request. Instances in a
+// cluster are reconciled after the store instead, by settleIdentity.
+func (h *Handler) withDebLocks(_ context.Context, repoName, storePath string, coords base.Coords, arch string,
+	fn func() (int, error),
 ) (int, error) {
-	// ':' namespaces the keys like the quota locks; repository names, package
-	// names and architectures cannot contain it, and the free-form parts
-	// (path, version) come last.
-	pathKey := "apt-path:" + repoName + ":" + storePath
-	identityKey := "apt-identity:" + repoName + ":" + arch + ":" + coords.Name + ":" + coords.Version
-	defer base.LockLocal(pathKey)()
-	defer base.LockLocal(identityKey)()
+	defer base.LockLocal(debPathKey(repoName, storePath))()
+	defer base.LockLocal(debIdentityKey(repoName, coords, arch))()
+	return fn()
+}
 
-	status := http.StatusInternalServerError
-	err := h.deps.Assets.WithBlobKeyLock(ctx, pathKey, func(ctx context.Context) error {
-		return h.deps.Assets.WithBlobKeyLock(ctx, identityKey, func(ctx context.Context) error {
-			var err error
-			status, err = fn(ctx)
-			return err
+// ':' namespaces the lock keys like the quota locks; repository names, package
+// names and architectures cannot contain it, and the free-form parts (path,
+// version) come last.
+func debPathKey(repoName, storePath string) string { return "apt-path:" + repoName + ":" + storePath }
+
+func debIdentityKey(repoName string, coords base.Coords, arch string) string {
+	return "apt-identity:" + repoName + ":" + arch + ":" + coords.Name + ":" + coords.Version
+}
+
+// settleIdentity is the cross-instance backstop for claimDebIdentity: another
+// instance may have stored the same identity under another path while this
+// one streamed. Every upload checks after its own store, and the earliest
+// stored file keeps the identity, so the later one removes itself before its
+// control paragraph is recorded. No lock is taken: holding a transaction while
+// querying through the same pool starves it under concurrent uploads, and
+// the rule needs none to agree on a winner. Within one instance the
+// in-process locks already serialize the claim.
+func (h *Handler) settleIdentity(ctx context.Context, repoName, storePath string, coords base.Coords, arch string) (int, error) {
+	holders, err := h.identityHolders(ctx, repoName, coords, arch)
+	if err != nil {
+		return http.StatusInternalServerError, err
+	}
+	winner := ""
+	var first time.Time
+	for _, a := range holders {
+		if winner == "" || a.CreatedAt.Before(first) || (a.CreatedAt.Equal(first) && a.Path < winner) {
+			winner, first = a.Path, a.CreatedAt
+		}
+	}
+	if winner == "" || winner == storePath {
+		return 0, nil
+	}
+	if err := base.DeleteArtifact(ctx, h.deps, repoName, storePath); err != nil {
+		return http.StatusInternalServerError, err
+	}
+	return http.StatusConflict, fmt.Errorf("%s %s (%s) is already stored at %s", coords.Name, coords.Version, arch, winner)
+}
+
+// identityHolders lists the stored debs that carry one identity: those filed
+// under its architecture, and pre-#637 ones (no Group) whose filename names it.
+func (h *Handler) identityHolders(ctx context.Context, repoName string, coords base.Coords, arch string) ([]domain.Asset, error) {
+	var out []domain.Asset
+	for _, group := range []string{arch, ""} {
+		comps, err := base.ExactComponents(ctx, h.deps.Components, domain.SearchParams{
+			Repository: repoName, Format: string(domain.FormatApt),
+			Group: group, Name: coords.Name, Version: coords.Version,
 		})
-	})
-	return status, err
+		if err != nil {
+			return nil, err
+		}
+		for i := range comps {
+			assets, err := h.deps.Assets.ListByComponentID(ctx, comps[i].ID)
+			if err != nil {
+				return nil, err
+			}
+			for _, a := range assets {
+				if assetArch(&comps[i], a) == arch {
+					out = append(out, a)
+				}
+			}
+		}
+	}
+	return out, nil
 }
 
 // claimDebIdentity enforces one .deb per (Package, Version, Architecture): apt
@@ -617,27 +674,14 @@ func (h *Handler) withDebLocks(ctx context.Context, repoName, storePath string, 
 // different one is refused too, rather than deleting a file the new upload
 // might then fail to replace. Callers hold withDebLocks.
 func (h *Handler) claimDebIdentity(ctx context.Context, repoName, storePath string, coords base.Coords, arch string) (int, error) {
-	// Debs stored before control parsing sit in a component with no Group;
-	// their architecture is the filename's, exactly as the index files them.
-	for _, group := range []string{arch, ""} {
-		comps, err := base.ExactComponents(ctx, h.deps.Components, domain.SearchParams{
-			Repository: repoName, Format: string(domain.FormatApt),
-			Group: group, Name: coords.Name, Version: coords.Version,
-		})
-		if err != nil {
-			return http.StatusInternalServerError, err
-		}
-		for i := range comps {
-			assets, err := h.deps.Assets.ListByComponentID(ctx, comps[i].ID)
-			if err != nil {
-				return http.StatusInternalServerError, err
-			}
-			for _, a := range assets {
-				if a.Path != storePath && assetArch(&comps[i], a) == arch {
-					return http.StatusConflict, fmt.Errorf("%s %s (%s) is already stored at %s",
-						coords.Name, coords.Version, arch, a.Path)
-				}
-			}
+	holders, err := h.identityHolders(ctx, repoName, coords, arch)
+	if err != nil {
+		return http.StatusInternalServerError, err
+	}
+	for _, a := range holders {
+		if a.Path != storePath {
+			return http.StatusConflict, fmt.Errorf("%s %s (%s) is already stored at %s",
+				coords.Name, coords.Version, arch, a.Path)
 		}
 	}
 
