@@ -254,3 +254,55 @@ func TestApt_MergeRelease_CapsTheIndexMatrix(t *testing.T) {
 
 	assert.LessOrEqual(t, calls, 2*64*32, "the fan-out is bounded regardless of what a member declares")
 }
+
+// A group whose members hold only arch-all debs declares "Architectures: all"
+// and must vouch for the binary-all index it serves, exactly like a single
+// repository; otherwise its signed Release carries no checksum lines at all.
+func TestApt_MergeRelease_AllOnlyMembersVouchForBinaryAll(t *testing.T) {
+	h := apt.New(formats.Deps{})
+	parts := []formats.GroupIndexPart{{Member: "m1", Body: []byte(
+		"Origin: Nexspence\nSuite: focal\nCodename: focal\n" +
+			"Date: Wed, 05 Aug 2026 10:00:00 UTC\nArchitectures: all\nComponents: main\n")}}
+	fetched := map[string][]byte{}
+	fetch := func(p string) ([]byte, error) {
+		if !strings.Contains(p, "/binary-all/") {
+			return nil, errors.New("no such index")
+		}
+		body := []byte("merged-index-for " + p)
+		fetched[p] = body
+		return body, nil
+	}
+
+	body, _, err := h.MergeGroupIndexWithFetch("g", "/dists/focal/Release", parts, fetch)
+	require.NoError(t, err)
+	out := string(body)
+
+	assert.Contains(t, out, "Architectures: all\n")
+	require.Len(t, fetched, 2, "binary-all Packages and Packages.gz are both fetched")
+	for p, b := range fetched {
+		rel := strings.TrimPrefix(p, "/dists/focal/")
+		assert.Contains(t, out, fmt.Sprintf(" %x %d %s\n", sha256.Sum256(b), len(b), rel))
+	}
+}
+
+// Members that never declare "all" (an Ubuntu archive behind a proxy) are not
+// asked for binary-all: a proxy caches no misses, so every group Release would
+// otherwise pay a live upstream round trip per component for a missing index.
+func TestApt_MergeRelease_SkipsBinaryAllWhenNoMemberDeclaresIt(t *testing.T) {
+	h := apt.New(formats.Deps{})
+	parts := []formats.GroupIndexPart{{Member: "ubuntu-proxy", Body: []byte(
+		"Origin: Ubuntu\nSuite: jammy\nCodename: jammy\n" +
+			"Date: Wed, 05 Aug 2026 10:00:00 UTC\nArchitectures: amd64 arm64\nComponents: main universe\n")}}
+	var asked []string
+	fetch := func(p string) ([]byte, error) {
+		asked = append(asked, p)
+		return []byte("idx " + p), nil
+	}
+
+	_, _, err := h.MergeGroupIndexWithFetch("g", "/dists/jammy/Release", parts, fetch)
+	require.NoError(t, err)
+	require.NotEmpty(t, asked)
+	for _, p := range asked {
+		assert.NotContains(t, p, "binary-all", "no member publishes binary-all")
+	}
+}
