@@ -1,0 +1,11 @@
+xz fixtures for the .deb control parser (deb_test.go). No xz encoder is a
+dependency, so they were made once with XZ Utils from the tars the tests build
+in Go (debfixture_test.go):
+
+  libfoo2-control.tar.xz             xz -T1 -6        tarWith("./control", libControl)
+  libfoo2-control-multiblock.tar.xz  xz -T4 --block-size=1MiB
+                                     tarWithEntries(control, 3 MiB ./postinst)
+
+The multi-block one has 4 blocks, as dpkg-deb -z0/-z1 writes a large control
+member with liblzma's multi-threaded encoder. Oversized dictionaries are made in
+the tests by patching these (setXzBlockDictProps).

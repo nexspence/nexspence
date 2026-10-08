@@ -15,6 +15,7 @@ import (
 	"context"
 	"crypto/md5" //nolint:gosec // apt protocol checksum, not security
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -29,7 +30,12 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/formats"
 	"github.com/nexspence-oss/nexspence/internal/formats/base"
 	"github.com/nexspence-oss/nexspence/internal/formats/repoproxy"
+	"github.com/nexspence-oss/nexspence/internal/repository"
 )
+
+// debControlKey holds a component's control paragraph, as stored by
+// handleUpload and emitted by buildPackagesIndex.
+const debControlKey = "deb_control"
 
 // Handler serves the Debian APT repository protocol.
 type Handler struct{ deps formats.Deps }
@@ -152,6 +158,7 @@ func (h *Handler) buildPackagesIndex(ctx context.Context, repoName, arch string)
 	}
 
 	var sb strings.Builder
+	listed := map[string]bool{}
 	for _, a := range assets {
 		if !strings.HasSuffix(a.Path, ".deb") {
 			continue
@@ -160,24 +167,69 @@ func (h *Handler) buildPackagesIndex(ctx context.Context, repoName, arch string)
 		if comp == nil {
 			continue
 		}
-		debA := debArch(a.Path)
+		debA := assetArch(comp, a)
 		if arch != "" && debA != arch && debA != "all" {
 			continue // the binary-<arch> index lists that arch plus "all" (#103)
 		}
-		fmt.Fprintf(&sb, "Package: %s\n", comp.Name)
-		fmt.Fprintf(&sb, "Version: %s\n", comp.Version)
-		fmt.Fprintf(&sb, "Architecture: %s\n", debA)
-		fmt.Fprintf(&sb, "Filename: %s\n", a.Path)
-		fmt.Fprintf(&sb, "Size: %d\n", a.SizeBytes)
-		if a.SHA256 != "" {
-			fmt.Fprintf(&sb, "SHA256: %s\n", a.SHA256)
+		// One stanza per identity. Uploads refuse a second file for one, but
+		// paths that bypass the handler (promotion into a repository that
+		// already holds the identity) can still attach one; listing both would
+		// give apt two candidates it cannot tell apart. Assets come in path
+		// order, so the first path wins deterministically.
+		key := comp.ID + "/" + debA
+		if listed[key] {
+			continue
 		}
-		if a.MD5 != "" {
-			fmt.Fprintf(&sb, "MD5sum: %s\n", a.MD5)
-		}
-		sb.WriteString("\n")
+		listed[key] = true
+		writeStanza(&sb, comp, a, debA)
 	}
 	return []byte(sb.String()), nil
+}
+
+// assetArch is a deb's architecture: from its control file (stored as the
+// component Group, #637), or from the filename for debs stored without one.
+func assetArch(comp *domain.Component, a domain.Asset) string {
+	if comp != nil && comp.Group != "" {
+		return comp.Group
+	}
+	return debArch(a.Path)
+}
+
+// writeStanza writes one Packages paragraph. A deb uploaded with a readable
+// control file contributes that paragraph verbatim — Depends, Pre-Depends,
+// Provides, Conflicts, Description and the rest — followed by the fields the
+// server computes from the stored file, in dpkg-scanpackages' order (#637).
+// Debs stored before that (or without an ar body) keep the filename stanza.
+func writeStanza(sb *strings.Builder, comp *domain.Component, a domain.Asset, arch string) {
+	if ctl, _ := comp.Extra[debControlKey].(string); ctl != "" {
+		sb.WriteString(strings.TrimRight(ctl, "\n"))
+		sb.WriteString("\n")
+		fmt.Fprintf(sb, "Filename: %s\n", a.Path)
+		fmt.Fprintf(sb, "Size: %d\n", a.SizeBytes)
+		if a.MD5 != "" {
+			fmt.Fprintf(sb, "MD5sum: %s\n", a.MD5)
+		}
+		if a.SHA1 != "" {
+			fmt.Fprintf(sb, "SHA1: %s\n", a.SHA1)
+		}
+		if a.SHA256 != "" {
+			fmt.Fprintf(sb, "SHA256: %s\n", a.SHA256)
+		}
+		sb.WriteString("\n")
+		return
+	}
+	fmt.Fprintf(sb, "Package: %s\n", comp.Name)
+	fmt.Fprintf(sb, "Version: %s\n", comp.Version)
+	fmt.Fprintf(sb, "Architecture: %s\n", arch)
+	fmt.Fprintf(sb, "Filename: %s\n", a.Path)
+	fmt.Fprintf(sb, "Size: %d\n", a.SizeBytes)
+	if a.SHA256 != "" {
+		fmt.Fprintf(sb, "SHA256: %s\n", a.SHA256)
+	}
+	if a.MD5 != "" {
+		fmt.Fprintf(sb, "MD5sum: %s\n", a.MD5)
+	}
+	sb.WriteString("\n")
 }
 
 func (h *Handler) servePackagesIndex(c *gin.Context, repoName, p string) {
@@ -219,13 +271,23 @@ func (h *Handler) repoArchitectures(ctx context.Context, repoName string) []stri
 	if err != nil {
 		return nil
 	}
+	// The same arch the Packages index files each deb under (assetArch), or
+	// Release would vouch for one set of indexes and serve another.
+	comps, err := base.AllComponents(ctx, h.deps.Components, repoName)
+	if err != nil {
+		return nil
+	}
+	compMap := make(map[string]*domain.Component, len(comps))
+	for i := range comps {
+		compMap[comps[i].ID] = &comps[i]
+	}
 	seen := map[string]bool{}
 	var archs []string
 	for _, a := range assets {
 		if !strings.HasSuffix(a.Path, ".deb") {
 			continue
 		}
-		arch := debArch(a.Path)
+		arch := assetArch(compMap[a.ComponentID], a)
 		if arch == "all" || seen[arch] {
 			continue
 		}
@@ -457,7 +519,29 @@ func (h *Handler) handleUpload(c *gin.Context, repoName, p string) {
 		filename, body, size = fh.Filename, f, fh.Size
 	}
 
+	// The control file is authoritative for Package/Version/Architecture and
+	// supplies the Packages stanza (#637), as dpkg-scanpackages does. Only the
+	// ar header and the control member are read here; the bytes are replayed
+	// in front of the rest of the body, so a large .deb still streams.
+	head, ctl, err := readDebHead(body)
+	switch {
+	case errors.Is(err, errDebTooLarge):
+		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": err.Error()})
+		return
+	case err != nil && !errors.Is(err, errNotDeb):
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	body = io.MultiReader(bytes.NewReader(head), body)
+
+	// Not an ar archive at all: keep the filename convention, as before.
 	pkgName, version := debCoords(filename)
+	coords := base.Coords{Name: pkgName, Version: version}
+	arch := debArch(filename)
+	if ctl != nil {
+		pkgName, arch = ctl.Package, ctl.Architecture
+		coords = base.Coords{Group: ctl.Architecture, Name: ctl.Package, Version: ctl.Version}
+	}
 
 	// Normalize root-level uploads into the canonical pool layout so the
 	// Packages index (which lists /pool/ assets) still finds them.
@@ -466,14 +550,120 @@ func (h *Handler) handleUpload(c *gin.Context, repoName, p string) {
 		storePath = poolPath(pkgName, filename)
 	}
 
-	coords := base.Coords{Name: pkgName, Version: version}
-	if _, err := base.StoreArtifact(c.Request.Context(), h.deps,
-		repoName, storePath, "application/vnd.debian.binary-package",
-		coords, body, size); err != nil {
-		c.JSON(base.HTTPStatusForError(err), gin.H{"error": err.Error()})
+	ctx := c.Request.Context()
+	store := func(ctx context.Context) (int, error) {
+		res, err := base.StoreArtifact(ctx, h.deps,
+			repoName, storePath, "application/vnd.debian.binary-package",
+			coords, body, size)
+		if err != nil {
+			return base.HTTPStatusForError(err), err
+		}
+		if ctl == nil {
+			return http.StatusCreated, nil
+		}
+		if err := h.deps.Components.UpdateExtra(ctx, res.Asset.ComponentID,
+			map[string]any{debControlKey: ctl.Paragraph}); err != nil {
+			return http.StatusInternalServerError, err
+		}
+		return http.StatusCreated, nil
+	}
+	// Every upload claims its identity, a filename-named one included:
+	// otherwise a non-deb body could take an identity a real deb holds.
+	status, err := h.withDebLocks(ctx, repoName, storePath, coords, arch, func(ctx context.Context) (int, error) {
+		if status, err := h.claimDebIdentity(ctx, repoName, storePath, coords, arch); err != nil {
+			return status, err
+		}
+		return store(ctx)
+	})
+	if err != nil {
+		c.JSON(status, gin.H{"error": err.Error()})
 		return
 	}
-	c.Status(http.StatusCreated)
+	c.Status(status)
+}
+
+// withDebLocks runs fn holding the upload's path lock and then its identity
+// lock, always in that order, so two uploads can never wait on each other.
+// The path lock keeps two first uploads of one path from both seeing it free;
+// the identity lock keeps two paths from both claiming one identity. Same-
+// process waiters queue locally first (base.LockLocal), as the write-policy
+// path does.
+func (h *Handler) withDebLocks(ctx context.Context, repoName, storePath string, coords base.Coords, arch string,
+	fn func(context.Context) (int, error),
+) (int, error) {
+	// ':' namespaces the keys like the quota locks; repository names, package
+	// names and architectures cannot contain it, and the free-form parts
+	// (path, version) come last.
+	pathKey := "apt-path:" + repoName + ":" + storePath
+	identityKey := "apt-identity:" + repoName + ":" + arch + ":" + coords.Name + ":" + coords.Version
+	defer base.LockLocal(pathKey)()
+	defer base.LockLocal(identityKey)()
+
+	status := http.StatusInternalServerError
+	err := h.deps.Assets.WithBlobKeyLock(ctx, pathKey, func(ctx context.Context) error {
+		return h.deps.Assets.WithBlobKeyLock(ctx, identityKey, func(ctx context.Context) error {
+			var err error
+			status, err = fn(ctx)
+			return err
+		})
+	})
+	return status, err
+}
+
+// claimDebIdentity enforces one .deb per (Package, Version, Architecture): apt
+// can index only one file under that identity, so a second file claiming it
+// under another path is refused, as reprepro and dak refuse it. A path keeps
+// the identity it was first stored under: a redeploy whose control names a
+// different one is refused too, rather than deleting a file the new upload
+// might then fail to replace. Callers hold withDebLocks.
+func (h *Handler) claimDebIdentity(ctx context.Context, repoName, storePath string, coords base.Coords, arch string) (int, error) {
+	// Debs stored before control parsing sit in a component with no Group;
+	// their architecture is the filename's, exactly as the index files them.
+	for _, group := range []string{arch, ""} {
+		comps, err := base.ExactComponents(ctx, h.deps.Components, domain.SearchParams{
+			Repository: repoName, Format: string(domain.FormatApt),
+			Group: group, Name: coords.Name, Version: coords.Version,
+		})
+		if err != nil {
+			return http.StatusInternalServerError, err
+		}
+		for i := range comps {
+			assets, err := h.deps.Assets.ListByComponentID(ctx, comps[i].ID)
+			if err != nil {
+				return http.StatusInternalServerError, err
+			}
+			for _, a := range assets {
+				if a.Path != storePath && assetArch(&comps[i], a) == arch {
+					return http.StatusConflict, fmt.Errorf("%s %s (%s) is already stored at %s",
+						coords.Name, coords.Version, arch, a.Path)
+				}
+			}
+		}
+	}
+
+	existing, err := h.deps.Assets.GetByPath(ctx, repoName, storePath)
+	if errors.Is(err, repository.ErrNotFound) || (err == nil && existing == nil) {
+		return 0, nil // nothing stored at this path yet
+	}
+	if err != nil {
+		return http.StatusInternalServerError, fmt.Errorf("look up %s: %w", storePath, err)
+	}
+	old, err := h.deps.Components.Get(ctx, existing.ComponentID)
+	if errors.Is(err, repository.ErrNotFound) || (err == nil && old == nil) {
+		return 0, nil // dangling asset: the store re-registers it
+	}
+	if err != nil {
+		return http.StatusInternalServerError, fmt.Errorf("look up the package at %s: %w", storePath, err)
+	}
+	if old.Group != coords.Group || old.Name != coords.Name || old.Version != coords.Version {
+		held := old.Name + " " + old.Version
+		if old.Group != "" {
+			held += " (" + old.Group + ")"
+		}
+		return http.StatusConflict, fmt.Errorf("%s holds %s; delete it before uploading %s %s (%s) there",
+			storePath, held, coords.Name, coords.Version, arch)
+	}
+	return 0, nil
 }
 
 func (h *Handler) serveFile(c *gin.Context, repoName, p string) {

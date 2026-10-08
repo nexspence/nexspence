@@ -329,6 +329,9 @@ type ComponentRepo struct {
 	components map[string]*domain.Component
 	nextID     int
 	Err        error // when non-nil, ListByRepoNames/Get/Search/Delete/SetTags return it (500-branch seam)
+	// GetErr, when non-nil, makes Get alone fail — for callers that search
+	// successfully and then load one component by ID.
+	GetErr error
 	// UpdateExtraErr is returned by UpdateExtra when set — the seam for a write
 	// that fails after the work producing it already succeeded.
 	UpdateExtraErr error
@@ -414,6 +417,9 @@ func (c *ComponentRepo) Get(_ context.Context, id string) (*domain.Component, er
 	defer c.mu.Unlock()
 	if c.Err != nil {
 		return nil, c.Err
+	}
+	if c.GetErr != nil {
+		return nil, c.GetErr
 	}
 	v, ok := c.components[id]
 	if !ok {
