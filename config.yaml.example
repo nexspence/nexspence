@@ -40,6 +40,9 @@ outbound:
 
 database:
   dsn: "postgres://nexspence:nexspence@localhost:5432/nexspence?sslmode=disable"
+  # Connection pool. A pool parameter in the DSN itself (pool_max_conns,
+  # pool_min_conns, pool_max_conn_idle_time) takes precedence; 0 keeps pgx's
+  # default (max_conns: max(4, CPUs)).
   max_conns: 100
   min_conns: 5
   max_idle_sec: 300

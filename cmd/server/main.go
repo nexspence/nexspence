@@ -109,7 +109,11 @@ func cmdServe() *cobra.Command {
 				queryTracers = append(queryTracers, otelpgx.NewTracer())
 			}
 
-			pool, err := db.Connect(cmd.Context(), cfg.Database.DSN, queryTracers...)
+			pool, err := db.ConnectPool(cmd.Context(), cfg.Database.DSN, db.PoolSettings{
+				MaxConns: cfg.Database.MaxConns,
+				MinConns: cfg.Database.MinConns,
+				MaxIdle:  time.Duration(cfg.Database.MaxIdleSec) * time.Second,
+			}, queryTracers...)
 			if err != nil {
 				return err
 			}
