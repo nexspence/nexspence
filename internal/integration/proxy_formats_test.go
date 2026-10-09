@@ -408,3 +408,129 @@ func TestProxyNuGet_RealShape(t *testing.T) {
 	assert.Equal(t, "nupkg-bytes",
 		fetchOK(t, "/repository/nuget-real/v3-flatcontainer/newtonsoft.json/13.0.3/newtonsoft.json.13.0.3.nupkg"))
 }
+
+// ── docker / oci (private Azure Container Registry shape) ────────
+
+// fakePrivateACR is shaped like <name>.azurecr.io with anonymous pull off:
+// every /v2/ path answers 401 with a Bearer challenge whose realm is
+// /oauth2/token on the registry's own host; a resource path's challenge also
+// names its scope. The token endpoint wants Basic (the ACR token or service
+// principal) and answers {"access_token":…}. Content is served only on that
+// Bearer.
+type fakePrivateACR struct {
+	srv       *httptest.Server
+	user      string
+	pass      string
+	blobHits  int
+	tokenHits int
+}
+
+const acrAccessToken = "acr-access-token"
+
+func newFakePrivateACR(t *testing.T, user, pass string, manifest, blob []byte) *fakePrivateACR {
+	t.Helper()
+	a := &fakePrivateACR{user: user, pass: pass}
+	manifestDigest := sha256Digest(manifest)
+	blobDigest := sha256Digest(blob)
+	a.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host := r.Host
+		realm := fmt.Sprintf(`Bearer realm="http://%s/oauth2/token",service="%s"`, host, host)
+		if r.URL.Path == "/oauth2/token" {
+			a.tokenHits++
+			u, p, ok := r.BasicAuth()
+			if !ok || u != a.user || p != a.pass {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusUnauthorized)
+				fmt.Fprint(w, `{"errors":[{"code":"UNAUTHORIZED","message":"authentication required"}]}`)
+				return
+			}
+			if r.URL.Query().Get("service") != host || r.URL.Query().Get("scope") != "repository:team/app:pull" {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintf(w, `{"access_token":%q}`, acrAccessToken)
+			return
+		}
+		if r.Header.Get("Authorization") != "Bearer "+acrAccessToken {
+			if strings.HasPrefix(r.URL.Path, "/v2/team/app/") {
+				realm += `,scope="repository:team/app:pull"`
+			}
+			w.Header().Set("WWW-Authenticate", realm)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			fmt.Fprint(w, `{"errors":[{"code":"UNAUTHORIZED","message":"authentication required"}]}`)
+			return
+		}
+		switch r.URL.Path {
+		case "/v2/":
+			fmt.Fprint(w, `{}`)
+		case "/v2/team/app/manifests/1.0", "/v2/team/app/manifests/" + manifestDigest:
+			w.Header().Set("Content-Type", "application/vnd.oci.image.manifest.v1+json")
+			w.Header().Set("Docker-Content-Digest", manifestDigest)
+			_, _ = w.Write(manifest)
+		case "/v2/team/app/blobs/" + blobDigest:
+			a.blobHits++
+			w.Header().Set("Content-Type", "application/octet-stream")
+			w.Header().Set("Docker-Content-Digest", blobDigest)
+			_, _ = w.Write(blob)
+		default:
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			fmt.Fprint(w, `{"errors":[{"code":"MANIFEST_UNKNOWN"}]}`)
+		}
+	}))
+	t.Cleanup(a.srv.Close)
+	return a
+}
+
+// createAuthedDockerProxy creates a docker proxy with upstream credentials
+// through the Nexus-compatible API and registers cleanup.
+func createAuthedDockerProxy(t *testing.T, name, remoteURL, user, pass string) {
+	t.Helper()
+	token := login(t, "admin", "admin123")
+	body := fmt.Sprintf(`{"name":%q,"online":true,"proxyConfig":{"remote_url":%q,"remote_username":%q,"remote_password":%q}}`,
+		name, remoteURL, user, pass)
+	resp := authReq(t, http.MethodPost, "/service/rest/v1/repositories/docker/proxy", strings.NewReader(body), token)
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	require.Equal(t, http.StatusCreated, resp.StatusCode, "create docker proxy: %s", raw)
+	t.Cleanup(func() {
+		del := authReq(t, http.MethodDelete, "/service/rest/v1/repositories/"+name, nil, token)
+		del.Body.Close()
+	})
+}
+
+// ACR without anonymous pull refuses a token request that carries no
+// credentials. The realm is on remote_url's host, so the proxy presents
+// remote_username there and pulls with the token it gets back.
+func TestProxyOCI_PrivateACR_RealShape(t *testing.T) {
+	manifest := []byte(`{"schemaVersion":2,"mediaType":"application/vnd.oci.image.manifest.v1+json"}`)
+	blob := []byte("layer-bytes")
+	acr := newFakePrivateACR(t, "puller", "acr-secret", manifest, blob)
+	createAuthedDockerProxy(t, "acr-real", acr.srv.URL, "puller", "acr-secret")
+	token := login(t, "admin", "admin123")
+
+	mresp := registryReq(t, http.MethodGet, "/v2/acr-real/team/app/manifests/1.0", "", nil, token)
+	raw, _ := io.ReadAll(mresp.Body)
+	mresp.Body.Close()
+	require.Equal(t, http.StatusOK, mresp.StatusCode, "manifest: %s", raw)
+	assert.JSONEq(t, string(manifest), string(raw))
+
+	blobPath := "/v2/acr-real/team/app/blobs/" + sha256Digest(blob)
+	for i := 0; i < 2; i++ {
+		bresp := registryReq(t, http.MethodGet, blobPath, "", nil, token)
+		got, _ := io.ReadAll(bresp.Body)
+		bresp.Body.Close()
+		require.Equal(t, http.StatusOK, bresp.StatusCode, "blob pull %d: %s", i+1, got)
+		assert.Equal(t, blob, got)
+	}
+	assert.Equal(t, 1, acr.blobHits, "the second blob pull is served from the cache")
+	assert.Positive(t, acr.tokenHits)
+
+	// The same registry with a wrong password: a direct pull keeps the 401.
+	createAuthedDockerProxy(t, "acr-wrongpw", acr.srv.URL, "puller", "not-the-secret")
+	wresp := registryReq(t, http.MethodGet, "/v2/acr-wrongpw/team/app/manifests/1.0", "", nil, token)
+	wresp.Body.Close()
+	assert.Equal(t, http.StatusUnauthorized, wresp.StatusCode)
+}

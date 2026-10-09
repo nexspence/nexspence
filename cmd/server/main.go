@@ -63,6 +63,7 @@ func cmdServe() *cobra.Command {
 
 			log := logger.New(cfg.Log.Level, cfg.Log.Format)
 			log.Info("starting nexspence", "version", Version, "addr", cfg.HTTP.Addr)
+			repoproxy.SetLogger(log)
 
 			// Install any server-wide outbound proxy default for upstream fetches.
 			// Per-repository proxy_config overrides these; when unset, env

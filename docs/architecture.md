@@ -140,6 +140,7 @@ proxy defaults, colour, command hints. Every place that special-cases a registry
 - Cache hit → serve from blob store immediately
 - Cache miss → stream upstream + blob store + response writer simultaneously (one pass, zero copy)
 - Upstream auth: Docker Hub uses anonymous bearer token; `[Phase 8]` configurable upstream credentials per proxy repo
+- Private registries with a same-host token realm (ACR, Harbor, GHCR, Quay): the Bearer token request carries `remote_username` / `remote_password` only when the realm is on `remote_url`'s host and not an https→http downgrade; a realm on another host (Docker Hub, GitLab) is asked anonymously, and the retry carries the Bearer alone. A realm that rejects the credentials (401/403) is asked once more anonymously, so stale credentials do not break a public image. Token redirects remove credentials on host/port changes or TLS downgrades and never restore them later in the chain; same-origin redirects preserve them
 
 **Group path**: `group.Handler`
 - Fans out to each member's full `FormatHandler.ServeHTTP` in order

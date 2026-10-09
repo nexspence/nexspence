@@ -14,6 +14,9 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/formats"
@@ -572,9 +575,10 @@ func TestServeGET_NonRegistryBearer401IsNotFollowed(t *testing.T) {
 	assert.Equal(t, 0, tokenHits)
 }
 
-// remote_username stays on the registry host. The anonymous token request and
-// the retry that carries the token must not see it, even when the registry
-// answers the first request — the one that does send Basic — with 401.
+// remote_username stays on the registry host. A token realm on another
+// host:port and the retry that carries the token must not see it, even when
+// the registry answers the first request — the one that does send Basic —
+// with 401.
 func TestServeGET_OCIBearerRetryDoesNotSendBasic(t *testing.T) {
 	useUnguardedUpstream(t)
 
@@ -690,6 +694,316 @@ func TestServeGET_OCIHttpRealmUnderHTTPSRemoteIsNotFetched(t *testing.T) {
 	c.Request = httptest.NewRequest(http.MethodGet, "/v2/fallen-up/charts/nexspence/manifests/v1", nil)
 	err = repoproxy.ServeGET(c, d, repo, "/v2/fallen-up/charts/nexspence/manifests/v1", "", base.Coords{Name: "nexspence"}, "", 0)
 	require.NoError(t, err)
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+	assert.Equal(t, 1, calls)
+	assert.Equal(t, 0, tokenHits)
+}
+
+// acrLikeRegistry fakes a private Azure Container Registry: /v2/ answers 401
+// with a Bearer challenge whose realm is /oauth2/token on the registry's own
+// host, the token endpoint wants the repository's Basic credentials and
+// answers {"access_token":…}, and content needs that token. tokenAuth records
+// the Authorization each token request carried; the retry is served only on
+// an Authorization that is exactly the Bearer, so Basic beside it fails.
+type acrLikeRegistry struct {
+	srv          *httptest.Server
+	tokenAuth    []string
+	contentCalls int
+	sawBasicOnV2 bool
+}
+
+func newACRLikeRegistry(t *testing.T, user, pass string) *acrLikeRegistry {
+	t.Helper()
+	a := &acrLikeRegistry{}
+	a.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/oauth2/token" {
+			a.tokenAuth = append(a.tokenAuth, r.Header.Get("Authorization"))
+			assert.Equal(t, "repository:team/app:pull", r.URL.Query().Get("scope"))
+			if u, p, ok := r.BasicAuth(); !ok || u != user || p != pass {
+				w.WriteHeader(http.StatusUnauthorized)
+				_, _ = fmt.Fprint(w, `{"errors":[{"code":"UNAUTHORIZED"}]}`)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprint(w, `{"access_token":"acr-access"}`)
+			return
+		}
+		a.contentCalls++
+		if r.Header.Get("Authorization") == "Bearer acr-access" {
+			w.Header().Set("Content-Type", "application/vnd.oci.image.manifest.v1+json")
+			_, _ = fmt.Fprint(w, `{"schemaVersion":2}`)
+			return
+		}
+		if _, _, ok := r.BasicAuth(); ok {
+			a.sawBasicOnV2 = true
+		}
+		w.Header().Set("WWW-Authenticate", fmt.Sprintf(
+			`Bearer realm="%s/oauth2/token",service="%s"`, a.srv.URL, a.srv.Listener.Addr().String()))
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = fmt.Fprint(w, `{"errors":[{"code":"UNAUTHORIZED"}]}`)
+	}))
+	t.Cleanup(a.srv.Close)
+	return a
+}
+
+func acrPull(t *testing.T, repo *domain.Repository) *httptest.ResponseRecorder {
+	t.Helper()
+	d := makeDeps(repo)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v2/team/app/manifests/1.0", nil)
+	err := repoproxy.ServeGET(c, d, repo, "/v2/team/app/manifests/1.0", "", base.Coords{Name: "team/app"}, "", 0)
+	require.NoError(t, err)
+	return w
+}
+
+// observeProxyLog routes repoproxy's warnings into an in-memory sink for the
+// duration of the test.
+func observeProxyLog(t *testing.T) *observer.ObservedLogs {
+	t.Helper()
+	core, logs := observer.New(zapcore.WarnLevel)
+	repoproxy.SetLogger(zap.New(core).Sugar())
+	t.Cleanup(func() { repoproxy.SetLogger(nil) })
+	return logs
+}
+
+// A private ACR refuses an anonymous token request. The realm is on
+// remote_url's host, so the token request presents remote_username, and the
+// retry presents the token alone.
+func TestServeGET_OCISameHostRealm_PresentsBasicToTokenEndpoint(t *testing.T) {
+	useUnguardedUpstream(t)
+	acr := newACRLikeRegistry(t, "puller", "s3cret")
+
+	repo := proxyRepo("acr", acr.srv.URL)
+	repo.Format = domain.FormatDocker
+	repo.ProxyConfig["remote_username"] = "puller"
+	repo.ProxyConfig["remote_password"] = "s3cret"
+
+	w := acrPull(t, repo)
+	assert.Equal(t, http.StatusOK, w.Code)
+	require.Len(t, acr.tokenAuth, 1)
+	assert.True(t, strings.HasPrefix(acr.tokenAuth[0], "Basic "), "token request carries Basic")
+	assert.Equal(t, 2, acr.contentCalls, "challenge, then the Bearer retry")
+	assert.True(t, acr.sawBasicOnV2, "the first hop to the registry still presents Basic")
+}
+
+// No remote_username: the token request on the registry host stays anonymous,
+// as it was for public GHCR and Hub pulls before same-host realms got Basic.
+func TestServeGET_OCISameHostRealm_NoUsernameStaysAnonymous(t *testing.T) {
+	useUnguardedUpstream(t)
+
+	var tokenAuth []string
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/token" {
+			tokenAuth = append(tokenAuth, r.Header.Get("Authorization"))
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprint(w, `{"token":"anon"}`)
+			return
+		}
+		if r.Header.Get("Authorization") != "Bearer anon" {
+			w.Header().Set("WWW-Authenticate", fmt.Sprintf(
+				`Bearer realm="%s/token",service="ghcr.io",scope="repository:team/app:pull"`, srv.URL))
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		_, _ = fmt.Fprint(w, `{"schemaVersion":2}`)
+	}))
+	defer srv.Close()
+
+	repo := proxyRepo("ghcr", srv.URL)
+	repo.Format = domain.FormatOCI
+	repo.ProxyConfig["remote_password"] = "orphan-password"
+
+	w := acrPull(t, repo)
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, []string{""}, tokenAuth)
+}
+
+// The token endpoint refuses the credentials of a private registry. The one
+// anonymous token request is refused too, the anonymous content retry gets
+// 401, and the client sees that 401. Both refusals are logged — without the
+// password, the token or the scope query.
+func TestServeGET_OCITokenEndpointRefuses_WarnsAndFallsBack(t *testing.T) {
+	useUnguardedUpstream(t)
+	logs := observeProxyLog(t)
+	acr := newACRLikeRegistry(t, "puller", "right-password")
+
+	repo := proxyRepo("acr", acr.srv.URL)
+	repo.Format = domain.FormatDocker
+	repo.ProxyConfig["remote_username"] = "puller"
+	repo.ProxyConfig["remote_password"] = "wrong-password"
+
+	w := acrPull(t, repo)
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+	assert.Equal(t, 2, acr.contentCalls, "challenge, then the anonymous retry")
+	require.Len(t, acr.tokenAuth, 2, "the credentialed request, then exactly one anonymous one")
+	assert.True(t, strings.HasPrefix(acr.tokenAuth[0], "Basic "))
+	assert.Empty(t, acr.tokenAuth[1])
+
+	entries := logs.FilterMessageSnippet("token request failed").All()
+	require.Len(t, entries, 2)
+	for i, wantCreds := range []bool{true, false} {
+		fields := entries[i].ContextMap()
+		assert.Equal(t, "acr", fields["repository"])
+		assert.Equal(t, acr.srv.Listener.Addr().String(), fields["realm_host"])
+		assert.EqualValues(t, http.StatusUnauthorized, fields["status"])
+		assert.Equal(t, wantCreds, fields["with_credentials"])
+		logged := fmt.Sprint(entries[i].Message, fields)
+		for _, secret := range []string{"wrong-password", "right-password", "acr-access", "scope=", "repository:team"} {
+			assert.NotContains(t, logged, secret)
+		}
+	}
+}
+
+// Stale credentials on a registry whose token realm is on its own host (GHCR,
+// Quay, Harbor) must not break a public image: the realm rejects Basic but
+// hands out an anonymous pull token, as it did before same-host realms got
+// credentials. The rejection is still logged, so the stale credentials show.
+func TestServeGET_OCIPublicImageStaleCredentials_TakesAnonymousToken(t *testing.T) {
+	useUnguardedUpstream(t)
+	logs := observeProxyLog(t)
+
+	var tokenAuth []string
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/token" {
+			tokenAuth = append(tokenAuth, r.Header.Get("Authorization"))
+			if r.Header.Get("Authorization") != "" {
+				w.WriteHeader(http.StatusUnauthorized)
+				_, _ = fmt.Fprint(w, `{"errors":[{"code":"UNAUTHORIZED"}]}`)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprint(w, `{"token":"public-token"}`)
+			return
+		}
+		if r.Header.Get("Authorization") == "Bearer public-token" {
+			_, _ = fmt.Fprint(w, `{"schemaVersion":2}`)
+			return
+		}
+		w.Header().Set("WWW-Authenticate", fmt.Sprintf(
+			`Bearer realm="%s/token",service="ghcr.io",scope="repository:team/app:pull"`, srv.URL))
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte("no"))
+	}))
+	defer srv.Close()
+
+	repo := proxyRepo("ghcr", srv.URL)
+	repo.Format = domain.FormatOCI
+	repo.ProxyConfig["remote_username"] = "expired-user"
+	repo.ProxyConfig["remote_password"] = "expired-password"
+
+	w := acrPull(t, repo)
+	assert.Equal(t, http.StatusOK, w.Code)
+	require.Len(t, tokenAuth, 2)
+	assert.True(t, strings.HasPrefix(tokenAuth[0], "Basic "))
+	assert.Empty(t, tokenAuth[1])
+
+	entries := logs.FilterMessageSnippet("token request failed").All()
+	require.Len(t, entries, 1, "the rejected credentials are logged; the anonymous token is not a failure")
+	fields := entries[0].ContextMap()
+	assert.Equal(t, true, fields["with_credentials"])
+	assert.NotContains(t, fmt.Sprint(entries[0].Message, fields), "expired-password")
+	assert.NotContains(t, fmt.Sprint(entries[0].Message, fields), "public-token")
+}
+
+// A token realm that fails for a reason other than the credentials — here a
+// 5xx — gets no anonymous second token request: that would only double the
+// load on a struggling upstream. The content retry stays anonymous.
+func TestServeGET_OCITokenEndpointServerError_NoAnonymousTokenRetry(t *testing.T) {
+	useUnguardedUpstream(t)
+	logs := observeProxyLog(t)
+
+	tokenHits := 0
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/token" {
+			tokenHits++
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("WWW-Authenticate", fmt.Sprintf(
+			`Bearer realm="%s/token",service="ghcr.io",scope="repository:team/app:pull"`, srv.URL))
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte("no"))
+	}))
+	defer srv.Close()
+
+	repo := proxyRepo("ghcr", srv.URL)
+	repo.Format = domain.FormatOCI
+	repo.ProxyConfig["remote_username"] = "puller"
+	repo.ProxyConfig["remote_password"] = "s3cret"
+
+	w := acrPull(t, repo)
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+	assert.Equal(t, 1, tokenHits)
+	entries := logs.FilterMessageSnippet("token request failed").All()
+	require.Len(t, entries, 1)
+	assert.EqualValues(t, http.StatusInternalServerError, entries[0].ContextMap()["status"])
+}
+
+// A realm that cannot be reached is logged by cause, not by the token URL
+// net/http would repeat in its error.
+func TestServeGET_OCITokenEndpointUnreachable_WarnsWithoutURL(t *testing.T) {
+	useUnguardedUpstream(t)
+	logs := observeProxyLog(t)
+
+	dead := httptest.NewServer(http.NotFoundHandler())
+	deadURL := dead.URL
+	dead.Close()
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("WWW-Authenticate", fmt.Sprintf(
+			`Bearer realm="%s/token",service="ghcr.io",scope="repository:team/app:pull"`, deadURL))
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte("no"))
+	}))
+	defer upstream.Close()
+
+	repo := proxyRepo("ghcr", upstream.URL)
+	repo.Format = domain.FormatOCI
+
+	w := acrPull(t, repo)
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+	entries := logs.FilterMessageSnippet("token request failed").All()
+	require.Len(t, entries, 1)
+	fields := entries[0].ContextMap()
+	assert.EqualValues(t, 0, fields["status"])
+	assert.NotContains(t, fmt.Sprint(fields), "scope=")
+}
+
+// remote_url is https and the registry names an http realm on its own host.
+// Neither the realm nor Basic go over that cleartext hop.
+func TestServeGET_OCIHttpSameHostRealmUnderHTTPSRemote_NoBasicNoFetch(t *testing.T) {
+	tokenHits := 0
+	calls := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/token" {
+			tokenHits++
+			_, _ = fmt.Fprint(w, `{"token":"cleartext"}`)
+			return
+		}
+		calls++
+		w.Header().Set("WWW-Authenticate",
+			`Bearer realm="http://acr.example.io/token",service="acr.example.io",scope="repository:team/app:pull"`)
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte("no"))
+	}))
+	defer upstream.Close()
+
+	upURL, err := url.Parse(upstream.URL)
+	require.NoError(t, err)
+	orig := repoproxy.UpstreamClient
+	repoproxy.UpstreamClient = &http.Client{Transport: hostRewriteTransport{from: "acr.example.io", to: upURL}}
+	t.Cleanup(func() { repoproxy.UpstreamClient = orig })
+
+	repo := proxyRepo("acr", "https://acr.example.io")
+	repo.Format = domain.FormatDocker
+	repo.ProxyConfig["remote_username"] = "puller"
+	repo.ProxyConfig["remote_password"] = "s3cret"
+
+	w := acrPull(t, repo)
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
 	assert.Equal(t, 1, calls)
 	assert.Equal(t, 0, tokenHits)

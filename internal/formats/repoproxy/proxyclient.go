@@ -290,11 +290,13 @@ func hostPort(raw string) (string, error) {
 //
 // Credentials stay on remote_url's host, plus any extra base registered with
 // WithTrustedAuthBases (Cargo config.json "dl", which came from remote_url).
+// The OCI Bearer token request goes through here too, so a token realm the
+// registry names on its own host gets Basic and one on any other host does not.
 // Helm (and any other format that fetches an absolute origin URL) can point
 // ServeGET at GitHub releases or a sibling subtree; those hosts must not see
 // remote_username. A request that already carries an Authorization header
-// keeps it — the Docker Hub token flow, for one, sets its own Bearer and
-// must win.
+// keeps it — the retry after a Bearer challenge, for one, sets its own token
+// and must win.
 //
 // An http request never receives credentials when remote_url is https, and a
 // trusted base that is itself https does not authorize an http request to

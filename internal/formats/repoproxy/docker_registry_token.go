@@ -3,14 +3,94 @@ package repoproxy
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
+	"sync/atomic"
+
+	"go.uber.org/zap"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
+	"github.com/nexspence-oss/nexspence/internal/logger"
 )
+
+// tokenLog receives the warnings the Bearer token flow emits. formats.Deps
+// carries no logger, so the server installs one with SetLogger at startup.
+var tokenLog atomic.Pointer[zap.SugaredLogger]
+
+// SetLogger installs the logger repoproxy warns through when an upstream token
+// request fails. nil restores the default, which discards. Intended to be
+// called once from server startup, like SetGlobalProxy.
+func SetLogger(l logger.Logger) {
+	tokenLog.Store(l)
+}
+
+func proxyLogger() logger.Logger {
+	if l := tokenLog.Load(); l != nil {
+		return l
+	}
+	return zap.NewNop().Sugar()
+}
+
+// tokenEndpointError is a non-200 answer from a token realm. It keeps the
+// status alone: the body is the upstream's to word, and it goes to a log line.
+// withCredentials records whether the request presented remote_username.
+type tokenEndpointError struct {
+	status          int
+	withCredentials bool
+}
+
+// credentialsRejected reports a token realm that turned remote_username down.
+// That alone is worth one anonymous token request: a public image on GHCR,
+// Quay or Harbor still gets an anonymous pull token when the stored
+// credentials have gone stale. A network error, a 5xx or a malformed answer
+// is not a verdict on the credentials and gets no second request.
+func credentialsRejected(err error) bool {
+	var se *tokenEndpointError
+	if !errors.As(err, &se) || !se.withCredentials {
+		return false
+	}
+	return se.status == http.StatusUnauthorized || se.status == http.StatusForbidden
+}
+
+func (e *tokenEndpointError) Error() string {
+	return fmt.Sprintf("token endpoint answered %d %s", e.status, http.StatusText(e.status))
+}
+
+// warnTokenFailure records why a token request failed before the anonymous
+// retry hides it — otherwise a private registry whose token endpoint refuses
+// remote_username reads as a bare 401 with nothing in the log, and a public
+// pull that only works through the anonymous token never says the stored
+// credentials are stale. It names the realm host and status, never the
+// realm's query (it carries the scope), the token or the password.
+func warnTokenFailure(ctx context.Context, repo *domain.Repository, realm string, err error) {
+	var realmHost string
+	if u, perr := url.Parse(realm); perr == nil {
+		realmHost = u.Host
+	}
+	var repoName string
+	if repo != nil {
+		repoName = repo.Name
+	}
+	var status int
+	var withCredentials bool
+	var se *tokenEndpointError
+	if errors.As(err, &se) {
+		status = se.status
+		withCredentials = se.withCredentials
+	}
+	// *url.Error repeats the full token URL; its cause is what went wrong.
+	var ue *url.Error
+	if errors.As(err, &ue) {
+		err = ue.Err
+	}
+	logger.WithTraceContext(ctx, proxyLogger()).Warnw("upstream token request failed; retrying anonymously",
+		"repository", repoName, "realm_host", realmHost, "status", status,
+		"with_credentials", withCredentials, "error", err)
+}
 
 // ociBearerChallenge reports a Bearer realm an OCI Distribution repository may
 // follow. Docker Hub is decided separately, by host. Helm, Maven and the rest
@@ -109,7 +189,15 @@ func scopeFromRegistryV2URL(u *url.URL) string {
 	return "repository:" + name + ":pull"
 }
 
-func fetchDockerRegistryToken(ctx context.Context, client *http.Client, realm, service, scope string) (string, error) {
+// fetchDockerRegistryToken requests a pull token from realm. repo's
+// remote_username goes along under SetUpstreamAuth's rules: only when realm is
+// on remote_url's host and the hop is not a downgrade from https. ACR, Harbor,
+// GHCR and Quay issue tokens on the registry's own host and refuse an
+// anonymous request for a private repository. The realm is the upstream's
+// choice of URL, so a realm on any other host — Docker Hub's auth.docker.io,
+// GitLab's gitlab.com/jwt/auth — is asked anonymously, which is what a public
+// pull needs anyway. A nil repo asks anonymously everywhere.
+func fetchDockerRegistryToken(ctx context.Context, repo *domain.Repository, client *http.Client, realm, service, scope string) (string, error) {
 	// Realm and service are the caller's. Docker Hub is the registry that omits
 	// them; filling registry.docker.io in here would aim a GHCR challenge that
 	// forgot service at Docker Hub's token service.
@@ -137,16 +225,20 @@ func fetchDockerRegistryToken(ctx context.Context, client *http.Client, realm, s
 		return "", err
 	}
 	req.Header.Set("User-Agent", "Nexspence/1.0 (docker-proxy)")
+	SetUpstreamAuth(req, repo)
 
-	resp, err := client.Do(req)
+	resp, err := tokenRedirectClient(client).Do(req)
 	if err != nil {
 		return "", err
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return "", fmt.Errorf("token endpoint %s: %s", resp.Status, string(b))
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+		return "", &tokenEndpointError{
+			status:          resp.StatusCode,
+			withCredentials: resp.Request.Header.Get("Authorization") != "",
+		}
 	}
 
 	var out struct {
@@ -166,20 +258,30 @@ func fetchDockerRegistryToken(ctx context.Context, client *http.Client, realm, s
 }
 
 // fetchUpstreamWithDockerHubAuth performs the HTTP request with the repo's
-// upstream credentials (SetUpstreamAuth). On 401 it takes an anonymous Bearer
-// token from the registry's own challenge and retries once, so a public OCI
-// registry (GHCR, Docker Hub) can be pulled through the proxy without the
-// client following that challenge itself — the challenge names the upstream
-// token realm, and a client talking to Nexspence would present the token to
-// the wrong host.
+// upstream credentials (SetUpstreamAuth). On 401 it takes a Bearer token from
+// the registry's own challenge and retries once, so an OCI registry can be
+// pulled through the proxy without the client following that challenge
+// itself — the challenge names the upstream token realm, and a client talking
+// to Nexspence would present the token to the wrong host.
 //
 // Only a Docker Hub remote, or a repository whose format speaks OCI
 // Distribution, follows that challenge. Any other format keeps the 401: a Helm
 // index can name an absolute URL, and a Bearer realm on it must not become a
-// GET this process makes. The token request carries no remote_username. An
-// http realm is not fetched when remote_url is https — same rule as Basic on
-// a scheme downgrade. Docker Hub is the registry that omits realm or service;
-// every other registry must spell the realm out.
+// GET this process makes. The token request carries remote_username only when
+// the realm is on remote_url's host (fetchDockerRegistryToken): that is how a
+// private ACR, Harbor, GHCR or Quay repository is pulled. A realm elsewhere —
+// Docker Hub, GitLab — is asked anonymously. The retry carries the Bearer
+// alone, never Basic. An http realm is not fetched when remote_url is https —
+// same rule as Basic on a scheme downgrade. Docker Hub is the registry that
+// omits realm or service; every other registry must spell the realm out.
+//
+// A token realm that rejects remote_username (401/403) is asked once more
+// without it: stale credentials must not break a public image the realm hands
+// an anonymous token for. A private repository gets no usable token that way,
+// so the client still sees 401. Every failed token request is logged; when
+// none yields a token the request is retried without any Authorization, which
+// is what a registry that serves the path anonymously needs, and one that
+// does not answers the client 401 again.
 func fetchUpstreamWithDockerHubAuth(ctx context.Context, repo *domain.Repository, client *http.Client, method, upstreamURL, baseRemote string, hdr http.Header) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, method, upstreamURL, nil)
 	if err != nil {
@@ -239,8 +341,15 @@ func fetchUpstreamWithDockerHubAuth(ctx context.Context, repo *domain.Repository
 		return redoUpstreamWithoutAuth(ctx, client, method, upstreamURL, hdr)
 	}
 
-	tok, errTok := fetchDockerRegistryToken(ctx, client, realm, service, scope)
-	if errTok != nil || tok == "" {
+	tok, errTok := fetchDockerRegistryToken(ctx, repo, client, realm, service, scope)
+	if errTok != nil && credentialsRejected(errTok) {
+		warnTokenFailure(ctx, repo, realm, errTok)
+		// One anonymous attempt. It carries no credentials, so it cannot be
+		// rejected as credentials and come round again.
+		tok, errTok = fetchDockerRegistryToken(ctx, nil, client, realm, service, scope)
+	}
+	if errTok != nil {
+		warnTokenFailure(ctx, repo, realm, errTok)
 		return redoUpstreamWithoutAuth(ctx, client, method, upstreamURL, hdr)
 	}
 
