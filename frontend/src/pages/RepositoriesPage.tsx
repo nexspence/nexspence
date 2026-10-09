@@ -28,6 +28,13 @@ interface Repository {
   formatConfig?: Record<string, unknown> | null
 }
 
+/**
+ * Repository types a routing rule applies to: on a group it filters which
+ * paths any member serves; on a proxy, which paths are fetched from the
+ * remote (#642). Hosted repositories ignore rules.
+ */
+const routable = (type: string) => type === 'group' || type === 'proxy'
+
 /** Reads a string entry out of a repository config map, tolerating absent/typed-wrong values. */
 function cfgString(cfg: Record<string, unknown> | null | undefined, key: string): string {
   const v = cfg?.[key]
@@ -647,7 +654,7 @@ function CreateRepoModal({ onClose, onCreated }: {
       if (form.type === 'hosted') {
         body.formatConfig = withWritePolicy({}, form.format, form.writePolicy, form.allowRedeployLatest)
       }
-      if (form.type === 'group' && form.routingRuleId) {
+      if (routable(form.type) && form.routingRuleId) {
         body.routingRuleId = form.routingRuleId
       }
       if (form.type !== 'group' && form.cleanupPolicyIds.length > 0) body.cleanupPolicyIds = form.cleanupPolicyIds
@@ -863,7 +870,7 @@ function CreateRepoModal({ onClose, onCreated }: {
           )}
         </div>
       )}
-      {form.type === 'group' && (
+      {routable(form.type) && (
         <div style={{ marginTop: 12 }}>
           <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--holo-text-dim)', display: 'block', marginBottom: 5 }}>
             ROUTING RULE
@@ -1149,11 +1156,13 @@ function EditRepoModal({
       if (repo.type !== 'group' && blobStoreId) {
         updateBody.blobStoreId = blobStoreId
       }
-      if (repo.type === 'group') {
+      if (routable(repo.type)) {
         // Empty string, not null: the API reads an absent field as "unchanged"
         // and an empty one as "detach" (same convention as blobStoreId), so a
         // null here would silently leave the old rule attached.
         updateBody.routingRuleId = routingRuleId || ''
+      }
+      if (repo.type === 'group') {
         // Preserve any other formatConfig entries (e.g. writable_member) the API set.
         const { proxy_password_set: _drop, ...rest } = (repo.formatConfig ?? {}) as Record<string, unknown>
         void _drop
@@ -1548,7 +1557,7 @@ function EditRepoModal({
           )}
           <span className={styles.hint}>Scheduled and manual runs only affect attached repositories.</span>
         </div>
-        {repo.type === 'group' && (
+        {routable(repo.type) && (
           <div className={styles.formRow}>
             <label style={LABEL_STYLE}>Routing Rule</label>
             <Select
@@ -1559,7 +1568,11 @@ function EditRepoModal({
                 ...routingRules.map(r => ({ value: r.id, label: `${r.name} (${r.mode})` })),
               ]}
             />
-            <span className={styles.hint}>Route requests through this routing rule before dispatching to members.</span>
+            <span className={styles.hint}>
+              {repo.type === 'group'
+                ? 'Route requests through this routing rule before dispatching to members.'
+                : 'Paths this rule refuses are never fetched from the remote; a hosted member of a group still serves them.'}
+            </span>
           </div>
         )}
         {error && <div style={ERROR_STYLE}>{error}</div>}
