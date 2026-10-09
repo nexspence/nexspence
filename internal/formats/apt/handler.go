@@ -551,7 +551,7 @@ func (h *Handler) handleUpload(c *gin.Context, repoName, p string) {
 	}
 
 	ctx := c.Request.Context()
-	store := func(ctx context.Context) (int, error) {
+	store := func(ctx context.Context, legacyID string) (int, error) {
 		res, err := base.StoreArtifact(ctx, h.deps,
 			repoName, storePath, "application/vnd.debian.binary-package",
 			coords, body, size)
@@ -564,19 +564,37 @@ func (h *Handler) handleUpload(c *gin.Context, repoName, p string) {
 		if ctl == nil {
 			return http.StatusCreated, nil
 		}
-		if err := h.deps.Components.UpdateExtra(ctx, res.Asset.ComponentID,
+		componentID := res.Asset.ComponentID
+		if legacyID != "" {
+			// The asset row kept its pre-#637 component on upsert; the store
+			// created the one these coordinates name. Find it, then move the
+			// file there once its paragraph is recorded.
+			if componentID, err = h.componentFor(ctx, repoName, coords); err != nil {
+				return http.StatusInternalServerError, err
+			}
+		}
+		if err := h.deps.Components.UpdateExtra(ctx, componentID,
 			map[string]any{debControlKey: ctl.Paragraph}); err != nil {
 			return http.StatusInternalServerError, err
+		}
+		if legacyID != "" {
+			if err := h.migrateLegacyAsset(ctx, repoName, storePath, legacyID, componentID); err != nil {
+				return http.StatusInternalServerError, err
+			}
 		}
 		return http.StatusCreated, nil
 	}
 	// Every upload claims its identity, a filename-named one included:
 	// otherwise a non-deb body could take an identity a real deb holds.
 	status, err := h.withDebLocks(ctx, repoName, storePath, coords, arch, func() (int, error) {
-		if status, err := h.claimDebIdentity(ctx, repoName, storePath, coords, arch); err != nil {
+		legacyID, status, err := h.claimDebIdentity(ctx, repoName, storePath, coords, arch)
+		if err != nil {
 			return status, err
 		}
-		return store(ctx)
+		if ctl == nil {
+			legacyID = "" // a non-deb body has no control paragraph to migrate to
+		}
+		return store(ctx, legacyID)
 	})
 	if err != nil {
 		c.JSON(status, gin.H{"error": err.Error()})
@@ -673,41 +691,88 @@ func (h *Handler) identityHolders(ctx context.Context, repoName string, coords b
 // the identity it was first stored under: a redeploy whose control names a
 // different one is refused too, rather than deleting a file the new upload
 // might then fail to replace. Callers hold withDebLocks.
-func (h *Handler) claimDebIdentity(ctx context.Context, repoName, storePath string, coords base.Coords, arch string) (int, error) {
+//
+// One exception: a pre-#637 deb at this path — filed without a Group, under
+// the same package, version and filename architecture — is the same identity
+// read the old way. Its redeploy is allowed (the write policy still decides)
+// and legacyID names the component the file is then moved away from.
+func (h *Handler) claimDebIdentity(ctx context.Context, repoName, storePath string, coords base.Coords, arch string) (legacyID string, status int, err error) {
 	holders, err := h.identityHolders(ctx, repoName, coords, arch)
 	if err != nil {
-		return http.StatusInternalServerError, err
+		return "", http.StatusInternalServerError, err
 	}
 	for _, a := range holders {
 		if a.Path != storePath {
-			return http.StatusConflict, fmt.Errorf("%s %s (%s) is already stored at %s",
+			return "", http.StatusConflict, fmt.Errorf("%s %s (%s) is already stored at %s",
 				coords.Name, coords.Version, arch, a.Path)
 		}
 	}
 
 	existing, err := h.deps.Assets.GetByPath(ctx, repoName, storePath)
 	if errors.Is(err, repository.ErrNotFound) || (err == nil && existing == nil) {
-		return 0, nil // nothing stored at this path yet
+		return "", 0, nil // nothing stored at this path yet
 	}
 	if err != nil {
-		return http.StatusInternalServerError, fmt.Errorf("look up %s: %w", storePath, err)
+		return "", http.StatusInternalServerError, fmt.Errorf("look up %s: %w", storePath, err)
 	}
 	old, err := h.deps.Components.Get(ctx, existing.ComponentID)
 	if errors.Is(err, repository.ErrNotFound) || (err == nil && old == nil) {
-		return 0, nil // dangling asset: the store re-registers it
+		return "", 0, nil // dangling asset: the store re-registers it
 	}
 	if err != nil {
-		return http.StatusInternalServerError, fmt.Errorf("look up the package at %s: %w", storePath, err)
+		return "", http.StatusInternalServerError, fmt.Errorf("look up the package at %s: %w", storePath, err)
 	}
-	if old.Group != coords.Group || old.Name != coords.Name || old.Version != coords.Version {
-		held := old.Name + " " + old.Version
-		if old.Group != "" {
-			held += " (" + old.Group + ")"
+	if old.Group == coords.Group && old.Name == coords.Name && old.Version == coords.Version {
+		return "", 0, nil
+	}
+	if old.Group == "" && coords.Group != "" && old.Name == coords.Name && old.Version == coords.Version &&
+		debArch(existing.Path) == arch {
+		return old.ID, 0, nil
+	}
+	held := old.Name + " " + old.Version
+	if old.Group != "" {
+		held += " (" + old.Group + ")"
+	}
+	return "", http.StatusConflict, fmt.Errorf("%s holds %s; delete it before uploading %s %s (%s) there",
+		storePath, held, coords.Name, coords.Version, arch)
+}
+
+// componentFor returns the ID of the component coords name.
+func (h *Handler) componentFor(ctx context.Context, repoName string, coords base.Coords) (string, error) {
+	comps, err := base.ExactComponents(ctx, h.deps.Components, domain.SearchParams{
+		Repository: repoName, Format: string(domain.FormatApt),
+		Group: coords.Group, Name: coords.Name, Version: coords.Version,
+	})
+	if err != nil {
+		return "", err
+	}
+	if len(comps) == 0 {
+		return "", fmt.Errorf("no component for %s %s (%s) after storing it", coords.Name, coords.Version, coords.Group)
+	}
+	return comps[0].ID, nil
+}
+
+// migrateLegacyAsset moves the file at storePath from its pre-#637 component to
+// componentID, and drops the old component once nothing else is filed under
+// it (a pre-#637 component holds every architecture of its version).
+func (h *Handler) migrateLegacyAsset(ctx context.Context, repoName, storePath, legacyID, componentID string) error {
+	asset, err := h.deps.Assets.GetByPath(ctx, repoName, storePath)
+	if err != nil {
+		return fmt.Errorf("look up %s: %w", storePath, err)
+	}
+	if err := h.deps.Assets.SetComponent(ctx, asset.ID, componentID); err != nil {
+		return fmt.Errorf("move %s to its control coordinates: %w", storePath, err)
+	}
+	left, err := h.deps.Assets.ListByComponentID(ctx, legacyID)
+	if err != nil {
+		return err
+	}
+	if len(left) == 0 {
+		if err := h.deps.Components.Delete(ctx, legacyID); err != nil && !errors.Is(err, repository.ErrNotFound) {
+			return err
 		}
-		return http.StatusConflict, fmt.Errorf("%s holds %s; delete it before uploading %s %s (%s) there",
-			storePath, held, coords.Name, coords.Version, arch)
 	}
-	return 0, nil
+	return nil
 }
 
 func (h *Handler) serveFile(c *gin.Context, repoName, p string) {

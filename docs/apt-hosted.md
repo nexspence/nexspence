@@ -75,7 +75,11 @@ Debs stored by earlier versions keep the minimal filename-derived stanza
 (`Package`, `Version`, `Architecture`, `Filename`, `Size` and checksums), and
 a component with an empty `group`: path selectors see `//<Package>`, and their
 versions are retained separately from newly uploaded ones. They keep their
-identity: a new upload of the same package, version and architecture is
-refused under another path, and under the same path too, since the stored file
-is filed under different coordinates. Delete the old file, then upload it
-again to get the full stanza.
+identity: a new upload of the same package, version and architecture under
+another path is refused.
+
+Uploading the same package, version and architecture again at its existing
+path upgrades it in place, as a redeploy: it gets the full stanza and moves to
+the component its control file names. The deployment policy still decides
+whether that redeploy is allowed. In a write-once repository, delete the old
+file first.

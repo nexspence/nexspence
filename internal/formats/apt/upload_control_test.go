@@ -209,7 +209,7 @@ func TestUpload_WriteOnceRefusesARedeploy(t *testing.T) {
 }
 
 // A deb stored before control parsing (filename coordinates, no Group) still
-// holds its identity, and its path.
+// holds its identity against other paths.
 func TestUpload_LegacyFileStillHoldsItsIdentity(t *testing.T) {
 	e := newCtlEnv(t, "ctl-legacy", "")
 	legacy := "/pool/main/foo_1.0_amd64.deb"
@@ -221,12 +221,57 @@ func TestUpload_LegacyFileStillHoldsItsIdentity(t *testing.T) {
 
 	// Another architecture of the same version is a different identity.
 	assert.Equal(t, http.StatusCreated, e.put("/pool/main/foo_1.0_arm64.deb", debFor(t, "foo", "1.0", "arm64", "", "y")).Code)
+}
 
-	// The legacy path is upgraded by deleting it and uploading the real deb.
-	assert.Equal(t, http.StatusConflict, e.put(legacy, debFor(t, "foo", "1.0", "amd64", "Depends: foo-common\n", "z")).Code)
-	require.Equal(t, http.StatusNoContent, e.del(legacy))
-	require.Equal(t, http.StatusCreated, e.put(legacy, debFor(t, "foo", "1.0", "amd64", "Depends: foo-common\n", "z")).Code)
-	assert.Contains(t, e.get(t, "/dists/stable/main/binary-amd64/Packages"), "Depends: foo-common\n")
+// Re-pushing the same version at its pre-#637 path is a redeploy, not a new
+// identity: CI that republishes a release keeps working after the upgrade, and
+// the file moves to its control coordinates with the full stanza.
+func TestUpload_LegacyFileRedeployedInPlaceMigrates(t *testing.T) {
+	e := newCtlEnv(t, "ctl-legacy-move", "")
+	amd := "/pool/main/foo_1.0_amd64.deb"
+	arm := "/pool/main/foo_1.0_arm64.deb"
+	require.Equal(t, http.StatusCreated, e.put(amd, []byte("legacy amd64")).Code)
+	require.Equal(t, http.StatusCreated, e.put(arm, []byte("legacy arm64")).Code)
+	legacy, _ := e.comps.Search(t.Context(), domain.SearchParams{Repository: "ctl-legacy-move"})
+	require.Len(t, legacy.Items, 1, "pre-#637 debs of one version share a group-less component")
+
+	deb := debFor(t, "foo", "1.0", "amd64", "Depends: foo-common\n", "real")
+	require.Equal(t, http.StatusCreated, e.put(amd, deb).Code)
+
+	idx := e.get(t, "/dists/stable/main/binary-amd64/Packages")
+	assert.Contains(t, idx, "Depends: foo-common\n", "the full stanza")
+	assert.Contains(t, idx, fmt.Sprintf("SHA256: %x\n", sha256.Sum256(deb)))
+	assert.Equal(t, 1, strings.Count(idx, "Package: foo\n"))
+	comps, _ := e.comps.Search(t.Context(), domain.SearchParams{Repository: "ctl-legacy-move"})
+	var got []string
+	for _, c := range comps.Items {
+		got = append(got, c.Group+"/"+c.Name+"/"+c.Version)
+	}
+	assert.ElementsMatch(t, []string{"amd64/foo/1.0", "/foo/1.0"}, got, "the legacy component stays while arm64 is filed under it")
+	assert.Contains(t, e.get(t, "/dists/stable/main/binary-arm64/Packages"), "Package: foo\n")
+
+	// Migrating the last file drops the legacy component.
+	require.Equal(t, http.StatusCreated, e.put(arm, debFor(t, "foo", "1.0", "arm64", "", "real arm")).Code)
+	comps, _ = e.comps.Search(t.Context(), domain.SearchParams{Repository: "ctl-legacy-move"})
+	got = got[:0]
+	for _, c := range comps.Items {
+		got = append(got, c.Group+"/"+c.Name+"/"+c.Version)
+	}
+	assert.ElementsMatch(t, []string{"amd64/foo/1.0", "arm64/foo/1.0"}, got)
+}
+
+// The in-place migration is still a redeploy: write-once refuses it, and a
+// control naming another version is another identity.
+func TestUpload_LegacyRedeployLimits(t *testing.T) {
+	e := newCtlEnv(t, "ctl-legacy-once", domain.WritePolicyAllowOnce)
+	require.Equal(t, http.StatusCreated, e.put("/pool/main/foo_1.0_amd64.deb", []byte("legacy")).Code)
+	assert.Equal(t, http.StatusBadRequest, e.put("/pool/main/foo_1.0_amd64.deb", debFor(t, "foo", "1.0", "amd64", "", "x")).Code)
+
+	e = newCtlEnv(t, "ctl-legacy-other", "")
+	require.Equal(t, http.StatusCreated, e.put("/pool/main/foo_1.0_amd64.deb", []byte("legacy")).Code)
+	w := e.put("/pool/main/foo_1.0_amd64.deb", debFor(t, "foo", "1.1", "amd64", "", "x"))
+	assert.Equal(t, http.StatusConflict, w.Code)
+	assert.Contains(t, w.Body.String(), "delete it before uploading")
 }
 
 // Concurrent uploads of one identity to different paths: exactly one wins,

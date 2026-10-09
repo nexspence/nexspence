@@ -825,6 +825,8 @@ func (a *AssetRepo) Create(_ context.Context, asset *domain.Asset) error {
 	key := asset.Repository + ":" + asset.Path
 	if existing, ok := a.assets[key]; ok {
 		asset.ID = existing.ID
+		// As the postgres upsert does: a path keeps its component on conflict.
+		asset.ComponentID = existing.ComponentID
 		if asset.CreatedAt.IsZero() {
 			asset.CreatedAt = existing.CreatedAt
 		}
@@ -946,6 +948,18 @@ func (a *AssetRepo) ListByComponentIDs(_ context.Context, componentIDs []string)
 		out[k] = slice
 	}
 	return out, nil
+}
+
+// SetComponent moves an asset to another component.
+func (a *AssetRepo) SetComponent(_ context.Context, id, componentID string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	v, ok := a.byID[id]
+	if !ok {
+		return repository.ErrNotFound
+	}
+	v.ComponentID = componentID
+	return nil
 }
 
 func (a *AssetRepo) ListAllBlobRefs(_ context.Context) ([]domain.BlobRef, error) {

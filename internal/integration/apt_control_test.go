@@ -213,3 +213,31 @@ func TestAptControlSlowUploadsDoNotStarveThePool_RealShape(t *testing.T) {
 		assert.Equal(t, http.StatusCreated, <-u.done, "upload %d", i)
 	}
 }
+
+// A pre-#637 deb re-pushed at its own path migrates in place on postgres,
+// whose asset upsert keeps the row's component: the file is moved to its
+// control coordinates explicitly and the emptied legacy component is dropped.
+func TestAptControlLegacyRedeployMigrates_RealShape(t *testing.T) {
+	createHostedRepo(t, "apt", "apt-control-legacy", `{}`)
+	token := login(t, "admin", "admin123")
+	p := "/repository/apt-control-legacy/pool/main/foo_1.0_amd64.deb"
+	code, body := putBody(t, token, p, "legacy body, not an ar archive")
+	require.Equal(t, http.StatusCreated, code, body)
+
+	ctl := "Package: foo\nVersion: 1.0\nArchitecture: amd64\nMaintainer: Foo <foo@example.org>\nDepends: foo-common\nDescription: foo\n text\n"
+	code, body = putBody(t, token, p, aptDeb(t, ctl, "real"))
+	require.Equal(t, http.StatusCreated, code, body)
+
+	_, idx := getBody(t, token, "/repository/apt-control-legacy/dists/stable/main/binary-amd64/Packages")
+	assert.Contains(t, idx, "Depends: foo-common\n")
+	assert.Equal(t, 1, strings.Count(idx, "Package: foo\n"))
+
+	code, raw := getBody(t, token, "/service/rest/v1/components?repository=apt-control-legacy")
+	require.Equal(t, http.StatusOK, code, raw)
+	var page struct {
+		Items []struct{ Group, Name, Version string } `json:"items"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(raw), &page))
+	require.Len(t, page.Items, 1, raw)
+	assert.Equal(t, "amd64", page.Items[0].Group)
+}
