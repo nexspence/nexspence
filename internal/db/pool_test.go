@@ -48,9 +48,51 @@ func TestApplyPoolSettings_DSNParametersWin(t *testing.T) {
 	assert.Equal(t, time.Minute, cfg.MaxConnIdleTime)
 }
 
-func TestApplyPoolSettings_RejectsInconsistentSizes(t *testing.T) {
+// An install that sizes the pool in the DSN, below the default min_conns,
+// keeps starting: the defaulted minimum is lowered to the maximum.
+func TestApplyPoolSettings_DefaultMinIsClampedToADSNMax(t *testing.T) {
+	dsn := testDSN + "&pool_max_conns=4"
+	cfg := parsed(t, dsn)
+	require.NoError(t, applyPoolSettings(cfg, dsn, PoolSettings{MaxConns: 20, MinConns: 5}))
+	assert.Equal(t, int32(4), cfg.MaxConns)
+	assert.Equal(t, int32(4), cfg.MinConns)
+}
+
+// The same holds when only the maximum is the operator's: the minimum was
+// never chosen, so it gives way.
+func TestApplyPoolSettings_DefaultMinIsClampedToAnExplicitMax(t *testing.T) {
 	cfg := parsed(t, testDSN)
-	assert.ErrorContains(t, applyPoolSettings(cfg, testDSN, PoolSettings{MaxConns: 4, MinConns: 10}), "min_conns")
-	cfg = parsed(t, testDSN)
+	require.NoError(t, applyPoolSettings(cfg, testDSN, PoolSettings{MaxConns: 3, MinConns: 5, MaxConnsSet: true}))
+	assert.Equal(t, int32(3), cfg.MaxConns)
+	assert.Equal(t, int32(3), cfg.MinConns)
+}
+
+// Both set by the operator, and contradictory: refuse rather than guess.
+func TestApplyPoolSettings_ExplicitContradictionIsRefused(t *testing.T) {
+	cfg := parsed(t, testDSN)
+	err := applyPoolSettings(cfg, testDSN, PoolSettings{MaxConns: 4, MinConns: 10, MaxConnsSet: true, MinConnsSet: true})
+	assert.ErrorContains(t, err, "database.min_conns (10) exceeds database.max_conns (4)")
+}
+
+func TestApplyPoolSettings_RejectsNegativeValues(t *testing.T) {
+	cfg := parsed(t, testDSN)
 	assert.ErrorContains(t, applyPoolSettings(cfg, testDSN, PoolSettings{MaxConns: -1}), "negative")
+}
+
+// The DSN is parsed, in both forms pgx accepts, not searched as text.
+func TestDSNHasParam(t *testing.T) {
+	cases := []struct {
+		dsn  string
+		want bool
+	}{
+		{"postgres://u:p@h:5432/db?sslmode=disable&pool_max_conns=50", true},
+		{"postgresql://u:p@h/db?pool_max_conns=50", true},
+		{"postgres://u:pool_max_conns=9@h:5432/db?sslmode=disable", false}, // in the password
+		{"postgres://u:p@h:5432/db?sslmode=disable", false},
+		{"host=h user=u password=p dbname=db pool_max_conns=7", true},
+		{"host=h user=u password=pool_max_conns=7 dbname=db", false},
+	}
+	for _, c := range cases {
+		assert.Equal(t, c.want, dsnHasParam(c.dsn, "pool_max_conns"), c.dsn)
+	}
 }

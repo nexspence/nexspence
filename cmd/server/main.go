@@ -113,6 +113,9 @@ func cmdServe() *cobra.Command {
 				MaxConns: cfg.Database.MaxConns,
 				MinConns: cfg.Database.MinConns,
 				MaxIdle:  time.Duration(cfg.Database.MaxIdleSec) * time.Second,
+
+				MaxConnsSet: cfg.Database.MaxConnsSet,
+				MinConnsSet: cfg.Database.MinConnsSet,
 			}, queryTracers...)
 			if err != nil {
 				return err
