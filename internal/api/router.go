@@ -775,44 +775,7 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 	// The format is looked up from the repository record in the DB.
 	repo := r.Group("/repository/:repoName", handlers.OptionalAuth(userSvc, tokenSvc, loginGuard, log), rbacMW)
 	{
-		repo.Any("/*path", func(c *gin.Context) {
-			repoName := c.Param("repoName")
-			ctx := c.Request.Context()
-			if uid, ok := c.Get("userID"); ok {
-				if id, ok2 := uid.(string); ok2 && id != "" {
-					uname, _ := c.Get("username")
-					uStr, _ := uname.(string)
-					ctx = requestctx.WithUser(ctx, id, uStr)
-				}
-			}
-			c.Request = c.Request.WithContext(ctx)
-
-			repoDef, err := repoRepo.Get(ctx, repoName)
-			if err != nil || repoDef == nil {
-				c.JSON(http.StatusNotFound, gin.H{"error": "repository not found: " + repoName})
-				return
-			}
-			if !repoDef.Online {
-				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "repository is offline"})
-				return
-			}
-
-			// Group repositories fan-out to member repos.
-			if repoDef.Type == domain.TypeGroup {
-				groupHandler.ServeHTTP(c)
-				return
-			}
-
-			handler, ok := formatRegistry[string(repoDef.Format)]
-			if !ok {
-				c.JSON(http.StatusNotImplemented, gin.H{
-					"error": "format not yet implemented: " + string(repoDef.Format),
-				})
-				return
-			}
-
-			handler.ServeHTTP(c)
-		})
+		repo.Any("/*path", serveRepository(repoRepo, rrRepo, groupHandler, formatRegistry))
 	}
 
 	// ── Docker registry v2 API ────────────────────────────────
@@ -854,7 +817,7 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 	r.GET("/v2/_catalog", dockerCatalogH...)
 	r.HEAD("/v2/_catalog", dockerCatalogH...) // net/http drops the body for HEAD
 
-	dockerV2H := serveDockerV2(repoRepo, groupHandler, formatRegistry)
+	dockerV2H := serveDockerV2(repoRepo, rrRepo, groupHandler, formatRegistry)
 	v2docker := r.Group("/v2/repository", handlers.OptionalAuth(userSvc, tokenSvc, loginGuard, log), handlers.RBACMiddleware(rbacSvc, repoRepo))
 	v2docker.Any("/:repoName/*dockerpath", dockerV2H)
 
@@ -876,12 +839,67 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 	return r
 }
 
+// serveRepository dispatches /repository/:repoName/*path to the group handler
+// or the repository's format handler. A proxy's routing rule is applied here,
+// before the handler can consult its cache or upstream (#642).
+func serveRepository(
+	repoRepo repository.RepositoryRepo,
+	rules repository.RoutingRuleRepo,
+	groupH formats.FormatHandler,
+	fmtRegistry map[string]formats.FormatHandler,
+) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		repoName := c.Param("repoName")
+		ctx := c.Request.Context()
+		if uid, ok := c.Get("userID"); ok {
+			if id, ok2 := uid.(string); ok2 && id != "" {
+				uname, _ := c.Get("username")
+				uStr, _ := uname.(string)
+				ctx = requestctx.WithUser(ctx, id, uStr)
+			}
+		}
+		c.Request = c.Request.WithContext(ctx)
+
+		repoDef, err := repoRepo.Get(ctx, repoName)
+		if err != nil || repoDef == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "repository not found: " + repoName})
+			return
+		}
+		if !repoDef.Online {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "repository is offline"})
+			return
+		}
+
+		// Group repositories fan-out to member repos.
+		if repoDef.Type == domain.TypeGroup {
+			groupH.ServeHTTP(c)
+			return
+		}
+
+		if !formats.ProxyRuleAllows(ctx, rules, repoDef, c.Request.Method, c.Param("path")) {
+			formats.WriteRoutingBlocked(c, repoName)
+			return
+		}
+
+		handler, ok := fmtRegistry[string(repoDef.Format)]
+		if !ok {
+			c.JSON(http.StatusNotImplemented, gin.H{
+				"error": "format not yet implemented: " + string(repoDef.Format),
+			})
+			return
+		}
+
+		handler.ServeHTTP(c)
+	}
+}
+
 // serveDockerV2 returns a gin.HandlerFunc that dispatches Docker OCI v2 API
 // requests for a named repository. Registered on both the long-path route
 // (/v2/repository/:repoName/*dockerpath) and the short-path route
 // (/v2/:repoName/*dockerpath) so they share identical dispatch logic.
 func serveDockerV2(
 	repoRepo repository.RepositoryRepo,
+	rules repository.RoutingRuleRepo,
 	groupH formats.FormatHandler,
 	fmtRegistry map[string]formats.FormatHandler,
 ) gin.HandlerFunc {
@@ -932,6 +950,11 @@ func serveDockerV2(
 		c.Params = gin.Params{
 			{Key: "repoName", Value: repoName},
 			{Key: "path", Value: "/v2" + dockerPath},
+		}
+		// Matched on the same /v2/... path a group's rule sees (#642).
+		if !formats.ProxyRuleAllows(ctx, rules, repoDef, c.Request.Method, "/v2"+dockerPath) {
+			formats.WriteRoutingBlocked(c, repoName)
+			return
 		}
 		h, ok := fmtRegistry[string(repoDef.Format)]
 		if !ok {
