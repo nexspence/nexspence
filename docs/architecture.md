@@ -184,7 +184,7 @@ Pure business logic; no HTTP concerns; depend only on repository interfaces.
 | `WebhookService` | Async delivery with HMAC-SHA256; retry; inactive hook skip |
 | `ScanService` | Trivy (operator-supplied, see [scanning.md](scanning.md)) for `docker`/`oci`, OSV.dev for `maven`/`npm`/`pypi`/`cargo`; auto-scan queued on upload plus a nightly bulk re-scan; results cached in `components.extra` and persisted to `scan_results`; CSV/JSON export |
 | `RBACService` | Role → privilege → content-selector evaluation for a caller, path and action |
-| `RoutingRuleService` | Path allow/block rules applied to group-repository fan-out |
+| `RoutingRuleService` | Path allow/block rules: on a group, applied to the member fan-out; on a proxy, a refused path is never served or fetched from the remote ([routing-rules.md](routing-rules.md)) |
 | `PromotionService` | Staging → production promotion with a scan-pass gate and optional manual approval |
 | `ReplicationService` | Push-on-publish to a secondary instance via streaming blob copy; per-rule cron |
 | `BlobGCService` | `ListAllBlobRefs` (key + store) vs `BlobStore.ListKeys` → delete blobs no asset references *in that store*; dry-run |
