@@ -2,6 +2,8 @@ module github.com/nexspence-oss/nexspence
 
 go 1.26.5
 
+toolchain go1.26.9
+
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.23.1
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.14.1
