@@ -208,15 +208,20 @@ func (h *Handler) servePackagesIndex(c *gin.Context, repoName, p string) {
 	c.Data(http.StatusOK, "text/plain; charset=utf-8", data)
 }
 
-// repoArchitectures collects the set of architectures present in the repo.
+// repoArchitectures collects the concrete architectures of the debs the
+// Packages indexes are built from: every /pool/ deb, not a first page of the
+// repository's assets — an architecture missing here is an index the Release
+// never vouches for, which a verifying apt then rejects. "all" is not one of
+// them: renderRelease declares it unconditionally and buildRelease always
+// vouches for its binary-all index.
 func (h *Handler) repoArchitectures(ctx context.Context, repoName string) []string {
-	assetPage, err := h.deps.Assets.List(ctx, repoName, 1000, 0)
+	assets, err := h.deps.Assets.ListByRepoAndPath(ctx, repoName, "/pool/")
 	if err != nil {
 		return nil
 	}
 	seen := map[string]bool{}
 	var archs []string
-	for _, a := range assetPage.Items {
+	for _, a := range assets {
 		if !strings.HasSuffix(a.Path, ".deb") {
 			continue
 		}
@@ -305,8 +310,12 @@ func (h *Handler) buildRelease(ctx context.Context, repoName, p string) ([]byte,
 
 	// apt verifies the Packages indexes against these checksum sections —
 	// without them a default (verifying) client rejects the repo (#103).
+	// binary-all is vouched for as well: renderRelease always declares "all",
+	// and in a repository whose debs are all Architecture: all it is the ONLY
+	// index apt reads — without its checksums a signed repository carries no
+	// hash entries at all and apt refuses it as "weak security information".
 	var files []releaseIndexFile
-	for _, arch := range archs {
+	for _, arch := range indexArchs(archs) {
 		plain, err := h.buildPackagesIndex(ctx, repoName, arch)
 		if err != nil {
 			continue
@@ -319,6 +328,12 @@ func (h *Handler) buildRelease(ctx context.Context, repoName, p string) ([]byte,
 
 	date := h.releaseDate(ctx, repoName).UTC().Format(releaseDateLayout)
 	return renderRelease(dist, archs, []string{"main"}, date, files), nil
+}
+
+// indexArchs is every architecture a Release vouches for: the concrete ones
+// plus "all", which renderRelease declares on every Architectures line.
+func indexArchs(archs []string) []string {
+	return append(append([]string{}, archs...), "all")
 }
 
 // releaseDateLayout is the Date format apt reads, and the one a group parses

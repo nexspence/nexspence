@@ -1041,6 +1041,10 @@ func (a *AssetRepo) ListByRepoAndPath(_ context.Context, repoName, pathPrefix st
 			out = append(out, *asset)
 		}
 	}
+	// Same contract as postgres (ORDER BY a.path): callers build documents
+	// from this list that are hashed and served separately (apt's Release and
+	// Packages), so a map-ordered result would make them disagree at random.
+	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
 	return out, nil
 }
 

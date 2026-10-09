@@ -109,16 +109,27 @@ func (h *Handler) mergeRelease(groupName, p string, inline bool, parts []formats
 	const contentType = "text/plain; charset=utf-8"
 
 	dist := releaseDist(p)
-	archs := unionReleaseField(parts, "Architectures", maxReleaseArchs, func(v string) bool { return v != "all" })
+	// One slot of the cap is "all", which indexArchs adds to every Release.
+	archs := unionReleaseField(parts, "Architectures", maxReleaseArchs-1, func(v string) bool { return v != "all" })
 	components := unionReleaseField(parts, "Components", maxReleaseComponents, func(string) bool { return true })
 	if len(components) == 0 {
 		components = []string{"main"}
 	}
 
+	// binary-all is vouched for when a member publishes it — every Nexspence
+	// hosted member declares "all", so an all-only group keeps working. Members
+	// that never declare it (an Ubuntu archive proxy) are not asked for it: a
+	// proxy has no negative cache, so each Release would cost them a live
+	// upstream round trip per component for an index that does not exist.
+	indexed := archs
+	if releaseDeclaresAll(parts) {
+		indexed = indexArchs(archs)
+	}
+
 	var files []releaseIndexFile
 	if fetch != nil {
 		for _, component := range components {
-			for _, arch := range archs {
+			for _, arch := range indexed {
 				for _, suffix := range []string{"", ".gz"} {
 					rel := component + "/binary-" + arch + "/Packages" + suffix
 					body, err := fetch("/dists/" + dist + "/" + rel)
@@ -189,6 +200,19 @@ func unionReleaseField(parts []formats.GroupIndexPart, field string, limit int, 
 		out = out[:limit]
 	}
 	return out
+}
+
+// releaseDeclaresAll reports whether any member's Release lists "all" among
+// its Architectures, i.e. whether some member publishes a binary-all index.
+func releaseDeclaresAll(parts []formats.GroupIndexPart) bool {
+	for _, part := range parts {
+		for _, v := range strings.Fields(releaseHeader(string(part.Body), "Architectures")) {
+			if v == "all" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // releaseDateOf is the newest Date the members declare. The document has to be
