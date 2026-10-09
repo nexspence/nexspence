@@ -115,6 +115,12 @@ func (h *Handler) serveGet(c *gin.Context) {
 		if memberRepo == nil {
 			continue
 		}
+		// The member's own rule (a proxy's): a path it refuses is a miss here,
+		// so a later hosted member still serves it and the upstream is never
+		// asked (#642).
+		if !formats.ProxyRuleAllows(ctx, h.deps.RoutingRules, memberRepo, c.Request.Method, filePath) {
+			continue
+		}
 		handler, ok := h.formatRegistry[string(memberRepo.Format)]
 		if !ok {
 			continue
@@ -280,6 +286,11 @@ func (h *Handler) collectIndexParts(c *gin.Context, repoDef *domain.Repository, 
 		}
 		memberRepo := h.eligibleMember(ctx, memberName, repoDef)
 		if memberRepo == nil {
+			continue
+		}
+		// A proxy member whose rule refuses the index contributes nothing,
+		// rather than carrying the name to its upstream (#642).
+		if !formats.ProxyRuleAllows(ctx, h.deps.RoutingRules, memberRepo, http.MethodGet, source) {
 			continue
 		}
 		handler, ok := h.formatRegistry[string(memberRepo.Format)]
