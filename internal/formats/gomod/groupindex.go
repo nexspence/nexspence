@@ -66,3 +66,15 @@ func mergeLatest(parts []formats.GroupIndexPart) ([]byte, string, error) {
 	}
 	return best, "application/json", nil
 }
+
+// GroupIndexClaimsName implements formats.GroupIndexNameClaimer: a version
+// list with a version in it, or an @latest naming one.
+func (h *Handler) GroupIndexClaimsName(source string, body []byte) bool {
+	if strings.HasSuffix(source, "/@latest") {
+		var doc struct {
+			Version string `json:"Version"`
+		}
+		return json.Unmarshal(body, &doc) == nil && doc.Version != ""
+	}
+	return strings.TrimSpace(string(body)) != ""
+}

@@ -1,8 +1,9 @@
 // Package group implements the "group" repository type.
 //
 // A group repository aggregates multiple hosted/proxy repositories under one URL.
-// GET/HEAD are delegated to each member's format handler in order; the first
-// non-404 response is returned.
+// GET/HEAD are delegated to each member's format handler, hosted members before
+// proxy members and otherwise in member order; the first non-404 response is
+// returned.
 //
 // PUT/POST/PATCH are forwarded to the first hosted member (or the member named
 // by formatConfig["writable_member"] if set). Groups with no hosted members
@@ -107,12 +108,9 @@ func (h *Handler) serveGet(c *gin.Context) {
 		}
 	}
 
-	for _, memberName := range members {
+	for _, memberRepo := range h.eligibleMembers(ctx, members, repoDef) {
+		memberName := memberRepo.Name
 		if !service.Allow(rule, filePath) {
-			continue
-		}
-		memberRepo := h.eligibleMember(ctx, memberName, repoDef)
-		if memberRepo == nil {
 			continue
 		}
 		// The member's own rule (a proxy's): a path it refuses is a miss here,
@@ -152,6 +150,25 @@ func (h *Handler) serveGet(c *gin.Context) {
 	c.JSON(http.StatusNotFound, gin.H{
 		"error": fmt.Sprintf("artifact not found in any member of group %q", repoName),
 	})
+}
+
+// eligibleMembers resolves the members eligible for fan-out, hosted members
+// first and proxy members after them, each kind in member_names order. A path a
+// hosted member can serve is then answered before any proxy carries the name
+// to its upstream (#642) — the order Nexus documents and Artifactory enforces.
+func (h *Handler) eligibleMembers(ctx context.Context, members []string, groupDef *domain.Repository) []*domain.Repository {
+	var hosted, rest []*domain.Repository
+	for _, memberName := range members {
+		memberRepo := h.eligibleMember(ctx, memberName, groupDef)
+		switch {
+		case memberRepo == nil:
+		case memberRepo.Type == domain.TypeHosted:
+			hosted = append(hosted, memberRepo)
+		default:
+			rest = append(rest, memberRepo)
+		}
+	}
+	return append(hosted, rest...)
 }
 
 // eligibleMember resolves a member repo eligible for fan-out: online,
@@ -270,22 +287,27 @@ type memberFailure struct {
 }
 
 // collectIndexParts fans source out to every eligible member and returns their
-// 2xx bodies in member order (member order = priority). A member that failed is
+// 2xx bodies in eligibleMembers order (hosted first; that order = priority). A member that failed is
 // skipped so one down upstream cannot take the group with it, unless the merger
 // calls that failure fatal — then it comes back for the caller to relay.
 func (h *Handler) collectIndexParts(c *gin.Context, repoDef *domain.Repository, members []string,
 	rule *domain.RoutingRule, strict formats.GroupIndexStrictMerger, source, memberQuery string,
 ) ([]formats.GroupIndexPart, []string, *memberFailure) {
 	ctx := c.Request.Context()
+	claimer, _ := h.formatRegistry[string(repoDef.Format)].(formats.GroupIndexNameClaimer)
 
 	var parts []formats.GroupIndexPart
 	var contributing []string
-	for _, memberName := range members {
+	claimed := false
+	for _, memberRepo := range h.eligibleMembers(ctx, members, repoDef) {
+		memberName := memberRepo.Name
 		if !service.Allow(rule, source) {
 			continue
 		}
-		memberRepo := h.eligibleMember(ctx, memberName, repoDef)
-		if memberRepo == nil {
+		// A package a hosted member publishes is answered by the hosted
+		// members alone: hosted members come first, so by the first proxy the
+		// claim is settled (#642).
+		if claimed && memberRepo.Type != domain.TypeHosted {
 			continue
 		}
 		// A proxy member whose rule refuses the index contributes nothing,
@@ -311,6 +333,9 @@ func (h *Handler) collectIndexParts(c *gin.Context, repoDef *domain.Repository, 
 		}
 		parts = append(parts, formats.GroupIndexPart{Member: memberName, Body: rec.Body.Bytes()})
 		contributing = append(contributing, memberName)
+		if claimer != nil && memberRepo.Type == domain.TypeHosted && claimer.GroupIndexClaimsName(source, rec.Body.Bytes()) {
+			claimed = true
+		}
 	}
 	return parts, contributing, nil
 }

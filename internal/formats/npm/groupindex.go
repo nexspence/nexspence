@@ -115,3 +115,12 @@ func rewriteVersionTarball(vdoc any, member, groupBase string) {
 		dist["tarball"] = groupBase + tail
 	}
 }
+
+// GroupIndexClaimsName implements formats.GroupIndexNameClaimer: a packument
+// with at least one version.
+func (h *Handler) GroupIndexClaimsName(_ string, body []byte) bool {
+	var doc struct {
+		Versions map[string]json.RawMessage `json:"versions"`
+	}
+	return json.Unmarshal(body, &doc) == nil && len(doc.Versions) > 0
+}
