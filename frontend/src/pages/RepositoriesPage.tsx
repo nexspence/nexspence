@@ -1430,7 +1430,7 @@ function EditRepoModal({
                 ))}
               </div>
             )}
-            <span className={styles.hint}>Members are searched in the order shown; the first hit wins.</span>
+            <span className={styles.hint}>Hosted members are searched before proxy members, each in the order shown; the first hit wins.</span>
           </div>
         )}
         {repo.type !== 'group' && blobStores.length > 0 && (

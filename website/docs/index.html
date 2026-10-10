@@ -1002,7 +1002,7 @@ curl -sf http://localhost:8081/service/rest/v1/status/check</div></div>
       <div class="step-num" style="background:linear-gradient(135deg,#8b5cf6,#7c3aed)">G</div>
       <div>
         <div class="step-title" data-i18n="repo.group.title">Group</div>
-        <div class="step-desc" data-i18n="repo.group.desc">Aggregates multiple repositories (hosted + proxy) under one URL. Clients use a single endpoint; Nexspence searches members in order and returns the first match. Ideal for giving developers one URL for all dependencies.</div>
+        <div class="step-desc" data-i18n="repo.group.desc">Aggregates multiple repositories (hosted + proxy) under one URL. Clients use a single endpoint; Nexspence searches hosted members first, then proxy members, and returns the first match. Ideal for giving developers one URL for all dependencies.</div>
       </div>
     </div>
   </div>
@@ -1857,7 +1857,7 @@ const TRANSLATIONS={
     'repo.types.sep':'Repository Types',
     'repo.hosted.title':'Hosted','repo.hosted.desc':'Stores artifacts you publish directly. Use for internal builds, release binaries, private packages.',
     'repo.proxy.title':'Proxy','repo.proxy.desc':'Caches artifacts from a remote registry (Maven Central, npmjs, PyPI, Docker Hub, etc.). First request fetches from upstream; subsequent requests serve from cache.',
-    'repo.group.title':'Group','repo.group.desc':'Aggregates multiple repositories (hosted + proxy) under one URL. Clients use a single endpoint; Nexspence searches members in order and returns the first match.',
+    'repo.group.title':'Group','repo.group.desc':'Aggregates multiple repositories (hosted + proxy) under one URL. Clients use a single endpoint; Nexspence searches hosted members first, then proxy members, and returns the first match.',
     'repo.create.sep':'Creating a Repository',
     'repo.create.s1.title':'Open the Repositories page','repo.create.s1.desc':'Navigate to <strong>Repositories</strong> in the sidebar. Click the <strong>+ Create</strong> button in the top-right corner.',
     'repo.create.s2.title':'Choose type and format','repo.create.s2.desc':'Select the repository type (Hosted / Proxy / Group) and format. The name must be unique and URL-safe.',
@@ -2231,7 +2231,7 @@ const TRANSLATIONS={
     'repo.types.sep':'Типы репозиториев',
     'repo.hosted.title':'Hosted','repo.hosted.desc':'Хранит артефакты, которые вы публикуете напрямую. Используйте для внутренних сборок, релизных бинарей, приватных пакетов.',
     'repo.proxy.title':'Proxy','repo.proxy.desc':'Кэширует артефакты из удалённого реестра (Maven Central, npmjs, PyPI, Docker Hub и др.). Первый запрос идёт к upstream, последующие обслуживаются из кэша.',
-    'repo.group.title':'Group','repo.group.desc':'Объединяет несколько репозиториев (hosted + proxy) под одним URL. Клиенты используют единый endpoint; Nexspence ищет в членах по порядку и возвращает первое совпадение.',
+    'repo.group.title':'Group','repo.group.desc':'Объединяет несколько репозиториев (hosted + proxy) под одним URL. Клиенты используют единый endpoint; Nexspence ищет сначала в hosted-членах, затем в proxy, и возвращает первое совпадение.',
     'repo.create.sep':'Создание репозитория',
     'repo.create.s1.title':'Откройте страницу Repositories','repo.create.s1.desc':'Перейдите в <strong>Repositories</strong> в сайдбаре. Нажмите кнопку <strong>+ Create</strong> в правом верхнем углу.',
     'repo.create.s2.title':'Выберите тип и формат','repo.create.s2.desc':'Выберите тип (Hosted / Proxy / Group) и формат. Имя должно быть уникальным и допустимым для URL.',

@@ -809,7 +809,7 @@ function GuideRepositories() {
       />
       <hr className={styles.divider} />
       <Step num={5} title="(Group) Add member repositories"
-        text="If you chose Group, select member repositories on the Storage step. All members must share the same format. Order determines lookup priority — first match wins."
+        text="If you chose Group, select member repositories on the Storage step. All members must share the same format. Hosted members are searched before proxy members, each in the order you set — first match wins."
         note="A group cannot contain another group. Members must already exist."
         screenshot={{ src: '/docs/screenshots/create-repo-step3-group.png', alt: 'Wizard Step 3 — group member selection' }}
       />
