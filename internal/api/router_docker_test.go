@@ -44,7 +44,7 @@ func buildDockerRouter(repos ...*domain.Repository) *gin.Engine {
 	stub := &stubDockerHandler{}
 	fmtRegistry := map[string]formats.FormatHandler{"docker": stub, "oci": stub}
 
-	dockerV2H := serveDockerV2(repoRepo, stub, fmtRegistry)
+	dockerV2H := serveDockerV2(repoRepo, nil, stub, fmtRegistry)
 
 	// OptionalAuth is intentionally omitted from this test router.
 	// These tests cover routing behavior and RBAC access control, not authentication.

@@ -497,6 +497,41 @@ describe('RepositoriesPage', () => {
     expect(cfg.minimum_package_age).toBe(7 * 24 * 3600)
   })
 
+  it('attaches a routing rule to a proxy repo (#642)', async () => {
+    const user = userEvent.setup()
+    let put: Record<string, unknown> | null = null
+    server.use(
+      http.put('/service/rest/v1/repositories/:format/:type/:name', async ({ request }) => {
+        put = (await request.json()) as Record<string, unknown>
+        return HttpResponse.json(fixtures.repository())
+      }),
+    )
+    renderWithProviders(<RepositoriesPage />)
+    await screen.findByText('npm-proxy')
+    fireEvent.click(screen.getAllByTitle('Settings')[1])
+    await screen.findByText('Repository settings')
+
+    const url = screen.getByPlaceholderText('https://registry.example.com/')
+    await user.clear(url)
+    await user.type(url, 'https://registry.npmjs.org/')
+    expect(screen.getByText('Routing Rule')).toBeInTheDocument()
+    await user.click(screen.getByText('None'))
+    await user.click(await screen.findByText(/block-rule/))
+
+    const form = document.querySelector('form') as HTMLFormElement
+    fireEvent.click(within(form).getByRole('button', { name: /^Save$/ }))
+    await waitFor(() => expect(put).toBeTruthy())
+    expect((put! as { routingRuleId?: string }).routingRuleId).toBe('rr-1')
+  })
+
+  it('has no routing rule selector on a hosted repo', async () => {
+    renderWithProviders(<RepositoriesPage />)
+    await screen.findByText('maven-hosted')
+    fireEvent.click(screen.getAllByTitle('Settings')[0])
+    await screen.findByText('Repository settings')
+    expect(screen.queryByText('Routing Rule')).not.toBeInTheDocument()
+  })
+
   it('shows an error when edit save fails', async () => {
     const user = userEvent.setup()
     server.use(
