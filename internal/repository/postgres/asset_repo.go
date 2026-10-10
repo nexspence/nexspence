@@ -388,6 +388,18 @@ func (r *assetRepo) TouchLastModified(ctx context.Context, id string) error {
 	return err
 }
 
+// SetComponent moves an asset to another component.
+func (r *assetRepo) SetComponent(ctx context.Context, id, componentID string) error {
+	tag, err := r.db.Exec(ctx, `UPDATE assets SET component_id = $2 WHERE id = $1`, id, componentID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return repository.ErrNotFound
+	}
+	return nil
+}
+
 func (r *assetRepo) ListAllBlobRefs(ctx context.Context) ([]domain.BlobRef, error) {
 	rows, err := r.db.Query(ctx,
 		`SELECT DISTINCT blob_key, COALESCE(blob_store_id::text, '')

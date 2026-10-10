@@ -114,6 +114,10 @@ type AssetRepo interface {
 	// ListByRepoAndPath returns all assets in repoName whose path starts with pathPrefix.
 	// Use pathPrefix="" to list all assets in the repo.
 	ListByRepoAndPath(ctx context.Context, repoName, pathPrefix string) ([]domain.Asset, error)
+	// SetComponent moves an asset to another component. Create's upsert keeps
+	// an existing row's component, so a caller that re-files a path under new
+	// coordinates moves it explicitly.
+	SetComponent(ctx context.Context, id, componentID string) error
 	// CountByBlobKey returns the number of assets that reference blobKey, excluding the asset with excludeID.
 	// Used to decide whether the physical blob file can be deleted.
 	CountByBlobKey(ctx context.Context, blobKey, excludeID string) (int, error)

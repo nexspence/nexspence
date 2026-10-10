@@ -49,6 +49,9 @@ personal one.
 
 Signatures are SHA-256; apt rejects SHA-1.
 
+What each `Packages` stanza contains, and how uploads are validated, is in
+[apt-hosted.md](apt-hosted.md).
+
 `Release` is byte-identical between requests — its `Date` follows the newest
 package rather than the wall clock, because apt fetches `Release` and
 `Release.gpg` separately and verifies one against the other.

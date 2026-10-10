@@ -168,6 +168,13 @@ type keyedEntry struct {
 
 var localPathLocks keyedMutex
 
+// LockLocal queues same-process callers on key and returns the unlock. Callers
+// that take Assets.WithBlobKeyLock for the same key take this first: every
+// waiter blocked inside the advisory lock pins a pool connection.
+func LockLocal(key string) (unlock func()) {
+	return localPathLocks.lock(key)
+}
+
 func (k *keyedMutex) lock(key string) (unlock func()) {
 	k.mu.Lock()
 	if k.m == nil {

@@ -329,6 +329,9 @@ type ComponentRepo struct {
 	components map[string]*domain.Component
 	nextID     int
 	Err        error // when non-nil, ListByRepoNames/Get/Search/Delete/SetTags return it (500-branch seam)
+	// GetErr, when non-nil, makes Get alone fail — for callers that search
+	// successfully and then load one component by ID.
+	GetErr error
 	// UpdateExtraErr is returned by UpdateExtra when set — the seam for a write
 	// that fails after the work producing it already succeeded.
 	UpdateExtraErr error
@@ -414,6 +417,9 @@ func (c *ComponentRepo) Get(_ context.Context, id string) (*domain.Component, er
 	defer c.mu.Unlock()
 	if c.Err != nil {
 		return nil, c.Err
+	}
+	if c.GetErr != nil {
+		return nil, c.GetErr
 	}
 	v, ok := c.components[id]
 	if !ok {
@@ -819,6 +825,8 @@ func (a *AssetRepo) Create(_ context.Context, asset *domain.Asset) error {
 	key := asset.Repository + ":" + asset.Path
 	if existing, ok := a.assets[key]; ok {
 		asset.ID = existing.ID
+		// As the postgres upsert does: a path keeps its component on conflict.
+		asset.ComponentID = existing.ComponentID
 		if asset.CreatedAt.IsZero() {
 			asset.CreatedAt = existing.CreatedAt
 		}
@@ -940,6 +948,18 @@ func (a *AssetRepo) ListByComponentIDs(_ context.Context, componentIDs []string)
 		out[k] = slice
 	}
 	return out, nil
+}
+
+// SetComponent moves an asset to another component.
+func (a *AssetRepo) SetComponent(_ context.Context, id, componentID string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	v, ok := a.byID[id]
+	if !ok {
+		return repository.ErrNotFound
+	}
+	v.ComponentID = componentID
+	return nil
 }
 
 func (a *AssetRepo) ListAllBlobRefs(_ context.Context) ([]domain.BlobRef, error) {
