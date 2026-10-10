@@ -694,3 +694,40 @@ func TestLoad_GoogleAdminSDK_FromEnv(t *testing.T) {
 	assert.Equal(t, "admin@company.com", cfg.OIDC.GoogleAdminSDK.SubjectEmail)
 	assert.Contains(t, cfg.OIDC.GoogleAdminSDK.ServiceAccountKey, "sa@p.iam")
 }
+
+// The pool default is per instance and replicas multiply it, so it stays well
+// under PostgreSQL's default max_connections (#639). Defaults are not
+// "explicitly set": pool sizing may clamp them.
+func TestLoad_PoolDefaultsAreNotExplicit(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := "" +
+		"database:\n  dsn: \"postgres://u:p@localhost:5432/db?sslmode=disable\"\n" +
+		"auth:\n  jwt_secret: \"a-unique-production-secret-at-least-32b\"\n"
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.Equal(t, 20, cfg.Database.MaxConns)
+	assert.Equal(t, 5, cfg.Database.MinConns)
+	assert.False(t, cfg.Database.MaxConnsSet)
+	assert.False(t, cfg.Database.MinConnsSet)
+}
+
+// A value from the config file or the environment is the operator's choice.
+func TestLoad_PoolSettingsFromFileOrEnvAreExplicit(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := "" +
+		"database:\n  dsn: \"postgres://u:p@localhost:5432/db?sslmode=disable\"\n  max_conns: 40\n" +
+		"auth:\n  jwt_secret: \"a-unique-production-secret-at-least-32b\"\n"
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+	t.Setenv("NEXSPENCE_DATABASE_MIN_CONNS", "8")
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.Equal(t, 40, cfg.Database.MaxConns)
+	assert.Equal(t, 8, cfg.Database.MinConns)
+	assert.True(t, cfg.Database.MaxConnsSet, "from the config file")
+	assert.True(t, cfg.Database.MinConnsSet, "from the environment")
+}

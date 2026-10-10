@@ -40,7 +40,12 @@ outbound:
 
 database:
   dsn: "postgres://nexspence:nexspence@localhost:5432/nexspence?sslmode=disable"
-  max_conns: 100
+  # Connection pool, per instance: replicas multiply it, and PostgreSQL's
+  # default max_connections is 100. A pool parameter in the DSN itself
+  # (pool_max_conns, pool_min_conns, pool_max_conn_idle_time) takes precedence;
+  # 0 keeps pgx's default (max_conns: max(4, CPUs)). min_conns is lowered to
+  # max_conns when it would exceed it, unless both are set here that way.
+  max_conns: 20
   min_conns: 5
   max_idle_sec: 300
 

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"reflect"
 	"strings"
 	"time"
@@ -152,6 +153,13 @@ type DatabaseConfig struct {
 	MaxConns   int    `mapstructure:"max_conns"`
 	MinConns   int    `mapstructure:"min_conns"`
 	MaxIdleSec int    `mapstructure:"max_idle_sec"`
+
+	// MaxConnsSet and MinConnsSet report whether the operator set the value
+	// (config file or environment) rather than inheriting the default: pool
+	// sizing clamps a defaulted min_conns to the effective maximum, but
+	// refuses a pair the operator set inconsistently.
+	MaxConnsSet bool `mapstructure:"-"`
+	MinConnsSet bool `mapstructure:"-"`
 }
 
 // StorageConfig selects the default blob store backend and its local/S3/Azure settings.
@@ -628,7 +636,9 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("storage.azure.sas_token", "")
 	v.SetDefault("storage.azure.endpoint", "")
 	v.SetDefault("storage.azure.skip_tls_verify", false)
-	v.SetDefault("database.max_conns", 100)
+	// Per instance: replicas multiply it, and PostgreSQL's default
+	// max_connections is 100.
+	v.SetDefault("database.max_conns", 20)
 	v.SetDefault("database.min_conns", 5)
 	v.SetDefault("database.max_idle_sec", 300)
 	v.SetDefault("storage.default_type", "local")
@@ -807,6 +817,8 @@ func Load(path string) (*Config, error) {
 	if cfg.Database.DSN == "" {
 		return nil, fmt.Errorf("database.dsn is required (or set NEXSPENCE_DATABASE_DSN)")
 	}
+	cfg.Database.MaxConnsSet = explicitlySet(v, "database.max_conns")
+	cfg.Database.MinConnsSet = explicitlySet(v, "database.min_conns")
 	if err := ValidateStorage(cfg.Storage); err != nil {
 		return nil, err
 	}
@@ -920,4 +932,15 @@ func joinDotted(prefix, key string) string {
 		return key
 	}
 	return prefix + "." + key
+}
+
+// explicitlySet reports whether key was given in the config file or the
+// environment. viper's IsSet also counts SetDefault values, so it cannot tell
+// an operator's choice from the default.
+func explicitlySet(v *viper.Viper, key string) bool {
+	if v.InConfig(key) {
+		return true
+	}
+	val, ok := os.LookupEnv("NEXSPENCE_" + strings.ToUpper(strings.ReplaceAll(key, ".", "_")))
+	return ok && val != ""
 }
