@@ -150,3 +150,17 @@ func TestMaven_MergeGroupIndex_PerVersionShape_ChecksumOfWinner(t *testing.T) {
 	assert.Contains(t, ct, "text/plain")
 	assert.Equal(t, fmt.Sprintf("%x", sha1.Sum(doc)), string(sum)) //nolint:gosec
 }
+
+// A hosted member that publishes the artifact claims its metadata, so a group
+// does not ask its proxies for that name (#642).
+func TestMaven_GroupIndexClaimsName(t *testing.T) {
+	var c formats.GroupIndexNameClaimer = maven.New(formats.Deps{})
+	const p = "/com/foo/bar/maven-metadata.xml"
+
+	assert.True(t, c.GroupIndexClaimsName(p, metadataXML("1.0", "1.0", "1.0")))
+	assert.True(t, c.GroupIndexClaimsName("/com/foo/bar/2.0-SNAPSHOT/maven-metadata.xml", perVersionXML("20260830.123456", 3)))
+	assert.False(t, c.GroupIndexClaimsName(p, []byte("not xml")))
+	// Group-level plugin metadata names no artifact.
+	assert.False(t, c.GroupIndexClaimsName("/com/foo/maven-metadata.xml",
+		[]byte("<metadata><plugins><plugin><prefix>x</prefix></plugin></plugins></metadata>")))
+}

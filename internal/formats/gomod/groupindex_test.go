@@ -57,3 +57,12 @@ func TestGomod_MergeGroupIndex_MalformedLatestSkipped(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, string(body), "v1.0.0")
 }
+
+func TestGomod_GroupIndexClaimsName(t *testing.T) {
+	var c formats.GroupIndexNameClaimer = gomod.New(formats.Deps{})
+
+	assert.True(t, c.GroupIndexClaimsName("/acme.dev/lib/@v/list", []byte("v1.0.0\n")))
+	assert.False(t, c.GroupIndexClaimsName("/acme.dev/lib/@v/list", []byte("\n")))
+	assert.True(t, c.GroupIndexClaimsName("/acme.dev/lib/@latest", []byte(`{"Version":"v1.0.0"}`)))
+	assert.False(t, c.GroupIndexClaimsName("/acme.dev/lib/@latest", []byte(`{}`)))
+}

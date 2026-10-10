@@ -107,3 +107,30 @@ func mergeModuleVersions(parts []formats.GroupIndexPart) ([]byte, string, error)
 	body, err := json.Marshal(map[string]any{"modules": []map[string]any{{"versions": out}}})
 	return body, "application/json", err
 }
+
+// GroupIndexClaimsName implements formats.GroupIndexNameClaimer: a provider's
+// or module's version list with a version in it. The discovery document
+// describes the registry, not a package.
+func (h *Handler) GroupIndexClaimsName(source string, body []byte) bool {
+	if !strings.HasSuffix(source, "/versions") {
+		return false
+	}
+	var doc struct {
+		Versions []json.RawMessage `json:"versions"`
+		Modules  []struct {
+			Versions []json.RawMessage `json:"versions"`
+		} `json:"modules"`
+	}
+	if json.Unmarshal(body, &doc) != nil {
+		return false
+	}
+	if len(doc.Versions) > 0 {
+		return true
+	}
+	for _, m := range doc.Modules {
+		if len(m.Versions) > 0 {
+			return true
+		}
+	}
+	return false
+}

@@ -55,3 +55,13 @@ func TestNuGet_MergeGroupIndex_ServiceIndexRewritesMemberURLs(t *testing.T) {
 	assert.Contains(t, out, "/repository/ng-group/v3/flatcontainer/")
 	assert.NotContains(t, out, "/repository/m1/")
 }
+
+func TestNuGet_GroupIndexClaimsName(t *testing.T) {
+	var c formats.GroupIndexNameClaimer = nuget.New(formats.Deps{})
+	const p = "/v3/flatcontainer/acme.core/index.json"
+
+	assert.True(t, c.GroupIndexClaimsName(p, []byte(`{"versions":["1.0.0"]}`)))
+	assert.False(t, c.GroupIndexClaimsName(p, []byte(`{"versions":[]}`)))
+	// The service index describes the feed, not a package.
+	assert.False(t, c.GroupIndexClaimsName("/index.json", []byte(`{"version":"3.0.0","resources":[]}`)))
+}

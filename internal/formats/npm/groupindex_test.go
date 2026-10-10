@@ -77,3 +77,11 @@ func TestNPM_MergeGroupIndex_MalformedPartSkipped(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, string(body), `"1.0.0"`)
 }
+
+func TestNPM_GroupIndexClaimsName(t *testing.T) {
+	var c formats.GroupIndexNameClaimer = npm.New(formats.Deps{})
+
+	assert.True(t, c.GroupIndexClaimsName("/@acme/ui", []byte(`{"name":"@acme/ui","versions":{"1.0.0":{}}}`)))
+	assert.False(t, c.GroupIndexClaimsName("/@acme/ui", []byte(`{"name":"@acme/ui","versions":{}}`)))
+	assert.False(t, c.GroupIndexClaimsName("/@acme/ui", []byte(`<html>`)))
+}

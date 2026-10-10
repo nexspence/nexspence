@@ -75,3 +75,19 @@ func (h *Handler) MergeGroupIndex(groupName, p string, parts []formats.GroupInde
 	sb.WriteString("</body></html>\n")
 	return []byte(sb.String()), "text/html; charset=utf-8", nil
 }
+
+// GroupIndexClaimsName implements formats.GroupIndexNameClaimer: a project
+// page with at least one file. Hosted pypi answers an unknown project with an
+// empty page, and the root /simple index lists every project, so neither
+// claims anything.
+func (h *Handler) GroupIndexClaimsName(source string, body []byte) bool {
+	if strings.Trim(strings.TrimPrefix(source, "/simple"), "/") == "" {
+		return false
+	}
+	for _, m := range anchorRe.FindAllSubmatch(body, -1) {
+		if anchorHrefRe.Match(m[1]) {
+			return true
+		}
+	}
+	return false
+}

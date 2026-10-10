@@ -99,3 +99,15 @@ func TestPyPI_MergeGroupIndex_KeepsAnchorAttributes(t *testing.T) {
 	assert.NotContains(t, out, "/repository/proxy/")
 	assert.Equal(t, 2, strings.Count(out, "data-requires-python="))
 }
+
+func TestPyPI_GroupIndexClaimsName(t *testing.T) {
+	var c formats.GroupIndexNameClaimer = pypi.New(formats.Deps{})
+	full := []byte(`<html><body><a href="/repository/h/packages/aa/pkg-1.0.whl">pkg-1.0.whl</a></body></html>`)
+
+	assert.True(t, c.GroupIndexClaimsName("/simple/pkg/", full))
+	// Hosted pypi answers an unknown project with an empty 200 page.
+	assert.False(t, c.GroupIndexClaimsName("/simple/pkg/", []byte(`<html><body><h1>Links for pkg</h1></body></html>`)))
+	// The root index lists every project: never claimed.
+	assert.False(t, c.GroupIndexClaimsName("/simple", full))
+	assert.False(t, c.GroupIndexClaimsName("/simple/", full))
+}

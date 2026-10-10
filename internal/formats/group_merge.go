@@ -92,3 +92,20 @@ type GroupIndexPaginator interface {
 	// c. Returning merged unchanged is what an unpaginated path does.
 	PageGroupIndex(c *gin.Context, path string, merged []byte) ([]byte, error)
 }
+
+// GroupIndexNameClaimer is optionally implemented alongside GroupIndexMerger by
+// formats with a per-package index (Maven maven-metadata.xml, the npm
+// packument, a PyPI project page, …). When a hosted member's answer claims the
+// package, the group does not ask its proxy members for that index at all, so
+// a name published locally is never carried to a public upstream and public
+// versions of the same name are never mixed into it (#642).
+//
+// Repository-wide indexes (apt Release, Helm index.yaml, …) describe every
+// package at once and are never claimed: one local package must not hide all
+// the public ones.
+type GroupIndexNameClaimer interface {
+	// GroupIndexClaimsName reports whether body, a hosted member's 2xx answer
+	// on source, shows that member publishes the package source names. An
+	// empty answer (a format whose "not found" is an empty 200) claims nothing.
+	GroupIndexClaimsName(source string, body []byte) bool
+}

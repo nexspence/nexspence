@@ -150,3 +150,13 @@ func mergePerVersionGroupIndex(p string, parts []formats.GroupIndexPart) ([]byte
 	}
 	return winner, "application/xml", nil
 }
+
+// GroupIndexClaimsName implements formats.GroupIndexNameClaimer: a metadata
+// document naming an artifact (either shape) is that artifact's. Group-level
+// plugin metadata names none and claims nothing.
+func (h *Handler) GroupIndexClaimsName(_ string, body []byte) bool {
+	var m struct {
+		ArtifactID string `xml:"artifactId"`
+	}
+	return xml.Unmarshal(body, &m) == nil && m.ArtifactID != ""
+}
