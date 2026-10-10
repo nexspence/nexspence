@@ -64,3 +64,16 @@ func (h *Handler) MergeGroupIndex(groupName, p string, parts []formats.GroupInde
 	body, err := json.Marshal(map[string]any{"versions": out})
 	return body, "application/json", err
 }
+
+// GroupIndexClaimsName implements formats.GroupIndexNameClaimer: a package's
+// flatcontainer version list with a version in it. The service index
+// describes the feed, not a package.
+func (h *Handler) GroupIndexClaimsName(source string, body []byte) bool {
+	if source == "/index.json" {
+		return false
+	}
+	var doc struct {
+		Versions []string `json:"versions"`
+	}
+	return json.Unmarshal(body, &doc) == nil && len(doc.Versions) > 0
+}

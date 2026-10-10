@@ -294,12 +294,20 @@ func (h *Handler) collectIndexParts(c *gin.Context, repoDef *domain.Repository, 
 	rule *domain.RoutingRule, strict formats.GroupIndexStrictMerger, source, memberQuery string,
 ) ([]formats.GroupIndexPart, []string, *memberFailure) {
 	ctx := c.Request.Context()
+	claimer, _ := h.formatRegistry[string(repoDef.Format)].(formats.GroupIndexNameClaimer)
 
 	var parts []formats.GroupIndexPart
 	var contributing []string
+	claimed := false
 	for _, memberRepo := range h.eligibleMembers(ctx, members, repoDef) {
 		memberName := memberRepo.Name
 		if !service.Allow(rule, source) {
+			continue
+		}
+		// A package a hosted member publishes is answered by the hosted
+		// members alone: hosted members come first, so by the first proxy the
+		// claim is settled (#642).
+		if claimed && memberRepo.Type != domain.TypeHosted {
 			continue
 		}
 		// A proxy member whose rule refuses the index contributes nothing,
@@ -325,6 +333,9 @@ func (h *Handler) collectIndexParts(c *gin.Context, repoDef *domain.Repository, 
 		}
 		parts = append(parts, formats.GroupIndexPart{Member: memberName, Body: rec.Body.Bytes()})
 		contributing = append(contributing, memberName)
+		if claimer != nil && memberRepo.Type == domain.TypeHosted && claimer.GroupIndexClaimsName(source, rec.Body.Bytes()) {
+			claimed = true
+		}
 	}
 	return parts, contributing, nil
 }

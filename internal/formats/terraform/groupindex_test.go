@@ -83,3 +83,13 @@ func TestTerraform_MergeGroupIndex_DiscoveryRewritesMemberURLs(t *testing.T) {
 	assert.Contains(t, out, "/repository/tf-group/v1/providers/")
 	assert.NotContains(t, out, "/repository/m1/")
 }
+
+func TestTerraform_GroupIndexClaimsName(t *testing.T) {
+	var c formats.GroupIndexNameClaimer = terraform.New(formats.Deps{})
+
+	assert.True(t, c.GroupIndexClaimsName("/v1/providers/acme/cloud/versions", []byte(`{"versions":[{"version":"1.0.0"}]}`)))
+	assert.False(t, c.GroupIndexClaimsName("/v1/providers/acme/cloud/versions", []byte(`{"versions":[]}`)))
+	assert.True(t, c.GroupIndexClaimsName("/v1/modules/acme/vpc/aws/versions", []byte(`{"modules":[{"versions":[{"version":"0.1.0"}]}]}`)))
+	assert.False(t, c.GroupIndexClaimsName("/v1/modules/acme/vpc/aws/versions", []byte(`{"modules":[{"versions":[]}]}`)))
+	assert.False(t, c.GroupIndexClaimsName("/.well-known/terraform.json", []byte(`{"providers.v1":"/v1/providers/"}`)))
+}
