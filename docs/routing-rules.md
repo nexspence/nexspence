@@ -24,10 +24,13 @@ Rules are managed under **Admin → Routing Rules** or through
 
 ## Keeping a private namespace off a public upstream
 
-A group that combines a public proxy with a hosted repository asks its members
-in `member_names` order. Without a rule, a request for an internal artifact
-that the proxy has not cached is forwarded to the public upstream, and the
-name is disclosed even when the upstream answers `404`.
+A group asks its hosted members before its proxy members, so an artifact the
+hosted repository already has is never requested upstream, and a per-package
+index (`maven-metadata.xml`, an npm packument, a PyPI project page, Go
+`@v/list`, a NuGet version list, Terraform `versions`) that a hosted member
+has is merged from the hosted members alone. A name that is not published
+yet, such as a version that is still being built or a typo, still falls
+through to the proxy, and the upstream sees it even when it answers `404`.
 
 Attach a `BLOCK` rule to the **proxy**, not the group:
 
@@ -46,5 +49,12 @@ With the group `maven-public = [maven-central, maven-internal]`:
 The same rule on the group would block `/com/acme/...` for every member,
 including `maven-internal`.
 
-Member order and index merging are otherwise unchanged. A group still asks its
-members in the configured order and merges index documents from all of them.
+## Group member order
+
+Within a group, hosted members are asked first and proxy members after them;
+each kind keeps its order from `member_names`. A file request returns the
+first member that has the path. An index request merges every member's
+answer, except that a per-package index a hosted member answers with content
+is not asked of the proxy members: public versions of a locally published
+name are not mixed into it. Repository-wide indexes (apt `Release`, Helm
+`index.yaml`, the Docker `_catalog`, …) are always merged from every member.

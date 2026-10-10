@@ -143,7 +143,9 @@ proxy defaults, colour, command hints. Every place that special-cases a registry
 - Private registries with a same-host token realm (ACR, Harbor, GHCR, Quay): the Bearer token request carries `remote_username` / `remote_password` only when the realm is on `remote_url`'s host and not an https→http downgrade; a realm on another host (Docker Hub, GitLab) is asked anonymously, and the retry carries the Bearer alone. A realm that rejects the credentials (401/403) is asked once more anonymously, so stale credentials do not break a public image. Token redirects remove credentials on host/port changes or TLS downgrades and never restore them later in the chain; same-origin redirects preserve them
 
 **Group path**: `group.Handler`
-- Fans out to each member's full `FormatHandler.ServeHTTP` in order
+- Fans out to each member's full `FormatHandler.ServeHTTP`: hosted members first, then proxy
+  members, each kind in `member_names` order, so a path a hosted member can serve is never
+  fetched from a proxy upstream (#642)
 - First non-404 wins; sets `X-Nexspence-Source` header
 - Uses `httptest.ResponseRecorder` + `gin.CreateTestContext` isolation
 
@@ -156,9 +158,11 @@ combined implement one to three optional interfaces in `internal/formats/group_m
 | `GroupIndexMerger` | the path is recognised as an index and member bodies are merged instead of first-wins |
 | `GroupIndexStrictMerger` | a member that answers non-2xx is **relayed** rather than skipped, so a listing is never quietly short |
 | `GroupIndexPaginator` | members are queried unpaginated and the *merged* document is paged — paging each member truncates its contribution and makes the entries past its cut unreachable by any later cursor |
+| `GroupIndexNameClaimer` | a per-package index that a hosted member answers with content is merged from the hosted members alone; proxy members are not asked, so a local name never reaches a public upstream (#642) |
 
 maven implements the first (merged `maven-metadata.xml`); the OCI handler implements all three for
-`tags/list`, `_catalog` and `referrers`.
+`tags/list`, `_catalog` and `referrers`. Maven, npm, PyPI, Go, NuGet and Terraform implement
+`GroupIndexNameClaimer` for their per-package indexes; repository-wide indexes are never claimed.
 
 **Blob store usage accounting**: `blob_stores.used_bytes` and the repository quota both count
 **stored bytes**, not asset rows. Several paths register more than one asset against one blob key

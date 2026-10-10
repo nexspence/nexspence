@@ -111,7 +111,7 @@ curl -O http://localhost:8080/repository/raw-proxy/terraform/1.7.5/terraform_1.7
 
 ### Group — unified access
 
-The group repository aggregates hosted and proxy members under a single URL. Clients point to the group and Nexspence resolves requests against each member in order, returning the first match.
+The group repository aggregates hosted and proxy members under a single URL. Clients point to the group and Nexspence resolves requests against its hosted members first and its proxy members after them, each in the configured order, returning the first match.
 
 ```bash
 curl -O http://localhost:8080/repository/raw-common/releases/myapp/1.0.0/myapp-1.0.0-linux-amd64.tar.gz
