@@ -1,6 +1,7 @@
 package pypi_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -65,4 +66,36 @@ func TestPyPI_MergeGroupIndex_EmptyPartContributesNothing(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, string(body), "pkg-3.0.whl")
 	assert.Contains(t, string(body), "/repository/g/packages/dd/pkg-3.0.whl")
+}
+
+// Every attribute a member serves on a link reaches the client through the
+// group (#661): pip skips releases by data-requires-python, honors
+// data-yanked, and fetches PEP 658 metadata by data-core-metadata. Only the
+// href is re-rooted.
+func TestPyPI_MergeGroupIndex_KeepsAnchorAttributes(t *testing.T) {
+	h := pypi.New(formats.Deps{BaseURL: "http://localhost:8080"})
+
+	proxy := []byte(`<html><body><h1>Links for numpy</h1>
+<a href="http://localhost:8080/repository/proxy/packages/fd/5f/numpy-2.3.0.tar.gz#sha256=abc" data-requires-python="&gt;=3.11" data-dist-info-metadata="sha256=def" data-core-metadata="sha256=def">numpy-2.3.0.tar.gz</a><br/>
+<a data-yanked="broken build" href="http://localhost:8080/repository/proxy/packages/aa/numpy-2.2.9.tar.gz#sha256=111" data-requires-python="&gt;=3.10">numpy-2.2.9.tar.gz</a><br/>
+</body></html>`)
+	hosted := []byte(`<html><body><h1>Links for numpy</h1>
+<a href="http://localhost:8080/repository/hosted/packages/numpy/numpy-2.3.0.tar.gz#sha256=OTHER" data-requires-python="">numpy-2.3.0.tar.gz</a>
+<a name="anchor-without-href">not a link</a>
+</body></html>`)
+
+	body, _, err := h.MergeGroupIndex("py-group", "/simple/numpy", []formats.GroupIndexPart{
+		{Member: "proxy", Body: proxy}, {Member: "hosted", Body: hosted},
+	})
+	require.NoError(t, err)
+	out := string(body)
+
+	assert.Contains(t, out, `<a href="http://localhost:8080/repository/py-group/packages/fd/5f/numpy-2.3.0.tar.gz#sha256=abc" data-requires-python="&gt;=3.11" data-dist-info-metadata="sha256=def" data-core-metadata="sha256=def">numpy-2.3.0.tar.gz</a>`,
+		"attributes kept verbatim, entities included; href re-rooted")
+	assert.Contains(t, out, `<a data-yanked="broken build" href="http://localhost:8080/repository/py-group/packages/aa/numpy-2.2.9.tar.gz#sha256=111" data-requires-python="&gt;=3.10">numpy-2.2.9.tar.gz</a>`,
+		"an href that is not the first attribute is found and re-rooted too")
+	assert.NotContains(t, out, "sha256=OTHER", "the first member's file and attributes win")
+	assert.NotContains(t, out, "not a link", "anchors without an href are not links")
+	assert.NotContains(t, out, "/repository/proxy/")
+	assert.Equal(t, 2, strings.Count(out, "data-requires-python="))
 }

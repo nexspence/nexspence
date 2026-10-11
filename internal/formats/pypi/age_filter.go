@@ -135,7 +135,9 @@ func fetchSimpleUploadTimes(ctx context.Context, repo *domain.Repository, pkg st
 // (everything before the first "-", per wheel/sdist naming), normalized the
 // way the simple index is.
 func (h *Handler) fileAgeAllowed(c *gin.Context, repo *domain.Repository, filePath string, minAge time.Duration) bool {
-	filename := path.Base(filePath)
+	// A PEP 658 metadata file ("X.whl.metadata") shares the age of its
+	// distribution; the upload history is keyed by the distribution name.
+	filename := strings.TrimSuffix(path.Base(filePath), ".metadata")
 	dist, _, ok := strings.Cut(filename, "-")
 	if !ok || dist == "" {
 		c.JSON(http.StatusForbidden, gin.H{"error": fmt.Sprintf(

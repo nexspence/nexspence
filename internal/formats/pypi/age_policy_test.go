@@ -155,3 +155,22 @@ func TestPyPI_AgePolicy_DisabledByDefault(t *testing.T) {
 }
 
 var _ = domain.TypeProxy // keep the import when helpers move
+
+// PEP 658: pip fetches "<file>.metadata" next to the distribution. It carries
+// the distribution's age, so it follows the same verdict instead of being
+// refused as unknown.
+func TestPyPI_AgePolicy_MetadataFollowsDistribution(t *testing.T) {
+	upstream, _ := agedPyPIUpstream(t, true)
+	r := agedPyPIProxy(upstream.URL)
+
+	req := httptest.NewRequest(http.MethodGet, "/repository/pypi-aged/packages/ab/cd/"+oldWhl+".metadata", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code, "old file's metadata must be served: %s", w.Body.String())
+
+	req = httptest.NewRequest(http.MethodGet, "/repository/pypi-aged/packages/ab/ce/"+youngWhl+".metadata", nil)
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusForbidden, w.Code, w.Body.String())
+	assert.Contains(t, w.Body.String(), "minimum package age")
+}
