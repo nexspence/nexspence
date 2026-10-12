@@ -507,6 +507,16 @@ describe('RepositoriesPage', () => {
     expect(screen.getByPlaceholderText('e.g. 7')).toBeInTheDocument()
   })
 
+  // #643: so does a NuGet proxy.
+  it('shows minimum package age on a nuget proxy', async () => {
+    seedRepos([fixtures.repository({ id: 'repo-nuget', name: 'nuget-proxy', format: 'nuget', type: 'proxy', online: true })])
+    renderWithProviders(<RepositoriesPage />)
+    await screen.findByText('nuget-proxy')
+    fireEvent.click(screen.getAllByTitle('Settings')[0])
+    await screen.findByText('Repository settings')
+    expect(screen.getByPlaceholderText('e.g. 7')).toBeInTheDocument()
+  })
+
   it('attaches a routing rule to a proxy repo (#642)', async () => {
     const user = userEvent.setup()
     let put: Record<string, unknown> | null = null

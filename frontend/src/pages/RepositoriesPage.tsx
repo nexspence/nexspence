@@ -476,7 +476,7 @@ function assignOrDelete(cfg: Record<string, unknown>, key: string, value: string
 
 // Proxy formats whose handler enforces proxy_config.minimum_package_age
 // (#323, #643); any other format would store the key and ignore it.
-const MIN_PACKAGE_AGE_FORMATS = ['npm', 'pypi', 'go']
+const MIN_PACKAGE_AGE_FORMATS = ['npm', 'pypi', 'go', 'nuget']
 
 const LABEL_STYLE = { fontSize: 12, fontWeight: 500, color: 'var(--holo-text-dim)', textTransform: 'uppercase' as const, letterSpacing: '0.4px' }
 const ERROR_STYLE = { background: 'rgba(255,107,107,0.12)', border: '1px solid rgba(255,107,107,0.3)', borderRadius: 10, padding: '10px 12px', color: 'var(--holo-red)', fontSize: 13 }
