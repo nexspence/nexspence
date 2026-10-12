@@ -97,6 +97,9 @@ func (s *RepositoryService) Create(ctx context.Context, r *domain.Repository) er
 	if err := validateWritePolicy(r); err != nil {
 		return err
 	}
+	if err := validatePullBlockSeverity(r); err != nil {
+		return err
+	}
 
 	// Check duplicate
 	existing, err := s.repos.Get(ctx, r.Name)
@@ -187,7 +190,10 @@ func (s *RepositoryService) Update(ctx context.Context, name string, updates *do
 		if err := validateWritePolicy(&candidate); err != nil {
 			return nil, err
 		}
-		r.FormatConfig = merged
+		if err := validatePullBlockSeverity(&candidate); err != nil {
+			return nil, err
+		}
+		r.FormatConfig = candidate.FormatConfig
 	}
 	if updates.HTTPConfig != nil {
 		r.HTTPConfig = updates.HTTPConfig
@@ -305,6 +311,31 @@ func validateWritePolicy(r *domain.Repository) error {
 			return fmt.Errorf("%w: %s applies to hosted docker and oci repositories only", ErrInvalidInput, domain.AllowRedeployLatestKey)
 		}
 	}
+	return nil
+}
+
+// validatePullBlockSeverity checks formatConfig's pull_block_severity (#641)
+// and rewrites it lower-cased. It must be one of low / medium / high /
+// critical / malicious, or empty for off, and can only be switched on for a
+// docker or oci repository — the formats whose pulls go through a manifest and
+// whose images Trivy scans. Hosted, proxy and group all take it: a gate on
+// only one kind would be bypassed by pulling the same image through another.
+func validatePullBlockSeverity(r *domain.Repository) error {
+	if r.FormatConfig == nil {
+		return nil
+	}
+	raw, ok := r.FormatConfig[domain.PullBlockSeverityKey]
+	if !ok || raw == nil {
+		return nil
+	}
+	v, err := domain.NormalizePullBlockSeverity(raw)
+	if err != nil {
+		return fmt.Errorf("%w: %s", ErrInvalidInput, err.Error())
+	}
+	if v != "" && !r.Format.IsOCIRegistry() {
+		return fmt.Errorf("%w: %s applies to docker and oci repositories only", ErrInvalidInput, domain.PullBlockSeverityKey)
+	}
+	r.FormatConfig[domain.PullBlockSeverityKey] = v
 	return nil
 }
 

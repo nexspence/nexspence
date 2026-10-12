@@ -209,6 +209,7 @@ func (h *Handler) callMemberWithQuery(ctx context.Context, c *gin.Context, membe
 		{Key: "path", Value: filePath},
 	}
 	sub.Set(formats.GroupMemberKey, true)
+	sub.Set(formats.GroupRepoKey, c.Param("repoName"))
 	handler.ServeHTTP(sub)
 	sub.Writer.WriteHeaderNow() // flush buffered status to rec.Code
 	return rec
