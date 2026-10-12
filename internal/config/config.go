@@ -38,6 +38,11 @@ type Config struct {
 	Outbound  OutboundConfig  `mapstructure:"outbound"`
 	Metrics   MetricsConfig   `mapstructure:"metrics"`
 	Tracing   TracingConfig   `mapstructure:"tracing"`
+
+	// UnknownKeys describes config file keys and NEXSPENCE_* environment
+	// variables that match no setting (see UnknownKeys). Load fills it; the
+	// server logs each entry at startup.
+	UnknownKeys []string `mapstructure:"-"`
 }
 
 // TracingConfig governs OpenTelemetry distributed tracing (#302). Disabled by
@@ -806,13 +811,15 @@ func Load(path string) (*Config, error) {
 	// Quoting the YAML key does not help — the split happens after parse.
 	// Flatten those nested maps back into dotted hostnames. Passing DecodeHook
 	// replaces viper's defaults, so keep the duration and comma-slice hooks.
+	var md mapstructure.Metadata
 	if err := v.Unmarshal(&cfg, viper.DecodeHook(mapstructure.ComposeDecodeHookFunc(
 		mapstructure.StringToTimeDurationHookFunc(),
 		mapstructure.StringToSliceHookFunc(","),
 		flattenDottedStringMapHook(),
-	))); err != nil {
+	)), func(dc *mapstructure.DecoderConfig) { dc.Metadata = &md }); err != nil {
 		return nil, fmt.Errorf("parse config: %w", err)
 	}
+	cfg.UnknownKeys = UnknownKeys(md.Unused, os.Environ())
 
 	if cfg.Database.DSN == "" {
 		return nil, fmt.Errorf("database.dsn is required (or set NEXSPENCE_DATABASE_DSN)")

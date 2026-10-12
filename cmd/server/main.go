@@ -64,6 +64,7 @@ func cmdServe() *cobra.Command {
 			log := logger.New(cfg.Log.Level, cfg.Log.Format)
 			log.Info("starting nexspence", "version", Version, "addr", cfg.HTTP.Addr)
 			repoproxy.SetLogger(log)
+			warnUnknownKeys(cfg, log)
 
 			// Install any server-wide outbound proxy default for upstream fetches.
 			// Per-repository proxy_config overrides these; when unset, env
@@ -274,6 +275,14 @@ func cmdServe() *cobra.Command {
 
 	cmd.Flags().StringVarP(&cfgPath, "config", "c", "config.yaml", "Path to config file")
 	return cmd
+}
+
+// warnUnknownKeys logs every config key and NEXSPENCE_* variable the server
+// ignores, so a misspelled setting does not fail silently (#660).
+func warnUnknownKeys(cfg *config.Config, log logger.Logger) {
+	for _, w := range cfg.UnknownKeys {
+		log.Warn(w)
+	}
 }
 
 func cmdMigrate() *cobra.Command {

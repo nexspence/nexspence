@@ -61,6 +61,13 @@ config:
       aliases: {}   # optional, same meaning as above
 ```
 
+The camelCase spelling (`subdomainConnector`, `baseDomain`) belongs to the
+chart's `values.yaml` only. A `config.yaml` and environment variables use the
+server's snake_case keys — `docker.subdomain_connector.enabled`, or
+`NEXSPENCE_DOCKER_SUBDOMAIN_CONNECTOR_ENABLED` and
+`NEXSPENCE_DOCKER_SUBDOMAIN_CONNECTOR_BASE_DOMAIN`. Any other spelling is
+ignored, and the server logs a warning naming it at startup.
+
 The chart passes `enabled` and `baseDomain` as environment variables; setting
 any alias makes it mount a small config file, because a YAML map has no
 environment-variable spelling. Remember to add a wildcard host to

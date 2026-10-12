@@ -731,3 +731,58 @@ func TestLoad_PoolSettingsFromFileOrEnvAreExplicit(t *testing.T) {
 	assert.True(t, cfg.Database.MaxConnsSet, "from the config file")
 	assert.True(t, cfg.Database.MinConnsSet, "from the environment")
 }
+
+// A key spelled the way the Helm chart's values.yaml spells it, and the env
+// name derived from that spelling, both match nothing: viper drops them, and
+// the subdomain connector stayed off while the config said enabled (#660).
+// Load names them, with the key that was meant.
+func TestLoad_ReportsUnknownKeys(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := "" +
+		"database:\n  dsn: \"postgres://u:p@localhost:5432/db?sslmode=disable\"\n" +
+		"auth:\n  jwt_secret: \"a-unique-production-secret-at-least-32b\"\n" +
+		"docker:\n  max_upload_bytes: 10\n  subdomainConnector:\n    enabled: true\n    base_domain: registry.example.com\n" +
+		"nosuchsection:\n  x: 1\n"
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+	t.Setenv("NEXSPENCE_DOCKER_SUBDOMAINCONNECTOR_ENABLED", "true")
+	t.Setenv("NEXSPENCE_NOT_A_SETTING", "1")
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.False(t, cfg.Docker.SubdomainConnector.Enabled)
+	assert.ElementsMatch(t, []string{
+		`config key "docker.subdomainconnector" is not a setting and is ignored (did you mean "docker.subdomain_connector"?)`,
+		`config key "nosuchsection" is not a setting and is ignored`,
+		`environment variable NEXSPENCE_DOCKER_SUBDOMAINCONNECTOR_ENABLED matches no setting and is ignored (did you mean NEXSPENCE_DOCKER_SUBDOMAIN_CONNECTOR_ENABLED?)`,
+		`environment variable NEXSPENCE_NOT_A_SETTING matches no setting and is ignored`,
+	}, cfg.UnknownKeys)
+}
+
+// Correct spellings report nothing: nested keys, a map setting with dotted
+// hostname keys, and env names of leaves and of keys under a map.
+func TestLoad_KnownKeysAreNotReported(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := "" +
+		"database:\n  dsn: \"postgres://u:p@localhost:5432/db?sslmode=disable\"\n" +
+		"auth:\n  jwt_secret: \"a-unique-production-secret-at-least-32b\"\n" +
+		"docker:\n  subdomain_connector:\n    enabled: true\n    aliases:\n      docker.registry.example.com: docker-group\n"
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+	t.Setenv("NEXSPENCE_DOCKER_SUBDOMAIN_CONNECTOR_BASE_DOMAIN", "registry.example.com")
+	t.Setenv("NEXSPENCE_DATABASE_MAX_CONNS", "10")
+	t.Setenv("NEXSPENCE_JWT_SECRET_FILE", "/app/secrets/jwt_secret") // the entrypoint's
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.Empty(t, cfg.UnknownKeys)
+	assert.Equal(t, "docker-group", cfg.Docker.SubdomainConnector.Aliases["docker.registry.example.com"])
+}
+
+// The shipped example config uses only real keys.
+func TestLoad_ExampleConfigHasNoUnknownKeys(t *testing.T) {
+	t.Setenv("NEXSPENCE_AUTH_JWT_SECRET", "a-unique-production-secret-at-least-32b")
+	cfg, err := Load(filepath.Join("..", "..", "config.yaml.example"))
+	require.NoError(t, err)
+	assert.Empty(t, cfg.UnknownKeys)
+}
