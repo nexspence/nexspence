@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"path"
 	"strings"
 
@@ -62,38 +63,78 @@ func (h *Handler) buildIndex(ctx context.Context, repoName, p string) ([]byte, e
 		if comp == nil {
 			continue
 		}
-		checksum, _ := comp.Extra["checksum"].(string)
+		name, version, extra := comp.Name, comp.Version, comp.Extra
+		if comp.Group != indexDir(a.Path) {
+			// Uploaded before the index directory was a coordinate (#671): the
+			// shared component may hold another build's metadata. Read this
+			// file's own, and move it to its component so this happens once.
+			if n, v, x, ok := h.repairLegacyAsset(ctx, repoName, a); ok {
+				name, version, extra = n, v, x
+			}
+		}
+		checksum, _ := extra["checksum"].(string)
 		if checksum == "" {
 			continue
 		}
 		fmt.Fprintf(&sb, "C:%s\n", checksum)
-		fmt.Fprintf(&sb, "P:%s\n", comp.Name)
-		fmt.Fprintf(&sb, "V:%s\n", comp.Version)
+		fmt.Fprintf(&sb, "P:%s\n", name)
+		fmt.Fprintf(&sb, "V:%s\n", version)
 		fmt.Fprintf(&sb, "A:%s\n", arch)
 		fmt.Fprintf(&sb, "S:%d\n", a.SizeBytes)
 		// I: (installed/uncompressed size) comes from .PKGINFO's own "size"
 		// when the upload could be parsed; falls back to the stored .apk size
 		// otherwise (better than nothing, though not the real uncompressed size).
 		installedSize := a.SizeBytes
-		if n, ok := extraInt64(comp.Extra["installedSize"]); ok && n > 0 {
+		if n, ok := extraInt64(extra["installedSize"]); ok && n > 0 {
 			installedSize = n
 		}
 		fmt.Fprintf(&sb, "I:%d\n", installedSize)
-		if desc, _ := comp.Extra["description"].(string); desc != "" {
+		if desc, _ := extra["description"].(string); desc != "" {
 			fmt.Fprintf(&sb, "T:%s\n", desc)
 		}
-		if lic, _ := comp.Extra["license"].(string); lic != "" {
+		if lic, _ := extra["license"].(string); lic != "" {
 			fmt.Fprintf(&sb, "L:%s\n", lic)
 		}
-		if depends := extraStringSlice(comp.Extra["depends"]); len(depends) > 0 {
+		if depends := extraStringSlice(extra["depends"]); len(depends) > 0 {
 			fmt.Fprintf(&sb, "D:%s\n", strings.Join(depends, " "))
 		}
-		if provides := extraStringSlice(comp.Extra["provides"]); len(provides) > 0 {
+		if provides := extraStringSlice(extra["provides"]); len(provides) > 0 {
 			fmt.Fprintf(&sb, "p:%s\n", strings.Join(provides, " "))
 		}
 		sb.WriteString("\n")
 	}
 	return []byte(sb.String()), nil
+}
+
+// repairLegacyAsset reads a pre-#671 asset's metadata from its own bytes and
+// moves it to the component of its index directory. ok is false when the file
+// cannot be read or parsed; the caller then keeps what the component says. A
+// failed move is only logged: the metadata read is still this file's.
+func (h *Handler) repairLegacyAsset(ctx context.Context, repoName string, a domain.Asset) (name, version string, extra map[string]any, ok bool) {
+	rc, _, err := base.FetchArtifact(ctx, h.deps, repoName, a.Path)
+	if err != nil {
+		log.Printf("nexspence: alpine %s%s: read for index repair: %v", repoName, a.Path, err)
+		return "", "", nil, false
+	}
+	body, err := io.ReadAll(io.LimitReader(rc, maxApkBytes+1))
+	_ = rc.Close()
+	if err != nil || len(body) > maxApkBytes {
+		return "", "", nil, false
+	}
+	compressed, rawControl, err := controlSegment(body)
+	if err != nil {
+		return "", "", nil, false
+	}
+	name, version, extra = apkMetadata(path.Base(a.Path), compressed, rawControl)
+	repo, err := h.deps.Repos.Get(ctx, repoName)
+	if err == nil && repo != nil {
+		coords := base.Coords{Group: indexDir(a.Path), Name: name, Version: version}
+		err = h.placeInIndexDir(ctx, repo, &a, coords, extra)
+	}
+	if err != nil {
+		log.Printf("nexspence: alpine %s%s: move to its index directory's component: %v", repoName, a.Path, err)
+	}
+	return name, version, extra, true
 }
 
 // extraStringSlice reads a []string out of Component.Extra, tolerating both
