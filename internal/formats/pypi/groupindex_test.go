@@ -107,6 +107,8 @@ func TestPyPI_GroupIndexClaimsName(t *testing.T) {
 	assert.True(t, c.GroupIndexClaimsName("/simple/pkg/", full))
 	// Hosted pypi answers an unknown project with an empty 200 page.
 	assert.False(t, c.GroupIndexClaimsName("/simple/pkg/", []byte(`<html><body><h1>Links for pkg</h1></body></html>`)))
+	// An anchor without an href is not a file.
+	assert.False(t, c.GroupIndexClaimsName("/simple/pkg/", []byte(`<html><body><a name="top">pkg</a></body></html>`)))
 	// The root index lists every project: never claimed.
 	assert.False(t, c.GroupIndexClaimsName("/simple", full))
 	assert.False(t, c.GroupIndexClaimsName("/simple/", full))
