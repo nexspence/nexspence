@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"golang.org/x/mod/module"
 	"golang.org/x/mod/semver"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
@@ -28,7 +29,12 @@ import (
 )
 
 // Handler serves the Go module proxy (GOPROXY) protocol.
-type Handler struct{ deps formats.Deps }
+type Handler struct {
+	deps formats.Deps
+	// age caches upstream version times for the minimum-package-age policy
+	// (#643); see age_filter.go.
+	age ageCache
+}
 
 // New creates a Go module format Handler with the given dependencies.
 func New(deps formats.Deps) *Handler { return &Handler{deps: deps} }
@@ -71,7 +77,13 @@ func (h *Handler) handleGet(c *gin.Context, repoName, p string) {
 		if strings.HasSuffix(p, "/@latest") || strings.HasSuffix(p, "/@v/list") {
 			maxAge = repoproxy.MetadataMaxAge(repo)
 		}
-		if err := repoproxy.ServeGET(c, h.deps, repo, p, "", goProxyCoords(p), goContentType(p), maxAge); err != nil {
+		var rewrite func([]byte) []byte
+		if minAge := repoproxy.MinimumPackageAge(repo); minAge > 0 {
+			if done := h.applyAgePolicy(c, repo, p, minAge, &rewrite); done {
+				return
+			}
+		}
+		if err := repoproxy.ServeGETRewritten(c, h.deps, repo, p, "", goProxyCoords(p), goContentType(p), maxAge, rewrite); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		}
 		return
@@ -108,6 +120,36 @@ func (h *Handler) handleGet(c *gin.Context, repoName, p string) {
 	default:
 		c.JSON(http.StatusNotFound, gin.H{"error": "unknown endpoint"})
 	}
+}
+
+// applyAgePolicy enforces minimum_package_age on a proxy GET. It reports
+// done when it has answered the request itself (@latest, or a refusal);
+// otherwise it may set rewrite to filter the @v/list body.
+func (h *Handler) applyAgePolicy(c *gin.Context, repo *domain.Repository, p string, minAge time.Duration, rewrite *func([]byte) []byte) (done bool) {
+	if modPrefix, ok := strings.CutSuffix(p, "/@latest"); ok {
+		h.serveLatestByAge(c, repo, modPrefix, minAge)
+		return true
+	}
+	atv := strings.Index(p, "/@v/")
+	if atv < 0 {
+		return false
+	}
+	modPrefix, rest := p[:atv], p[atv+len("/@v/"):]
+	if rest == "list" {
+		*rewrite = h.filterListRewrite(c.Request.Context(), repo, modPrefix, minAge)
+		return false
+	}
+	for _, suf := range []string{".info", ".mod", ".zip"} {
+		if escaped, ok := strings.CutSuffix(rest, suf); ok {
+			version, err := module.UnescapeVersion(escaped)
+			if err != nil {
+				c.JSON(http.StatusNotFound, gin.H{"error": "invalid version"})
+				return true
+			}
+			return !h.versionAgeAllowed(c, repo, modPrefix, version, minAge)
+		}
+	}
+	return false
 }
 
 // moduleComponents returns the stored versions of exactly modulePath (one

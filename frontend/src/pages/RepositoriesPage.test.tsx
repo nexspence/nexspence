@@ -497,6 +497,16 @@ describe('RepositoriesPage', () => {
     expect(cfg.minimum_package_age).toBe(7 * 24 * 3600)
   })
 
+  // #643: a go proxy enforces the policy too, so its settings show the field.
+  it('shows minimum package age on a go proxy', async () => {
+    seedRepos([fixtures.repository({ id: 'repo-go', name: 'go-proxy', format: 'go', type: 'proxy', online: true })])
+    renderWithProviders(<RepositoriesPage />)
+    await screen.findByText('go-proxy')
+    fireEvent.click(screen.getAllByTitle('Settings')[0])
+    await screen.findByText('Repository settings')
+    expect(screen.getByPlaceholderText('e.g. 7')).toBeInTheDocument()
+  })
+
   it('attaches a routing rule to a proxy repo (#642)', async () => {
     const user = userEvent.setup()
     let put: Record<string, unknown> | null = null

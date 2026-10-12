@@ -474,6 +474,10 @@ function assignOrDelete(cfg: Record<string, unknown>, key: string, value: string
   else delete cfg[key]
 }
 
+// Proxy formats whose handler enforces proxy_config.minimum_package_age
+// (#323, #643); any other format would store the key and ignore it.
+const MIN_PACKAGE_AGE_FORMATS = ['npm', 'pypi', 'go']
+
 const LABEL_STYLE = { fontSize: 12, fontWeight: 500, color: 'var(--holo-text-dim)', textTransform: 'uppercase' as const, letterSpacing: '0.4px' }
 const ERROR_STYLE = { background: 'rgba(255,107,107,0.12)', border: '1px solid rgba(255,107,107,0.3)', borderRadius: 10, padding: '10px 12px', color: 'var(--holo-red)', fontSize: 13 }
 
@@ -741,7 +745,7 @@ function CreateRepoModal({ onClose, onCreated }: {
           <span className={styles.hint}>URL of the upstream registry to proxy and cache</span>
         </div>
       )}
-      {form.type === 'proxy' && ['npm', 'pypi'].includes(form.format) && (
+      {form.type === 'proxy' && MIN_PACKAGE_AGE_FORMATS.includes(form.format) && (
         <div className={styles.formRow}>
           <label style={LABEL_STYLE}>Minimum package age (days)</label>
           <HoloInput
@@ -1276,7 +1280,7 @@ function EditRepoModal({
             </span>
           </div>
         )}
-        {repo.type === 'proxy' && ['npm', 'pypi'].includes(repo.format) && (
+        {repo.type === 'proxy' && MIN_PACKAGE_AGE_FORMATS.includes(repo.format) && (
           <div className={styles.formRow}>
             <label style={LABEL_STYLE}>Minimum package age (days)</label>
             <HoloInput

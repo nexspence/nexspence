@@ -163,7 +163,7 @@ func (h *Handler) tarballAgeAllowed(c *gin.Context, repo *domain.Repository, pkg
 // TTL), the upstream document otherwise.
 func (h *Handler) packumentTimesFor(ctx context.Context, repo *domain.Repository, pkg string) map[string]time.Time {
 	if asset, err := h.deps.Assets.GetByPath(ctx, repo.Name, "/"+pkg); err == nil && asset != nil {
-		if body := h.readCachedBlob(ctx, asset); body != nil {
+		if body := base.ReadCachedBlob(ctx, h.deps, asset, maxPackumentBytes); body != nil {
 			if times := PackumentPublishTimes(body); len(times) > 0 {
 				return times
 			}
@@ -182,34 +182,6 @@ func (h *Handler) packumentTimesFor(ctx context.Context, repo *domain.Repository
 		return nil
 	}
 	return PackumentPublishTimes(body)
-}
-
-// readCachedBlob reads a cached asset's bytes from the store that holds them.
-// Deliberately not base.FetchArtifact: that path counts a download, and an
-// internal policy read must not inflate the packument's statistics.
-func (h *Handler) readCachedBlob(ctx context.Context, asset *domain.Asset) []byte {
-	store := h.deps.BlobStore
-	if asset.BlobStoreID != "" {
-		meta, err := h.deps.Blobs.GetByID(ctx, asset.BlobStoreID)
-		if err != nil || meta == nil {
-			return nil
-		}
-		resolved, err := base.PhysicalStore(ctx, h.deps, meta)
-		if err != nil {
-			return nil
-		}
-		store = resolved
-	}
-	rc, _, err := store.Get(ctx, asset.BlobKey)
-	if err != nil {
-		return nil
-	}
-	defer func() { _ = rc.Close() }()
-	b, err := io.ReadAll(io.LimitReader(rc, maxPackumentBytes))
-	if err != nil {
-		return nil
-	}
-	return b
 }
 
 // tarballVersion cuts "<base>-<version>.tgz" at the package's base-name
