@@ -7,6 +7,7 @@
 package pypi
 
 import (
+	"context"
 	"fmt"
 	"html"
 	"log"
@@ -23,6 +24,15 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/formats/base"
 	"github.com/nexspence-oss/nexspence/internal/formats/repoproxy"
 )
+
+// requiresPythonKey holds a release's Requires-Python specifier in its
+// component's extra, as recorded from the upload form (#665). PyPI keeps it per
+// release, and so does this: every file of a version shares one component.
+const requiresPythonKey = "requires_python"
+
+// maxRequiresPythonLen bounds the recorded specifier; real ones are a few
+// dozen bytes.
+const maxRequiresPythonLen = 1024
 
 // Handler serves the PyPI repository protocol.
 type Handler struct {
@@ -134,6 +144,12 @@ func (h *Handler) handleUpload(c *gin.Context, repoName string) {
 		return
 	}
 
+	requiresPython, err := uploadRequiresPython(c.Request.FormValue("requires_python"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
 	filename := fh.Filename
 	filePath := "/packages/" + pkgName + "/" + filename
 	ct := fh.Header.Get("Content-Type")
@@ -142,12 +158,67 @@ func (h *Handler) handleUpload(c *gin.Context, repoName string) {
 	}
 
 	coords := base.Coords{Name: pkgName, Version: version}
-	if _, err := base.StoreArtifact(c.Request.Context(), h.deps,
-		repoName, filePath, ct, coords, f, fh.Size); err != nil {
+	// Storing a file upserts the release's component, which resets its extra,
+	// so the specifier is written back after every upload: the one this upload
+	// sent, else the one the release already had — a file uploaded without it
+	// (an older client, curl) must not strip it from its siblings. When files
+	// of one release disagree, the last one sent wins.
+	if requiresPython == "" {
+		if requiresPython, err = h.releaseRequiresPython(c.Request.Context(), repoName, pkgName, version); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
+	res, err := base.StoreArtifact(c.Request.Context(), h.deps,
+		repoName, filePath, ct, coords, f, fh.Size)
+	if err != nil {
 		c.JSON(base.HTTPStatusForError(err), gin.H{"error": err.Error()})
 		return
 	}
+	if requiresPython != "" {
+		if err := h.deps.Components.UpdateExtra(c.Request.Context(), res.Asset.ComponentID,
+			map[string]any{requiresPythonKey: requiresPython}); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
 	c.Status(http.StatusOK)
+}
+
+// releaseRequiresPython returns the specifier recorded for a release, or "".
+func (h *Handler) releaseRequiresPython(ctx context.Context, repoName, pkgName, version string) (string, error) {
+	comps, err := base.ExactComponents(ctx, h.deps.Components, domain.SearchParams{
+		Repository: repoName, Name: pkgName, Version: version,
+	})
+	if err != nil {
+		return "", err
+	}
+	for _, comp := range comps {
+		if comp.Version != version {
+			continue
+		}
+		if rp, _ := comp.Extra[requiresPythonKey].(string); rp != "" {
+			return rp, nil
+		}
+	}
+	return "", nil
+}
+
+// uploadRequiresPython validates the upload form's requires_python field. The
+// value is rendered (escaped) into the simple page, so only its size and the
+// absence of control characters are enforced; pip itself ignores a specifier
+// it cannot parse.
+func uploadRequiresPython(v string) (string, error) {
+	v = strings.TrimSpace(v)
+	if len(v) > maxRequiresPythonLen {
+		return "", fmt.Errorf("requires_python is longer than %d bytes", maxRequiresPythonLen)
+	}
+	for _, r := range v {
+		if r < 0x20 || r == 0x7f {
+			return "", fmt.Errorf("requires_python contains a control character")
+		}
+	}
+	return v, nil
 }
 
 func (h *Handler) serveSimpleIndex(c *gin.Context, repoName string) {
@@ -200,6 +271,12 @@ func (h *Handler) servePackageIndex(c *gin.Context, repoName, pkgName string) {
 		if err != nil {
 			continue
 		}
+		// PEP 503: the attribute carries the specifier HTML-escaped, and is
+		// left out when the release recorded none.
+		requires := ""
+		if rp, _ := comp.Extra[requiresPythonKey].(string); rp != "" {
+			requires = ` data-requires-python="` + html.EscapeString(rp) + `"`
+		}
 		for _, a := range assets {
 			filename := path.Base(a.Path)
 			href := h.deps.BaseURL + "/repository/" + repoName + a.Path
@@ -207,8 +284,8 @@ func (h *Handler) servePackageIndex(c *gin.Context, repoName, pkgName string) {
 			if a.SHA256 != "" {
 				sha = "#sha256=" + a.SHA256
 			}
-			fmt.Fprintf(&sb, `<a href="%s%s" data-requires-python="">%s</a><br/>`,
-				html.EscapeString(href), sha, html.EscapeString(filename))
+			fmt.Fprintf(&sb, `<a href="%s%s"%s>%s</a><br/>`,
+				html.EscapeString(href), sha, requires, html.EscapeString(filename))
 		}
 	}
 	sb.WriteString("</body></html>")

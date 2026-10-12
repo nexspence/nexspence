@@ -20,27 +20,21 @@ import (
 func init() { gin.SetMode(gin.TestMode) }
 
 func setup(repo *domain.Repository) *gin.Engine {
-	d := formats.Deps{
-		Repos:      testutil.NewRepoRepo(repo),
-		Blobs:      testutil.NewBlobStoreRepo(),
-		Components: testutil.NewComponentRepo(),
-		Assets:     testutil.NewAssetRepo(),
-		BlobStore:  testutil.NewBlobStore(),
-		BaseURL:    "http://localhost:8080",
-	}
-	h := pypi.New(d)
-	r := gin.New()
-	r.Any("/repository/:repoName/*path", func(c *gin.Context) { h.ServeHTTP(c) })
+	r, _ := setupWithComponents(repo)
 	return r
 }
 
 // buildUpload creates a multipart body for twine-style upload.
-func buildUpload(pkgName, version, filename, content string) (*bytes.Buffer, string) {
+// fields are extra form fields as name/value pairs.
+func buildUpload(pkgName, version, filename, content string, fields ...string) (*bytes.Buffer, string) {
 	var buf bytes.Buffer
 	w := multipart.NewWriter(&buf)
 	_ = w.WriteField(":action", "file_upload")
 	_ = w.WriteField("name", pkgName)
 	_ = w.WriteField("version", version)
+	for i := 0; i+1 < len(fields); i += 2 {
+		_ = w.WriteField(fields[i], fields[i+1])
+	}
 	part, _ := w.CreateFormFile("content", filename)
 	_, _ = part.Write([]byte(content))
 	w.Close()
@@ -145,4 +139,22 @@ func TestPyPI_ProxyPOST_Rejected(t *testing.T) {
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusMethodNotAllowed, w.Code)
+}
+
+// setupWithComponents is setup that also hands back the component repository,
+// for tests that inject its failures.
+func setupWithComponents(repo *domain.Repository) (*gin.Engine, *testutil.ComponentRepo) {
+	comps := testutil.NewComponentRepo()
+	d := formats.Deps{
+		Repos:      testutil.NewRepoRepo(repo),
+		Blobs:      testutil.NewBlobStoreRepo(),
+		Components: comps,
+		Assets:     testutil.NewAssetRepo(),
+		BlobStore:  testutil.NewBlobStore(),
+		BaseURL:    "http://localhost:8080",
+	}
+	h := pypi.New(d)
+	r := gin.New()
+	r.Any("/repository/:repoName/*path", func(c *gin.Context) { h.ServeHTTP(c) })
+	return r, comps
 }
