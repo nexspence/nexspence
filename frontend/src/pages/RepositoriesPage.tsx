@@ -546,6 +546,62 @@ function WritePolicyFields({ format, policy, allowLatest, onPolicyChange, onAllo
   )
 }
 
+/** Docker/oci pull gate (formatConfig.pull_block_severity, #641). '' = off. */
+type PullBlockSeverity = '' | 'low' | 'medium' | 'high' | 'critical' | 'malicious'
+
+const PULL_BLOCK_OPTIONS: { value: PullBlockSeverity; label: string }[] = [
+  { value: '', label: 'Off' },
+  { value: 'low', label: 'Low or higher' },
+  { value: 'medium', label: 'Medium or higher' },
+  { value: 'high', label: 'High or higher' },
+  { value: 'critical', label: 'Critical or higher' },
+  { value: 'malicious', label: 'Malicious only' },
+]
+
+const PULL_BLOCK_HINTS: Record<string, string> = {
+  hosted: 'An image with no finished scan is refused too.',
+  proxy: 'An image not scanned yet is still served — the first pull brings it in to be scanned.',
+  group: 'Applies to whichever member answers; a member\'s own setting still holds, the stricter wins.',
+}
+
+function readPullBlockSeverity(cfg: Record<string, unknown> | null | undefined): PullBlockSeverity {
+  const v = cfg?.['pull_block_severity']
+  return PULL_BLOCK_OPTIONS.some(o => o.value === v) ? (v as PullBlockSeverity) : ''
+}
+
+/**
+ * Writes the pull gate into a formatConfig copy. The key is kept only on
+ * docker/oci (the API refuses it elsewhere) and dropped when the gate is off.
+ */
+function withPullBlockSeverity(cfg: Record<string, unknown>, format: string, sev: PullBlockSeverity) {
+  const out: Record<string, unknown> = { ...cfg }
+  if (hasLatestTag(format) && sev) out.pull_block_severity = sev
+  else delete out.pull_block_severity
+  return out
+}
+
+function PullBlockField({ repoType, value, onChange }: {
+  repoType: string
+  value: PullBlockSeverity
+  onChange: (v: PullBlockSeverity) => void
+}) {
+  return (
+    <div className={styles.formRow}>
+      <label style={LABEL_STYLE}>Refuse pulls at severity</label>
+      <Select
+        options={PULL_BLOCK_OPTIONS}
+        value={value}
+        onChange={v => onChange(v as PullBlockSeverity)}
+      />
+      <span className={styles.hint}>
+        {value
+          ? `A manifest pull is refused while the image's latest scan has a finding at this severity or above. Negligible and unknown findings never block. ${PULL_BLOCK_HINTS[repoType] ?? ''}`
+          : 'Images are served whatever their scan found.'}
+      </span>
+    </div>
+  )
+}
+
 function CreateRepoModal({ onClose, onCreated }: {
   onClose: () => void
   onCreated: () => void
@@ -584,6 +640,7 @@ function CreateRepoModal({ onClose, onCreated }: {
     routingRuleId: '' as string,
     writePolicy: 'allow' as WritePolicy,
     allowRedeployLatest: false,
+    pullBlockSeverity: '' as PullBlockSeverity,
   })
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -658,6 +715,10 @@ function CreateRepoModal({ onClose, onCreated }: {
       if (form.type === 'hosted') {
         body.formatConfig = withWritePolicy({}, form.format, form.writePolicy, form.allowRedeployLatest)
       }
+      if (hasLatestTag(form.format) && form.pullBlockSeverity) {
+        body.formatConfig = withPullBlockSeverity(
+          (body.formatConfig ?? {}) as Record<string, unknown>, form.format, form.pullBlockSeverity)
+      }
       if (routable(form.type) && form.routingRuleId) {
         body.routingRuleId = form.routingRuleId
       }
@@ -731,6 +792,13 @@ function CreateRepoModal({ onClose, onCreated }: {
           allowLatest={form.allowRedeployLatest}
           onPolicyChange={p => setField('writePolicy', p)}
           onAllowLatestChange={v => setField('allowRedeployLatest', v)}
+        />
+      )}
+      {hasLatestTag(form.format) && (
+        <PullBlockField
+          repoType={form.type}
+          value={form.pullBlockSeverity}
+          onChange={v => setField('pullBlockSeverity', v)}
         />
       )}
       {form.type === 'proxy' && (
@@ -1053,6 +1121,7 @@ function EditRepoModal({
   const [memberNames, setMemberNames] = useState<string[]>(groupMemberNames(repo))
   const [writePolicy, setWritePolicy] = useState<WritePolicy>(readWritePolicy(repo.formatConfig))
   const [allowRedeployLatest, setAllowRedeployLatest] = useState(repo.formatConfig?.['allow_redeploy_latest'] === true)
+  const [pullBlockSeverity, setPullBlockSeverity] = useState<PullBlockSeverity>(readPullBlockSeverity(repo.formatConfig))
   const memberCandidates = allRepos.filter(r => r.format === repo.format && r.type !== 'group')
   const originalStoreId = repo.blobStoreId ?? ''
   const storeChanged = blobStoreId !== originalStoreId
@@ -1177,6 +1246,12 @@ function EditRepoModal({
         updateBody.formatConfig = withWritePolicy(
           (repo.formatConfig ?? {}) as Record<string, unknown>, repo.format, writePolicy, allowRedeployLatest)
       }
+      if (hasLatestTag(repo.format)) {
+        // Proxies send no formatConfig otherwise; it is replaced wholesale, so
+        // start from the stored one when nothing above built it.
+        updateBody.formatConfig = withPullBlockSeverity(
+          (updateBody.formatConfig ?? repo.formatConfig ?? {}) as Record<string, unknown>, repo.format, pullBlockSeverity)
+      }
       if (repo.type === 'proxy') {
         const proxyConfig: Record<string, unknown> = {}
         for (const [k, v] of Object.entries(repo.proxyConfig ?? {})) {
@@ -1264,6 +1339,9 @@ function EditRepoModal({
             onPolicyChange={setWritePolicy}
             onAllowLatestChange={setAllowRedeployLatest}
           />
+        )}
+        {hasLatestTag(repo.format) && (
+          <PullBlockField repoType={repo.type} value={pullBlockSeverity} onChange={setPullBlockSeverity} />
         )}
         {repo.type === 'proxy' && (
           <div className={styles.formRow}>
