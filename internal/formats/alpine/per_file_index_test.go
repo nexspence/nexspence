@@ -195,3 +195,57 @@ func TestAlpine_Upload_RebuildAfterDeleteDropsOldMetadata(t *testing.T) {
 	assert.Contains(t, index, "I:1200\n")
 	assert.False(t, strings.Contains(index, "\nD:"), "no dependency line from the deleted build:\n%s", index)
 }
+
+// A legacy file whose bytes cannot be read or parsed keeps the entry its
+// component describes, rather than drop out of the index.
+func TestAlpine_Index_UnrepairableLegacyKeepsComponentEntry(t *testing.T) {
+	ctx := context.Background()
+	r, d := setupWithDeps(testutil.SimpleRepo("apks-unrep", "alpine"))
+	arm := buildApk(t, "aarch64", 2000, "")
+	seedLegacy(t, d, "apks-unrep", map[string][]byte{
+		"/x86_64/acme-tool-1.0-r0.apk":  []byte("not an apk at all"),
+		"/aarch64/acme-tool-1.0-r0.apk": arm,
+	}, arm)
+	assert.Contains(t, apkIndex(t, r, "apks-unrep", "x86_64"), "C:"+apkChecksum(t, arm)+"\n",
+		"unparsable bytes: the component's entry stays")
+
+	gone, err := d.Assets.GetByPath(ctx, "apks-unrep", "/aarch64/acme-tool-1.0-r0.apk")
+	require.NoError(t, err)
+	require.NoError(t, d.BlobStore.Delete(ctx, gone.BlobKey))
+	assert.Contains(t, apkIndex(t, r, "apks-unrep", "aarch64"), "C:"+apkChecksum(t, arm)+"\n",
+		"unreadable blob: the component's entry stays")
+}
+
+// A repair whose move fails still serves the file's own metadata.
+func TestAlpine_Index_RepairServesOwnMetadataWhenMoveFails(t *testing.T) {
+	r, d := setupWithDeps(testutil.SimpleRepo("apks-movefail", "alpine"))
+	x86 := buildApk(t, "x86_64", 1000, "")
+	arm := buildApk(t, "aarch64", 2000, "")
+	seedLegacy(t, d, "apks-movefail", map[string][]byte{
+		"/x86_64/acme-tool-1.0-r0.apk":  x86,
+		"/aarch64/acme-tool-1.0-r0.apk": arm,
+	}, arm)
+	d.Components.(*testutil.ComponentRepo).UpdateExtraErr = assert.AnError
+	assert.Contains(t, apkIndex(t, r, "apks-movefail", "x86_64"), "C:"+apkChecksum(t, x86)+"\n")
+}
+
+func TestAlpine_Upload_RecordFailureIs500(t *testing.T) {
+	r, d := setupWithDeps(testutil.SimpleRepo("apks-fail", "alpine"))
+	d.Components.(*testutil.ComponentRepo).UpdateExtraErr = assert.AnError
+	assert.Equal(t, http.StatusInternalServerError,
+		putApk(r, "apks-fail", "/x86_64/acme-tool-1.0-r0.apk", buildApk(t, "x86_64", 1000, "")))
+}
+
+// PostgreSQL hands JSONB arrays and numbers back as []any and float64.
+func TestAlpine_ExtraDecodingFromJSONB(t *testing.T) {
+	assert.Equal(t, []string{"a", "b"}, extraStringSlice([]any{"a", 1, "b"}))
+	assert.Equal(t, []string{"x"}, extraStringSlice([]string{"x"}))
+	assert.Nil(t, extraStringSlice("not a list"))
+	for _, v := range []any{int64(7), 7, float64(7)} {
+		n, ok := extraInt64(v)
+		assert.True(t, ok)
+		assert.Equal(t, int64(7), n)
+	}
+	_, ok := extraInt64("7")
+	assert.False(t, ok)
+}
