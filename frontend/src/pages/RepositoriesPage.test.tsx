@@ -535,6 +535,16 @@ describe('RepositoriesPage', () => {
     expect(screen.getByPlaceholderText('e.g. 7')).toBeInTheDocument()
   })
 
+  // #643: a rubygems proxy enforces the policy too, so its settings show the field.
+  it('shows minimum package age on a rubygems proxy', async () => {
+    seedRepos([fixtures.repository({ id: 'repo-gems', name: 'gems-proxy', format: 'rubygems', type: 'proxy', online: true })])
+    renderWithProviders(<RepositoriesPage />)
+    await screen.findByText('gems-proxy')
+    fireEvent.click(screen.getAllByTitle('Settings')[0])
+    await screen.findByText('Repository settings')
+    expect(screen.getByPlaceholderText('e.g. 7')).toBeInTheDocument()
+  })
+
   it('attaches a routing rule to a proxy repo (#642)', async () => {
     const user = userEvent.setup()
     let put: Record<string, unknown> | null = null

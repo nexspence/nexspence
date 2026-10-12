@@ -34,7 +34,12 @@ import (
 // The compact index is what Bundler resolves against; it is generated from
 // the stored components (hosted) or proxied verbatim (proxy) — its entries
 // carry no embedded URLs, so no rewriting is needed.
-type Handler struct{ deps formats.Deps }
+type Handler struct {
+	deps formats.Deps
+	// age caches publish times for the minimum-package-age policy (#643);
+	// see age_filter.go.
+	age ageCache
+}
 
 // New creates a RubyGems format Handler with the given dependencies.
 func New(deps formats.Deps) *Handler { return &Handler{deps: deps} }
@@ -65,12 +70,19 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 			return
 		}
 		// The compact index is mutable metadata (new versions appear); .gem
-		// files are immutable. Nothing embeds URLs, so nothing is rewritten.
+		// files are immutable. Nothing embeds URLs; /info is rewritten only
+		// to apply minimum_package_age.
 		var maxAge time.Duration
 		if !strings.HasPrefix(p, "/gems/") {
 			maxAge = repoproxy.MetadataMaxAge(repo)
 		}
-		if err := repoproxy.ServeGET(c, h.deps, repo, p, "", proxyCoords(p), "application/octet-stream", maxAge); err != nil {
+		var rewrite func([]byte) []byte
+		if minAge := repoproxy.MinimumPackageAge(repo); minAge > 0 {
+			if done := h.applyAgePolicy(c, repo, p, minAge, &rewrite); done {
+				return
+			}
+		}
+		if err := repoproxy.ServeGETRewritten(c, h.deps, repo, p, "", proxyCoords(p), "application/octet-stream", maxAge, rewrite); err != nil {
 			c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		}
 		return
