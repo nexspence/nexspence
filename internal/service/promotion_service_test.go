@@ -504,3 +504,61 @@ func TestPromotionService_CopiesComponentExtra(t *testing.T) {
 
 // Ensure time package is used (referenced in domain types).
 var _ = time.Now
+
+// A promoted copy replaces the metadata the target's component held: storing
+// keeps a component's extra (#668), but a promotion brings the source's content
+// and must not leave the target's scan or OCI keys describing something else.
+func TestPromotionService_ReplacesTargetComponentExtra(t *testing.T) {
+	svc, promoRepo, compRepo, assetRepo, blobStore, repoRepo, _, _ := newTestPromotionSvc(t)
+	ctx := context.Background()
+
+	fromRepo := testutil.SimpleRepo("raw-staging", "raw")
+	toRepo := testutil.SimpleRepo("raw-production", "raw")
+	repoRepo.Create(ctx, fromRepo)
+	repoRepo.Create(ctx, toRepo)
+
+	comp := &domain.Component{
+		ID: "comp-src-1", RepositoryID: fromRepo.ID, Repository: fromRepo.Name,
+		Format: "raw", Name: "acme-tool", Version: "1.0",
+	}
+	compRepo.AddComponent(comp)
+	stale := &domain.Component{
+		ID: "comp-dst-1", RepositoryID: toRepo.ID, Repository: toRepo.Name,
+		Format: "raw", Name: "acme-tool", Version: "1.0",
+		Extra: map[string]any{
+			"scan_result": map[string]any{"status": "ok"},
+			"oci_subject": "sha256:" + strings.Repeat("b", 64),
+		},
+	}
+	compRepo.AddComponent(stale)
+
+	blobKey := "raw-staging:acme-tool"
+	if err := blobStore.PutBytes(ctx, blobKey, []byte("tool")); err != nil {
+		t.Fatalf("PutBytes: %v", err)
+	}
+	assetRepo.Create(ctx, &domain.Asset{
+		ComponentID: comp.ID, RepositoryID: fromRepo.ID, Repository: fromRepo.Name,
+		Path: "/acme-tool/1.0/acme-tool.bin", BlobKey: blobKey, SizeBytes: 4,
+		ContentType: "application/octet-stream",
+	})
+
+	rule := &domain.PromotionRule{Name: "raw-promote", FromRepo: "raw-staging", ToRepo: "raw-production"}
+	if err := promoRepo.CreateRule(ctx, rule); err != nil {
+		t.Fatalf("CreateRule: %v", err)
+	}
+	results, err := svc.Promote(ctx, rule.ID, []string{comp.ID}, "user-1")
+	if err != nil {
+		t.Fatalf("Promote: %v", err)
+	}
+	if len(results) != 1 || results[0].Status != domain.PromotionCompleted {
+		t.Fatalf("promotion did not complete: %+v", results)
+	}
+
+	got, err := compRepo.Get(ctx, stale.ID)
+	if err != nil || got == nil {
+		t.Fatalf("Get target: err=%v got=%v", err, got)
+	}
+	if len(got.Extra) != 0 {
+		t.Errorf("the target's stale metadata must be replaced by the source's (none), got %v", got.Extra)
+	}
+}

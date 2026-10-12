@@ -32,11 +32,13 @@ const helmChartManifest = `{
 // setupWithDeps is setup() from handler_test.go, also handing back the deps so a
 // test can inspect what the handler stored.
 func setupWithDeps(repo *domain.Repository) (*gin.Engine, formats.Deps) {
+	comps, assets := testutil.NewComponentRepo(), testutil.NewAssetRepo()
+	comps.HasAssets = assets.HasComponent
 	d := formats.Deps{
 		Repos:      testutil.NewRepoRepo(repo),
 		Blobs:      testutil.NewBlobStoreRepo(),
-		Components: testutil.NewComponentRepo(),
-		Assets:     testutil.NewAssetRepo(),
+		Components: comps,
+		Assets:     assets,
 		BlobStore:  testutil.NewBlobStore(),
 		BaseURL:    "http://localhost:8080",
 	}

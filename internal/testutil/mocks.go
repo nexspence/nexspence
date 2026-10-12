@@ -335,6 +335,10 @@ type ComponentRepo struct {
 	// UpdateExtraErr is returned by UpdateExtra when set — the seam for a write
 	// that fails after the work producing it already succeeded.
 	UpdateExtraErr error
+	// HasAssets, when set, tells Create whether a component still has assets,
+	// so a nil-Extra upsert of an emptied component resets its extra like the
+	// SQL does (#668). Unset, such an upsert keeps the extra.
+	HasAssets func(componentID string) bool
 	// DockerRowsByRepo maps repoName→browse rows; ListDockerBrowseRows returns the
 	// union of rows for the requested repo names (mirrors the SQL WHERE rep.name IN (...)).
 	// A row's ArtifactType stands for the SQL's extra->>'oci_artifact_type': the
@@ -566,6 +570,15 @@ func (c *ComponentRepo) Create(_ context.Context, comp *domain.Component) error 
 		if ek == key {
 			comp.ID = existing.ID
 			comp.CreatedAt = existing.CreatedAt
+			// Like the SQL upsert: a nil Extra keeps the stored one (#668),
+			// and tags are never touched.
+			if comp.Extra == nil {
+				comp.Extra = existing.Extra
+				if c.HasAssets != nil && !c.HasAssets(existing.ID) {
+					comp.Extra = map[string]any{}
+				}
+			}
+			comp.Tags = existing.Tags
 			c.components[existing.ID] = comp
 			return nil
 		}
@@ -921,6 +934,19 @@ func (a *AssetRepo) ListByComponentID(_ context.Context, componentID string) ([]
 		}
 	}
 	return out, nil
+}
+
+// HasComponent reports whether any asset belongs to componentID; it is what
+// ComponentRepo.HasAssets is wired to.
+func (a *AssetRepo) HasComponent(componentID string) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for _, v := range a.byID {
+		if v.ComponentID == componentID {
+			return true
+		}
+	}
+	return false
 }
 
 func (a *AssetRepo) ListByComponentIDs(_ context.Context, componentIDs []string) (map[string][]domain.Asset, error) {

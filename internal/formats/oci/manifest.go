@@ -70,10 +70,10 @@ func parseManifestMeta(body []byte) (manifestMeta, bool) {
 // extraFrom renders the metadata as component.Extra entries. Empty fields are
 // left out so the stored map holds only keys that carry a meaning: a blank
 // oci_artifact_type would assert "this artifact has no type" rather than say
-// nothing. It is not protecting earlier data — every write path here goes
-// through base.RegisterStoredBlob → Components.Create, whose upsert does
-// SET extra = EXCLUDED.extra with an always-empty Extra, so the whole map is
-// wiped immediately before UpdateExtra merges these keys back in.
+// nothing. It is not protecting earlier data either: a manifest whose bytes
+// changed at its path has its component's extra reset by
+// base.RegisterStoredBlob before UpdateExtra merges these keys in (#668), and
+// unchanged bytes carry the same keys.
 func extraFrom(m manifestMeta) map[string]any {
 	extra := make(map[string]any, 4)
 	if m.MediaType != "" {

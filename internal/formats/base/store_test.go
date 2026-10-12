@@ -26,6 +26,7 @@ func deps(repo *domain.Repository) (formats.Deps, *testutil.BlobStore, *testutil
 	blobs := testutil.NewBlobStoreRepo()
 	comps := testutil.NewComponentRepo()
 	assets := testutil.NewAssetRepo()
+	comps.HasAssets = assets.HasComponent
 	blobStore := testutil.NewBlobStore()
 
 	return formats.Deps{

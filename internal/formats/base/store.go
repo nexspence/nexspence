@@ -273,6 +273,11 @@ func RegisterStoredBlob(ctx context.Context, d formats.Deps, repo *domain.Reposi
 		Name:         name,
 		Version:      version,
 	}
+	if contentReplaced(ctx, d, comp, prev, sha256sum) {
+		// The metadata described bytes this write replaces — a re-pushed tag, a
+		// redeployed SNAPSHOT. Start over; the handler records the new content's.
+		comp.Extra = map[string]any{}
+	}
 
 	asset := &domain.Asset{
 		ComponentID:  comp.ID,
@@ -354,6 +359,24 @@ func RegisterStoredBlob(ctx context.Context, d formats.Deps, repo *domain.Reposi
 	notifyPublished(ctx, d, repo, comp, filePath, coords)
 	queueForScanning(d, comp)
 	return asset, nil
+}
+
+// contentReplaced reports whether registering sha256sum at prev's path
+// overwrites different bytes of the same component. Only then does the
+// component's extra stop describing it (#668): a new file of a release, or the
+// same bytes stored again (an unchanged proxy refill, a digest alias), keep it.
+// A path the store cannot attribute is treated as replaced — stale metadata
+// about other bytes is worse than none.
+func contentReplaced(ctx context.Context, d formats.Deps, comp *domain.Component, prev *domain.Asset, sha256sum string) bool {
+	if prev == nil || (prev.SHA256 != "" && prev.SHA256 == sha256sum) {
+		return false
+	}
+	old, err := d.Components.Get(ctx, prev.ComponentID)
+	if err != nil || old == nil {
+		return true
+	}
+	return old.Format == comp.Format && old.Group == comp.Group &&
+		old.Name == comp.Name && old.Version == comp.Version
 }
 
 // notifyPublished tells auto-promotion (#542) that a client published into

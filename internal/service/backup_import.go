@@ -330,6 +330,7 @@ func (s *BackupService) importRepoComponents(ctx context.Context, components []d
 		comp.ID = ""
 		comp.RepositoryID = destRepo.ID
 		comp.Repository = finalName
+		archivedExtraReplaces(comp)
 		if err := s.Components.Create(ctx, comp); err != nil {
 			s.recordFailure(&stats.FailureReport, "import", "component", finalName+"/"+componentLabel(comp), err)
 			continue
@@ -683,6 +684,7 @@ func (s *BackupService) restoreComponents(ctx context.Context, components []doma
 		}
 		comp.RepositoryID = repoID
 		comp.ID = ""
+		archivedExtraReplaces(comp)
 		if err := s.Components.Create(ctx, comp); err != nil {
 			s.recordFailure(&stats.FailureReport, "restore", "component", comp.Repository+"/"+componentLabel(comp), err)
 			continue
@@ -739,5 +741,14 @@ func (s *BackupService) restoreAssets(ctx context.Context, assets []domain.Asset
 			continue
 		}
 		stats.Assets++
+	}
+}
+
+// archivedExtraReplaces makes an archived component's metadata replace what an
+// existing component of the same coordinates holds: the archive is the source
+// of truth, and Create keeps the stored extra for a nil Extra (#668).
+func archivedExtraReplaces(comp *domain.Component) {
+	if comp.Extra == nil {
+		comp.Extra = map[string]any{}
 	}
 }

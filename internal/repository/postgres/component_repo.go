@@ -228,14 +228,23 @@ func (r *componentRepo) Create(ctx context.Context, c *domain.Component) error {
 		extraMap = map[string]any{}
 	}
 	extra, _ := json.Marshal(extraMap)
+	// A nil Extra keeps an existing row's extra (#668): storing one more file of
+	// a release must not drop what was recorded for it. A row with no assets
+	// left is the exception — its extra describes deleted content (a tag
+	// deleted and pushed again, a package deleted and rebuilt), so it resets.
 	return r.db.QueryRow(ctx, `
 		INSERT INTO components
 		  (repository_id, format, group_id, name, version, extra)
 		VALUES ($1, $2, $3, $4, $5, $6)
 		ON CONFLICT (repository_id, format, group_id, name, version) DO UPDATE
-		  SET extra = EXCLUDED.extra, updated_at = NOW()
+		  SET extra = CASE
+		        WHEN $7::boolean THEN EXCLUDED.extra
+		        WHEN NOT EXISTS (SELECT 1 FROM assets a WHERE a.component_id = components.id) THEN EXCLUDED.extra
+		        ELSE components.extra
+		      END,
+		      updated_at = NOW()
 		RETURNING id, created_at`,
-		c.RepositoryID, c.Format, c.Group, c.Name, c.Version, extra,
+		c.RepositoryID, c.Format, c.Group, c.Name, c.Version, extra, c.Extra != nil,
 	).Scan(&c.ID, &c.CreatedAt)
 }
 

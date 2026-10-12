@@ -933,19 +933,16 @@ func (s *PromotionService) withTargetPathLock(ctx context.Context, guarded bool,
 // SOURCE repository's image reference, and the scan rows the promotion gate
 // actually reads are keyed by component ID and are not copied either — so
 // carrying it would report a scan of this copy that was never run.
+//
+// The result is never nil: the copy replaces whatever metadata the target's
+// component held, and a nil Extra would keep it (#668).
 func promotedExtra(extra map[string]any) map[string]any {
-	if len(extra) == 0 {
-		return nil
-	}
 	out := make(map[string]any, len(extra))
 	for k, v := range extra {
 		if k == "scan_result" {
 			continue
 		}
 		out[k] = v
-	}
-	if len(out) == 0 {
-		return nil
 	}
 	return out
 }

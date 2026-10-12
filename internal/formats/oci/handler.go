@@ -469,7 +469,8 @@ func (h *Handler) detachDigestAlias(ctx context.Context, repoName, imageName, ta
 	if sum := sha256.Sum256(body); hex.EncodeToString(sum[:]) != tag.SHA256 {
 		return
 	}
-	// The upsert replaces the component's metadata; carry it over.
+	// Re-storing the same bytes keeps the component's metadata (#668), but an
+	// alias row without a recorded digest counts as replaced; carry it over.
 	var extra map[string]any
 	if comp, cerr := h.deps.Components.Get(ctx, alias.ComponentID); cerr == nil && comp != nil {
 		extra = comp.Extra

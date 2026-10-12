@@ -195,6 +195,112 @@ func TestComponentRepo_Create_Upsert_UpdatesExtraOnConflict(t *testing.T) {
 	}
 }
 
+// #668: a nil Extra on conflict leaves the stored extra (and tags) of a
+// component that still has assets alone; an empty, non-nil Extra still
+// replaces it.
+func TestComponentRepo_Create_Upsert_NilExtraKeepsExisting(t *testing.T) {
+	pool := pgtest.Pool(t)
+	pgtest.Truncate(t, pool, "blob_stores", "repositories")
+	ctx := context.Background()
+
+	p := makeCompParent(t, ctx, "cr_keep")
+	repo := NewComponentRepo(pool)
+	coords := func(extra map[string]any) *domain.Component {
+		return &domain.Component{RepositoryID: p.RepositoryID, Format: "raw", Name: "keep-lib", Version: "1.0.0", Extra: extra}
+	}
+
+	first := coords(map[string]any{"key1": "value1"})
+	if err := repo.Create(ctx, first); err != nil {
+		t.Fatalf("Create first: %v", err)
+	}
+	if err := repo.SetTags(ctx, first.ID, []string{"stable"}); err != nil {
+		t.Fatalf("SetTags: %v", err)
+	}
+	if err := NewAssetRepo(pool).Create(ctx, &domain.Asset{
+		ComponentID: first.ID, RepositoryID: p.RepositoryID, Path: "/keep-lib/1.0.0/a.bin",
+		BlobStoreID: p.BlobStoreID, BlobKey: "bk_keep", SizeBytes: 1, ContentType: "application/octet-stream",
+	}); err != nil {
+		t.Fatalf("Create asset: %v", err)
+	}
+
+	again := coords(nil)
+	if err := repo.Create(ctx, again); err != nil {
+		t.Fatalf("Create (nil extra): %v", err)
+	}
+	if again.ID != first.ID {
+		t.Fatalf("upsert: ID changed: %q → %q", first.ID, again.ID)
+	}
+	got, err := repo.Get(ctx, first.ID)
+	if err != nil || got == nil {
+		t.Fatalf("Get: err=%v got=%v", err, got)
+	}
+	if got.Extra["key1"] != "value1" {
+		t.Errorf("nil Extra must keep the stored extra, got %v", got.Extra)
+	}
+	if len(got.Tags) != 1 || got.Tags[0] != "stable" {
+		t.Errorf("upsert must not touch tags, got %v", got.Tags)
+	}
+
+	if err := repo.Create(ctx, coords(map[string]any{})); err != nil {
+		t.Fatalf("Create (empty extra): %v", err)
+	}
+	got, err = repo.Get(ctx, first.ID)
+	if err != nil || got == nil {
+		t.Fatalf("Get: err=%v got=%v", err, got)
+	}
+	if len(got.Extra) != 0 {
+		t.Errorf("an empty Extra must replace the stored extra, got %v", got.Extra)
+	}
+}
+
+// A component whose assets are all gone describes deleted content: the next
+// nil-Extra upsert into it starts from {}.
+func TestComponentRepo_Create_Upsert_NilExtraResetsComponentWithoutAssets(t *testing.T) {
+	pool := pgtest.Pool(t)
+	pgtest.Truncate(t, pool, "blob_stores", "repositories")
+	ctx := context.Background()
+
+	p := makeCompParent(t, ctx, "cr_orphan")
+	repo := NewComponentRepo(pool)
+	first := &domain.Component{RepositoryID: p.RepositoryID, Format: "raw", Name: "gone-lib", Version: "1.0.0",
+		Extra: map[string]any{"oci_subject": "sha256:abc"}}
+	if err := repo.Create(ctx, first); err != nil {
+		t.Fatalf("Create first: %v", err)
+	}
+
+	again := &domain.Component{RepositoryID: p.RepositoryID, Format: "raw", Name: "gone-lib", Version: "1.0.0"}
+	if err := repo.Create(ctx, again); err != nil {
+		t.Fatalf("Create (nil extra): %v", err)
+	}
+	got, err := repo.Get(ctx, first.ID)
+	if err != nil || got == nil {
+		t.Fatalf("Get: err=%v got=%v", err, got)
+	}
+	if len(got.Extra) != 0 {
+		t.Errorf("a component without assets must not keep its extra, got %v", got.Extra)
+	}
+}
+
+func TestComponentRepo_Create_NilExtraNewRowIsEmptyObject(t *testing.T) {
+	pool := pgtest.Pool(t)
+	pgtest.Truncate(t, pool, "blob_stores", "repositories")
+	ctx := context.Background()
+
+	p := makeCompParent(t, ctx, "cr_newnil")
+	repo := NewComponentRepo(pool)
+	c := &domain.Component{RepositoryID: p.RepositoryID, Format: "raw", Name: "new-lib", Version: "1.0.0"}
+	if err := repo.Create(ctx, c); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	var raw string
+	if err := pool.QueryRow(ctx, `SELECT extra::text FROM components WHERE id = $1`, c.ID).Scan(&raw); err != nil {
+		t.Fatalf("select extra: %v", err)
+	}
+	if raw != "{}" {
+		t.Errorf("a new row with nil Extra stores {}, got %s", raw)
+	}
+}
+
 // ── Get (by ID) ───────────────────────────────────────────────────────────────
 
 func TestComponentRepo_Get_NotFoundReturnsNil(t *testing.T) {
