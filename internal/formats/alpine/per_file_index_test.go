@@ -249,3 +249,68 @@ func TestAlpine_ExtraDecodingFromJSONB(t *testing.T) {
 	_, ok := extraInt64("7")
 	assert.False(t, ok)
 }
+
+// namedApk is buildApk for another package name.
+func namedApk(t *testing.T, name string) []byte {
+	t.Helper()
+	control := tarWith(t, ".PKGINFO", []byte("pkgname = "+name+"\npkgver = 1.0-r0\narch = x86_64\n"))
+	return append(gzipMember(control), gzipMember(tarWith(t, "usr/bin/"+name, []byte(name)))...)
+}
+
+type countingDownloads struct{ n int }
+
+func (c *countingDownloads) Add(string) { c.n++ }
+
+// Repairing reads files back from storage; that is not a download, and must
+// not keep them from download-age cleanup.
+func TestAlpine_Index_RepairIsNotADownload(t *testing.T) {
+	_, d := setupWithDeps(testutil.SimpleRepo("apks-dl", "alpine"))
+	counter := &countingDownloads{}
+	d.Downloads = counter
+	h := New(d)
+	r := gin.New()
+	r.Any("/repository/:repoName/*path", func(c *gin.Context) { h.ServeHTTP(c) })
+	x86 := buildApk(t, "x86_64", 1000, "")
+	seedLegacy(t, d, "apks-dl", map[string][]byte{"/x86_64/acme-tool-1.0-r0.apk": x86}, buildApk(t, "aarch64", 2000, ""))
+	assert.Contains(t, apkIndex(t, r, "apks-dl", "x86_64"), "C:"+apkChecksum(t, x86)+"\n")
+	assert.Zero(t, counter.n)
+}
+
+// A large legacy directory is repaired over several requests.
+func TestAlpine_Index_LegacyRepairIsBoundedPerRequest(t *testing.T) {
+	r, d := setupWithDeps(testutil.SimpleRepo("apks-many", "alpine"))
+	files := map[string][]byte{}
+	for i := 0; i < 40; i++ {
+		name := fmt.Sprintf("pkg%02d", i)
+		files["/x86_64/"+name+"-1.0-r0.apk"] = namedApk(t, name)
+	}
+	legacy := seedLegacy(t, d, "apks-many", files, buildApk(t, "aarch64", 1, ""))
+
+	assert.Equal(t, 40, strings.Count(apkIndex(t, r, "apks-many", "x86_64"), "C:"))
+	assert.False(t, componentGone(t, d, legacy), "not every file was repaired by the first request")
+	assert.Equal(t, 40, strings.Count(apkIndex(t, r, "apks-many", "x86_64"), "C:"))
+	assert.True(t, componentGone(t, d, legacy), "the second request finished the repair")
+}
+
+// Files whose blobs are gone are recorded once, so they do not take the
+// repair slots of the files after them on every request.
+func TestAlpine_Index_UnreadableLegacyDoesNotStarveOthers(t *testing.T) {
+	ctx := context.Background()
+	r, d := setupWithDeps(testutil.SimpleRepo("apks-gone", "alpine"))
+	files := map[string][]byte{}
+	for i := 0; i < 33; i++ {
+		name := fmt.Sprintf("aaa%02d", i)
+		files["/x86_64/"+name+"-1.0-r0.apk"] = namedApk(t, name)
+	}
+	good := buildApk(t, "x86_64", 1000, "")
+	files["/x86_64/zzz-acme-tool-1.0-r0.apk"] = good
+	seedLegacy(t, d, "apks-gone", files, buildApk(t, "aarch64", 2000, ""))
+	for i := 0; i < 33; i++ {
+		a, err := d.Assets.GetByPath(ctx, "apks-gone", fmt.Sprintf("/x86_64/aaa%02d-1.0-r0.apk", i))
+		require.NoError(t, err)
+		require.NoError(t, d.BlobStore.Delete(ctx, a.BlobKey))
+	}
+	apkIndex(t, r, "apks-gone", "x86_64")
+	assert.Contains(t, apkIndex(t, r, "apks-gone", "x86_64"), "C:"+apkChecksum(t, good)+"\n",
+		"the readable file is reached by the second request")
+}

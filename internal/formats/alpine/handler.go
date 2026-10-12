@@ -150,7 +150,7 @@ func (h *Handler) handleUpload(c *gin.Context, repoName, p string) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	if err := h.placeInIndexDir(ctx, repo, res.Asset, coords, extra); err != nil {
+	if err := h.placeInIndexDir(ctx, repo, res.Asset, "", coords, extra); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -195,14 +195,27 @@ func indexDir(p string) string {
 // placeInIndexDir records extra on the component coords name and moves asset
 // there if it sits elsewhere. A path first uploaded before the index directory
 // was part of the coordinates keeps its old, directory-less component on
-// upsert; once the last such path has moved, that component is dropped.
-func (h *Handler) placeInIndexDir(ctx context.Context, repo *domain.Repository, asset *domain.Asset, coords base.Coords, extra map[string]any) error {
+// upsert; once the last such path has moved, that component is dropped. A
+// non-empty sha256 is the content extra was read from: if the path holds
+// other bytes by now, nothing is written — the upload that replaced them
+// recorded their own.
+func (h *Handler) placeInIndexDir(ctx context.Context, repo *domain.Repository, asset *domain.Asset, sha256 string, coords base.Coords, extra map[string]any) error {
 	comp := &domain.Component{
 		RepositoryID: repo.ID, Repository: repo.Name, Format: string(repo.Format),
 		Group: coords.Group, Name: coords.Name, Version: coords.Version,
 	}
 	if err := h.deps.Components.Create(ctx, comp); err != nil {
 		return fmt.Errorf("component for %s: %w", asset.Path, err)
+	}
+	if sha256 != "" {
+		cur, err := h.deps.Assets.GetByPath(ctx, repo.Name, asset.Path)
+		if err != nil {
+			return fmt.Errorf("look up %s: %w", asset.Path, err)
+		}
+		if cur.SHA256 != sha256 {
+			return nil
+		}
+		asset = cur
 	}
 	if asset.ComponentID != comp.ID {
 		if err := h.deps.Assets.SetComponent(ctx, asset.ID, comp.ID); err != nil {

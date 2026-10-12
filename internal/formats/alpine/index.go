@@ -16,6 +16,7 @@ import (
 	"log"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/formats/base"
@@ -54,6 +55,8 @@ func (h *Handler) buildIndex(ctx context.Context, repoName, p string) ([]byte, e
 		compByID[comps[i].ID] = &comps[i]
 	}
 
+	repo, _ := h.deps.Repos.Get(ctx, repoName)
+	repairs, deadline := 0, time.Now().Add(repairTimeBudget)
 	var sb strings.Builder
 	for _, a := range assets {
 		if !strings.HasSuffix(a.Path, ".apk") {
@@ -68,8 +71,11 @@ func (h *Handler) buildIndex(ctx context.Context, repoName, p string) ([]byte, e
 			// Uploaded before the index directory was a coordinate (#671): the
 			// shared component may hold another build's metadata. Read this
 			// file's own, and move it to its component so this happens once.
-			if n, v, x, ok := h.repairLegacyAsset(ctx, repoName, a); ok {
-				name, version, extra = n, v, x
+			if repo != nil && repairs < maxRepairsPerIndex && time.Now().Before(deadline) {
+				repairs++
+				if n, v, x, ok := h.repairLegacyAsset(ctx, repo, a, comp); ok {
+					name, version, extra = n, v, x
+				}
 			}
 		}
 		checksum, _ := extra["checksum"].(string)
@@ -106,35 +112,79 @@ func (h *Handler) buildIndex(ctx context.Context, repoName, p string) ([]byte, e
 	return []byte(sb.String()), nil
 }
 
+// One APKINDEX request repairs at most maxRepairsPerIndex pre-#671 files, for
+// at most repairTimeBudget; the rest keep their old entries until the requests
+// that follow. Every attempt records metadata, so no file is read twice.
+const (
+	maxRepairsPerIndex = 32
+	repairTimeBudget   = 10 * time.Second
+	// The control segment sits within the first members of an .apk: up to
+	// maxSignatureMembers signatures and the control member, each bounded by
+	// maxMemberBytes decompressed. Twice that covers their compressed form.
+	maxControlPrefixBytes = 2 * (maxSignatureMembers + 1) * maxMemberBytes
+)
+
 // repairLegacyAsset reads a pre-#671 asset's metadata from its own bytes and
-// moves it to the component of its index directory. ok is false when the file
-// cannot be read or parsed; the caller then keeps what the component says. A
-// failed move is only logged: the metadata read is still this file's.
-func (h *Handler) repairLegacyAsset(ctx context.Context, repoName string, a domain.Asset) (name, version string, extra map[string]any, ok bool) {
-	rc, _, err := base.FetchArtifact(ctx, h.deps, repoName, a.Path)
-	if err != nil {
-		log.Printf("nexspence: alpine %s%s: read for index repair: %v", repoName, a.Path, err)
+// moves it to the component of its index directory. A file that cannot be
+// read moves with what its shared component says, so it is not retried on
+// every request. Concurrent requests repairing the same file wait for each
+// other and reuse the result. ok is false when the path no longer holds a
+// file the index can describe. A failed move is only logged: the metadata is
+// still this file's.
+func (h *Handler) repairLegacyAsset(ctx context.Context, repo *domain.Repository, a domain.Asset, legacy *domain.Component) (name, version string, extra map[string]any, ok bool) {
+	unlock := base.LockLocal("alpine-index-repair:" + repo.Name + ":" + a.Path)
+	defer unlock()
+	cur, err := h.deps.Assets.GetByPath(ctx, repo.Name, a.Path)
+	if err != nil || cur == nil {
 		return "", "", nil, false
 	}
-	body, err := io.ReadAll(io.LimitReader(rc, maxApkBytes+1))
-	_ = rc.Close()
-	if err != nil || len(body) > maxApkBytes {
-		return "", "", nil, false
+	if cur.ComponentID != a.ComponentID || cur.SHA256 != a.SHA256 {
+		// Repaired by a request that held the lock first, or replaced by an
+		// upload: its component describes it now.
+		comp, err := h.deps.Components.Get(ctx, cur.ComponentID)
+		if err != nil || comp == nil {
+			return "", "", nil, false
+		}
+		return comp.Name, comp.Version, comp.Extra, true
 	}
-	compressed, rawControl, err := controlSegment(body)
+
+	compressed, rawControl, err := h.readStoredControl(ctx, cur)
 	if err != nil {
-		return "", "", nil, false
+		log.Printf("nexspence: alpine %s%s: index repair keeps the shared component's metadata: %v", repo.Name, a.Path, err)
+		name, version = legacy.Name, legacy.Version
+		extra = make(map[string]any, len(legacy.Extra))
+		for k, v := range legacy.Extra {
+			extra[k] = v
+		}
+	} else {
+		name, version, extra = apkMetadata(path.Base(a.Path), compressed, rawControl)
 	}
-	name, version, extra = apkMetadata(path.Base(a.Path), compressed, rawControl)
-	repo, err := h.deps.Repos.Get(ctx, repoName)
-	if err == nil && repo != nil {
-		coords := base.Coords{Group: indexDir(a.Path), Name: name, Version: version}
-		err = h.placeInIndexDir(ctx, repo, &a, coords, extra)
-	}
-	if err != nil {
-		log.Printf("nexspence: alpine %s%s: move to its index directory's component: %v", repoName, a.Path, err)
+	coords := base.Coords{Group: indexDir(a.Path), Name: name, Version: version}
+	if err := h.placeInIndexDir(ctx, repo, cur, cur.SHA256, coords, extra); err != nil {
+		log.Printf("nexspence: alpine %s%s: move to its index directory's component: %v", repo.Name, a.Path, err)
 	}
 	return name, version, extra, true
+}
+
+// readStoredControl reads the start of a stored .apk straight from its blob
+// store — not through FetchArtifact, which would count the read as a download
+// and keep the file from download-age cleanup — and isolates its control
+// segment.
+func (h *Handler) readStoredControl(ctx context.Context, a *domain.Asset) (compressed, raw []byte, err error) {
+	store, err := base.AssetPhysicalStore(ctx, h.deps, a)
+	if err != nil {
+		return nil, nil, err
+	}
+	rc, _, err := store.Get(ctx, a.BlobKey)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer func() { _ = rc.Close() }()
+	head, err := io.ReadAll(io.LimitReader(rc, maxControlPrefixBytes))
+	if err != nil {
+		return nil, nil, err
+	}
+	return controlSegment(head)
 }
 
 // extraStringSlice reads a []string out of Component.Extra, tolerating both
