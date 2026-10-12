@@ -526,6 +526,15 @@ describe('RepositoriesPage', () => {
     expect(screen.getByPlaceholderText('e.g. 7')).toBeInTheDocument()
   })
 
+  it('shows minimum package age on a conda proxy', async () => {
+    seedRepos([fixtures.repository({ id: 'repo-conda', name: 'conda-proxy', format: 'conda', type: 'proxy', online: true })])
+    renderWithProviders(<RepositoriesPage />)
+    await screen.findByText('conda-proxy')
+    fireEvent.click(screen.getAllByTitle('Settings')[0])
+    await screen.findByText('Repository settings')
+    expect(screen.getByPlaceholderText('e.g. 7')).toBeInTheDocument()
+  })
+
   it('attaches a routing rule to a proxy repo (#642)', async () => {
     const user = userEvent.setup()
     let put: Record<string, unknown> | null = null
