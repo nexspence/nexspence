@@ -44,11 +44,16 @@ type Handler struct {
 	// (#347). Cached per repo for the metadata TTL.
 	dlMu    sync.Mutex
 	dlBases map[string]dlBaseEntry
+
+	// age caches publish times for the minimum-package-age policy (#643);
+	// see age_filter.go.
+	age ageCache
 }
 
 type dlBaseEntry struct {
 	fetched time.Time
 	dl      string // empty = upstream has no usable config.json; fall back to remote_url
+	api     string // the upstream's "api" base; empty = none usable
 }
 
 // New creates a Cargo format Handler with the given dependencies.
@@ -92,7 +97,13 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 				c.Request = c.Request.WithContext(repoproxy.WithTrustedAuthBases(c.Request.Context(), dl))
 			}
 		}
-		if err := repoproxy.ServeGET(c, h.deps, repo, p, upstreamPath, coords, "application/octet-stream", maxAge); err != nil {
+		var rewrite func([]byte) []byte
+		if minAge := repoproxy.MinimumPackageAge(repo); minAge > 0 {
+			if done := h.applyAgePolicy(c, repo, p, minAge, &rewrite); done {
+				return
+			}
+		}
+		if err := repoproxy.ServeGETRewritten(c, h.deps, repo, p, upstreamPath, coords, "application/octet-stream", maxAge, rewrite); err != nil {
 			c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		}
 		return
@@ -386,43 +397,61 @@ func parseDownloadPath(p string) (name, version string, ok bool) {
 // unreachable or unparsable config yields "", and the download falls back to
 // remote_url + the local path (correct for single-host registries).
 func (h *Handler) upstreamDlBase(ctx context.Context, repo *domain.Repository) string {
+	return h.upstreamConfig(ctx, repo).dl
+}
+
+// upstreamAPIBase returns the upstream registry's web API base — the "api"
+// value of ITS /config.json ("https://crates.io" for index.crates.io) — or ""
+// when it names none.
+func (h *Handler) upstreamAPIBase(ctx context.Context, repo *domain.Repository) string {
+	return h.upstreamConfig(ctx, repo).api
+}
+
+// upstreamConfig returns the upstream /config.json values, cached per
+// repository for the metadata TTL.
+func (h *Handler) upstreamConfig(ctx context.Context, repo *domain.Repository) dlBaseEntry {
 	h.dlMu.Lock()
 	if h.dlBases == nil {
 		h.dlBases = make(map[string]dlBaseEntry)
 	}
 	if e, ok := h.dlBases[repo.Name]; ok && time.Since(e.fetched) < repoproxy.MetadataMaxAge(repo) {
 		h.dlMu.Unlock()
-		return e.dl
+		return e
 	}
 	h.dlMu.Unlock()
 
-	dl := fetchUpstreamDl(ctx, repo)
+	e := fetchUpstreamConfig(ctx, repo)
+	e.fetched = time.Now()
 
 	h.dlMu.Lock()
-	h.dlBases[repo.Name] = dlBaseEntry{fetched: time.Now(), dl: dl}
+	h.dlBases[repo.Name] = e
 	h.dlMu.Unlock()
-	return dl
+	return e
 }
 
-func fetchUpstreamDl(ctx context.Context, repo *domain.Repository) string {
+func fetchUpstreamConfig(ctx context.Context, repo *domain.Repository) dlBaseEntry {
 	resp, err := repoproxy.FetchUpstreamOnce(ctx, repo, "/config.json", "", nil)
 	if err != nil {
-		return ""
+		return dlBaseEntry{}
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		return ""
+		return dlBaseEntry{}
 	}
 	var cfg struct {
-		Dl string `json:"dl"`
+		Dl  string `json:"dl"`
+		API string `json:"api"`
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&cfg); err != nil {
-		return ""
+		return dlBaseEntry{}
 	}
-	if !strings.HasPrefix(cfg.Dl, "http://") && !strings.HasPrefix(cfg.Dl, "https://") {
-		return ""
+	absolute := func(u string) string {
+		if !strings.HasPrefix(u, "http://") && !strings.HasPrefix(u, "https://") {
+			return ""
+		}
+		return u
 	}
-	return cfg.Dl
+	return dlBaseEntry{dl: absolute(cfg.Dl), api: absolute(cfg.API)}
 }
 
 // cargoDownloadURL renders the registry's dl template for one crate. Per the

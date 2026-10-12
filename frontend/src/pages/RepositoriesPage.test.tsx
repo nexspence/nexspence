@@ -545,6 +545,16 @@ describe('RepositoriesPage', () => {
     expect(screen.getByPlaceholderText('e.g. 7')).toBeInTheDocument()
   })
 
+  // #643: a cargo proxy enforces the policy too, so its settings show the field.
+  it('shows minimum package age on a cargo proxy', async () => {
+    seedRepos([fixtures.repository({ id: 'repo-cargo', name: 'cargo-proxy', format: 'cargo', type: 'proxy', online: true })])
+    renderWithProviders(<RepositoriesPage />)
+    await screen.findByText('cargo-proxy')
+    fireEvent.click(screen.getAllByTitle('Settings')[0])
+    await screen.findByText('Repository settings')
+    expect(screen.getByPlaceholderText('e.g. 7')).toBeInTheDocument()
+  })
+
   it('attaches a routing rule to a proxy repo (#642)', async () => {
     const user = userEvent.setup()
     let put: Record<string, unknown> | null = null
