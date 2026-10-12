@@ -117,3 +117,20 @@ func TestScanResultRowSeverityCount(t *testing.T) {
 		t.Errorf("SeverityCount(negligible) = %d, want 0", got)
 	}
 }
+
+func TestScanResultRowScannedManifestSHA256(t *testing.T) {
+	cases := []struct {
+		raw  map[string]any
+		want string
+	}{
+		{nil, ""},
+		{map[string]any{"other": "x"}, ""},
+		{map[string]any{ScanRawManifestSHA256Key: 7}, ""},
+		{map[string]any{ScanRawManifestSHA256Key: "abc"}, "abc"},
+	}
+	for _, c := range cases {
+		if got := (&ScanResultRow{Raw: c.raw}).ScannedManifestSHA256(); got != c.want {
+			t.Errorf("ScannedManifestSHA256(%v) = %q, want %q", c.raw, got, c.want)
+		}
+	}
+}

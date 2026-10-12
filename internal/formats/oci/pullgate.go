@@ -160,7 +160,7 @@ func (h *Handler) manifestScan(ctx context.Context, repoName, imageName, referen
 		}
 	}
 	if !strings.HasPrefix(reference, "sha256:") {
-		return true, h.newestScan(ctx, []string{asset.ComponentID}), image
+		return true, h.newestScan(ctx, []scanCandidate{{asset.ComponentID, asset.SHA256}}), image
 	}
 
 	// One listing of the image's manifests answers both digest lookups.
@@ -178,16 +178,16 @@ func (h *Handler) manifestScan(ctx context.Context, repoName, imageName, referen
 		}
 	}
 	hexSum := strings.TrimPrefix(reference, "sha256:")
-	same := []string{asset.ComponentID}
+	same := []scanCandidate{{asset.ComponentID, hexSum}}
 	for _, a := range tags {
 		if a.SHA256 == hexSum {
-			same = append(same, a.ComponentID)
+			same = append(same, scanCandidate{a.ComponentID, hexSum})
 		}
 	}
 	if scan = h.newestScan(ctx, same); scan != nil {
 		return true, scan, image
 	}
-	var parents []string
+	var parents []scanCandidate
 	for i := range tags {
 		a := &tags[i]
 		if !slices.Contains(indexMediaTypes, a.ContentType) {
@@ -198,21 +198,41 @@ func (h *Handler) manifestScan(ctx context.Context, repoName, imageName, referen
 			continue
 		}
 		if slices.Contains(parseManifestRefs(body).manifests, reference) {
-			parents = append(parents, a.ComponentID)
+			// The index's scan is checked against the index, the
+			// manifest its tag held when it was scanned.
+			parents = append(parents, scanCandidate{a.ComponentID, a.SHA256})
 		}
 	}
 	return true, h.newestScan(ctx, parents), image
 }
 
-// newestScan returns the most recent scan of any of the components, or nil.
-func (h *Handler) newestScan(ctx context.Context, componentIDs []string) *domain.ScanResultRow {
+// scanCandidate is a component whose latest scan may judge a pull, and the
+// hex sha256 of the manifest that scan has to have looked at.
+type scanCandidate struct {
+	componentID string
+	sha256      string
+}
+
+// newestScan returns the most recent applicable scan of any candidate, or nil.
+//
+// A scan that records the manifest it looked at applies only while that is
+// still the candidate's manifest: a tag re-pushed after its scan would
+// otherwise be served on the strength of a scan of other content until the
+// re-scan lands — indefinitely with scan-on-upload off or its queue full. Such
+// a scan counts as none, so a hosted repository refuses the image as
+// unscanned. A row that records no manifest predates the check and is trusted
+// as before, so an existing install does not start refusing everything.
+func (h *Handler) newestScan(ctx context.Context, candidates []scanCandidate) *domain.ScanResultRow {
 	if h.deps.ScanResults == nil {
 		return nil
 	}
 	var newest *domain.ScanResultRow
-	for _, id := range componentIDs {
-		s, err := h.deps.ScanResults.GetLatestByComponent(ctx, id)
+	for _, c := range candidates {
+		s, err := h.deps.ScanResults.GetLatestByComponent(ctx, c.componentID)
 		if err != nil || s == nil {
+			continue
+		}
+		if got := s.ScannedManifestSHA256(); got != "" && got != c.sha256 {
 			continue
 		}
 		if newest == nil || s.ScannedAt.After(newest.ScannedAt) {

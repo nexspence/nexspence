@@ -358,12 +358,16 @@ const (
 
 // ScanResult is stored in component.Extra["scan_result"] after a Trivy scan.
 type ScanResult struct {
-	ScannedAt time.Time    `json:"scannedAt"`
-	ImageRef  string       `json:"imageRef"`
-	Status    ScanStatus   `json:"status"`
-	Error     string       `json:"error,omitempty"`
-	Summary   ScanSummary  `json:"summary"`
-	Findings  []CVEFinding `json:"findings,omitempty"`
+	ScannedAt time.Time  `json:"scannedAt"`
+	ImageRef  string     `json:"imageRef"`
+	Status    ScanStatus `json:"status"`
+	Error     string     `json:"error,omitempty"`
+	// ManifestSHA256 is the hex sha256 of the manifest an image scan was
+	// started against (#641) — what the pull gate checks a served manifest
+	// against. Empty for a package scan.
+	ManifestSHA256 string       `json:"manifestSha256,omitempty"`
+	Summary        ScanSummary  `json:"summary"`
+	Findings       []CVEFinding `json:"findings,omitempty"`
 }
 
 // ScanSummary holds per-severity CVE counts.

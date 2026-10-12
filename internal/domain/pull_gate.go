@@ -72,6 +72,18 @@ func StricterPullSeverity(a, b string) string {
 	}
 }
 
+// ScanRawManifestSHA256Key is the scan_results.raw key holding the hex sha256
+// of the manifest an image scan was started against (ScanResult.ManifestSHA256).
+const ScanRawManifestSHA256Key = "manifest_sha256"
+
+// ScannedManifestSHA256 returns the sha256 of the manifest the scan looked at,
+// or "" for a row that does not record one — every row written before #641's
+// re-push check, which the pull gate keeps trusting as before.
+func (r *ScanResultRow) ScannedManifestSHA256() string {
+	v, _ := r.Raw[ScanRawManifestSHA256Key].(string)
+	return v
+}
+
 // SeverityCount returns how many findings of one ScanSeverities bucket the scan
 // counted.
 func (r *ScanResultRow) SeverityCount(sev string) int {

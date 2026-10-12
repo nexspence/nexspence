@@ -281,3 +281,84 @@ func TestPullGate_ProxyLetsUnscannedThroughAndRefusesDirtyCache(t *testing.T) {
 	msg := deniedMessage(t, env.pull(http.MethodGet, "proxy", "library/app", "1.0"))
 	assert.Contains(t, msg, `repository "proxy"`)
 }
+
+// scanRecording records a scan of the manifest under reference that names the
+// manifest it looked at, the way ScanService does since #641's re-push check.
+func (e *gateEnv) scanRecording(t *testing.T, repoName, imageName, reference, sha string, s domain.ScanSummary) {
+	t.Helper()
+	a, err := e.assets.GetByPath(context.Background(), repoName, "/manifests/"+imageName+"/"+reference)
+	require.NoError(t, err)
+	require.NoError(t, e.scans.Insert(context.Background(), &domain.ScanResultRow{
+		ComponentID: a.ComponentID, Scanner: "trivy", Status: domain.ScanStatusOK,
+		Critical: s.Critical, High: s.High, Medium: s.Medium,
+		ScannedAt: time.Now(), Raw: map[string]any{domain.ScanRawManifestSHA256Key: sha},
+	}))
+}
+
+// A tag re-pushed after its scan must not be served on the strength of a scan
+// of the content it held before.
+func TestPullGate_RepushedTagIsUnscannedUntilRescanned(t *testing.T) {
+	env := setupGate(gatedRepo("hosted", domain.TypeHosted, "high"))
+	v1 := env.push(t, "hosted", "app", "1.0", ociManifestCT, imageManifest(digest("cfg-1"), digest("layer-1")))
+	env.scanRecording(t, "hosted", "app", "1.0", strings.TrimPrefix(v1, "sha256:"), domain.ScanSummary{})
+	assert.Equal(t, http.StatusOK, env.pull(http.MethodGet, "hosted", "app", "1.0").Code, "matching sha: judged by the scan")
+
+	v2 := env.push(t, "hosted", "app", "1.0", ociManifestCT, imageManifest(digest("cfg-2"), digest("layer-2")))
+	msg := deniedMessage(t, env.pull(http.MethodGet, "hosted", "app", "1.0"))
+	assert.Contains(t, msg, "no finished vulnerability scan")
+	deniedMessage(t, env.pull(http.MethodGet, "hosted", "app", v2))
+
+	env.scanRecording(t, "hosted", "app", "1.0", strings.TrimPrefix(v2, "sha256:"), domain.ScanSummary{High: 1})
+	assert.Contains(t, deniedMessage(t, env.pull(http.MethodGet, "hosted", "app", "1.0")), "1 high vulnerability")
+
+	env.scanRecording(t, "hosted", "app", "1.0", strings.TrimPrefix(v2, "sha256:"), domain.ScanSummary{})
+	assert.Equal(t, http.StatusOK, env.pull(http.MethodGet, "hosted", "app", "1.0").Code)
+	assert.Equal(t, http.StatusOK, env.pull(http.MethodGet, "hosted", "app", v2).Code)
+}
+
+// A scan row written before the check records no manifest; it keeps today's
+// trust so an existing install does not start refusing everything.
+func TestPullGate_LegacyScanRowWithoutSHAIsTrusted(t *testing.T) {
+	env := setupGate(gatedRepo("hosted", domain.TypeHosted, "high"))
+	env.push(t, "hosted", "app", "1.0", ociManifestCT, imageManifest(digest("cfg-1"), digest("layer-1")))
+	env.scan(t, "hosted", "app", "1.0", domain.ScanStatusOK, domain.ScanSummary{}, time.Minute)
+	env.push(t, "hosted", "app", "1.0", ociManifestCT, imageManifest(digest("cfg-2"), digest("layer-2")))
+	assert.Equal(t, http.StatusOK, env.pull(http.MethodGet, "hosted", "app", "1.0").Code)
+}
+
+// The index's scan judges its platform manifests only while the tag still
+// holds the index that was scanned.
+func TestPullGate_PlatformManifestIgnoresScanOfReplacedIndex(t *testing.T) {
+	env := setupGate(gatedRepo("hosted", domain.TypeHosted, "high"))
+	amd := imageManifest(digest("cfg-amd64"), digest("layer-amd64"))
+	amdDigest := env.push(t, "hosted", "app", digest(amd), ociManifestCT, amd)
+	index := func(note string) string {
+		return fmt.Sprintf(`{"schemaVersion":2,"mediaType":%q,"manifests":[{"mediaType":%q,"digest":%q,"size":1}],"annotations":{"n":%q}}`,
+			ociIndexType, ociManifestCT, amdDigest, note)
+	}
+	first := env.push(t, "hosted", "app", "2.0", ociIndexType, index("a"))
+	env.scanRecording(t, "hosted", "app", "2.0", strings.TrimPrefix(first, "sha256:"), domain.ScanSummary{})
+	assert.Equal(t, http.StatusOK, env.pull(http.MethodGet, "hosted", "app", amdDigest).Code)
+
+	env.push(t, "hosted", "app", "2.0", ociIndexType, index("b"))
+	deniedMessage(t, env.pull(http.MethodGet, "hosted", "app", amdDigest))
+}
+
+// On a proxy a scan of other content is no scan, which a proxy serves.
+func TestPullGate_ProxyServesWhenScanIsOfOtherContent(t *testing.T) {
+	body := imageManifest(digest("cfg"), digest("layer"))
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", ociManifestCT)
+		_, _ = w.Write([]byte(body))
+	}))
+	defer upstream.Close()
+	proxy := gatedRepo("proxy", domain.TypeProxy, "high")
+	proxy.ProxyConfig = map[string]any{"remote_url": upstream.URL}
+	env := setupGate(proxy)
+	require.Equal(t, http.StatusOK, env.pull(http.MethodGet, "proxy", "library/app", "1.0").Code)
+
+	env.scanRecording(t, "proxy", "library/app", "1.0", "not-the-cached-manifest", domain.ScanSummary{Critical: 1})
+	assert.Equal(t, http.StatusOK, env.pull(http.MethodGet, "proxy", "library/app", "1.0").Code)
+	env.scanRecording(t, "proxy", "library/app", "1.0", strings.TrimPrefix(digest(body), "sha256:"), domain.ScanSummary{Critical: 1})
+	assert.Equal(t, http.StatusForbidden, env.pull(http.MethodGet, "proxy", "library/app", "1.0").Code)
+}

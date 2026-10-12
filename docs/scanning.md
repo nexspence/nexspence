@@ -408,9 +408,16 @@ own `/v2/` API with the bootstrap admin account (`bootstrap.admin_username`);
 pulls made as that account pass the gate, or a hosted image refused as
 unscanned could never be scanned. Pulling as any other account is gated.
 
-A tag re-pushed with new content keeps the previous scan until the automatic
-re-scan of the push finishes, so keep scan-on-upload (`scan.enabled`) on when
-you rely on the gate.
+**A re-pushed tag is unscanned until it is scanned again.** Each image scan
+records the sha256 of the manifest the tag held when the scan started, and
+the gate applies a scan only while that is still the manifest being served.
+Re-push different content to a scanned tag and the old scan stops counting:
+a hosted repository refuses the tag as unscanned (a proxy serves it, per the
+no-scan rule) until a scan of the new content lands — so keep scan-on-upload
+(`scan.enabled`) on when you rely on the gate. A push that lands while a scan
+is starting can leave the scan recorded against the previous manifest; that
+only ever reads as "unscanned", never as clean. Scans made before this check
+existed record no manifest and are trusted as they were.
 
 ## Where the switch lives
 

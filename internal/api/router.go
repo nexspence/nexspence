@@ -257,6 +257,7 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 	// every handler keeps a nil copy of it.
 	scanSvc := service.NewScanService(componentRepo, cfg.HTTP.BaseURL).
 		WithScanResults(scanRepo).
+		WithAssets(assetRepo).
 		WithScanCompleted(promotionSvc.NotifyScanned).
 		WithCredentials(cfg.Bootstrap.AdminUsername, cfg.Bootstrap.AdminPassword).
 		WithTrivy(service.TrivyOptions{
