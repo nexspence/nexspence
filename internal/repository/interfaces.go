@@ -77,9 +77,9 @@ type AssetRepo interface {
 	// WithBlobKeyLock serializes every caller that wants to read-then-act on a
 	// given blob key (count references, physically delete, register a new
 	// reference). Any other WithBlobKeyLock caller for the same key — same
-	// process or not — blocks until fn returns. fn's own reads and writes go
-	// through the repo's normal connections: the guarantee is mutual exclusion,
-	// not that fn's effects share one transaction.
+	// process or not — blocks until fn returns. fn must use the supplied context
+	// for nested locks and repository calls, synchronously within the callback.
+	// The guarantee is mutual exclusion, not a transaction around fn's effects.
 	WithBlobKeyLock(ctx context.Context, blobKey string, fn func(ctx context.Context) error) error
 	// TouchLastModified sets last_modified = NOW() for the asset. The proxy cache
 	// uses last_modified as the "last validated" timestamp for metadata freshness:

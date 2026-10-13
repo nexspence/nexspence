@@ -15,7 +15,7 @@ const (
 )
 
 // maxManifestBytes is the manifest size limit from the OCI Distribution Spec.
-// It caps how much of a push body is buffered for parsing.
+// It caps hosted pushes and bounded metadata helpers; proxy pulls spool to disk.
 const maxManifestBytes = 4 << 20
 
 // maxReferrersBytes caps a referrers index read from an upstream registry. It is

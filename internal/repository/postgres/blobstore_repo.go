@@ -22,7 +22,7 @@ func NewBlobStoreRepo(db *pgxpool.Pool) *blobStoreRepo {
 }
 
 func (r *blobStoreRepo) List(ctx context.Context) ([]domain.BlobStore, error) {
-	rows, err := r.db.Query(ctx, `
+	rows, err := lockDB(ctx, r.db).Query(ctx, `
 		SELECT id, name, type, config, quota_bytes, used_bytes, created_at, updated_at
 		FROM blob_stores ORDER BY name`)
 	if err != nil {
@@ -42,7 +42,7 @@ func (r *blobStoreRepo) List(ctx context.Context) ([]domain.BlobStore, error) {
 }
 
 func (r *blobStoreRepo) Get(ctx context.Context, name string) (*domain.BlobStore, error) {
-	row := r.db.QueryRow(ctx, `
+	row := lockDB(ctx, r.db).QueryRow(ctx, `
 		SELECT id, name, type, config, quota_bytes, used_bytes, created_at, updated_at
 		FROM blob_stores WHERE name = $1`, name)
 	bs, err := scanBlobStore(row)
@@ -53,7 +53,7 @@ func (r *blobStoreRepo) Get(ctx context.Context, name string) (*domain.BlobStore
 }
 
 func (r *blobStoreRepo) GetByID(ctx context.Context, id string) (*domain.BlobStore, error) {
-	row := r.db.QueryRow(ctx, `
+	row := lockDB(ctx, r.db).QueryRow(ctx, `
 		SELECT id, name, type, config, quota_bytes, used_bytes, created_at, updated_at
 		FROM blob_stores WHERE id = $1`, id)
 	bs, err := scanBlobStore(row)
@@ -65,7 +65,7 @@ func (r *blobStoreRepo) GetByID(ctx context.Context, id string) (*domain.BlobSto
 
 func (r *blobStoreRepo) Create(ctx context.Context, b *domain.BlobStore) error {
 	cfg, _ := json.Marshal(b.Config)
-	return translateNameUnique(r.db.QueryRow(ctx, `
+	return translateNameUnique(lockDB(ctx, r.db).QueryRow(ctx, `
 		INSERT INTO blob_stores (name, type, config, quota_bytes)
 		VALUES ($1,$2,$3,$4)
 		RETURNING id, created_at, updated_at`,
@@ -75,7 +75,7 @@ func (r *blobStoreRepo) Create(ctx context.Context, b *domain.BlobStore) error {
 
 func (r *blobStoreRepo) Update(ctx context.Context, b *domain.BlobStore) error {
 	cfg, _ := json.Marshal(b.Config)
-	_, err := r.db.Exec(ctx, `
+	_, err := lockDB(ctx, r.db).Exec(ctx, `
 		UPDATE blob_stores SET type=$1, config=$2, quota_bytes=$3, updated_at=NOW()
 		WHERE name=$4`,
 		b.Type, cfg, b.QuotaBytes, b.Name,
@@ -84,12 +84,12 @@ func (r *blobStoreRepo) Update(ctx context.Context, b *domain.BlobStore) error {
 }
 
 func (r *blobStoreRepo) Delete(ctx context.Context, name string) error {
-	_, err := r.db.Exec(ctx, `DELETE FROM blob_stores WHERE name=$1`, name)
+	_, err := lockDB(ctx, r.db).Exec(ctx, `DELETE FROM blob_stores WHERE name=$1`, name)
 	return translateInUse(err)
 }
 
 func (r *blobStoreRepo) UpdateUsedBytes(ctx context.Context, name string, delta int64) error {
-	_, err := r.db.Exec(ctx, `
+	_, err := lockDB(ctx, r.db).Exec(ctx, `
 		UPDATE blob_stores SET used_bytes = GREATEST(0, used_bytes + $1) WHERE name=$2`,
 		delta, name,
 	)
@@ -127,7 +127,7 @@ const recomputeUsedBytesSQL = `
 // statement is in flight can still land on either side of the new figure, which
 // is why the repair is repeatable rather than a one-shot.
 func (r *blobStoreRepo) RecomputeUsedBytes(ctx context.Context) error {
-	_, err := r.db.Exec(ctx, recomputeUsedBytesSQL)
+	_, err := lockDB(ctx, r.db).Exec(ctx, recomputeUsedBytesSQL)
 	return err
 }
 

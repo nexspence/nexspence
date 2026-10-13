@@ -42,7 +42,7 @@ func (r *repositoryRepo) List(ctx context.Context, format, repoType string) ([]d
 	}
 	query += " ORDER BY name"
 
-	rows, err := r.db.Query(ctx, query, args...)
+	rows, err := lockDB(ctx, r.db).Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -60,7 +60,7 @@ func (r *repositoryRepo) List(ctx context.Context, format, repoType string) ([]d
 }
 
 func (r *repositoryRepo) Get(ctx context.Context, name string) (*domain.Repository, error) {
-	row := r.db.QueryRow(ctx, `
+	row := lockDB(ctx, r.db).QueryRow(ctx, `
 		SELECT id, name, format, type, blob_store_id, online,
 		       format_config, http_config, proxy_config, cleanup_policy_ids,
 		       quota_bytes, routing_rule_id, allow_anonymous, description, created_at, updated_at
@@ -73,7 +73,7 @@ func (r *repositoryRepo) Get(ctx context.Context, name string) (*domain.Reposito
 }
 
 func (r *repositoryRepo) GetByID(ctx context.Context, id string) (*domain.Repository, error) {
-	row := r.db.QueryRow(ctx, `
+	row := lockDB(ctx, r.db).QueryRow(ctx, `
 		SELECT id, name, format, type, blob_store_id, online,
 		       format_config, http_config, proxy_config, cleanup_policy_ids,
 		       quota_bytes, routing_rule_id, allow_anonymous, description, created_at, updated_at
@@ -90,7 +90,7 @@ func (r *repositoryRepo) Create(ctx context.Context, repo *domain.Repository) er
 	httpCfg, _ := json.Marshal(repo.HTTPConfig)
 	proxyCfg, _ := json.Marshal(repo.ProxyConfig)
 
-	return r.db.QueryRow(ctx, `
+	return lockDB(ctx, r.db).QueryRow(ctx, `
 		INSERT INTO repositories
 		  (name, format, type, blob_store_id, online, format_config, http_config,
 		   proxy_config, cleanup_policy_ids, quota_bytes, routing_rule_id, allow_anonymous, description)
@@ -108,7 +108,7 @@ func (r *repositoryRepo) Update(ctx context.Context, repo *domain.Repository) er
 	httpCfg, _ := json.Marshal(repo.HTTPConfig)
 	proxyCfg, _ := json.Marshal(repo.ProxyConfig)
 
-	_, err := r.db.Exec(ctx, `
+	_, err := lockDB(ctx, r.db).Exec(ctx, `
 		UPDATE repositories SET
 		  online=$1, format_config=$2, http_config=$3, proxy_config=$4,
 		  cleanup_policy_ids=$5, quota_bytes=$6, routing_rule_id=$7,
@@ -123,12 +123,12 @@ func (r *repositoryRepo) Update(ctx context.Context, repo *domain.Repository) er
 }
 
 func (r *repositoryRepo) Delete(ctx context.Context, name string) error {
-	_, err := r.db.Exec(ctx, `DELETE FROM repositories WHERE name = $1`, name)
+	_, err := lockDB(ctx, r.db).Exec(ctx, `DELETE FROM repositories WHERE name = $1`, name)
 	return err
 }
 
 func (r *repositoryRepo) ListNamesByCleanupPolicyID(ctx context.Context, policyID string) ([]string, error) {
-	rows, err := r.db.Query(ctx, `
+	rows, err := lockDB(ctx, r.db).Query(ctx, `
 		SELECT name FROM repositories
 		WHERE $1::uuid = ANY(cleanup_policy_ids)
 		ORDER BY name`, policyID)
@@ -148,7 +148,7 @@ func (r *repositoryRepo) ListNamesByCleanupPolicyID(ctx context.Context, policyI
 }
 
 func (r *repositoryRepo) ListByBlobStoreID(ctx context.Context, blobStoreID string) ([]domain.Repository, error) {
-	rows, err := r.db.Query(ctx, `
+	rows, err := lockDB(ctx, r.db).Query(ctx, `
 		SELECT id, name, format, type, blob_store_id, online,
 		       format_config, http_config, proxy_config, cleanup_policy_ids,
 		       quota_bytes, routing_rule_id, allow_anonymous, description, created_at, updated_at
@@ -170,7 +170,7 @@ func (r *repositoryRepo) ListByBlobStoreID(ctx context.Context, blobStoreID stri
 }
 
 func (r *repositoryRepo) DetachCleanupPolicyID(ctx context.Context, policyID string) error {
-	_, err := r.db.Exec(ctx, `
+	_, err := lockDB(ctx, r.db).Exec(ctx, `
 		UPDATE repositories SET
 		  cleanup_policy_ids = array_remove(cleanup_policy_ids, $1::uuid),
 		  updated_at = NOW()

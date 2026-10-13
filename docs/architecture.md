@@ -142,6 +142,18 @@ proxy defaults, colour, command hints. Every place that special-cases a registry
 - Upstream auth: Docker Hub uses anonymous bearer token; `[Phase 8]` configurable upstream credentials per proxy repo
 - Private registries with a same-host token realm (ACR, Harbor, GHCR, Quay): the Bearer token request carries `remote_username` / `remote_password` only when the realm is on `remote_url`'s host and not an https→http downgrade; a realm on another host (Docker Hub, GitLab) is asked anonymously, and the retry carries the Bearer alone. A realm that rejects the credentials (401/403) is asked once more anonymously, so stale credentials do not break a public image. Token redirects remove credentials on host/port changes or TLS downgrades and never restore them later in the chain; same-origin redirects preserve them
 
+**OCI proxy manifests** (`docker` and `oci`): tag responses, `Docker-Content-Digest`
+and subsequent digest pulls identify the same verified bytes. Tags refer to immutable
+digest objects; replacing a tag preserves earlier digests, and legacy cache entries
+are pinned before being served or replaced. PostgreSQL locks protect cache reads,
+repairs and persistence across instances. All upstream requests, including digest
+availability checks, run outside these locks; persistence rechecks the current tag
+after acquiring the lock again. Proxy pulls spool manifests to temporary files and
+stream them to storage and clients, so upstream and existing cached manifests above
+4 MiB remain pullable with bounded memory. Digest verification, quotas, stored-byte
+accounting, physical store selection and both pull gates still apply. The hosted
+manifest push limit remains 4 MiB.
+
 **Group path**: `group.Handler`
 - Fans out to each member's full `FormatHandler.ServeHTTP`: hosted members first, then proxy
   members, each kind in `member_names` order, so a path a hosted member can serve is never

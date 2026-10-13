@@ -42,7 +42,7 @@ func (r *assetRepo) List(ctx context.Context, repoName string, limit, offset int
 	q := fmt.Sprintf(`SELECT %s %s WHERE rep.name = $1 ORDER BY a.path LIMIT $2 OFFSET $3`,
 		assetSelectCols, assetFromJoin)
 
-	rows, err := r.db.Query(ctx, q, repoName, limit+1, offset)
+	rows, err := lockDB(ctx, r.db).Query(ctx, q, repoName, limit+1, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +71,7 @@ func (r *assetRepo) List(ctx context.Context, repoName string, limit, offset int
 
 func (r *assetRepo) Get(ctx context.Context, id string) (*domain.Asset, error) {
 	q := fmt.Sprintf(`SELECT %s %s WHERE a.id = $1`, assetSelectCols, assetFromJoin)
-	row := r.db.QueryRow(ctx, q, id)
+	row := lockDB(ctx, r.db).QueryRow(ctx, q, id)
 	a, err := scanAsset(row)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, repository.ErrNotFound
@@ -81,7 +81,7 @@ func (r *assetRepo) Get(ctx context.Context, id string) (*domain.Asset, error) {
 
 func (r *assetRepo) GetByPath(ctx context.Context, repoName, path string) (*domain.Asset, error) {
 	q := fmt.Sprintf(`SELECT %s %s WHERE rep.name = $1 AND a.path = $2`, assetSelectCols, assetFromJoin)
-	row := r.db.QueryRow(ctx, q, repoName, path)
+	row := lockDB(ctx, r.db).QueryRow(ctx, q, repoName, path)
 	a, err := scanAsset(row)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, repository.ErrNotFound
@@ -91,7 +91,7 @@ func (r *assetRepo) GetByPath(ctx context.Context, repoName, path string) (*doma
 
 func (r *assetRepo) ListByComponentID(ctx context.Context, componentID string) ([]domain.Asset, error) {
 	q := fmt.Sprintf(`SELECT %s %s WHERE a.component_id = $1 ORDER BY a.path`, assetSelectCols, assetFromJoin)
-	rows, err := r.db.Query(ctx, q, componentID)
+	rows, err := lockDB(ctx, r.db).Query(ctx, q, componentID)
 	if err != nil {
 		return nil, err
 	}
@@ -113,7 +113,7 @@ func (r *assetRepo) ListByComponentIDs(ctx context.Context, componentIDs []strin
 		return map[string][]domain.Asset{}, nil
 	}
 	q := fmt.Sprintf(`SELECT %s %s WHERE a.component_id = ANY($1) ORDER BY a.component_id, a.path`, assetSelectCols, assetFromJoin)
-	rows, err := r.db.Query(ctx, q, componentIDs)
+	rows, err := lockDB(ctx, r.db).Query(ctx, q, componentIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -173,7 +173,7 @@ func (r *assetRepo) SearchAssets(ctx context.Context, p domain.SearchParams) (*d
 		assetSelectCols, assetFromJoin, where, i, i+1)
 	args = append(args, limit+1, p.Offset)
 
-	rows, err := r.db.Query(ctx, q, args...)
+	rows, err := lockDB(ctx, r.db).Query(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -301,7 +301,7 @@ WITH retained_comps AS (
 		%s ORDER BY a.created_at ASC LIMIT $%d`,
 		ctePrefix, assetSelectCols, assetFromJoin, where, i)
 
-	rows, err := r.db.Query(ctx, q, args...)
+	rows, err := lockDB(ctx, r.db).Query(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -318,7 +318,7 @@ WITH retained_comps AS (
 }
 
 func (r *assetRepo) Create(ctx context.Context, a *domain.Asset) error {
-	return r.db.QueryRow(ctx, `
+	return lockDB(ctx, r.db).QueryRow(ctx, `
 		INSERT INTO assets
 		  (component_id, repository_id, path, blob_store_id, blob_key,
 		   size_bytes, content_type, sha1, sha256, md5, uploader_id)
@@ -341,7 +341,7 @@ func (r *assetRepo) Create(ctx context.Context, a *domain.Asset) error {
 }
 
 func (r *assetRepo) Delete(ctx context.Context, id string) error {
-	_, err := r.db.Exec(ctx, `DELETE FROM assets WHERE id = $1`, id)
+	_, err := lockDB(ctx, r.db).Exec(ctx, `DELETE FROM assets WHERE id = $1`, id)
 	return err
 }
 
@@ -353,7 +353,7 @@ func (r *assetRepo) Delete(ctx context.Context, id string) error {
 // IS NOT DISTINCT FROM makes the NULL comparison work: most never-downloaded
 // rows carry NULL, and NULL = NULL would refuse every one of them.
 func (r *assetRepo) DeleteIfUnchanged(ctx context.Context, id, blobKey string, lastDownloaded *time.Time, lastModified time.Time) (bool, error) {
-	tag, err := r.db.Exec(ctx,
+	tag, err := lockDB(ctx, r.db).Exec(ctx,
 		`DELETE FROM assets WHERE id = $1 AND blob_key = $2 AND last_downloaded IS NOT DISTINCT FROM $3 AND last_modified = $4`,
 		id, blobKey, lastDownloaded, lastModified)
 	if err != nil {
@@ -362,35 +362,16 @@ func (r *assetRepo) DeleteIfUnchanged(ctx context.Context, id, blobKey string, l
 	return tag.RowsAffected() > 0, nil
 }
 
-// WithBlobKeyLock serializes callers read-then-acting on one blob key via a
-// transaction-scoped Postgres advisory lock, so mutual exclusion holds across
-// processes, not just this one. The transaction exists only to scope the lock;
-// fn's own statements run on the pool's normal connections.
-func (r *assetRepo) WithBlobKeyLock(ctx context.Context, blobKey string, fn func(ctx context.Context) error) error {
-	tx, err := r.db.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, blobKey); err != nil {
-		return err
-	}
-	if err := fn(ctx); err != nil {
-		return err
-	}
-	return tx.Commit(ctx)
-}
-
 // TouchLastModified sets last_modified = NOW() for the asset, extending the
 // proxy metadata freshness window after a successful upstream revalidation (304).
 func (r *assetRepo) TouchLastModified(ctx context.Context, id string) error {
-	_, err := r.db.Exec(ctx, `UPDATE assets SET last_modified = NOW() WHERE id = $1`, id)
+	_, err := lockDB(ctx, r.db).Exec(ctx, `UPDATE assets SET last_modified = NOW() WHERE id = $1`, id)
 	return err
 }
 
 // SetComponent moves an asset to another component.
 func (r *assetRepo) SetComponent(ctx context.Context, id, componentID string) error {
-	tag, err := r.db.Exec(ctx, `UPDATE assets SET component_id = $2 WHERE id = $1`, id, componentID)
+	tag, err := lockDB(ctx, r.db).Exec(ctx, `UPDATE assets SET component_id = $2 WHERE id = $1`, id, componentID)
 	if err != nil {
 		return err
 	}
@@ -401,7 +382,7 @@ func (r *assetRepo) SetComponent(ctx context.Context, id, componentID string) er
 }
 
 func (r *assetRepo) ListAllBlobRefs(ctx context.Context) ([]domain.BlobRef, error) {
-	rows, err := r.db.Query(ctx,
+	rows, err := lockDB(ctx, r.db).Query(ctx,
 		`SELECT DISTINCT blob_key, COALESCE(blob_store_id::text, '')
 		 FROM assets WHERE blob_key IS NOT NULL AND TRIM(blob_key) <> ''`)
 	if err != nil {
@@ -426,7 +407,7 @@ func (r *assetRepo) ListAllBlobRefs(ctx context.Context) ([]domain.BlobRef, erro
 // bytes it actually stored (issue #146). Rows that disagree about the size of a
 // key are read at their largest, the reading that cannot let a quota overrun.
 func (r *assetRepo) SumSizeByRepo(ctx context.Context, repoName string) (int64, error) {
-	row := r.db.QueryRow(ctx, `
+	row := lockDB(ctx, r.db).QueryRow(ctx, `
 		SELECT COALESCE(SUM(k.size_bytes), 0) FROM (
 			SELECT DISTINCT ON (a.blob_key) a.size_bytes
 			FROM assets a
@@ -454,7 +435,7 @@ func (r *assetRepo) IncrementDownloads(ctx context.Context, counts map[string]in
 		ns = append(ns, n)
 	}
 
-	tx, err := r.db.Begin(ctx)
+	tx, err := lockDB(ctx, r.db).Begin(ctx)
 	if err != nil {
 		return err
 	}
@@ -554,7 +535,7 @@ func nullStr(s string) any {
 // asset paths in the given repository. q is an optional case-insensitive
 // substring filter applied after prefix extraction.
 func (r *assetRepo) ListPathsByRepo(ctx context.Context, repoName, q string) ([]string, error) {
-	rows, err := r.db.Query(ctx,
+	rows, err := lockDB(ctx, r.db).Query(ctx,
 		`SELECT DISTINCT a.path
 		 FROM assets a
 		 JOIN repositories rep ON rep.id = a.repository_id
@@ -600,7 +581,7 @@ func (r *assetRepo) ListPathsByRepo(ctx context.Context, repoName, q string) ([]
 }
 
 func (r *assetRepo) ListRawAssetPaths(ctx context.Context, repoName string) ([]string, error) {
-	rows, err := r.db.Query(ctx,
+	rows, err := lockDB(ctx, r.db).Query(ctx,
 		`SELECT DISTINCT a.path
 		 FROM assets a
 		 JOIN repositories rep ON rep.id = a.repository_id
@@ -625,7 +606,7 @@ func (r *assetRepo) ListRawAssetPaths(ctx context.Context, repoName string) ([]s
 }
 
 func (r *assetRepo) ListRawBrowseAssets(ctx context.Context, repoNames []string) ([]domain.RawBrowseAsset, error) {
-	rows, err := r.db.Query(ctx,
+	rows, err := lockDB(ctx, r.db).Query(ctx,
 		`SELECT a.path, a.size_bytes, COALESCE(a.sha256, ''), COALESCE(a.content_type, ''),
 		        c.updated_at, COALESCE(a.component_id::text, ''), rep.name
 		 FROM assets a
@@ -682,7 +663,7 @@ func (r *assetRepo) ListOCIImageNames(ctx context.Context, repoNames []string) (
 	// The reference is the last segment and never contains a slash — a tag has
 	// no '/' in the OCI grammar and a digest is <algorithm>:<hex> — so the greedy
 	// group is exactly the image name, however many segments it has.
-	rows, err := r.db.Query(ctx,
+	rows, err := lockDB(ctx, r.db).Query(ctx,
 		`SELECT DISTINCT image FROM (
 		     SELECT substring(a.path from '^/manifests/(.+)/[^/]+$') AS image
 		     FROM assets a
@@ -719,7 +700,7 @@ func (r *assetRepo) ListByRepoAndPath(ctx context.Context, repoName, pathPrefix 
 			assetSelectCols, assetFromJoin)
 		args = []any{repoName, likePrefix(pathPrefix)}
 	}
-	rows, err := r.db.Query(ctx, q, args...)
+	rows, err := lockDB(ctx, r.db).Query(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -737,9 +718,9 @@ func (r *assetRepo) ListByRepoAndPath(ctx context.Context, repoName, pathPrefix 
 
 func (r *assetRepo) CountByBlobKey(ctx context.Context, blobKey, excludeID string) (int, error) {
 	var count int
-	err := r.db.QueryRow(ctx,
-		`SELECT COUNT(*) FROM assets WHERE blob_key = $1 AND id != $2`,
-		blobKey, excludeID,
+	err := lockDB(ctx, r.db).QueryRow(ctx,
+		`SELECT COUNT(*) FROM assets WHERE blob_key = $1 AND ($2::uuid IS NULL OR id != $2::uuid)`,
+		blobKey, nullStr(excludeID),
 	).Scan(&count)
 	return count, err
 }
@@ -748,7 +729,7 @@ func (r *assetRepo) CountByBlobKey(ctx context.Context, blobKey, excludeID strin
 // blobStoreID — the guard before deleting a physical blob from that one store.
 func (r *assetRepo) CountByBlobKeyInStore(ctx context.Context, blobKey, blobStoreID string) (int, error) {
 	var count int
-	err := r.db.QueryRow(ctx,
+	err := lockDB(ctx, r.db).QueryRow(ctx,
 		`SELECT COUNT(*) FROM assets WHERE blob_key = $1 AND blob_store_id = $2::uuid`,
 		blobKey, blobStoreID,
 	).Scan(&count)
@@ -761,7 +742,7 @@ func (r *assetRepo) CountByBlobKeyInStore(ctx context.Context, blobKey, blobStor
 // alone would miss them.
 func (r *assetRepo) CountByBlobStoreID(ctx context.Context, blobStoreID string) (int, error) {
 	var count int
-	err := r.db.QueryRow(ctx,
+	err := lockDB(ctx, r.db).QueryRow(ctx,
 		`SELECT COUNT(*) FROM assets WHERE blob_store_id = $1::uuid`,
 		blobStoreID,
 	).Scan(&count)
@@ -771,7 +752,7 @@ func (r *assetRepo) CountByBlobStoreID(ctx context.Context, blobStoreID string) 
 // ListForBlobStoreMigration returns distinct (blob_key, blob_store_id, size_bytes) for all
 // assets in repoName whose blob_store_id differs from targetStoreID.
 func (r *assetRepo) ListForBlobStoreMigration(ctx context.Context, repoName, targetStoreID string) ([]domain.MigrationAssetRow, error) {
-	rows, err := r.db.Query(ctx, `
+	rows, err := lockDB(ctx, r.db).Query(ctx, `
 		SELECT DISTINCT a.blob_key, a.blob_store_id::text, a.size_bytes
 		FROM assets a
 		JOIN repositories rep ON rep.id = a.repository_id
@@ -798,7 +779,7 @@ func (r *assetRepo) ListForBlobStoreMigration(ctx context.Context, repoName, tar
 
 // UpdateBlobStoreForBlobKey updates blob_store_id for all assets in repoName with the given blob_key.
 func (r *assetRepo) UpdateBlobStoreForBlobKey(ctx context.Context, blobKey, repoName, newBlobStoreID string) error {
-	_, err := r.db.Exec(ctx, `
+	_, err := lockDB(ctx, r.db).Exec(ctx, `
 		UPDATE assets SET blob_store_id = $1::uuid
 		WHERE blob_key = $2
 		  AND repository_id = (SELECT id FROM repositories WHERE name = $3)`,

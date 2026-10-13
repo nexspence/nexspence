@@ -66,7 +66,7 @@ func (r *componentRepo) ListByRepoNames(ctx context.Context, repoNames []string,
 		ORDER BY c.name, c.version
 		LIMIT $%d OFFSET $%d`, strings.Join(ph, ","), lim, off)
 
-	rows, err := r.db.Query(ctx, q, args...)
+	rows, err := lockDB(ctx, r.db).Query(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -94,7 +94,7 @@ func (r *componentRepo) ListByRepoNames(ctx context.Context, repoNames []string,
 }
 
 func (r *componentRepo) Get(ctx context.Context, id string) (*domain.Component, error) {
-	row := r.db.QueryRow(ctx, `
+	row := lockDB(ctx, r.db).QueryRow(ctx, `
 		SELECT c.id, c.repository_id, rep.name, c.format,
 		       c.group_id, c.name, c.version, c.tags,
 		       c.extra, c.last_downloaded, c.download_count, c.created_at
@@ -195,7 +195,7 @@ func (r *componentRepo) Search(ctx context.Context, p domain.SearchParams) (*dom
 		LIMIT $%d OFFSET $%d`, where, i, i+1)
 	args = append(args, limit+1, offset)
 
-	rows, err := r.db.Query(ctx, q, args...)
+	rows, err := lockDB(ctx, r.db).Query(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -232,7 +232,7 @@ func (r *componentRepo) Create(ctx context.Context, c *domain.Component) error {
 	// a release must not drop what was recorded for it. A row with no assets
 	// left is the exception — its extra describes deleted content (a tag
 	// deleted and pushed again, a package deleted and rebuilt), so it resets.
-	return r.db.QueryRow(ctx, `
+	return lockDB(ctx, r.db).QueryRow(ctx, `
 		INSERT INTO components
 		  (repository_id, format, group_id, name, version, extra)
 		VALUES ($1, $2, $3, $4, $5, $6)
@@ -249,7 +249,7 @@ func (r *componentRepo) Create(ctx context.Context, c *domain.Component) error {
 }
 
 func (r *componentRepo) Delete(ctx context.Context, id string) error {
-	_, err := r.db.Exec(ctx, `DELETE FROM components WHERE id = $1`, id)
+	_, err := lockDB(ctx, r.db).Exec(ctx, `DELETE FROM components WHERE id = $1`, id)
 	return err
 }
 
@@ -258,7 +258,7 @@ func (r *componentRepo) UpdateExtra(ctx context.Context, id string, extra map[st
 	if err != nil {
 		return err
 	}
-	_, err = r.db.Exec(ctx,
+	_, err = lockDB(ctx, r.db).Exec(ctx,
 		`UPDATE components SET extra = COALESCE(extra, '{}'::jsonb) || $2::jsonb, updated_at = NOW() WHERE id = $1`,
 		id, b,
 	)
@@ -269,7 +269,7 @@ func (r *componentRepo) SetTags(ctx context.Context, id string, tags []string) e
 	if tags == nil {
 		tags = []string{}
 	}
-	_, err := r.db.Exec(ctx,
+	_, err := lockDB(ctx, r.db).Exec(ctx,
 		`UPDATE components SET tags = $2, updated_at = NOW() WHERE id = $1`,
 		id, tags,
 	)
@@ -306,7 +306,7 @@ func (r *componentRepo) ListDockerBrowseRows(ctx context.Context, repoNames []st
 		GROUP BY c.id, c.name, c.version, c.extra
 		ORDER BY c.name, c.version
 		LIMIT $%d`, strings.Join(ph, ","), lim)
-	rows, err := r.db.Query(ctx, q, args...)
+	rows, err := lockDB(ctx, r.db).Query(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -353,7 +353,7 @@ func (r *componentRepo) ListOCIReferrers(ctx context.Context, repoNames []string
 	}
 	q += " ORDER BY c.name, c.version"
 
-	rows, err := r.db.Query(ctx, q, args...)
+	rows, err := lockDB(ctx, r.db).Query(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -371,7 +371,7 @@ func (r *componentRepo) ListOCIReferrers(ctx context.Context, repoNames []string
 }
 
 func (r *componentRepo) DeleteOrphans(ctx context.Context, repoName string) error {
-	_, err := r.db.Exec(ctx, `
+	_, err := lockDB(ctx, r.db).Exec(ctx, `
 		DELETE FROM components c
 		WHERE c.id IN (
 			SELECT c2.id

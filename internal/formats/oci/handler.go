@@ -35,7 +35,6 @@ import (
 	"path"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -273,35 +272,15 @@ func (h *Handler) handleManifests(c *gin.Context, repoName, imageName, reference
 	repo, _ := h.deps.Repos.Get(c.Request.Context(), repoName)
 	switch c.Request.Method {
 	case http.MethodGet, http.MethodHead:
+		c.Header("Vary", "Accept")
 		if !h.pullGateAllows(c, repo, imageName, reference) {
 			return
 		}
 		if repo != nil && repo.Type == domain.TypeProxy {
-			cachePath := manifestPath(imageName, reference)
-			// Upstream OCI path: /v2/{image}/manifests/{ref}
-			upPath := "/v2/" + imageName + "/manifests/" + reference
-			coords := base.Coords{Name: imageName, Version: reference}
-			ct := "application/vnd.docker.distribution.manifest.v2+json"
-			// A manifest referenced by digest is immutable; a tag (e.g. :latest)
-			// is a moving pointer, so revalidate it on a TTL.
-			var maxAge time.Duration
-			if !strings.HasPrefix(reference, "sha256:") {
-				maxAge = repoproxy.MetadataMaxAge(repo)
-			}
-			// A registry that does not host this image often answers 401
-			// (Docker Hub insufficient_scope) rather than 404. During group
-			// fan-out that is a miss: the next member may hold it. A direct
-			// pull keeps the 401, so a wrong upstream credential is not
-			// reported as "no such image".
 			maskUpstreamAuthMiss(c)
-			if err := repoproxy.ServeGET(c, h.deps, repo, cachePath, upPath, coords, ct, maxAge); err != nil {
+			if err := h.proxyManifest(c, repo, imageName, reference); err != nil {
 				dockerError(c, http.StatusBadGateway, "UNKNOWN", err.Error())
-				return
 			}
-			// Post-response work: drop cancellation (the client may already have
-			// hung up) while keeping request values, as repoproxy does for its
-			// own after-the-fact freshness update.
-			h.recordCachedManifestMeta(context.WithoutCancel(c.Request.Context()), repo, cachePath)
 			return
 		}
 		h.pullManifest(c, repoName, imageName, reference)
@@ -325,23 +304,26 @@ func manifestPath(imageName, reference string) string {
 }
 
 func (h *Handler) pullManifest(c *gin.Context, repoName, imageName, reference string) {
-	fp := manifestPath(imageName, reference)
-	rc, asset, err := base.FetchArtifact(c.Request.Context(), h.deps, repoName, fp)
+	asset, body, err := h.cachedManifest(c.Request.Context(), repoName, manifestPath(imageName, reference), false)
+	defer body.Close()
 	if err != nil {
+		dockerError(c, http.StatusInternalServerError, "UNKNOWN", err.Error())
+		return
+	}
+	if asset == nil {
 		dockerError(c, http.StatusNotFound, "MANIFEST_UNKNOWN", "manifest unknown")
 		return
 	}
-	defer func() { _ = rc.Close() }()
-	if asset.SHA256 != "" {
-		c.Header("Docker-Content-Digest", "sha256:"+asset.SHA256)
-	}
-	c.Header("Content-Type", asset.ContentType)
-	if c.Request.Method == http.MethodHead {
-		c.Header("Content-Length", fmt.Sprintf("%d", asset.SizeBytes))
-		c.Status(http.StatusOK)
+	if !acceptsManifest(manifestAccept(c), asset.ContentType) {
+		dockerError(c, http.StatusNotAcceptable, "MANIFEST_UNKNOWN", "manifest media type is not acceptable")
 		return
 	}
-	c.DataFromReader(http.StatusOK, asset.SizeBytes, asset.ContentType, rc, nil)
+	repo, err := h.deps.Repos.Get(c.Request.Context(), repoName)
+	if err != nil || repo == nil {
+		dockerError(c, http.StatusInternalServerError, "UNKNOWN", "repository lookup failed")
+		return
+	}
+	h.respondManifest(c, repo, imageName, reference, asset, body)
 }
 
 func (h *Handler) pushManifest(c *gin.Context, repoName, imageName, reference string) {
@@ -482,70 +464,6 @@ func (h *Handler) detachDigestAlias(ctx context.Context, repoName, imageName, ta
 	if err == nil && moved != nil && len(extra) > 0 {
 		_ = h.deps.Components.UpdateExtra(ctx, moved.ComponentID, extra)
 	}
-}
-
-// recordCachedManifestMeta types a manifest that repoproxy has just written to
-// the cache. ServeGET does not expose the body, so it is read back once per
-// distinct manifest: the recorded source digest keeps a steady-state cache hit
-// off the blob store, while a tag re-pointed upstream re-types because the
-// cached content — and so its digest — changed.
-func (h *Handler) recordCachedManifestMeta(ctx context.Context, repo *domain.Repository, cachePath string) {
-	asset, err := h.deps.Assets.GetByPath(ctx, repo.Name, cachePath)
-	if err != nil || asset == nil {
-		return
-	}
-	comp, err := h.deps.Components.Get(ctx, asset.ComponentID)
-	if err != nil || comp == nil {
-		return
-	}
-	// Keyed on WHICH manifest was typed, not on whether anything was typed. A
-	// re-pointed tag changes the cached blob's digest and re-types; an unchanged
-	// one skips the read even when the manifest carries no mediaType of its own.
-	if dg, ok := comp.Extra[extraSourceDigestKey].(string); ok && dg == asset.SHA256 {
-		return
-	}
-
-	store := h.deps.BlobStore
-	if asset.BlobStoreID != "" {
-		bsMeta, getErr := h.deps.Blobs.GetByID(ctx, asset.BlobStoreID)
-		if getErr != nil || bsMeta == nil {
-			return
-		}
-		resolved, resolveErr := base.PhysicalStore(ctx, h.deps, bsMeta)
-		if resolveErr != nil {
-			return
-		}
-		store = resolved
-	}
-	rc, _, err := store.Get(ctx, asset.BlobKey)
-	if err != nil {
-		return
-	}
-	defer func() { _ = rc.Close() }()
-
-	// One byte past the cap, as the push path does, so an oversized body is
-	// visible rather than silently truncated into unparsable JSON. Unlike a push
-	// there is nothing to reject here — the blob is already cached and already
-	// served — so an overflow only skips the parse.
-	body, err := io.ReadAll(io.LimitReader(rc, maxManifestBytes+1))
-	if err != nil {
-		return
-	}
-	var extra map[string]any
-	if len(body) <= maxManifestBytes {
-		if meta, ok := parseManifestMeta(body); ok {
-			extra = extraFrom(meta)
-		}
-	}
-	if extra == nil {
-		extra = make(map[string]any, 1)
-	}
-	// The source digest is written unconditionally: it is what arms the guard
-	// above, including for a manifest that yields no metadata at all — one that
-	// is not JSON, or one too large to parse. Without it every pull would read
-	// the whole blob back from the store forever.
-	extra[extraSourceDigestKey] = asset.SHA256
-	_ = h.deps.Components.UpdateExtra(ctx, comp.ID, extra)
 }
 
 func (h *Handler) deleteManifest(c *gin.Context, repoName, imageName, reference string) {

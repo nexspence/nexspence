@@ -22,7 +22,7 @@ func NewScanResultRepo(pool *pgxpool.Pool) *scanResultRepo {
 
 func (r *scanResultRepo) Insert(ctx context.Context, row *domain.ScanResultRow) error {
 	raw, _ := json.Marshal(row.Raw)
-	_, err := r.pool.Exec(ctx, `
+	_, err := lockDB(ctx, r.pool).Exec(ctx, `
 		INSERT INTO scan_results
 		  (component_id, scanner, status, malicious, critical, high, medium, low, unknown, total, scanned_at, raw, error)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
@@ -39,7 +39,7 @@ func (r *scanResultRepo) GetLatestByComponent(ctx context.Context, componentID s
 		raw []byte
 		st  string
 	)
-	err := r.pool.QueryRow(ctx, `
+	err := lockDB(ctx, r.pool).QueryRow(ctx, `
 		SELECT id, component_id, scanner, status, malicious, critical, high, medium, low, unknown, total, scanned_at, raw, COALESCE(error,'')
 		FROM scan_results
 		WHERE component_id = $1
@@ -62,7 +62,7 @@ func (r *scanResultRepo) GetLatestByComponent(ctx context.Context, componentID s
 
 func (r *scanResultRepo) Aggregate(ctx context.Context) (*domain.SecuritySummary, error) {
 	var s domain.SecuritySummary
-	err := r.pool.QueryRow(ctx, `
+	err := lockDB(ctx, r.pool).QueryRow(ctx, `
 		WITH latest AS (
 			SELECT DISTINCT ON (component_id)
 				component_id, malicious, critical, high, medium, low, unknown
@@ -125,11 +125,11 @@ func (r *scanResultRepo) List(ctx context.Context, f domain.VulnFilter) ([]*doma
 		) t`
 
 	var total int
-	if err := r.pool.QueryRow(ctx, "SELECT COUNT(*) "+base, f.Repo, f.Format).Scan(&total); err != nil {
+	if err := lockDB(ctx, r.pool).QueryRow(ctx, "SELECT COUNT(*) "+base, f.Repo, f.Format).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 
-	rows, err := r.pool.Query(ctx,
+	rows, err := lockDB(ctx, r.pool).Query(ctx,
 		"SELECT repo_name, format, component_id, name, version, malicious, critical, high, medium, low, unknown, scanned_at"+
 			base+" ORDER BY malicious DESC, critical DESC, high DESC, scanned_at DESC LIMIT $3 OFFSET $4",
 		f.Repo, f.Format, f.Limit, f.Offset,

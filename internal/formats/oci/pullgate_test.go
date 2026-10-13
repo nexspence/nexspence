@@ -280,6 +280,10 @@ func TestPullGate_ProxyLetsUnscannedThroughAndRefusesDirtyCache(t *testing.T) {
 	env.scan(t, "proxy", "library/app", "1.0", domain.ScanStatusOK, domain.ScanSummary{High: 3}, 0)
 	msg := deniedMessage(t, env.pull(http.MethodGet, "proxy", "library/app", "1.0"))
 	assert.Contains(t, msg, `repository "proxy"`)
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		assert.Equal(t, http.StatusForbidden, env.pull(method, "proxy", "library/app", digest(body)).Code,
+			"the proxy's new digest alias must inherit the tag's scan gate")
+	}
 }
 
 // scanRecording records a scan of the manifest under reference that names the
