@@ -59,43 +59,7 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 
 	// Proxy: block mutations; rewrite service index; cache packages.
 	if repo != nil && repo.Type == domain.TypeProxy {
-		if repoproxy.RejectMutation(c, repo) {
-			return
-		}
-		if (c.Request.Method == http.MethodGet || c.Request.Method == http.MethodHead) && p == "/index.json" {
-			h.fetchAndRewriteNuGetIndex(c, repo)
-			return
-		}
-		// .nupkg package content is immutable; registration/flat-container index
-		// pages are mutable metadata (new versions appear) and revalidate on a TTL.
-		var maxAge time.Duration
-		if !strings.HasSuffix(p, ".nupkg") {
-			maxAge = repoproxy.MetadataMaxAge(repo)
-		}
-		coords := proxyCoords(p)
-		// Resource paths advertised by the rewritten index are the upstream's
-		// own paths re-rooted locally — forward them onto the bare origin,
-		// not onto a possibly /v3-suffixed remote_url (#349).
-		upstreamPath := ""
-		if origin := nugetRemoteOrigin(remoteURLOf(repo)); origin != "" {
-			upstreamPath = origin + p
-		}
-		// Registration pages embed absolute upstream URLs (packageContent,
-		// @id) — rewrite them on serve so clients pull packages through this
-		// proxy (#98); the cache keeps the upstream original.
-		var rewrite func([]byte) []byte
-		if strings.HasPrefix(p, "/v3/registration/") {
-			localBase := strings.TrimRight(h.deps.BaseURL, "/") + "/repository/" + repo.Name
-			rewrite = func(b []byte) []byte { return RewriteRegistration(b, localBase) }
-		}
-		if minAge := repoproxy.MinimumPackageAge(repo); minAge > 0 {
-			if done := h.applyAgePolicy(c, repo, p, minAge, &rewrite); done {
-				return
-			}
-		}
-		if err := repoproxy.ServeGETRewritten(c, h.deps, repo, p, upstreamPath, coords, "application/octet-stream", maxAge, rewrite); err != nil {
-			c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
-		}
+		h.serveProxy(c, repo, p)
 		return
 	}
 
@@ -118,6 +82,12 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 	case c.Request.Method == http.MethodGet && strings.HasPrefix(p, "/v3/registration/"):
 		h.serveRegistration(c, repoName, p)
 
+	// Another registration hive — one a proxy member advertises through a
+	// group (#678). Not served here: a miss, so a group asks its next member
+	// instead of ending the fan-out on a 405.
+	case c.Request.Method == http.MethodGet && isRegistrationPath(p):
+		c.JSON(http.StatusNotFound, gin.H{"error": "package not found"})
+
 	// v2 OData query: FindPackagesById()
 	case c.Request.Method == http.MethodGet && strings.HasPrefix(p, "/FindPackagesById"):
 		pkgID := c.Query("id")
@@ -137,6 +107,54 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 
 	default:
 		c.Status(http.StatusMethodNotAllowed)
+	}
+}
+
+// serveProxy answers a request to a proxy repository.
+func (h *Handler) serveProxy(c *gin.Context, repo *domain.Repository, p string) {
+	if repoproxy.RejectMutation(c, repo) {
+		return
+	}
+	if (c.Request.Method == http.MethodGet || c.Request.Method == http.MethodHead) && p == "/index.json" {
+		h.fetchAndRewriteNuGetIndex(c, repo)
+		return
+	}
+	// .nupkg package content is immutable; registration/flat-container index
+	// pages are mutable metadata (new versions appear) and revalidate on a TTL.
+	var maxAge time.Duration
+	if !strings.HasSuffix(p, ".nupkg") {
+		maxAge = repoproxy.MetadataMaxAge(repo)
+	}
+	coords := proxyCoords(p)
+	// Resource paths advertised by the rewritten index are the upstream's
+	// own paths re-rooted locally — forward them onto the bare origin,
+	// not onto a possibly /v3-suffixed remote_url (#349).
+	upstreamPath := ""
+	if origin := nugetRemoteOrigin(remoteURLOf(repo)); origin != "" {
+		upstreamPath = origin + p
+	}
+	// Registration documents embed absolute upstream URLs (packageContent,
+	// page and leaf @id) — rewrite them on serve so clients pull pages and
+	// packages through this proxy (#98), in whichever hive the upstream's
+	// service index advertised (#678); the cache keeps the upstream
+	// original. Served through a group, the links stay on the group, as
+	// the group's own service index does.
+	var rewrite func([]byte) []byte
+	if isRegistrationPath(p) {
+		served := repo.Name
+		if g := c.GetString(formats.GroupRepoKey); g != "" {
+			served = g
+		}
+		localBase := strings.TrimRight(h.deps.BaseURL, "/") + "/repository/" + served
+		rewrite = func(b []byte) []byte { return RewriteRegistration(b, localBase) }
+	}
+	if minAge := repoproxy.MinimumPackageAge(repo); minAge > 0 {
+		if done := h.applyAgePolicy(c, repo, p, minAge, &rewrite); done {
+			return
+		}
+	}
+	if err := repoproxy.ServeGETRewritten(c, h.deps, repo, p, upstreamPath, coords, "application/octet-stream", maxAge, rewrite); err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 	}
 }
 
