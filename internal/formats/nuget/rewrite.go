@@ -13,8 +13,14 @@ import (
 //     (lowercased id, our flatcontainer layout) — upstream flatcontainer path
 //     shapes vary (api.nuget.org uses /v3-flatcontainer/), so string-munging
 //     the upstream URL would be fragile.
-//   - "@id" values whose URL path contains a segment starting with
-//     "registration" are re-rooted at localBase+"/v3/registration/"+tail.
+//   - links into a registration hive — "@id", and a page's "parent" and a
+//     leaf's "registration" — whose URL path has a segment starting with
+//     "registration" are re-rooted on localBase keeping the upstream path,
+//     hive included (#678). The proxy forwards a request path onto the
+//     upstream origin as is, the way the rewritten service index re-roots
+//     every resource, so a link stays followable only in the hive it came
+//     from: nuget.org serves /v3/registration5-gz-semver2/ and has no
+//     /v3/registration/ to collapse it into.
 //
 // localBase is the proxy repo base (e.g. "http://host/repository/nuget-proxy").
 // Malformed bodies are returned unchanged.
@@ -31,13 +37,19 @@ func RewriteRegistration(body []byte, localBase string) []byte {
 	return out
 }
 
+// registrationLinkKeys are the registration document fields that link into a
+// registration hive.
+var registrationLinkKeys = []string{"@id", "parent", "registration"}
+
 // rewriteRegistrationNode walks the registration JSON tree in place.
 func rewriteRegistrationNode(node any, localBase string) {
 	switch n := node.(type) {
 	case map[string]any:
-		if id, ok := n["@id"].(string); ok {
-			if rw, ok2 := rerootRegistrationID(id, localBase); ok2 {
-				n["@id"] = rw
+		for _, key := range registrationLinkKeys {
+			if link, ok := n[key].(string); ok {
+				if rw, ok2 := rerootRegistrationID(link, localBase); ok2 {
+					n[key] = rw
+				}
 			}
 		}
 		if _, ok := n["packageContent"].(string); ok {
@@ -61,18 +73,17 @@ func rewriteRegistrationNode(node any, localBase string) {
 }
 
 // rerootRegistrationID maps an upstream registration URL (any host, any
-// registration* segment flavor, e.g. /v3/registration5-gz-semver2/<id>/...)
-// onto this proxy's /v3/registration/<tail>.
+// registration* hive, e.g. /v3/registration5-gz-semver2/<id>/...) onto this
+// proxy at the same path: localBase + upstream path (+ query, fragment). A
+// URL outside a registration hive (registrationHiveSegment) is left alone.
 func rerootRegistrationID(rawURL, localBase string) (string, bool) {
 	u, err := url.Parse(rawURL)
 	if err != nil || !u.IsAbs() {
 		return "", false
 	}
-	segs := strings.Split(strings.Trim(u.Path, "/"), "/")
-	for i, s := range segs {
-		if strings.HasPrefix(s, "registration") && i+1 < len(segs) {
-			return localBase + "/v3/registration/" + strings.Join(segs[i+1:], "/"), true
-		}
+	if registrationHiveSegment(u.Path) < 0 {
+		return "", false
 	}
-	return "", false
+	local := &url.URL{Path: u.Path, RawPath: u.RawPath, RawQuery: u.RawQuery, Fragment: u.Fragment, RawFragment: u.RawFragment}
+	return strings.TrimRight(localBase, "/") + local.String(), true
 }
