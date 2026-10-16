@@ -79,3 +79,54 @@ func TestRBACMiddleware_PathScopeStillApplies(t *testing.T) {
 		assert.Equal(t, want, w.Code, target)
 	}
 }
+
+// The middleware is the first check every artifact request meets, so it is
+// where a second spelling of a path is refused: a "//", "." or encoded segment
+// stays inside a /pub/ grant as the selector reads it, but the routing rule and
+// the proxy upstream behind it read it differently.
+func TestRBACMiddleware_RefusesNonCanonicalSpelling(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo := &domain.Repository{ID: "r1", Name: "raw-pub", Format: domain.FormatRaw, Type: domain.TypeHosted, Online: true}
+	repoRepo := testutil.NewRepoRepo(repo)
+	rbac := service.NewRBACService(fixedPrivilegesRBACRepo{privs: []repository.PrivilegeWithSelector{{
+		Actions:    []string{"read"},
+		Expression: `repository == "raw-pub" && path.startsWith("/pub/")`,
+	}}}, repoRepo, zap.NewNop().Sugar(), true)
+	r := gin.New()
+	r.Use(func(c *gin.Context) {
+		c.Set("userID", "bob")
+		c.Set("roles", []string{"dev"})
+		c.Next()
+	})
+	r.Group("/repository/:repoName", handlers.RBACMiddleware(rbac, repoRepo)).
+		Any("/*path", func(c *gin.Context) { c.Status(http.StatusOK) })
+	r.Group("/v2/:repoName", handlers.RBACMiddleware(rbac, repoRepo)).
+		Any("/*dockerpath", func(c *gin.Context) { c.Status(http.StatusOK) })
+
+	for _, prefix := range []string{"/repository/raw-pub", "/v2/raw-pub"} {
+		for _, spelling := range []string{
+			"/pub//private/x",
+			"/pub/./private/x",
+			"/pub/%2e/private/x",
+			"/pub/%2Fprivate/x",
+			"/pub/%252e%252e/%252e%252e/other/x",
+			"/pub/a%252Fb/x",
+		} {
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, prefix+spelling, nil))
+			assert.Equal(t, http.StatusBadRequest, w.Code, prefix+spelling)
+		}
+	}
+
+	for target, want := range map[string]int{
+		"/repository/raw-pub/pub/x":          http.StatusOK,
+		"/repository/raw-pub/pub/x/":         http.StatusOK,
+		"/repository/raw-pub/pub/100%25.txt": http.StatusOK,
+		"/repository/raw-pub/pub/":           http.StatusOK,
+		"/repository/raw-pub/private/x":      http.StatusForbidden,
+	} {
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, target, nil))
+		assert.Equal(t, want, w.Code, target)
+	}
+}

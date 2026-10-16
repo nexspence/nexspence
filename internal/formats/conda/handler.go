@@ -296,7 +296,13 @@ func (h *Handler) proxyIndex(c *gin.Context, repo *domain.Repository, repoName, 
 		return
 	}
 
-	upstreamURL := remoteBase + "/" + platform + "/" + filename
+	// Through JoinURL, not pasted on: it refuses a path that decodes to a
+	// ".." segment at the upstream.
+	upstreamURL, err := repoproxy.JoinURL(remoteBase, platform+"/"+filename)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	req, err := http.NewRequestWithContext(c.Request.Context(), http.MethodGet, upstreamURL, nil)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})

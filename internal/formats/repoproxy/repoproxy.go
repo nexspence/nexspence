@@ -155,7 +155,17 @@ func JoinURL(remoteBase, repoRelativePath string) (string, error) {
 	// keep the decoded form in Path, so String() emits it exactly once-escaped.
 	// A stray "%" that is not a valid escape fails PathUnescape and keeps
 	// today's escape-once behavior.
+	//
+	// That raw form is what the upstream decodes, so it must not decode to a
+	// "." or ".." segment: path.Join above saw "%2e%2e" as a name, but nginx,
+	// Apache and Go resolve it as "..", and the request carries this proxy's
+	// remote credentials to wherever it lands.
 	if unescaped, uerr := url.PathUnescape(u.Path); uerr == nil && unescaped != u.Path {
+		for _, seg := range strings.Split(unescaped, "/") {
+			if seg == "." || seg == ".." {
+				return "", fmt.Errorf("upstream path %q has an encoded %q segment", repoRelativePath, seg)
+			}
+		}
 		u.RawPath = u.Path
 		u.Path = unescaped
 	}

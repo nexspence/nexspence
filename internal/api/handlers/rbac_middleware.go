@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/nexspence-oss/nexspence/internal/formats"
 	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/service"
 )
@@ -28,11 +29,13 @@ func RBACMiddleware(rbacSvc *service.RBACService, repoRepo repository.Repository
 
 		// The selector is judged against this path, but the format handlers
 		// clean it before resolving it: /team-a/../team-b/x would pass a
-		// /team-a/ selector and serve /team-b/x. Refuse the segment outright
-		// rather than normalize, as the group handler does
-		// (GHSA-jcgv-hchv-g397).
-		if hasTraversalSegment(path) {
-			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": `path must not contain a ".." segment`})
+		// /team-a/ selector and serve /team-b/x (GHSA-jcgv-hchv-g397). Every
+		// spelling Clean would rewrite — "..", "." and empty segments, and
+		// any of them percent-encoded — is refused outright rather than
+		// normalized, as the group handler does: the routing rule and the
+		// proxy upstream behind this check read those spellings differently.
+		if _, err := formats.CanonicalPath(path); err != nil {
+			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 
@@ -109,15 +112,4 @@ func methodToAction(method string) string {
 	default:
 		return "read"
 	}
-}
-
-// hasTraversalSegment reports whether p has a ".." path segment. A name that
-// merely contains dots ("we..ird.txt") is an ordinary artifact name and passes.
-func hasTraversalSegment(p string) bool {
-	for _, seg := range strings.Split(p, "/") {
-		if seg == ".." {
-			return true
-		}
-	}
-	return false
 }

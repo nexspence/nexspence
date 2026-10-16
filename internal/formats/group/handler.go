@@ -22,7 +22,6 @@ import (
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/formats"
-	"github.com/nexspence-oss/nexspence/internal/service"
 )
 
 // Handler implements the group repository type.
@@ -43,12 +42,12 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 	// A routing rule — the only path-level policy a group has, since RBAC grants
 	// a repository rather than a path inside it — is matched against the path as
 	// requested, while the member that finally serves it normalizes the path
-	// first. A path that names the same artifact a second way would therefore be
-	// checked as one string and served as another. Refused rather than quietly
-	// rewritten, so no legitimate path changes meaning on the way through: an
-	// artifact path never contains a ".." segment.
-	if hasTraversalSegment(c.Param("path")) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": `path must not contain a ".." segment`})
+	// first. A path that names the same artifact a second way ("..", "//", ".",
+	// or any of them percent-encoded) would therefore be checked as one string
+	// and served as another. Refused rather than quietly rewritten, so no
+	// legitimate path changes meaning on the way through.
+	if _, err := formats.CanonicalPath(c.Param("path")); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -62,17 +61,6 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 			"error": "group repository is read-only — publish to a member hosted repository",
 		})
 	}
-}
-
-// hasTraversalSegment reports whether p has a ".." path segment. A name that
-// merely contains dots ("we..ird.txt") is an ordinary artifact name and passes.
-func hasTraversalSegment(p string) bool {
-	for _, seg := range strings.Split(p, "/") {
-		if seg == ".." {
-			return true
-		}
-	}
-	return false
 }
 
 func (h *Handler) serveGet(c *gin.Context) {
@@ -94,7 +82,14 @@ func (h *Handler) serveGet(c *gin.Context) {
 
 	var rule *domain.RoutingRule
 	if repoDef.RoutingRuleID != nil && h.deps.RoutingRules != nil {
-		rule, _ = h.deps.RoutingRules.Get(ctx, *repoDef.RoutingRuleID)
+		// Fails closed: a rule that cannot be loaded is not a group without a
+		// rule (routing_rule_id is ON DELETE SET NULL, so this is a failing
+		// database, not a deleted rule).
+		rule, err = h.deps.RoutingRules.Get(ctx, *repoDef.RoutingRuleID)
+		if err != nil || rule == nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "routing rule check failed"})
+			return
+		}
 	}
 
 	// Index documents are merged across ALL members (member order = priority)
@@ -110,7 +105,7 @@ func (h *Handler) serveGet(c *gin.Context) {
 
 	for _, memberRepo := range h.eligibleMembers(ctx, members, repoDef) {
 		memberName := memberRepo.Name
-		if !service.Allow(rule, filePath) {
+		if !formats.RuleAllows(rule, filePath) {
 			continue
 		}
 		// The member's own rule (a proxy's): a path it refuses is a miss here,
@@ -302,7 +297,7 @@ func (h *Handler) collectIndexParts(c *gin.Context, repoDef *domain.Repository, 
 	claimed := false
 	for _, memberRepo := range h.eligibleMembers(ctx, members, repoDef) {
 		memberName := memberRepo.Name
-		if !service.Allow(rule, source) {
+		if !formats.RuleAllows(rule, source) {
 			continue
 		}
 		// A package a hosted member publishes is answered by the hosted
@@ -368,8 +363,8 @@ func (h *Handler) subIndexFetcher(c *gin.Context, repoDef *domain.Repository, me
 		// The path a merger asks for is built from its members' documents, which
 		// for a proxy member is whatever the upstream serves. It gets the same
 		// answer a client would: a traversal segment is not a path here either.
-		if hasTraversalSegment(p) {
-			return nil, fmt.Errorf("index path %q must not contain a \"..\" segment", p)
+		if _, err := formats.CanonicalPath(p); err != nil {
+			return nil, fmt.Errorf("index path %q: %w", p, err)
 		}
 		source, ok := merger.GroupIndexSourcePath(p)
 		if !ok {

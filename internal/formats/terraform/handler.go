@@ -345,7 +345,13 @@ func (h *Handler) serveProxy(c *gin.Context, repo *domain.Repository, repoName, 
 	}
 
 	// All other API calls (versions, download redirect): proxy JSON response.
-	upstreamURL := strings.TrimRight(remoteBase, "/") + p
+	// Through JoinURL, not pasted on: it refuses a path that decodes to a
+	// ".." segment at the upstream.
+	upstreamURL, err := repoproxy.JoinURL(remoteBase, p)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	req, err := http.NewRequestWithContext(c.Request.Context(), http.MethodGet, upstreamURL, nil)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})

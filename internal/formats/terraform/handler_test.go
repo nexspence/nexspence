@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -225,4 +226,26 @@ func TestTerraform_Hosted_ModuleArchiveFetch(t *testing.T) {
 	r.ServeHTTP(w2, req2)
 	require.Equal(t, http.StatusOK, w2.Code)
 	assert.Equal(t, body, w2.Body.Bytes())
+}
+
+// "%252e%252e" arrives as "%2e%2e", which path.Clean leaves alone; pasted onto
+// the remote URL it is decoded back to ".." by the upstream, which then serves
+// another path with this proxy's remote credentials attached.
+func TestTerraform_Proxy_EncodedTraversal_NeverReachesUpstream(t *testing.T) {
+	var hits atomic.Int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"secret":true}`))
+	}))
+	defer upstream.Close()
+
+	r := setup(proxyRepo("tf-proxy", upstream.URL+"/registry"))
+	req := httptest.NewRequest(http.MethodGet,
+		"/repository/tf-proxy/v1/providers/%252e%252e/%252e%252e/%252e%252e/admin/versions", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	assert.NotEqual(t, http.StatusOK, w.Code)
+	assert.Zero(t, hits.Load(), "the upstream must not be asked for an encoded traversal")
 }

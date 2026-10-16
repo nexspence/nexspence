@@ -1,6 +1,8 @@
 package group_test
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -72,4 +74,59 @@ func TestGroupHandler_TraversalSegmentRejected(t *testing.T) {
 	r.ServeHTTP(rec2, httptest.NewRequest(http.MethodGet, "/repository/pgroup/ok/we..ird.txt", nil))
 	assert.Equal(t, http.StatusOK, rec2.Code)
 	assert.Equal(t, "fine", rec2.Body.String())
+}
+
+// The member serves path.Clean of the path, so every spelling it would clean
+// is a second name for the blocked artifact — not only "..". An empty segment,
+// a "." segment and an encoded "/" or "." all have to be refused too.
+func TestGroupHandler_RoutingRule_NonCanonicalSpellingDoesNotBypassBlock(t *testing.T) {
+	rule := makeBlockRule("rule-spelling", `^/private/`)
+
+	member := testutil.SimpleRepo("secrets2", "raw")
+	ruleID := "rule-spelling"
+	grp := &domain.Repository{
+		ID: "repo-grp-s", Name: "sgroup", Format: "raw",
+		Type: domain.TypeGroup, Online: true,
+		RoutingRuleID: &ruleID,
+		FormatConfig:  map[string]any{"member_names": []any{"secrets2"}},
+	}
+
+	r := buildEngineWithRule(rule, member, grp)
+	require.Equal(t, http.StatusCreated, put(r, "secrets2", "/private/secret.txt", "TOPSECRET"))
+
+	for _, url := range []string{
+		"/repository/sgroup//private/secret.txt",
+		"/repository/sgroup/./private/secret.txt",
+		"/repository/sgroup/%2e/private/secret.txt",
+		"/repository/sgroup/%2Fprivate/secret.txt",
+		"/repository/sgroup/%252e%252e/private/secret.txt",
+	} {
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, url, nil))
+		assert.Equal(t, http.StatusBadRequest, rec.Code, url)
+		assert.NotContains(t, rec.Body.String(), "TOPSECRET", "%s leaked the blocked content", url)
+	}
+}
+
+// A group rule that cannot be loaded is not a group without a rule: the
+// lookup failing must not open every path the rule was there to refuse.
+func TestGroupHandler_RoutingRule_LookupFailureFailsClosed(t *testing.T) {
+	member := testutil.SimpleRepo("open1", "raw")
+	ruleID := "rule-broken"
+	grp := &domain.Repository{
+		ID: "repo-grp-b", Name: "bgroup", Format: "raw",
+		Type: domain.TypeGroup, Online: true,
+		RoutingRuleID: &ruleID,
+		FormatConfig:  map[string]any{"member_names": []any{"open1"}},
+	}
+	rules := testutil.NewRoutingRuleRepo()
+	_ = rules.Create(context.Background(), makeBlockRule(ruleID, `^/private/`))
+	r := buildEngineWithRuleRepo(rules, member, grp)
+	require.Equal(t, http.StatusCreated, put(r, "open1", "/private/secret.txt", "TOPSECRET"))
+
+	rules.Err = errors.New("database unavailable")
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/repository/bgroup/private/secret.txt", nil))
+	assert.NotEqual(t, http.StatusOK, rec.Code)
+	assert.NotContains(t, rec.Body.String(), "TOPSECRET")
 }

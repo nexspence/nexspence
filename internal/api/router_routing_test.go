@@ -75,3 +75,69 @@ func TestServeDockerV2_ProxyRoutingRule(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Equal(t, 1, h.calls)
 }
+
+// proxyBlockingPrivate is a proxy whose rule blocks the anchored /private/
+// prefix, the shape of rule a spelling trick has to get past.
+func proxyBlockingPrivate(t *testing.T, format domain.RepoFormat, matcher string) (*domain.Repository, *testutil.RoutingRuleRepo) {
+	t.Helper()
+	id := "rr-private"
+	rules := testutil.NewRoutingRuleRepo()
+	require.NoError(t, rules.Create(context.Background(),
+		&domain.RoutingRule{ID: id, Name: id, Mode: "BLOCK", Matchers: []string{matcher}}))
+	return &domain.Repository{ID: "p", Name: "p", Format: format, Type: domain.TypeProxy,
+		Online: true, AllowAnonymous: true, RoutingRuleID: &id}, rules
+}
+
+// The format handler serves path.Clean of the request path, so the rule must
+// judge that same string: a second spelling of a blocked path must not reach
+// the handler (and with it the cache or the upstream).
+func TestServeRepository_ProxyRoutingRule_NonCanonicalSpellingRefused(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	proxy, rules := proxyBlockingPrivate(t, "raw", `^/private/`)
+	h := &countingHandler{}
+	r := gin.New()
+	r.Any("/repository/:repoName/*path",
+		serveRepository(testutil.NewRepoRepo(proxy), rules, h, map[string]formats.FormatHandler{"raw": h}))
+
+	for _, target := range []string{
+		"/repository/p//private/x",
+		"/repository/p/./private/x",
+		"/repository/p/%2e/private/x",
+		"/repository/p/%2Fprivate/x",
+		"/repository/p/%252e/private/x",
+	} {
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, target, nil))
+		assert.NotEqual(t, http.StatusOK, w.Code, target)
+	}
+	assert.Zero(t, h.calls, "no spelling of a blocked path may reach the format handler")
+
+	// A trailing slash is an ordinary spelling (PyPI's simple index needs it)
+	// and is judged as the handler sees it.
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/repository/p/public/x/", nil))
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, 1, h.calls)
+}
+
+// Same on the OCI routes, where serveDockerV2 rewrites the params to /v2/...
+func TestServeDockerV2_ProxyRoutingRule_NonCanonicalSpellingRefused(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	proxy, rules := proxyBlockingPrivate(t, domain.FormatDocker, `^/v2/private/`)
+	h := &countingHandler{}
+	r := gin.New()
+	r.Any("/v2/:repoName/*dockerpath",
+		serveDockerV2(testutil.NewRepoRepo(proxy), rules, h, map[string]formats.FormatHandler{"docker": h}))
+
+	for _, target := range []string{
+		"/v2/p//private/app/manifests/1",
+		"/v2/p/./private/app/manifests/1",
+		"/v2/p/%2e/private/app/manifests/1",
+		"/v2/p/%2Fprivate/app/manifests/1",
+	} {
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, target, nil))
+		assert.NotEqual(t, http.StatusOK, w.Code, target)
+	}
+	assert.Zero(t, h.calls)
+}

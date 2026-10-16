@@ -15,8 +15,12 @@ import (
 // which paths are fetched from remote_url: a refused path is not served from
 // the cache either, and in a group it is a miss, so a hosted member can still
 // serve it. Hosted repositories ignore rules, and a group's own rule is
-// applied by the group handler. A rule that no longer resolves counts as none,
-// as it does on a group.
+// applied by the group handler.
+//
+// Evaluation fails closed: a rule that cannot be loaded refuses every path
+// (repositories.routing_rule_id is ON DELETE SET NULL, so a lookup error is a
+// failing database, not a deleted rule), and so does a path RuleAllows
+// refuses.
 func ProxyRuleAllows(ctx context.Context, rules repository.RoutingRuleRepo, repo *domain.Repository, method, path string) bool {
 	if rules == nil || repo == nil || repo.Type != domain.TypeProxy || repo.RoutingRuleID == nil {
 		return true
@@ -25,10 +29,33 @@ func ProxyRuleAllows(ctx context.Context, rules repository.RoutingRuleRepo, repo
 		return true
 	}
 	rule, err := rules.Get(ctx, *repo.RoutingRuleID)
-	if err != nil {
+	if err != nil || rule == nil {
+		return false
+	}
+	return RuleAllows(rule, path)
+}
+
+// RuleAllows reports whether rule lets path through. A path with a second
+// spelling (see CanonicalPath) is refused rather than judged: no rule can be
+// written against every way of spelling the same artifact.
+//
+// That leaves the trailing slash, which the handler drops and a client may
+// need (PyPI's simple index). An ALLOW rule judges the path as requested, so
+// ^/simple/requests/ keeps admitting the index page it names. A BLOCK rule
+// judges both spellings: /lib.jar/ must not slip past \.jar$ only to be
+// served as /lib.jar.
+func RuleAllows(rule *domain.RoutingRule, path string) bool {
+	if rule == nil {
 		return true
 	}
-	return rule.Allows(path)
+	served, err := CanonicalPath(path)
+	if err != nil {
+		return false
+	}
+	if !rule.Allows(path) {
+		return false
+	}
+	return rule.Mode == "ALLOW" || rule.Allows(served)
 }
 
 // WriteRoutingBlocked answers a read a proxy's routing rule refused. 404, not

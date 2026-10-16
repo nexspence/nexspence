@@ -234,11 +234,15 @@ func makeAllowRule(id string, matchers ...string) *domain.RoutingRule {
 }
 
 func buildEngineWithRule(rule *domain.RoutingRule, repos ...*domain.Repository) *gin.Engine {
-	repoRepo := testutil.NewRepoRepo(repos...)
 	rrRepo := testutil.NewRoutingRuleRepo()
 	if rule != nil {
 		_ = rrRepo.Create(context.Background(), rule)
 	}
+	return buildEngineWithRuleRepo(rrRepo, repos...)
+}
+
+func buildEngineWithRuleRepo(rrRepo *testutil.RoutingRuleRepo, repos ...*domain.Repository) *gin.Engine {
+	repoRepo := testutil.NewRepoRepo(repos...)
 	d := formats.Deps{
 		Repos:        repoRepo,
 		Blobs:        testutil.NewBlobStoreRepo(),
