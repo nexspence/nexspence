@@ -70,6 +70,13 @@ type GroupIndexStrictMerger interface {
 	GroupIndexMemberFailureIsFatal(path string, status int) bool
 }
 
+// GroupIndexMergeFailurePolicy overrides the strict merger's error policy for
+// a particular requested index. Without it, strict mergers fail every merge
+// error, including intentional refusals such as CRAN's unsupported RDS index.
+type GroupIndexMergeFailurePolicy interface {
+	GroupIndexMergeFailureIsFatal(path string) bool
+}
+
 // GroupIndexPaginator is optionally implemented alongside GroupIndexMerger by
 // formats whose index endpoints are paginated.
 //
@@ -91,6 +98,12 @@ type GroupIndexPaginator interface {
 	// document and sets whatever cursor header the format's protocol uses on
 	// c. Returning merged unchanged is what an unpaginated path does.
 	PageGroupIndex(c *gin.Context, path string, merged []byte) ([]byte, error)
+}
+
+// GroupIndexRequestValidator validates an index query before member paging
+// arguments are replaced for fan-out. Invalid queries are answered with 400.
+type GroupIndexRequestValidator interface {
+	ValidateGroupIndexRequest(c *gin.Context, path string) error
 }
 
 // GroupIndexNameClaimer is optionally implemented alongside GroupIndexMerger by
