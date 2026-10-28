@@ -58,7 +58,7 @@ func TestHandler_ProxyManifest_DigestCacheHitsAvoidManifestLock(t *testing.T) {
 	_, d := setupWithDeps(proxyManifestRepo(up.URL))
 	assets := &manifestLockCountingAssets{AssetRepo: d.Assets}
 	d.Assets = assets
-	r = manifestRouter(d)
+	r := manifestRouter(d)
 	tag := manifestRequest(r, http.MethodGet, "8.2.5", "application/vnd.oci.image.manifest.v1+json")
 	require.Equal(t, http.StatusOK, tag.Code)
 	assets.calls.Store(0)
