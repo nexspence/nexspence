@@ -9,6 +9,8 @@
 package integration
 
 import (
+	"compress/gzip"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -381,18 +383,43 @@ func TestProxyCargo_RealShape(t *testing.T) {
 
 // ── nuget (api.nuget.org shape: /v3/index.json, /v3-flatcontainer) ─
 
+// The registration hive is nuget.org's /v3/registration5-gz-semver2/: always
+// gzip-encoded, and a package with many versions LINKS its pages from the
+// index instead of inlining them (AWSSDK.Core, #678).
 func TestProxyNuGet_RealShape(t *testing.T) {
 	var up *httptest.Server
 	up = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		hive := up.URL + "/v3/registration5-gz-semver2/"
+		gz := func(body string) {
+			w.Header().Set("Content-Encoding", "gzip")
+			zw := gzip.NewWriter(w)
+			_, _ = io.WriteString(zw, body)
+			_ = zw.Close()
+		}
 		switch r.URL.Path {
 		case "/v3/index.json":
-			fmt.Fprintf(w, `{"version":"3.0.0","resources":[{"@id":"%s/v3-flatcontainer/","@type":"PackageBaseAddress/3.0.0"}]}`, up.URL)
+			fmt.Fprintf(w, `{"version":"3.0.0","resources":[`+
+				`{"@id":"%s/v3-flatcontainer/","@type":"PackageBaseAddress/3.0.0"},`+
+				`{"@id":"%s","@type":"RegistrationsBaseUrl/3.6.0"}]}`, up.URL, hive)
 		case "/v3-flatcontainer/newtonsoft.json/index.json":
 			fmt.Fprint(w, `{"versions":["13.0.3"]}`)
 		case "/v3-flatcontainer/newtonsoft.json/13.0.3/newtonsoft.json.13.0.3.nupkg":
 			w.Header().Set("Content-Type", "application/octet-stream")
 			fmt.Fprint(w, "nupkg-bytes")
+		case "/v3/registration5-gz-semver2/newtonsoft.json/index.json":
+			gz(fmt.Sprintf(`{"@id":"%[1]snewtonsoft.json/index.json","count":1,"items":[`+
+				`{"@id":"%[1]snewtonsoft.json/page/13.0.3/13.0.3.json","@type":"catalog:CatalogPage",`+
+				`"count":1,"lower":"13.0.3","upper":"13.0.3"}]}`, hive))
+		case "/v3/registration5-gz-semver2/newtonsoft.json/page/13.0.3/13.0.3.json":
+			gz(fmt.Sprintf(`{"@id":"%[1]snewtonsoft.json/page/13.0.3/13.0.3.json","count":1,`+
+				`"parent":"%[1]snewtonsoft.json/index.json","lower":"13.0.3","upper":"13.0.3","items":[`+
+				`{"@id":"%[1]snewtonsoft.json/13.0.3.json","@type":"Package",`+
+				`"registration":"%[1]snewtonsoft.json/index.json",`+
+				`"packageContent":"%[2]s/v3-flatcontainer/newtonsoft.json/13.0.3/newtonsoft.json.13.0.3.nupkg",`+
+				`"catalogEntry":{"@id":"%[2]s/v3/catalog0/data/2023.03.08.07.46.17/newtonsoft.json.13.0.3.json",`+
+				`"id":"Newtonsoft.Json","version":"13.0.3","listed":true,"published":"2023-03-08T07:42:54.647+00:00"}}]}`,
+				hive, up.URL))
 		default:
 			http.NotFound(w, r)
 		}
@@ -403,10 +430,32 @@ func TestProxyNuGet_RealShape(t *testing.T) {
 	svcIdx := fetchOK(t, "/repository/nuget-real/index.json")
 	assert.Contains(t, svcIdx, "/repository/nuget-real/v3-flatcontainer/",
 		"service index resources keep the real hyphenated path, re-rooted locally")
+	assert.Contains(t, svcIdx, "/repository/nuget-real/v3/registration5-gz-semver2/")
 	assert.NotContains(t, svcIdx, up.URL)
 	assert.Contains(t, fetchOK(t, "/repository/nuget-real/v3-flatcontainer/newtonsoft.json/index.json"), "13.0.3")
 	assert.Equal(t, "nupkg-bytes",
 		fetchOK(t, "/repository/nuget-real/v3-flatcontainer/newtonsoft.json/13.0.3/newtonsoft.json.13.0.3.nupkg"))
+
+	// The linked page is linked on the proxy, in the same hive, and a client
+	// following it stays on the proxy (#678).
+	base := server(t).URL
+	const hivePath = "/repository/nuget-real/v3/registration5-gz-semver2/newtonsoft.json/"
+	regIdx := fetchOK(t, hivePath+"index.json")
+	assert.NotContains(t, regIdx, up.URL+"/v3/registration5-gz-semver2/")
+	var idx struct {
+		Items []struct {
+			ID string `json:"@id"`
+		} `json:"items"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(regIdx), &idx), regIdx)
+	require.Len(t, idx.Items, 1)
+	pageURL := idx.Items[0].ID
+	require.True(t, strings.HasPrefix(pageURL, base+hivePath+"page/"), "page link %q must be on the proxy", pageURL)
+
+	page := fetchOK(t, strings.TrimPrefix(pageURL, base))
+	assert.NotContains(t, page, up.URL+"/v3/registration5-gz-semver2/")
+	assert.Contains(t, page, base+hivePath+"13.0.3.json")
+	assert.Contains(t, page, `"version":"13.0.3"`)
 }
 
 // ── docker / oci (private Azure Container Registry shape) ────────
