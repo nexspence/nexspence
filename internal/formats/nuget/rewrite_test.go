@@ -39,11 +39,16 @@ func TestRewriteRegistration_PackageContentAndIDs(t *testing.T) {
 	// packageContent is rebuilt from catalogEntry (lowercased id), not string-munged.
 	assert.Contains(t, out,
 		`"packageContent":"http://localhost:8080/repository/nuget-proxy/v3/flatcontainer/newtonsoft.json/13.0.1/newtonsoft.json.13.0.1.nupkg"`)
-	// @id URLs with a registration* segment are re-rooted at the local registration base.
+	// @id URLs inside a registration hive are re-rooted on the proxy in the
+	// SAME hive (#678): the proxy forwards a path onto the upstream as is, and
+	// nuget.org has no /v3/registration/ hive to collapse them into.
 	assert.Contains(t, out,
-		`"@id":"http://localhost:8080/repository/nuget-proxy/v3/registration/newtonsoft.json/index.json"`)
+		`"@id":"http://localhost:8080/repository/nuget-proxy/v3/registration5-gz-semver2/newtonsoft.json/index.json"`)
 	assert.Contains(t, out,
-		`"@id":"http://localhost:8080/repository/nuget-proxy/v3/registration/newtonsoft.json/13.0.1.json"`)
+		`"@id":"http://localhost:8080/repository/nuget-proxy/v3/registration5-gz-semver2/newtonsoft.json/page/1.0.0/13.0.1.json"`)
+	assert.Contains(t, out,
+		`"@id":"http://localhost:8080/repository/nuget-proxy/v3/registration5-gz-semver2/newtonsoft.json/13.0.1.json"`)
+	assert.NotContains(t, out, "/nuget-proxy/v3/registration/")
 	assert.NotContains(t, out, "api.nuget.org")
 	// catalogEntry survives.
 	assert.Contains(t, out, `"listed":true`)
