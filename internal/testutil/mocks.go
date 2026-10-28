@@ -337,7 +337,8 @@ type ComponentRepo struct {
 	UpdateExtraErr error
 	// HasAssets, when set, tells Create whether a component still has assets,
 	// so a nil-Extra upsert of an emptied component resets its extra like the
-	// SQL does (#668). Unset, such an upsert keeps the extra.
+	// SQL does (#668), and lets DeleteOrphans really delete. Unset, such an
+	// upsert keeps the extra and DeleteOrphans only records the call.
 	HasAssets func(componentID string) bool
 	// DockerRowsByRepo maps repoName→browse rows; ListDockerBrowseRows returns the
 	// union of rows for the requested repo names (mirrors the SQL WHERE rep.name IN (...)).
@@ -602,6 +603,15 @@ func (c *ComponentRepo) DeleteOrphans(_ context.Context, repoName string) error 
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.DeleteOrphansCalls = append(c.DeleteOrphansCalls, repoName)
+	// With HasAssets wired, actually remove the repository's empty components,
+	// as the SQL does.
+	if c.HasAssets != nil {
+		for id, comp := range c.components {
+			if comp.Repository == repoName && !c.HasAssets(id) {
+				delete(c.components, id)
+			}
+		}
+	}
 	return nil
 }
 

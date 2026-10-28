@@ -82,7 +82,8 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 				return
 			}
 		}
-		if err := repoproxy.ServeGETRewritten(c, h.deps, repo, p, "", proxyCoords(p), "application/octet-stream", maxAge, rewrite); err != nil {
+		opts := repoproxy.ServeOptions{Rewrite: rewrite, MD5ETag: compactIndexPath(p)}
+		if err := repoproxy.ServeGETWithOptions(c, h.deps, repo, p, "", proxyCoords(p), "application/octet-stream", maxAge, opts); err != nil {
 			c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		}
 		return
@@ -128,6 +129,17 @@ func proxyCoords(p string) base.Coords {
 		return base.Coords{Name: "_index", Version: "metadata"}
 	}
 	return base.Coords{}
+}
+
+// compactIndexPath reports the compact-index files Bundler fetches through its
+// updater, which checks each body against the ETag as an MD5 before 2.5
+// (#679).
+func compactIndexPath(p string) bool {
+	if p == "/versions" || p == "/names" {
+		return true
+	}
+	gem, ok := strings.CutPrefix(p, "/info/")
+	return ok && gem != "" && !strings.Contains(gem, "/")
 }
 
 // parseGemFilename splits "name-version[-platform].gem" at the first hyphen
