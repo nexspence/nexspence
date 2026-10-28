@@ -233,6 +233,8 @@ Two things to know:
 
 Under Kubernetes the same switch is `config.bootstrapEnabled: false` in the Helm values, which also lets you drop `adminPassword` from the chart's Secret. Setting it through the environment works too: `NEXSPENCE_BOOTSTRAP_ENABLED=false`.
 
+To remove the local bootstrap account as well, first sign in with another administrator account (for example a Keycloak/OIDC account with the `nx-admin` role) and verify that it can manage users. Set `bootstrap.enabled: false` and restart to apply it, then delete the local account under Administration → Users. You cannot delete your own account from the UI; sign in as the other administrator first. If bootstrap remains enabled, deleting its configured `bootstrap.admin_username` account only removes it until the next server start, when it is created again.
+
 If you would rather keep the bootstrap on but stop storing the password in the file, leave `enabled: true` and pass it as `NEXSPENCE_BOOTSTRAP_ADMIN_PASSWORD` instead.
 
 ---
