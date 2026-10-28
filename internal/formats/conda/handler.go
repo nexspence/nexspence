@@ -14,9 +14,12 @@
 package conda
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path"
@@ -29,6 +32,7 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/formats"
 	"github.com/nexspence-oss/nexspence/internal/formats/base"
 	"github.com/nexspence-oss/nexspence/internal/formats/repoproxy"
+	"github.com/nexspence-oss/nexspence/internal/repository"
 )
 
 // Handler serves the Conda channel repository protocol.
@@ -97,40 +101,18 @@ func normPath(p string) string {
 }
 
 func (h *Handler) handleUpload(c *gin.Context, repoName, platform, filename string) {
-	var (
-		meta *PkgMeta
-		body io.Reader = c.Request.Body
-		size           = c.Request.ContentLength
-	)
-	if strings.HasSuffix(filename, ".tar.bz2") {
-		// Coords come from in-archive metadata, which must be parsed before
-		// StoreArtifact — spool to a temp file so memory stays O(1).
-		tmp, err := os.CreateTemp("", "conda-upload-*")
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "spool upload: " + err.Error()})
-			return
-		}
-		defer func() {
-			_ = tmp.Close()
-			_ = os.Remove(tmp.Name())
-		}()
-		n, err := io.Copy(tmp, c.Request.Body)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "read body: " + err.Error()})
-			return
-		}
-		if _, err := tmp.Seek(0, io.SeekStart); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-		if m, err := ParseMeta(filename, tmp); err == nil && m != nil {
-			meta = m
-		}
-		if _, err := tmp.Seek(0, io.SeekStart); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-		body, size = tmp, n
+	// Coordinates come from in-archive metadata, which must be read before
+	// StoreArtifact, and a .conda is a zip read from its end — spool to a temp
+	// file so memory stays O(1).
+	tmp, size, err := spool(c.Request.Body)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "read body: " + err.Error()})
+		return
+	}
+	defer cleanupSpool(tmp)
+	meta, err := ParseMeta(filename, tmp, size)
+	if err != nil {
+		log.Printf("nexspence: conda %s/%s/%s: unreadable package metadata, using the filename: %v", repoName, platform, filename, err)
 	}
 	if meta == nil {
 		meta = metaFromFilename(filename)
@@ -138,34 +120,94 @@ func (h *Handler) handleUpload(c *gin.Context, repoName, platform, filename stri
 
 	filePath := "/" + platform + "/" + filename
 	ct := "application/x-tar"
-	if strings.HasSuffix(filename, ".conda") {
+	if isCondaFile(filename) {
 		ct = "application/zip"
 	}
-
-	coords := base.Coords{
-		Group:   platform,
-		Name:    meta.Name,
-		Version: meta.Version,
-	}
-
-	res, err := base.StoreArtifact(c.Request.Context(), h.deps,
-		repoName, filePath, ct, coords, body, size)
-	if err != nil {
+	coords := componentCoords(platform, meta)
+	ctx := c.Request.Context()
+	if _, err := base.StoreArtifact(ctx, h.deps, repoName, filePath, ct, coords,
+		io.NewSectionReader(tmp, 0, size), size); err != nil {
 		c.JSON(base.HTTPStatusForError(err), gin.H{"error": err.Error()})
 		return
 	}
-
-	// Persist build/depends in component Extra — best-effort
-	if res != nil && res.Asset != nil && res.Asset.ComponentID != "" {
-		extra := map[string]any{
-			"build":        meta.Build,
-			"build_number": meta.BuildNumber,
-			"depends":      meta.Depends,
-		}
-		_ = h.deps.Components.UpdateExtra(c.Request.Context(), res.Asset.ComponentID, extra)
+	repo, err := h.deps.Repos.Get(ctx, repoName)
+	if err == nil {
+		err = placeFile(ctx, h.deps, repo, filePath, "", coords, indexFromMeta(meta, platform))
 	}
-
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	c.JSON(http.StatusCreated, gin.H{"saved": true})
+}
+
+// componentCoords keys a hosted package by its build as well as its version
+// (#677): builds of one version — py310 and py311, say — are different files
+// with different dependencies, while the .conda and .tar.bz2 of one build are
+// one package and share a component.
+func componentCoords(platform string, m *PkgMeta) base.Coords {
+	version := m.Version
+	if m.Build != "" {
+		version += "-" + m.Build
+	}
+	return base.Coords{Group: platform, Name: m.Name, Version: version}
+}
+
+// placeFile records index on the component coords name and moves the file at
+// filePath there if it sits elsewhere: a path first stored before builds were
+// part of the coordinates keeps its old component on upsert. The old component
+// goes once the last such file has left it. A non-empty sha256 is the content
+// index was read from; if the path holds other bytes by now, nothing is
+// written — they were stored, and described, by the upload that replaced them.
+func placeFile(ctx context.Context, d formats.Deps, repo *domain.Repository, filePath, sha256 string, coords base.Coords, index map[string]any) error {
+	comp := &domain.Component{
+		RepositoryID: repo.ID, Repository: repo.Name, Format: string(repo.Format),
+		Group: coords.Group, Name: coords.Name, Version: coords.Version,
+	}
+	if err := d.Components.Create(ctx, comp); err != nil {
+		return fmt.Errorf("component for %s: %w", filePath, err)
+	}
+	asset, err := d.Assets.GetByPath(ctx, repo.Name, filePath)
+	if err != nil {
+		return fmt.Errorf("look up %s: %w", filePath, err)
+	}
+	if sha256 != "" && asset.SHA256 != sha256 {
+		return nil
+	}
+	if old := asset.ComponentID; old != comp.ID {
+		if err := d.Assets.SetComponent(ctx, asset.ID, comp.ID); err != nil {
+			return fmt.Errorf("move %s to its build's component: %w", filePath, err)
+		}
+		if left, err := d.Assets.ListByComponentID(ctx, old); err == nil && len(left) == 0 {
+			if err := d.Components.Delete(ctx, old); err != nil && !errors.Is(err, repository.ErrNotFound) {
+				return err
+			}
+		}
+	}
+	return d.Components.UpdateExtra(ctx, comp.ID, map[string]any{condaIndexKey: index})
+}
+
+// spool copies r to a temp file, rewound, for random access. cleanupSpool
+// closes and removes it.
+func spool(r io.Reader) (*os.File, int64, error) {
+	tmp, err := os.CreateTemp("", "conda-*")
+	if err != nil {
+		return nil, 0, err
+	}
+	n, err := io.Copy(tmp, r)
+	if err == nil {
+		_, err = tmp.Seek(0, io.SeekStart)
+	}
+	if err != nil {
+		cleanupSpool(tmp)
+		return nil, 0, err
+	}
+	return tmp, n, nil
+}
+
+func cleanupSpool(f *os.File) {
+	_ = f.Close()
+	_ = os.Remove(f.Name())
 }
 
 func (h *Handler) servePackage(c *gin.Context, repoName, filePath string) {
