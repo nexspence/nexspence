@@ -16,6 +16,9 @@ import (
 // GroupIndexSourcePath implements formats.GroupIndexMerger. Any GET path that
 // is not the repo root, a tarball, or a /-/ API path is a packument request.
 func (h *Handler) GroupIndexSourcePath(p string) (string, bool) {
+	if normPath(p) == searchPath {
+		return searchPath, true
+	}
 	if p == "/" || p == "" || strings.Contains(p, "/-/") || strings.HasPrefix(p, "/-") {
 		return "", false
 	}
@@ -23,7 +26,10 @@ func (h *Handler) GroupIndexSourcePath(p string) (string, bool) {
 }
 
 // MergeGroupIndex implements formats.GroupIndexMerger.
-func (h *Handler) MergeGroupIndex(groupName, _ string, parts []formats.GroupIndexPart) ([]byte, string, error) {
+func (h *Handler) MergeGroupIndex(groupName, p string, parts []formats.GroupIndexPart) ([]byte, string, error) {
+	if normPath(p) == searchPath {
+		return mergeSearch(parts)
+	}
 	groupBase := strings.TrimRight(h.deps.BaseURL, "/") + "/repository/" + groupName
 
 	merged := map[string]any{}

@@ -3,10 +3,12 @@ package handlers
 import (
 	"fmt"
 	"net/http"
+	pathpkg "path"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/service"
 )
@@ -59,6 +61,12 @@ func RBACMiddleware(rbacSvc *service.RBACService, repoRepo repository.Repository
 		}
 
 		ok, err := rbacSvc.CanAccessRepo(c.Request.Context(), userIDStr, rolesSlice, repo, path, action)
+		if repo.Format == domain.FormatNPM && pathpkg.Clean(path) == "/-/v1/search" && action == "read" {
+			// Search lists packages rather than reading an artifact named
+			// /-/v1/search. The handler applies selectors to each result before
+			// computing totals and paging, including results merged by a group.
+			ok = len(rbacSvc.FilterRepos(c.Request.Context(), userIDStr, rolesSlice, []domain.Repository{*repo})) > 0
+		}
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "access check failed"})
 			return
