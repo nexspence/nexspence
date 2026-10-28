@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"net/http"
@@ -955,7 +956,7 @@ func serveDockerV2(
 
 		if repoDef.Type == domain.TypeGroup {
 			if !repoDef.Format.IsOCIRegistry() {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "repository is not an OCI registry"})
+				writeNotOCIRegistry(c, repoDef)
 				return
 			}
 			c.Params = gin.Params{
@@ -967,7 +968,7 @@ func serveDockerV2(
 		}
 
 		if !repoDef.Format.IsOCIRegistry() {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "repository is not an OCI registry"})
+			writeNotOCIRegistry(c, repoDef)
 			return
 		}
 
@@ -993,6 +994,23 @@ func serveDockerV2(
 		}
 		h.ServeHTTP(c)
 	}
+}
+
+// writeNotOCIRegistry refuses a /v2/ request for a repository whose format
+// does not speak the distribution API. The usual way here is `helm push
+// oci://host/<helm-repo>` (#682): a helm repository is a classic chart
+// repository (index.yaml + chart uploads), and OCI charts belong in an oci or
+// docker repository. The body is the OCI error shape so registry clients that
+// read it print the reason; HEAD carries no body, so the status stays 400.
+func writeNotOCIRegistry(c *gin.Context, repo *domain.Repository) {
+	c.Header("Docker-Distribution-API-Version", "registry/2.0")
+	c.JSON(http.StatusBadRequest, gin.H{"errors": []gin.H{{
+		"code": "UNSUPPORTED",
+		"message": fmt.Sprintf(
+			"%q is a %s repository, not an OCI registry: push and pull OCI artifacts "+
+				"(docker images, helm push oci://, oras) through an oci or docker repository",
+			repo.Name, repo.Format),
+	}}})
 }
 
 // cleanupTaskAdapter adapts the cleanup repo (List) and service (RunPolicy) to the
