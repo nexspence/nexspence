@@ -41,6 +41,42 @@ func TestManifestBody_InvalidSpoolRemovesTemporaryFiles(t *testing.T) {
 	}
 }
 
+func TestManifestBody_OversizedSpoolRemovesTemporaryFile(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("TMPDIR", dir)
+	prefix := `{"mediaType":"application/vnd.oci.image.manifest.v1+json","padding":"`
+	raw := io.MultiReader(strings.NewReader(prefix), &repeatedByteReader{remaining: maxProxyManifestSpoolBytes + 1, value: 'x'}, strings.NewReader(`"}`))
+
+	body, err := spoolManifest(raw)
+	if body != nil {
+		body.Close()
+	}
+	require.ErrorContains(t, err, "manifest exceeds")
+	files, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	require.Empty(t, files)
+}
+
+type repeatedByteReader struct {
+	remaining int64
+	value     byte
+}
+
+func (r *repeatedByteReader) Read(p []byte) (int, error) {
+	if r.remaining == 0 {
+		return 0, io.EOF
+	}
+	n := len(p)
+	if int64(n) > r.remaining {
+		n = int(r.remaining)
+	}
+	for i := 0; i < n; i++ {
+		p[i] = r.value
+	}
+	r.remaining -= int64(n)
+	return n, nil
+}
+
 func TestManifestJSON_Validation(t *testing.T) {
 	for _, raw := range []string{
 		`{}`, ` {"x":[null,true,false,{},[],0,-12,1.25,1e3,-2.3E-4]} `,

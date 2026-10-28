@@ -14,6 +14,11 @@ import (
 	"strings"
 )
 
+// maxProxyManifestSpoolBytes bounds temporary disk use while proxying OCI
+// manifests. It intentionally exceeds maxManifestBytes, which applies to
+// hosted uploads and is too small for some existing upstream manifests.
+const maxProxyManifestSpoolBytes = 64 << 20
+
 // manifestBody is a request-scoped snapshot, never shared state. Hashing and
 // JSON validation finish before persistence or a success response. Temporary
 // files keep memory bounded even for a single enormous JSON string.
@@ -37,9 +42,12 @@ func spoolManifest(r io.Reader) (_ *manifestBody, err error) {
 		}
 	}()
 	s256, s1, m5 := sha256.New(), sha1.New(), md5.New() //nolint:gosec // artifact checksums
-	body.size, err = io.Copy(io.MultiWriter(f, s256, s1, m5), r)
+	body.size, err = io.Copy(io.MultiWriter(f, s256, s1, m5), io.LimitReader(r, maxProxyManifestSpoolBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("spool manifest: %w", err)
+	}
+	if body.size > maxProxyManifestSpoolBytes {
+		return nil, fmt.Errorf("manifest exceeds %d-byte proxy spool limit", maxProxyManifestSpoolBytes)
 	}
 	body.sha256, body.sha1, body.md5 = fmt.Sprintf("%x", s256.Sum(nil)), fmt.Sprintf("%x", s1.Sum(nil)), fmt.Sprintf("%x", m5.Sum(nil))
 	if _, err = f.Seek(0, io.SeekStart); err != nil {
