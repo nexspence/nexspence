@@ -5,6 +5,8 @@ import { http, HttpResponse } from 'msw'
 import UsersPage from './UsersPage'
 import { renderWithProviders, seedAuthAsAdmin } from '@/test/renderUtils'
 import { server } from '@/test/msw/server'
+import { useAuthStore } from '@/store/authStore'
+import { fixtures } from '@/test/fixtures'
 
 const userItem = (overrides?: Record<string, unknown>) => ({
   id: 'u-1',
@@ -186,6 +188,63 @@ describe('UsersPage', () => {
     const delBtn = within(bobRow).getByTitle('Delete user')
     fireEvent.click(delBtn)
     await waitFor(() => expect(deleted).toBe(true))
+  })
+
+  // #667: an SSO administrator must be able to retire the local bootstrap
+  // account, including the default username that was hardcoded as undeletable.
+  it.each(['admin', 'initial-admin'])('lets an SSO administrator delete the local %s account', async (username) => {
+    useAuthStore.setState({ user: fixtures.user({ username: 'keycloak-admin', source: 'oidc' }) })
+    let deletedUsername = ''
+    let users = [userItem({ userId: username }), userItem({ id: 'sso', userId: 'keycloak-admin', source: 'oidc' })]
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    server.use(
+      http.get('/service/rest/v1/security/users', () => HttpResponse.json(users)),
+      http.delete('/service/rest/v1/security/users/:userId', ({ params }) => {
+        deletedUsername = String(params.userId)
+        users = users.filter(u => u.userId !== deletedUsername)
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+    renderWithProviders(<UsersPage />)
+    await screen.findByText(username)
+    const row = screen.getByText(username).closest('div[style]')!.parentElement!.parentElement as HTMLElement
+    const button = within(row).getByTitle('Delete user')
+    expect(button).toBeEnabled()
+    await userEvent.click(button)
+    await waitFor(() => expect(deletedUsername).toBe(username))
+    await waitFor(() => expect(screen.queryByText(username)).not.toBeInTheDocument())
+    expect(screen.getByText('keycloak-admin')).toBeInTheDocument()
+  })
+
+  it.each([['admin', 'local'], ['keycloak-admin', 'oidc']])('prevents deleting the signed-in %s account', async (username, source) => {
+    useAuthStore.setState({ user: fixtures.user({ username, source }) })
+    server.use(http.get('/service/rest/v1/security/users', () =>
+      HttpResponse.json([userItem({ userId: username, source })]),
+    ))
+    renderWithProviders(<UsersPage />)
+    await screen.findByText(username)
+    expect(screen.getByTitle('Delete user')).toBeDisabled()
+  })
+
+  it('warns before deleting a local account that bootstrap can recreate it', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    renderWithProviders(<UsersPage />)
+    await screen.findByText('bob')
+    await userEvent.click(screen.getAllByTitle('Delete user')[1])
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('bootstrap.enabled: false'))
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('restart'))
+  })
+
+  it('shows the API error when deleting a user fails', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    server.use(http.delete('/service/rest/v1/security/users/:userId', () =>
+      HttpResponse.json({ error: 'Deletion denied by policy' }, { status: 403 }),
+    ))
+    renderWithProviders(<UsersPage />)
+    await screen.findByText('bob')
+    await userEvent.click(screen.getAllByTitle('Delete user')[1])
+    expect(await screen.findByRole('alert')).toHaveTextContent('Deletion denied by policy')
+    expect(screen.getByText('bob')).toBeInTheDocument()
   })
 
   it('does not delete when confirm is cancelled', async () => {
