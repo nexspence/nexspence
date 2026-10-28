@@ -187,6 +187,15 @@ docker:
 helm:
   index_cache_ttl: "5m"
 
+# Proxy metadata that needs URL rewriting is buffered before serving. This cap
+# applies to both upstream downloads and cache reads (npm packuments, PyPI
+# indexes and NuGet metadata). Raise it for large packages such as vite; the
+# default remains 32 MiB. Must be positive; 0 does not disable the bound.
+# Larger values increase memory use per concurrent metadata request.
+# Env override: NEXSPENCE_PROXY_MAX_REWRITTEN_METADATA_BYTES=134217728 (128 MiB).
+proxy:
+  max_rewritten_metadata_bytes: 33554432
+
 # Automatic vulnerability scanning.
 # Every upload is queued for a background scan; the queue is bounded and drops
 # rather than delaying an upload, so the periodic full re-scan below is also the

@@ -333,11 +333,13 @@ func (r *assetRepo) Create(ctx context.Context, a *domain.Asset) error {
 		  md5          = EXCLUDED.md5,
 		  uploader_id  = COALESCE(EXCLUDED.uploader_id, assets.uploader_id),
 		  last_modified = NOW()
-		RETURNING id, created_at, last_modified`,
+		RETURNING id, component_id, created_at, last_modified`,
 		a.ComponentID, a.RepositoryID, a.Path, a.BlobStoreID, a.BlobKey,
 		a.SizeBytes, a.ContentType, nullStr(a.SHA1), nullStr(a.SHA256), nullStr(a.MD5),
 		nullStr(a.UploaderID),
-	).Scan(&a.ID, &a.CreatedAt, &a.LastModified)
+	// An existing path keeps its component on conflict; component_id comes back
+	// so the caller sees where the asset actually is (#671).
+	).Scan(&a.ID, &a.ComponentID, &a.CreatedAt, &a.LastModified)
 }
 
 func (r *assetRepo) Delete(ctx context.Context, id string) error {

@@ -40,6 +40,11 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 	p := normPath(c.Param("path"))
 	repoName := c.Param("repoName")
 
+	if p == searchPath {
+		h.serveSearch(c)
+		return
+	}
+
 	// Health ping
 	if p == "/-/ping" {
 		c.JSON(http.StatusOK, gin.H{"ok": true})

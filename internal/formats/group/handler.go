@@ -103,6 +103,12 @@ func (h *Handler) serveGet(c *gin.Context) {
 	// behind them (#99).
 	if merger, ok := h.formatRegistry[string(repoDef.Format)].(formats.GroupIndexMerger); ok {
 		if source, isIndex := merger.GroupIndexSourcePath(filePath); isIndex {
+			if validator, ok := merger.(formats.GroupIndexRequestValidator); ok {
+				if err := validator.ValidateGroupIndexRequest(c, filePath); err != nil {
+					c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+					return
+				}
+			}
 			h.serveMergedIndex(c, repoDef, members, rule, merger, source, filePath)
 			return
 		}
@@ -263,7 +269,11 @@ func (h *Handler) serveMergedIndex(c *gin.Context, repoDef *domain.Repository, m
 		body, err = pager.PageGroupIndex(c, requestPath, body)
 	}
 	if err != nil {
-		if isStrict {
+		fatal := isStrict
+		if policy, ok := merger.(formats.GroupIndexMergeFailurePolicy); ok {
+			fatal = policy.GroupIndexMergeFailureIsFatal(requestPath)
+		}
+		if fatal {
 			// A member's document that could not be merged is a member whose
 			// contribution is missing from the result, which is the same fact a
 			// fatal member failure reports.
