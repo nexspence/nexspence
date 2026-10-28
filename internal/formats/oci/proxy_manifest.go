@@ -31,7 +31,7 @@ func (h *Handler) proxyManifest(c *gin.Context, repo *domain.Repository, image, 
 	var cached *domain.Asset
 	var body *manifestBody
 	var repairErr error
-	err := h.withManifestLock(ctx, repo, image, ref, func(ctx context.Context) error {
+	loadCached := func(ctx context.Context) error {
 		var err error
 		cached, body, err = h.cachedManifest(ctx, repo.Name, manifestPath(image, ref), true)
 		if err != nil {
@@ -41,7 +41,15 @@ func (h *Handler) proxyManifest(c *gin.Context, repo *domain.Repository, image, 
 			_, repairErr = h.persistManifest(ctx, repo, image, ref, cached.ContentType, body, cached)
 		}
 		return nil
-	})
+	}
+	var err error
+	if strings.Contains(ref, ":") {
+		// Digest aliases are immutable. A cache hit only reads their verified
+		// content, so it does not need to serialize with tag refresh or replacement.
+		err = loadCached(ctx)
+	} else {
+		err = h.withManifestLock(ctx, repo, image, ref, loadCached)
+	}
 	defer body.Close()
 	if err != nil {
 		return err

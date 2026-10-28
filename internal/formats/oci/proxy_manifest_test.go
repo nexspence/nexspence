@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/formats"
 	"github.com/nexspence-oss/nexspence/internal/formats/oci"
+	"github.com/nexspence-oss/nexspence/internal/repository"
 )
 
 const dockerIndexType = "application/vnd.docker.distribution.manifest.list.v2+json"
@@ -33,6 +35,57 @@ func manifestRequest(r *gin.Engine, method, ref, accept string) *httptest.Respon
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	return w
+}
+
+type manifestLockCountingAssets struct {
+	repository.AssetRepo
+	calls atomic.Int32
+}
+
+func (a *manifestLockCountingAssets) WithBlobKeyLock(ctx context.Context, key string, fn func(context.Context) error) error {
+	a.calls.Add(1)
+	return a.AssetRepo.WithBlobKeyLock(ctx, key, fn)
+}
+
+func TestHandler_ProxyManifest_DigestCacheHitsAvoidManifestLock(t *testing.T) {
+	const body = `{"schemaVersion":2,"mediaType":"application/vnd.oci.image.manifest.v1+json","config":{},"layers":[]}`
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.oci.image.manifest.v1+json")
+		_, _ = w.Write([]byte(body))
+	}))
+	defer up.Close()
+
+	r, d := setupWithDeps(proxyManifestRepo(up.URL))
+	assets := &manifestLockCountingAssets{AssetRepo: d.Assets}
+	d.Assets = assets
+	r = manifestRouter(d)
+	tag := manifestRequest(r, http.MethodGet, "8.2.5", "application/vnd.oci.image.manifest.v1+json")
+	require.Equal(t, http.StatusOK, tag.Code)
+	assets.calls.Store(0)
+
+	ref := digest(body)
+	var wg sync.WaitGroup
+	results := make(chan *httptest.ResponseRecorder, 16)
+	for i := 0; i < cap(results); i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			method := http.MethodGet
+			if i%2 == 1 {
+				method = http.MethodHead
+			}
+			results <- manifestRequest(r, method, ref, "application/vnd.oci.image.manifest.v1+json")
+		}(i)
+	}
+	wg.Wait()
+	close(results)
+	for got := range results {
+		require.Equal(t, http.StatusOK, got.Code)
+		if got.Header().Get("Content-Length") != "" {
+			require.Equal(t, fmt.Sprint(len(body)), got.Header().Get("Content-Length"))
+		}
+	}
+	require.Zero(t, assets.calls.Load(), "immutable digest cache hits must not serialize on a manifest lock")
 }
 
 func TestHandler_ProxyManifest_TagDigestConsistency(t *testing.T) {
