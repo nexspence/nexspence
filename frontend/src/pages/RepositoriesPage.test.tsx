@@ -254,6 +254,35 @@ describe('RepositoriesPage', () => {
     await waitFor(() => expect(deleted).toBe(true))
   })
 
+  // #682: a refused delete used to leave the row in place with no word of why.
+  it('reports a failed delete instead of failing silently', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    server.use(
+      http.delete('/service/rest/v1/repositories/:name', () =>
+        HttpResponse.json({ error: 'admin role required' }, { status: 403 }),
+      ),
+    )
+    renderWithProviders(<RepositoriesPage />)
+    await screen.findByText('maven-hosted')
+    fireEvent.click(screen.getAllByTitle('Delete')[0])
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('Could not delete "maven-hosted": admin role required')
+    fireEvent.click(within(alert).getByRole('button', { name: 'Dismiss' }))
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('reports a failed online toggle', async () => {
+    server.use(
+      http.patch('/service/rest/v1/repositories/:name', () =>
+        HttpResponse.json({ error: 'nope' }, { status: 500 }),
+      ),
+    )
+    renderWithProviders(<RepositoriesPage />)
+    await screen.findByText('maven-hosted')
+    fireEvent.click(screen.getAllByTitle('Disable repository')[0])
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not update "maven-hosted": nope')
+  })
+
   it('does not delete when confirm is cancelled', async () => {
     let deleted = false
     vi.spyOn(window, 'confirm').mockReturnValue(false)
@@ -604,6 +633,25 @@ describe('RepositoriesPage', () => {
     const form = document.querySelector('form') as HTMLFormElement
     await user.click(within(form).getByRole('button', { name: /^Save$/ }))
     expect(await screen.findByText('save broke')).toBeInTheDocument()
+  })
+
+  // #682: a reverse proxy refusing PUT answers with HTML, not {"error": ...};
+  // the modal then said only "Failed to save", hiding the status that names
+  // the culprit.
+  it('shows the HTTP status when an edit save fails without a JSON error', async () => {
+    const user = userEvent.setup()
+    server.use(
+      http.put('/service/rest/v1/repositories/:format/:type/:name', () =>
+        new HttpResponse('<html>403 Forbidden</html>', { status: 403, headers: { 'Content-Type': 'text/html' } }),
+      ),
+    )
+    renderWithProviders(<RepositoriesPage />)
+    await screen.findByText('maven-hosted')
+    fireEvent.click(screen.getAllByTitle('Settings')[0])
+    await screen.findByText('Repository settings')
+    const form = document.querySelector('form') as HTMLFormElement
+    await user.click(within(form).getByRole('button', { name: /^Save$/ }))
+    expect(await screen.findByText(/status code 403/)).toBeInTheDocument()
   })
 
   it('closes the edit modal via Cancel', async () => {
