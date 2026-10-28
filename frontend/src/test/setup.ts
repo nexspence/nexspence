@@ -2,7 +2,7 @@ import '@testing-library/jest-dom/vitest'
 import { beforeAll, afterEach, afterAll, vi } from 'vitest'
 import { server } from './msw/server'
 
-beforeAll(() => server.listen({ onUnhandledRequest: 'warn' }))
+beforeAll(() => server.listen({ onUnhandledFrame: 'warn' }))
 afterEach(() => {
   server.resetHandlers()
   localStorage.clear()

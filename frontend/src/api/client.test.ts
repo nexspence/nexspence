@@ -10,7 +10,7 @@ import {
   cancelBlobStoreMigration,
 } from './client'
 import { server } from '@/test/msw/server'
-import { http, HttpResponse } from 'msw'
+import { http, HttpResponse } from '@/test/msw/http'
 
 beforeEach(() => {
   localStorage.clear()

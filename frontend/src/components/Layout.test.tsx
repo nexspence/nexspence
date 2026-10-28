@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { http, HttpResponse } from 'msw'
+import { http, HttpResponse } from '@/test/msw/http'
 import { Routes, Route } from 'react-router-dom'
 import Layout from './Layout'
 import { renderWithProviders, seedAuthAsAdmin, seedAuthAsGuest } from '@/test/renderUtils'

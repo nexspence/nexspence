@@ -2,7 +2,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { useAuthStore } from './authStore'
 import { server } from '@/test/msw/server'
-import { http, HttpResponse } from 'msw'
+import { http, HttpResponse } from '@/test/msw/http'
 import { fixtures } from '@/test/fixtures'
 
 beforeEach(() => {

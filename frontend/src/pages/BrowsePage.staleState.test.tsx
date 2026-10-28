@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { screen, waitFor, fireEvent, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { http, HttpResponse } from 'msw'
+import { http, HttpResponse } from '@/test/msw/http'
 import BrowsePage from './BrowsePage'
 import { renderWithProviders, seedAuthAsAdmin } from '@/test/renderUtils'
 import { server } from '@/test/msw/server'

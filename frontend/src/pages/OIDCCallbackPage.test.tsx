@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { screen } from '@testing-library/react'
-import { http, HttpResponse } from 'msw'
+import { http, HttpResponse } from '@/test/msw/http'
 import { Routes, Route } from 'react-router-dom'
 import OIDCCallbackPage from './OIDCCallbackPage'
 import { renderWithProviders, seedAuthAsGuest } from '@/test/renderUtils'
