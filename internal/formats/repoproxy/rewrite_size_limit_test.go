@@ -3,6 +3,7 @@ package repoproxy_test
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -94,4 +95,69 @@ func TestServeGETRewritten_CacheHit_OversizedCachedBody_Rejected(t *testing.T) {
 	err = repoproxy.ServeGETRewritten(c, d, repo, "/meta.json", "", base.Coords{}, "text/plain", 0, bytes.ToUpper)
 	require.NoError(t, err, "the error is written directly onto the response, not returned")
 	assert.Equal(t, http.StatusBadGateway, w.Code)
+}
+
+// A configured limit applies both when populating the cache and when reading
+// an entry created with a larger limit. Overflow must never be truncated or cached.
+func TestServeGETRewritten_ConfiguredLimit(t *testing.T) {
+	useUnguardedUpstream(t)
+	for _, cached := range []bool{false, true} {
+		for _, size := range []int{16, 17} {
+			t.Run(fmt.Sprintf("cached=%v/bytes=%d", cached, size), func(t *testing.T) {
+				body := bytes.Repeat([]byte("a"), size)
+				upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					_, _ = w.Write(body)
+				}))
+				defer upstream.Close()
+				repo := proxyRepo("configured-limit", upstream.URL)
+				d := makeDeps(repo)
+				d.MaxRewrittenMetadataBytes = 16
+				if cached {
+					_, err := base.StoreArtifact(context.Background(), d, repo.Name, "/meta.json", "text/plain", base.Coords{}, bytes.NewReader(body), int64(size))
+					require.NoError(t, err)
+				}
+				w := httptest.NewRecorder()
+				c, _ := gin.CreateTestContext(w)
+				c.Request = httptest.NewRequest(http.MethodGet, "/meta.json", nil)
+				err := repoproxy.ServeGETRewritten(c, d, repo, "/meta.json", "", base.Coords{}, "text/plain", 0, bytes.ToUpper)
+				switch {
+				case size == 16:
+					require.NoError(t, err)
+					assert.Equal(t, http.StatusOK, w.Code)
+					assert.Equal(t, "AAAAAAAAAAAAAAAA", w.Body.String())
+				case cached:
+					require.NoError(t, err)
+					assert.Equal(t, http.StatusBadGateway, w.Code)
+				default:
+					require.ErrorContains(t, err, "16 byte rewrite size limit")
+					_, getErr := d.Assets.GetByPath(context.Background(), repo.Name, "/meta.json")
+					require.Error(t, getErr)
+				}
+			})
+		}
+	}
+}
+
+func TestServeGETRewritten_RaisedLimit(t *testing.T) {
+	useUnguardedUpstream(t)
+	body := bytes.Repeat([]byte("a"), (32<<20)+1)
+	requests := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests++
+		_, _ = w.Write(body)
+	}))
+	defer upstream.Close()
+	repo := proxyRepo("raised-limit", upstream.URL)
+	d := makeDeps(repo)
+	d.MaxRewrittenMetadataBytes = 64 << 20
+	for i := 0; i < 2; i++ {
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodGet, "/meta.json", nil)
+		err := repoproxy.ServeGETRewritten(c, d, repo, "/meta.json", "", base.Coords{}, "text/plain", 0, bytes.ToUpper)
+		require.NoError(t, err)
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Equal(t, bytes.ToUpper(body), w.Body.Bytes())
+	}
+	assert.Equal(t, 1, requests, "the second read must use cached metadata")
 }
