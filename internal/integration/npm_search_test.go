@@ -47,7 +47,7 @@ func TestNPMSearch_ContentSelectorsAcrossRepositoryTypes(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			token := selectorUser(t, admin, fmt.Sprintf("search-sel-%d", i), `repository == "`+name+`" && path.startsWith("/@team/")`, "read")
 			endpointOnly := selectorUser(t, admin, fmt.Sprintf("search-endpoint-%d", i), `repository == "`+name+`" && path.startsWith("/-/")`, "read")
-			for _, suffix := range []string{"/-/v1/search", "/-/v1/search/", "/-//v1/search"} {
+			for _, suffix := range []string{"/-/v1/search", "/-/v1/search/"} {
 				r := authReq(t, http.MethodGet, "/repository/"+name+suffix, nil, endpointOnly)
 				raw, _ := io.ReadAll(r.Body)
 				r.Body.Close()
@@ -55,7 +55,12 @@ func TestNPMSearch_ContentSelectorsAcrossRepositoryTypes(t *testing.T) {
 				assert.NotContains(t, string(raw), "hidden")
 				assert.NotContains(t, string(raw), "allowed")
 			}
-			for _, suffix := range []string{"/-/v1/search", "/-/v1/search/", "/-//v1/search", "/./-/v1/search"} {
+			for _, suffix := range []string{"/-//v1/search", "/./-/v1/search"} {
+				r := authReq(t, http.MethodGet, "/repository/"+name+suffix+"?size=1&from=0", nil, token)
+				r.Body.Close()
+				assert.Equal(t, http.StatusBadRequest, r.StatusCode)
+			}
+			for _, suffix := range []string{"/-/v1/search", "/-/v1/search/"} {
 				for _, from := range []int{0, 1} {
 					r := authReq(t, http.MethodGet, fmt.Sprintf("/repository/%s%s?size=1&from=%d", name, suffix, from), nil, token)
 					raw, _ := io.ReadAll(r.Body)
