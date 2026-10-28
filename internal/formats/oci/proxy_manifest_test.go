@@ -55,7 +55,7 @@ func TestHandler_ProxyManifest_DigestCacheHitsAvoidManifestLock(t *testing.T) {
 	}))
 	defer up.Close()
 
-	r, d := setupWithDeps(proxyManifestRepo(up.URL))
+	_, d := setupWithDeps(proxyManifestRepo(up.URL))
 	assets := &manifestLockCountingAssets{AssetRepo: d.Assets}
 	d.Assets = assets
 	r = manifestRouter(d)

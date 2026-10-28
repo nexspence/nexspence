@@ -33,14 +33,8 @@ func (h *Handler) proxyManifest(c *gin.Context, repo *domain.Repository, image, 
 	var repairErr error
 	loadCached := func(ctx context.Context) error {
 		var err error
-		cached, body, err = h.cachedManifest(ctx, repo.Name, manifestPath(image, ref), true)
-		if err != nil {
-			return err
-		}
-		if cached != nil && !strings.Contains(ref, ":") {
-			_, repairErr = h.persistManifest(ctx, repo, image, ref, cached.ContentType, body, cached)
-		}
-		return nil
+		cached, body, repairErr, err = h.loadCachedManifestForProxy(ctx, repo, image, ref)
+		return err
 	}
 	var err error
 	if strings.Contains(ref, ":") {
@@ -106,6 +100,15 @@ func (h *Handler) proxyManifest(c *gin.Context, repo *domain.Repository, image, 
 		return h.manifestUpstreamStatus(c, repo, image, ref, resp, cached, body, compatible)
 	}
 	return h.serveFetchedManifest(ctx, c, repo, image, ref, resp)
+}
+
+func (h *Handler) loadCachedManifestForProxy(ctx context.Context, repo *domain.Repository, image, ref string) (*domain.Asset, *manifestBody, error, error) {
+	cached, body, err := h.cachedManifest(ctx, repo.Name, manifestPath(image, ref), true)
+	if err != nil || cached == nil || strings.Contains(ref, ":") {
+		return cached, body, nil, err
+	}
+	_, repairErr := h.persistManifest(ctx, repo, image, ref, cached.ContentType, body, cached)
+	return cached, body, repairErr, nil
 }
 
 func (h *Handler) withManifestLock(ctx context.Context, repo *domain.Repository, image, ref string, fn func(context.Context) error) error {
