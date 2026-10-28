@@ -193,7 +193,7 @@ func applyChecksumHeaders(c *gin.Context, a *domain.Asset) {
 // addressed by digest) are never revalidated — callers pass maxAge == 0 for those.
 const DefaultMetadataMaxAge = 10 * time.Minute
 
-// maxRewrittenMetadataBytes caps storeAndServeResponse's and
+// maxRewrittenMetadataBytes is the default cap on storeAndServeResponse's and
 // serveCachedAsset's buffered io.ReadAll — the only unbounded reads in this
 // codebase, both gated on rewrite != nil (npm packuments, PyPI simple pages,
 // NuGet registration/flatcontainer indexes: the shared path any proxy that
@@ -204,6 +204,15 @@ const DefaultMetadataMaxAge = 10 * time.Minute
 // repository whose remote_url a caller can point at a hostile, compromised,
 // or simply oversized-by-accident upstream.
 const maxRewrittenMetadataBytes = 32 << 20
+
+func rewrittenMetadataLimit(d formats.Deps) int64 {
+	// Config loading rejects invalid values. Keep direct/zero-value callers
+	// bounded too, and leave room for LimitReader's one-byte overflow probe.
+	if d.MaxRewrittenMetadataBytes > 0 && d.MaxRewrittenMetadataBytes < 1<<63-1 {
+		return d.MaxRewrittenMetadataBytes
+	}
+	return maxRewrittenMetadataBytes
+}
 
 // MetadataMaxAge returns the freshness TTL to use for proxied metadata on this
 // repository. It reads proxy_config["metadata_max_age"], interpreted as a number
@@ -337,12 +346,13 @@ func serveCachedAsset(c *gin.Context, d formats.Deps, asset *domain.Asset, rc io
 		// reader limited to exactly the cap returns the trimmed prefix and a
 		// nil error, which would rewrite (and serve) a silently truncated
 		// document instead of rejecting it.
-		body, err := io.ReadAll(io.LimitReader(rc, maxRewrittenMetadataBytes+1))
+		limit := rewrittenMetadataLimit(d)
+		body, err := io.ReadAll(io.LimitReader(rc, limit+1))
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "cache read: " + err.Error()})
 			return
 		}
-		if len(body) > maxRewrittenMetadataBytes {
+		if int64(len(body)) > limit {
 			c.JSON(http.StatusBadGateway, gin.H{"error": "cached metadata exceeds the rewrite size limit"})
 			return
 		}
@@ -600,12 +610,13 @@ func storeAndServeResponse(c *gin.Context, d formats.Deps, repo *domain.Reposito
 		// Same cap and +1 trick as serveCachedAsset's re-read below: a
 		// hostile, compromised, or simply oversized-by-accident upstream
 		// otherwise buffers without limit before any quota/size check runs.
-		body, readErr := io.ReadAll(io.LimitReader(resp.Body, maxRewrittenMetadataBytes+1))
+		limit := rewrittenMetadataLimit(d)
+		body, readErr := io.ReadAll(io.LimitReader(resp.Body, limit+1))
 		if readErr != nil {
 			return fmt.Errorf("proxy metadata read: %w", readErr)
 		}
-		if len(body) > maxRewrittenMetadataBytes {
-			return fmt.Errorf("proxy metadata exceeds the %d byte rewrite size limit", maxRewrittenMetadataBytes)
+		if int64(len(body)) > limit {
+			return fmt.Errorf("proxy metadata exceeds the %d byte rewrite size limit", limit)
 		}
 		if err := storeOriginal(ctx, c, d, repo, repoRelativePath, ct, coords, body); err != nil {
 			return err

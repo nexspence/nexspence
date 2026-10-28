@@ -313,7 +313,8 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 		Tokens: authSvc,
 		// /v2/ upload paths are exempt from the global body cap, so this is the
 		// only bound on a staged blob upload (issue #208).
-		MaxUploadBytes: cfg.Docker.MaxUploadBytes,
+		MaxUploadBytes:            cfg.Docker.MaxUploadBytes,
+		MaxRewrittenMetadataBytes: cfg.Proxy.MaxRewrittenMetadataBytes,
 		// A Helm proxy looks the origin of every uncached chart up in the
 		// upstream index; this is how long a fetched index answers that.
 		HelmIndexCacheTTL: cfg.Helm.IndexCacheTTL,
