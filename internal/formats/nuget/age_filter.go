@@ -641,15 +641,31 @@ func upstreamLists(ctx context.Context, repo *domain.Repository, flatIndex, vers
 }
 
 // isRegistrationPath reports whether a proxied path is a registration
-// document: some segment names a registration hive, as rerootRegistrationID
+// document: it lies inside a registration hive, as rerootRegistrationID
 // recognizes upstream URLs.
 func isRegistrationPath(p string) bool {
-	for _, s := range strings.Split(strings.Trim(p, "/"), "/") {
-		if strings.HasPrefix(s, "registration") {
-			return true
+	return registrationHiveSegment(p) >= 0
+}
+
+// registrationHiveSegment returns the index of the segment of path p that
+// names a registration hive (registration, registration5-gz-semver2,
+// registrations2, ...), or -1. Every registration document lies at least two
+// segments below its hive ({hive}/{id}/index.json, {hive}/{id}/{version}.json,
+// {hive}/{id}/page/{lower}/{upper}.json), while a package id that merely
+// starts with "registration" sits right above the flat container's
+// index.json or names a package file. Without that distinction such a
+// package's version list and files escaped the flat container's age policy.
+func registrationHiveSegment(p string) int {
+	if strings.HasSuffix(p, ".nupkg") || strings.HasSuffix(p, ".nuspec") {
+		return -1
+	}
+	segs := strings.Split(strings.Trim(p, "/"), "/")
+	for i := 0; i+2 < len(segs); i++ {
+		if strings.HasPrefix(segs[i], "registration") {
+			return i
 		}
 	}
-	return false
+	return -1
 }
 
 // applyAgePolicy enforces minimum_package_age on a proxy GET. It reports
