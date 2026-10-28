@@ -12,6 +12,7 @@ package alpine
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha1" //nolint:gosec // apk protocol checksum (Q1 = SHA-1 prefix), not security
 	"encoding/base64"
 	"fmt"
@@ -129,14 +130,41 @@ func (h *Handler) handleUpload(c *gin.Context, repoName, p string) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid .apk: %s", err.Error())})
 		return
 	}
-	sum := sha1.Sum(compressed) //nolint:gosec // apk protocol checksum, not security
-	checksum := "Q1" + base64.StdEncoding.EncodeToString(sum[:])
+	name, version, extra := apkMetadata(path.Base(p), compressed, rawControl)
 
-	// .PKGINFO (real abuild metadata) is authoritative for name/version, same
-	// as the real `apk index` tool — the filename convention is only a
-	// fallback for a control segment that failed to parse.
-	name, version := apkCoords(path.Base(p))
-	extra := map[string]any{"checksum": checksum}
+	// The index directory is part of the coordinates: the checksum, sizes and
+	// dependencies above describe this one file, and the same name and version
+	// built for another architecture or branch is a different file whose
+	// index entry must not read them (#671).
+	coords := base.Coords{Group: indexDir(p), Name: name, Version: version}
+	ctx := c.Request.Context()
+	res, err := base.StoreArtifact(ctx, h.deps,
+		repoName, p, "application/x-alpine-apk", coords,
+		bytes.NewReader(body), int64(len(body)))
+	if err != nil {
+		c.JSON(base.HTTPStatusForError(err), gin.H{"error": err.Error()})
+		return
+	}
+	repo, err := h.deps.Repos.Get(ctx, repoName)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := h.placeInIndexDir(ctx, repo, res.Asset, "", coords, extra); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.Status(http.StatusCreated)
+}
+
+// apkMetadata derives an .apk's coordinates and APKINDEX metadata from its
+// control segment. .PKGINFO (real abuild metadata) is authoritative for
+// name/version, same as the real `apk index` tool — the filename convention is
+// only a fallback for a control segment that failed to parse.
+func apkMetadata(filename string, compressed, rawControl []byte) (name, version string, extra map[string]any) {
+	sum := sha1.Sum(compressed) //nolint:gosec // apk protocol checksum, not security
+	extra = map[string]any{"checksum": "Q1" + base64.StdEncoding.EncodeToString(sum[:])}
+	name, version = apkCoords(filename)
 	if info, pErr := parsePKGInfo(rawControl); pErr == nil {
 		name, version = info.Name, info.Version
 		if info.Description != "" {
@@ -155,20 +183,52 @@ func (h *Handler) handleUpload(c *gin.Context, repoName, p string) {
 			extra["provides"] = info.Provides
 		}
 	}
+	return name, version, extra
+}
 
-	coords := base.Coords{Name: name, Version: version}
-	res, err := base.StoreArtifact(c.Request.Context(), h.deps,
-		repoName, p, "application/x-alpine-apk", coords,
-		bytes.NewReader(body), int64(len(body)))
-	if err != nil {
-		c.JSON(base.HTTPStatusForError(err), gin.H{"error": err.Error()})
-		return
+// indexDir is the directory an .apk is indexed under, without the leading
+// slash: "x86_64" or "v3.20/main/x86_64".
+func indexDir(p string) string {
+	return strings.TrimPrefix(path.Dir(p), "/")
+}
+
+// placeInIndexDir records extra on the component coords name and moves asset
+// there if it sits elsewhere. A path first uploaded before the index directory
+// was part of the coordinates keeps its old, directory-less component on
+// upsert; once the last such path has moved, that component is dropped. A
+// non-empty sha256 is the content extra was read from: if the path holds
+// other bytes by now, nothing is written — the upload that replaced them
+// recorded their own.
+func (h *Handler) placeInIndexDir(ctx context.Context, repo *domain.Repository, asset *domain.Asset, sha256 string, coords base.Coords, extra map[string]any) error {
+	comp := &domain.Component{
+		RepositoryID: repo.ID, Repository: repo.Name, Format: string(repo.Format),
+		Group: coords.Group, Name: coords.Name, Version: coords.Version,
 	}
-	if err := h.deps.Components.UpdateExtra(c.Request.Context(), res.Asset.ComponentID, extra); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
+	if err := h.deps.Components.Create(ctx, comp); err != nil {
+		return fmt.Errorf("component for %s: %w", asset.Path, err)
 	}
-	c.Status(http.StatusCreated)
+	if sha256 != "" {
+		cur, err := h.deps.Assets.GetByPath(ctx, repo.Name, asset.Path)
+		if err != nil {
+			return fmt.Errorf("look up %s: %w", asset.Path, err)
+		}
+		if cur.SHA256 != sha256 {
+			return nil
+		}
+		asset = cur
+	}
+	if asset.ComponentID != comp.ID {
+		if err := h.deps.Assets.SetComponent(ctx, asset.ID, comp.ID); err != nil {
+			return fmt.Errorf("move %s to its index directory's component: %w", asset.Path, err)
+		}
+		asset.ComponentID = comp.ID
+		// Atomic per component, so it cannot drop one another upload is
+		// storing into right now.
+		if err := h.deps.Components.DeleteOrphans(ctx, repo.Name); err != nil {
+			return err
+		}
+	}
+	return h.deps.Components.UpdateExtra(ctx, comp.ID, extra)
 }
 
 func (h *Handler) serveFile(c *gin.Context, repoName, p string) {

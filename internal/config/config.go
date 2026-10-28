@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"math"
 	"os"
 	"reflect"
 	"strings"
@@ -97,17 +98,20 @@ type OutboundConfig struct {
 	AllowedInternalCIDRs []string `mapstructure:"allowed_internal_cidrs"`
 }
 
-// ProxyConfig configures the server-wide outbound proxy used when fetching from
-// upstream registries for proxy repositories. All fields are optional; when
-// empty, the standard HTTP_PROXY/HTTPS_PROXY/NO_PROXY environment variables are
-// honored instead. Per-repository proxy_config overrides these defaults.
+// ProxyConfig configures proxy metadata buffering and the server-wide outbound
+// proxy used to fetch from upstream registries. Empty outbound proxy fields
+// honor the standard HTTP_PROXY/HTTPS_PROXY/NO_PROXY environment variables.
+// Per-repository proxy_config overrides the outbound proxy defaults.
 type ProxyConfig struct {
-	HTTPProxy   string `mapstructure:"http_proxy"`
-	HTTPSProxy  string `mapstructure:"https_proxy"`
-	SOCKS5Proxy string `mapstructure:"socks5_proxy"`
-	NoProxy     string `mapstructure:"no_proxy"`
-	Username    string `mapstructure:"username"`
-	Password    string `mapstructure:"password"`
+	// MaxRewrittenMetadataBytes bounds buffered proxy metadata on cache fill
+	// and cache hit. Must be positive; the reader reserves one overflow byte.
+	MaxRewrittenMetadataBytes int64  `mapstructure:"max_rewritten_metadata_bytes"`
+	HTTPProxy                 string `mapstructure:"http_proxy"`
+	HTTPSProxy                string `mapstructure:"https_proxy"`
+	SOCKS5Proxy               string `mapstructure:"socks5_proxy"`
+	NoProxy                   string `mapstructure:"no_proxy"`
+	Username                  string `mapstructure:"username"`
+	Password                  string `mapstructure:"password"`
 }
 
 // BootstrapConfig holds the admin account that is created/synced on every startup.
@@ -763,6 +767,7 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("ldap.host", "")
 	v.SetDefault("ldap.search_base", "")
 	v.SetDefault("proxy.http_proxy", "")
+	v.SetDefault("proxy.max_rewritten_metadata_bytes", int64(32<<20))
 	v.SetDefault("proxy.https_proxy", "")
 	v.SetDefault("proxy.no_proxy", "")
 	v.SetDefault("proxy.password", "")
@@ -820,6 +825,9 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("parse config: %w", err)
 	}
 	cfg.UnknownKeys = UnknownKeys(md.Unused, os.Environ())
+	if cfg.Proxy.MaxRewrittenMetadataBytes <= 0 || cfg.Proxy.MaxRewrittenMetadataBytes == math.MaxInt64 {
+		return nil, fmt.Errorf("proxy.max_rewritten_metadata_bytes must be between 1 and %d", int64(math.MaxInt64-1))
+	}
 
 	if cfg.Database.DSN == "" {
 		return nil, fmt.Errorf("database.dsn is required (or set NEXSPENCE_DATABASE_DSN)")

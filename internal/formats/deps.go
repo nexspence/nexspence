@@ -54,6 +54,9 @@ type Deps struct {
 	// image layers are not truncated, which leaves this as their only bound.
 	// 0 disables the cap.
 	MaxUploadBytes int64
+	// MaxRewrittenMetadataBytes bounds buffered proxy metadata. Non-positive
+	// values use the default 32 MiB cap, including zero-value test configs.
+	MaxRewrittenMetadataBytes int64
 	// HelmIndexCacheTTL is how long a Helm proxy reuses an upstream index.yaml
 	// when resolving where a chart tarball comes from (config helm.index_cache_ttl).
 	// 0 fetches the index per lookup.

@@ -110,6 +110,10 @@ export default function RepositoriesPage() {
   const [editRepo, setEditRepo] = useState<Repository | null>(null)
   const [setupRepo, setSetupRepo] = useState<Repository | null>(null)
   const [activeMigrations, setActiveMigrations] = React.useState<Set<string>>(new Set())
+  // A failed row action (delete, online toggle) has no modal to show its
+  // error in; without this banner it failed silently and the row just stayed
+  // as it was (#682).
+  const [actionError, setActionError] = useState('')
 
   const { data: repos = [], isLoading, isError, error, refetch } = useQuery<Repository[]>({
     queryKey: ['repositories', formatFilter],
@@ -130,7 +134,10 @@ export default function RepositoriesPage() {
 
   const deleteMutation = useMutation({
     mutationFn: (name: string) => nexusApi.deleteRepository(name),
+    onMutate: () => setActionError(''),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['repositories'] }),
+    onError: (err, name) =>
+      setActionError(`Could not delete "${name}": ${apiErrorMessage(err, 'request failed')}`),
   })
 
   const toggleOnlineMutation = useMutation({
@@ -144,8 +151,9 @@ export default function RepositoriesPage() {
       )
       return { prev }
     },
-    onError: (_err, _vars, ctx) => {
+    onError: (err, { name }, ctx) => {
       if (ctx?.prev) qc.setQueryData(['repositories', formatFilter], ctx.prev)
+      setActionError(`Could not update "${name}": ${apiErrorMessage(err, 'request failed')}`)
     },
     onSettled: () => qc.invalidateQueries({ queryKey: ['repositories'] }),
   })
@@ -210,6 +218,16 @@ export default function RepositoriesPage() {
           style={{ minWidth: 140, flexShrink: 0 }}
         />
       </div>
+
+      {actionError && (
+        <div
+          role="alert"
+          style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px', marginBottom: 12, borderRadius: 8, fontSize: 13, color: 'var(--holo-c-red)', border: '1px solid var(--holo-c-red)' }}
+        >
+          <span style={{ flex: 1 }}>{actionError}</span>
+          <HoloButton onClick={() => setActionError('')}>Dismiss</HoloButton>
+        </div>
+      )}
 
       {isLoading ? (
         <div className={styles.empty}>Loading…</div>
@@ -1278,8 +1296,10 @@ function EditRepoModal({
       await nexusApi.updateRepository(repo.format, repo.type, repo.name, updateBody)
       onSaved()
     } catch (err: unknown) {
-      const ax = err as { response?: { data?: { error?: string } } }
-      setError(ax.response?.data?.error ?? 'Failed to save')
+      // apiErrorMessage falls back to axios' "Request failed with status code
+      // N" when the body is not the API's JSON — e.g. a reverse proxy's HTML
+      // refusal — so the status that names the culprit is not lost (#682).
+      setError(apiErrorMessage(err, 'Failed to save'))
     } finally {
       setLoading(false)
     }

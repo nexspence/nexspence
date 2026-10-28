@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -164,5 +165,33 @@ func TestDockerRouting(t *testing.T) {
 			r.ServeHTTP(w, req)
 			assert.Equal(t, tt.wantStatus, w.Code, "path: %s", tt.path)
 		})
+	}
+}
+
+// #682: `helm push oci://host/<helm-repo>` lands on /v2/ against a helm-format
+// repository. The refusal must say in OCI-client terms what is wrong — the
+// repository's format — and which repository type takes an OCI push, instead
+// of a bare {"error": ...} no registry client parses.
+func TestDockerRouting_NonOCIRepoExplainsFormat(t *testing.T) {
+	helmRepo := &domain.Repository{
+		ID: "h1", Name: "chartrepo", Format: domain.FormatHelm,
+		Type: domain.TypeHosted, Online: true, AllowAnonymous: true,
+	}
+	r := buildDockerRouter(helmRepo)
+
+	for _, path := range []string{"/v2/chartrepo/gd/manifests/1.37", "/v2/repository/chartrepo/gd/manifests/1.37"} {
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+
+		assert.Equal(t, http.StatusBadRequest, w.Code, path)
+		assert.Equal(t, "registry/2.0", w.Header().Get("Docker-Distribution-API-Version"), path)
+		var body struct {
+			Errors []struct{ Code, Message string } `json:"errors"`
+		}
+		if assert.NoError(t, json.Unmarshal(w.Body.Bytes(), &body), path) && assert.Len(t, body.Errors, 1, path) {
+			assert.Equal(t, "UNSUPPORTED", body.Errors[0].Code, path)
+			assert.Contains(t, body.Errors[0].Message, `"chartrepo" is a helm repository`, path)
+			assert.Contains(t, body.Errors[0].Message, "oci", path)
+		}
 	}
 }
