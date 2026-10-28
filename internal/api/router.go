@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -313,7 +315,8 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 		Tokens: authSvc,
 		// /v2/ upload paths are exempt from the global body cap, so this is the
 		// only bound on a staged blob upload (issue #208).
-		MaxUploadBytes: cfg.Docker.MaxUploadBytes,
+		MaxUploadBytes:            cfg.Docker.MaxUploadBytes,
+		MaxRewrittenMetadataBytes: cfg.Proxy.MaxRewrittenMetadataBytes,
 		// A Helm proxy looks the origin of every uncached chart up in the
 		// upstream index; this is how long a fetched index answers that.
 		HelmIndexCacheTTL: cfg.Helm.IndexCacheTTL,
@@ -415,6 +418,25 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 
 	// ── Gin engine ────────────────────────────────────────────
 	r := gin.New()
+	// Match before decoding: an escaped slash inside a username must stay
+	// within :userId, rather than turning into a second route segment (#687).
+	r.UseRawPath = true
+	r.UnescapePathValues = false
+	r.Use(func(c *gin.Context) {
+		if c.Request.URL.RawPath != "" {
+			// Gin uses QueryUnescape, which changes literal '+' into a space.
+			// These are path values: decode exactly once with PathUnescape.
+			for i := range c.Params {
+				value, err := url.PathUnescape(c.Params[i].Value)
+				if err != nil {
+					c.AbortWithStatus(http.StatusBadRequest)
+					return
+				}
+				c.Params[i].Value = value
+			}
+		}
+		c.Next()
+	})
 	// Decide whose X-Forwarded-For we believe before any middleware reads
 	// ClientIP. main validates the same list at startup, so an error here means
 	// the config changed underneath us: keep the fail-closed engine default of
@@ -934,7 +956,7 @@ func serveDockerV2(
 
 		if repoDef.Type == domain.TypeGroup {
 			if !repoDef.Format.IsOCIRegistry() {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "repository is not an OCI registry"})
+				writeNotOCIRegistry(c, repoDef)
 				return
 			}
 			c.Params = gin.Params{
@@ -946,7 +968,7 @@ func serveDockerV2(
 		}
 
 		if !repoDef.Format.IsOCIRegistry() {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "repository is not an OCI registry"})
+			writeNotOCIRegistry(c, repoDef)
 			return
 		}
 
@@ -972,6 +994,23 @@ func serveDockerV2(
 		}
 		h.ServeHTTP(c)
 	}
+}
+
+// writeNotOCIRegistry refuses a /v2/ request for a repository whose format
+// does not speak the distribution API. The usual way here is `helm push
+// oci://host/<helm-repo>` (#682): a helm repository is a classic chart
+// repository (index.yaml + chart uploads), and OCI charts belong in an oci or
+// docker repository. The body is the OCI error shape so registry clients that
+// read it print the reason; HEAD carries no body, so the status stays 400.
+func writeNotOCIRegistry(c *gin.Context, repo *domain.Repository) {
+	c.Header("Docker-Distribution-API-Version", "registry/2.0")
+	c.JSON(http.StatusBadRequest, gin.H{"errors": []gin.H{{
+		"code": "UNSUPPORTED",
+		"message": fmt.Sprintf(
+			"%q is a %s repository, not an OCI registry: push and pull OCI artifacts "+
+				"(docker images, helm push oci://, oras) through an oci or docker repository",
+			repo.Name, repo.Format),
+	}}})
 }
 
 // cleanupTaskAdapter adapts the cleanup repo (List) and service (RunPolicy) to the

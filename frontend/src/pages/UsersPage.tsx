@@ -321,6 +321,7 @@ export function ResetPasswordModal({ user, onClose, onSaved }: {
 /* ─── Users tab ──────────────────────────────────────────────── */
 export function UsersTab() {
   const qc = useQueryClient()
+  const currentUsername = useAuthStore(s => s.user?.username)
   const [filter, setFilter] = useState('')
   const [showCreate, setShowCreate] = useState(false)
   const [assignUser, setAssignUser] = useState<UserItem | null>(null)
@@ -375,6 +376,10 @@ export function UsersTab() {
         </div>
       )}
 
+      {deleteMutation.isError && (
+        <div role="alert" className={styles.error}>{apiErrorMessage(deleteMutation.error, 'Failed to delete user')}</div>
+      )}
+
       {isLoading ? (
         <div className={styles.empty}>Loading…</div>
       ) : filtered.length === 0 && !isError ? (
@@ -423,8 +428,11 @@ export function UsersTab() {
                   title={user.source !== 'local'
                     ? `A ${user.source} account's password is managed by the identity provider`
                     : 'Reset password'}><KeyRound size={14} /></HoloButton>
-                <HoloButton variant="danger" style={{ padding: 5 }} disabled={user.userId === 'admin'} onClick={() => {
-                  if (confirm(`Delete user "${user.userId}"?`)) deleteMutation.mutate(user.userId)
+                <HoloButton variant="danger" style={{ padding: 5 }} disabled={user.userId === currentUsername} onClick={() => {
+                  const bootstrapWarning = user.source === 'local'
+                    ? '\n\nIf this is the bootstrap account, set bootstrap.enabled: false and restart before deleting it to prevent recreation on the next restart.'
+                    : ''
+                  if (confirm(`Delete user "${user.userId}"?${bootstrapWarning}`)) deleteMutation.mutate(user.userId)
                 }} title="Delete user"><Trash2 size={14} /></HoloButton>
               </div>
             )
