@@ -7,6 +7,7 @@ import (
 	"crypto/md5"  //nolint:gosec // md5/sha1 required for artifact-protocol checksums (Maven .md5/.sha1, npm shasum), not security
 	"crypto/sha1" //nolint:gosec // md5/sha1 required for artifact-protocol checksums (Maven .md5/.sha1, npm shasum), not security
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -186,6 +187,41 @@ func applyChecksumHeaders(c *gin.Context, a *domain.Asset) {
 	}
 }
 
+// applyMD5ETagHeaders replaces a cached asset's sha256 ETag with the quoted
+// MD5 of its body and adds Repr-Digest/Digest (sha-256), as rubygems.org
+// serves its compact index. It returns the ETag set, or "" when the asset has
+// no MD5 recorded — then no ETag at all, which Bundler accepts, rather than
+// one it would check as an MD5 and reject.
+func applyMD5ETagHeaders(c *gin.Context, a *domain.Asset) string {
+	if sum, err := hex.DecodeString(a.SHA256); err == nil && len(sum) == sha256.Size {
+		digest := "sha-256=:" + base64.StdEncoding.EncodeToString(sum) + ":"
+		c.Header("Repr-Digest", digest)
+		c.Header("Digest", digest)
+	}
+	if a.MD5 == "" {
+		c.Writer.Header().Del("ETag")
+		return ""
+	}
+	etag := `"` + a.MD5 + `"`
+	c.Header("ETag", etag)
+	return etag
+}
+
+// ifNoneMatch reports whether an If-None-Match header matches etag, comparing
+// weakly (RFC 9110 section 13.1.2): a W/ prefix is ignored, "*" matches anything.
+func ifNoneMatch(header, etag string) bool {
+	if header == "" || etag == "" {
+		return false
+	}
+	for _, v := range strings.Split(header, ",") {
+		v = strings.TrimSpace(v)
+		if v == "*" || strings.TrimPrefix(v, "W/") == etag {
+			return true
+		}
+	}
+	return false
+}
+
 // DefaultMetadataMaxAge is the freshness window applied to proxied repository
 // metadata (indexes, Release/InRelease, packuments, repodata, simple-index
 // pages, …) when a repository does not override it via
@@ -326,13 +362,24 @@ func cacheFetchStore(ctx context.Context, d formats.Deps, asset *domain.Asset) (
 // serveCachedAsset streams (or, for HEAD, describes) a cached asset to the client.
 // A non-nil rewrite is applied to the body on the way out (the cache keeps the
 // upstream original). It takes ownership of rc and closes it.
-func serveCachedAsset(c *gin.Context, d formats.Deps, asset *domain.Asset, rc io.ReadCloser, rewrite func([]byte) []byte) {
+func serveCachedAsset(c *gin.Context, d formats.Deps, asset *domain.Asset, rc io.ReadCloser, opts ServeOptions) {
 	defer func() { _ = rc.Close() }()
+	rewrite := opts.Rewrite
+	applyChecksumHeaders(c, asset)
+	if opts.MD5ETag {
+		etag := applyMD5ETagHeaders(c, asset)
+		// Only an unrewritten body is the one the ETag names: a rewrite may
+		// change it, and then the rewrite sets its own validators.
+		if rewrite == nil && ifNoneMatch(c.GetHeader("If-None-Match"), etag) {
+			c.Status(http.StatusNotModified)
+			c.Writer.WriteHeaderNow()
+			return
+		}
+	}
 	// Count only real GETs so a HEAD probe + GET pull don't double-count.
 	if c.Request.Method == http.MethodGet && d.Downloads != nil {
 		d.Downloads.Add(asset.ID)
 	}
-	applyChecksumHeaders(c, asset)
 	if c.Request.Method == http.MethodHead {
 		c.Header("Content-Type", asset.ContentType)
 		if asset.SizeBytes > 0 && rewrite == nil {
@@ -417,6 +464,28 @@ func ServeGET(c *gin.Context, d formats.Deps, repo *domain.Repository, repoRelat
 func ServeGETRewritten(c *gin.Context, d formats.Deps, repo *domain.Repository, repoRelativePath, upstreamPath string,
 	coords base.Coords, defaultContentType string, maxAge time.Duration, rewrite func([]byte) []byte,
 ) error {
+	return ServeGETWithOptions(c, d, repo, repoRelativePath, upstreamPath, coords, defaultContentType, maxAge, ServeOptions{Rewrite: rewrite})
+}
+
+// ServeOptions tunes how ServeGETWithOptions serves a path.
+type ServeOptions struct {
+	// Rewrite, when non-nil, transforms the body on the way out; see
+	// ServeGETRewritten.
+	Rewrite func([]byte) []byte
+	// MD5ETag makes a cache hit carry the validators a RubyGems compact index
+	// (/versions, /info/<gem>) is served with upstream: ETag is the quoted MD5
+	// of the body — Bundler before 2.5 checks the body it received against
+	// the ETag as an MD5 and fails on anything else (#679) — and
+	// Repr-Digest/Digest carry its sha-256, which later Bundlers verify. A
+	// matching If-None-Match is answered 304. Without it a cache hit's ETag is
+	// the body's sha256.
+	MD5ETag bool
+}
+
+// ServeGETWithOptions is ServeGET with the per-path behavior in opts.
+func ServeGETWithOptions(c *gin.Context, d formats.Deps, repo *domain.Repository, repoRelativePath, upstreamPath string,
+	coords base.Coords, defaultContentType string, maxAge time.Duration, opts ServeOptions,
+) error {
 	ctx := c.Request.Context()
 	if repo.Type != domain.TypeProxy {
 		return fmt.Errorf("repoproxy: repository %q is not a proxy", repo.Name)
@@ -448,16 +517,16 @@ func ServeGETRewritten(c *gin.Context, d formats.Deps, repo *domain.Repository, 
 			// revalidated against upstream before serving. Immutable content
 			// (maxAge == 0) and HEAD probes always serve straight from cache.
 			if maxAge > 0 && c.Request.Method == http.MethodGet && time.Since(asset.LastModified) > maxAge {
-				return revalidateAndServe(c, d, repo, asset, repoRelativePath, upJoin, coords, defaultContentType, rc, rewrite)
+				return revalidateAndServe(c, d, repo, asset, repoRelativePath, upJoin, coords, defaultContentType, rc, opts)
 			}
-			serveCachedAsset(c, d, asset, rc, rewrite)
+			serveCachedAsset(c, d, asset, rc, opts)
 			return nil
 		}
 		// Blob file missing from cache storage (storage path changed or file deleted).
 		// Fall through to upstream fetch so the client gets content and the cache is repaired.
 	}
 
-	return fetchAndCache(c, d, repo, repoRelativePath, upJoin, coords, defaultContentType, rewrite)
+	return fetchAndCache(c, d, repo, repoRelativePath, upJoin, coords, defaultContentType, opts.Rewrite)
 }
 
 // fetchAndCache handles a cache miss (or a cache entry whose blob went missing):
@@ -529,18 +598,18 @@ func fetchAndCache(c *gin.Context, d formats.Deps, repo *domain.Repository,
 //
 // It takes ownership of rc (the open cache blob) and always closes it.
 func revalidateAndServe(c *gin.Context, d formats.Deps, repo *domain.Repository, asset *domain.Asset,
-	repoRelativePath, upJoin string, coords base.Coords, defaultContentType string, rc io.ReadCloser, rewrite func([]byte) []byte,
+	repoRelativePath, upJoin string, coords base.Coords, defaultContentType string, rc io.ReadCloser, opts ServeOptions,
 ) error {
 	ctx := c.Request.Context()
 
 	baseRemote, err := RemoteURL(repo)
 	if err != nil {
-		serveCachedAsset(c, d, asset, rc, rewrite)
+		serveCachedAsset(c, d, asset, rc, opts)
 		return nil
 	}
 	upstream, err := JoinURL(baseRemote, upJoin)
 	if err != nil {
-		serveCachedAsset(c, d, asset, rc, rewrite)
+		serveCachedAsset(c, d, asset, rc, opts)
 		return nil
 	}
 
@@ -562,7 +631,7 @@ func revalidateAndServe(c *gin.Context, d formats.Deps, repo *domain.Repository,
 	if err != nil {
 		// Upstream unreachable → serve stale cache so metadata consumers keep working.
 		DispatchProxyError(d, repo.Name, repoRelativePath, upstream, err)
-		serveCachedAsset(c, d, asset, rc, rewrite)
+		serveCachedAsset(c, d, asset, rc, opts)
 		return nil
 	}
 	defer func() { _ = resp.Body.Close() }()
@@ -574,18 +643,18 @@ func revalidateAndServe(c *gin.Context, d formats.Deps, repo *domain.Repository,
 		if d.Assets != nil {
 			_ = d.Assets.TouchLastModified(context.Background(), asset.ID)
 		}
-		serveCachedAsset(c, d, asset, rc, rewrite)
+		serveCachedAsset(c, d, asset, rc, opts)
 		return nil
 	case resp.StatusCode >= 200 && resp.StatusCode <= 299:
 		// Upstream returned a newer copy: replace the cached blob and serve it.
 		_ = rc.Close()
-		return storeAndServeResponse(c, d, repo, repoRelativePath, defaultContentType, coords, resp, rewrite)
+		return storeAndServeResponse(c, d, repo, repoRelativePath, defaultContentType, coords, resp, opts.Rewrite)
 	default:
 		// Any other status (404/410/5xx): don't discard a good cache on a transient
 		// upstream hiccup — serve stale and record the anomaly.
 		DispatchProxyError(d, repo.Name, repoRelativePath, upstream,
 			fmt.Errorf("revalidation returned status %d", resp.StatusCode))
-		serveCachedAsset(c, d, asset, rc, rewrite)
+		serveCachedAsset(c, d, asset, rc, opts)
 		return nil
 	}
 }
