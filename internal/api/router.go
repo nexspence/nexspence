@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -415,6 +416,25 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 
 	// ── Gin engine ────────────────────────────────────────────
 	r := gin.New()
+	// Match before decoding: an escaped slash inside a username must stay
+	// within :userId, rather than turning into a second route segment (#687).
+	r.UseRawPath = true
+	r.UnescapePathValues = false
+	r.Use(func(c *gin.Context) {
+		if c.Request.URL.RawPath != "" {
+			// Gin uses QueryUnescape, which changes literal '+' into a space.
+			// These are path values: decode exactly once with PathUnescape.
+			for i := range c.Params {
+				value, err := url.PathUnescape(c.Params[i].Value)
+				if err != nil {
+					c.AbortWithStatus(http.StatusBadRequest)
+					return
+				}
+				c.Params[i].Value = value
+			}
+		}
+		c.Next()
+	})
 	// Decide whose X-Forwarded-For we believe before any middleware reads
 	// ClientIP. main validates the same list at startup, so an error here means
 	// the config changed underneath us: keep the fail-closed engine default of
