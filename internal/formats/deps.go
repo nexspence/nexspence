@@ -35,6 +35,16 @@ type Deps struct {
 	// Publishes is optional — nil disables automatic promotion on publish
 	// (#542). It is told about client publishes into hosted repositories only.
 	Publishes PublishNotifier
+	// ScanResults is optional — the docker/oci pull gate (#641) reads the
+	// latest scan of an image from it. nil leaves the gate with no scans to
+	// read: a hosted repository with the gate on then refuses every image as
+	// unscanned, which is the safe reading of "nothing is known".
+	ScanResults repository.ScanResultRepo
+	// ScanPullUser is the account the image scanner pulls with (Trivy reads the
+	// image through this instance's own /v2/ API). The pull gate lets it
+	// through: an image a hosted repository refuses as unscanned could never
+	// be scanned otherwise. Empty exempts nobody.
+	ScanPullUser string
 	// Tokens mints a bearer token for a caller the request has already
 	// authenticated. It is optional — nil makes the handshakes that need one
 	// answer 503 rather than hand out a token nothing can validate.
@@ -44,6 +54,9 @@ type Deps struct {
 	// image layers are not truncated, which leaves this as their only bound.
 	// 0 disables the cap.
 	MaxUploadBytes int64
+	// MaxRewrittenMetadataBytes bounds buffered proxy metadata. Non-positive
+	// values use the default 32 MiB cap, including zero-value test configs.
+	MaxRewrittenMetadataBytes int64
 	// HelmIndexCacheTTL is how long a Helm proxy reuses an upstream index.yaml
 	// when resolving where a chart tarball comes from (config helm.index_cache_ttl).
 	// 0 fetches the index per lookup.

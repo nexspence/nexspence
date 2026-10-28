@@ -124,6 +124,25 @@ components:
             policyNames:
               type: array
               items: { type: string }
+        formatConfig:
+          type: object
+          description: >-
+            Format- and type-specific settings, replaced as a whole on update.
+          properties:
+            write_policy: { type: string, enum: [allow, allow_once, deny], description: "Hosted only." }
+            allow_redeploy_latest: { type: boolean, description: "Hosted docker/oci under allow_once." }
+            member_names:
+              type: array
+              items: { type: string }
+              description: Group only.
+            pull_block_severity:
+              type: string
+              enum: ["", low, medium, high, critical, malicious]
+              description: >-
+                docker/oci (hosted, proxy, group): refuse a manifest GET/HEAD with 403 DENIED
+                while the image's latest scan has a finding at or above this severity
+                (malicious ranks above critical; unknown/negligible never block). A hosted
+                repository also refuses an image with no finished scan. Empty or absent = off (#641).
 
     Component:
       type: object

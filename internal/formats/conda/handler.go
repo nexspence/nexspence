@@ -3,7 +3,7 @@
 // Conda channel layout:
 //
 //	GET /repository/<repo>/<platform>/repodata.json      → channel index
-//	GET /repository/<repo>/<platform>/current_repodata.json → trimmed channel index (proxy)
+//	GET /repository/<repo>/<platform>/current_repodata.json → trimmed channel index (proxy; 404 under minimum_package_age)
 //	GET /repository/<repo>/<platform>/repodata.json.bz2  → compressed index (returns 404)
 //	GET /repository/<repo>/<platform>/<filename>          → download package
 //	PUT /repository/<repo>/<platform>/<filename>          → upload package
@@ -21,6 +21,7 @@ import (
 	"os"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -31,7 +32,12 @@ import (
 )
 
 // Handler serves the Conda channel repository protocol.
-type Handler struct{ deps formats.Deps }
+type Handler struct {
+	deps formats.Deps
+	// ages caches per-subdir package timestamps for the minimum-package-age
+	// policy (#643); see age_filter.go.
+	ages ageTables
+}
 
 // New creates a Conda format Handler with the given dependencies.
 func New(deps formats.Deps) *Handler { return &Handler{deps: deps} }
@@ -209,6 +215,12 @@ func (h *Handler) serveProxy(c *gin.Context, repo *domain.Repository, repoName, 
 	// A repodata.json entry may point below the subdir, so filename can carry a
 	// directory; the component is named after the package file alone.
 	coords := base.Coords{Name: path.Base(filename), Group: platform}
+	// Before ServeGET, which would answer a cached file without asking: the
+	// age policy refuses a cached one too (#643).
+	if minAge := repoproxy.MinimumPackageAge(repo); minAge > 0 && isPackageFile(filename) &&
+		!h.packageAgeAllowed(c, repo, p, platform, minAge) {
+		return
+	}
 	if err := repoproxy.ServeGET(c, h.deps, repo, p, "", coords, "application/x-tar", 0); err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 	}
@@ -275,6 +287,15 @@ func (h *Handler) proxyIndex(c *gin.Context, repo *domain.Repository, repoName, 
 		return
 	}
 
+	minAge := repoproxy.MinimumPackageAge(repo)
+	if minAge > 0 && filename == "current_repodata.json" {
+		// Only the newest build of each package: once that one is too young
+		// there is no older build to offer. conda falls back to repodata.json
+		// on a 404 (#643; see age_filter.go).
+		c.JSON(http.StatusNotFound, gin.H{"error": "use repodata.json: this repository enforces a minimum package age"})
+		return
+	}
+
 	upstreamURL := remoteBase + "/" + platform + "/" + filename
 	req, err := http.NewRequestWithContext(c.Request.Context(), http.MethodGet, upstreamURL, nil)
 	if err != nil {
@@ -299,6 +320,15 @@ func (h *Handler) proxyIndex(c *gin.Context, repo *domain.Repository, repoName, 
 	if err := json.NewDecoder(resp.Body).Decode(&doc); err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "parse upstream " + filename + ": " + err.Error()})
 		return
+	}
+
+	// Builds younger than the minimum package age are not offered (#643). The
+	// download gate's table is taken first, while the urls are upstream's.
+	if minAge > 0 {
+		if filename == "repodata.json" {
+			h.storeAgeTable(repo, remoteBase, platform, ageTableFromDoc(doc, remoteBase, platform))
+		}
+		logUndatedPackages(repo, platform, filterRepodataByAge(doc, time.Now().Add(-minAge).UnixMilli()))
 	}
 
 	// The proxy base is the CHANNEL root, not the subdir: an entry may name a sibling

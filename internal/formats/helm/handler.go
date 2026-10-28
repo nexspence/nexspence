@@ -66,6 +66,11 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 		coords := base.Coords{Name: filename}
 		upstream := ""
 		if strings.HasSuffix(filename, ".tgz") {
+			// Before the origin lookup, which skips the index for a cached
+			// archive: the age policy refuses a cached one too (#643).
+			if minAge := repoproxy.MinimumPackageAge(repo); minAge > 0 && !h.chartAgeAllowed(c, repo, p, minAge) {
+				return
+			}
 			chartName, version := splitChartFilename(filename)
 			coords = base.Coords{Name: chartName, Version: version}
 			u, name, ver := h.proxyChartUpstream(c, repo, p)
@@ -265,6 +270,11 @@ func (h *Handler) fetchAndRewriteHelmIndex(c *gin.Context, repo *domain.Reposito
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		return
+	}
+
+	// Versions younger than the minimum package age are not offered (#643).
+	if minAge := repoproxy.MinimumPackageAge(repo); minAge > 0 {
+		logUndatedCharts(repo, filterIndexByAge(index, time.Now().Add(-minAge)))
 	}
 
 	// Rewrite each chart's download URLs to point through this proxy.

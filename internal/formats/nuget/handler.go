@@ -38,7 +38,12 @@ import (
 )
 
 // Handler serves the NuGet v2/v3 repository protocol.
-type Handler struct{ deps formats.Deps }
+type Handler struct {
+	deps formats.Deps
+	// age caches registration hives and publish times for the
+	// minimum-package-age policy (#643); see age_filter.go.
+	age ageCache
+}
 
 // New creates a NuGet format Handler with the given dependencies.
 func New(deps formats.Deps) *Handler { return &Handler{deps: deps} }
@@ -82,6 +87,11 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 		if strings.HasPrefix(p, "/v3/registration/") {
 			localBase := strings.TrimRight(h.deps.BaseURL, "/") + "/repository/" + repo.Name
 			rewrite = func(b []byte) []byte { return RewriteRegistration(b, localBase) }
+		}
+		if minAge := repoproxy.MinimumPackageAge(repo); minAge > 0 {
+			if done := h.applyAgePolicy(c, repo, p, minAge, &rewrite); done {
+				return
+			}
 		}
 		if err := repoproxy.ServeGETRewritten(c, h.deps, repo, p, upstreamPath, coords, "application/octet-stream", maxAge, rewrite); err != nil {
 			c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})

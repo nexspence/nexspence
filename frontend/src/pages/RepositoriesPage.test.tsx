@@ -507,6 +507,54 @@ describe('RepositoriesPage', () => {
     expect(screen.getByPlaceholderText('e.g. 7')).toBeInTheDocument()
   })
 
+  // #643: so does a NuGet proxy.
+  it('shows minimum package age on a nuget proxy', async () => {
+    seedRepos([fixtures.repository({ id: 'repo-nuget', name: 'nuget-proxy', format: 'nuget', type: 'proxy', online: true })])
+    renderWithProviders(<RepositoriesPage />)
+    await screen.findByText('nuget-proxy')
+    fireEvent.click(screen.getAllByTitle('Settings')[0])
+    await screen.findByText('Repository settings')
+    expect(screen.getByPlaceholderText('e.g. 7')).toBeInTheDocument()
+  })
+
+  it('shows minimum package age on a helm proxy', async () => {
+    seedRepos([fixtures.repository({ id: 'repo-helm', name: 'helm-proxy', format: 'helm', type: 'proxy', online: true })])
+    renderWithProviders(<RepositoriesPage />)
+    await screen.findByText('helm-proxy')
+    fireEvent.click(screen.getAllByTitle('Settings')[0])
+    await screen.findByText('Repository settings')
+    expect(screen.getByPlaceholderText('e.g. 7')).toBeInTheDocument()
+  })
+
+  it('shows minimum package age on a conda proxy', async () => {
+    seedRepos([fixtures.repository({ id: 'repo-conda', name: 'conda-proxy', format: 'conda', type: 'proxy', online: true })])
+    renderWithProviders(<RepositoriesPage />)
+    await screen.findByText('conda-proxy')
+    fireEvent.click(screen.getAllByTitle('Settings')[0])
+    await screen.findByText('Repository settings')
+    expect(screen.getByPlaceholderText('e.g. 7')).toBeInTheDocument()
+  })
+
+  // #643: a rubygems proxy enforces the policy too, so its settings show the field.
+  it('shows minimum package age on a rubygems proxy', async () => {
+    seedRepos([fixtures.repository({ id: 'repo-gems', name: 'gems-proxy', format: 'rubygems', type: 'proxy', online: true })])
+    renderWithProviders(<RepositoriesPage />)
+    await screen.findByText('gems-proxy')
+    fireEvent.click(screen.getAllByTitle('Settings')[0])
+    await screen.findByText('Repository settings')
+    expect(screen.getByPlaceholderText('e.g. 7')).toBeInTheDocument()
+  })
+
+  // #643: a cargo proxy enforces the policy too, so its settings show the field.
+  it('shows minimum package age on a cargo proxy', async () => {
+    seedRepos([fixtures.repository({ id: 'repo-cargo', name: 'cargo-proxy', format: 'cargo', type: 'proxy', online: true })])
+    renderWithProviders(<RepositoriesPage />)
+    await screen.findByText('cargo-proxy')
+    fireEvent.click(screen.getAllByTitle('Settings')[0])
+    await screen.findByText('Repository settings')
+    expect(screen.getByPlaceholderText('e.g. 7')).toBeInTheDocument()
+  })
+
   it('attaches a routing rule to a proxy repo (#642)', async () => {
     const user = userEvent.setup()
     let put: Record<string, unknown> | null = null

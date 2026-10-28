@@ -273,6 +273,9 @@ func (h *Handler) handleManifests(c *gin.Context, repoName, imageName, reference
 	repo, _ := h.deps.Repos.Get(c.Request.Context(), repoName)
 	switch c.Request.Method {
 	case http.MethodGet, http.MethodHead:
+		if !h.pullGateAllows(c, repo, imageName, reference) {
+			return
+		}
 		if repo != nil && repo.Type == domain.TypeProxy {
 			cachePath := manifestPath(imageName, reference)
 			// Upstream OCI path: /v2/{image}/manifests/{ref}

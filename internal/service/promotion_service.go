@@ -331,18 +331,10 @@ func (s *PromotionService) scanGate(ctx context.Context, rule *domain.PromotionR
 	if err != nil || scan == nil {
 		return fmt.Errorf("component %s: scan required but not yet run", compID)
 	}
-	counts := map[string]int{
-		domain.ScanSeverityMalicious: scan.Malicious,
-		domain.ScanSeverityCritical:  scan.Critical,
-		domain.ScanSeverityHigh:      scan.High,
-		domain.ScanSeverityMedium:    scan.Medium,
-		domain.ScanSeverityLow:       scan.Low,
-		domain.ScanSeverityUnknown:   scan.Unknown,
-	}
 	failOn := rule.EffectiveScanFailSeverities()
 	var failed []string
 	for _, sev := range failOn {
-		if n := counts[sev]; n > 0 {
+		if n := scan.SeverityCount(sev); n > 0 {
 			failed = append(failed, fmt.Sprintf("%d %s", n, sev))
 		}
 	}

@@ -333,6 +333,92 @@ Once the cache is populated (or if you seed the cache directory by hand), set
 `skip_db_update: true` so Trivy never attempts a refresh; re-seed the mirror
 and flip it back to refresh.
 
+## Refusing vulnerable pulls
+
+A docker or oci repository can refuse to serve an image whose latest scan has
+findings at or above a severity you choose — Harbor's "Prevent vulnerable
+images from running". It is off by default and works on hosted, proxy and
+group repositories alike. Turn it on in the repository settings
+(**Refuse pulls at severity**) or over the API with the `pull_block_severity`
+key of `formatConfig`:
+
+```bash
+curl -u admin:… -X PUT http://localhost:8081/service/rest/v1/repositories/docker/hosted/docker-hosted \
+  -H 'Content-Type: application/json' \
+  -d '{"online":true,"formatConfig":{"pull_block_severity":"high"}}'
+```
+
+`formatConfig` is replaced as a whole on update, so send the keys you want to
+keep (`write_policy`, `member_names`, …) along with it. An empty string or an
+absent key turns the gate off.
+
+| Value | Refuses an image with findings of |
+|---|---|
+| `low` | low, medium, high, critical or malicious |
+| `medium` | medium, high, critical or malicious |
+| `high` | high, critical or malicious |
+| `critical` | critical or malicious |
+| `malicious` | malicious only |
+
+`malicious` ranks above `critical`: a malicious-package report has no CVSS
+level, so every threshold stops it. Findings the scanner files as `unknown`
+(negligible or unclassified) never stop a pull, and `negligible`/`unknown`
+are not accepted as thresholds.
+
+**What is refused.** `GET` and `HEAD` of a manifest answer `403` with an OCI
+error — `HEAD` without a body:
+
+```json
+{"errors":[{"code":"DENIED","message":"current image app:1.0 with 2 critical vulnerabilities cannot be pulled due to configured policy in repository \"docker-hosted\": prevent images with vulnerability severity of \"high\" or higher from running"}]}
+```
+
+Blobs are not gated: a client only learns a layer's digest from a manifest,
+and one layer is shared by images the gate passes.
+
+**Which scan decides.** The latest scan of the image: of the tag for a pull by
+tag; for a pull by digest, the newest scan of that manifest or of any tag that
+resolves to it. A multi-arch pull asks for the index by tag and then for one
+platform manifest by digest; a platform manifest without a scan of its own is
+judged by the scan of the tagged index that lists it (the tag is what the
+scanner scanned), and one that was scanned itself is judged by its own scan.
+
+**No scan yet.** A failed scan counts as no scan — it found nothing because it
+looked at nothing.
+
+| Repository | No finished scan | Finished scan at or above the threshold |
+|---|---|---|
+| hosted | refused (serving it would read as a clean pull) | refused |
+| proxy | served — the first pull is what brings the image in to be scanned | refused |
+| group | decided by the member that answers: refused from a hosted member, served from a proxy | refused |
+
+A manifest that is not an image — a signature, an SBOM, a Helm chart, anything
+whose config is not an image config — is not refused for being unscanned, so
+`cosign verify` keeps working; a finished scan with findings still refuses it.
+A manifest the repository does not hold is not judged at all: a hosted
+repository answers `MANIFEST_UNKNOWN`, a proxy fetches it.
+
+**Groups.** A member's gate holds inside every group, and its refusal is
+relayed rather than skipped — the group does not try the next member, so the
+same image cannot be pulled around the gate through a group. A gate set on the
+group applies to whatever member answers; when both carry one, the stricter
+threshold applies and the refusal names the repository that set it.
+
+**The scanner itself is exempt.** Trivy reads images through this instance's
+own `/v2/` API with the bootstrap admin account (`bootstrap.admin_username`);
+pulls made as that account pass the gate, or a hosted image refused as
+unscanned could never be scanned. Pulling as any other account is gated.
+
+**A re-pushed tag is unscanned until it is scanned again.** Each image scan
+records the sha256 of the manifest the tag held when the scan started, and
+the gate applies a scan only while that is still the manifest being served.
+Re-push different content to a scanned tag and the old scan stops counting:
+a hosted repository refuses the tag as unscanned (a proxy serves it, per the
+no-scan rule) until a scan of the new content lands — so keep scan-on-upload
+(`scan.enabled`) on when you rely on the gate. A push that lands while a scan
+is starting can leave the scan recorded against the previous manifest; that
+only ever reads as "unscanned", never as clean. Scans made before this check
+existed record no manifest and are trusted as they were.
+
 ## Where the switch lives
 
 | Setting | config.yaml key | Environment variable | Helm value |

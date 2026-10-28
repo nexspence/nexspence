@@ -45,8 +45,14 @@ const (
 // url is empty for same-host in-subtree entries: ServeGET then forwards the
 // request path through remote_url (so an http listing under an https remote
 // stays on TLS). Off-host and sibling-subtree entries store the absolute origin.
+//
+// created/dated carry the entry's publish time for the minimum-package-age
+// gate (#643); chartDated reports whether any version of the same chart is
+// dated, which decides the hybrid failure mode for an undated entry.
 type chartOrigin struct {
 	name, version, url string
+	created            time.Time
+	dated, chartDated  bool
 }
 
 // chartIndex is one repository's slot. Its lock is held across the upstream
@@ -56,8 +62,12 @@ type chartIndex struct {
 	mu     sync.Mutex
 	urls   map[string]chartOrigin // rewritten local path → origin; never mutated once published
 	urlsAt time.Time
-	err    error
-	errAt  time.Time
+	// good is the last table fetched successfully. It outlives a failed
+	// refetch so the age gate can still date a cached chart while upstream
+	// is down (publish times never change).
+	good  map[string]chartOrigin
+	err   error
+	errAt time.Time
 
 	lastUsed time.Time // guarded by chartIndexCache.mu
 }
@@ -99,6 +109,12 @@ func (c *chartIndexCache) slot(key string) *chartIndex {
 // chartURLs returns repo's upstream chart URL table, fetching index.yaml when the
 // cached copy is missing or stale. The returned map is shared and read-only.
 func (h *Handler) chartURLs(ctx context.Context, repo *domain.Repository, remoteBase string) (map[string]chartOrigin, error) {
+	return h.chartTable(ctx, repo, remoteBase, false)
+}
+
+// chartTable is chartURLs; with allowStale a failed refetch answers the last
+// table fetched successfully, when there is one.
+func (h *Handler) chartTable(ctx context.Context, repo *domain.Repository, remoteBase string, allowStale bool) (map[string]chartOrigin, error) {
 	ttl := h.deps.HelmIndexCacheTTL
 	if ttl <= 0 {
 		index, err := fetchHelmIndexDoc(ctx, repo, remoteBase)
@@ -117,6 +133,9 @@ func (h *Handler) chartURLs(ctx context.Context, repo *domain.Repository, remote
 		return e.urls, nil
 	}
 	if e.err != nil && now.Sub(e.errAt) < min(chartIndexErrorTTL, ttl) {
+		if allowStale && e.good != nil {
+			return e.good, nil
+		}
 		return nil, e.err
 	}
 
@@ -129,9 +148,13 @@ func (h *Handler) chartURLs(ctx context.Context, repo *domain.Repository, remote
 			return nil, err
 		}
 		e.urls, e.err, e.errAt = nil, err, time.Now()
+		if allowStale && e.good != nil {
+			return e.good, nil
+		}
 		return nil, err
 	}
 	e.urls, e.urlsAt, e.err = chartOriginTable(index, remoteBase), time.Now(), nil
+	e.good = e.urls
 	return e.urls, nil
 }
 
@@ -143,6 +166,7 @@ func (h *Handler) chartURLs(ctx context.Context, repo *domain.Repository, remote
 func chartOriginTable(index map[string]any, remoteBase string) map[string]chartOrigin {
 	entries, _ := index["entries"].(map[string]any)
 	table := make(map[string]chartOrigin, len(entries))
+	chartDated := map[string]bool{}
 	for key, raw := range entries {
 		charts, ok := raw.([]any)
 		if !ok {
@@ -158,6 +182,10 @@ func chartOriginTable(index map[string]any, remoteBase string) map[string]chartO
 				name = n
 			}
 			version := asString(chart["version"])
+			created, dated := chartCreated(chart["created"])
+			if dated {
+				chartDated[name] = true
+			}
 			urls, _ := chart["urls"].([]any)
 			if len(urls) == 0 || version == "" {
 				continue
@@ -186,8 +214,14 @@ func chartOriginTable(index map[string]any, remoteBase string) map[string]chartO
 				continue
 			}
 			if _, seen := table[rel]; !seen {
-				table[rel] = chartOrigin{name: name, version: version, url: origin}
+				table[rel] = chartOrigin{name: name, version: version, url: origin, created: created, dated: dated}
 			}
+		}
+	}
+	for rel, o := range table {
+		if chartDated[o.name] {
+			o.chartDated = true
+			table[rel] = o
 		}
 	}
 	return table

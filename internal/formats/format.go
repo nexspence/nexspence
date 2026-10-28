@@ -29,3 +29,8 @@ type FormatHandler interface {
 // a miss during fan-out, while the same answer to a request addressed straight at
 // the member must reach the client unchanged.
 const GroupMemberKey = "nexspence.group_member"
+
+// GroupRepoKey is set alongside GroupMemberKey to the name of the group doing
+// the fan-out, so a member handler can apply a policy the group itself carries
+// to whatever member answers — the docker/oci pull gate (#641) does.
+const GroupRepoKey = "nexspence.group_repo"

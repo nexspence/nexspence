@@ -140,6 +140,7 @@ type ScanService struct {
 	HTTPBaseURL  string                    // e.g. http://localhost:8081 — used to build registry pull refs for hosted images
 	TrivyTimeout time.Duration             // per-scan wall-clock limit (0 = no extra timeout); default 10m
 	ScanResults  repository.ScanResultRepo // may be nil; if set, each scan is persisted here
+	Assets       repository.AssetRepo      // may be nil; if set, an image scan records the manifest it looked at
 	OSVClient    *OSVClient                // used for non-Docker formats
 	scanUsername string                    // registry credentials handed to Trivy via TRIVY_USERNAME/TRIVY_PASSWORD (see TrivyEnv)
 	scanPassword string
@@ -340,6 +341,34 @@ func (s *ScanService) drainQueue(ctx context.Context) {
 	}
 }
 
+// WithAssets attaches the asset repository an image scan reads the scanned
+// manifest's sha256 from (see manifestSHA256) and returns s.
+func (s *ScanService) WithAssets(repo repository.AssetRepo) *ScanService {
+	s.Assets = repo
+	return s
+}
+
+// manifestSHA256 returns the hex sha256 of the manifest comp's tag points at
+// as the scan starts, or "" when it cannot be read. The pull gate (#641)
+// compares it with the manifest it is about to serve, so a tag re-pushed
+// after its scan is not served on the strength of a scan of other content.
+//
+// It is read before Trivy pulls the image, so a push landing in between
+// leaves the recorded sha older than what Trivy actually scanned. That only
+// errs one way: the gate then sees a mismatch and treats the tag as
+// unscanned until the next scan, never a vulnerable manifest as scanned.
+func (s *ScanService) manifestSHA256(ctx context.Context, comp *domain.Component) string {
+	if s.Assets == nil || comp.Version == "" {
+		return ""
+	}
+	// The path an OCI manifest is stored under (oci.manifestPath).
+	a, err := s.Assets.GetByPath(ctx, comp.Repository, "/manifests/"+comp.Name+"/"+comp.Version)
+	if err != nil || a == nil {
+		return ""
+	}
+	return a.SHA256
+}
+
 // WithScanResults attaches a repository for persisting scan results and returns s.
 func (s *ScanService) WithScanResults(repo repository.ScanResultRepo) *ScanService {
 	s.ScanResults = repo
@@ -429,8 +458,9 @@ func (s *ScanService) Scan(ctx context.Context, componentID, imageRef string) (*
 	}
 
 	result := &domain.ScanResult{
-		ScannedAt: time.Now().UTC(),
-		ImageRef:  ref,
+		ScannedAt:      time.Now().UTC(),
+		ImageRef:       ref,
+		ManifestSHA256: s.manifestSHA256(ctx, comp),
 	}
 
 	bin := s.trivy.BinOrDefault()
@@ -599,6 +629,9 @@ func (s *ScanService) persistScanRow(ctx context.Context, comp *domain.Component
 		Total:       result.Summary.Total,
 		ScannedAt:   result.ScannedAt,
 		Error:       result.Error,
+	}
+	if result.ManifestSHA256 != "" {
+		row.Raw = map[string]any{domain.ScanRawManifestSHA256Key: result.ManifestSHA256}
 	}
 	if err := s.ScanResults.Insert(ctx, row); err != nil {
 		log.Printf("nexor: scan result row not inserted component=%s scanner=%s: %v", comp.ID, scanner, err)
