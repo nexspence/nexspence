@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/nexspence-oss/nexspence/internal/auth"
 	"github.com/nexspence-oss/nexspence/internal/config"
@@ -16,17 +17,19 @@ import (
 
 // UserService handles user management and authentication.
 type UserService struct {
-	users   repository.UserRepo
-	roles   repository.RoleRepo
-	auth    *auth.Service
-	ldap    auth.LDAPAuthenticator // nil when LDAP is disabled
-	ldapCfg config.LDAPConfig      // empty when LDAP is disabled
-	oidc    auth.OIDCAuthenticator // nil when OIDC is disabled
-	oidcCfg config.OIDCConfig      // empty when OIDC is disabled
-	groups  auth.GroupLookup       // nil unless a directory lookup (Google Admin SDK) is configured
-	saml    auth.SAMLAuthenticator // nil when SAML is disabled
-	samlCfg config.SAMLConfig      // empty when SAML is disabled
-	log     logger.Logger
+	users          repository.UserRepo
+	roles          repository.RoleRepo
+	auth           *auth.Service
+	ldap           auth.LDAPAuthenticator // nil when LDAP is disabled
+	ldapCfg        config.LDAPConfig      // empty when LDAP is disabled
+	oidc           auth.OIDCAuthenticator // nil when OIDC is disabled
+	oidcCfg        config.OIDCConfig      // empty when OIDC is disabled
+	groups         auth.GroupLookup       // nil unless a directory lookup (Google Admin SDK) is configured
+	saml           auth.SAMLAuthenticator // nil when SAML is disabled
+	samlCfg        config.SAMLConfig      // empty when SAML is disabled
+	log            logger.Logger
+	basicAuthCache *basicAuthVerificationCache
+	checkPassword  func(hash, password string) error
 }
 
 // NewUserService constructs a service for managing users, their passwords, and roles.
@@ -36,7 +39,7 @@ func NewUserService(
 	auth *auth.Service,
 	log logger.Logger,
 ) *UserService {
-	return &UserService{users: users, roles: roles, auth: auth, log: log}
+	return &UserService{users: users, roles: roles, auth: auth, log: log, basicAuthCache: newBasicAuthVerificationCache(), checkPassword: auth.CheckPassword}
 }
 
 // WithLDAP attaches an LDAP authenticator and its config.
@@ -116,6 +119,37 @@ func (s *UserService) Login(ctx context.Context, username, password string) (str
 	}
 	_ = s.users.UpdateLastLogin(ctx, username)
 	return token, u, nil
+}
+
+// AuthenticateBasic validates credentials for high-volume data routes without minting a JWT.
+// Successful local password checks are cached briefly, but the current user record
+// is loaded for every request so roles and revocation state remain current.
+func (s *UserService) AuthenticateBasic(ctx context.Context, username, password string) (*domain.User, error) {
+	u, err := s.users.Get(ctx, username)
+	if err != nil && !errors.Is(err, repository.ErrNotFound) {
+		return nil, err
+	}
+	if s.ldap != nil && (u == nil || u.Source == domain.UserSourceLDAP) {
+		_, ldapUser, loginErr := s.Login(ctx, username, password)
+		return ldapUser, loginErr
+	}
+	if u == nil {
+		return nil, fmt.Errorf("%w: user %q", ErrNotFound, username)
+	}
+	cacheHit := s.basicAuthCache.valid(username, password, u)
+	if u.Status != domain.UserStatusActive {
+		return nil, fmt.Errorf("%w: user account is not active", ErrInvalidInput)
+	}
+	if !cacheHit {
+		if err := s.checkPassword(u.PasswordHash, password); err != nil {
+			return nil, err
+		}
+		s.basicAuthCache.remember(username, password, u)
+	}
+	if u.LastLogin == nil || time.Since(*u.LastLogin) >= time.Minute {
+		_ = s.users.UpdateLastLogin(ctx, username)
+	}
+	return u, nil
 }
 
 // loginLDAP authenticates via LDAP and upserts the local user record.
