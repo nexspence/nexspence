@@ -40,7 +40,11 @@ type ComponentRepo interface {
 	// Create upserts on (repository, format, group, name, version). On conflict
 	// a non-nil Extra (even an empty map) replaces the stored extra; a nil Extra
 	// leaves it as it is (#668), unless the component has no assets left, in
-	// which case it is reset.
+	// which case it is reset to InitialExtra (empty when nil). A new row gets
+	// Extra, or InitialExtra when Extra is nil. When a non-nil Extra replaces
+	// the stored extra of a component that still has assets, the stored values
+	// of KeepExtraKeys are kept, in the same statement; one with no assets left
+	// describes deleted content and keeps nothing.
 	Create(ctx context.Context, c *domain.Component) error
 	Delete(ctx context.Context, id string) error
 	// UpdateExtra merges JSON into components.extra (e.g. scan_result).

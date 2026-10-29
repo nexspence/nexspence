@@ -225,27 +225,42 @@ func (r *componentRepo) Search(ctx context.Context, p domain.SearchParams) (*dom
 func (r *componentRepo) Create(ctx context.Context, c *domain.Component) error {
 	extraMap := c.Extra
 	if extraMap == nil {
+		extraMap = c.InitialExtra
+	}
+	if extraMap == nil {
 		extraMap = map[string]any{}
 	}
 	extra, _ := json.Marshal(extraMap)
 	// A nil Extra keeps an existing row's extra (#668): storing one more file of
 	// a release must not drop what was recorded for it. A row with no assets
 	// left is the exception — its extra describes deleted content (a tag
-	// deleted and pushed again, a package deleted and rebuilt), so it resets.
+	// deleted and pushed again, a package deleted and rebuilt), so it resets
+	// to InitialExtra.
 	return lockDB(ctx, r.db).QueryRow(ctx, `
 		INSERT INTO components
 		  (repository_id, format, group_id, name, version, extra)
 		VALUES ($1, $2, $3, $4, $5, $6)
 		ON CONFLICT (repository_id, format, group_id, name, version) DO UPDATE
 		  SET extra = CASE
-		        WHEN $7::boolean THEN EXCLUDED.extra
 		        WHEN NOT EXISTS (SELECT 1 FROM assets a WHERE a.component_id = components.id) THEN EXCLUDED.extra
+		        WHEN $7::boolean THEN EXCLUDED.extra || COALESCE(
+		          (SELECT jsonb_object_agg(e.key, e.value) FROM jsonb_each(components.extra) AS e
+		            WHERE e.key = ANY($8::text[])), '{}'::jsonb)
 		        ELSE components.extra
 		      END,
 		      updated_at = NOW()
 		RETURNING id, created_at`,
-		c.RepositoryID, c.Format, c.Group, c.Name, c.Version, extra, c.Extra != nil,
+		c.RepositoryID, c.Format, c.Group, c.Name, c.Version, extra, c.Extra != nil, keepKeys(c.KeepExtraKeys),
 	).Scan(&c.ID, &c.CreatedAt)
+}
+
+// keepKeys is the text[] parameter for KeepExtraKeys; never NULL, so ANY()
+// matches nothing rather than erroring.
+func keepKeys(keys []string) []string {
+	if keys == nil {
+		return []string{}
+	}
+	return keys
 }
 
 func (r *componentRepo) Delete(ctx context.Context, id string) error {

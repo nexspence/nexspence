@@ -301,6 +301,89 @@ func TestComponentRepo_Create_NilExtraNewRowIsEmptyObject(t *testing.T) {
 	}
 }
 
+// InitialExtra is what a component starts with when Extra is nil: on a new
+// row, and on a row with no assets left; a row that holds assets keeps its own
+// (covered with an asset by TestComponentRepo_Create_Upsert_NilExtraKeepsExisting).
+func TestComponentRepo_Create_InitialExtraStartsTheComponent(t *testing.T) {
+	pool := pgtest.Pool(t)
+	pgtest.Truncate(t, pool, "blob_stores", "repositories")
+	ctx := context.Background()
+
+	p := makeCompParent(t, ctx, "cr_initial")
+	repo := NewComponentRepo(pool)
+	c := &domain.Component{RepositoryID: p.RepositoryID, Format: "apt", Group: "amd64", Name: "acme", Version: "1.0",
+		InitialExtra: map[string]any{"apt_suites": []string{"one"}}}
+	if err := repo.Create(ctx, c); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	got, err := repo.Get(ctx, c.ID)
+	if err != nil || got == nil {
+		t.Fatalf("Get: err=%v got=%v", err, got)
+	}
+	if suites, _ := got.Extra["apt_suites"].([]any); len(suites) != 1 || suites[0] != "one" {
+		t.Errorf("a new row starts with InitialExtra, got %v", got.Extra)
+	}
+
+	again := &domain.Component{RepositoryID: p.RepositoryID, Format: "apt", Group: "amd64", Name: "acme", Version: "1.0",
+		InitialExtra: map[string]any{"apt_suites": []string{"two"}}}
+	if err := repo.Create(ctx, again); err != nil {
+		t.Fatalf("Create again: %v", err)
+	}
+	got, _ = repo.Get(ctx, c.ID)
+	if suites, _ := got.Extra["apt_suites"].([]any); len(suites) != 1 || suites[0] != "two" {
+		t.Errorf("a row with no assets starts over with InitialExtra, got %v", got.Extra)
+	}
+}
+
+// A non-nil Extra replaces the stored extra but keeps KeepExtraKeys, in the
+// same statement, while the component holds assets; a key the row does not
+// have is simply absent. A component with no assets left keeps nothing: its
+// record describes deleted content.
+func TestComponentRepo_Create_KeepExtraKeysOnReplace(t *testing.T) {
+	pool := pgtest.Pool(t)
+	pgtest.Truncate(t, pool, "blob_stores", "repositories")
+	ctx := context.Background()
+
+	p := makeCompParent(t, ctx, "cr_keep_keys")
+	repo := NewComponentRepo(pool)
+	c := &domain.Component{RepositoryID: p.RepositoryID, Format: "apt", Group: "amd64", Name: "acme", Version: "1.0",
+		Extra: map[string]any{"deb_control": "old", "apt_suites": []string{"one"}, "scan": "x"}}
+	if err := repo.Create(ctx, c); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	asset := &domain.Asset{
+		ComponentID: c.ID, RepositoryID: p.RepositoryID, Path: "/pool/main/acme_1.0_amd64.deb",
+		BlobStoreID: p.BlobStoreID, BlobKey: "bk_keep_keys", SizeBytes: 1, ContentType: "application/octet-stream",
+	}
+	if err := NewAssetRepo(pool).Create(ctx, asset); err != nil {
+		t.Fatalf("Create asset: %v", err)
+	}
+	replace := func(extra map[string]any) map[string]any {
+		t.Helper()
+		again := &domain.Component{RepositoryID: p.RepositoryID, Format: "apt", Group: "amd64", Name: "acme", Version: "1.0",
+			Extra: extra, KeepExtraKeys: []string{"apt_suites", "absent"}}
+		if err := repo.Create(ctx, again); err != nil {
+			t.Fatalf("Create again: %v", err)
+		}
+		got, _ := repo.Get(ctx, c.ID)
+		return got.Extra
+	}
+
+	got := replace(map[string]any{"deb_control": "new"})
+	suites, _ := got["apt_suites"].([]any)
+	if got["deb_control"] != "new" || len(suites) != 1 || suites[0] != "one" || got["scan"] != nil || len(got) != 2 {
+		t.Errorf("want deb_control=new and the kept apt_suites only, got %v", got)
+	}
+
+	if err := NewAssetRepo(pool).Delete(ctx, asset.ID); err != nil {
+		t.Fatalf("Delete asset: %v", err)
+	}
+	got = replace(map[string]any{"deb_control": "newer"})
+	if got["deb_control"] != "newer" || got["apt_suites"] != nil || len(got) != 1 {
+		t.Errorf("a component with no assets left keeps nothing, got %v", got)
+	}
+}
+
 // ── Get (by ID) ───────────────────────────────────────────────────────────────
 
 func TestComponentRepo_Get_NotFoundReturnsNil(t *testing.T) {
