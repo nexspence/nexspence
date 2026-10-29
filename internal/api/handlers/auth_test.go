@@ -219,6 +219,25 @@ func TestOptionalAuth_NoAuth_Passes(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 }
 
+func TestOptionalAuth_ValidBasicAuth_SetsCurrentUser(t *testing.T) {
+	user := activeUser("basic-user", "secret")
+	user.Roles = []string{"reader"}
+	svc := newUserSvc(user)
+	r := buildOptionalAuthRouter(svc)
+	// Return both identity and roles so this path proves authorization data is populated.
+	r.GET("/roles", func(c *gin.Context) {
+		roles, _ := c.Get("roles")
+		c.JSON(http.StatusOK, gin.H{"user": c.GetString("username"), "roles": roles})
+	})
+	req := httptest.NewRequest(http.MethodGet, "/roles", nil)
+	req.SetBasicAuth("basic-user", "secret")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), `"user":"basic-user"`)
+	assert.Contains(t, w.Body.String(), `"roles":["reader"]`)
+}
+
 func TestOptionalAuth_ValidBearer_SetsUser(t *testing.T) {
 	user := activeUser("dave", "pw")
 	svc := newUserSvc(user)

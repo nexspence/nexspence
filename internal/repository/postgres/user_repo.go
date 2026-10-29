@@ -151,7 +151,7 @@ func (r *userRepo) Delete(ctx context.Context, username string) error {
 }
 
 func (r *userRepo) UpdateLastLogin(ctx context.Context, username string) error {
-	_, err := r.db.Exec(ctx, `UPDATE users SET last_login=NOW() WHERE username=$1`, username)
+	_, err := r.db.Exec(ctx, `UPDATE users SET last_login=NOW() WHERE username=$1 AND (last_login IS NULL OR last_login < NOW() - INTERVAL '1 minute')`, username)
 	return err
 }
 

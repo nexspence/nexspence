@@ -562,6 +562,54 @@ func TestUserRepo_UpdateLastLogin_SetsTimestamp(t *testing.T) {
 	}
 }
 
+func TestUserRepo_UpdateLastLogin_ThrottlesWritesToOncePerMinute(t *testing.T) {
+	pool := pgtest.Pool(t)
+	pgtest.Truncate(t, pool, "users", "roles")
+	ctx := context.Background()
+	repo := NewUserRepo(pool)
+	u := makeUser("lastlogin_throttle", "lastlogin_throttle@test.com")
+	if err := repo.Create(ctx, u); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := repo.UpdateLastLogin(ctx, u.Username); err != nil {
+		t.Fatalf("first UpdateLastLogin: %v", err)
+	}
+	first, err := repo.Get(ctx, u.Username)
+	if err != nil {
+		t.Fatalf("Get after first update: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE users SET last_login = NOW() - INTERVAL '30 seconds' WHERE username=$1`, u.Username); err != nil {
+		t.Fatalf("age last_login: %v", err)
+	}
+	withinMinute, err := repo.Get(ctx, u.Username)
+	if err != nil {
+		t.Fatalf("Get before throttled update: %v", err)
+	}
+	if err := repo.UpdateLastLogin(ctx, u.Username); err != nil {
+		t.Fatalf("throttled UpdateLastLogin: %v", err)
+	}
+	afterThrottle, err := repo.Get(ctx, u.Username)
+	if err != nil {
+		t.Fatalf("Get after throttled update: %v", err)
+	}
+	if !afterThrottle.LastLogin.Equal(*withinMinute.LastLogin) {
+		t.Fatalf("last_login changed inside one minute: before=%v after=%v", withinMinute.LastLogin, afterThrottle.LastLogin)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE users SET last_login = NOW() - INTERVAL '2 minutes' WHERE username=$1`, u.Username); err != nil {
+		t.Fatalf("age last_login past window: %v", err)
+	}
+	if err := repo.UpdateLastLogin(ctx, u.Username); err != nil {
+		t.Fatalf("eligible UpdateLastLogin: %v", err)
+	}
+	afterWindow, err := repo.Get(ctx, u.Username)
+	if err != nil {
+		t.Fatalf("Get after eligible update: %v", err)
+	}
+	if !afterWindow.LastLogin.After(*first.LastLogin) {
+		t.Fatalf("last_login was not refreshed after one minute: first=%v after=%v", first.LastLogin, afterWindow.LastLogin)
+	}
+}
+
 // ── SetOIDCTokens / GetOIDCIDToken ────────────────────────────────────────────
 
 func TestUserRepo_OIDCTokens_RoundTrip(t *testing.T) {

@@ -565,7 +565,7 @@ func OptionalAuth(users *service.UserService, tokens *service.TokenService, guar
 				c.Next()
 				return
 			}
-			if _, user, err := users.Login(ctx, username, password); err == nil {
+			if user, err := users.AuthenticateBasic(ctx, username, password); err == nil {
 				guard.RecordSuccess(ctx, username)
 				c.Set("username", user.Username)
 				c.Set("userID", user.ID)
