@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -109,6 +110,7 @@ func (r *RepoRepo) Update(_ context.Context, repo *domain.Repository) error {
 		return r.Err
 	}
 	r.repos[repo.Name] = repo
+	r.touchGroupsListing(repo.Name)
 	return nil
 }
 func (r *RepoRepo) Delete(_ context.Context, name string) error {
@@ -118,7 +120,21 @@ func (r *RepoRepo) Delete(_ context.Context, name string) error {
 		return r.Err
 	}
 	delete(r.repos, name)
+	r.touchGroupsListing(name)
 	return nil
+}
+
+// touchGroupsListing mirrors the SQL: groups listing member are marked
+// changed. Callers hold r.mu.
+func (r *RepoRepo) touchGroupsListing(member string) {
+	for _, g := range r.repos {
+		if g.Type != domain.TypeGroup || g.Name == member {
+			continue
+		}
+		if slices.Contains(domain.GroupMemberNames(g), member) {
+			g.UpdatedAt = time.Now()
+		}
+	}
 }
 
 func (r *RepoRepo) ListNamesByCleanupPolicyID(_ context.Context, policyID string) ([]string, error) {

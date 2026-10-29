@@ -15,6 +15,8 @@ type RepositoryRepo interface {
 	Get(ctx context.Context, name string) (*domain.Repository, error)
 	GetByID(ctx context.Context, id string) (*domain.Repository, error)
 	Create(ctx context.Context, r *domain.Repository) error
+	// Update and Delete also move updated_at of every group listing the
+	// repository: what the group serves changes with its member (#728).
 	Update(ctx context.Context, r *domain.Repository) error
 	Delete(ctx context.Context, name string) error
 	// ListNamesByCleanupPolicyID returns repository names that reference the policy.
