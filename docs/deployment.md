@@ -40,6 +40,18 @@ docker compose logs -f nexspence
 
 > Change the admin password immediately after first login via **Admin → Security → Users**.
 
+## Testing the latest main-branch image
+
+Every merge to `main` publishes a multi-architecture image to GHCR with two tags: `main` and the short commit SHA. These tags track development builds; they do not move `latest`, which remains the latest versioned release.
+
+```bash
+docker pull ghcr.io/nexspence/nexspence:main
+# Pin a specific main commit instead of following the branch:
+docker pull ghcr.io/nexspence/nexspence:<short-commit-sha>
+```
+
+Use the versioned release image (or `latest`) for production deployments.
+
 ---
 
 ## Docker Compose — With MinIO (S3)

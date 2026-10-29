@@ -345,6 +345,12 @@ When a request is made for an artifact:
 
 ---
 
+## Credentials for package managers
+
+Use a Nexspence API token for automated package-manager and CI/CD traffic. Tokens work as a Bearer credential or as the password in HTTP Basic authentication, can be scoped and expired independently, and can be revoked without changing the user's password. Basic username/password authentication remains supported for clients that require it.
+
+For Basic-authenticated hosted users, the server reuses a successful password verification for up to 60 seconds per node while loading current account status and roles on every request. API tokens avoid password verification entirely and are the recommended credential for high-volume artifact traffic.
+
 ## Brute-force Protection
 
 Two independent throttles sit in front of every password check.
