@@ -28,3 +28,14 @@ export GH_HEAD_SHA="89abcdef0123456789abcdef0123456789abcdef"
 bash "$ROOT/scripts/promote-main-image.sh" "$IMAGE" "$CURRENT_SHA"
 [[ "$(wc -l < "$DOCKER_LOG" | tr -d ' ')" == 1 ]]
 printf 'main promotion succeeds only for the current main commit\n'
+WORKFLOW="$ROOT/.github/workflows/main-image.yml"
+release_token_count="$(grep -Fc 'password: ${{ secrets.RELEASE_PAT }}' "$WORKFLOW" || true)"
+if [[ "$release_token_count" != 2 ]]; then
+  echo "expected both GHCR login steps to use RELEASE_PAT; found $release_token_count" >&2
+  exit 1
+fi
+if grep -Fq 'password: ${{ secrets.GITHUB_TOKEN }}' "$WORKFLOW"; then
+  echo "GITHUB_TOKEN cannot write the nexspence GHCR package" >&2
+  exit 1
+fi
+printf 'main image jobs use the package-authorized release token\n'
