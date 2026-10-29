@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -109,6 +110,7 @@ func (r *RepoRepo) Update(_ context.Context, repo *domain.Repository) error {
 		return r.Err
 	}
 	r.repos[repo.Name] = repo
+	r.touchGroupsListing(repo.Name)
 	return nil
 }
 func (r *RepoRepo) Delete(_ context.Context, name string) error {
@@ -118,7 +120,21 @@ func (r *RepoRepo) Delete(_ context.Context, name string) error {
 		return r.Err
 	}
 	delete(r.repos, name)
+	r.touchGroupsListing(name)
 	return nil
+}
+
+// touchGroupsListing mirrors the SQL: groups listing member are marked
+// changed. Callers hold r.mu.
+func (r *RepoRepo) touchGroupsListing(member string) {
+	for _, g := range r.repos {
+		if g.Type != domain.TypeGroup || g.Name == member {
+			continue
+		}
+		if slices.Contains(domain.GroupMemberNames(g), member) {
+			g.UpdatedAt = time.Now()
+		}
+	}
 }
 
 func (r *RepoRepo) ListNamesByCleanupPolicyID(_ context.Context, policyID string) ([]string, error) {
@@ -573,10 +589,23 @@ func (c *ComponentRepo) Create(_ context.Context, comp *domain.Component) error 
 			comp.CreatedAt = existing.CreatedAt
 			// Like the SQL upsert: a nil Extra keeps the stored one (#668),
 			// and tags are never touched.
+			emptied := c.HasAssets != nil && !c.HasAssets(existing.ID)
+			if comp.Extra != nil && len(comp.KeepExtraKeys) > 0 && !emptied {
+				merged := make(map[string]any, len(comp.Extra))
+				for k, v := range comp.Extra {
+					merged[k] = v
+				}
+				for _, k := range comp.KeepExtraKeys {
+					if v, ok := existing.Extra[k]; ok {
+						merged[k] = v
+					}
+				}
+				comp.Extra = merged
+			}
 			if comp.Extra == nil {
 				comp.Extra = existing.Extra
 				if c.HasAssets != nil && !c.HasAssets(existing.ID) {
-					comp.Extra = map[string]any{}
+					comp.Extra = initialExtra(comp)
 				}
 			}
 			comp.Tags = existing.Tags
@@ -586,8 +615,21 @@ func (c *ComponentRepo) Create(_ context.Context, comp *domain.Component) error 
 	}
 	c.nextID++
 	comp.ID = fmt.Sprintf("comp-%d", c.nextID)
+	if comp.Extra == nil {
+		comp.Extra = initialExtra(comp)
+	}
 	c.components[comp.ID] = comp
 	return nil
+}
+
+// initialExtra is what the SQL upsert records for a component that starts
+// over: a copy of InitialExtra, or an empty map.
+func initialExtra(comp *domain.Component) map[string]any {
+	out := make(map[string]any, len(comp.InitialExtra))
+	for k, v := range comp.InitialExtra {
+		out[k] = v
+	}
+	return out
 }
 func (c *ComponentRepo) Delete(_ context.Context, id string) error {
 	c.mu.Lock()
@@ -671,6 +713,9 @@ type AssetRepo struct {
 	// path does a single pass instead of looping.
 	ListStaleCalls int
 	MigrationRows  []domain.MigrationAssetRow
+	// deletedAt mirrors the assets_deleted_at trigger: per repository name,
+	// when an asset was last deleted.
+	deletedAt map[string]time.Time
 	// MigrationListGate, when non-nil, holds ListForBlobStoreMigration until it
 	// is closed, parking a blob-store migration in the "running" state for as
 	// long as the test needs.
@@ -900,6 +945,22 @@ func (a *AssetRepo) TouchLastModified(_ context.Context, id string) error {
 	}
 	return nil
 }
+
+// LastDeletedAt implements repository.AssetRepo.
+func (a *AssetRepo) LastDeletedAt(_ context.Context, repoName string) (time.Time, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.deletedAt[repoName], nil
+}
+
+// noteDeleted records a deletion from repoName; callers hold a.mu.
+func (a *AssetRepo) noteDeleted(repoName string) {
+	if a.deletedAt == nil {
+		a.deletedAt = map[string]time.Time{}
+	}
+	a.deletedAt[repoName] = time.Now()
+}
+
 func (a *AssetRepo) Delete(_ context.Context, id string) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -915,6 +976,7 @@ func (a *AssetRepo) Delete(_ context.Context, id string) error {
 	// off RepositoryID left the path index pointing at a deleted asset, so
 	// GetByPath kept resolving it.
 	delete(a.assets, asset.Repository+":"+asset.Path)
+	a.noteDeleted(asset.Repository)
 	return nil
 }
 func (a *AssetRepo) IncrementDownloads(_ context.Context, counts map[string]int64) error {
@@ -1207,6 +1269,7 @@ func (a *AssetRepo) DeleteIfUnchanged(_ context.Context, id, blobKey string, las
 	}
 	delete(a.byID, id)
 	delete(a.assets, v.Repository+":"+v.Path)
+	a.noteDeleted(v.Repository)
 	return true, nil
 }
 

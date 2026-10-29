@@ -5,8 +5,11 @@
 //	GET  /dists/:dist/:component/binary-:arch/Packages[.gz] → packages index
 //	GET  /dists/:dist/Release                               → Release file
 //	GET  /pool/:component/:prefix/:name_ver_arch.deb        → deb download
-//	PUT  /pool/:component/:name_ver_arch.deb                → upload .deb
+//	PUT  /pool/:component/:name_ver_arch.deb[?suite=…]      → upload .deb
 //	DELETE /pool/:component/:name_ver_arch.deb              → delete .deb
+//	DELETE /pool/:component/:name_ver_arch.deb?suite=…      → leave a suite
+//
+// :dist is a suite (#727): see suites.go.
 package apt
 
 import (
@@ -84,6 +87,12 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 
 // serveHosted routes the hosted (non-proxy) surface of the apt protocol.
 func (h *Handler) serveHosted(c *gin.Context, repo *domain.Repository, repoName, p string) {
+	if strings.HasPrefix(p, "/dists/") && !validDist(p) {
+		// The suite is echoed into the (signed) Release: a name that is not
+		// one is no suite of this repository.
+		c.JSON(http.StatusNotFound, gin.H{"error": errSuiteName.Error()})
+		return
+	}
 	switch {
 	// Packages index (plain or gzip)
 	case c.Request.Method == http.MethodGet && strings.HasPrefix(p, "/dists/") && strings.Contains(p, "/Packages"):
@@ -116,7 +125,13 @@ func (h *Handler) serveHosted(c *gin.Context, repo *domain.Repository, repoName,
 	// root as multipart/form-data with a "file"/"package" field (#96).
 	case (c.Request.Method == http.MethodPut || c.Request.Method == http.MethodPost) &&
 		(p == "/" || strings.HasPrefix(p, "/pool/") || strings.HasSuffix(p, ".deb")):
-		h.handleUpload(c, repoName, p)
+		h.handleUpload(c, repo, repoName, p)
+
+	// Remove a .deb from one suite; the file stays.
+	// Any "suite" parameter, even an empty one, makes this a suite change, so
+	// a mistyped name is refused rather than deleting the file.
+	case c.Request.Method == http.MethodDelete && strings.HasPrefix(p, "/pool/") && c.Request.URL.Query().Has("suite"):
+		h.serveLeaveSuite(c, repo, p)
 
 	// Delete .deb
 	case c.Request.Method == http.MethodDelete && strings.HasPrefix(p, "/pool/"):
@@ -140,25 +155,47 @@ func debArch(filePath string) string {
 	return "amd64" // default for non-conforming names
 }
 
-// buildPackagesIndex generates the Packages index. arch filters to that
-// architecture (plus "all" debs, per Debian convention); empty = no filter.
-func (h *Handler) buildPackagesIndex(ctx context.Context, repoName, arch string) ([]byte, error) {
+// suiteDeb is a stored deb listed in a suite, with the component it is filed under.
+type suiteDeb struct {
+	asset domain.Asset
+	comp  *domain.Component
+}
+
+// suiteDebs lists the debs dists/<suite>/ indexes, in path order.
+func (h *Handler) suiteDebs(ctx context.Context, repoName, suite string) ([]suiteDeb, error) {
+	all, err := h.poolDebs(ctx, repoName)
+	if err != nil {
+		return nil, err
+	}
+	return inSuiteDebs(all, suite), nil
+}
+
+func inSuiteDebs(all []suiteDeb, suite string) []suiteDeb {
+	var out []suiteDeb
+	for _, d := range all {
+		if inSuite(d.comp, suite) {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+// poolDebs lists every /pool/ deb (that is where apt fetches Filename from,
+// #443) with its component, in path order.
+func (h *Handler) poolDebs(ctx context.Context, repoName string) ([]suiteDeb, error) {
 	comps, err := base.AllComponents(ctx, h.deps.Components, repoName)
 	if err != nil {
 		return nil, err
 	}
-	// Only /pool/ debs: that is where apt fetches Filename from (#443).
 	assets, err := h.deps.Assets.ListByRepoAndPath(ctx, repoName, "/pool/")
 	if err != nil {
 		return nil, err
 	}
-	compMap := map[string]*domain.Component{}
+	compMap := make(map[string]*domain.Component, len(comps))
 	for i := range comps {
 		compMap[comps[i].ID] = &comps[i]
 	}
-
-	var sb strings.Builder
-	listed := map[string]bool{}
+	var out []suiteDeb
 	for _, a := range assets {
 		if !strings.HasSuffix(a.Path, ".deb") {
 			continue
@@ -167,6 +204,22 @@ func (h *Handler) buildPackagesIndex(ctx context.Context, repoName, arch string)
 		if comp == nil {
 			continue
 		}
+		out = append(out, suiteDeb{asset: a, comp: comp})
+	}
+	return out, nil
+}
+
+// buildPackagesIndex generates the Packages index of a suite. arch filters to
+// that architecture (plus "all" debs, per Debian convention); empty = no filter.
+func (h *Handler) buildPackagesIndex(ctx context.Context, repoName, suite, arch string) ([]byte, error) {
+	debs, err := h.suiteDebs(ctx, repoName, suite)
+	if err != nil {
+		return nil, err
+	}
+	var sb strings.Builder
+	listed := map[string]bool{}
+	for _, d := range debs {
+		a, comp := d.asset, d.comp
 		debA := assetArch(comp, a)
 		if arch != "" && debA != arch && debA != "all" {
 			continue // the binary-<arch> index lists that arch plus "all" (#103)
@@ -244,7 +297,7 @@ func (h *Handler) servePackagesIndex(c *gin.Context, repoName, p string) {
 		}
 	}
 
-	data, err := h.buildPackagesIndex(c.Request.Context(), repoName, arch)
+	data, err := h.buildPackagesIndex(c.Request.Context(), repoName, releaseDist(p), arch)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -260,34 +313,19 @@ func (h *Handler) servePackagesIndex(c *gin.Context, repoName, p string) {
 	c.Data(http.StatusOK, "text/plain; charset=utf-8", data)
 }
 
-// repoArchitectures collects the concrete architectures of the debs the
-// Packages indexes are built from: every /pool/ deb, not a first page of the
-// repository's assets — an architecture missing here is an index the Release
-// never vouches for, which a verifying apt then rejects. "all" is not one of
-// them: renderRelease declares it unconditionally and buildRelease always
-// vouches for its binary-all index.
-func (h *Handler) repoArchitectures(ctx context.Context, repoName string) []string {
-	assets, err := h.deps.Assets.ListByRepoAndPath(ctx, repoName, "/pool/")
-	if err != nil {
-		return nil
-	}
-	// The same arch the Packages index files each deb under (assetArch), or
-	// Release would vouch for one set of indexes and serve another.
-	comps, err := base.AllComponents(ctx, h.deps.Components, repoName)
-	if err != nil {
-		return nil
-	}
-	compMap := make(map[string]*domain.Component, len(comps))
-	for i := range comps {
-		compMap[comps[i].ID] = &comps[i]
-	}
+// suiteArchitectures collects the concrete architectures of the debs a
+// suite's Packages indexes are built from: every deb of the suite, not a
+// first page of the repository's assets — an architecture missing here is an
+// index the Release never vouches for, which a verifying apt then rejects.
+// "all" is not one of them: renderRelease declares it unconditionally and
+// buildRelease always vouches for its binary-all index.
+func suiteArchitectures(debs []suiteDeb) []string {
 	seen := map[string]bool{}
 	var archs []string
-	for _, a := range assets {
-		if !strings.HasSuffix(a.Path, ".deb") {
-			continue
-		}
-		arch := assetArch(compMap[a.ComponentID], a)
+	for _, d := range debs {
+		// The same arch the Packages index files each deb under (assetArch),
+		// or Release would vouch for one set of indexes and serve another.
+		arch := assetArch(d.comp, d.asset)
 		if arch == "all" || seen[arch] {
 			continue
 		}
@@ -365,10 +403,15 @@ func (h *Handler) servePublicKey(c *gin.Context, repo *domain.Repository) {
 // The result must be byte-identical across requests: apt fetches Release and
 // its signature separately and verifies one against the other, so a wall-clock
 // Date would break verification. The date therefore tracks the content — the
-// newest package in the repository (#103).
+// newest package in the suite, or the latest change to its members (#103).
 func (h *Handler) buildRelease(ctx context.Context, repoName, p string) ([]byte, error) {
 	dist := releaseDist(p)
-	archs := h.repoArchitectures(ctx, repoName)
+	all, err := h.poolDebs(ctx, repoName)
+	if err != nil {
+		return nil, err
+	}
+	debs := inSuiteDebs(all, dist)
+	archs := suiteArchitectures(debs)
 
 	// apt verifies the Packages indexes against these checksum sections —
 	// without them a default (verifying) client rejects the repo (#103).
@@ -378,7 +421,7 @@ func (h *Handler) buildRelease(ctx context.Context, repoName, p string) ([]byte,
 	// hash entries at all and apt refuses it as "weak security information".
 	var files []releaseIndexFile
 	for _, arch := range indexArchs(archs) {
-		plain, err := h.buildPackagesIndex(ctx, repoName, arch)
+		plain, err := h.buildPackagesIndex(ctx, repoName, dist, arch)
 		if err != nil {
 			continue
 		}
@@ -388,7 +431,11 @@ func (h *Handler) buildRelease(ctx context.Context, repoName, p string) ([]byte,
 		)
 	}
 
-	date := h.releaseDate(ctx, repoName).UTC().Format(releaseDateLayout)
+	deleted, err := h.deps.Assets.LastDeletedAt(ctx, repoName)
+	if err != nil {
+		return nil, err
+	}
+	date := suiteDate(all, debs, deleted).UTC().Format(releaseDateLayout)
 	return renderRelease(dist, archs, []string{"main"}, date, files), nil
 }
 
@@ -407,6 +454,11 @@ const releaseDateLayout = "Mon, 02 Jan 2006 15:04:05 UTC"
 type releaseIndexFile struct {
 	relPath string
 	body    []byte
+}
+
+// validDist reports whether the distribution in a /dists/ path is a suite name.
+func validDist(p string) bool {
+	return suiteNamePattern.MatchString(releaseDist(p))
 }
 
 // releaseDist parses the distribution out of /dists/:dist/Release.
@@ -454,21 +506,30 @@ Description: Nexspence APT Repository
 	return []byte(sb.String())
 }
 
-// releaseDate is the timestamp stamped into Release. It follows the newest
-// stored package so the document only changes when its content does; an empty
-// repository has nothing to pin it to and falls back to the current time.
-func (h *Handler) releaseDate(ctx context.Context, repoName string) time.Time {
-	assetPage, err := h.deps.Assets.List(ctx, repoName, 1000, 0)
-	if err != nil {
-		return time.Now()
-	}
-	var newest time.Time
-	for _, a := range assetPage.Items {
-		if !strings.HasSuffix(a.Path, ".deb") {
-			continue
+// suiteDate is the timestamp stamped into a suite's Release: the newest
+// package in the suite, the latest change to any deb's suites in the
+// repository, or the latest deletion from it — a deb that left the suite, or
+// was deleted, is no member any more, and apt keeps the Release it has when
+// the new one is not newer (#728). The document therefore only changes when
+// the repository does. A suite with no package takes the newest in the
+// repository; an empty repository that never lost a file falls back to the
+// current time.
+func suiteDate(all, members []suiteDeb, deleted time.Time) time.Time {
+	newest := deleted
+	later := func(t time.Time) {
+		if t.After(newest) {
+			newest = t
 		}
-		if a.LastModified.After(newest) {
-			newest = a.LastModified
+	}
+	for _, d := range members {
+		later(d.asset.LastModified)
+	}
+	for _, d := range all {
+		later(suitesChanged(d.comp))
+	}
+	if newest.IsZero() {
+		for _, d := range all {
+			later(d.asset.LastModified)
 		}
 	}
 	if newest.IsZero() {
@@ -499,10 +560,14 @@ func proxyCoords(p string) base.Coords {
 	return base.Coords{Name: strings.TrimPrefix(p, "/"), Version: "metadata"}
 }
 
-func (h *Handler) handleUpload(c *gin.Context, repoName, p string) {
+func (h *Handler) handleUpload(c *gin.Context, repo *domain.Repository, repoName, p string) {
 	filename := path.Base(p)
 	body := io.Reader(c.Request.Body)
 	size := c.Request.ContentLength
+	suites, ok := uploadSuites(c, repo)
+	if !ok {
+		return
+	}
 
 	// Nexus-style root POST: the .deb arrives as a multipart file field
 	// ("file" or "package") and the filename comes from the part, not the path.
@@ -551,7 +616,8 @@ func (h *Handler) handleUpload(c *gin.Context, repoName, p string) {
 	}
 
 	ctx := c.Request.Context()
-	store := func(ctx context.Context, legacyID string) (int, error) {
+	token := newUploadToken(storePath)
+	store := func(ctx context.Context, legacyID string, newFile bool) (int, error) {
 		res, err := base.StoreArtifact(ctx, h.deps,
 			repoName, storePath, "application/vnd.debian.binary-package",
 			coords, body, size)
@@ -562,6 +628,9 @@ func (h *Handler) handleUpload(c *gin.Context, repoName, p string) {
 			return status, err
 		}
 		if ctl == nil {
+			if err := h.settleSuites(ctx, res.Asset.ComponentID, newFile, nil, token); err != nil {
+				return http.StatusInternalServerError, err
+			}
 			return http.StatusCreated, nil
 		}
 		componentID := res.Asset.ComponentID
@@ -582,11 +651,22 @@ func (h *Handler) handleUpload(c *gin.Context, repoName, p string) {
 				return http.StatusInternalServerError, err
 			}
 		}
+		if err := h.settleSuites(ctx, componentID, newFile, suites, token); err != nil {
+			return http.StatusInternalServerError, err
+		}
 		return http.StatusCreated, nil
 	}
 	// Every upload claims its identity, a filename-named one included:
 	// otherwise a non-deb body could take an identity a real deb holds.
 	status, err := h.withDebLocks(ctx, repoName, storePath, coords, arch, func() (int, error) {
+		rest, spooled, status, err := h.joinIfStored(ctx, repo, storePath, coords, arch, ctl, body, size, suites)
+		if spooled != nil {
+			defer spooled.Close()
+		}
+		if err != nil {
+			return status, err
+		}
+		body = rest // a redeploy with other content: what was read ahead, then the rest
 		legacyID, status, err := h.claimDebIdentity(ctx, repoName, storePath, coords, arch)
 		if err != nil {
 			return status, err
@@ -594,8 +674,17 @@ func (h *Handler) handleUpload(c *gin.Context, repoName, p string) {
 		if ctl == nil {
 			legacyID = "" // a non-deb body has no control paragraph to migrate to
 		}
-		return store(ctx, legacyID)
+		held, err := h.pathHeld(ctx, repoName, storePath)
+		if err != nil {
+			return http.StatusInternalServerError, err
+		}
+		coords.Extra, coords.KeepExtra = uploadExtra(ctl, suites, token), keptExtra
+		return store(ctx, legacyID, !held)
 	})
+	if errors.Is(err, errJoinedSuites) {
+		c.Status(http.StatusOK)
+		return
+	}
 	if err != nil {
 		c.JSON(status, gin.H{"error": err.Error()})
 		return

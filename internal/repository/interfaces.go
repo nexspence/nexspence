@@ -15,6 +15,8 @@ type RepositoryRepo interface {
 	Get(ctx context.Context, name string) (*domain.Repository, error)
 	GetByID(ctx context.Context, id string) (*domain.Repository, error)
 	Create(ctx context.Context, r *domain.Repository) error
+	// Update and Delete also move updated_at of every group listing the
+	// repository: what the group serves changes with its member (#728).
 	Update(ctx context.Context, r *domain.Repository) error
 	Delete(ctx context.Context, name string) error
 	// ListNamesByCleanupPolicyID returns repository names that reference the policy.
@@ -38,7 +40,11 @@ type ComponentRepo interface {
 	// Create upserts on (repository, format, group, name, version). On conflict
 	// a non-nil Extra (even an empty map) replaces the stored extra; a nil Extra
 	// leaves it as it is (#668), unless the component has no assets left, in
-	// which case it is reset.
+	// which case it is reset to InitialExtra (empty when nil). A new row gets
+	// Extra, or InitialExtra when Extra is nil. When a non-nil Extra replaces
+	// the stored extra of a component that still has assets, the stored values
+	// of KeepExtraKeys are kept, in the same statement; one with no assets left
+	// describes deleted content and keeps nothing.
 	Create(ctx context.Context, c *domain.Component) error
 	Delete(ctx context.Context, id string) error
 	// UpdateExtra merges JSON into components.extra (e.g. scan_result).
@@ -115,6 +121,10 @@ type AssetRepo interface {
 	// ListRawAssetPaths returns raw asset paths (not directory-expanded) for
 	// the given repository. Used by format-specific path transformations (e.g. Docker).
 	ListRawAssetPaths(ctx context.Context, repoName string) ([]string, error)
+	// LastDeletedAt is when an asset was last deleted from repoName, by any
+	// path; zero when none was since this was recorded (#728). A failed
+	// lookup is an error, never zero.
+	LastDeletedAt(ctx context.Context, repoName string) (time.Time, error)
 	// ListByRepoAndPath returns all assets in repoName whose path starts with pathPrefix.
 	// Use pathPrefix="" to list all assets in the repo.
 	ListByRepoAndPath(ctx context.Context, repoName, pathPrefix string) ([]domain.Asset, error)

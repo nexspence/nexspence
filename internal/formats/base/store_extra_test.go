@@ -124,3 +124,50 @@ func TestStoreArtifact_UnattributableReplacedPathResetsExtra(t *testing.T) {
 	d.Comps.GetErr = nil
 	assert.Empty(t, componentExtra(t, ctx, d, changed.ComponentID))
 }
+
+// Coords.Extra is what a component starts over with: recorded together with
+// the file when the component is new, emptied or has its content replaced,
+// and ignored while it holds what was recorded for the bytes it has.
+func TestStoreArtifact_CoordsExtraStartsTheComponent(t *testing.T) {
+	ctx := context.Background()
+	d := newExtraDeps()
+	withExtra := func(k string) base.Coords {
+		c := lib
+		c.Extra = map[string]any{"k": k}
+		return c
+	}
+
+	jar := storeExtraFile(t, ctx, d, "/com/acme/lib/1.0/lib-1.0.jar", "jar", withExtra("new"))
+	assert.Equal(t, "new", componentExtra(t, ctx, d, jar.ComponentID)["k"], "a new component")
+
+	require.NoError(t, d.Comps.UpdateExtra(ctx, jar.ComponentID, map[string]any{"k": "recorded", "scan_result": "ok"}))
+	storeExtraFile(t, ctx, d, "/com/acme/lib/1.0/lib-1.0.jar", "jar", withExtra("same bytes"))
+	storeExtraFile(t, ctx, d, "/com/acme/lib/1.0/lib-1.0.pom", "pom", withExtra("sibling"))
+	extra := componentExtra(t, ctx, d, jar.ComponentID)
+	assert.Equal(t, "recorded", extra["k"], "the component keeps what it has")
+	assert.Equal(t, "ok", extra["scan_result"])
+
+	storeExtraFile(t, ctx, d, "/com/acme/lib/1.0/lib-1.0.jar", "rebuilt jar", withExtra("replaced"))
+	assert.Equal(t, map[string]any{"k": "replaced"}, componentExtra(t, ctx, d, jar.ComponentID), "replaced content")
+
+	require.NoError(t, base.DeleteArtifact(ctx, d.Deps, "extra-repo", "/com/acme/lib/1.0/lib-1.0.jar"))
+	require.NoError(t, base.DeleteArtifact(ctx, d.Deps, "extra-repo", "/com/acme/lib/1.0/lib-1.0.pom"))
+	again := storeExtraFile(t, ctx, d, "/com/acme/lib/1.0/lib-1.0.jar", "jar", withExtra("emptied"))
+	assert.Equal(t, map[string]any{"k": "emptied"}, componentExtra(t, ctx, d, again.ComponentID), "an emptied component")
+}
+
+// Coords.KeepExtra keys outlive a content replacement, kept by the upsert
+// itself: they say where the component is listed, not what its bytes are.
+func TestStoreArtifact_KeepExtraSurvivesReplacedContent(t *testing.T) {
+	ctx := context.Background()
+	d := newExtraDeps()
+	c := lib
+	c.Extra = map[string]any{"about": "first"}
+	c.KeepExtra = []string{"listed_in"}
+	jar := storeExtraFile(t, ctx, d, "/com/acme/lib/1.0/lib-1.0.jar", "jar", c)
+	require.NoError(t, d.Comps.UpdateExtra(ctx, jar.ComponentID, map[string]any{"listed_in": "s1", "scan_result": "ok"}))
+
+	c.Extra = map[string]any{"about": "second"}
+	storeExtraFile(t, ctx, d, "/com/acme/lib/1.0/lib-1.0.jar", "rebuilt jar", c)
+	assert.Equal(t, map[string]any{"about": "second", "listed_in": "s1"}, componentExtra(t, ctx, d, jar.ComponentID))
+}

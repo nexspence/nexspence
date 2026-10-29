@@ -8,7 +8,9 @@ import (
 	"net/http/httptest"
 	"regexp"
 	"sort"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -17,6 +19,7 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/formats"
 	"github.com/nexspence-oss/nexspence/internal/formats/apt"
+	"github.com/nexspence-oss/nexspence/internal/formats/base"
 	"github.com/nexspence-oss/nexspence/internal/testutil"
 )
 
@@ -181,4 +184,47 @@ func TestApt_Release_ArchitecturesCoverEveryDebNotAFirstPage(t *testing.T) {
 	release := fetch(t, r, "/repository/debs-big/dists/focal/Release").Body.String()
 	assert.Contains(t, release, "Architectures: amd64 arm64 all\n")
 	assertVouches(t, r, "debs-big", release, "main/binary-arm64/Packages")
+}
+
+// Deleting the newest deb must not move Release back: apt keeps a cached
+// Release the new one is not newer than, and would keep offering the deleted
+// file (#728). Any delete counts, not only the apt DELETE.
+func TestApt_Release_DateDoesNotGoBackAfterADelete(t *testing.T) {
+	repo := testutil.SimpleRepo("debs-del", "apt")
+	assets := testutil.NewAssetRepo()
+	d := formats.Deps{
+		Repos: testutil.NewRepoRepo(repo), Blobs: testutil.NewBlobStoreRepo(),
+		Components: testutil.NewComponentRepo(), Assets: assets, BlobStore: testutil.NewBlobStore(),
+		BaseURL: "http://localhost:8080",
+	}
+	h := apt.New(d)
+	r := gin.New()
+	r.Any("/repository/:repoName/*path", func(c *gin.Context) { h.ServeHTTP(c) })
+	require.Equal(t, http.StatusCreated, putDeb(r, "debs-del", "/pool/main/acme_1.0_all.deb", "one"))
+	require.Equal(t, http.StatusCreated, putDeb(r, "debs-del", "/pool/main/acme_1.1_all.deb", "two"))
+	older, newer := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)
+	for p, at := range map[string]time.Time{"/pool/main/acme_1.0_all.deb": older, "/pool/main/acme_1.1_all.deb": newer} {
+		a, err := assets.GetByPath(context.Background(), "debs-del", p)
+		require.NoError(t, err)
+		a.LastModified = at
+	}
+	releaseDate := func() time.Time {
+		t.Helper()
+		w := fetch(t, r, "/repository/debs-del/dists/stable/Release")
+		require.Equal(t, http.StatusOK, w.Code)
+		for _, line := range strings.Split(w.Body.String(), "\n") {
+			if v, ok := strings.CutPrefix(line, "Date: "); ok {
+				at, err := time.Parse("Mon, 02 Jan 2006 15:04:05 UTC", v)
+				require.NoError(t, err)
+				return at
+			}
+		}
+		t.Fatal("no Date in Release")
+		return time.Time{}
+	}
+	before := releaseDate()
+	require.Equal(t, newer, before)
+
+	require.NoError(t, base.DeleteArtifact(context.Background(), d, "debs-del", "/pool/main/acme_1.1_all.deb"))
+	assert.True(t, releaseDate().After(before), "the deletion is newer than anything the client cached")
 }

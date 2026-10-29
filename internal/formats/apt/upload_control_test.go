@@ -29,6 +29,7 @@ type ctlEnv struct {
 	comps  *testutil.ComponentRepo
 	assets *testutil.AssetRepo
 	repo   *domain.Repository
+	deps   formats.Deps
 }
 
 func newCtlEnv(t *testing.T, name string, writePolicy domain.WritePolicy) *ctlEnv {
@@ -50,7 +51,7 @@ func newCtlEnv(t *testing.T, name string, writePolicy domain.WritePolicy) *ctlEn
 	h := New(d)
 	r := gin.New()
 	r.Any("/repository/:repoName/*path", func(c *gin.Context) { h.ServeHTTP(c) })
-	return &ctlEnv{r: r, comps: comps, assets: assets, repo: repo}
+	return &ctlEnv{r: r, comps: comps, assets: assets, repo: repo, deps: d}
 }
 
 func (e *ctlEnv) put(path string, body []byte) *httptest.ResponseRecorder {
