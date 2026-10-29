@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/repository"
@@ -783,5 +784,63 @@ func TestRepositoryRepo_BlobStoreID_FK_Association(t *testing.T) {
 	}
 	if list[0].Name != r.Name {
 		t.Errorf("Name: got %q, want %q", list[0].Name, r.Name)
+	}
+}
+
+// #728: a member's change or deletion changes what its groups serve, so it
+// moves their updated_at — and only theirs.
+func TestRepositoryRepo_MemberChangesTouchTheirGroups(t *testing.T) {
+	pool := pgtest.Pool(t)
+	pgtest.Truncate(t, pool, "blob_stores", "repositories")
+	ctx := context.Background()
+	repo := NewRepositoryRepo(pool)
+	bs := newRepoBlobStore(t, ctx, "touch_bs")
+
+	member := makeRepo("touch-member", domain.FormatApt, domain.TypeHosted, &bs)
+	other := makeRepo("touch-other", domain.FormatApt, domain.TypeHosted, &bs)
+	group := makeRepo("touch-group", domain.FormatApt, domain.TypeGroup, nil)
+	group.FormatConfig = map[string]any{"member_names": []string{"touch-member", "touch-other"}}
+	unrelated := makeRepo("touch-unrelated", domain.FormatApt, domain.TypeGroup, nil)
+	unrelated.FormatConfig = map[string]any{"member_names": []string{"touch-other"}}
+	for _, r := range []*domain.Repository{member, other, group, unrelated} {
+		if err := repo.Create(ctx, r); err != nil {
+			t.Fatalf("create %s: %v", r.Name, err)
+		}
+	}
+	past := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	if _, err := pool.Exec(ctx, `UPDATE repositories SET updated_at = $1`, past); err != nil {
+		t.Fatalf("age rows: %v", err)
+	}
+	updatedAt := func(name string) time.Time {
+		t.Helper()
+		var at time.Time
+		if err := pool.QueryRow(ctx, `SELECT updated_at FROM repositories WHERE name = $1`, name).Scan(&at); err != nil {
+			t.Fatalf("updated_at of %s: %v", name, err)
+		}
+		return at
+	}
+
+	member.Online = false
+	if err := repo.Update(ctx, member); err != nil {
+		t.Fatalf("update member: %v", err)
+	}
+	if !updatedAt("touch-group").After(past) {
+		t.Error("taking a member offline must move its group's updated_at")
+	}
+	if !updatedAt("touch-unrelated").Equal(past) {
+		t.Error("a group that does not list the member is not touched")
+	}
+
+	if _, err := pool.Exec(ctx, `UPDATE repositories SET updated_at = $1 WHERE type = 'group'`, past); err != nil {
+		t.Fatalf("age groups: %v", err)
+	}
+	if err := repo.Delete(ctx, "touch-member"); err != nil {
+		t.Fatalf("delete member: %v", err)
+	}
+	if !updatedAt("touch-group").After(past) {
+		t.Error("deleting a member must move its group's updated_at")
+	}
+	if !updatedAt("touch-unrelated").Equal(past) {
+		t.Error("a group that does not list the member is not touched")
 	}
 }

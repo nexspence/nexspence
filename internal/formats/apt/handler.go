@@ -455,14 +455,21 @@ Description: Nexspence APT Repository
 }
 
 // releaseDate is the timestamp stamped into Release. It follows the newest
-// stored package so the document only changes when its content does; an empty
-// repository has nothing to pin it to and falls back to the current time.
+// stored package, or the latest deletion from the repository — deleting the
+// newest package must not make Release older than the one a client cached,
+// or apt keeps that one, still listing the deleted file (#728). The document
+// therefore only changes when the repository does; an empty repository that
+// never lost a file has nothing to pin it to and falls back to the current
+// time.
 func (h *Handler) releaseDate(ctx context.Context, repoName string) time.Time {
 	assetPage, err := h.deps.Assets.List(ctx, repoName, 1000, 0)
 	if err != nil {
 		return time.Now()
 	}
-	var newest time.Time
+	newest, err := h.deps.Assets.LastDeletedAt(ctx, repoName)
+	if err != nil {
+		return time.Now()
+	}
 	for _, a := range assetPage.Items {
 		if !strings.HasSuffix(a.Path, ".deb") {
 			continue
