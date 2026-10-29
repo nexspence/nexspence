@@ -17,19 +17,20 @@ import (
 
 // UserService handles user management and authentication.
 type UserService struct {
-	users          repository.UserRepo
-	roles          repository.RoleRepo
-	auth           *auth.Service
-	ldap           auth.LDAPAuthenticator // nil when LDAP is disabled
-	ldapCfg        config.LDAPConfig      // empty when LDAP is disabled
-	oidc           auth.OIDCAuthenticator // nil when OIDC is disabled
-	oidcCfg        config.OIDCConfig      // empty when OIDC is disabled
-	groups         auth.GroupLookup       // nil unless a directory lookup (Google Admin SDK) is configured
-	saml           auth.SAMLAuthenticator // nil when SAML is disabled
-	samlCfg        config.SAMLConfig      // empty when SAML is disabled
-	log            logger.Logger
-	basicAuthCache *basicAuthVerificationCache
-	checkPassword  func(hash, password string) error
+	users              repository.UserRepo
+	roles              repository.RoleRepo
+	auth               *auth.Service
+	ldap               auth.LDAPAuthenticator // nil when LDAP is disabled
+	ldapCfg            config.LDAPConfig      // empty when LDAP is disabled
+	oidc               auth.OIDCAuthenticator // nil when OIDC is disabled
+	oidcCfg            config.OIDCConfig      // empty when OIDC is disabled
+	groups             auth.GroupLookup       // nil unless a directory lookup (Google Admin SDK) is configured
+	saml               auth.SAMLAuthenticator // nil when SAML is disabled
+	samlCfg            config.SAMLConfig      // empty when SAML is disabled
+	log                logger.Logger
+	basicAuthCache     *basicAuthVerificationCache
+	ldapBasicAuthCache *basicAuthVerificationCache
+	checkPassword      func(hash, password string) error
 }
 
 // NewUserService constructs a service for managing users, their passwords, and roles.
@@ -47,6 +48,11 @@ func NewUserService(
 func (s *UserService) WithLDAP(l auth.LDAPAuthenticator, cfg config.LDAPConfig) *UserService {
 	s.ldap = l
 	s.ldapCfg = cfg
+	if cfg.BasicAuthCacheTTL > 0 {
+		s.ldapBasicAuthCache = newBasicAuthVerificationCacheWithTTL(cfg.BasicAuthCacheTTL)
+	} else {
+		s.ldapBasicAuthCache = nil
+	}
 	return s
 }
 
@@ -121,16 +127,38 @@ func (s *UserService) Login(ctx context.Context, username, password string) (str
 	return token, u, nil
 }
 
-// AuthenticateBasic validates local Basic credentials for data routes without minting a JWT. LDAP authentication retains its existing interactive-login path.
-// Successful local password checks are cached briefly, but the current user record
-// is loaded for every request so roles and revocation state remain current.
+// AuthenticateBasic validates Basic credentials for data routes without minting a JWT.
+// Successful local checks use the bounded local cache; LDAP checks are cached only
+// when ldap.basic_auth_cache_ttl is explicitly configured. The current user record
+// is loaded for every request so account status and roles remain current.
 func (s *UserService) AuthenticateBasic(ctx context.Context, username, password string) (*domain.User, error) {
 	u, err := s.users.Get(ctx, username)
 	if err != nil && !errors.Is(err, repository.ErrNotFound) {
 		return nil, err
 	}
+	if s.ldap != nil && u == nil && strings.ToLower(username) != username {
+		normalizedUser, normalizedErr := s.users.Get(ctx, strings.ToLower(username))
+		if normalizedErr != nil && !errors.Is(normalizedErr, repository.ErrNotFound) {
+			return nil, normalizedErr
+		}
+		if normalizedUser != nil && normalizedUser.Source == domain.UserSourceLDAP {
+			u = normalizedUser
+		}
+	}
 	if s.ldap != nil && (u == nil || u.Source == domain.UserSourceLDAP) {
+		if u != nil && u.Status != domain.UserStatusActive {
+			return nil, fmt.Errorf("%w: user account is not active", ErrInvalidInput)
+		}
+		if s.ldapBasicAuthCache != nil && u != nil && s.ldapBasicAuthCache.valid(strings.ToLower(username), password, u) {
+			if u.LastLogin == nil || time.Since(*u.LastLogin) >= time.Minute {
+				_ = s.users.UpdateLastLogin(ctx, u.Username)
+			}
+			return u, nil
+		}
 		_, ldapUser, loginErr := s.Login(ctx, username, password)
+		if loginErr == nil && ldapUser != nil && ldapUser.Source == domain.UserSourceLDAP && s.ldapBasicAuthCache != nil {
+			s.ldapBasicAuthCache.remember(ldapUser.Username, password, ldapUser)
+		}
 		return ldapUser, loginErr
 	}
 	if u == nil {

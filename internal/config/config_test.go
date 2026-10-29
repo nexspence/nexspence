@@ -178,6 +178,28 @@ func TestLoad_AllowInsecureDefaults_DefaultsFalse(t *testing.T) {
 		"auth.allow_insecure_defaults must default to false (fail-closed)")
 }
 
+func TestLoad_LDAPBasicAuthCacheTTLDefaultsToDisabled(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := "database:\n  dsn: \"postgres://u:p@localhost:5432/db?sslmode=disable\"\n" +
+		"auth:\n  jwt_secret: \"a-unique-production-secret-at-least-32b\"\n"
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.Zero(t, cfg.LDAP.BasicAuthCacheTTL)
+}
+
+func TestLoad_LDAPBasicAuthCacheTTLRejectsValuesOverOneMinute(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := "database:\n  dsn: \"postgres://u:p@localhost:5432/db?sslmode=disable\"\n" +
+		"auth:\n  jwt_secret: \"a-unique-production-secret-at-least-32b\"\n" +
+		"ldap:\n  basic_auth_cache_ttl: 61s\n"
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+	_, err := Load(path)
+	require.ErrorContains(t, err, "ldap.basic_auth_cache_ttl must be between 0s and 1m")
+}
+
 func TestLoad_GCDefaults(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")

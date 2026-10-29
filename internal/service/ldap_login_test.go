@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -21,9 +22,11 @@ type mockLDAP struct {
 	user    *auth.LDAPUser
 	err     error
 	testErr error
+	calls   int
 }
 
 func (m *mockLDAP) Authenticate(_ context.Context, _, _ string) (*auth.LDAPUser, error) {
+	m.calls++
 	return m.user, m.err
 }
 func (m *mockLDAP) TestConnection(_ context.Context) error { return m.testErr }
@@ -66,6 +69,36 @@ func TestLogin_LDAPSuccess_NewUser(t *testing.T) {
 	created, _ := users.Get(context.Background(), "alice")
 	require.NotNil(t, created)
 	assert.Equal(t, "alice@corp.com", created.Email)
+}
+
+func TestAuthenticateBasicLDAPCacheIsDisabledByDefault(t *testing.T) {
+	ldap := &mockLDAP{user: &auth.LDAPUser{Username: "alice"}}
+	svc, _ := newUserSvcWithLDAP(ldap)
+	for range 2 {
+		_, err := svc.AuthenticateBasic(context.Background(), "alice", "secret")
+		require.NoError(t, err)
+	}
+	require.Equal(t, 2, ldap.calls, "zero LDAP cache TTL must preserve live directory authentication")
+}
+
+func TestAuthenticateBasicCachesLDAPAuthenticationWhenConfigured(t *testing.T) {
+	ldap := &mockLDAP{user: &auth.LDAPUser{Username: "alice", Email: "alice@example.com"}}
+	svc, _, _ := newUserSvcWithLDAPConfig(ldap, config.LDAPConfig{BasicAuthCacheTTL: time.Minute})
+	for range 2 {
+		_, err := svc.AuthenticateBasic(context.Background(), "alice", "secret")
+		require.NoError(t, err)
+	}
+	require.Equal(t, 1, ldap.calls, "a successful LDAP Basic-auth verification should be reused within its TTL")
+}
+
+func TestAuthenticateBasicLDAPCacheNormalizesUsername(t *testing.T) {
+	ldap := &mockLDAP{user: &auth.LDAPUser{Username: "alice"}}
+	svc, _, _ := newUserSvcWithLDAPConfig(ldap, config.LDAPConfig{BasicAuthCacheTTL: time.Minute})
+	_, err := svc.AuthenticateBasic(context.Background(), "alice", "secret")
+	require.NoError(t, err)
+	_, err = svc.AuthenticateBasic(context.Background(), "ALICE", "secret")
+	require.NoError(t, err)
+	require.Equal(t, 1, ldap.calls, "LDAP cache keys must use the normalized directory username")
 }
 
 func TestLogin_LDAPSuccess_ExistingUser_ProfileSynced(t *testing.T) {

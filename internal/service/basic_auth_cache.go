@@ -37,11 +37,15 @@ type basicAuthVerificationCache struct {
 }
 
 func newBasicAuthVerificationCache() *basicAuthVerificationCache {
+	return newBasicAuthVerificationCacheWithTTL(basicAuthCacheTTL)
+}
+
+func newBasicAuthVerificationCacheWithTTL(ttl time.Duration) *basicAuthVerificationCache {
 	key := make([]byte, 32)
 	if _, err := rand.Read(key); err != nil {
 		return nil
 	}
-	return newBasicAuthVerificationCacheWithKey(key, basicAuthCacheTTL, basicAuthCacheMaxEntries, time.Now)
+	return newBasicAuthVerificationCacheWithKey(key, ttl, basicAuthCacheMaxEntries, time.Now)
 }
 
 func newBasicAuthVerificationCacheWithKey(key []byte, ttl time.Duration, maxSize int, now func() time.Time) *basicAuthVerificationCache {

@@ -244,6 +244,10 @@ audit:
 # Env overrides: NEXSPENCE_LDAP_ENABLED, NEXSPENCE_LDAP_BIND_PASSWORD, etc.
 ldap:
   enabled: false
+  # Cache successful LDAP Basic-auth checks for this long (0 keeps every
+  # request live against LDAP). Directory password, lockout, and group changes
+  # can take effect up to this long later. Maximum: 1m.
+  basic_auth_cache_ttl: 0s
 
   # LDAP server address
   host: "ldap.example.com"

@@ -428,6 +428,13 @@ every read — or refuses it entirely when `auth.anonymous_enabled` is off.
 
 ## LDAP External Role Mapping
 
+LDAP-backed Basic authentication checks the directory on every request by default. To reduce LDAP load for package-manager downloads, set `ldap.basic_auth_cache_ttl` to a duration from `1s` to `1m`; `0s` (the default) disables this cache and keeps password changes, lockouts, and group changes immediately visible. With caching enabled, successful LDAP credentials can remain accepted for up to the configured TTL after a password change or directory lockout, and LDAP-derived profile and role updates are refreshed when the entry expires. Nexspence still reloads the local user record on every request, so local account disablement and current local authorization state are checked immediately.
+
+```yaml
+ldap:
+  basic_auth_cache_ttl: 30s
+```
+
 On every LDAP login, Nexspence automatically syncs the user's roles from their LDAP group memberships (REPLACE semantics — existing roles are fully replaced each time).
 
 ### Mapping strategies (all three applied in order)

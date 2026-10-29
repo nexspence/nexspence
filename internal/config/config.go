@@ -243,6 +243,7 @@ type LogConfig struct {
 // LDAPConfig configures LDAP/Active Directory authentication.
 type LDAPConfig struct {
 	Enabled            bool            `mapstructure:"enabled"`
+	BasicAuthCacheTTL  time.Duration   `mapstructure:"basic_auth_cache_ttl"`
 	Host               string          `mapstructure:"host"`
 	Port               int             `mapstructure:"port"`
 	UseTLS             bool            `mapstructure:"use_tls"`   // LDAPS (port 636)
@@ -728,6 +729,7 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("saml.username_attribute", "uid")
 	v.SetDefault("saml.name_attribute", "displayName")
 	v.SetDefault("ldap.enabled", false)
+	v.SetDefault("ldap.basic_auth_cache_ttl", "0s")
 	v.SetDefault("ldap.port", 389)
 	v.SetDefault("ldap.search_filter", "(uid={0})")
 	v.SetDefault("ldap.user_attributes.email", "mail")
@@ -827,6 +829,9 @@ func Load(path string) (*Config, error) {
 	cfg.UnknownKeys = UnknownKeys(md.Unused, os.Environ())
 	if cfg.Proxy.MaxRewrittenMetadataBytes <= 0 || cfg.Proxy.MaxRewrittenMetadataBytes == math.MaxInt64 {
 		return nil, fmt.Errorf("proxy.max_rewritten_metadata_bytes must be between 1 and %d", int64(math.MaxInt64-1))
+	}
+	if cfg.LDAP.BasicAuthCacheTTL < 0 || cfg.LDAP.BasicAuthCacheTTL > time.Minute {
+		return nil, fmt.Errorf("ldap.basic_auth_cache_ttl must be between 0s and 1m")
 	}
 
 	if cfg.Database.DSN == "" {
