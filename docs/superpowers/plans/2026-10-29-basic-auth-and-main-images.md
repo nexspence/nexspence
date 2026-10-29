@@ -69,9 +69,10 @@
 **Files:**
 - Create: `.github/workflows/main-image.yml`
 
-- [ ] Validate expected metadata for a main-branch push: tags `main` and the seven-character commit SHA; no `latest` or semver tags.
-- [ ] Add a push-to-main-only workflow with `contents: read`, `packages: write`, pinned existing Docker action SHAs, GHCR login, amd64+arm64 Buildx build, and metadata-action tags.
-- [ ] Validate YAML, event/permission scope, tag output, and that `latest` appears only in release workflow.
+- [ ] Write `scripts/test-main-image-promotion.sh` with fake `gh` and `docker` commands; assert current commit promotes `:main`, while a stale commit does not. Run it before implementation and observe the missing promotion helper.
+- [ ] Add `scripts/promote-main-image.sh` to query current `main` head and promote the immutable short-SHA image to `:main` only when the workflow commit is still current.
+- [ ] Add a push-to-main-only workflow with `contents: read`, `packages: write`, pinned Docker action SHAs, GHCR login, amd64+arm64 Buildx, immutable short-SHA image build, serialized `main` promotion, and latest-head guard.
+- [ ] Verify the promotion test, actionlint, event/permission scope, and that `latest` appears only in release workflow.
 - [ ] Commit as `ci: publish main-branch container images`.
 
 ### Task 4: Operator documentation and website
