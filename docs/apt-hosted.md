@@ -51,6 +51,75 @@ Promotion copies files without going through the upload checks. If it brings
 a second file for an identity the target already holds, the index still lists
 one stanza for it, the one at the first path in sort order.
 
+## Suites
+
+One repository can serve several release lines, each as its own suite
+(`dists/<suite>/`), from one shared `pool/`. Name the suite when uploading:
+
+```bash
+curl --fail -u "$USER:$TOKEN" -T acme_1.5.1_all.deb \
+  "$NEXSPENCE/repository/apt-acme/pool/main/acme_1.5.1_all.deb?suite=acme-1.5.1"
+```
+
+A client then picks the line with its sources entry, and `apt upgrade` stays
+within it:
+
+```
+deb [signed-by=/usr/share/keyrings/acme.gpg] https://repo.example.com/repository/apt-acme acme-1.5.1 main
+```
+
+`dists/<suite>/Release`, `InRelease`, `Release.gpg` and
+`main/binary-<arch>/Packages(.gz)` list only the debs of that suite. Groups
+pass the suite through to their members.
+
+| Upload with `?suite=…` | Result |
+|---|---|
+| A package, version and architecture not stored yet | Stored, in the named suites (`201`) |
+| The same file (same SHA-256) at the path it is stored at | Nothing is stored; the file joins the named suites (`200`) |
+| The same package, version and architecture at another path | `409`, naming the path that holds it: upload it there to add suites |
+| Other content at the same path (a redeploy) | The deployment policy decides; the file keeps its suites and joins the named ones |
+| A body that is not a Debian package with a control file | `400` |
+| Any upload naming a suite, to a read-only repository | `400`, as any write to it |
+
+A new file's suites are recorded together with it, so it is never listed in
+a suite it was not uploaded to, not even for a moment.
+
+`suite` can be repeated (`?suite=acme-1.5&suite=acme-1.5.1`). A suite name is
+letters, digits and `.` `_` `+` `~` `-`, starting with a letter or digit, up
+to 100 characters; anything else is refused with `400`.
+
+To take a file out of one suite without deleting it:
+
+```bash
+curl -X DELETE -u "$USER:$TOKEN" \
+  "$NEXSPENCE/repository/apt-acme/pool/main/acme-toolchain_1.0_amd64.deb?suite=acme-1.4"
+```
+
+A file taken out of its last suite stays stored but is listed in no suite. A
+`DELETE` without `suite` deletes the file, from every suite. A redeploy keeps
+the suites a file is in, whether or not it names any.
+
+A suite's `Release` `Date` follows the newest package in the suite and the
+latest change to suite membership anywhere in the repository, so apt sees a
+newer `Release` whenever a suite changes, including when a file leaves it.
+`dists/<name>/` with a name that is not a valid suite name is `404`.
+
+Suites belong to the repository a file is listed in. Promotion copies a deb
+without its source suites: a new copy is listed in every suite of the
+target, and a copy that replaces a target file keeps that file's suites.
+
+### Debs uploaded without a suite
+
+A deb uploaded without `suite` belongs to every suite, so a repository that
+never names one serves the same index under any `dists/<name>/`, as before.
+Uploading such a file again with `?suite=…` records its suites, and from then
+on it is listed under those only: name every suite clients already use for it.
+
+A package identity is still one file across the whole repository: two release
+lines cannot ship different builds of the same package, version and
+architecture. Give the builds different versions, or use separate
+repositories.
+
 ## Components, path selectors and retention
 
 A deb uploaded with a control file is a component whose `group` is its

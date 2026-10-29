@@ -589,10 +589,23 @@ func (c *ComponentRepo) Create(_ context.Context, comp *domain.Component) error 
 			comp.CreatedAt = existing.CreatedAt
 			// Like the SQL upsert: a nil Extra keeps the stored one (#668),
 			// and tags are never touched.
+			emptied := c.HasAssets != nil && !c.HasAssets(existing.ID)
+			if comp.Extra != nil && len(comp.KeepExtraKeys) > 0 && !emptied {
+				merged := make(map[string]any, len(comp.Extra))
+				for k, v := range comp.Extra {
+					merged[k] = v
+				}
+				for _, k := range comp.KeepExtraKeys {
+					if v, ok := existing.Extra[k]; ok {
+						merged[k] = v
+					}
+				}
+				comp.Extra = merged
+			}
 			if comp.Extra == nil {
 				comp.Extra = existing.Extra
 				if c.HasAssets != nil && !c.HasAssets(existing.ID) {
-					comp.Extra = map[string]any{}
+					comp.Extra = initialExtra(comp)
 				}
 			}
 			comp.Tags = existing.Tags
@@ -602,8 +615,21 @@ func (c *ComponentRepo) Create(_ context.Context, comp *domain.Component) error 
 	}
 	c.nextID++
 	comp.ID = fmt.Sprintf("comp-%d", c.nextID)
+	if comp.Extra == nil {
+		comp.Extra = initialExtra(comp)
+	}
 	c.components[comp.ID] = comp
 	return nil
+}
+
+// initialExtra is what the SQL upsert records for a component that starts
+// over: a copy of InitialExtra, or an empty map.
+func initialExtra(comp *domain.Component) map[string]any {
+	out := make(map[string]any, len(comp.InitialExtra))
+	for k, v := range comp.InitialExtra {
+		out[k] = v
+	}
+	return out
 }
 func (c *ComponentRepo) Delete(_ context.Context, id string) error {
 	c.mu.Lock()

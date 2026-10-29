@@ -28,7 +28,9 @@ import (
 // fans out on the PLAIN document — members serve plain text, the merger
 // gzips the merged result.
 func (h *Handler) GroupIndexSourcePath(p string) (string, bool) {
-	if !strings.HasPrefix(p, "/dists/") {
+	if !strings.HasPrefix(p, "/dists/") || !validDist(p) {
+		// Not merged: a malformed suite would be echoed into the group's own
+		// Release. The plain fan-out reaches members that refuse it.
 		return "", false
 	}
 	if strings.Contains(p, "/Packages") {
