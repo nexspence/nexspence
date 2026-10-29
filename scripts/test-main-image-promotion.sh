@@ -45,3 +45,11 @@ if [[ "$api_token_count" != 1 ]]; then
   exit 1
 fi
 printf 'main promotion receives a read-only GitHub API token\n'
+promotion_job="$(sed -n '/^  promote-main:/,/^  [[:alnum:]_-]*:/p' "$WORKFLOW")"
+checkout_line="$(printf '%s\n' "$promotion_job" | grep -n 'uses: actions/checkout@' | head -n1 | cut -d: -f1 || true)"
+script_line="$(printf '%s\n' "$promotion_job" | grep -n 'scripts/promote-main-image.sh' | head -n1 | cut -d: -f1 || true)"
+if [[ -z "$checkout_line" || -z "$script_line" || "$checkout_line" -ge "$script_line" ]]; then
+  echo "promotion job must checkout the repository before running its promotion script" >&2
+  exit 1
+fi
+printf 'main promotion checks out its script before execution\n'
