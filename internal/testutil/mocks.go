@@ -671,6 +671,9 @@ type AssetRepo struct {
 	// path does a single pass instead of looping.
 	ListStaleCalls int
 	MigrationRows  []domain.MigrationAssetRow
+	// deletedAt mirrors the assets_deleted_at trigger: per repository name,
+	// when an asset was last deleted.
+	deletedAt map[string]time.Time
 	// MigrationListGate, when non-nil, holds ListForBlobStoreMigration until it
 	// is closed, parking a blob-store migration in the "running" state for as
 	// long as the test needs.
@@ -900,6 +903,22 @@ func (a *AssetRepo) TouchLastModified(_ context.Context, id string) error {
 	}
 	return nil
 }
+
+// LastDeletedAt implements repository.AssetRepo.
+func (a *AssetRepo) LastDeletedAt(_ context.Context, repoName string) (time.Time, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.deletedAt[repoName], nil
+}
+
+// noteDeleted records a deletion from repoName; callers hold a.mu.
+func (a *AssetRepo) noteDeleted(repoName string) {
+	if a.deletedAt == nil {
+		a.deletedAt = map[string]time.Time{}
+	}
+	a.deletedAt[repoName] = time.Now()
+}
+
 func (a *AssetRepo) Delete(_ context.Context, id string) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -915,6 +934,7 @@ func (a *AssetRepo) Delete(_ context.Context, id string) error {
 	// off RepositoryID left the path index pointing at a deleted asset, so
 	// GetByPath kept resolving it.
 	delete(a.assets, asset.Repository+":"+asset.Path)
+	a.noteDeleted(asset.Repository)
 	return nil
 }
 func (a *AssetRepo) IncrementDownloads(_ context.Context, counts map[string]int64) error {
@@ -1207,6 +1227,7 @@ func (a *AssetRepo) DeleteIfUnchanged(_ context.Context, id, blobKey string, las
 	}
 	delete(a.byID, id)
 	delete(a.assets, v.Repository+":"+v.Path)
+	a.noteDeleted(v.Repository)
 	return true, nil
 }
 

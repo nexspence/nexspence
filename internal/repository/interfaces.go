@@ -115,6 +115,10 @@ type AssetRepo interface {
 	// ListRawAssetPaths returns raw asset paths (not directory-expanded) for
 	// the given repository. Used by format-specific path transformations (e.g. Docker).
 	ListRawAssetPaths(ctx context.Context, repoName string) ([]string, error)
+	// LastDeletedAt is when an asset was last deleted from repoName, by any
+	// path; zero when none was since this was recorded (#728). A failed
+	// lookup is an error, never zero.
+	LastDeletedAt(ctx context.Context, repoName string) (time.Time, error)
 	// ListByRepoAndPath returns all assets in repoName whose path starts with pathPrefix.
 	// Use pathPrefix="" to list all assets in the repo.
 	ListByRepoAndPath(ctx context.Context, repoName, pathPrefix string) ([]domain.Asset, error)

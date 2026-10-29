@@ -342,6 +342,21 @@ func (r *assetRepo) Create(ctx context.Context, a *domain.Asset) error {
 	).Scan(&a.ID, &a.ComponentID, &a.CreatedAt, &a.LastModified)
 }
 
+func (r *assetRepo) LastDeletedAt(ctx context.Context, repoName string) (time.Time, error) {
+	var at time.Time
+	err := lockDB(ctx, r.db).QueryRow(ctx, `
+		SELECT d.deleted_at FROM repository_asset_deletions d
+		  JOIN repositories r ON r.id = d.repository_id
+		 WHERE r.name = $1`, repoName).Scan(&at)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return time.Time{}, nil // nothing deleted since this was recorded
+	}
+	if err != nil {
+		return time.Time{}, err
+	}
+	return at, nil
+}
+
 func (r *assetRepo) Delete(ctx context.Context, id string) error {
 	_, err := lockDB(ctx, r.db).Exec(ctx, `DELETE FROM assets WHERE id = $1`, id)
 	return err
