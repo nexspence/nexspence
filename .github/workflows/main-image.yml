@@ -77,4 +77,5 @@ jobs:
       - name: Promote current main head
         env:
           IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bash scripts/promote-main-image.sh "$IMAGE" "$GITHUB_SHA"
