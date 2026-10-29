@@ -18,6 +18,7 @@ func TestBasicAuthVerificationCacheExpiresAndDoesNotStoreCredentialsInKeys(t *te
 	key := cache.credentialKey("alice", "plain-password")
 	require.NotContains(t, key, "alice")
 	require.NotContains(t, key, "plain-password")
+	require.NotEqual(t, cache.credentialKey("alice\x00x", "pw"), cache.credentialKey("alice", "x\x00pw"))
 	require.True(t, cache.valid("alice", "plain-password", user))
 
 	now = now.Add(time.Minute)

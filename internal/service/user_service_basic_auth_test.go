@@ -31,7 +31,9 @@ func TestAuthenticateBasicReusesSuccessfulVerificationAndReturnsCurrentRoles(t *
 	require.NoError(t, err)
 	require.Equal(t, []string{"reader"}, first.Roles)
 
-	user.Roles = []string{"publisher"}
+	updatedUser := *user
+	updatedUser.Roles = []string{"publisher"}
+	require.NoError(t, repo.Update(context.Background(), &updatedUser))
 	second, err := svc.AuthenticateBasic(context.Background(), "alice", "secret")
 	require.NoError(t, err)
 	require.Equal(t, []string{"publisher"}, second.Roles, "authorization data must come from the current user record")
@@ -52,6 +54,37 @@ func TestAuthenticateBasicDoesNotCacheFailedCredentials(t *testing.T) {
 		require.Error(t, err)
 	}
 	require.Equal(t, 2, checks)
+}
+
+func TestAuthenticateBasicRejectsWrongPasswordAfterSuccessfulCacheHit(t *testing.T) {
+	user := &domain.User{ID: "user-1", Username: "alice", PasswordHash: "shared-hash", Status: domain.UserStatusActive, Source: domain.UserSourceLocal}
+	svc := NewUserService(testutil.NewUserRepo(user), testutil.NewRoleRepo(), auth.NewService("test-secret-32-chars-long-here!!", 1, 4), zap.NewNop().Sugar())
+	checks := 0
+	svc.checkPassword = func(_, password string) error {
+		checks++
+		if password != "correct" {
+			return errors.New("invalid credentials")
+		}
+		return nil
+	}
+	_, err := svc.AuthenticateBasic(context.Background(), "alice", "correct")
+	require.NoError(t, err)
+	_, err = svc.AuthenticateBasic(context.Background(), "alice", "wrong")
+	require.Error(t, err)
+	require.Equal(t, 2, checks, "a cache hit for a different password must not authenticate the request")
+}
+
+func TestAuthenticateBasicKeepsVerificationKeysScopedToUsernameAndPassword(t *testing.T) {
+	alice := &domain.User{ID: "user-1", Username: "alice", PasswordHash: "same-hash", Status: domain.UserStatusActive, Source: domain.UserSourceLocal}
+	bob := &domain.User{ID: "user-2", Username: "bob", PasswordHash: "same-hash", Status: domain.UserStatusActive, Source: domain.UserSourceLocal}
+	svc := NewUserService(testutil.NewUserRepo(alice, bob), testutil.NewRoleRepo(), auth.NewService("test-secret-32-chars-long-here!!", 1, 4), zap.NewNop().Sugar())
+	checks := 0
+	svc.checkPassword = func(_, _ string) error { checks++; return nil }
+	for _, username := range []string{"alice", "bob"} {
+		_, err := svc.AuthenticateBasic(context.Background(), username, "shared-password")
+		require.NoError(t, err)
+	}
+	require.Equal(t, 2, checks, "successful verification for one username must not populate another username's cache key")
 }
 
 func TestAuthenticateBasicInvalidatesVerificationWhenCredentialStateChanges(t *testing.T) {

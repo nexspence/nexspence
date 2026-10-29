@@ -121,7 +121,7 @@ func (s *UserService) Login(ctx context.Context, username, password string) (str
 	return token, u, nil
 }
 
-// AuthenticateBasic validates credentials for high-volume data routes without minting a JWT.
+// AuthenticateBasic validates local Basic credentials for data routes without minting a JWT. LDAP authentication retains its existing interactive-login path.
 // Successful local password checks are cached briefly, but the current user record
 // is loaded for every request so roles and revocation state remain current.
 func (s *UserService) AuthenticateBasic(ctx context.Context, username, password string) (*domain.User, error) {
