@@ -18,15 +18,38 @@ func denyAll() gin.HandlerFunc {
 	}
 }
 
+// passThrough stands in for the rate limiter when rate limiting is off.
+func passThrough() gin.HandlerFunc {
+	return func(c *gin.Context) { c.Next() }
+}
+
 func scrape(t *testing.T, public bool) *httptest.ResponseRecorder {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	registerMetricsRoute(r, public, denyAll())
+	registerMetricsRoute(r, public, denyAll(), passThrough())
 
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/metrics", nil))
 	return w
+}
+
+// The rate limiter keys on the user ID the authentication middleware puts in
+// the context, so it has to run behind it: a scrape rejected by auth must
+// never reach the limiter, and a scrape that passes it must be counted
+// against the user rather than against the address Prometheus scrapes from.
+func TestMetricsRoute_RateLimitRunsAfterAuth(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	limited := func(c *gin.Context) {
+		c.AbortWithStatus(http.StatusTooManyRequests)
+	}
+
+	r := gin.New()
+	registerMetricsRoute(r, false, denyAll(), limited)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	assert.Equal(t, http.StatusUnauthorized, w.Code,
+		"auth must reject the scrape before the limiter can answer it")
 }
 
 func TestMetricsRoute_RequiresAuthByDefault(t *testing.T) {

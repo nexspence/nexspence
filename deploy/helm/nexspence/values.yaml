@@ -99,6 +99,14 @@ config:
   # the cluster network reaches the Service and a scrape token would just be one
   # more secret to rotate.
   metricsPublic: false
+  # -- Request rate limit. The limiter counts authenticated calls per user, so
+  # several users behind one address (a corporate NAT, a CI runner) do not
+  # share a bucket; anonymous calls are counted per client address. These
+  # mirror the server defaults — raise them when a package manager or a CI
+  # pipeline legitimately bursts, lower them to tighten an instance.
+  rateLimitEnabled: true
+  rateLimitRps: 50
+  rateLimitBurst: 100
   # -- Docker subdomain connector: serve each Docker repository on its own
   # hostname, so clients can `docker pull myrepo.example.com/alpine` instead of
   # `docker pull nexspence.example.com:8081/repository/myrepo/alpine`. Needs a
@@ -393,6 +401,15 @@ affinity: {}
 # libpq syntax — the chart just has nowhere to put the certificate file).
 extraVolumes: []
 extraVolumeMounts: []
+
+# -- Extra environment variables for the container, for a setting the chart
+# does not model yet:
+#   extraEnv:
+#     - name: NEXSPENCE_LOG_LEVEL
+#       value: debug
+# A value set here wins over the same variable coming from the chart's own
+# ConfigMap, because Kubernetes reads `env` after `envFrom`.
+extraEnv: []
 
 # ── PostgreSQL sub-chart (bitnami) ────────────────────────────────────
 # Set enabled: false and provide externalDatabase.dsn for external Postgres.

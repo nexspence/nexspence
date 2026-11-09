@@ -378,6 +378,20 @@ buckets requests per authenticated user, or per client address for anonymous
 calls. It is coarser and complements, rather than replaces, the per-account
 backoff above.
 
+The limiter runs *behind* authentication, because the user it buckets on is
+the one the authentication middleware puts in the request context. Requests
+without an identity — the login route, the OIDC/SAML flows, the Docker token
+endpoint — are counted per client address.
+
+Two routes are deliberately outside the limit: the health probes
+(`/healthz`, `/readyz`), because a probe answered with 429 marks the pod
+unready and takes the instance out of service, and the frontend fallback,
+which serves the SPA's static files.
+
+`auth.rate_limit_rps` (50) and `auth.rate_limit_burst` (100) set the rate and
+the burst size. The Helm chart exposes all three as `config.rateLimitEnabled`,
+`config.rateLimitRps` and `config.rateLimitBurst`.
+
 ---
 
 ## Anonymous Access

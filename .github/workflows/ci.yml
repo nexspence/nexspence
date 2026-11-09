@@ -63,6 +63,11 @@ jobs:
       # That has happened three times; this is the guard.
       - name: Chart env names must match config keys
         run: python3 scripts/check-helm-env.py
+      # A value in values.yaml that never reaches the server is the same class
+      # of bug as an env name that matches no key: the install runs on defaults
+      # while the values file plainly says otherwise.
+      - name: Chart exposes the rate limit and extraEnv
+        run: python3 scripts/test-helm-config.py
 
   frontend:
     name: frontend tests (≥80% coverage)
