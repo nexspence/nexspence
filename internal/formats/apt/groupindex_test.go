@@ -306,3 +306,23 @@ func TestApt_MergeRelease_SkipsBinaryAllWhenNoMemberDeclaresIt(t *testing.T) {
 		assert.NotContains(t, p, "binary-all", "no member publishes binary-all")
 	}
 }
+
+// Dropping the member with the newest Date must not make the group's Release
+// older than the one a client cached (#728): the group's last configuration
+// change is a floor.
+func TestApt_MergeRelease_DateNotBeforeTheGroupsLastChange(t *testing.T) {
+	group := testutil.SimpleRepo("g", "apt")
+	group.UpdatedAt = time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+	h := apt.New(formats.Deps{Repos: testutil.NewRepoRepo(group)})
+	fetch := func(string) ([]byte, error) { return []byte("Package: x\n"), nil }
+
+	body, _, err := h.MergeGroupIndexWithFetch("g", "/dists/focal/Release", releaseParts(), fetch)
+	require.NoError(t, err)
+	assert.Contains(t, string(body), "Date: Tue, 01 Sep 2026 12:00:00 UTC", "later than every member's")
+
+	group.UpdatedAt = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	h = apt.New(formats.Deps{Repos: testutil.NewRepoRepo(group)})
+	body, _, err = h.MergeGroupIndexWithFetch("g", "/dists/focal/Release", releaseParts(), fetch)
+	require.NoError(t, err)
+	assert.Contains(t, string(body), "Date: Wed, 05 Aug 2026 11:00:00 UTC", "the members' newest otherwise")
+}

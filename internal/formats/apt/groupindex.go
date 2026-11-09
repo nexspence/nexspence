@@ -144,7 +144,7 @@ func (h *Handler) mergeRelease(groupName, p string, inline bool, parts []formats
 		}
 	}
 
-	body := renderRelease(dist, archs, components, releaseDateOf(parts), files)
+	body := renderRelease(dist, archs, components, h.groupReleaseDate(groupName, parts), files)
 	if !inline {
 		return body, contentType, nil
 	}
@@ -219,6 +219,25 @@ func releaseDeclaresAll(parts []formats.GroupIndexPart) bool {
 // byte-identical across requests — apt fetches Release and its signature
 // separately and verifies one against the other — so it tracks the members'
 // content rather than the wall clock, exactly as a single repository's does.
+// groupReleaseDate is the group's Release Date: its members' newest, and never
+// earlier than the group's last configuration change — dropping the member
+// with the newest Date must not make the group's Release older than the one
+// a client cached (#728).
+func (h *Handler) groupReleaseDate(groupName string, parts []formats.GroupIndexPart) string {
+	date := releaseDateOf(parts)
+	if h.deps.Repos == nil {
+		return date
+	}
+	group, err := h.deps.Repos.Get(context.Background(), groupName)
+	if err != nil || group == nil {
+		return date
+	}
+	if d, err := time.Parse(releaseDateLayout, date); err == nil && group.UpdatedAt.After(d) {
+		return group.UpdatedAt.UTC().Format(releaseDateLayout)
+	}
+	return date
+}
+
 func releaseDateOf(parts []formats.GroupIndexPart) string {
 	var newest time.Time
 	for _, part := range parts {

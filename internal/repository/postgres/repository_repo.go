@@ -108,7 +108,13 @@ func (r *repositoryRepo) Update(ctx context.Context, repo *domain.Repository) er
 	httpCfg, _ := json.Marshal(repo.HTTPConfig)
 	proxyCfg, _ := json.Marshal(repo.ProxyConfig)
 
+	// A member's change can change what its groups serve (offline, a routing
+	// rule): the groups' updated_at moves with it, so an index date pinned to
+	// it does not go back (#728).
 	_, err := lockDB(ctx, r.db).Exec(ctx, `
+		WITH groups AS (
+		  UPDATE repositories SET updated_at = NOW()
+		   WHERE type = 'group' AND name <> $11 AND format_config->'member_names' ? $11)
 		UPDATE repositories SET
 		  online=$1, format_config=$2, http_config=$3, proxy_config=$4,
 		  cleanup_policy_ids=$5, quota_bytes=$6, routing_rule_id=$7,
@@ -122,8 +128,15 @@ func (r *repositoryRepo) Update(ctx context.Context, repo *domain.Repository) er
 	return err
 }
 
+// Delete removes the repository, and marks the groups that list it as changed:
+// they stop serving it, so an index date pinned to their updated_at does not
+// go back (#728).
 func (r *repositoryRepo) Delete(ctx context.Context, name string) error {
-	_, err := lockDB(ctx, r.db).Exec(ctx, `DELETE FROM repositories WHERE name = $1`, name)
+	_, err := lockDB(ctx, r.db).Exec(ctx, `
+		WITH groups AS (
+		  UPDATE repositories SET updated_at = NOW()
+		   WHERE type = 'group' AND name <> $1 AND format_config->'member_names' ? $1)
+		DELETE FROM repositories WHERE name = $1`, name)
 	return err
 }
 
