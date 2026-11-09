@@ -14,6 +14,7 @@ import (
 	xproxy "golang.org/x/net/proxy"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
+	"github.com/nexspence-oss/nexspence/internal/netguard"
 )
 
 // Timeouts/limits mirror the shared UpstreamClient so proxied clients behave
@@ -136,13 +137,12 @@ var (
 //
 // SSRF-guard interaction: the guard exists because remote_url is
 // user-configured and must not be able to reach internal addresses on a DIRECT
-// dial. When a proxy is configured, the only address the process dials is the
-// proxy itself; the user-controlled upstream host is resolved by the proxy, not
-// by us, so it can never become a direct internal dial. We therefore do NOT
-// apply the guard to proxied clients (allowing a legitimately-internal
-// corporate proxy), while direct (no-proxy) clients keep the guard. This gives
-// exactly the required behavior: an explicitly-configured internal proxy is
-// reachable, but a direct internal upstream is still blocked.
+// dial. When a proxy is configured, the only address the process dials for the
+// request itself is the proxy — the user-controlled upstream host is resolved
+// by the proxy, not by us. The dial to the proxy is therefore not guarded (an
+// explicitly-configured internal proxy stays reachable), while a direct dial —
+// which is what `no_proxy` asks for — still goes through the guard, because
+// that dial reaches the user-configured upstream.
 func ClientFor(repo *domain.Repository) *http.Client {
 	if repo == nil {
 		return UpstreamClient
@@ -185,14 +185,69 @@ func redirectPolicy(_ *http.Request, via []*http.Request) error {
 	return nil
 }
 
+// proxyDialAddrs are the addresses the transport dials for the proxy itself,
+// in the form net/http hands them to the dialer: host:port, with the
+// scheme's default port when the proxy URL carries none.
+func (s proxySettings) proxyDialAddrs() map[string]bool {
+	out := map[string]bool{}
+	add := func(host, port string) {
+		if host == "" {
+			return
+		}
+		out[strings.ToLower(net.JoinHostPort(host, port))] = true
+	}
+	for _, raw := range []string{s.httpProxy, s.httpsProxy} {
+		if raw == "" {
+			continue
+		}
+		u, err := url.Parse(raw)
+		if err != nil {
+			continue
+		}
+		port := u.Port()
+		if port == "" {
+			switch u.Scheme {
+			case "https":
+				port = "443"
+			default:
+				port = "80"
+			}
+		}
+		add(u.Hostname(), port)
+	}
+	if s.socks5Proxy != "" {
+		if hp, err := hostPort(s.socks5Proxy); err == nil {
+			out[strings.ToLower(hp)] = true
+		}
+	}
+	return out
+}
+
 // buildProxyClient constructs an *http.Client that routes outbound requests
 // through the configured proxy. SOCKS5 takes precedence over HTTP(S) proxy when
-// both are set. The dialer that reaches the proxy is intentionally NOT
-// SSRF-guarded (the proxy is admin-configured and may legitimately be internal).
+// both are set.
+//
+// SSRF guard: the proxy is admin-configured and is frequently on an internal
+// IP, so the dial to it is not guarded. Every other dial is a direct one —
+// that is what `no_proxy` asks for — and it reaches the user-configured
+// upstream, so it goes through the guard like any other direct dial. The
+// dialer tells the two apart by address: the transport hands it the proxy's
+// own host:port when it routes through the proxy, and the upstream's
+// host:port when it dials directly.
 func buildProxyClient(s proxySettings) (*http.Client, error) {
 	// Dialer that connects to the proxy. No netguard.Control: the proxy is
 	// trusted/admin-configured and is frequently on an internal IP.
 	baseDialer := &net.Dialer{Timeout: proxyDialTimeout}
+	// Dialer for a direct connection to an upstream: guarded, because the
+	// upstream is user-configured.
+	directDialer := &net.Dialer{Timeout: proxyDialTimeout, Control: netguard.DialControl}
+	proxyAddrs := s.proxyDialAddrs()
+	dialUpstream := func(ctx context.Context, network, addr string) (net.Conn, error) {
+		if proxyAddrs[strings.ToLower(addr)] {
+			return baseDialer.DialContext(ctx, network, addr)
+		}
+		return directDialer.DialContext(ctx, network, addr)
+	}
 
 	tr := &http.Transport{
 		MaxIdleConns:        proxyMaxIdleConns,
@@ -226,7 +281,7 @@ func buildProxyClient(s proxySettings) (*http.Client, error) {
 		tr.DialContext = cd.DialContext
 		// tr.Proxy stays nil: routing is done at the socket layer.
 	} else {
-		tr.DialContext = baseDialer.DialContext
+		tr.DialContext = dialUpstream
 		pf, err := httpProxyFunc(s)
 		if err != nil {
 			return nil, err
