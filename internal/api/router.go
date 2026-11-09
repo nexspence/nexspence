@@ -467,33 +467,52 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 		r.Use(traceLogStash())
 	}
 	r.Use(AuditMiddleware(log, auditRepo))
-	if cfg.Auth.RateLimitEnabled {
-		r.Use(RateLimitMiddleware(log, cfg.Auth.RateLimitRPS, cfg.Auth.RateLimitBurst))
-	}
 
 	// Health probes: no auth, but inside the middleware chain — registering them
 	// earlier meant gin snapshotted an empty chain for them, leaving the
 	// readiness path without Recovery.
+	//
+	// They are deliberately left out of the rate limit: a probe answered with
+	// 429 marks the pod unready and takes the instance out of service.
 	registerHealthRoutes(r, handlers.LivenessHandler(), handlers.ReadinessHandler(log, pool, rdb))
 
 	authMW := handlers.AuthMiddleware(userSvc, tokenSvc, loginGuard, log)
 	adminMW := handlers.AdminRequired()
 
+	// The rate limiter keys on the user ID that the authentication middleware
+	// puts in the request context, and falls back to the client address for
+	// anonymous calls. It therefore has to run *behind* authentication, not on
+	// the engine: installed globally it ran first, never saw a user ID, and
+	// counted every request against the client address — so every user behind
+	// one address (a corporate NAT, a CI runner) shared a single bucket (#721).
+	//
+	// Every group below therefore carries it *after* its authentication
+	// middleware, and the routes without an identity carry it on their own.
+	rateLimitMW := gin.HandlerFunc(func(c *gin.Context) { c.Next() })
+	if cfg.Auth.RateLimitEnabled {
+		rateLimitMW = RateLimitMiddleware(log, cfg.Auth.RateLimitRPS, cfg.Auth.RateLimitBurst)
+	}
+
 	// ── Public endpoints ──────────────────────────────────────
-	r.GET("/service/rest/v1/status/check", func(c *gin.Context) {
+	// No identity to key on: the limiter counts these by client address. The
+	// login route is the reason rate limiting is on by default — it is the
+	// bcrypt cost-12 surface.
+	public := r.Group("", rateLimitMW)
+
+	public.GET("/service/rest/v1/status/check", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 
 	// Auth
-	r.POST("/api/v1/login", authH.Login)
+	public.POST("/api/v1/login", authH.Login)
 	// Nexus-compat login (used by some clients)
-	r.POST("/service/rest/v1/security/users/login", authH.Login)
+	public.POST("/service/rest/v1/security/users/login", authH.Login)
 
 	// Public: feature-detection for LoginPage (whether SSO button should render).
-	r.GET("/api/v1/auth/config", authH.Config)
+	public.GET("/api/v1/auth/config", authH.Config)
 
 	// Public: token creation policy (max expiry days).
-	r.GET("/api/v1/auth/token-policy", tokenH.TokenPolicy)
+	public.GET("/api/v1/auth/token-policy", tokenH.TokenPolicy)
 
 	// OIDC redirect flow — only registered when oidc.enabled=true.
 	// Audit events fire via the global AuditMiddleware above (callback GET
@@ -501,22 +520,22 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 	var oidcH *handlers.OIDCHandler
 	if oidcSvc != nil && oidcSealer != nil {
 		oidcH = handlers.NewOIDCHandler(oidcSvc, userSvc, userRepo, oidcSealer, cfg.OIDC, log)
-		r.GET("/api/v1/auth/oidc/login", oidcH.Login)
-		r.GET("/api/v1/auth/oidc/callback", oidcH.Callback)
+		public.GET("/api/v1/auth/oidc/login", oidcH.Login)
+		public.GET("/api/v1/auth/oidc/callback", oidcH.Callback)
 	}
 
 	if samlSvc != nil {
 		samlH := handlers.NewSAMLHandler(samlSvc, userSvc, cfg.SAML, log)
-		r.GET("/api/v1/auth/saml/metadata", samlH.Metadata)
-		r.GET("/api/v1/auth/saml/login", samlH.Login)
-		r.POST("/api/v1/auth/saml/acs", samlH.ACS)
+		public.GET("/api/v1/auth/saml/metadata", samlH.Metadata)
+		public.GET("/api/v1/auth/saml/login", samlH.Login)
+		public.POST("/api/v1/auth/saml/acs", samlH.ACS)
 	}
 
 	// Prometheus scrape endpoint — Bearer auth unless metrics.public is set.
-	registerMetricsRoute(r, cfg.Metrics.Public, authMW)
+	registerMetricsRoute(r, cfg.Metrics.Public, authMW, rateLimitMW)
 
 	// ── Authenticated endpoints (all valid users) ────────────
-	authed := r.Group("", authMW)
+	authed := r.Group("", authMW, rateLimitMW)
 	// Read endpoints that answer an unauthenticated caller too, marked
 	// publicRead below. Every one of them runs the request through RBACService,
 	// which serves an anonymous caller only for repositories carrying
@@ -526,7 +545,7 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 	// Browsing a public repository without signing in is what Nexus does, and
 	// what the web UI offers on top of this (#404). Writes, deletes and
 	// everything user-scoped stay on authed.
-	publicRead := r.Group("", handlers.OptionalAuth(userSvc, tokenSvc, loginGuard, log))
+	publicRead := r.Group("", handlers.OptionalAuth(userSvc, tokenSvc, loginGuard, log), rateLimitMW)
 	{
 		authed.GET("/service/rest/v1/status", func(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{"status": "ok"})
@@ -634,7 +653,7 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 	}
 
 	// ── Admin-only endpoints (nx-admin role required) ─────────
-	admin := r.Group("", authMW, adminMW)
+	admin := r.Group("", authMW, rateLimitMW, adminMW)
 	{
 		// ── Repositories (write) ──────────────────────────────
 		admin.POST("/service/rest/v1/repositories/:format/:type", repoH.Create)
@@ -801,7 +820,7 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 	// ── Artifact protocol endpoints ───────────────────────────
 	// Route /repository/:repoName/* to the appropriate format handler.
 	// The format is looked up from the repository record in the DB.
-	repo := r.Group("/repository/:repoName", handlers.OptionalAuth(userSvc, tokenSvc, loginGuard, log), rbacMW)
+	repo := r.Group("/repository/:repoName", handlers.OptionalAuth(userSvc, tokenSvc, loginGuard, log), rateLimitMW, rbacMW)
 	{
 		repo.Any("/*path", serveRepository(repoRepo, rrRepo, groupHandler, formatRegistry))
 	}
@@ -826,13 +845,13 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 	// before. A side effect: "token" is a reserved name on the /v2/ surface,
 	// like "repository" already is — validateNameForFormat refuses both.
 	dockerV2Root := handlers.DockerV2Auth(userSvc, tokenSvc, loginGuard, log)
-	r.GET("/v2/", dockerV2Root)
-	r.HEAD("/v2/", dockerV2Root)
+	public.GET("/v2/", dockerV2Root)
+	public.HEAD("/v2/", dockerV2Root)
 	dockerTokenH := handlers.DockerToken(
 		authSvc, userSvc, tokenSvc, cfg.Auth.AnonymousEnabled,
 		time.Duration(cfg.Auth.JWTExpiryHours)*time.Hour, loginGuard, log)
-	r.GET("/v2/token", dockerTokenH)
-	r.POST("/v2/token", dockerTokenH) // containerd/BuildKit try the OAuth2 POST first
+	public.GET("/v2/token", dockerTokenH)
+	public.POST("/v2/token", dockerTokenH) // containerd/BuildKit try the OAuth2 POST first
 	// Instance-level catalog (#261). A static route: without it the path fell
 	// into /v2/:repoName as a phantom repository named "_catalog", whose
 	// failed lookup denied even admins. On a subdomain host the rewriter still
@@ -840,19 +859,20 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 	// scope for a host that IS one repository.
 	dockerCatalogH := []gin.HandlerFunc{
 		handlers.OptionalAuth(userSvc, tokenSvc, loginGuard, log),
+		rateLimitMW,
 		handlers.DockerCatalog(repoRepo, rbacSvc, assetRepo),
 	}
 	r.GET("/v2/_catalog", dockerCatalogH...)
 	r.HEAD("/v2/_catalog", dockerCatalogH...) // net/http drops the body for HEAD
 
 	dockerV2H := serveDockerV2(repoRepo, rrRepo, groupHandler, formatRegistry)
-	v2docker := r.Group("/v2/repository", handlers.OptionalAuth(userSvc, tokenSvc, loginGuard, log), handlers.RBACMiddleware(rbacSvc, repoRepo))
+	v2docker := r.Group("/v2/repository", handlers.OptionalAuth(userSvc, tokenSvc, loginGuard, log), rateLimitMW, handlers.RBACMiddleware(rbacSvc, repoRepo))
 	v2docker.Any("/:repoName/*dockerpath", dockerV2H)
 
 	// Short-path Docker: /v2/:repoName/* — no "repository/" segment required.
 	// Gin static segments take priority, so /v2/repository/:repoName/... still
 	// matches v2docker above; this group catches everything else under /v2/.
-	v2short := r.Group("/v2", handlers.OptionalAuth(userSvc, tokenSvc, loginGuard, log), handlers.RBACMiddleware(rbacSvc, repoRepo))
+	v2short := r.Group("/v2", handlers.OptionalAuth(userSvc, tokenSvc, loginGuard, log), rateLimitMW, handlers.RBACMiddleware(rbacSvc, repoRepo))
 	v2short.Any("/:repoName/*dockerpath", dockerV2H)
 
 	// ── Frontend static (production build) ────────────────────

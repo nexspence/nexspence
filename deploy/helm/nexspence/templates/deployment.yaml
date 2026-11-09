@@ -199,6 +199,9 @@ spec:
                   name: {{ .Values.oidc.googleAdminSDK.serviceAccountKeyExistingSecret }}
                   key: {{ .Values.oidc.googleAdminSDK.serviceAccountKeyExistingSecretKey | default "key.json" }}
             {{- end }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           envFrom:
             - configMapRef:
                 name: {{ include "nexspence.fullname" . }}

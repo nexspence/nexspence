@@ -35,6 +35,13 @@ data:
   NEXSPENCE_BOOTSTRAP_ADMIN_FIRST_NAME: {{ .Values.config.adminFirstName | quote }}
   {{- end }}
   NEXSPENCE_METRICS_PUBLIC: {{ .Values.config.metricsPublic | quote }}
+  # The limiter counts authenticated calls per user and anonymous calls per
+  # client address. The names are spelled from the config keys
+  # auth.rate_limit_enabled / _rps / _burst, which viper derives the env name
+  # from — a different spelling is ignored silently.
+  NEXSPENCE_AUTH_RATE_LIMIT_ENABLED: {{ .Values.config.rateLimitEnabled | quote }}
+  NEXSPENCE_AUTH_RATE_LIMIT_RPS: {{ .Values.config.rateLimitRps | quote }}
+  NEXSPENCE_AUTH_RATE_LIMIT_BURST: {{ .Values.config.rateLimitBurst | quote }}
   NEXSPENCE_DOCKER_SUBDOMAIN_CONNECTOR_ENABLED: {{ .Values.config.docker.subdomainConnector.enabled | quote }}
   NEXSPENCE_DOCKER_SUBDOMAIN_CONNECTOR_BASE_DOMAIN: {{ .Values.config.docker.subdomainConnector.baseDomain | quote }}
   {{- with .Values.config.helm.indexCacheTTL }}

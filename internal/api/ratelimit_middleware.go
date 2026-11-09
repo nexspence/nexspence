@@ -41,6 +41,12 @@ func (b *tokenBucket) allow(rate, burst float64) bool {
 // RateLimitMiddleware returns a Gin middleware that limits requests per
 // authenticated user (keyed by userID, or by remote IP for anonymous calls).
 // rate is tokens/second; burst is the maximum burst size.
+//
+// It has to run *behind* the authentication middleware: the user ID it keys
+// on is put in the request context by AuthMiddleware / OptionalAuth, so a
+// limiter installed on the engine (in front of them) never sees one and
+// counts every request against the client address instead — which is how
+// every user behind one address ended up sharing a single bucket (#721).
 func RateLimitMiddleware(log logger.Logger, rate, burst float64) gin.HandlerFunc {
 	type entry struct {
 		bucket   *tokenBucket

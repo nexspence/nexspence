@@ -431,6 +431,31 @@ kubectl delete pvc -l app.kubernetes.io/instance=nexspence -n nexspence
 
 ---
 
+## Request rate limit
+
+The server limits request rates. Authenticated calls are counted per user, so
+several users behind one address (a corporate NAT, a CI runner) do not share a
+bucket; anonymous calls are counted per client address.
+
+The defaults mirror the server defaults (`50` requests/second, burst `100`).
+A package manager or a CI pipeline that legitimately bursts is best served by
+raising them:
+
+```bash
+helm upgrade nexspence oci://ghcr.io/nexspence/charts/nexspence \
+  --set config.rateLimitRps=200 \
+  --set config.rateLimitBurst=400
+```
+
+For a setting the chart does not model yet, `extraEnv` passes it straight to
+the container:
+
+```yaml
+extraEnv:
+  - name: NEXSPENCE_SOME_SETTING
+    value: "1"
+```
+
 ## Values Reference
 
 See `values.yaml` — every key is annotated inline.
