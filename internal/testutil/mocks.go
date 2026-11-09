@@ -716,6 +716,9 @@ type AssetRepo struct {
 	// deletedAt mirrors the assets_deleted_at trigger: per repository name,
 	// when an asset was last deleted.
 	deletedAt map[string]time.Time
+	// LastDeletedAtErr, when non-nil, makes LastDeletedAt fail — the seam for
+	// "the deletion lookup did not work", which must not take the index down.
+	LastDeletedAtErr error
 	// MigrationListGate, when non-nil, holds ListForBlobStoreMigration until it
 	// is closed, parking a blob-store migration in the "running" state for as
 	// long as the test needs.
@@ -950,6 +953,9 @@ func (a *AssetRepo) TouchLastModified(_ context.Context, id string) error {
 func (a *AssetRepo) LastDeletedAt(_ context.Context, repoName string) (time.Time, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if a.LastDeletedAtErr != nil {
+		return time.Time{}, a.LastDeletedAtErr
+	}
 	return a.deletedAt[repoName], nil
 }
 

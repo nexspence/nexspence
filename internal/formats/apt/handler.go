@@ -436,9 +436,14 @@ func (h *Handler) buildRelease(ctx context.Context, repoName, p string) ([]byte,
 		)
 	}
 
+	// A failed lookup is never "no deletion" — that would let the date move
+	// backwards and apt would keep the Release it cached, still listing the
+	// deleted file (#728). It is not a reason to fail the request either: the
+	// Release is the document every client fetches first, so it falls back
+	// to the current time, which is newer than any date a client holds.
 	deleted, err := h.deps.Assets.LastDeletedAt(ctx, repoName)
 	if err != nil {
-		return nil, err
+		deleted = time.Now()
 	}
 	date := suiteDate(all, debs, deleted).UTC().Format(releaseDateLayout)
 	return renderRelease(dist, archs, []string{"main"}, date, files), nil
