@@ -126,6 +126,12 @@ type BootstrapConfig struct {
 	AdminPassword  string `mapstructure:"admin_password"`
 	AdminEmail     string `mapstructure:"admin_email"`
 	AdminFirstName string `mapstructure:"admin_first_name"`
+	// Recreate creates the admin account again when its row is missing on an
+	// instance that already has other users. It is off by default: a missing
+	// admin row there means the account was deleted on purpose, and recreating
+	// it would hand the account — and with it nx-admin — back to whoever knows
+	// the configured password.
+	Recreate bool `mapstructure:"recreate"`
 }
 
 // HTTPConfig configures the HTTP server (listen address, timeouts, body limit, TLS).
