@@ -328,6 +328,28 @@ Built-in roles cannot be deleted or modified.
 
 ---
 
+## Promotion (staging → production)
+
+`POST /api/v1/promotion/promote` copies artifacts from a staging repository
+into the target repository of a promotion rule. It is not an admin-only
+endpoint, so the caller's own privileges decide it:
+
+| Check | Meaning |
+|-------|---------|
+| `browse` on the **source** repository | the caller may see what is promoted out of it |
+| `write` on the **target** repository | the caller may put artifacts into it |
+
+A caller without `write` on the target gets `403 Forbidden` and no promotion
+request is filed. `nx-admin` passes every check. The rule's own gates (scan
+result, path filter, target write policy) still decide *what* is promoted —
+they never substitute for this check.
+
+`GET /api/v1/promotion/requests` lists the requests of the rules the caller
+can browse on both sides; administrators see all of them, including requests
+whose rule has since been deleted.
+
+---
+
 ## Access Check Order
 
 When a request is made for an artifact:
