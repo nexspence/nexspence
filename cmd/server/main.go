@@ -772,6 +772,18 @@ func ensureBootstrapAdmin(
 	}
 
 	if existing == nil {
+		if !b.Recreate {
+			// A missing admin row on an instance that already has other users
+			// means the account was deleted on purpose — that is how it is
+			// retired. Recreating it would hand the account, and with it
+			// nx-admin, back to whoever knows the configured password, which on
+			// an instance that never changed it is the shipped default.
+			if others, lerr := userRepo.List(ctx, ""); lerr == nil && len(others) > 0 {
+				log.Warn("bootstrap: the admin account is missing and the instance already has users — not recreating it; set bootstrap.recreate=true to bring it back",
+					"username", b.AdminUsername)
+				return nil
+			}
+		}
 		// Create fresh admin user
 		u := &domain.User{
 			Username:     b.AdminUsername,

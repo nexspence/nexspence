@@ -114,6 +114,11 @@ bootstrap:
   admin_password: "admin123"   # change this!
   admin_email:    "admin@example.com"
   admin_first_name: "Admin"
+  # The admin account is created on a fresh install and never again: on an
+  # instance that already has users, a missing admin row means the account
+  # was deleted on purpose and stays deleted. Set recreate: true to bring it
+  # back anyway.
+  recreate: false
 
 log:
   level: "info"   # debug | info | warn | error
