@@ -125,7 +125,6 @@ load-balancer configs — in [install-local.md](install-local.md).
 ## Kubernetes (Helm)
 
 ```bash
-cd deploy/helm/nexspence && helm dependency update
 helm install nexspence \
   deploy/helm/nexspence \
   -f deploy/helm/nexspence/values-examples/nginx.yaml \
