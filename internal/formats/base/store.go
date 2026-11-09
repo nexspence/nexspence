@@ -266,17 +266,22 @@ func RegisterStoredBlob(ctx context.Context, d formats.Deps, repo *domain.Reposi
 		name = strings.TrimPrefix(filePath, "/")
 	}
 	comp := &domain.Component{
-		RepositoryID: repo.ID,
-		Repository:   repo.Name,
-		Format:       string(repo.Format),
-		Group:        coords.Group,
-		Name:         name,
-		Version:      version,
+		RepositoryID:  repo.ID,
+		Repository:    repo.Name,
+		Format:        string(repo.Format),
+		Group:         coords.Group,
+		Name:          name,
+		Version:       version,
+		InitialExtra:  coords.Extra,
+		KeepExtraKeys: coords.KeepExtra,
 	}
 	if contentReplaced(ctx, d, comp, prev, sha256sum) {
 		// The metadata described bytes this write replaces — a re-pushed tag, a
 		// redeployed SNAPSHOT. Start over; the handler records the new content's.
 		comp.Extra = map[string]any{}
+		for k, v := range coords.Extra {
+			comp.Extra[k] = v
+		}
 	}
 
 	asset := &domain.Asset{
@@ -748,6 +753,16 @@ type Coords struct {
 	Group   string // e.g. Maven groupId, npm scope, Go module path
 	Name    string // package/artifact/chart name
 	Version string // semantic version
+	// Extra is recorded on the component together with the file, when the
+	// component starts over: a new one, one with no file left, or one whose
+	// content this write replaces. An existing component keeps its extra.
+	// A handler that knows the metadata before storing sets it here, so the
+	// file is never visible without it.
+	Extra map[string]any
+	// KeepExtra are extra keys a content replacement keeps: they describe
+	// where the component is listed rather than the bytes replaced. They are
+	// kept by the upsert itself, so a concurrent change to them is not undone.
+	KeepExtra []string
 }
 
 // CheckQuota verifies that writing `size` bytes for repo won't exceed the repository or

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -611,6 +612,9 @@ func (s *PromotionService) executeCopy(ctx context.Context, req *domain.Promotio
 			Version:      u.comp.Version,
 			Tags:         u.comp.Tags,
 			Extra:        promotedExtra(u.comp.Extra),
+			// Where the component is listed is the target's own business:
+			// a new copy has no record, an overwritten one keeps the target's.
+			KeepExtraKeys: domain.ListingExtraKeys,
 		}
 		if err = s.componentRepo.Create(ctx, newComp); err != nil {
 			return 0, fmt.Errorf("upsert component in target: %w", err)
@@ -921,7 +925,11 @@ func (s *PromotionService) withTargetPathLock(ctx context.Context, guarded bool,
 // a copy without it is a signature the target repository's referrers API can
 // never list.
 //
-// scan_result is the one key left behind. It records a scan run against the
+// domain.ListingExtraKeys stay behind too: they say where the component is
+// listed in the source repository (apt suites), which is no fact about the
+// content.
+//
+// scan_result is the other key left behind. It records a scan run against the
 // SOURCE repository's image reference, and the scan rows the promotion gate
 // actually reads are keyed by component ID and are not copied either — so
 // carrying it would report a scan of this copy that was never run.
@@ -931,7 +939,7 @@ func (s *PromotionService) withTargetPathLock(ctx context.Context, guarded bool,
 func promotedExtra(extra map[string]any) map[string]any {
 	out := make(map[string]any, len(extra))
 	for k, v := range extra {
-		if k == "scan_result" {
+		if k == "scan_result" || slices.Contains(domain.ListingExtraKeys, k) {
 			continue
 		}
 		out[k] = v

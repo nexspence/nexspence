@@ -562,3 +562,99 @@ func TestPromotionService_ReplacesTargetComponentExtra(t *testing.T) {
 		t.Errorf("the target's stale metadata must be replaced by the source's (none), got %v", got.Extra)
 	}
 }
+
+// Where a component is listed is its own repository's business (#727): apt
+// suites recorded in the source do not travel with the copy, and a copy that
+// overwrites a target component keeps the target's own record.
+func TestPromotionService_LeavesListingKeysToEachRepository(t *testing.T) {
+	svc, promoRepo, compRepo, assetRepo, blobStore, repoRepo, _, _ := newTestPromotionSvc(t)
+	ctx := context.Background()
+
+	fromRepo := testutil.SimpleRepo("apt-dev", "apt")
+	toRepo := testutil.SimpleRepo("apt-prod", "apt")
+	repoRepo.Create(ctx, fromRepo)
+	repoRepo.Create(ctx, toRepo)
+	rule := &domain.PromotionRule{Name: "apt-promote", FromRepo: "apt-dev", ToRepo: "apt-prod"}
+	if err := promoRepo.CreateRule(ctx, rule); err != nil {
+		t.Fatalf("CreateRule: %v", err)
+	}
+	promote := func(t *testing.T, name string) *domain.Component {
+		t.Helper()
+		comp := &domain.Component{
+			ID: "comp-src-" + name, RepositoryID: fromRepo.ID, Repository: fromRepo.Name,
+			Format: "apt", Group: "amd64", Name: name, Version: "1.0",
+			Extra: map[string]any{
+				"deb_control": "Package: " + name + "\n",
+				"apt_suites":  []any{"acme-dev"}, "apt_suites_changed": "2026-01-01T00:00:00Z", "apt_suites_by": "change",
+			},
+		}
+		compRepo.AddComponent(comp)
+		blobKey := "apt-dev:" + name
+		if err := blobStore.PutBytes(ctx, blobKey, []byte(name)); err != nil {
+			t.Fatalf("PutBytes: %v", err)
+		}
+		assetRepo.Create(ctx, &domain.Asset{
+			ComponentID: comp.ID, RepositoryID: fromRepo.ID, Repository: fromRepo.Name,
+			Path: "/pool/main/" + name + "_1.0_amd64.deb", BlobKey: blobKey, SizeBytes: int64(len(name)),
+			ContentType: "application/vnd.debian.binary-package",
+		})
+		results, err := svc.Promote(ctx, rule.ID, []string{comp.ID}, "user-1")
+		if err != nil || len(results) != 1 || results[0].Status != domain.PromotionCompleted {
+			t.Fatalf("Promote: err=%v results=%+v", err, results)
+		}
+		page, _ := compRepo.Search(ctx, domain.SearchParams{Repository: "apt-prod"})
+		for i := range page.Items {
+			if c := &page.Items[i]; c.Repository == "apt-prod" && c.Name == name {
+				return c
+			}
+		}
+		t.Fatalf("no target component for %s", name)
+		return nil
+	}
+
+	got := promote(t, "fresh")
+	if got.Extra["deb_control"] == nil {
+		t.Errorf("the content's metadata travels: %v", got.Extra)
+	}
+	for _, k := range domain.ListingExtraKeys {
+		if _, ok := got.Extra[k]; ok {
+			t.Errorf("a new copy has no listing record of its own, got %s=%v", k, got.Extra[k])
+		}
+	}
+
+	// A target component whose file was deleted (no assets left) describes
+	// deleted content: the copy does not inherit its suites.
+	compRepo.AddComponent(&domain.Component{
+		ID: "comp-dst-orphan", RepositoryID: toRepo.ID, Repository: toRepo.Name,
+		Format: "apt", Group: "amd64", Name: "orphan", Version: "1.0",
+		Extra: map[string]any{"apt_suites": []any{"old"}, "apt_suites_changed": "2026-05-05T00:00:00Z", "apt_suites_by": "change"},
+	})
+	compRepo.HasAssets = func(id string) bool {
+		as, _ := assetRepo.ListByComponentID(ctx, id)
+		return len(as) > 0
+	}
+	got = promote(t, "orphan")
+	for _, k := range domain.ListingExtraKeys {
+		if _, ok := got.Extra[k]; ok {
+			t.Errorf("a copy into an emptied component starts without its record, got %s=%v", k, got.Extra[k])
+		}
+	}
+
+	compRepo.AddComponent(&domain.Component{
+		ID: "comp-dst-kept", RepositoryID: toRepo.ID, Repository: toRepo.Name,
+		Format: "apt", Group: "amd64", Name: "kept", Version: "1.0",
+		Extra: map[string]any{"apt_suites": []any{"stable"}, "apt_suites_changed": "2026-05-05T00:00:00Z", "apt_suites_by": "change"},
+	})
+	assetRepo.Create(ctx, &domain.Asset{
+		ComponentID: "comp-dst-kept", RepositoryID: toRepo.ID, Repository: toRepo.Name,
+		Path: "/pool/main/kept_1.0_amd64.deb", BlobKey: "apt-prod:kept-old", SizeBytes: 3,
+		ContentType: "application/vnd.debian.binary-package",
+	})
+	got = promote(t, "kept")
+	if suites, _ := got.Extra["apt_suites"].([]any); len(suites) != 1 || suites[0] != "stable" {
+		t.Errorf("an overwritten target keeps its own suites, got %v", got.Extra["apt_suites"])
+	}
+	if got.Extra["apt_suites_changed"] != "2026-05-05T00:00:00Z" {
+		t.Errorf("and its own stamp, got %v", got.Extra["apt_suites_changed"])
+	}
+}

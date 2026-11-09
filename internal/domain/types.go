@@ -452,21 +452,35 @@ type VulnFilter struct {
 
 // ── Component ────────────────────────────────────────────────
 
+// ListingExtraKeys are the Component.Extra keys that say where a component is
+// listed within its own repository — apt suites (#727) — rather than what it
+// is. They never travel with a copy to another repository, and a write that
+// replaces a component's content keeps them (Component.KeepExtraKeys).
+var ListingExtraKeys = []string{"apt_suites", "apt_suites_changed", "apt_suites_by"}
+
 // Component is a logical artifact (group/name/version) owning one or more Assets.
 type Component struct {
-	ID             string         `json:"id"`
-	RepositoryID   string         `json:"repositoryId"`
-	Repository     string         `json:"repository"` // name
-	Format         string         `json:"format"`
-	Group          string         `json:"group"`
-	Name           string         `json:"name"`
-	Version        string         `json:"version"`
-	Tags           []string       `json:"tags"`
-	Extra          map[string]any `json:"extra,omitempty"`
-	LastDownloaded *time.Time     `json:"lastDownloaded,omitempty"`
-	DownloadCount  int64          `json:"downloadCount"`
-	Assets         []Asset        `json:"assets,omitempty"`
-	CreatedAt      time.Time      `json:"createdAt"`
+	ID           string         `json:"id"`
+	RepositoryID string         `json:"repositoryId"`
+	Repository   string         `json:"repository"` // name
+	Format       string         `json:"format"`
+	Group        string         `json:"group"`
+	Name         string         `json:"name"`
+	Version      string         `json:"version"`
+	Tags         []string       `json:"tags"`
+	Extra        map[string]any `json:"extra,omitempty"`
+	// InitialExtra is the extra a Create records when Extra is nil and the
+	// component starts over: a new row, or one with no assets left. Ignored
+	// otherwise, so an existing component keeps what was recorded for it.
+	InitialExtra map[string]any `json:"-"`
+	// KeepExtraKeys are the keys a Create that replaces the stored extra
+	// (non-nil Extra) keeps from it, read and written in the one statement:
+	// they describe where the component is listed, not the bytes replaced.
+	KeepExtraKeys  []string   `json:"-"`
+	LastDownloaded *time.Time `json:"lastDownloaded,omitempty"`
+	DownloadCount  int64      `json:"downloadCount"`
+	Assets         []Asset    `json:"assets,omitempty"`
+	CreatedAt      time.Time  `json:"createdAt"`
 }
 
 // ── Asset ────────────────────────────────────────────────────
