@@ -105,7 +105,7 @@ func TestUpload_ControlFileDrivesTheStanza(t *testing.T) {
 	assert.Contains(t, idx, "Description: foo runtime library\n Shared library for foo.\n .\n Second paragraph")
 
 	// Server-computed fields describe the bytes actually stored.
-	assert.Contains(t, idx, "Filename: "+path+"\n")
+	assert.Contains(t, idx, "Filename: "+strings.TrimPrefix(path, "/")+"\n")
 	assert.Contains(t, idx, fmt.Sprintf("Size: %d\n", len(deb)))
 	assert.Contains(t, idx, fmt.Sprintf("MD5sum: %x\n", md5.Sum(deb))) //nolint:gosec // apt protocol checksum
 	assert.Contains(t, idx, fmt.Sprintf("SHA1: %x\n", sha1.Sum(deb)))  //nolint:gosec // apt protocol checksum
@@ -321,7 +321,7 @@ func TestPackagesIndex_OneStanzaPerIdentity(t *testing.T) {
 
 	idx := e.get(t, "/dists/stable/main/binary-amd64/Packages")
 	assert.Equal(t, 1, strings.Count(idx, "Package: foo\n"))
-	assert.Contains(t, idx, "Filename: /pool/main/foo_1.0_amd64.deb\n", "the first path wins")
+	assert.Contains(t, idx, "Filename: pool/main/foo_1.0_amd64.deb\n", "the first path wins")
 }
 
 func TestUpload_BrokenDebIsRefusedAndNothingStored(t *testing.T) {
@@ -374,7 +374,7 @@ func TestUpload_RootUploadUsesControlPackageForThePool(t *testing.T) {
 
 	idx := e.get(t, "/dists/stable/main/binary-amd64/Packages")
 	assert.Contains(t, idx, "Package: libfoo\nVersion: 3.0\n")
-	assert.Contains(t, idx, "Filename: /pool/main/libf/libfoo/renamed-by-ci.deb\n")
+	assert.Contains(t, idx, "Filename: pool/main/libf/libfoo/renamed-by-ci.deb\n")
 }
 
 // Rich stanzas (multi-line Description with " ." lines) survive a group merge
@@ -439,4 +439,35 @@ func TestSettleIdentity_LaterFileRemovesItself(t *testing.T) {
 	status, err = h.settleIdentity(t.Context(), "ctl-settle", "/pool/main/a/foo_1.0_amd64.deb", coords, "amd64")
 	assert.Equal(t, 0, status)
 	assert.NoError(t, err, "the winner stays")
+}
+
+// apt appends Filename to the source URI, which always ends in "/". A leading
+// slash made it request "<repo>//pool/...", which the server refuses as a
+// non-canonical path. Both stanza forms — from the control file and from the
+// file name — must give a Filename that resolves to the stored deb.
+func TestPackagesIndex_FilenameIsRelativeToTheRepository(t *testing.T) {
+	e := newCtlEnv(t, "debs-rel", "")
+	deb := debFor(t, "acme-tool", "1.0", "amd64", "", "tool")
+	require.Equal(t, http.StatusCreated, e.put("/pool/main/acme-tool_1.0_amd64.deb", deb).Code)
+	require.Equal(t, http.StatusCreated, e.put("/pool/main/acme-legacy_2.0_amd64.deb", []byte("legacy")).Code)
+
+	want := map[string]string{
+		"pool/main/acme-tool_1.0_amd64.deb":   string(deb),
+		"pool/main/acme-legacy_2.0_amd64.deb": "legacy",
+	}
+	var got []string
+	for _, line := range strings.Split(e.get(t, "/dists/stable/main/binary-amd64/Packages"), "\n") {
+		filename, ok := strings.CutPrefix(line, "Filename: ")
+		if !ok {
+			continue
+		}
+		got = append(got, filename)
+		// What apt requests below the repository: the source URI's trailing
+		// slash, then Filename.
+		inRepo := "/" + filename
+		_, err := formats.CanonicalPath(inRepo)
+		require.NoError(t, err, "apt would request %q", inRepo)
+		assert.Equal(t, want[filename], e.get(t, inRepo), filename)
+	}
+	assert.ElementsMatch(t, []string{"pool/main/acme-tool_1.0_amd64.deb", "pool/main/acme-legacy_2.0_amd64.deb"}, got)
 }

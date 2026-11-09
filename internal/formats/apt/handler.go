@@ -200,11 +200,16 @@ func assetArch(comp *domain.Component, a domain.Asset) string {
 // Provides, Conflicts, Description and the rest — followed by the fields the
 // server computes from the stored file, in dpkg-scanpackages' order (#637).
 // Debs stored before that (or without an ar body) keep the filename stanza.
+//
+// Filename is relative to the repository root, as Debian archives write it:
+// apt appends it to the source URI, which always ends in "/", so a leading
+// slash would make it request "//pool/...", a path the server refuses.
 func writeStanza(sb *strings.Builder, comp *domain.Component, a domain.Asset, arch string) {
+	filename := strings.TrimPrefix(a.Path, "/")
 	if ctl, _ := comp.Extra[debControlKey].(string); ctl != "" {
 		sb.WriteString(strings.TrimRight(ctl, "\n"))
 		sb.WriteString("\n")
-		fmt.Fprintf(sb, "Filename: %s\n", a.Path)
+		fmt.Fprintf(sb, "Filename: %s\n", filename)
 		fmt.Fprintf(sb, "Size: %d\n", a.SizeBytes)
 		if a.MD5 != "" {
 			fmt.Fprintf(sb, "MD5sum: %s\n", a.MD5)
@@ -221,7 +226,7 @@ func writeStanza(sb *strings.Builder, comp *domain.Component, a domain.Asset, ar
 	fmt.Fprintf(sb, "Package: %s\n", comp.Name)
 	fmt.Fprintf(sb, "Version: %s\n", comp.Version)
 	fmt.Fprintf(sb, "Architecture: %s\n", arch)
-	fmt.Fprintf(sb, "Filename: %s\n", a.Path)
+	fmt.Fprintf(sb, "Filename: %s\n", filename)
 	fmt.Fprintf(sb, "Size: %d\n", a.SizeBytes)
 	if a.SHA256 != "" {
 		fmt.Fprintf(sb, "SHA256: %s\n", a.SHA256)
