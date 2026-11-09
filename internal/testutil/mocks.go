@@ -1923,6 +1923,19 @@ func (r *UserRepo) BumpTokensValidAfter(_ context.Context, userID string) error 
 	return nil
 }
 
+// SetExternalID records the identity the IdP vouches for the account.
+func (r *UserRepo) SetExternalID(_ context.Context, userID, externalID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.Err != nil {
+		return r.Err
+	}
+	if u, ok := r.byID[userID]; ok {
+		u.ExternalID = externalID
+	}
+	return nil
+}
+
 func (r *UserRepo) SetOIDCTokens(_ context.Context, userID, idToken, _ string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()

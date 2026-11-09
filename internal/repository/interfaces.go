@@ -225,6 +225,11 @@ type UserRepo interface {
 	// invalidating any JWT issued before this call (used on disable, password
 	// change, and role change).
 	BumpTokensValidAfter(ctx context.Context, userID string) error
+	// SetExternalID records the identity the IdP vouches for the account:
+	// the OIDC `sub` claim or the SAML NameID. It is the immutable half of
+	// the login, the username being the mutable one, and it is what keeps a
+	// recycled username from handing an account to a new principal.
+	SetExternalID(ctx context.Context, userID, externalID string) error
 	// SetOIDCTokens stores id_token and refresh_token for an OIDC user.
 	// Pass empty strings to clear both columns (e.g. on logout).
 	SetOIDCTokens(ctx context.Context, userID string, idToken, refreshToken string) error

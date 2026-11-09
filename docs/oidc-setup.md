@@ -218,8 +218,18 @@ oidc:
 | `oidc_error=provisioning rejected` banner | `provisioning: allowlist` + no email match, or `provisioning: manual` + user not pre-created | Adjust mode, add email pattern, or pre-create user in Security → Users. |
 | No roles assigned after login | Claim name wrong or claim empty | Decode id_token at jwt.io. Verify `groups_claim` matches actual claim name. For Entra: use `roles`. For Google: set `groups_claim: ""` and assign roles manually. |
 | `username conflict` error (409 banner) | Local or LDAP user already exists with same username | Rename the local user or delete them before migrating to OIDC. |
+| `username conflict` error (409 banner), account is an SSO one | The IdP handed the username to a different principal than the one the account was created for | The account is bound to the IdP subject (`sub`) it was provisioned with. Check the `sub` of the account and of the incoming login; a recycled username is refused on purpose. |
 
 ## Security notes
+
+- **The account is bound to the IdP subject, not to the username.** The
+  username is the mutable half of a login: an IdP may hand the same
+  `preferred_username` to a different principal when an employee leaves or an
+  address is recycled. The first login records the subject (`sub`, the SAML
+  NameID) on the account, and every later login must carry the same one —
+  otherwise the login is refused with a `username conflict`, and the account
+  keeps its roles instead of handing them over. Accounts provisioned before
+  this was recorded bind on their next login; the check applies from then on.
 
 - **State cookie** is AES-256-GCM sealed (`cookie_key` must be 32 bytes).
   Rotate the key to invalidate all in-flight login attempts.
