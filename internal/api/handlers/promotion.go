@@ -161,6 +161,46 @@ func (h *PromotionHandler) GetComponentRules(c *gin.Context) {
 	c.JSON(http.StatusOK, rules)
 }
 
+// authorizePromotion reports whether the caller may promote artifacts under
+// this rule.
+//
+// The rule's own gates (scan, path filter, target write policy) decide *what*
+// is promoted; this decides *who* may ask for it. The endpoint sits in the
+// non-admin group, so without this check any authenticated account could
+// promote whatever a rule matched — including into a repository it has no
+// privilege over, and with an auto-approving rule the copy happens at once.
+//
+// The caller needs browse on the source repository (the promotion takes
+// artifacts out of it) and write on the target (the copy puts bytes in it).
+// Administrators pass through RBAC unchanged.
+//
+// Fails closed: with no repository repo or RBAC service wired the endpoint
+// refuses instead of promoting on trust.
+func (h *PromotionHandler) authorizePromotion(c *gin.Context, rule *domain.PromotionRule) bool {
+	if h.repos == nil || h.rbacSvc == nil {
+		return false
+	}
+	ctx := c.Request.Context()
+	userID, _ := c.Get("userID")
+	roles, _ := c.Get("roles")
+	userIDStr, _ := userID.(string)
+	rolesSlice, _ := roles.([]string)
+
+	from, _ := h.repos.Get(ctx, rule.FromRepo)
+	if from == nil {
+		return false
+	}
+	if ok, _ := h.rbacSvc.CanAccessRepo(ctx, userIDStr, rolesSlice, from, "", "browse"); !ok {
+		return false
+	}
+	to, _ := h.repos.Get(ctx, rule.ToRepo)
+	if to == nil {
+		return false
+	}
+	ok, _ := h.rbacSvc.CanAccessRepo(ctx, userIDStr, rolesSlice, to, "", "write")
+	return ok
+}
+
 // Promote handles POST /api/v1/promotion/promote
 // Body: { "rule_id": "...", "component_ids": ["..."] }
 func (h *PromotionHandler) Promote(c *gin.Context) {
@@ -179,6 +219,20 @@ func (h *PromotionHandler) Promote(c *gin.Context) {
 	userID, _ := c.Get("userID")
 	uid, _ := userID.(string)
 
+	// The rule is read before the promotion so the caller can be checked
+	// against the repositories it names. A missing rule keeps the answer it
+	// always had: rule IDs are UUIDs, so naming one that does not exist
+	// reveals nothing.
+	rule, err := h.svc.GetRule(c.Request.Context(), body.RuleID)
+	if err != nil || rule == nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "promotion rule not found: " + body.RuleID})
+		return
+	}
+	if !h.authorizePromotion(c, rule) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "write privilege on the target repository is required to promote into it"})
+		return
+	}
+
 	requests, err := h.svc.Promote(c.Request.Context(), body.RuleID, body.ComponentIDs, uid)
 	if err != nil {
 		// Two rules covering the same component is a conflict in the rules, not
@@ -194,6 +248,42 @@ func (h *PromotionHandler) Promote(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"requests": requests})
 }
 
+// visibleRequests keeps the requests whose rule the caller may see.
+//
+// A request names its rule and its component — everything the promote
+// endpoint needs — so a caller who cannot browse both sides of a rule must
+// not see the requests filed under it either.
+//
+// A request whose rule no longer exists names no repository, so there is
+// nothing to check the caller against: it stays visible to administrators
+// (who see everything) and is hidden from the rest.
+//
+// Follows visibleRules: with WithRBAC unset the requests are returned
+// unchanged.
+func (h *PromotionHandler) visibleRequests(c *gin.Context, requests []domain.PromotionRequest) []domain.PromotionRequest {
+	if h.repos == nil || h.rbacSvc == nil {
+		return requests
+	}
+	if IsAdmin(c) {
+		return requests
+	}
+	rules, err := h.svc.ListRules(c.Request.Context())
+	if err != nil {
+		return requests
+	}
+	visible := make(map[string]bool, len(rules))
+	for _, rule := range h.visibleRules(c, rules) {
+		visible[rule.ID] = true
+	}
+	out := make([]domain.PromotionRequest, 0, len(requests))
+	for _, req := range requests {
+		if visible[req.RuleID] {
+			out = append(out, req)
+		}
+	}
+	return out
+}
+
 // ListRequests handles GET /api/v1/promotion/requests?status=pending
 func (h *PromotionHandler) ListRequests(c *gin.Context) {
 	status := c.Query("status")
@@ -205,6 +295,7 @@ func (h *PromotionHandler) ListRequests(c *gin.Context) {
 	if requests == nil {
 		requests = []domain.PromotionRequest{}
 	}
+	requests = h.visibleRequests(c, requests)
 	c.JSON(http.StatusOK, requests)
 }
 

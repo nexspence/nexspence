@@ -8,9 +8,11 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
 
 	"github.com/nexspence-oss/nexspence/internal/api/handlers"
 	"github.com/nexspence-oss/nexspence/internal/domain"
+	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/service"
 	"github.com/nexspence-oss/nexspence/internal/testutil"
 )
@@ -18,6 +20,11 @@ import (
 // mountPromotion2 builds a PromotionHandler over mocks and returns the engine plus the
 // underlying promotion + component repos so tests can seed state directly. Distinct from
 // the existing buildPromotionRouter helper (which exposes no seams).
+//
+// The handler is wired with RBAC the way the router wires it, and the caller
+// holds browse on "staging" and write on "prod": the promote endpoint refuses
+// a caller it cannot check, so a mount without privileges would answer 403 for
+// every promotion.
 func mountPromotion2(t *testing.T) (*gin.Engine, *testutil.PromotionRepo, *testutil.ComponentRepo) {
 	t.Helper()
 	promoRepo := testutil.NewPromotionRepo()
@@ -27,11 +34,22 @@ func mountPromotion2(t *testing.T) (*gin.Engine, *testutil.PromotionRepo, *testu
 	blobRepo := testutil.NewBlobStoreRepo()
 	scanRepo := testutil.NewScanResultRepo()
 	repoRepo := testutil.NewRepoRepo()
+	require.NoError(t, repoRepo.Create(testContext(), testutil.SimpleRepo("staging", "raw")))
+	require.NoError(t, repoRepo.Create(testContext(), testutil.SimpleRepo("prod", "raw")))
 	svc, err := service.NewPromotionService(promoRepo, compRepo, assetRepo, repoRepo, blobRepo, scanRepo, testutil.NewFakeResolver(blobStore))
 	require.NoError(t, err)
-	h := handlers.NewPromotionHandler(svc)
+	rbac := service.NewRBACService(fixedPrivilegesRBACRepo{privs: []repository.PrivilegeWithSelector{
+		{Actions: []string{"read", "browse", "write"}, Expression: `repository == "staging"`},
+		{Actions: []string{"read", "browse", "write"}, Expression: `repository == "prod"`},
+	}}, repoRepo, zap.NewNop().Sugar(), true)
+	h := handlers.NewPromotionHandler(svc).WithRBAC(repoRepo, rbac)
 
 	r := gin.New()
+	r.Use(func(c *gin.Context) {
+		c.Set("userID", "bob")
+		c.Set("roles", []string{"dev"})
+		c.Next()
+	})
 	r.GET("/api/v1/promotion/rules", h.ListRules)
 	r.POST("/api/v1/promotion/rules", h.CreateRule)
 	r.PUT("/api/v1/promotion/rules/:id", h.UpdateRule)
@@ -178,8 +196,10 @@ func TestPromotionExtra_ListRequests_Empty_OK(t *testing.T) {
 
 func TestPromotionExtra_ListRequests_StatusFilter_OK(t *testing.T) {
 	r, repo, _ := mountPromotion2(t)
+	rule := &domain.PromotionRule{Name: "r", FromRepo: "staging", ToRepo: "prod"}
+	require.NoError(t, repo.CreateRule(testContext(), rule))
 	require.NoError(t, repo.CreateRequest(testContext(), &domain.PromotionRequest{
-		RuleID: "r1", ComponentID: "c1", Status: domain.PromotionPending,
+		RuleID: rule.ID, ComponentID: "c1", Status: domain.PromotionPending,
 	}))
 	rec := do(t, r, http.MethodGet, "/api/v1/promotion/requests?status=pending", nil)
 	require.Equal(t, http.StatusOK, rec.Code)
