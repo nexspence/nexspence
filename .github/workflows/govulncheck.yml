@@ -19,5 +19,11 @@ jobs:
           cache: true
       - name: Install govulncheck
         run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      # The wrapper runs govulncheck and fails on every reported vulnerability
+      # except the ones in scripts/vulnerability-allowlist.txt, each with a
+      # written reason. It exists because the database still lists every
+      # version of crewjam/saml as affected by GO-2026-6909 although the
+      # defects are fixed from v0.6.0 on — a red gate on every pull request
+      # teaches everyone to ignore it.
       - name: Run govulncheck (blocking)
-        run: govulncheck ./...
+        run: python3 scripts/check-vulnerabilities.py
