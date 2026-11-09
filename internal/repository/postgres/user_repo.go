@@ -160,6 +160,14 @@ func (r *userRepo) BumpTokensValidAfter(ctx context.Context, userID string) erro
 	return err
 }
 
+// SetExternalID records the immutable identity the IdP vouches for the
+// account: the OIDC `sub` claim or the SAML NameID.
+func (r *userRepo) SetExternalID(ctx context.Context, userID, externalID string) error {
+	_, err := r.db.Exec(ctx,
+		`UPDATE users SET external_id=$1, updated_at=NOW() WHERE id=$2`, nilIfEmpty(externalID), userID)
+	return err
+}
+
 func (r *userRepo) SetOIDCTokens(ctx context.Context, userID, idToken, refreshToken string) error {
 	_, err := r.db.Exec(ctx,
 		`UPDATE users SET oidc_id_token=$1, oidc_refresh_token=$2, updated_at=NOW() WHERE id=$3`,

@@ -536,6 +536,37 @@ func (s *UserService) SetUserRoles(ctx context.Context, userID string, roleIDs [
 	return nil
 }
 
+// externalIDConflict refuses a login whose identity does not match the one
+// the account is bound to.
+//
+// The username is the mutable half of a login; the subject (the OIDC `sub`
+// claim, the SAML NameID) is the immutable one. An IdP may hand the same
+// username to a different principal — the employee left, the address was
+// recycled, the directory was renamed — and the account, with the roles on
+// it, must not follow.
+func externalIDConflict(u *domain.User, subject string) error {
+	if u == nil || subject == "" || u.ExternalID == "" || u.ExternalID == subject {
+		return nil
+	}
+	return fmt.Errorf("%w: username %q is bound to a different identity", ErrProvisioningConflict, u.Username)
+}
+
+// recordExternalID binds the identity the IdP vouches for to the account.
+//
+// An account provisioned before the subject was recorded has nothing to
+// compare against: it binds here, on its next login, and the check applies
+// from then on.
+func (s *UserService) recordExternalID(ctx context.Context, u *domain.User, subject string) error {
+	if subject == "" || u.ExternalID == subject {
+		return nil
+	}
+	if err := s.users.SetExternalID(ctx, u.ID, subject); err != nil {
+		return fmt.Errorf("record the identity of %q: %w", u.Username, err)
+	}
+	u.ExternalID = subject
+	return nil
+}
+
 // LoginOIDC upserts the user and assigns roles based on OIDC claims.
 // Roles are REPLACED (not merged) on every login — IdP is source of truth.
 func (s *UserService) LoginOIDC(ctx context.Context, claims *auth.OIDCClaims, rawIDToken string) (string, *domain.User, error) {
@@ -555,6 +586,9 @@ func (s *UserService) LoginOIDC(ctx context.Context, claims *auth.OIDCClaims, ra
 	if existing != nil && existing.Source != domain.UserSourceOIDC {
 		return "", nil, fmt.Errorf("%w: username %q is claimed by %s",
 			ErrProvisioningConflict, username, existing.Source)
+	}
+	if err := externalIDConflict(existing, claims.Subject); err != nil {
+		return "", nil, err
 	}
 
 	if existing == nil {
@@ -577,6 +611,9 @@ func (s *UserService) LoginOIDC(ctx context.Context, claims *auth.OIDCClaims, ra
 		existing.FirstName = claims.FirstName
 		existing.LastName = claims.LastName
 		_ = s.users.Update(ctx, existing)
+	}
+	if err := s.recordExternalID(ctx, existing, claims.Subject); err != nil {
+		return "", nil, err
 	}
 
 	if existing.Status != domain.UserStatusActive {
@@ -753,6 +790,9 @@ func (s *UserService) LoginSAML(ctx context.Context, claims *auth.SAMLClaims) (s
 		return "", nil, fmt.Errorf("%w: username %q is claimed by %s",
 			ErrProvisioningConflict, username, existing.Source)
 	}
+	if err := externalIDConflict(existing, claims.Subject); err != nil {
+		return "", nil, err
+	}
 
 	if existing == nil {
 		if err := s.checkSAMLProvisioning(email); err != nil {
@@ -772,6 +812,9 @@ func (s *UserService) LoginSAML(ctx context.Context, claims *auth.SAMLClaims) (s
 		existing.Email = email
 		existing.FirstName = claims.Name
 		_ = s.users.Update(ctx, existing)
+	}
+	if err := s.recordExternalID(ctx, existing, claims.Subject); err != nil {
+		return "", nil, err
 	}
 
 	if existing.Status != domain.UserStatusActive {
