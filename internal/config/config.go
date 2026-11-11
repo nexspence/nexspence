@@ -103,6 +103,7 @@ type OutboundConfig struct {
 // honor the standard HTTP_PROXY/HTTPS_PROXY/NO_PROXY environment variables.
 // Per-repository proxy_config overrides the outbound proxy defaults.
 type ProxyConfig struct {
+	MaxConnsPerHost int `mapstructure:"max_conns_per_host"`
 	// MaxRewrittenMetadataBytes bounds buffered proxy metadata on cache fill
 	// and cache hit. Must be positive; the reader reserves one overflow byte.
 	MaxRewrittenMetadataBytes int64  `mapstructure:"max_rewritten_metadata_bytes"`
@@ -775,6 +776,7 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("ldap.host", "")
 	v.SetDefault("ldap.search_base", "")
 	v.SetDefault("proxy.http_proxy", "")
+	v.SetDefault("proxy.max_conns_per_host", 0)
 	v.SetDefault("proxy.max_rewritten_metadata_bytes", int64(32<<20))
 	v.SetDefault("proxy.https_proxy", "")
 	v.SetDefault("proxy.no_proxy", "")
@@ -833,6 +835,9 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("parse config: %w", err)
 	}
 	cfg.UnknownKeys = UnknownKeys(md.Unused, os.Environ())
+	if cfg.Proxy.MaxConnsPerHost < 0 {
+		return nil, fmt.Errorf("proxy.max_conns_per_host must not be negative")
+	}
 	if cfg.Proxy.MaxRewrittenMetadataBytes <= 0 || cfg.Proxy.MaxRewrittenMetadataBytes == math.MaxInt64 {
 		return nil, fmt.Errorf("proxy.max_rewritten_metadata_bytes must be between 1 and %d", int64(math.MaxInt64-1))
 	}

@@ -342,7 +342,7 @@ Still outstanding:
 │             │  (shared state)│     │  (shared blobs)      │     │
 │             └────────────────┘     └──────────────────────┘     │
 │                                                                  │
-│   Advisory locks replace in-process singleflight for proxy dedup │
+│   Proxy fill waits remain process-local on each replica        │
 │   Healthcheck /service/rest/v1/status/check → load balancer     │
 └─────────────────────────────────────────────────────────────────┘
 
@@ -446,8 +446,14 @@ main.go serve:
 ## Concurrency Model
 
 - Gin: N worker goroutines (GOMAXPROCS × 4 default)
-- Proxy cache dedup: in-process `singleflight` per blob key — prevents thundering herd
-  - **[Phase 10]** Replace with PostgreSQL advisory lock for multi-node safety
+- Proxy cache dedup: process-local fill registry per blob key. Waiters wait for
+  completion, then retry the cache lookup once; failed fills allow an independent fetch.
+  Replicas deduplicate independently. This is an optimization: atomic blob puts and
+  `RegisterStoredBlob` preserve correctness across concurrent fills. No advisory lock
+  is held during downloads, because it would pin a database pool connection.
+  This remains process-local in Phase 10.
+- Upstream transports: 32 idle connections and 64 total connections per host by
+  default (`proxy.max_conns_per_host` overrides the latter); HTTP/2 is enabled.
 - Blob writes: streaming via `io.Pipe` + goroutine — no full buffer in memory
 - Audit writes: goroutine fire-and-forget (non-blocking on handler path)
 - Webhook delivery: goroutine per dispatch; HTTP client with 10s timeout

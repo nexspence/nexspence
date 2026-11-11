@@ -69,6 +69,7 @@ func cmdServe() *cobra.Command {
 			// Install any server-wide outbound proxy default for upstream fetches.
 			// Per-repository proxy_config overrides these; when unset, env
 			// HTTP_PROXY/HTTPS_PROXY/NO_PROXY are honored by the guarded client.
+			repoproxy.SetUpstreamConnLimits(cfg.Proxy.MaxConnsPerHost)
 			if p := cfg.Proxy; p.HTTPProxy != "" || p.HTTPSProxy != "" || p.SOCKS5Proxy != "" || p.NoProxy != "" {
 				repoproxy.SetGlobalProxy(p.HTTPProxy, p.HTTPSProxy, p.SOCKS5Proxy, p.NoProxy, p.Username, p.Password)
 				log.Info("outbound proxy configured for upstream fetches",

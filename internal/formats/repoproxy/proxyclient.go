@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/net/http/httpproxy"
@@ -26,12 +27,14 @@ import (
 // wrapped around the transport built below. See UpstreamClient's doc comment
 // in repoproxy.go for why.
 const (
-	proxyDialTimeout    = 10 * time.Second
-	proxyRequestTimeout = 5 * time.Minute
-	proxyMaxIdleConns   = 128
-	proxyIdleConnTO     = 90 * time.Second
-	proxyTLSHandshakeTO = 15 * time.Second
-	proxyMaxRedirects   = 12
+	proxyDialTimeout         = 10 * time.Second
+	proxyRequestTimeout      = 5 * time.Minute
+	proxyMaxIdleConns        = 128
+	proxyMaxIdleConnsPerHost = 32
+	proxyMaxConnsPerHost     = 64
+	proxyIdleConnTO          = 90 * time.Second
+	proxyTLSHandshakeTO      = 15 * time.Second
+	proxyMaxRedirects        = 12
 )
 
 // proxySettings is the resolved outbound-proxy configuration for a repository.
@@ -251,6 +254,9 @@ func buildProxyClient(s proxySettings) (*http.Client, error) {
 
 	tr := &http.Transport{
 		MaxIdleConns:        proxyMaxIdleConns,
+		MaxIdleConnsPerHost: proxyMaxIdleConnsPerHost,
+		MaxConnsPerHost:     effectiveConnLimit(),
+		ForceAttemptHTTP2:   true,
 		IdleConnTimeout:     proxyIdleConnTO,
 		TLSHandshakeTimeout: proxyTLSHandshakeTO,
 		// Bounds connect + wait-for-headers only, matching UpstreamClient (see
@@ -474,4 +480,32 @@ func NormalizedHost(u *url.URL, fallbackScheme string) string {
 		return strings.TrimSuffix(host, ":443")
 	}
 	return host
+}
+
+// upstreamConnLimit is configured once at startup, before serving requests.
+var upstreamConnLimit atomic.Int64
+
+func effectiveConnLimit() int {
+	if n := upstreamConnLimit.Load(); n > 0 {
+		return int(n)
+	}
+	return proxyMaxConnsPerHost
+}
+
+// SetUpstreamConnLimits configures shared and subsequently built proxy clients.
+// Call at startup before using UpstreamClient, as with SetGlobalProxy.
+func SetUpstreamConnLimits(maxConnsPerHost int) {
+	if maxConnsPerHost <= 0 {
+		maxConnsPerHost = proxyMaxConnsPerHost
+	}
+	upstreamConnLimit.Store(int64(maxConnsPerHost))
+	tr := UpstreamClient.Transport.(idleGuardedTransport).Transport
+	tr.CloseIdleConnections()
+	tr.MaxConnsPerHost = maxConnsPerHost
+	clientCacheMu.Lock()
+	defer clientCacheMu.Unlock()
+	for _, c := range clientCache {
+		c.CloseIdleConnections()
+	}
+	clear(clientCache)
 }

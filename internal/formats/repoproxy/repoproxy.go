@@ -61,13 +61,16 @@ var UpstreamClient = &http.Client{
 		Transport: &http.Transport{
 			Proxy: envProxyFromRequest,
 			DialContext: (&net.Dialer{
-				Timeout: 10 * time.Second,
+				Timeout: proxyDialTimeout,
 				Control: netguard.DialControl,
 			}).DialContext,
-			MaxIdleConns:          128,
-			IdleConnTimeout:       90 * time.Second,
-			TLSHandshakeTimeout:   15 * time.Second,
-			ResponseHeaderTimeout: 5 * time.Minute,
+			MaxIdleConns:          proxyMaxIdleConns,
+			MaxIdleConnsPerHost:   proxyMaxIdleConnsPerHost,
+			MaxConnsPerHost:       proxyMaxConnsPerHost,
+			ForceAttemptHTTP2:     true,
+			IdleConnTimeout:       proxyIdleConnTO,
+			TLSHandshakeTimeout:   proxyTLSHandshakeTO,
+			ResponseHeaderTimeout: proxyRequestTimeout,
 		},
 		idle: idleBodyTimeout,
 	},
@@ -512,28 +515,46 @@ func ServeGETWithOptions(c *gin.Context, d formats.Deps, repo *domain.Repository
 		return fmt.Errorf("repoproxy: unsupported method %s", c.Request.Method)
 	}
 
-	asset, err := d.Assets.GetByPath(ctx, repo.Name, repoRelativePath)
-	if err != nil && !errors.Is(err, repository.ErrNotFound) {
-		return fmt.Errorf("repoproxy: asset lookup: %w", err)
-	}
-	if asset != nil {
-		cacheStore, storeErr := cacheFetchStore(ctx, d, asset)
-		if storeErr != nil {
-			return fmt.Errorf("repoproxy: resolve cached blob store: %w", storeErr)
+	// Retry the normal cache lookup once after joining an existing fill.
+	for attempt := 0; ; attempt++ {
+		asset, err := d.Assets.GetByPath(ctx, repo.Name, repoRelativePath)
+		if err != nil && !errors.Is(err, repository.ErrNotFound) {
+			return fmt.Errorf("repoproxy: asset lookup: %w", err)
 		}
-		rc, _, blobErr := cacheStore.Get(ctx, asset.BlobKey)
-		if blobErr == nil {
-			// Metadata freshness: a stale cached copy of mutable metadata is
-			// revalidated against upstream before serving. Immutable content
-			// (maxAge == 0) and HEAD probes always serve straight from cache.
-			if maxAge > 0 && c.Request.Method == http.MethodGet && time.Since(asset.LastModified) > maxAge {
-				return revalidateAndServe(c, d, repo, asset, repoRelativePath, upJoin, coords, defaultContentType, rc, opts)
+		if asset != nil {
+			cacheStore, storeErr := cacheFetchStore(ctx, d, asset)
+			if storeErr != nil {
+				return fmt.Errorf("repoproxy: resolve cached blob store: %w", storeErr)
 			}
-			serveCachedAsset(c, d, asset, rc, opts)
-			return nil
+			rc, _, blobErr := cacheStore.Get(ctx, asset.BlobKey)
+			if blobErr == nil {
+				// Metadata freshness: a stale cached copy of mutable metadata is
+				// revalidated against upstream before serving. Immutable content
+				// (maxAge == 0) and HEAD probes always serve straight from cache.
+				if maxAge > 0 && c.Request.Method == http.MethodGet && time.Since(asset.LastModified) > maxAge {
+					return revalidateAndServe(c, d, repo, asset, repoRelativePath, upJoin, coords, defaultContentType, rc, opts)
+				}
+				serveCachedAsset(c, d, asset, rc, opts)
+				return nil
+			}
+			// Blob file missing from cache storage (storage path changed or file deleted).
+			// Fall through to upstream fetch so the client gets content and the cache is repaired.
 		}
-		// Blob file missing from cache storage (storage path changed or file deleted).
-		// Fall through to upstream fetch so the client gets content and the cache is repaired.
+
+		if attempt > 0 {
+			break
+		}
+		done, release := cacheFills.acquire(base.BlobKey(repo.Name, repoRelativePath))
+		if release != nil {
+			defer release()
+			// A previous owner may have completed between our lookup and acquire.
+			continue
+		}
+		select {
+		case <-done:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
 
 	return fetchAndCache(c, d, repo, repoRelativePath, upJoin, coords, defaultContentType, opts.Rewrite)

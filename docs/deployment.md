@@ -301,3 +301,15 @@ metrics:
 or `NEXSPENCE_METRICS_PUBLIC=true`, or `--set config.metricsPublic=true` for the Helm chart. The `authorization:` block then drops out of the scrape config.
 
 The endpoint serves `nexspence_requests_total`, `nexspence_request_duration_seconds`, `nexspence_artifacts_total`, `nexspence_bytes_stored_bytes`, `nexspence_downloads_total`, `nexspence_goroutines` and `nexspence_memory_alloc_bytes`, plus the standard Go and process collectors. `/healthz` and `/readyz` are always unauthenticated and are the right targets for probes.
+
+### Upstream connection limit
+
+`proxy.max_conns_per_host` limits upstream connections per host and transport.
+The default `0` selects 64; negative values are rejected. Both direct and explicit
+proxy transports retain up to 32 idle connections per host and attempt HTTP/2.
+Replicas enforce these limits independently.
+
+```yaml
+proxy:
+  max_conns_per_host: 64
+```
