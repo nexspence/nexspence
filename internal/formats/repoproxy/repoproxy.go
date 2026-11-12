@@ -750,7 +750,8 @@ func revalidateAndServe(c *gin.Context, d formats.Deps, repo *domain.Repository,
 // replacing any prior cache entry for repoRelativePath.
 func storeAndServeResponse(c *gin.Context, d formats.Deps, repo *domain.Repository,
 	repoRelativePath, defaultContentType string, coords base.Coords, resp *http.Response, rewrite func([]byte) []byte, release func(...outcome),
-) error {
+) (returnErr error) {
+	defer abortStreamOnError(c, &returnErr)
 	ctx := context.WithoutCancel(c.Request.Context())
 
 	ct := resp.Header.Get("Content-Type")
