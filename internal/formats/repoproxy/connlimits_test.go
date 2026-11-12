@@ -7,18 +7,19 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
 
 func checkLimits(t *testing.T, c *http.Client, limit int) {
 	t.Helper()
-	tr := c.Transport.(idleGuardedTransport).Transport
+	tr := c.Transport.(inflightLimitedTransport).Transport.(idleGuardedTransport).Transport
 	if tr.MaxIdleConnsPerHost != 32 || tr.MaxConnsPerHost != limit || !tr.ForceAttemptHTTP2 {
 		t.Fatalf("transport limits: idle=%d, max=%d, h2=%v", tr.MaxIdleConnsPerHost, tr.MaxConnsPerHost, tr.ForceAttemptHTTP2)
 	}
 }
-func TestUpstreamClient_TransportLimits(t *testing.T) { checkLimits(t, UpstreamClient, 64) }
+func TestUpstreamClient_TransportLimits(t *testing.T) { checkLimits(t, newUpstreamClient(), 64) }
 func TestBuildProxyClient_TransportLimits(t *testing.T) {
 	for _, s := range []proxySettings{{httpProxy: "http://localhost:8080"}, {socks5Proxy: "localhost:1080"}} {
 		c, err := buildProxyClient(s)
@@ -29,14 +30,41 @@ func TestBuildProxyClient_TransportLimits(t *testing.T) {
 	}
 }
 func TestSetUpstreamConnLimits_AppliesToSharedAndProxyClients(t *testing.T) {
-	repo := mkProxyRepo(t.Name(), map[string]any{"http_proxy": "http://localhost:8080"})
-	previous := ClientFor(repo)
-	SetUpstreamConnLimits(4)
-	defer SetUpstreamConnLimits(0)
-	checkLimits(t, UpstreamClient, 4)
-	checkLimits(t, ClientFor(repo), 4)
-	if previous == ClientFor(repo) {
-		t.Fatal("cached client was retained")
+	defer upstreamConnLimit.Store(0)
+	defer upstreamInflight.configure(proxyMaxInflightPerHost)
+	client := newUpstreamClient()
+	var configured atomic.Bool
+	if err := setUpstreamConnLimits(client, &configured, 4, 2); err != nil {
+		t.Fatal(err)
+	}
+	checkLimits(t, client, 4)
+	proxied, err := buildProxyClient(proxySettings{httpProxy: "http://localhost:8080"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkLimits(t, proxied, 4)
+}
+func TestSetUpstreamConnLimits_SecondCallFails(t *testing.T) {
+	defer upstreamConnLimit.Store(0)
+	defer upstreamInflight.configure(proxyMaxInflightPerHost)
+	client := newUpstreamClient()
+	var configured atomic.Bool
+	if err := setUpstreamConnLimits(client, &configured, 0, 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := setUpstreamConnLimits(client, &configured, 1, 1); err == nil {
+		t.Fatal("second call succeeded")
+	}
+}
+func TestSetUpstreamConnLimits_RejectsForeignTransport(t *testing.T) {
+	client := newUpstreamClient()
+	client.Transport = http.DefaultTransport
+	var configured atomic.Bool
+	if err := setUpstreamConnLimits(client, &configured, 1, 1); err == nil {
+		t.Fatal("foreign transport accepted")
+	}
+	if configured.Load() {
+		t.Fatal("invalid transport consumed configuration")
 	}
 }
 func TestUpstreamClient_MaxConnsPerHost_Bounded(t *testing.T) {
@@ -61,9 +89,8 @@ func TestUpstreamClient_MaxConnsPerHost_Bounded(t *testing.T) {
 	}
 	server.Start()
 	defer server.Close()
-	SetUpstreamConnLimits(4)
-	defer SetUpstreamConnLimits(0)
-	tr := UpstreamClient.Transport.(idleGuardedTransport).Clone()
+	tr := newUpstreamClient().Transport.(inflightLimitedTransport).Transport.(idleGuardedTransport).Clone()
+	tr.MaxConnsPerHost = 4
 	tr.Proxy = nil
 	tr.DialContext = (&net.Dialer{}).DialContext
 	client := &http.Client{Transport: idleGuardedTransport{Transport: tr, idle: idleBodyTimeout}}
@@ -140,5 +167,27 @@ func TestIdleGuardedTransport_HTTP2_IdleStreamDoesNotBlockConnection(t *testing.
 	_ = resp.Body.Close()
 	if err != nil || string(body) != "ok" {
 		t.Fatalf("second stream: %q, %v", body, err)
+	}
+}
+
+func TestSetUpstreamConnLimits_RejectsInvalidSettings(t *testing.T) {
+	for _, limits := range [][2]int{{-1, 1}, {1, -1}} {
+		client := newUpstreamClient()
+		var configured atomic.Bool
+		if err := setUpstreamConnLimits(client, &configured, limits[0], limits[1]); err == nil {
+			t.Fatal("negative limit accepted")
+		}
+		if configured.Load() {
+			t.Fatal("invalid settings consumed configuration")
+		}
+	}
+}
+
+func TestSetUpstreamConnLimits_RejectsForeignGuard(t *testing.T) {
+	client := newUpstreamClient()
+	client.Transport = inflightLimitedTransport{Transport: http.DefaultTransport, registry: &inflightRegistry{}}
+	var configured atomic.Bool
+	if err := setUpstreamConnLimits(client, &configured, 1, 1); err == nil {
+		t.Fatal("foreign guard accepted")
 	}
 }

@@ -13,7 +13,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"path"
@@ -27,7 +26,6 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/formats"
 	"github.com/nexspence-oss/nexspence/internal/formats/base"
-	"github.com/nexspence-oss/nexspence/internal/netguard"
 	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/storage"
 )
@@ -56,31 +54,7 @@ import (
 // (idletimeout.go), which wraps every response body with the idle-timeout
 // watchdog at the transport level — so any caller of this client, not only
 // this package's own copy sites, is protected the same way.
-var UpstreamClient = &http.Client{
-	Transport: idleGuardedTransport{
-		Transport: &http.Transport{
-			Proxy: envProxyFromRequest,
-			DialContext: (&net.Dialer{
-				Timeout: proxyDialTimeout,
-				Control: netguard.DialControl,
-			}).DialContext,
-			MaxIdleConns:          proxyMaxIdleConns,
-			MaxIdleConnsPerHost:   proxyMaxIdleConnsPerHost,
-			MaxConnsPerHost:       proxyMaxConnsPerHost,
-			ForceAttemptHTTP2:     true,
-			IdleConnTimeout:       proxyIdleConnTO,
-			TLSHandshakeTimeout:   proxyTLSHandshakeTO,
-			ResponseHeaderTimeout: proxyRequestTimeout,
-		},
-		idle: idleBodyTimeout,
-	},
-	CheckRedirect: func(_ *http.Request, via []*http.Request) error {
-		if len(via) >= 12 {
-			return fmt.Errorf("stopped after 12 redirects")
-		}
-		return nil
-	},
-}
+var UpstreamClient = newUpstreamClient()
 
 // envProxyFromRequest resolves the proxy for a request from the process
 // environment (HTTP_PROXY/HTTPS_PROXY/NO_PROXY), read fresh each call.

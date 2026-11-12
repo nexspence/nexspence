@@ -452,8 +452,14 @@ main.go serve:
   `RegisterStoredBlob` preserve correctness across concurrent fills. No advisory lock
   is held during downloads, because it would pin a database pool connection.
   This remains process-local in Phase 10.
-- Upstream transports: 32 idle connections and 64 total connections per host by
-  default (`proxy.max_conns_per_host` overrides the latter); HTTP/2 is enabled.
+- Upstream transports: 32 idle and 64 total TCP connections per host and transport
+  by default (`proxy.max_conns_per_host` overrides the latter). HTTP/2 remains
+  enabled: its streams are not bounded by the TCP connection limit. A shared
+  process-local semaphore bounds concurrent upstream requests per normalized host
+  to 32 (`proxy.max_inflight_per_host`), across direct and per-repository proxy
+  clients and both HTTP versions. The slot lasts until response-body close.
+  Both settings are initialized once at startup; 0 selects the default rather than
+  unlimited, and negatives are rejected.
 - Blob writes: streaming via `io.Pipe` + goroutine — no full buffer in memory
 - Audit writes: goroutine fire-and-forget (non-blocking on handler path)
 - Webhook delivery: goroutine per dispatch; HTTP client with 10s timeout

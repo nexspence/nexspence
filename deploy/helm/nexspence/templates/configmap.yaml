@@ -22,6 +22,8 @@ data:
   NEXSPENCE_OUTBOUND_ALLOWED_INTERNAL_CIDRS: {{ .allowedInternalCidrs | join "," | quote }}
   {{- end }}
   {{- end }}
+  NEXSPENCE_PROXY_MAX_CONNS_PER_HOST: {{ .Values.config.proxy.maxConnsPerHost | quote }}
+  NEXSPENCE_PROXY_MAX_INFLIGHT_PER_HOST: {{ .Values.config.proxy.maxInflightPerHost | quote }}
   NEXSPENCE_LOG_LEVEL: {{ .Values.config.logLevel | quote }}
   NEXSPENCE_LOG_FORMAT: {{ .Values.config.logFormat | quote }}
   NEXSPENCE_AUTH_JWT_EXPIRY_HOURS: {{ .Values.config.jwtExpiryHours | quote }}

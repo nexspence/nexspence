@@ -296,7 +296,7 @@ func buildProxyClient(s proxySettings) (*http.Client, error) {
 	}
 
 	return &http.Client{
-		Transport:     idleGuardedTransport{Transport: tr, idle: idleBodyTimeout},
+		Transport:     inflightLimitedTransport{Transport: idleGuardedTransport{Transport: tr, idle: idleBodyTimeout}, registry: &upstreamInflight},
 		CheckRedirect: redirectPolicy,
 	}, nil
 }
@@ -492,20 +492,65 @@ func effectiveConnLimit() int {
 	return proxyMaxConnsPerHost
 }
 
-// SetUpstreamConnLimits configures shared and subsequently built proxy clients.
-// Call at startup before using UpstreamClient, as with SetGlobalProxy.
-func SetUpstreamConnLimits(maxConnsPerHost int) {
-	if maxConnsPerHost <= 0 {
+// SetUpstreamConnLimits configures upstream clients once, before serving requests.
+// It replaces the transport rather than mutating fields net/http reads concurrently.
+// Zero selects the defaults; negative limits are invalid.
+func SetUpstreamConnLimits(maxConnsPerHost, maxInflightPerHost int) error {
+	return setUpstreamConnLimits(UpstreamClient, &upstreamLimitsConfigured, maxConnsPerHost, maxInflightPerHost)
+}
+
+var upstreamLimitsConfigured atomic.Bool
+
+func setUpstreamConnLimits(client *http.Client, configured *atomic.Bool, maxConnsPerHost, maxInflightPerHost int) error {
+	if maxConnsPerHost < 0 || maxInflightPerHost < 0 {
+		return fmt.Errorf("upstream connection and inflight limits must not be negative")
+	}
+	if !configured.CompareAndSwap(false, true) {
+		return fmt.Errorf("upstream connection limits have already been configured")
+	}
+	limited, ok := client.Transport.(inflightLimitedTransport)
+	if !ok {
+		configured.Store(false)
+		return fmt.Errorf("unexpected upstream transport %T", client.Transport)
+	}
+	guarded, ok := limited.Transport.(idleGuardedTransport)
+	if !ok || guarded.Transport == nil {
+		configured.Store(false)
+		return fmt.Errorf("unexpected upstream guarded transport %T", limited.Transport)
+	}
+	if maxConnsPerHost == 0 {
 		maxConnsPerHost = proxyMaxConnsPerHost
 	}
+	if maxInflightPerHost == 0 {
+		maxInflightPerHost = proxyMaxInflightPerHost
+	}
 	upstreamConnLimit.Store(int64(maxConnsPerHost))
-	tr := UpstreamClient.Transport.(idleGuardedTransport).Transport
-	tr.CloseIdleConnections()
-	tr.MaxConnsPerHost = maxConnsPerHost
+	upstreamInflight.configure(maxInflightPerHost)
+	client.CloseIdleConnections()
+	client.Transport = newUpstreamClient().Transport
 	clientCacheMu.Lock()
 	defer clientCacheMu.Unlock()
 	for _, c := range clientCache {
 		c.CloseIdleConnections()
 	}
 	clear(clientCache)
+	return nil
+}
+
+func newUpstreamClient() *http.Client {
+	tr := &http.Transport{
+		Proxy:                 envProxyFromRequest,
+		DialContext:           (&net.Dialer{Timeout: proxyDialTimeout, Control: netguard.DialControl}).DialContext,
+		MaxIdleConns:          proxyMaxIdleConns,
+		MaxIdleConnsPerHost:   proxyMaxIdleConnsPerHost,
+		MaxConnsPerHost:       effectiveConnLimit(),
+		ForceAttemptHTTP2:     true,
+		IdleConnTimeout:       proxyIdleConnTO,
+		TLSHandshakeTimeout:   proxyTLSHandshakeTO,
+		ResponseHeaderTimeout: proxyRequestTimeout,
+	}
+	return &http.Client{
+		Transport:     inflightLimitedTransport{Transport: idleGuardedTransport{Transport: tr, idle: idleBodyTimeout}, registry: &upstreamInflight},
+		CheckRedirect: redirectPolicy,
+	}
 }

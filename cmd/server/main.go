@@ -66,14 +66,8 @@ func cmdServe() *cobra.Command {
 			repoproxy.SetLogger(log)
 			warnUnknownKeys(cfg, log)
 
-			// Install any server-wide outbound proxy default for upstream fetches.
-			// Per-repository proxy_config overrides these; when unset, env
-			// HTTP_PROXY/HTTPS_PROXY/NO_PROXY are honored by the guarded client.
-			repoproxy.SetUpstreamConnLimits(cfg.Proxy.MaxConnsPerHost)
-			if p := cfg.Proxy; p.HTTPProxy != "" || p.HTTPSProxy != "" || p.SOCKS5Proxy != "" || p.NoProxy != "" {
-				repoproxy.SetGlobalProxy(p.HTTPProxy, p.HTTPSProxy, p.SOCKS5Proxy, p.NoProxy, p.Username, p.Password)
-				log.Info("outbound proxy configured for upstream fetches",
-					"http", p.HTTPProxy != "", "https", p.HTTPSProxy != "", "socks5", p.SOCKS5Proxy != "")
+			if err := configureUpstreamProxy(cfg, log); err != nil {
+				return err
 			}
 			if err := checkStartupSecurity(cfg, log); err != nil {
 				return err
@@ -276,6 +270,22 @@ func cmdServe() *cobra.Command {
 
 	cmd.Flags().StringVarP(&cfgPath, "config", "c", "config.yaml", "Path to config file")
 	return cmd
+}
+
+func configureUpstreamProxy(cfg *config.Config, log logger.Logger) error {
+	// Install any server-wide outbound proxy default for upstream fetches.
+	// Per-repository proxy_config overrides these; when unset, env
+	// HTTP_PROXY/HTTPS_PROXY/NO_PROXY are honored by the guarded client.
+	if err := repoproxy.SetUpstreamConnLimits(cfg.Proxy.MaxConnsPerHost, cfg.Proxy.MaxInflightPerHost); err != nil {
+		log.Error("configure upstream limits", "error", err)
+		return fmt.Errorf("configure upstream limits: %w", err)
+	}
+	if p := cfg.Proxy; p.HTTPProxy != "" || p.HTTPSProxy != "" || p.SOCKS5Proxy != "" || p.NoProxy != "" {
+		repoproxy.SetGlobalProxy(p.HTTPProxy, p.HTTPSProxy, p.SOCKS5Proxy, p.NoProxy, p.Username, p.Password)
+		log.Info("outbound proxy configured for upstream fetches",
+			"http", p.HTTPProxy != "", "https", p.HTTPSProxy != "", "socks5", p.SOCKS5Proxy != "")
+	}
+	return nil
 }
 
 // warnUnknownKeys logs every config key and NEXSPENCE_* variable the server

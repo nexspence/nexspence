@@ -199,6 +199,12 @@ helm:
 # Larger values increase memory use per concurrent metadata request.
 # Env override: NEXSPENCE_PROXY_MAX_REWRITTEN_METADATA_BYTES=134217728 (128 MiB).
 proxy:
+  # TCP connections per upstream host and transport; HTTP/2 multiplexes streams.
+  # 0 means default (64), not unlimited; negative values are rejected.
+  max_conns_per_host: 64
+  # Concurrent upstream requests per host, shared by direct and proxy clients,
+  # for HTTP/1.1 and HTTP/2. 0 means default (32), not unlimited; negatives fail.
+  max_inflight_per_host: 32
   max_rewritten_metadata_bytes: 33554432
 
 # Automatic vulnerability scanning.
