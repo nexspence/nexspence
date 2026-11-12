@@ -148,7 +148,7 @@ func TestServeGET_ConcurrentMiss_DifferentPaths_DoNotBlockEachOther(t *testing.T
 }
 func TestServeGET_WaiterHonoursContextCancel(t *testing.T) {
 	repo, d, lookups := fillFixture(t, func(http.ResponseWriter, *http.Request) { t.Error("unexpected upstream request") })
-	key := base.BlobKey(repo.Name, "/a")
+	key := base.BlobKey(repo.Name, "/a") + "\x00\x00"
 	done, release := cacheFills.acquire(key)
 	defer release()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -160,12 +160,12 @@ func TestServeGET_WaiterHonoursContextCancel(t *testing.T) {
 		t.Fatalf("error: %v", r.err)
 	}
 	select {
-	case <-done:
+	case <-done.done:
 		t.Fatal("owner released by waiter")
 	default:
 	}
 }
-func TestServeGET_WaiterFallsBackWhenFillFails(t *testing.T) {
+func TestServeGET_WaitersRelayUpstream500WithoutRefetch(t *testing.T) {
 	var hits atomic.Int32
 	started := make(chan struct{})
 	release := make(chan struct{})
@@ -187,7 +187,7 @@ func TestServeGET_WaiterFallsBackWhenFillFails(t *testing.T) {
 	close(release)
 	receiveFill(t, owner)
 	r := receiveFill(t, waiter)
-	if r.err != nil || r.w.Body.String() != "retry" || hits.Load() != 2 {
+	if r.err != nil || r.w.Code != http.StatusInternalServerError || hits.Load() != 1 {
 		t.Fatalf("fallback: %v, hits %d", r, hits.Load())
 	}
 }
@@ -201,7 +201,7 @@ func TestFillGroup_Acquire_ReleaseAfterPanic(t *testing.T) {
 	done, release := group.acquire("key")
 	func() { defer func() { _ = recover() }(); defer release(); panic("fill failed") }()
 	select {
-	case <-done:
+	case <-done.done:
 	default:
 		t.Fatal("completion was not signaled")
 	}

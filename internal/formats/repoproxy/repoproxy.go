@@ -489,7 +489,9 @@ func ServeGETWithOptions(c *gin.Context, d formats.Deps, repo *domain.Repository
 		return fmt.Errorf("repoproxy: unsupported method %s", c.Request.Method)
 	}
 
-	// Retry the normal cache lookup once after joining an existing fill.
+	var release func(...outcome)
+	var joined *fillEntry
+	// Retry the cache lookup after another owner publishes its outcome.
 	for attempt := 0; ; attempt++ {
 		asset, err := d.Assets.GetByPath(ctx, repo.Name, repoRelativePath)
 		if err != nil && !errors.Is(err, repository.ErrNotFound) {
@@ -505,7 +507,7 @@ func ServeGETWithOptions(c *gin.Context, d formats.Deps, repo *domain.Repository
 				// Metadata freshness: a stale cached copy of mutable metadata is
 				// revalidated against upstream before serving. Immutable content
 				// (maxAge == 0) and HEAD probes always serve straight from cache.
-				if maxAge > 0 && c.Request.Method == http.MethodGet && time.Since(asset.LastModified) > maxAge {
+				if joined == nil && maxAge > 0 && c.Request.Method == http.MethodGet && time.Since(asset.LastModified) > maxAge {
 					return revalidateAndServe(c, d, repo, asset, repoRelativePath, upJoin, coords, defaultContentType, rc, opts)
 				}
 				serveCachedAsset(c, d, asset, rc, opts)
@@ -516,31 +518,55 @@ func ServeGETWithOptions(c *gin.Context, d formats.Deps, repo *domain.Repository
 		}
 
 		if attempt > 0 {
+			if joined != nil && joined.outcome.status >= 400 && joined.outcome.status <= 599 {
+				c.Status(joined.outcome.status)
+				c.Writer.WriteHeaderNow()
+				return nil
+			}
+			// 304, transport errors and quota skips have no registered body.
+			// Only these outcomes permit a remaining wave of independent fetches.
 			break
 		}
-		done, release := cacheFills.acquire(base.BlobKey(repo.Name, repoRelativePath))
+		entry, ownerRelease := cacheFills.acquire(fillKey(c, repo.Name, repoRelativePath))
+		release = ownerRelease
 		if release != nil {
 			defer release()
 			// A previous owner may have completed between our lookup and acquire.
 			continue
 		}
 		select {
-		case <-done:
+		case <-entry.done:
 		case <-ctx.Done():
 			return ctx.Err()
 		}
+		joined = entry
 	}
+	if release == nil {
+		release = func(...outcome) {}
+	}
+	return fetchAndCache(c, d, repo, repoRelativePath, upJoin, coords, defaultContentType, opts.Rewrite, release)
+}
 
-	return fetchAndCache(c, d, repo, repoRelativePath, upJoin, coords, defaultContentType, opts.Rewrite)
+func fillKey(c *gin.Context, repo, path string) string {
+	// Trim optional whitespace without changing case-sensitive validator values
+	// or media-type parameters. Different representations never share a fill.
+	normalize := func(name string) string {
+		values := append([]string(nil), c.Request.Header.Values(name)...)
+		for i, value := range values {
+			values[i] = strings.TrimSpace(value)
+		}
+		return strings.Join(values, ",")
+	}
+	return base.BlobKey(repo, path) + "\x00" + normalize("Accept") + "\x00" + normalize("If-None-Match")
 }
 
 // fetchAndCache handles a cache miss (or a cache entry whose blob went missing):
 // it fetches from upstream, forwarding the client's own conditional headers, and
 // on success stores the blob and serves it.
 func fetchAndCache(c *gin.Context, d formats.Deps, repo *domain.Repository,
-	repoRelativePath, upJoin string, coords base.Coords, defaultContentType string, rewrite func([]byte) []byte,
+	repoRelativePath, upJoin string, coords base.Coords, defaultContentType string, rewrite func([]byte) []byte, release func(...outcome),
 ) error {
-	ctx := c.Request.Context()
+	ctx := context.WithoutCancel(c.Request.Context())
 
 	baseRemote, err := RemoteURL(repo)
 	if err != nil {
@@ -572,26 +598,34 @@ func fetchAndCache(c *gin.Context, d formats.Deps, repo *domain.Repository,
 
 	resp, err := fetchUpstreamWithDockerHubAuth(ctx, repo, ClientFor(repo), upstreamMethod, upstream, baseRemote, upHdr)
 	if err != nil {
+		release(outcome{err: err})
 		DispatchProxyError(d, repo.Name, repoRelativePath, upstream, err)
 		c.JSON(http.StatusBadGateway, gin.H{"error": "upstream fetch failed: " + err.Error()})
 		return nil
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer func() {
+		if rewrite != nil || resp.StatusCode < 200 || resp.StatusCode > 299 {
+			_ = resp.Body.Close()
+		}
+	}()
 
 	if resp.StatusCode == http.StatusNotModified {
+		release(outcome{status: resp.StatusCode})
 		copyRespHeaders(c.Writer.Header(), resp.Header)
 		c.Status(http.StatusNotModified)
 		return nil
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		release(outcome{status: resp.StatusCode})
 		copyRespHeaders(c.Writer.Header(), resp.Header)
 		c.Status(resp.StatusCode)
+		c.Writer.WriteHeaderNow()
 		_, _ = io.Copy(c.Writer, resp.Body)
 		return nil
 	}
 
-	return storeAndServeResponse(c, d, repo, repoRelativePath, defaultContentType, coords, resp, rewrite)
+	return storeAndServeResponse(c, d, repo, repoRelativePath, defaultContentType, coords, resp, rewrite, release)
 }
 
 // revalidateAndServe is invoked when a cached metadata asset is older than its
@@ -605,15 +639,55 @@ func fetchAndCache(c *gin.Context, d formats.Deps, repo *domain.Repository,
 func revalidateAndServe(c *gin.Context, d formats.Deps, repo *domain.Repository, asset *domain.Asset,
 	repoRelativePath, upJoin string, coords base.Coords, defaultContentType string, rc io.ReadCloser, opts ServeOptions,
 ) error {
-	ctx := c.Request.Context()
+	ctx := context.WithoutCancel(c.Request.Context())
+	entry, release := cacheFills.acquire("revalidate:" + fillKey(c, repo.Name, repoRelativePath))
+	if release == nil {
+		select {
+		case <-entry.done:
+		case <-c.Request.Context().Done():
+			_ = rc.Close()
+			return c.Request.Context().Err()
+		}
+		// The owner just tried revalidation. Never revalidate again here,
+		// even when an upstream failure left the cached copy stale.
+		fresh, lookupErr := d.Assets.GetByPath(ctx, repo.Name, repoRelativePath)
+		if lookupErr == nil && fresh != nil {
+			store, storeErr := cacheFetchStore(ctx, d, fresh)
+			if storeErr == nil {
+				if body, _, getErr := store.Get(ctx, fresh.BlobKey); getErr == nil {
+					_ = rc.Close()
+					serveCachedAsset(c, d, fresh, body, opts)
+					return nil
+				}
+			}
+		}
+		serveCachedAsset(c, d, asset, rc, opts)
+		return nil
+	}
+	defer release()
+	// Another owner may have refreshed the asset before this acquire.
+	fresh, lookupErr := d.Assets.GetByPath(ctx, repo.Name, repoRelativePath)
+	if lookupErr == nil && fresh != nil && fresh.LastModified.After(asset.LastModified) {
+		store, storeErr := cacheFetchStore(ctx, d, fresh)
+		if storeErr == nil {
+			if body, _, getErr := store.Get(ctx, fresh.BlobKey); getErr == nil {
+				_ = rc.Close()
+				release()
+				serveCachedAsset(c, d, fresh, body, opts)
+				return nil
+			}
+		}
+	}
 
 	baseRemote, err := RemoteURL(repo)
 	if err != nil {
+		release()
 		serveCachedAsset(c, d, asset, rc, opts)
 		return nil
 	}
 	upstream, err := JoinURL(baseRemote, upJoin)
 	if err != nil {
+		release()
 		serveCachedAsset(c, d, asset, rc, opts)
 		return nil
 	}
@@ -636,10 +710,15 @@ func revalidateAndServe(c *gin.Context, d formats.Deps, repo *domain.Repository,
 	if err != nil {
 		// Upstream unreachable → serve stale cache so metadata consumers keep working.
 		DispatchProxyError(d, repo.Name, repoRelativePath, upstream, err)
+		release()
 		serveCachedAsset(c, d, asset, rc, opts)
 		return nil
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer func() {
+		if opts.Rewrite != nil || resp.StatusCode < 200 || resp.StatusCode > 299 {
+			_ = resp.Body.Close()
+		}
+	}()
 
 	switch {
 	case resp.StatusCode == http.StatusNotModified:
@@ -648,17 +727,19 @@ func revalidateAndServe(c *gin.Context, d formats.Deps, repo *domain.Repository,
 		if d.Assets != nil {
 			_ = d.Assets.TouchLastModified(context.Background(), asset.ID)
 		}
+		release()
 		serveCachedAsset(c, d, asset, rc, opts)
 		return nil
 	case resp.StatusCode >= 200 && resp.StatusCode <= 299:
 		// Upstream returned a newer copy: replace the cached blob and serve it.
 		_ = rc.Close()
-		return storeAndServeResponse(c, d, repo, repoRelativePath, defaultContentType, coords, resp, opts.Rewrite)
+		return storeAndServeResponse(c, d, repo, repoRelativePath, defaultContentType, coords, resp, opts.Rewrite, release)
 	default:
 		// Any other status (404/410/5xx): don't discard a good cache on a transient
 		// upstream hiccup — serve stale and record the anomaly.
 		DispatchProxyError(d, repo.Name, repoRelativePath, upstream,
 			fmt.Errorf("revalidation returned status %d", resp.StatusCode))
+		release()
 		serveCachedAsset(c, d, asset, rc, opts)
 		return nil
 	}
@@ -668,9 +749,9 @@ func revalidateAndServe(c *gin.Context, d formats.Deps, repo *domain.Repository,
 // client while persisting it to the blob store and registering the DB asset,
 // replacing any prior cache entry for repoRelativePath.
 func storeAndServeResponse(c *gin.Context, d formats.Deps, repo *domain.Repository,
-	repoRelativePath, defaultContentType string, coords base.Coords, resp *http.Response, rewrite func([]byte) []byte,
+	repoRelativePath, defaultContentType string, coords base.Coords, resp *http.Response, rewrite func([]byte) []byte, release func(...outcome),
 ) error {
-	ctx := c.Request.Context()
+	ctx := context.WithoutCancel(c.Request.Context())
 
 	ct := resp.Header.Get("Content-Type")
 	if ct == "" {
@@ -692,9 +773,10 @@ func storeAndServeResponse(c *gin.Context, d formats.Deps, repo *domain.Reposito
 		if int64(len(body)) > limit {
 			return fmt.Errorf("proxy metadata exceeds the %d byte rewrite size limit", limit)
 		}
-		if err := storeOriginal(ctx, c, d, repo, repoRelativePath, ct, coords, body); err != nil {
+		if err := storeOriginal(ctx, c, d, repo, repoRelativePath, ct, coords, body, release); err != nil {
 			return err
 		}
+		release()
 		copyRespHeaders(c.Writer.Header(), resp.Header)
 		c.Writer.Header().Del("Content-Length") // length changes after rewrite
 		if c.Request.Method == http.MethodHead {
@@ -706,6 +788,96 @@ func storeAndServeResponse(c *gin.Context, d formats.Deps, repo *domain.Reposito
 		return nil
 	}
 
+	copyRespHeaders(c.Writer.Header(), resp.Header)
+	c.Header("Content-Type", ct)
+	c.Status(resp.StatusCode)
+	method := c.Request.Method
+	tee := newClientTee(effectiveClientTeeBufferBytes())
+	var sink io.Writer = tee
+	if method == http.MethodHead {
+		sink = io.Discard
+	}
+	resultCh := make(chan streamFillResult, 1)
+	go func() {
+		result := fillStream(ctx, d, repo, repoRelativePath, ct, coords, resp, sink, method)
+		switch {
+		case result.asset != nil:
+			release(outcome{})
+		case result.err != nil:
+			release(outcome{err: result.err})
+		default:
+			release(outcome{status: resp.StatusCode})
+		}
+		tee.close()
+		resultCh <- result
+	}()
+	var clientErr error
+	if method != http.MethodHead {
+		for {
+			chunk, ok := tee.next()
+			if !ok {
+				break
+			}
+			if _, clientErr = c.Writer.Write(chunk); clientErr != nil {
+				break
+			}
+			if clientErr = c.Request.Context().Err(); clientErr != nil {
+				break
+			}
+		}
+	}
+	// Even after client cancellation the detached fill must finish before our
+	// safety-net release (and the caller's response-body close) runs.
+	result := <-resultCh
+	if result.cleanup {
+		defer dropUnreferencedBlob(ctx, d, repo, repoRelativePath, result.store, result.blobKey)
+	}
+	if clientErr != nil {
+		return fmt.Errorf("proxy client write: %w", clientErr)
+	}
+	if result.err != nil {
+		return result.err
+	}
+	if result.skip {
+		defer func() { _ = resp.Body.Close() }()
+		// There is no cache fill when the pre-check rejects storage. Release
+		// waiters immediately and preserve the ordinary uncached stream.
+		if method != http.MethodHead {
+			_, clientErr = io.Copy(c.Writer, resp.Body)
+		}
+		return clientErr
+	}
+	lagging, sent := tee.progress()
+	if lagging && method != http.MethodHead {
+		rc, _, err := result.store.Get(ctx, result.blobKey)
+		if err != nil {
+			return fmt.Errorf("proxy catch-up open: %w", err)
+		}
+		defer func() { _ = rc.Close() }()
+		// BlobStore has no range GET. Re-read the stored blob and discard the
+		// ordered prefix; Azure therefore downloads this prefix a second time.
+		if _, err = io.CopyN(io.Discard, rc, sent); err != nil {
+			return fmt.Errorf("proxy catch-up skip: %w", err)
+		}
+		if _, err = io.Copy(c.Writer, rc); err != nil {
+			return fmt.Errorf("proxy catch-up write: %w", err)
+		}
+	}
+	return nil
+}
+
+type streamFillResult struct {
+	asset         *domain.Asset
+	store         storage.BlobStore
+	blobKey       string
+	size          int64
+	err           error
+	skip, cleanup bool
+}
+
+func fillStream(ctx context.Context, d formats.Deps, repo *domain.Repository,
+	repoRelativePath, ct string, coords base.Coords, resp *http.Response, clientSink io.Writer, method string,
+) streamFillResult {
 	// Quota gate (#189): when caching this artifact would exceed the repository
 	// or blob-store quota, serve it straight from upstream and skip the cache —
 	// clients keep working, the cache stops growing. Any check failure skips the
@@ -713,15 +885,16 @@ func storeAndServeResponse(c *gin.Context, d formats.Deps, repo *domain.Reposito
 	// with no quota applied (#328).
 	if resp.ContentLength > 0 {
 		if qErr := base.CheckQuota(ctx, d, repo, resp.ContentLength); qErr != nil {
-			copyRespHeaders(c.Writer.Header(), resp.Header)
-			c.Header("Content-Type", ct)
-			c.Status(resp.StatusCode)
-			if c.Request.Method != http.MethodHead {
-				_, _ = io.Copy(c.Writer, resp.Body)
-			}
-			return nil
+			return streamFillResult{skip: true}
 		}
 	}
+
+	bodyClosed := false
+	defer func() {
+		if !bodyClosed {
+			_ = resp.Body.Close()
+		}
+	}()
 
 	blobKey := base.BlobKey(repo.Name, repoRelativePath)
 	sha256h := sha256.New()
@@ -732,12 +905,8 @@ func storeAndServeResponse(c *gin.Context, d formats.Deps, repo *domain.Reposito
 	// what RegisterStoredBlob will record in the DB asset row.
 	resolvedID, resolvedName, physStore, resolveErr := base.ResolveBlobStore(ctx, d, repo)
 	if resolveErr != nil {
-		return fmt.Errorf("proxy cache store: %w", resolveErr)
+		return streamFillResult{err: fmt.Errorf("proxy cache store: %w", resolveErr)}
 	}
-
-	copyRespHeaders(c.Writer.Header(), resp.Header)
-	c.Header("Content-Type", ct)
-	c.Status(resp.StatusCode)
 
 	pr, pw := io.Pipe()
 	putErrCh := make(chan error, 1)
@@ -754,13 +923,13 @@ func storeAndServeResponse(c *gin.Context, d formats.Deps, repo *domain.Reposito
 	}()
 
 	hashes := io.MultiWriter(sha256h, sha1h, md5h)
-	clientSink := io.Writer(c.Writer)
-	if c.Request.Method == http.MethodHead {
-		clientSink = io.Discard
-	}
 	mw := io.MultiWriter(pw, hashes, clientSink)
 
 	written, copyErr := io.Copy(mw, resp.Body)
+	// Release the host inflight permit as soon as the upstream is consumed,
+	// independently of the owner's client writes and cache catch-up.
+	_ = resp.Body.Close()
+	bodyClosed = true
 	_ = pw.CloseWithError(copyErr)
 	putErr := <-putErrCh
 
@@ -772,7 +941,7 @@ func storeAndServeResponse(c *gin.Context, d formats.Deps, repo *domain.Reposito
 		// copy already cached at this path, or one a concurrent fill just
 		// published and registered. Deleting it leaves an asset row with no
 		// bytes behind it; leaving it costs nothing.
-		return fmt.Errorf("proxy cache write: %w", errors.Join(copyErr, putErr))
+		return streamFillResult{err: fmt.Errorf("proxy cache write: %w", errors.Join(copyErr, putErr))}
 	}
 
 	sha256sum := hex.EncodeToString(sha256h.Sum(nil))
@@ -792,23 +961,23 @@ func storeAndServeResponse(c *gin.Context, d formats.Deps, repo *domain.Reposito
 	// but the client keeps its stream (#328).
 	if resp.ContentLength <= 0 && size > 0 {
 		if qErr := base.CheckQuota(ctx, d, repo, size); qErr != nil {
-			dropUnreferencedBlob(ctx, d, repo, repoRelativePath, physStore, blobKey)
-			return nil //nolint:nilerr // deliberate: skip the cache, never fail the served download
+			// Keep the stored body available until a lagging client catches up.
+			return streamFillResult{store: physStore, blobKey: blobKey, cleanup: true, size: size}
 		}
 	}
 
 	// Use context.Background so DB registration survives request context cancellation
 	// after streaming (client closes connection once all bytes are received).
-	regAsset, regErr := base.RegisterStoredBlob(context.Background(), d, repo, repoRelativePath, ct, coords, blobKey, sha256sum, sha1sum, md5sum, size, resolvedID, resolvedName)
+	regAsset, regErr := base.RegisterStoredBlob(ctx, d, repo, repoRelativePath, ct, coords, blobKey, sha256sum, sha1sum, md5sum, size, resolvedID, resolvedName)
 	if regErr != nil {
-		return regErr
+		return streamFillResult{err: regErr}
 	}
 	// Count a download only for GET. Otherwise a HEAD probe + GET hit would
 	// double-count the same pull.
-	if regAsset != nil && regAsset.ID != "" && c.Request.Method == http.MethodGet && d.Downloads != nil {
+	if regAsset != nil && regAsset.ID != "" && method == http.MethodGet && d.Downloads != nil {
 		d.Downloads.Add(regAsset.ID)
 	}
-	return nil
+	return streamFillResult{asset: regAsset, store: physStore, blobKey: blobKey, size: size}
 }
 
 // dropUnreferencedBlob removes a blob this request wrote but will not register,
@@ -834,11 +1003,12 @@ func dropUnreferencedBlob(ctx context.Context, d formats.Deps, repo *domain.Repo
 // and registers the DB asset (the buffered counterpart of the streaming path
 // in storeAndServeResponse, used when a rewrite forces buffering).
 func storeOriginal(ctx context.Context, c *gin.Context, d formats.Deps, repo *domain.Repository,
-	repoRelativePath, ct string, coords base.Coords, body []byte,
+	repoRelativePath, ct string, coords base.Coords, body []byte, release func(...outcome),
 ) error {
 	// Quota gate (#189): over-quota metadata is served (rewritten) but not
 	// cached; a check that failed to evaluate skips the cache the same way (#328).
 	if qErr := base.CheckQuota(ctx, d, repo, int64(len(body))); qErr != nil {
+		release(outcome{status: http.StatusOK})
 		return nil //nolint:nilerr // deliberate: skip the cache, never fail the served response
 	}
 
@@ -860,6 +1030,7 @@ func storeOriginal(ctx context.Context, c *gin.Context, d formats.Deps, repo *do
 	if regErr != nil {
 		return regErr
 	}
+	release(outcome{})
 	if regAsset != nil && regAsset.ID != "" && c.Request.Method == http.MethodGet && d.Downloads != nil {
 		d.Downloads.Add(regAsset.ID)
 	}

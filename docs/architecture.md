@@ -446,12 +446,26 @@ main.go serve:
 ## Concurrency Model
 
 - Gin: N worker goroutines (GOMAXPROCS × 4 default)
-- Proxy cache dedup: process-local fill registry per blob key. Waiters wait for
-  completion, then retry the cache lookup once; failed fills allow an independent fetch.
-  Replicas deduplicate independently. This is an optimization: atomic blob puts and
-  `RegisterStoredBlob` preserve correctness across concurrent fills. No advisory lock
-  is held during downloads, because it would pin a database pool connection.
-  This remains process-local in Phase 10.
+- Proxy cache dedup: a process-local fill registry keyed by blob key plus normalized
+  `Accept` and `If-None-Match` headers. The owner releases the fill immediately after
+  blob and asset registration, independently of client streaming. Waiters retry the
+  cache lookup; an uncached 4xx/5xx outcome is relayed without another upstream
+  request. Transport failures, 304 responses and quota skips may require independent
+  fetches. Stale metadata uses a separate `revalidate:` key: waiters serve the cache
+  after the owner's attempt, even if it is still stale, without revalidating again.
+  Replicas deduplicate independently. Atomic blob puts and `RegisterStoredBlob`
+  preserve correctness across fills; no database connection is pinned by a lock
+  during a download.
+- Proxy streaming fills: a goroutine with `context.WithoutCancel` streams the upstream
+  into blob storage and hashes. A non-blocking client tee queues at most 4 MiB per
+  fill. When a client lags, the fill continues; after registration the client reopens
+  the blob, skips the already queued bytes and streams the remainder. The store has
+  no range-get interface, so this may read the blob twice (including a second Azure
+  download). HEAD uses `io.Discard`. Client cancellation does not cancel the fill.
+  Active upstream fills have a tee budget of 4 MiB ×
+  `proxy.max_inflight_per_host` per upstream host. After a fill completes, a slow
+  response may retain its queued bytes until drained (at most 4 MiB per response);
+  the upstream request limit does not bound these remaining response queues.
 - Upstream transports: 32 idle and 64 total TCP connections per host and transport
   by default (`proxy.max_conns_per_host` overrides the latter). HTTP/2 remains
   enabled: its streams are not bounded by the TCP connection limit. A shared
