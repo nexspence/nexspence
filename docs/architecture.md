@@ -342,7 +342,7 @@ Still outstanding:
 │             │  (shared state)│     │  (shared blobs)      │     │
 │             └────────────────┘     └──────────────────────┘     │
 │                                                                  │
-│   Advisory locks replace in-process singleflight for proxy dedup │
+│   Proxy fill waits remain process-local on each replica        │
 │   Healthcheck /service/rest/v1/status/check → load balancer     │
 └─────────────────────────────────────────────────────────────────┘
 
@@ -446,8 +446,34 @@ main.go serve:
 ## Concurrency Model
 
 - Gin: N worker goroutines (GOMAXPROCS × 4 default)
-- Proxy cache dedup: in-process `singleflight` per blob key — prevents thundering herd
-  - **[Phase 10]** Replace with PostgreSQL advisory lock for multi-node safety
+- Proxy cache dedup: a process-local fill registry keyed by blob key plus normalized
+  `Accept` and `If-None-Match` headers. The owner releases the fill immediately after
+  blob and asset registration, independently of client streaming. Waiters retry the
+  cache lookup; an uncached 4xx/5xx outcome is relayed without another upstream
+  request. Transport failures, 304 responses and quota skips may require independent
+  fetches. Stale metadata uses a separate `revalidate:` key: waiters serve the cache
+  after the owner's attempt, even if it is still stale, without revalidating again.
+  Replicas deduplicate independently. Atomic blob puts and `RegisterStoredBlob`
+  preserve correctness across fills; no database connection is pinned by a lock
+  during a download.
+- Proxy streaming fills: a goroutine with `context.WithoutCancel` streams the upstream
+  into blob storage and hashes. A non-blocking client tee queues at most 4 MiB per
+  fill. When a client lags, the fill continues; after registration the client reopens
+  the blob, skips the already queued bytes and streams the remainder. The store has
+  no range-get interface, so this may read the blob twice (including a second Azure
+  download). HEAD uses `io.Discard`. Client cancellation does not cancel the fill.
+  Active upstream fills have a tee budget of 4 MiB ×
+  `proxy.max_inflight_per_host` per upstream host. After a fill completes, a slow
+  response may retain its queued bytes until drained (at most 4 MiB per response);
+  the upstream request limit does not bound these remaining response queues.
+- Upstream transports: 32 idle and 64 total TCP connections per host and transport
+  by default (`proxy.max_conns_per_host` overrides the latter). HTTP/2 remains
+  enabled: its streams are not bounded by the TCP connection limit. A shared
+  process-local semaphore bounds concurrent upstream requests per normalized host
+  to 32 (`proxy.max_inflight_per_host`), across direct and per-repository proxy
+  clients and both HTTP versions. The slot lasts until response-body close.
+  Both settings are initialized once at startup; 0 selects the default rather than
+  unlimited, and negatives are rejected.
 - Blob writes: streaming via `io.Pipe` + goroutine — no full buffer in memory
 - Audit writes: goroutine fire-and-forget (non-blocking on handler path)
 - Webhook delivery: goroutine per dispatch; HTTP client with 10s timeout

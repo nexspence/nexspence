@@ -301,3 +301,27 @@ metrics:
 or `NEXSPENCE_METRICS_PUBLIC=true`, or `--set config.metricsPublic=true` for the Helm chart. The `authorization:` block then drops out of the scrape config.
 
 The endpoint serves `nexspence_requests_total`, `nexspence_request_duration_seconds`, `nexspence_artifacts_total`, `nexspence_bytes_stored_bytes`, `nexspence_downloads_total`, `nexspence_goroutines` and `nexspence_memory_alloc_bytes`, plus the standard Go and process collectors. `/healthz` and `/readyz` are always unauthenticated and are the right targets for probes.
+
+### Upstream connection and request limits
+
+`proxy.max_conns_per_host` bounds TCP connections per upstream host and transport
+(default 64). HTTP/2 multiplexes streams on a connection, so this setting does
+not bound concurrent requests. `ForceAttemptHTTP2` remains enabled on both direct
+and explicit proxy transports; both retain up to 32 idle connections per host.
+
+`proxy.max_inflight_per_host` bounds simultaneous upstream requests per normalized
+host (default 32), independently of HTTP/1.1 or HTTP/2. Direct and per-repository
+proxy clients share the same process-local semaphore; a slot is released when
+the response body is closed. Requests waiting for a slot respect cancellation.
+Replicas enforce these limits independently. Both settings are startup-only;
+**0 means the default, not unlimited**, and negative values are rejected.
+
+```yaml
+proxy:
+  max_conns_per_host: 64
+  max_inflight_per_host: 32
+```
+
+Environment overrides are `NEXSPENCE_PROXY_MAX_CONNS_PER_HOST` and
+`NEXSPENCE_PROXY_MAX_INFLIGHT_PER_HOST`. With Helm, use
+`config.proxy.maxConnsPerHost` and `config.proxy.maxInflightPerHost`.

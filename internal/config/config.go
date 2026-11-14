@@ -103,6 +103,12 @@ type OutboundConfig struct {
 // honor the standard HTTP_PROXY/HTTPS_PROXY/NO_PROXY environment variables.
 // Per-repository proxy_config overrides the outbound proxy defaults.
 type ProxyConfig struct {
+	// MaxConnsPerHost bounds TCP connections per host and transport, not HTTP/2 streams.
+	// Zero selects 64; negative values are invalid.
+	MaxConnsPerHost int `mapstructure:"max_conns_per_host"`
+	// MaxInflightPerHost bounds concurrent requests per upstream host across
+	// direct and proxy clients, for HTTP/1.1 and HTTP/2. Zero selects 32.
+	MaxInflightPerHost int `mapstructure:"max_inflight_per_host"`
 	// MaxRewrittenMetadataBytes bounds buffered proxy metadata on cache fill
 	// and cache hit. Must be positive; the reader reserves one overflow byte.
 	MaxRewrittenMetadataBytes int64  `mapstructure:"max_rewritten_metadata_bytes"`
@@ -775,6 +781,8 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("ldap.host", "")
 	v.SetDefault("ldap.search_base", "")
 	v.SetDefault("proxy.http_proxy", "")
+	v.SetDefault("proxy.max_conns_per_host", 64)
+	v.SetDefault("proxy.max_inflight_per_host", 32)
 	v.SetDefault("proxy.max_rewritten_metadata_bytes", int64(32<<20))
 	v.SetDefault("proxy.https_proxy", "")
 	v.SetDefault("proxy.no_proxy", "")
@@ -833,6 +841,18 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("parse config: %w", err)
 	}
 	cfg.UnknownKeys = UnknownKeys(md.Unused, os.Environ())
+	if cfg.Proxy.MaxConnsPerHost < 0 {
+		return nil, fmt.Errorf("proxy.max_conns_per_host must not be negative")
+	}
+	if cfg.Proxy.MaxInflightPerHost < 0 {
+		return nil, fmt.Errorf("proxy.max_inflight_per_host must not be negative")
+	}
+	if cfg.Proxy.MaxConnsPerHost == 0 {
+		cfg.Proxy.MaxConnsPerHost = 64
+	}
+	if cfg.Proxy.MaxInflightPerHost == 0 {
+		cfg.Proxy.MaxInflightPerHost = 32
+	}
 	if cfg.Proxy.MaxRewrittenMetadataBytes <= 0 || cfg.Proxy.MaxRewrittenMetadataBytes == math.MaxInt64 {
 		return nil, fmt.Errorf("proxy.max_rewritten_metadata_bytes must be between 1 and %d", int64(math.MaxInt64-1))
 	}

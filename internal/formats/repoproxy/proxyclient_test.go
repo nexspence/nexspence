@@ -76,7 +76,7 @@ func TestBuildProxyClient_SOCKS5_BuildsDialer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildProxyClient socks5: %v", err)
 	}
-	igt, ok := c.Transport.(idleGuardedTransport)
+	igt, ok := c.Transport.(inflightLimitedTransport).Transport.(idleGuardedTransport)
 	if !ok {
 		t.Fatal("expected idleGuardedTransport")
 	}

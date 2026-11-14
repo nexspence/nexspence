@@ -142,6 +142,27 @@ helm install nexspence \
 
 ---
 
+## Upstream limits
+
+The chart forwards these startup settings through its ConfigMap:
+
+| Helm value | Application key | Default | Meaning |
+| --- | --- | --- | --- |
+| `config.proxy.maxConnsPerHost` | `proxy.max_conns_per_host` | `64` | TCP connections per upstream host and transport; HTTP/2 streams share connections |
+| `config.proxy.maxInflightPerHost` | `proxy.max_inflight_per_host` | `32` | Concurrent upstream requests per host across direct and proxy clients, for HTTP/1.1 and HTTP/2 |
+
+For both values, **0 selects the default, not unlimited**; negative values are
+rejected. Limits apply independently per pod. For example:
+
+```yaml
+config:
+  proxy:
+    maxConnsPerHost: 64
+    maxInflightPerHost: 16
+```
+
+---
+
 ## Adding further local blob stores
 
 The chart mounts the blob PVC at `storage.local.mountPath` (default `/blobs`)

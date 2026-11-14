@@ -447,7 +447,7 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 			log.Error("failed to reset trusted proxies", "err", err)
 		}
 	}
-	r.Use(gin.Recovery())
+	r.Use(recoveryMiddleware())
 	r.Use(requestLogger(log))
 	r.Use(corsMiddleware(cfg.HTTP.CORSOrigins))
 	r.Use(securityHeaders(cspPolicy(cfg)))
