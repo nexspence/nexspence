@@ -1100,7 +1100,7 @@ trusted-host = localhost</div></div>
 docker login localhost:5000 -u admin -p admin123
 
 <span class="cc"># Pull through proxy</span>
-docker pull localhost:5000/docker-proxy/library/nginx:latest
+docker pull localhost:5000/docker-proxy/nginx:latest
 
 <span class="cc"># Push to hosted</span>
 docker tag myimage:1.0 localhost:5000/docker-hosted/myimage:1.0

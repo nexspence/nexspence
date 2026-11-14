@@ -126,6 +126,14 @@ func isDockerRegistryRemote(baseRemote string) bool {
 	}
 }
 
+// IsDockerHubRemote reports whether remote_url points at the Docker Hub
+// registry. Callers outside this package need it to recognize the upstream that
+// keeps its official images under "library/" and answers a short name with 401
+// instead of 404 (#757).
+func IsDockerHubRemote(baseRemote string) bool {
+	return isDockerRegistryRemote(baseRemote)
+}
+
 func grabQuotedAttr(s, key string) string {
 	needle := key + `="`
 	i := strings.Index(s, needle)

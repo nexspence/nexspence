@@ -28,6 +28,10 @@ func (h *Handler) proxyManifest(c *gin.Context, repo *domain.Repository, image, 
 		return nil
 	}
 	ctx := c.Request.Context()
+	// The upstream may know this image under another name — a Docker Hub
+	// official image under "library/" (#757). The short name is tried first;
+	// the "library/" form only when the upstream does not know it.
+	upImage := resolveUpstreamImage(repo, image)
 	var cached *domain.Asset
 	var body *manifestBody
 	var repairErr error
@@ -49,7 +53,7 @@ func (h *Handler) proxyManifest(c *gin.Context, repo *domain.Repository, image, 
 		return err
 	}
 	// Network verification must not retain an advisory-lock connection.
-	if repairErr != nil && !h.manifestAvailableUpstream(ctx, repo, image, cached.ContentType, body) {
+	if repairErr != nil && !h.manifestAvailableUpstream(ctx, repo, upImage, cached.ContentType, body) {
 		return repairErr
 	}
 	compatible := cached != nil && acceptsManifest(manifestAccept(c), cached.ContentType)
@@ -66,8 +70,11 @@ func (h *Handler) proxyManifest(c *gin.Context, repo *domain.Repository, image, 
 	if compatible && prefersCachedManifest(manifestAccept(c), cached.ContentType) && !cached.LastModified.IsZero() {
 		hdr.Set("If-Modified-Since", cached.LastModified.UTC().Format(http.TimeFormat))
 	}
-	upPath := "/v2/" + image + "/manifests/" + ref
-	resp, err := repoproxy.FetchUpstreamOnce(ctx, repo, upPath, "", hdr)
+	// The upstream may know this image under another name — a Docker Hub
+	// official image under "library/" (#757). The short name is tried first;
+	// the "library/" form only when the upstream does not know it.
+	upPath := "/v2/" + upImage.primary + "/manifests/" + ref
+	resp, upImage, err := fetchUpstreamForImage(ctx, repo, upImage, image, "/manifests/"+ref, "", hdr)
 	if err != nil {
 		repoproxy.DispatchProxyError(h.deps, repo.Name, manifestPath(image, ref), upPath, err)
 		if compatible {
@@ -99,7 +106,7 @@ func (h *Handler) proxyManifest(c *gin.Context, repo *domain.Repository, image, 
 	if resp.StatusCode != http.StatusOK {
 		return h.manifestUpstreamStatus(c, repo, image, ref, resp, cached, body, compatible)
 	}
-	return h.serveFetchedManifest(ctx, c, repo, image, ref, resp)
+	return h.serveFetchedManifest(ctx, c, repo, image, upImage, ref, resp)
 }
 
 func (h *Handler) loadCachedManifestForProxy(ctx context.Context, repo *domain.Repository, image, ref string) (*domain.Asset, *manifestBody, error, error) {
@@ -115,7 +122,7 @@ func (h *Handler) withManifestLock(ctx context.Context, repo *domain.Repository,
 	return h.deps.Assets.WithBlobKeyLock(ctx, "oci:manifest:"+repo.Name+":"+manifestPath(image, ref), fn)
 }
 
-func (h *Handler) serveFetchedManifest(ctx context.Context, c *gin.Context, repo *domain.Repository, image, ref string, resp *http.Response) error {
+func (h *Handler) serveFetchedManifest(ctx context.Context, c *gin.Context, repo *domain.Repository, image string, upImage upstreamImage, ref string, resp *http.Response) error {
 	body, err := spoolManifest(resp.Body)
 	if err != nil {
 		return err
@@ -159,7 +166,7 @@ func (h *Handler) serveFetchedManifest(ctx context.Context, c *gin.Context, repo
 		// Preserve proxy pass-through at full quota, but only if these exact bytes
 		// can be fetched by digest upstream. A tag-only variant must be persisted
 		// before acknowledging it, or the client's next request would fail.
-		if !h.manifestAvailableUpstream(ctx, repo, image, ct, body) {
+		if !h.manifestAvailableUpstream(ctx, repo, upImage, ct, body) {
 			return fmt.Errorf("persist manifest: %w", storeErr)
 		}
 		asset = &domain.Asset{ContentType: ct, SHA256: body.sha256, SizeBytes: body.size}
@@ -168,8 +175,24 @@ func (h *Handler) serveFetchedManifest(ctx context.Context, c *gin.Context, repo
 	return nil
 }
 
-func (h *Handler) manifestAvailableUpstream(ctx context.Context, repo *domain.Repository, image, ct string, body *manifestBody) bool {
+// manifestAvailableUpstream reports whether the upstream still serves exactly
+// these bytes for this image. The name the upstream knows the image under is
+// tried first, and the fallback name — the "library/" form of a Docker Hub
+// official image (#757) — only when the upstream does not know the first.
+func (h *Handler) manifestAvailableUpstream(ctx context.Context, repo *domain.Repository, upImage upstreamImage, ct string, body *manifestBody) bool {
 	ref := "sha256:" + body.sha256
+	if h.manifestMatchesUpstream(ctx, repo, upImage.primary, ref, ct, body) {
+		return true
+	}
+	if upImage.fallback == "" {
+		return false
+	}
+	return h.manifestMatchesUpstream(ctx, repo, upImage.fallback, ref, ct, body)
+}
+
+// manifestMatchesUpstream reports whether the upstream serves exactly these
+// bytes for the image under the given name.
+func (h *Handler) manifestMatchesUpstream(ctx context.Context, repo *domain.Repository, image, ref, ct string, body *manifestBody) bool {
 	resp, err := repoproxy.FetchUpstreamOnce(ctx, repo, "/v2/"+image+"/manifests/"+ref, "", http.Header{"Accept": []string{ct}})
 	if err != nil {
 		return false

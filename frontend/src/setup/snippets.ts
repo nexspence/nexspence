@@ -400,7 +400,11 @@ const BUILDERS: Record<string, (c: Ctx) => SetupClient[]> = {
   },
 
   docker: (c) => {
-    const pullImage = c.type === 'proxy' ? 'library/nginx:latest' : 'myapp:1.0'
+    // A Docker Hub proxy resolves the short name of an official image itself,
+    // the way the Docker client does against docker.io: "nginx" is served
+    // upstream as "library/nginx", so the reader never writes the namespace.
+    // A hosted repository holds only the images pushed to it.
+    const pullImage = c.hosted ? 'myapp:1.0' : 'nginx:latest'
     const sections: SetupSection[] = [
       { title: 'Log in', text: DOCKER_HOST_NOTE, codes: [code('bash', docker.login(c.host, c.user, c.secret))] },
       { title: 'Pull', codes: [code('bash', `docker pull ${ociRef(c, pullImage)}`)] },
