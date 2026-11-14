@@ -800,7 +800,7 @@ func storeAndServeResponse(c *gin.Context, d formats.Deps, repo *domain.Reposito
 	}
 	resultCh := make(chan streamFillResult, 1)
 	go func() {
-		result := fillStream(ctx, d, repo, repoRelativePath, ct, coords, resp, sink, method)
+		result := fillStreamSafely(ctx, d, repo, repoRelativePath, ct, coords, resp, sink, method)
 		switch {
 		case result.asset != nil:
 			release(outcome{})
@@ -876,6 +876,30 @@ type streamFillResult struct {
 	skip, cleanup bool
 }
 
+// fillStreamSafely runs a cache fill and turns a panic inside it into an
+// ordinary failure.
+//
+// The fill runs on its own goroutine, where gin's recovery middleware does not
+// reach: an unrecovered panic there takes the whole process down, so one
+// misbehaving blob store driver would take every repository with it. Before
+// the fill moved off the request goroutine the same panic was recovered into a
+// 500 for that one request.
+//
+// The response body is closed here as well: a panic can leave it open, and an
+// open body keeps the upstream connection — and the host permit that goes with
+// it — occupied.
+func fillStreamSafely(ctx context.Context, d formats.Deps, repo *domain.Repository,
+	repoRelativePath, ct string, coords base.Coords, resp *http.Response, clientSink io.Writer, method string,
+) (result streamFillResult) {
+	defer func() {
+		if r := recover(); r != nil {
+			_ = resp.Body.Close()
+			result = streamFillResult{err: fmt.Errorf("proxy cache fill panic: %v", r)}
+		}
+	}()
+	return fillStream(ctx, d, repo, repoRelativePath, ct, coords, resp, clientSink, method)
+}
+
 func fillStream(ctx context.Context, d formats.Deps, repo *domain.Repository,
 	repoRelativePath, ct string, coords base.Coords, resp *http.Response, clientSink io.Writer, method string,
 ) streamFillResult {
@@ -912,15 +936,24 @@ func fillStream(ctx context.Context, d formats.Deps, repo *domain.Repository,
 	pr, pw := io.Pipe()
 	putErrCh := make(chan error, 1)
 	go func() {
-		err := physStore.Put(ctx, blobKey, pr, resp.ContentLength)
-		// The io.Copy below runs on the client's own request goroutine, so a Put
-		// that returns without draining pr — a disk-full or permission failure
-		// fails before reading a single byte — would block that copy on
-		// pw.Write forever: no response, no error, no timeout (#367). Closing
-		// the read end makes the pending write return io.ErrClosedPipe at once,
-		// and is a no-op once the pipe has already drained normally.
-		_ = pr.Close()
-		putErrCh <- err
+		// A panic in the storage driver must not take the process down: this
+		// goroutine has no recovery middleware above it, and the fill it
+		// belongs to still owes its waiters an outcome.
+		var err error
+		defer func() {
+			if r := recover(); r != nil {
+				err = fmt.Errorf("proxy cache store panic: %v", r)
+			}
+			// The io.Copy below runs on the client's own request goroutine, so a Put
+			// that returns without draining pr — a disk-full or permission failure
+			// fails before reading a single byte — would block that copy on
+			// pw.Write forever: no response, no error, no timeout (#367). Closing
+			// the read end makes the pending write return io.ErrClosedPipe at once,
+			// and is a no-op once the pipe has already drained normally.
+			_ = pr.Close()
+			putErrCh <- err
+		}()
+		err = physStore.Put(ctx, blobKey, pr, resp.ContentLength)
 	}()
 
 	hashes := io.MultiWriter(sha256h, sha1h, md5h)
