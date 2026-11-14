@@ -56,9 +56,10 @@ func (h *BackupHandler) Export(c *gin.Context) {
 // a scheduled run keeps — so it is served and the gap logged. Anything else
 // (a lost component or asset page, a write error) means the archive is not a
 // backup: the connection is closed before the final chunk, so the client sees
-// a broken transfer instead of a complete download (#569). gin.Recovery turns
-// a panic(http.ErrAbortHandler) into a normal return and gin refuses to
-// hijack once body bytes are written, hence the net/http writer underneath.
+// a broken transfer instead of a complete download (#569). The recovery
+// middleware re-raises a panic(http.ErrAbortHandler) so net/http closes the
+// stream, and gin refuses to hijack once body bytes are written, hence the
+// net/http writer underneath.
 // An HTTP/2 connection cannot be hijacked; there the error is only logged.
 func (h *BackupHandler) failExport(c *gin.Context, err error) {
 	_ = c.Error(err)
