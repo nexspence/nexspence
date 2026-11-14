@@ -584,14 +584,22 @@ func (h *Handler) handleBlobs(c *gin.Context, repoName, imageName, digest string
 		if repo != nil && repo.Type == domain.TypeProxy {
 			cachePath := blobPath(imageName, digest)
 			// Upstream OCI path: /v2/{image}/blobs/{digest}
-			upPath := "/v2/" + imageName + "/blobs/" + digest
+			upImage := resolveUpstreamImage(repo, imageName)
+			upPath := "/v2/" + upImage.primary + "/blobs/" + digest
 			coords := base.Coords{Name: imageName, Version: digest}
 			// Blobs are content-addressed by digest — immutable, never revalidate.
 			// Same 401-as-miss rule as manifests: a group pull fetches layers
 			// through the group too, and the member that 401s on the manifest
 			// 401s on the blob.
 			maskUpstreamAuthMiss(c)
-			if err := repoproxy.ServeGET(c, h.deps, repo, cachePath, upPath, coords, "application/octet-stream", 0); err != nil {
+			opts := repoproxy.ServeOptions{}
+			if upImage.fallback != "" {
+				// The upstream may know this image under another name — a
+				// Docker Hub official image under "library/" (#757).
+				opts.FallbackUpstreamPath = "/v2/" + upImage.fallback + "/blobs/" + digest
+				opts.OnFallbackUsed = func() { upImage.learn(imageName) }
+			}
+			if err := repoproxy.ServeGETWithOptions(c, h.deps, repo, cachePath, upPath, coords, "application/octet-stream", 0, opts); err != nil {
 				dockerError(c, http.StatusBadGateway, "UNKNOWN", err.Error())
 			}
 			return

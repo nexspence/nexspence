@@ -133,7 +133,9 @@ func (h *Handler) handleReferrers(c *gin.Context, repoName, imageName, subjectDi
 // not an index, is a failure to look, and a failure to look must never be
 // reported as an absence: a policy gate reads an empty index as "unsigned".
 func (h *Handler) proxyReferrers(c *gin.Context, repo *domain.Repository, imageName, subjectDigest string) {
-	upPath := "/v2/" + imageName + "/referrers/" + subjectDigest
+	// The upstream may know this image under another name — a Docker Hub
+	// official image under "library/" (#757).
+	upImage := resolveUpstreamImage(repo, imageName)
 	// What the failure record names is the path on THIS side, as every other
 	// DispatchProxyError caller does; the upstream side travels in the separate
 	// upstream argument.
@@ -145,7 +147,8 @@ func (h *Handler) proxyReferrers(c *gin.Context, repo *domain.Repository, imageN
 	//
 	// Only artifactType is forwarded; the client's pagination is dropped. See
 	// upstreamQuery.
-	resp, err := repoproxy.FetchUpstreamOnce(c.Request.Context(), repo, upPath, upstreamQuery(c), hdr)
+	resp, _, err := fetchUpstreamForImage(c.Request.Context(), repo, upImage, imageName,
+		"/referrers/"+subjectDigest, upstreamQuery(c), hdr)
 	if err != nil {
 		// No response at all: DNS failure, refused connection, TLS error, timeout,
 		// the SSRF guard, or a proxy_config that cannot even produce a URL. The

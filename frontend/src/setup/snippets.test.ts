@@ -151,7 +151,14 @@ describe('client tabs and endpoint shapes', () => {
     expect(text).toContain(`docker login nx.example.com:8443 -u dan -p ${SECRET_PLACEHOLDER}`)
     expect(text).toContain('docker push nx.example.com:8443/dh/myapp:1.0')
     expect(text).toContain(`"${BASE}/v2/dh/myapp/tags/list"`)
-    expect(all(guide('docker', 'proxy', 'hub'))).toContain('docker pull nx.example.com:8443/hub/library/nginx:latest')
+  })
+
+  it('docker: a proxy and a group pull an official image by its short name', () => {
+    // The proxy resolves "nginx" upstream as "library/nginx" on its own, so
+    // the reader never writes the namespace.
+    expect(all(guide('docker', 'proxy', 'hub'))).toContain('docker pull nx.example.com:8443/hub/nginx:latest')
+    expect(all(guide('docker', 'group', 'grp'))).toContain('docker pull nx.example.com:8443/grp/nginx:latest')
+    expect(all(guide('docker', 'proxy', 'hub'))).not.toContain('library/nginx')
   })
 
   it('nuget: v3 index.json source, push by source name', () => {

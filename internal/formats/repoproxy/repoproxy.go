@@ -467,6 +467,21 @@ type ServeOptions struct {
 	// matching If-None-Match is answered 304. Without it a cache hit's ETag is
 	// the body's sha256.
 	MD5ETag bool
+	// FallbackUpstreamPath, when non-empty, names a second upstream path for
+	// the SAME artifact, tried when the primary path answers 404 (the upstream
+	// does not host that name) or 401 (it refuses the scope). A Docker Hub
+	// proxy uses it to reach an official image under "library/" after the
+	// short name was refused (#757).
+	//
+	// The cache key stays repoRelativePath either way: the artifact is one
+	// artifact, reachable under the name the client asked for. The fallback is
+	// used only when it actually serves the request — a fallback that fails
+	// leaves the primary path's answer untouched.
+	FallbackUpstreamPath string
+	// OnFallbackUsed is called when the fallback path served the request, so
+	// the caller can remember the mapping and skip the failed primary path
+	// next time.
+	OnFallbackUsed func()
 }
 
 // ServeGETWithOptions is ServeGET with the per-path behavior in opts.
@@ -544,7 +559,7 @@ func ServeGETWithOptions(c *gin.Context, d formats.Deps, repo *domain.Repository
 	if release == nil {
 		release = func(...outcome) {}
 	}
-	return fetchAndCache(c, d, repo, repoRelativePath, upJoin, coords, defaultContentType, opts.Rewrite, release)
+	return fetchAndCache(c, d, repo, repoRelativePath, upJoin, coords, defaultContentType, opts.Rewrite, release, opts)
 }
 
 func fillKey(c *gin.Context, repo, path string) string {
@@ -564,7 +579,8 @@ func fillKey(c *gin.Context, repo, path string) string {
 // it fetches from upstream, forwarding the client's own conditional headers, and
 // on success stores the blob and serves it.
 func fetchAndCache(c *gin.Context, d formats.Deps, repo *domain.Repository,
-	repoRelativePath, upJoin string, coords base.Coords, defaultContentType string, rewrite func([]byte) []byte, release func(...outcome),
+	repoRelativePath, upJoin string, coords base.Coords, defaultContentType string,
+	rewrite func([]byte) []byte, release func(...outcome), opts ServeOptions,
 ) error {
 	ctx := context.WithoutCancel(c.Request.Context())
 
@@ -596,7 +612,7 @@ func fetchAndCache(c *gin.Context, d formats.Deps, repo *domain.Repository,
 		upstreamMethod = http.MethodGet
 	}
 
-	resp, err := fetchUpstreamWithDockerHubAuth(ctx, repo, ClientFor(repo), upstreamMethod, upstream, baseRemote, upHdr)
+	resp, err := fetchWithFallback(ctx, repo, upstreamMethod, upstream, baseRemote, upHdr, opts)
 	if err != nil {
 		release(outcome{err: err})
 		DispatchProxyError(d, repo.Name, repoRelativePath, upstream, err)
@@ -626,6 +642,72 @@ func fetchAndCache(c *gin.Context, d formats.Deps, repo *domain.Repository,
 	}
 
 	return storeAndServeResponse(c, d, repo, repoRelativePath, defaultContentType, coords, resp, rewrite, release)
+}
+
+// upstreamMissesName reports whether an upstream status means "I do not host
+// that name": 404 for a name the registry does not have, and 401 for a name the
+// registry refuses to serve under that scope — which is how Docker Hub answers
+// an official image asked for by its short name ("nginx" instead of
+// "library/nginx"). A 401 that is a credential problem is not answered
+// differently: the fallback simply fails and the original answer stands.
+func upstreamMissesName(status int) bool {
+	return status == http.StatusNotFound || status == http.StatusUnauthorized
+}
+
+// UpstreamMissesName reports whether an upstream status means "I do not host
+// that name". Callers that resolve an image name themselves use it to decide
+// whether to try the name the upstream uses for it (#757).
+func UpstreamMissesName(status int) bool {
+	return upstreamMissesName(status)
+}
+
+// fetchWithFallback fetches the upstream path and, when the upstream does not
+// know that name, the fallback path for the same artifact.
+//
+// The fallback response replaces the primary one only when it actually serves
+// the request: a fallback that fails leaves the primary answer untouched, with
+// its body intact. The caller is told through opts.OnFallbackUsed, so it can
+// remember the mapping and skip the failed primary path next time.
+func fetchWithFallback(ctx context.Context, repo *domain.Repository, method, upstreamURL, baseRemote string, hdr http.Header, opts ServeOptions) (*http.Response, error) {
+	resp, err := fetchUpstreamWithDockerHubAuth(ctx, repo, ClientFor(repo), method, upstreamURL, baseRemote, hdr)
+	if err != nil {
+		return nil, err
+	}
+	if opts.FallbackUpstreamPath == "" || !upstreamMissesName(resp.StatusCode) {
+		return resp, nil
+	}
+	alt, ok := tryFallbackUpstream(ctx, repo, method, baseRemote, opts.FallbackUpstreamPath, hdr)
+	if !ok {
+		return resp, nil
+	}
+	// The fallback served the request: the primary answer is dropped, and its
+	// body drained so the connection stays reusable.
+	_, _ = io.Copy(io.Discard, resp.Body)
+	_ = resp.Body.Close()
+	if opts.OnFallbackUsed != nil {
+		opts.OnFallbackUsed()
+	}
+	return alt, nil
+}
+
+// tryFallbackUpstream asks the upstream for the same artifact under the
+// fallback path. It returns the response only when the fallback actually
+// serves the request — a fallback that fails is not an error here, it just
+// does not answer, and the primary answer stands.
+func tryFallbackUpstream(ctx context.Context, repo *domain.Repository, method, baseRemote, fallbackPath string, hdr http.Header) (*http.Response, bool) {
+	fallbackURL, err := JoinURL(baseRemote, fallbackPath)
+	if err != nil {
+		return nil, false
+	}
+	alt, err := fetchUpstreamWithDockerHubAuth(ctx, repo, ClientFor(repo), method, fallbackURL, baseRemote, hdr)
+	if err != nil {
+		return nil, false
+	}
+	if alt.StatusCode != http.StatusOK && alt.StatusCode != http.StatusNotModified {
+		_ = alt.Body.Close()
+		return nil, false
+	}
+	return alt, true
 }
 
 // revalidateAndServe is invoked when a cached metadata asset is older than its
@@ -706,7 +788,7 @@ func revalidateAndServe(c *gin.Context, d formats.Deps, repo *domain.Repository,
 		upHdr.Set("If-Modified-Since", asset.LastModified.UTC().Format(http.TimeFormat))
 	}
 
-	resp, err := fetchUpstreamWithDockerHubAuth(ctx, repo, ClientFor(repo), http.MethodGet, upstream, baseRemote, upHdr)
+	resp, err := fetchWithFallback(ctx, repo, http.MethodGet, upstream, baseRemote, upHdr, opts)
 	if err != nil {
 		// Upstream unreachable → serve stale cache so metadata consumers keep working.
 		DispatchProxyError(d, repo.Name, repoRelativePath, upstream, err)
