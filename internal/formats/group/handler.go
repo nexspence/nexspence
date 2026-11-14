@@ -16,6 +16,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -134,6 +135,14 @@ func (h *Handler) serveGet(c *gin.Context) {
 		if code == http.StatusNotFound {
 			continue
 		}
+		// A member that failed mid-stream leaves a short body under the
+		// Content-Length it announced. Relaying that would tell the client to
+		// wait for bytes that will never arrive, so the group's answer is a
+		// failure of its own instead.
+		if truncatedMemberResponse(c, rec) {
+			h.memberFailed(c, repoName, memberName)
+			return
+		}
 
 		for k, vals := range rec.Header() {
 			for _, v := range vals {
@@ -150,6 +159,43 @@ func (h *Handler) serveGet(c *gin.Context) {
 
 	c.JSON(http.StatusNotFound, gin.H{
 		"error": fmt.Sprintf("artifact not found in any member of group %q", repoName),
+	})
+}
+
+// truncatedMemberResponse reports whether a member's answer promises more
+// bytes than it delivered: a 2xx response whose Content-Length is larger than
+// the body the member actually wrote.
+//
+// The member runs against a recorder, not a network stream, so a failure after
+// the headers were written cannot close a connection — it leaves a short body
+// behind. Relayed as it is, the client would wait for bytes that never come.
+func truncatedMemberResponse(c *gin.Context, rec *httptest.ResponseRecorder) bool {
+	if c.Request.Method == http.MethodHead {
+		// A HEAD response carries no body by design; its Content-Length
+		// describes the artifact, not the answer.
+		return false
+	}
+	if rec.Code < 200 || rec.Code > 299 {
+		return false
+	}
+	length := rec.Header().Get("Content-Length")
+	if length == "" {
+		return false
+	}
+	n, err := strconv.Atoi(length)
+	if err != nil {
+		return false
+	}
+	return rec.Body.Len() < n
+}
+
+// memberFailed answers a group request whose member could not deliver the
+// artifact. The partial body is dropped: it is shorter than the length the
+// member announced, and relaying it would leave the client waiting.
+func (h *Handler) memberFailed(c *gin.Context, groupName, memberName string) {
+	c.Writer.Header().Del("Content-Length")
+	c.JSON(http.StatusBadGateway, gin.H{
+		"error": fmt.Sprintf("group %q: member %q could not deliver the artifact", groupName, memberName),
 	})
 }
 
