@@ -25,6 +25,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"strconv"
 	"strings"
 	"time"
 
@@ -105,9 +106,102 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 		(strings.HasPrefix(p, "/v2/package/") || strings.HasPrefix(p, "/v2/packages/")):
 		h.handleDelete(c, repoName, p)
 
+	// Hosted package download by stored path or by coordinates. The product
+	// hands the stored path out as the download link: the WebUI's per-asset
+	// Download button builds it from asset.path, and the Nexus-compatible
+	// asset downloadUrl is BaseURL + "/repository/" + repo + asset.path. For
+	// NuGet the stored path is the flat-container path without its prefix
+	// ("<id>/<version>/<id>.<version>.nupkg"), and no route above serves
+	// it — so every download from the UI fell through to the 405 below.
+	// Other formats that store under a prefixed layout (pypi's "/packages/…",
+	// apt, alpine, yum, cran) already serve the stored path verbatim.
+	case (c.Request.Method == http.MethodGet || c.Request.Method == http.MethodHead) &&
+		isPackageDownloadPath(p):
+		h.serveHostedDownload(c, repoName, p)
+
 	default:
 		c.Status(http.StatusMethodNotAllowed)
 	}
+}
+
+// isPackageDownloadPath reports whether p addresses a package of a hosted
+// repository: "<id>/<version>" or "<id>/<version>/<file>.nupkg". Every
+// other NuGet path is a protocol route (the service index, the flat
+// container, the registration hive) or a push/delete address, and is
+// matched by its own case above.
+func isPackageDownloadPath(p string) bool {
+	segs := strings.Split(strings.Trim(p, "/"), "/")
+	switch len(segs) {
+	case 2:
+		return segs[0] != "" && segs[1] != ""
+	case 3:
+		return segs[0] != "" && segs[1] != "" && strings.HasSuffix(segs[2], ".nupkg")
+	default:
+		return false
+	}
+}
+
+// packageCoords returns the package coordinates a download path names: the
+// id and the version, in either spelling of the path.
+func packageCoords(p string) (id, version string, ok bool) {
+	segs := strings.Split(strings.Trim(p, "/"), "/")
+	if len(segs) < 2 {
+		return "", "", false
+	}
+	return segs[0], segs[1], true
+}
+
+// serveHostedDownload serves a package of a hosted repository. The stored
+// path is tried first — it is what the product links to, and a package
+// pushed before #590 may sit under a spelling the coordinates do not
+// reconstruct. The same package addressed by its coordinates is tried
+// after it, so a link that spells the id the way the user typed it still
+// finds the package.
+func (h *Handler) serveHostedDownload(c *gin.Context, repoName, p string) {
+	ctx := c.Request.Context()
+
+	candidates := []string{p}
+	if id, version, ok := packageCoords(p); ok {
+		paths, err := h.storedNupkgPaths(ctx, repoName, id, version, true)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		candidates = append(candidates, paths...)
+	}
+
+	for _, cand := range candidates {
+		asset, err := h.deps.Assets.GetByPath(ctx, repoName, cand)
+		if err != nil {
+			if !errors.Is(err, repository.ErrNotFound) {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			continue
+		}
+		if asset == nil {
+			continue
+		}
+		h.writeNupkg(c, repoName, cand)
+		return
+	}
+	c.JSON(http.StatusNotFound, gin.H{"error": "package not found"})
+}
+
+// writeNupkg streams the package stored at filePath.
+func (h *Handler) writeNupkg(c *gin.Context, repoName, filePath string) {
+	rc, asset, err := base.FetchArtifact(c.Request.Context(), h.deps, repoName, filePath)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	defer func() { _ = rc.Close() }()
+	if c.Request.Method == http.MethodHead {
+		c.Header("Content-Length", strconv.FormatInt(asset.SizeBytes, 10))
+		c.Status(http.StatusOK)
+		return
+	}
+	c.DataFromReader(http.StatusOK, asset.SizeBytes, "application/zip", rc, nil)
 }
 
 // serveProxy answers a request to a proxy repository.
