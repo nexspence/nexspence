@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"mime"
 	"net/http"
+	"net/url"
 	"path"
 	"strings"
 
@@ -45,7 +46,20 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 			}
 			// Raw repositories have no metadata/index concept — treat all paths as
 			// immutable cached content (maxAge 0), preserving prior behavior.
-			if err := repoproxy.ServeGET(c, h.deps, repo, filePath, "", coords, ct, 0); err != nil {
+			//
+			// An upstream directory index links its files with absolute paths
+			// rooted at the upstream's own base path ("/dist/…"). Served
+			// verbatim they escape "/repository/<repo>/" and resolve against
+			// the local origin — the repository segment is lost and the
+			// upstream prefix leaks, so the links 404 and nothing can be
+			// downloaded (#774). An HTML listing is re-rooted at this
+			// repository's URL; every other body is served as it came.
+			opts := repoproxy.ServeOptions{}
+			if rewrite := h.listingRewrite(c, repo, filePath); rewrite != nil {
+				opts.Rewrite = rewrite
+				opts.RewriteContentType = "text/html"
+			}
+			if err := repoproxy.ServeGETWithOptions(c, h.deps, repo, filePath, "", coords, ct, 0, opts); err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			}
 			return
@@ -108,6 +122,34 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 	default:
 		c.Status(http.StatusMethodNotAllowed)
 	}
+}
+
+// listingRewrite builds the rewrite that re-roots the links of a proxied
+// upstream directory index at this repository, or nil when the upstream
+// cannot be described well enough to do it (a malformed remote URL), in
+// which case the upstream's bytes are served as they came.
+func (h *Handler) listingRewrite(c *gin.Context, repo *domain.Repository, filePath string) func([]byte) []byte {
+	remote, err := repoproxy.RemoteURL(repo)
+	if err != nil {
+		return nil
+	}
+	upstream, err := url.Parse(remote)
+	if err != nil || upstream.Host == "" {
+		return nil
+	}
+	// Served through a group, the links stay on the group — as the group's
+	// own service index does.
+	served := repo.Name
+	if g := c.GetString(formats.GroupRepoKey); g != "" {
+		served = g
+	}
+	rewrite := ListingRewrite{
+		LocalBase:        strings.TrimRight(h.deps.BaseURL, "/") + "/repository/" + served,
+		UpstreamHost:     upstream.Host,
+		UpstreamBasePath: upstream.Path,
+		RequestPath:      filePath,
+	}
+	return rewrite.Apply
 }
 
 func applyChecksumHeaders(c *gin.Context, a *domain.Asset) {

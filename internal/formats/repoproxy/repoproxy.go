@@ -351,7 +351,7 @@ func cacheFetchStore(ctx context.Context, d formats.Deps, asset *domain.Asset) (
 // upstream original). It takes ownership of rc and closes it.
 func serveCachedAsset(c *gin.Context, d formats.Deps, asset *domain.Asset, rc io.ReadCloser, opts ServeOptions) {
 	defer func() { _ = rc.Close() }()
-	rewrite := opts.Rewrite
+	rewrite := opts.rewriteFor(asset.ContentType)
 	applyChecksumHeaders(c, asset)
 	if opts.MD5ETag {
 		etag := applyMD5ETagHeaders(c, asset)
@@ -459,6 +459,14 @@ type ServeOptions struct {
 	// Rewrite, when non-nil, transforms the body on the way out; see
 	// ServeGETRewritten.
 	Rewrite func([]byte) []byte
+	// RewriteContentType, when set, restricts Rewrite to responses whose
+	// media type is the one named here ("text/html"); a response of any
+	// other type is served unrewritten. The upstream's content type is
+	// known only once it has answered, so a format that rewrites one
+	// kind of document and passes every other one through — a raw proxy
+	// rewriting the links of an HTML directory index — says here which
+	// document it rewrites.
+	RewriteContentType string
 	// MD5ETag makes a cache hit carry the validators a RubyGems compact index
 	// (/versions, /info/<gem>) is served with upstream: ETag is the quoted MD5
 	// of the body — Bundler before 2.5 checks the body it received against
@@ -482,6 +490,26 @@ type ServeOptions struct {
 	// the caller can remember the mapping and skip the failed primary path
 	// next time.
 	OnFallbackUsed func()
+}
+
+// rewriteFor returns the rewrite to apply to a body of the given content
+// type, or nil when none applies: no rewrite was asked for, or the rewrite
+// is restricted to a kind of document this body is not.
+func (o ServeOptions) rewriteFor(contentType string) func([]byte) []byte {
+	if o.Rewrite == nil {
+		return nil
+	}
+	if o.RewriteContentType != "" && !sameMediaType(contentType, o.RewriteContentType) {
+		return nil
+	}
+	return o.Rewrite
+}
+
+// sameMediaType reports whether contentType is the named media type. The
+// parameters are ignored: "text/html; charset=utf-8" is "text/html".
+func sameMediaType(contentType, want string) bool {
+	got, _, _ := strings.Cut(contentType, ";")
+	return strings.EqualFold(strings.TrimSpace(got), strings.TrimSpace(want))
 }
 
 // ServeGETWithOptions is ServeGET with the per-path behavior in opts.
@@ -641,7 +669,7 @@ func fetchAndCache(c *gin.Context, d formats.Deps, repo *domain.Repository,
 		return nil
 	}
 
-	return storeAndServeResponse(c, d, repo, repoRelativePath, defaultContentType, coords, resp, rewrite, release)
+	return storeAndServeResponse(c, d, repo, repoRelativePath, defaultContentType, coords, resp, opts, release)
 }
 
 // upstreamMissesName reports whether an upstream status means "I do not host
@@ -815,7 +843,7 @@ func revalidateAndServe(c *gin.Context, d formats.Deps, repo *domain.Repository,
 	case resp.StatusCode >= 200 && resp.StatusCode <= 299:
 		// Upstream returned a newer copy: replace the cached blob and serve it.
 		_ = rc.Close()
-		return storeAndServeResponse(c, d, repo, repoRelativePath, defaultContentType, coords, resp, opts.Rewrite, release)
+		return storeAndServeResponse(c, d, repo, repoRelativePath, defaultContentType, coords, resp, opts, release)
 	default:
 		// Any other status (404/410/5xx): don't discard a good cache on a transient
 		// upstream hiccup — serve stale and record the anomaly.
@@ -831,7 +859,7 @@ func revalidateAndServe(c *gin.Context, d formats.Deps, repo *domain.Repository,
 // client while persisting it to the blob store and registering the DB asset,
 // replacing any prior cache entry for repoRelativePath.
 func storeAndServeResponse(c *gin.Context, d formats.Deps, repo *domain.Repository,
-	repoRelativePath, defaultContentType string, coords base.Coords, resp *http.Response, rewrite func([]byte) []byte, release func(...outcome),
+	repoRelativePath, defaultContentType string, coords base.Coords, resp *http.Response, opts ServeOptions, release func(...outcome),
 ) (returnErr error) {
 	defer abortStreamOnError(c, &returnErr)
 	ctx := context.WithoutCancel(c.Request.Context())
@@ -840,6 +868,9 @@ func storeAndServeResponse(c *gin.Context, d formats.Deps, repo *domain.Reposito
 	if ct == "" {
 		ct = defaultContentType
 	}
+	// The rewrite may be restricted to one kind of document; a body of any
+	// other type is served as it came.
+	rewrite := opts.rewriteFor(ct)
 
 	// Rewritten metadata cannot stream: buffer the upstream body, persist the
 	// ORIGINAL to the cache (hashes over the original), and serve the client
