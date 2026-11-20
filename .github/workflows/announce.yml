@@ -29,7 +29,8 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0 # the tags: the previous one says where the release starts
-          ref: ${{ github.ref }}
+          # A manual run announces a named tag; a tag push announces itself.
+          ref: ${{ inputs.tag || github.ref }}
 
       - name: Checkout the announcements repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -47,7 +48,10 @@ jobs:
           TAG="${INPUT_TAG:-${GITHUB_REF_NAME}}"
           echo "TAG=$TAG" >> "$GITHUB_ENV"
           # The commits since the previous release are what the release is.
-          PREV="$(git tag --sort=-v:refname | grep -v "^${TAG}$" | head -1 || true)"
+          # The previous release is the tag the release was cut from — not the
+          # newest tag in the repository: that one is the release itself when it
+          # is the latest, and a LATER release when an older tag is announced.
+          PREV="$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)"
           if [ -n "$PREV" ]; then
             RANGE="${PREV}..${TAG}"
           else
