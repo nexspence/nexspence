@@ -174,9 +174,20 @@ export const handlers = [
   http.get('/api/v1/browse/repositories/:name/tree', () =>
     HttpResponse.json({ rows: [] })
   ),
-  http.get('/api/v1/browse/repositories/:name/docker-tree', () =>
-    HttpResponse.json({ rows: [] })
-  ),
+  // Browse — the Docker tree is served by levels: the names of the images
+  // without a parameter, the content of one image with ?image=<name>.
+  http.get('/api/v1/browse/repositories/:name/docker-tree', ({ request }) => {
+    const image = new URL(request.url).searchParams.get('image')
+    if (image) {
+      return HttpResponse.json({
+        repository: '',
+        format: 'docker',
+        image,
+        root: { kind: 'folder', label: image, path: `/${image}`, children: [] },
+      })
+    }
+    return HttpResponse.json({ repository: '', format: 'docker', root: { kind: 'folder', label: '/', path: '/', children: [] } })
+  }),
   http.get('/api/v1/browse/repositories/:name/raw-tree', () =>
     HttpResponse.json({ rows: [] })
   ),

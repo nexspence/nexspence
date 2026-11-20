@@ -768,6 +768,19 @@ describe('nexspenceApi helpers', () => {
     expect(res.status).toBe(200)
   })
 
+  it('getDockerBrowseImage asks for one image of the docker tree', async () => {
+    let asked: string | null = null
+    server.use(
+      http.get('/api/v1/browse/repositories/:name/docker-tree', ({ request }) => {
+        asked = new URL(request.url).searchParams.get('image')
+        return HttpResponse.json({ root: { kind: 'folder', label: 'myapp', path: '/myapp', children: [] } })
+      }),
+    )
+    const res = await nexspenceApi.getDockerBrowseImage('docker-hosted', 'myapp')
+    expect(res.status).toBe(200)
+    expect(asked).toBe('myapp')
+  })
+
   it('getRawBrowseTree calls GET /api/v1/browse/repositories/:name/raw-tree', async () => {
     const res = await nexspenceApi.getRawBrowseTree('raw-hosted')
     expect(res.status).toBe(200)
