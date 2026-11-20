@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -43,16 +44,12 @@ func TestDockerTree_OCIFormatRepo_ComponentAppearsInTree(t *testing.T) {
 		},
 	}
 
-	rec := do(t, r, http.MethodGet, "/api/v1/browse/repositories/oci-hosted/docker-tree", nil)
+	rec := do(t, r, http.MethodGet, "/api/v1/browse/repositories/oci-hosted/docker-tree?image=charts%2Fnginx", nil)
 	require.Equal(t, http.StatusOK, rec.Code)
 	var got browseTreeResp
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
 
-	charts, ok := findChild(got.Root, "charts")
-	require.True(t, ok, "the oci component must appear in the browse tree")
-	nginx, ok := findChild(charts, "nginx")
-	require.True(t, ok)
-	tags, ok := findChild(nginx, "Tags")
+	tags, ok := findChild(got.Root, "Tags")
 	require.True(t, ok)
 	leaf, ok := findChild(tags, "1.2.3")
 	require.True(t, ok)
@@ -71,14 +68,14 @@ func ociLeaf(t *testing.T, row domain.DockerBrowseRow) browseNode {
 	}))
 	comps.DockerRowsByRepo = map[string][]domain.DockerBrowseRow{"oci-hosted": {row}}
 
-	rec := do(t, r, http.MethodGet, "/api/v1/browse/repositories/oci-hosted/docker-tree", nil)
+	// The tree is loaded by levels: the content of one image comes with the
+	// image named.
+	rec := do(t, r, http.MethodGet, "/api/v1/browse/repositories/oci-hosted/docker-tree?image="+url.QueryEscape(row.ImageName), nil)
 	require.Equal(t, http.StatusOK, rec.Code)
 	var got browseTreeResp
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
 
-	img, ok := findChild(got.Root, row.ImageName)
-	require.True(t, ok, "image %q must appear in the tree", row.ImageName)
-	cat, ok := findChild(img, "Tags")
+	cat, ok := findChild(got.Root, "Tags")
 	require.True(t, ok)
 	leaf, ok := findChild(cat, row.Version)
 	require.True(t, ok)

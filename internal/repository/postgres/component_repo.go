@@ -291,12 +291,61 @@ func (r *componentRepo) SetTags(ctx context.Context, id string, tags []string) e
 	return err
 }
 
-func (r *componentRepo) ListDockerBrowseRows(ctx context.Context, repoNames []string, maxRows int) ([]domain.DockerBrowseRow, error) {
+// ListDockerBrowseImageNames returns one row per image name, with the smallest
+// asset path among that image's components as its sample path.
+//
+// One row per COMPONENT is what this query used to return, and a repository of
+// any size holds more components than one response can carry: the cut that
+// followed fell BEFORE the RBAC filter, so a caller whose content selector
+// covered one namespace saw an empty tree over the images it may read (#777).
+// The name level counts IMAGES, and the components of one image all live
+// under the same path, so one sample path per image decides what the caller
+// may see.
+func (r *componentRepo) ListDockerBrowseImageNames(ctx context.Context, repoNames []string) ([]domain.DockerBrowseRow, error) {
 	if len(repoNames) == 0 {
 		return nil, nil
 	}
-	if maxRows <= 0 || maxRows > 5000 {
-		maxRows = 3000
+	ph := make([]string, len(repoNames))
+	args := make([]any, 0, len(repoNames))
+	for i, n := range repoNames {
+		ph[i] = fmt.Sprintf("$%d", i+1)
+		args = append(args, n)
+	}
+	// MIN over the image's assets: the smallest path is enough to place the
+	// image in the tree, and an image whose components carry no asset at all
+	// reports the empty path — visible only to a caller whose privilege says
+	// nothing about paths.
+	q := fmt.Sprintf(`
+		SELECT c.name AS image_name,
+		       COALESCE(MIN(NULLIF(a.path, '')), '') AS sample_path
+		FROM components c
+		JOIN repositories rep ON rep.id = c.repository_id
+		LEFT JOIN assets a ON a.component_id = c.id
+		WHERE rep.name IN (%s) AND lower(trim(rep.format)) IN ('docker', 'oci')
+		GROUP BY c.name
+		ORDER BY c.name`, strings.Join(ph, ","))
+	rows, err := lockDB(ctx, r.db).Query(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []domain.DockerBrowseRow
+	for rows.Next() {
+		var row domain.DockerBrowseRow
+		if err := rows.Scan(&row.ImageName, &row.SamplePath); err != nil {
+			return nil, err
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
+// ListDockerBrowseImageRows returns the components of ONE image: its tags,
+// manifests and blobs, with one asset path per row.
+func (r *componentRepo) ListDockerBrowseImageRows(ctx context.Context, repoNames []string, image string) ([]domain.DockerBrowseRow, error) {
+	if len(repoNames) == 0 {
+		return nil, nil
 	}
 	ph := make([]string, len(repoNames))
 	args := make([]any, 0, len(repoNames)+1)
@@ -304,8 +353,8 @@ func (r *componentRepo) ListDockerBrowseRows(ctx context.Context, repoNames []st
 		ph[i] = fmt.Sprintf("$%d", i+1)
 		args = append(args, n)
 	}
-	lim := len(args) + 1
-	args = append(args, maxRows)
+	imagePos := len(args) + 1
+	args = append(args, image)
 	// oci_artifact_type is grouped, not aggregated: it belongs to the component,
 	// and c.id — the components primary key — is already in the GROUP BY, so one
 	// value per group is all there is. Components pushed before that metadata
@@ -317,10 +366,9 @@ func (r *componentRepo) ListDockerBrowseRows(ctx context.Context, repoNames []st
 		FROM components c
 		JOIN repositories rep ON rep.id = c.repository_id
 		LEFT JOIN assets a ON a.component_id = c.id
-		WHERE rep.name IN (%s) AND lower(trim(rep.format)) IN ('docker', 'oci')
+		WHERE rep.name IN (%s) AND lower(trim(rep.format)) IN ('docker', 'oci') AND c.name = $%d
 		GROUP BY c.id, c.name, c.version, c.extra
-		ORDER BY c.name, c.version
-		LIMIT $%d`, strings.Join(ph, ","), lim)
+		ORDER BY c.version`, strings.Join(ph, ","), imagePos)
 	rows, err := lockDB(ctx, r.db).Query(ctx, q, args...)
 	if err != nil {
 		return nil, err

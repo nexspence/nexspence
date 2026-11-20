@@ -1493,9 +1493,9 @@ func TestComponentRepo_Search_OversizedLimitClampsUpNotDown(t *testing.T) {
 	}
 }
 
-// ── ListDockerBrowseRows ──────────────────────────────────────────────────────
+// ── ListDockerBrowseImageNames / ListDockerBrowseImageRows ─────────────────────
 
-func TestComponentRepo_ListDockerBrowseRows_ReturnsDockerComponents(t *testing.T) {
+func TestComponentRepo_ListDockerBrowseImageRows_ReturnsDockerComponents(t *testing.T) {
 	pool := pgtest.Pool(t)
 	pgtest.Truncate(t, pool, "blob_stores", "repositories")
 	ctx := context.Background()
@@ -1541,20 +1541,32 @@ func TestComponentRepo_ListDockerBrowseRows_ReturnsDockerComponents(t *testing.T
 		}
 	}
 
-	rows, err := repo.ListDockerBrowseRows(ctx, []string{"docker-browse-repo"}, 100)
+	// The name level counts IMAGES, the image level the components of one.
+	names, err := repo.ListDockerBrowseImageNames(ctx, []string{"docker-browse-repo"})
 	if err != nil {
-		t.Fatalf("ListDockerBrowseRows: %v", err)
+		t.Fatalf("ListDockerBrowseImageNames: %v", err)
 	}
-	if len(rows) != 3 {
-		t.Errorf("expected 3 rows, got %d", len(rows))
+	if len(names) != 2 {
+		t.Errorf("expected 2 image names, got %d", len(names))
+	}
+	if names[0].ImageName != "nginx" || names[1].ImageName != "redis" {
+		t.Errorf("expected the names nginx and redis, got %q and %q", names[0].ImageName, names[1].ImageName)
+	}
+
+	rows, err := repo.ListDockerBrowseImageRows(ctx, []string{"docker-browse-repo"}, "nginx")
+	if err != nil {
+		t.Fatalf("ListDockerBrowseImageRows: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Errorf("expected 2 rows for the image nginx, got %d", len(rows))
 	}
 	// Verify fields
 	for _, row := range rows {
 		if row.ComponentID == "" {
 			t.Error("ComponentID must not be empty")
 		}
-		if row.ImageName == "" {
-			t.Error("ImageName must not be empty")
+		if row.ImageName != "nginx" {
+			t.Errorf("ImageName must be the image asked for, got %q", row.ImageName)
 		}
 		if row.Version == "" {
 			t.Error("Version must not be empty")
@@ -1564,7 +1576,7 @@ func TestComponentRepo_ListDockerBrowseRows_ReturnsDockerComponents(t *testing.T
 
 // An oci repository speaks the same OCI Distribution protocol as a docker one,
 // so its components must appear in the registry browse rows too.
-func TestComponentRepo_ListDockerBrowseRows_ReturnsOCIComponents(t *testing.T) {
+func TestComponentRepo_ListDockerBrowseImageRows_ReturnsOCIComponents(t *testing.T) {
 	pool := pgtest.Pool(t)
 	pgtest.Truncate(t, pool, "blob_stores", "repositories")
 	ctx := context.Background()
@@ -1601,9 +1613,9 @@ func TestComponentRepo_ListDockerBrowseRows_ReturnsOCIComponents(t *testing.T) {
 		t.Fatalf("Create component: %v", err)
 	}
 
-	rows, err := repo.ListDockerBrowseRows(ctx, []string{"oci-browse-repo"}, 100)
+	rows, err := repo.ListDockerBrowseImageRows(ctx, []string{"oci-browse-repo"}, "charts/nginx")
 	if err != nil {
-		t.Fatalf("ListDockerBrowseRows: %v", err)
+		t.Fatalf("ListDockerBrowseImageRows: %v", err)
 	}
 	if len(rows) != 1 {
 		t.Fatalf("expected 1 row for an oci repository, got %d", len(rows))
@@ -1616,7 +1628,7 @@ func TestComponentRepo_ListDockerBrowseRows_ReturnsOCIComponents(t *testing.T) {
 // The browse tree names the kind of each artifact, and the only record of that
 // is oci_artifact_type on the component. A row that dropped it would leave the
 // UI unable to tell a chart from an image.
-func TestComponentRepo_ListDockerBrowseRows_CarriesArtifactType(t *testing.T) {
+func TestComponentRepo_ListDockerBrowseImageRows_CarriesArtifactType(t *testing.T) {
 	pool := pgtest.Pool(t)
 	pgtest.Truncate(t, pool, "blob_stores", "repositories")
 	ctx := context.Background()
@@ -1664,9 +1676,9 @@ func TestComponentRepo_ListDockerBrowseRows_CarriesArtifactType(t *testing.T) {
 		t.Fatalf("Create legacy component: %v", err)
 	}
 
-	rows, err := repo.ListDockerBrowseRows(ctx, []string{"oci-arttype-repo"}, 100)
+	rows, err := repo.ListDockerBrowseImageRows(ctx, []string{"oci-arttype-repo"}, "art")
 	if err != nil {
-		t.Fatalf("ListDockerBrowseRows: %v", err)
+		t.Fatalf("ListDockerBrowseImageRows: %v", err)
 	}
 	byName := map[string]domain.DockerBrowseRow{}
 	for _, row := range rows {
@@ -1680,22 +1692,22 @@ func TestComponentRepo_ListDockerBrowseRows_CarriesArtifactType(t *testing.T) {
 	}
 }
 
-func TestComponentRepo_ListDockerBrowseRows_EmptyRepoNamesReturnsNil(t *testing.T) {
+func TestComponentRepo_ListDockerBrowseImageNames_EmptyRepoNamesReturnsNil(t *testing.T) {
 	pool := pgtest.Pool(t)
 	pgtest.Truncate(t, pool, "blob_stores", "repositories")
 	ctx := context.Background()
 	repo := NewComponentRepo(pool)
 
-	rows, err := repo.ListDockerBrowseRows(ctx, []string{}, 100)
+	rows, err := repo.ListDockerBrowseImageNames(ctx, []string{})
 	if err != nil {
-		t.Fatalf("ListDockerBrowseRows(empty): %v", err)
+		t.Fatalf("ListDockerBrowseImageNames(empty): %v", err)
 	}
 	if rows != nil {
 		t.Errorf("expected nil for empty repo names, got %v", rows)
 	}
 }
 
-func TestComponentRepo_ListDockerBrowseRows_NonDockerRepoExcluded(t *testing.T) {
+func TestComponentRepo_ListDockerBrowseImageNames_NonDockerRepoExcluded(t *testing.T) {
 	pool := pgtest.Pool(t)
 	pgtest.Truncate(t, pool, "blob_stores", "repositories")
 	ctx := context.Background()
@@ -1714,12 +1726,61 @@ func TestComponentRepo_ListDockerBrowseRows_NonDockerRepoExcluded(t *testing.T) 
 		t.Fatalf("Create: %v", err)
 	}
 
-	rows, err := repo.ListDockerBrowseRows(ctx, []string{p.RepoName}, 100)
+	rows, err := repo.ListDockerBrowseImageNames(ctx, []string{p.RepoName})
 	if err != nil {
-		t.Fatalf("ListDockerBrowseRows: %v", err)
+		t.Fatalf("ListDockerBrowseImageNames: %v", err)
 	}
 	if len(rows) != 0 {
 		t.Errorf("expected 0 rows for non-docker repo, got %d", len(rows))
+	}
+}
+
+// A repository of any size holds more components than one response can carry.
+// The name level counts IMAGES, so every image is still listed: the cut that
+// used to fall here — 3000 component rows, before the RBAC filter — left the
+// images after it invisible, and a path-scoped caller with an empty tree (#777).
+func TestComponentRepo_ListDockerBrowseImageNames_MoreComponentsThanTheOldCut(t *testing.T) {
+	pool := pgtest.Pool(t)
+	pgtest.Truncate(t, pool, "blob_stores", "repositories")
+	ctx := context.Background()
+
+	p := makeCompParent(t, ctx, "docker_big")
+	repo := NewComponentRepo(pool)
+	assets := NewAssetRepo(pool)
+
+	const images, componentsPerImage = 330, 10
+	for i := 0; i < images; i++ {
+		name := fmt.Sprintf("a-img-%03d", i)
+		for j := 0; j < componentsPerImage; j++ {
+			c := &domain.Component{
+				RepositoryID: p.RepositoryID,
+				Format:       "docker",
+				Name:         name,
+				Version:      fmt.Sprintf("sha256:%s-%d", name, j),
+			}
+			if err := repo.Create(ctx, c); err != nil {
+				t.Fatalf("Create %s: %v", name, err)
+			}
+		}
+		// One asset per image: the sample path the RBAC filter reads.
+		if err := assets.Create(ctx, &domain.Asset{
+			Repository: p.RepoName,
+			Path:       fmt.Sprintf("/manifests/%s/latest", name),
+		}); err != nil {
+			t.Fatalf("Create asset for %s: %v", name, err)
+		}
+	}
+
+	names, err := repo.ListDockerBrowseImageNames(ctx, []string{p.RepoName})
+	if err != nil {
+		t.Fatalf("ListDockerBrowseImageNames: %v", err)
+	}
+	if len(names) != images {
+		t.Fatalf("expected every one of the %d images, got %d — the name level must not be cut", images, len(names))
+	}
+	// The sample path of an image is the path of its assets, not the name.
+	if names[0].SamplePath != "/manifests/a-img-000/latest" {
+		t.Errorf("expected the asset path as the sample path, got %q", names[0].SamplePath)
 	}
 }
 
