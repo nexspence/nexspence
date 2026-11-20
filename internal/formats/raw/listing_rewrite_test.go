@@ -3,7 +3,6 @@ package raw_test
 import (
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -41,13 +40,19 @@ const nodejsLikeListing = `<!DOCTYPE html><html><head><title>Index of /dist/</ti
 
 // setupProxy mounts the raw handler for a proxy repository.
 func setupProxy(repo *domain.Repository) *gin.Engine {
+	return setupProxyWithBaseURL(repo, "http://localhost:8080")
+}
+
+// setupProxyWithBaseURL mounts the raw handler for a proxy repository with an
+// explicit configured base URL — the value http.base_url carries.
+func setupProxyWithBaseURL(repo *domain.Repository, baseURL string) *gin.Engine {
 	d := formats.Deps{
 		Repos:      testutil.NewRepoRepo(repo),
 		Blobs:      testutil.NewBlobStoreRepo(),
 		Components: testutil.NewComponentRepo(),
 		Assets:     testutil.NewAssetRepo(),
 		BlobStore:  testutil.NewBlobStore(),
-		BaseURL:    "http://localhost:8080",
+		BaseURL:    baseURL,
 	}
 	h := raw.New(d)
 	r := gin.New()
@@ -80,12 +85,46 @@ func TestRawProxy_ListingLinksPointAtTheRepository(t *testing.T) {
 	body := w.Body.String()
 
 	// The absolute upstream file links are re-rooted at this repository.
-	assert.Contains(t, body, `href="http://localhost:8080/repository/myraw-proxy/index.json"`)
-	assert.Contains(t, body, `href="http://localhost:8080/repository/myraw-proxy/node-v0.6.13.tar.gz"`)
+	assert.Contains(t, body, `href="/repository/myraw-proxy/index.json"`)
+	assert.Contains(t, body, `href="/repository/myraw-proxy/node-v0.6.13.tar.gz"`)
 
 	// A relative folder link already resolves through the proxy — it is left
 	// alone.
 	assert.Contains(t, body, `href="latest-argon/"`)
+}
+
+// A link in a proxied listing must not name a host.
+//
+// The re-rooted links are root-relative: the browser resolves them against the
+// origin it reached us on. An absolute link would have to name a host, and the
+// only host this server knows is the one in http.base_url — which ships as
+// http://localhost:8081 and, on a default install, names a host that is not
+// the one the user is browsing: the link would carry the user off the site
+// they opened (#774, reported against #776).
+func TestRawProxy_ListingCarriesNoForeignHost(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(nodejsLikeListing))
+	}))
+	defer upstream.Close()
+
+	// A configured public base URL must not leak into the listing either.
+	r := setupProxyWithBaseURL(proxyRepo("myraw-proxy", upstream.URL+"/dist"), "https://myrepo.ru:8081")
+
+	req := httptest.NewRequest(http.MethodGet, "/repository/myraw-proxy/", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	body := w.Body.String()
+
+	// The links name the repository and nothing else: no host, no scheme.
+	assert.Contains(t, body, `href="/repository/myraw-proxy/index.json"`)
+	assert.Contains(t, body, `href="/repository/myraw-proxy/node-v0.6.13.tar.gz"`)
+	assert.NotContains(t, body, "myrepo.ru")
+	assert.NotContains(t, body, "localhost")
+	assert.NotContains(t, body, "http://")
+	assert.NotContains(t, body, "https://")
 }
 
 // A file that is not HTML is served byte for byte: the rewrite must not
@@ -111,7 +150,7 @@ func TestRawProxy_NonHTMLIsServedVerbatim(t *testing.T) {
 // The rewrite of a single link, on its own.
 func TestRaw_RewriteListingLinks(t *testing.T) {
 	rewrite := raw.ListingRewrite{
-		LocalBase:        "http://localhost:8080/repository/myraw-proxy",
+		LocalPath:        "/repository/myraw-proxy",
 		UpstreamHost:     "nodejs.org",
 		UpstreamBasePath: "/dist",
 	}
@@ -122,14 +161,14 @@ func TestRaw_RewriteListingLinks(t *testing.T) {
 		requestPath string
 		want        string
 	}{
-		{name: "absolute path under the base", href: "/dist/index.json", want: "http://localhost:8080/repository/myraw-proxy/index.json"},
-		{name: "absolute path to the base itself", href: "/dist", want: "http://localhost:8080/repository/myraw-proxy/"},
-		{name: "absolute url to the upstream", href: "https://nodejs.org/dist/index.json", want: "http://localhost:8080/repository/myraw-proxy/index.json"},
-		{name: "absolute url to the upstream, http", href: "http://nodejs.org/dist/index.json", want: "http://localhost:8080/repository/myraw-proxy/index.json"},
+		{name: "absolute path under the base", href: "/dist/index.json", want: "/repository/myraw-proxy/index.json"},
+		{name: "absolute path to the base itself", href: "/dist", want: "/repository/myraw-proxy/"},
+		{name: "absolute url to the upstream", href: "https://nodejs.org/dist/index.json", want: "/repository/myraw-proxy/index.json"},
+		{name: "absolute url to the upstream, http", href: "http://nodejs.org/dist/index.json", want: "/repository/myraw-proxy/index.json"},
 		{name: "absolute path outside the base", href: "/other/index.json", want: "/other/index.json"},
 		{name: "absolute url to another host", href: "https://example.com/dist/index.json", want: "https://example.com/dist/index.json"},
 		{name: "relative link", href: "latest-argon/", want: "latest-argon/"},
-		{name: "relative parent link at the repository root", href: "../", want: "http://localhost:8080/repository/myraw-proxy/"},
+		{name: "relative parent link at the repository root", href: "../", want: "/repository/myraw-proxy/"},
 		{name: "relative parent link deeper down", href: "../", requestPath: "/v20.0.0/", want: "../"},
 	}
 	for _, tc := range cases {
@@ -146,20 +185,20 @@ func TestRaw_RewriteListingLinks(t *testing.T) {
 // belongs to the repository.
 func TestRaw_RewriteListingLinks_NoUpstreamBasePath(t *testing.T) {
 	rewrite := raw.ListingRewrite{
-		LocalBase:        "http://localhost:8080/repository/myraw-proxy",
+		LocalPath:        "/repository/myraw-proxy",
 		UpstreamHost:     "example.com",
 		UpstreamBasePath: "",
 	}
 
 	body := []byte(`<a href="/index.json">x</a>`)
 	out := string(rewrite.Apply(body))
-	assert.Contains(t, out, `href="http://localhost:8080/repository/myraw-proxy/index.json"`)
+	assert.Contains(t, out, `href="/repository/myraw-proxy/index.json"`)
 }
 
 // A body that is not HTML comes back unchanged.
 func TestRaw_RewriteListingLinks_LeavesOtherBodiesAlone(t *testing.T) {
 	rewrite := raw.ListingRewrite{
-		LocalBase:        "http://localhost:8080/repository/myraw-proxy",
+		LocalPath:        "/repository/myraw-proxy",
 		UpstreamHost:     "nodejs.org",
 		UpstreamBasePath: "/dist",
 	}
@@ -184,5 +223,5 @@ func TestRawProxy_ListingLinkMatchesTheReportedCase(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code)
 	assert.Contains(t, w.Body.String(), "/repository/myraw-proxy/index.json")
 	assert.NotContains(t, w.Body.String(), `href="/dist/index.json"`)
-	assert.False(t, strings.Contains(w.Body.String(), `href="http://localhost:8081/dist/index.json"`))
+	assert.NotContains(t, w.Body.String(), "localhost")
 }

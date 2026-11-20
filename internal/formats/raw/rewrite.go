@@ -20,7 +20,7 @@ var hrefRe = regexp.MustCompile(`href="([^"]*)"`)
 // repository segment is lost and the upstream prefix leaks, so the link
 // 404s and nothing can be downloaded. Each absolute link under the
 // upstream's base path is stripped of that base path and re-rooted at
-// LocalBase.
+// LocalPath.
 //
 // Links that already resolve through the proxy are left alone: a relative
 // link ("latest-argon/") is resolved by the browser against the current
@@ -28,13 +28,21 @@ var hrefRe = regexp.MustCompile(`href="([^"]*)"`)
 // upstream's. A link outside the upstream's base path is left alone too —
 // it names something the mirror does not carry.
 //
+// The re-rooted links are ROOT-RELATIVE ("/repository/<repo>/index.json"):
+// the browser resolves them against the origin it reached us on. An absolute
+// link would have to name a host, and the only host this server knows is the
+// one in http.base_url — which ships as http://localhost:8081 and, on a
+// default install, names a host that is not the one the user is browsing: the
+// link would carry the user off the site they opened (#774, reported against
+// the fix that re-rooted the links in the first place).
+//
 // Bodies that are not HTML are returned unchanged, and a malformed link is
 // left as it was: serving the upstream's bytes is strictly better than
 // serving nothing.
 type ListingRewrite struct {
-	// LocalBase is this repository's base URL, e.g.
-	// "http://host:8081/repository/myraw-proxy".
-	LocalBase string
+	// LocalPath is this repository's root-relative base path, e.g.
+	// "/repository/myraw-proxy".
+	LocalPath string
 	// UpstreamHost is the host of the upstream's remote URL.
 	UpstreamHost string
 	// UpstreamBasePath is the path of the upstream's remote URL, e.g.
@@ -69,14 +77,14 @@ func (r ListingRewrite) rewriteHref(href string) (string, bool) {
 		if !ok {
 			return "", false
 		}
-		return r.LocalBase + tail, true
+		return r.LocalPath + tail, true
 
 	case strings.HasPrefix(href, "/"):
 		tail, ok := r.stripBasePath(href)
 		if !ok {
 			return "", false
 		}
-		return r.LocalBase + tail, true
+		return r.LocalPath + tail, true
 
 	case href == "../" || href == "..":
 		// The upstream's "up" link at the root of the mirror points above
@@ -84,7 +92,7 @@ func (r ListingRewrite) rewriteHref(href string) (string, bool) {
 		// equivalent; deeper down, the link already resolves through the
 		// proxy and is left alone.
 		if r.RequestPath == "" || r.RequestPath == "/" {
-			return r.LocalBase + "/", true
+			return r.LocalPath + "/", true
 		}
 		return "", false
 

@@ -144,7 +144,14 @@ func (h *Handler) listingRewrite(c *gin.Context, repo *domain.Repository, filePa
 		served = g
 	}
 	rewrite := ListingRewrite{
-		LocalBase:        strings.TrimRight(h.deps.BaseURL, "/") + "/repository/" + served,
+		// The links are re-rooted at a ROOT-RELATIVE path: the browser
+		// resolves them against the origin it reached us on. An absolute
+		// URL would have to name a host, and the only host this server
+		// knows is the one in http.base_url — which ships as
+		// http://localhost:8081 and, on a default install, names a host
+		// that is not the one the user is browsing: the link would carry
+		// the user off the site they opened (#774).
+		LocalPath:        "/repository/" + served,
 		UpstreamHost:     upstream.Host,
 		UpstreamBasePath: upstream.Path,
 		RequestPath:      filePath,
