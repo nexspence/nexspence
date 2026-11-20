@@ -430,23 +430,54 @@ describe('BrowsePage — Raw tree', () => {
   })
 })
 
-describe('BrowsePage — Docker tree', () => {
-  const dockerTree = {
-    root: {
-      kind: 'folder', label: '', path: '', children: [
-        {
-          kind: 'folder', label: 'myapp', path: '/myapp', imageRef: 'myapp', children: [
-            {
-              kind: 'folder', label: 'Tags', path: '/myapp/Tags', children: [
-                { kind: 'tag', label: 'latest', path: '/myapp/Tags/latest', imageRef: 'myapp', version: 'latest', componentId: 'dc1' },
-                { kind: 'tag', label: 'stable', path: '/myapp/Tags/stable', imageRef: 'myapp', version: 'stable', componentId: 'dc2' },
-              ],
-            },
+// seedDockerImage serves both levels of one image: the name level without a
+// parameter, the content of the image with ?image=<name>.
+function seedDockerImage(image: string, leaves: unknown[], repo = 'docker-hosted') {
+  server.use(
+    http.get('/api/v1/browse/repositories/:name/docker-tree', ({ request }) => {
+      const asked = new URL(request.url).searchParams.get('image')
+      if (asked) {
+        return HttpResponse.json({
+          repository: repo, format: 'docker', image: asked,
+          root: {
+            kind: 'folder', label: asked, path: `/${asked}`, children: [
+              { kind: 'folder', label: 'Tags', path: `/${asked}/Tags`, children: leaves },
+            ],
+          },
+        })
+      }
+      return HttpResponse.json({
+        repository: repo, format: 'docker',
+        root: {
+          kind: 'folder', label: '/', path: '/', children: [
+            { kind: 'folder', label: image, path: `/${image}`, imageRef: image, lazy: true },
           ],
         },
+      })
+    }),
+  )
+}
+
+describe('BrowsePage — Docker tree', () => {
+  // The Docker tree is loaded by levels: without a parameter the server
+  // answers with the NAMES of the images, and the content of one image comes
+  // with ?image=<name> — a repository that holds more components than one
+  // response can carry still shows every image (#777).
+  const dockerTree = {
+    repository: 'docker-hosted',
+    format: 'docker',
+    root: {
+      kind: 'folder', label: '/', path: '/', children: [
+        { kind: 'folder', label: 'myapp', path: '/myapp', imageRef: 'myapp', lazy: true },
       ],
     },
   }
+
+  const dockerImageLeaves = [
+    { kind: 'tag', label: 'latest', path: '/myapp/Tags/latest', imageRef: 'myapp', version: 'latest', componentId: 'dc1' },
+    { kind: 'tag', label: 'stable', path: '/myapp/Tags/stable', imageRef: 'myapp', version: 'stable', componentId: 'dc2' },
+  ]
+
 
   const dockerDetail = {
     id: 'dc1', repository: 'docker-hosted', format: 'docker', name: 'myapp', version: 'latest', group: '',
@@ -455,8 +486,8 @@ describe('BrowsePage — Docker tree', () => {
   }
 
   function seedDocker() {
+    seedDockerImage('myapp', dockerImageLeaves)
     server.use(
-      http.get('/api/v1/browse/repositories/:name/docker-tree', () => HttpResponse.json(dockerTree)),
       // The detail follows the requested id, so selecting a second tag really
       // changes what the panel is describing.
       http.get('/service/rest/v1/components/:id', ({ params }) =>
@@ -751,13 +782,54 @@ describe('BrowsePage — Docker tree', () => {
     const user = userEvent.setup()
     let calls = 0
     server.use(
-      http.get('/api/v1/browse/repositories/:name/docker-tree', () => { calls++; return HttpResponse.json(dockerTree) }),
+      http.get('/api/v1/browse/repositories/:name/docker-tree', ({ request }) => {
+        if (!new URL(request.url).searchParams.get('image')) calls++
+        return HttpResponse.json(dockerTree)
+      }),
     )
     renderBrowse('?repo=docker-hosted')
     await screen.findByText('myapp')
     const before = calls
     await user.click(screen.getByRole('button', { name: 'Refresh' }))
     await waitFor(() => expect(calls).toBeGreaterThan(before))
+  })
+
+  // The name level holds the image names only: opening one asks the server
+  // for its content, and what comes back is shown under it (#777).
+  it('loads the content of an image when it is opened', async () => {
+    const user = userEvent.setup()
+    let asked: string | null = null
+    server.use(
+      http.get('/api/v1/browse/repositories/:name/docker-tree', ({ request }) => {
+        const image = new URL(request.url).searchParams.get('image')
+        asked = image
+        if (image) {
+          return HttpResponse.json({
+            repository: 'docker-hosted', format: 'docker', image,
+            root: {
+              kind: 'folder', label: image, path: `/${image}`, children: [
+                { kind: 'folder', label: 'Tags', path: `/${image}/Tags`, children: [
+                  { kind: 'tag', label: 'latest', path: `/${image}/Tags/latest`, imageRef: image, version: 'latest', componentId: 'dc1' },
+                ] },
+              ],
+            },
+          })
+        }
+        return HttpResponse.json({
+          repository: 'docker-hosted', format: 'docker',
+          root: {
+            kind: 'folder', label: '/', path: '/', children: [
+              { kind: 'folder', label: 'myapp', path: '/myapp', imageRef: 'myapp', lazy: true },
+            ],
+          },
+        })
+      }),
+    )
+    renderBrowse('?repo=docker-hosted')
+    await user.click(await screen.findByText('myapp'))
+    expect(asked).toBe('myapp')
+    await user.click(await screen.findByText('Tags'))
+    expect(await screen.findByText('latest')).toBeInTheDocument()
   })
 
   it('auto-drills to a component via ?cid= URL param', async () => {
@@ -772,25 +844,9 @@ describe('BrowsePage — Docker tree', () => {
 
 describe('BrowsePage — OCI tree', () => {
   it('renders the registry tree (not the generic component list) for an oci repository', async () => {
-    server.use(
-      http.get('/api/v1/browse/repositories/:name/docker-tree', () =>
-        HttpResponse.json({
-          root: {
-            kind: 'folder', label: '', path: '', children: [
-              {
-                kind: 'folder', label: 'my-chart', path: '/my-chart', imageRef: 'my-chart', children: [
-                  {
-                    kind: 'folder', label: 'Tags', path: '/my-chart/Tags', children: [
-                      { kind: 'tag', label: '1.0.0', path: '/my-chart/Tags/1.0.0', imageRef: 'my-chart', version: '1.0.0', componentId: 'oc1' },
-                    ],
-                  },
-                ],
-              },
-            ],
-          },
-        }),
-      ),
-    )
+    seedOciTree([
+      { kind: 'tag', label: '1.0.0', path: '/my-chart/Tags/1.0.0', imageRef: 'my-chart', version: '1.0.0', componentId: 'oc1' },
+    ])
     renderBrowse('?repo=oci-hosted')
     expect(await screen.findByText('my-chart')).toBeInTheDocument()
     expect(screen.queryByText('No components in this repository')).not.toBeInTheDocument()
@@ -798,21 +854,7 @@ describe('BrowsePage — OCI tree', () => {
 
   // The tree is where a chart, a WASM module and a signature stop looking alike.
   function seedOciTree(leaves: Record<string, unknown>[]) {
-    server.use(
-      http.get('/api/v1/browse/repositories/:name/docker-tree', () =>
-        HttpResponse.json({
-          root: {
-            kind: 'folder', label: '', path: '', children: [
-              {
-                kind: 'folder', label: 'my-chart', path: '/my-chart', imageRef: 'my-chart', children: [
-                  { kind: 'folder', label: 'Tags', path: '/my-chart/Tags', children: leaves },
-                ],
-              },
-            ],
-          },
-        }),
-      ),
-    )
+    seedDockerImage('my-chart', leaves, 'oci-hosted')
   }
 
   it('badges a tag with the artifact type the manifest declared', async () => {

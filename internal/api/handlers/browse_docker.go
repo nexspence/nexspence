@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"path"
 	"sort"
 	"strings"
 
@@ -44,11 +45,29 @@ type dockerBrowseNode struct {
 	// ArtifactType names what the manifest holds — "chart", "image", "wasm" — or
 	// repeats the raw media type when it is not one this registry recognizes. It
 	// is omitted entirely for a component that carries no OCI metadata.
-	ArtifactType string              `json:"artifactType,omitempty"`
-	Children     []*dockerBrowseNode `json:"children,omitempty"`
+	ArtifactType string `json:"artifactType,omitempty"`
+	// Lazy marks an image node of the name level: it names the image, and its
+	// content is loaded on demand (docker-tree?image=<name>).
+	Lazy     bool                `json:"lazy,omitempty"`
+	Children []*dockerBrowseNode `json:"children,omitempty"`
 }
 
+// maxDockerTreeImages caps the name level of the tree. It sits far above any
+// repository a human browses, and it is applied AFTER the RBAC filter: a cut
+// that hides images is reported in the response, not silent.
+const maxDockerTreeImages = 20000
+
 // DockerTree handles GET /api/v1/browse/repositories/:name/docker-tree
+//
+// The tree is served by levels. Without a parameter it holds the IMAGE NAMES
+// of the repository — one node per image, marked lazy — and the content of one
+// image comes with ?image=<name>.
+//
+// The name level counts images, not components: a repository of any size holds
+// more components than one response can carry, and the cut that followed fell
+// before the RBAC filter, so a caller whose content selector covered one
+// namespace was answered with an empty tree over the images it may read
+// (#777).
 func (h *BrowseHandler) DockerTree(c *gin.Context) {
 	repoName := c.Param("name")
 	ctx := c.Request.Context()
@@ -76,16 +95,52 @@ func (h *BrowseHandler) DockerTree(c *gin.Context) {
 		}
 	}
 
-	rows, err := h.deps.Components.ListDockerBrowseRows(ctx, repoNames, 3000)
+	if image := strings.Trim(c.Query("image"), "/"); image != "" {
+		h.dockerImageTree(c, repo, repoNames, image)
+		return
+	}
+	h.dockerNameTree(c, repo, repoNames)
+}
+
+// dockerNameTree answers with the image names of the repository, each one a
+// node the caller expands on demand.
+func (h *BrowseHandler) dockerNameTree(c *gin.Context, repo *domain.Repository, repoNames []string) {
+	ctx := c.Request.Context()
+	rows, err := h.deps.Components.ListDockerBrowseImageNames(ctx, repoNames)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	rows = h.filterDockerRows(c, repo, rows)
 
-	userID, _ := c.Get("userID")
-	roles, _ := c.Get("roles")
-	rows = h.rbac.FilterDockerRows(ctx, stringVal(userID), stringSliceVal(roles),
-		repoName, repo.AllowAnonymous, rows)
+	root := &dockerBrowseNode{Kind: "folder", Label: "/", Path: "/"}
+	truncated := false
+	if len(rows) > maxDockerTreeImages {
+		rows = rows[:maxDockerTreeImages]
+		truncated = true
+	}
+	for _, row := range rows {
+		insertDockerBrowseImage(root, row.ImageName)
+	}
+	sortBrowseChildren(root)
+
+	resp := gin.H{"repository": repo.Name, "format": string(repo.Format), "root": root}
+	if truncated {
+		resp["truncated"] = true
+	}
+	c.JSON(http.StatusOK, resp)
+}
+
+// dockerImageTree answers with the content of one image: its tags, manifests
+// and blobs.
+func (h *BrowseHandler) dockerImageTree(c *gin.Context, repo *domain.Repository, repoNames []string, image string) {
+	ctx := c.Request.Context()
+	rows, err := h.deps.Components.ListDockerBrowseImageRows(ctx, repoNames, image)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	rows = h.filterDockerRows(c, repo, rows)
 
 	root := &dockerBrowseNode{Kind: "folder", Label: "/", Path: "/"}
 	for _, row := range rows {
@@ -93,11 +148,29 @@ func (h *BrowseHandler) DockerTree(c *gin.Context) {
 	}
 	sortBrowseChildren(root)
 
+	node := findDockerBrowseNode(root, "/"+image)
+	if node == nil {
+		// An image the caller may not see answers like an image that does not
+		// exist: an empty tree, so the two are indistinguishable.
+		node = &dockerBrowseNode{Kind: "folder", Label: path.Base(image), Path: "/" + image}
+	}
 	c.JSON(http.StatusOK, gin.H{
-		"repository": repoName,
+		"repository": repo.Name,
 		"format":     string(repo.Format),
-		"root":       root,
+		"image":      image,
+		"root":       node,
 	})
+}
+
+// filterDockerRows keeps the rows the caller may browse. The filter runs on
+// the rows the level asked for and not on a cut of them: an image the caller
+// may not see is left out, and an image the caller may see is never cut away
+// before the filter could say so (#777).
+func (h *BrowseHandler) filterDockerRows(c *gin.Context, repo *domain.Repository, rows []domain.DockerBrowseRow) []domain.DockerBrowseRow {
+	userID, _ := c.Get("userID")
+	roles, _ := c.Get("roles")
+	return h.rbac.FilterDockerRows(c.Request.Context(), stringVal(userID), stringSliceVal(roles),
+		repo.Name, repo.AllowAnonymous, rows)
 }
 
 // PathTree handles GET /api/v1/browse/repositories/:name/path-tree
@@ -220,6 +293,40 @@ func browseJoin(base, seg string) string {
 		return "/" + seg
 	}
 	return strings.TrimRight(base, "/") + "/" + seg
+}
+
+// insertDockerBrowseImage adds an image NAME to the tree: the folder path the
+// image lives under, and the image node itself, marked lazy because its
+// content is loaded on demand.
+func insertDockerBrowseImage(root *dockerBrowseNode, image string) {
+	image = strings.Trim(image, "/")
+	if image == "" {
+		return
+	}
+	cur := root
+	curPath := "/"
+	for _, seg := range strings.Split(image, "/") {
+		if seg == "" {
+			continue
+		}
+		curPath = browseJoin(curPath, seg)
+		cur = cur.getOrCreateFolder(seg, curPath)
+	}
+	cur.ImageRef = image
+	cur.Lazy = true
+}
+
+// findDockerBrowseNode returns the node at the given path, or nil.
+func findDockerBrowseNode(n *dockerBrowseNode, nodePath string) *dockerBrowseNode {
+	if n.Path == nodePath {
+		return n
+	}
+	for _, ch := range n.Children {
+		if hit := findDockerBrowseNode(ch, nodePath); hit != nil {
+			return hit
+		}
+	}
+	return nil
 }
 
 func insertDockerBrowseRow(root *dockerBrowseNode, row domain.DockerBrowseRow) {

@@ -34,9 +34,17 @@ type ComponentRepo interface {
 	ListByRepoNames(ctx context.Context, repoNames []string, limit int, offset int) (*domain.Page[domain.Component], error)
 	Get(ctx context.Context, id string) (*domain.Component, error)
 	Search(ctx context.Context, p domain.SearchParams) (*domain.Page[domain.Component], error)
-	// ListDockerBrowseRows returns components of both OCI Distribution formats — docker
-	// and oci — with one asset path per row (for Tags vs Manifests vs Blobs).
-	ListDockerBrowseRows(ctx context.Context, repoNames []string, maxRows int) ([]domain.DockerBrowseRow, error)
+	// ListDockerBrowseImageNames returns one row per IMAGE name of the given
+	// repositories, with a sample asset path for the RBAC filter. The name
+	// level of the Docker tree counts images, not components: a repository of
+	// any size holds more components than one response can carry, and a cut
+	// applied before the filter leaves a path-scoped caller with an empty tree
+	// over the images it may read (#777).
+	ListDockerBrowseImageNames(ctx context.Context, repoNames []string) ([]domain.DockerBrowseRow, error)
+	// ListDockerBrowseImageRows returns the browse rows of ONE image — its
+	// tags, manifests and blobs — with one asset path per row (for Tags vs
+	// Manifests vs Blobs).
+	ListDockerBrowseImageRows(ctx context.Context, repoNames []string, image string) ([]domain.DockerBrowseRow, error)
 	// Create upserts on (repository, format, group, name, version). On conflict
 	// a non-nil Extra (even an empty map) replaces the stored extra; a nil Extra
 	// leaves it as it is (#668), unless the component has no assets left, in

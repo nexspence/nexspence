@@ -517,7 +517,30 @@ func (c *ComponentRepo) Search(_ context.Context, params domain.SearchParams) (*
 	return &domain.Page[domain.Component]{Items: items, ContinuationToken: token}, nil
 }
 
-func (c *ComponentRepo) ListDockerBrowseRows(_ context.Context, names []string, _ int) ([]domain.DockerBrowseRow, error) {
+// ListDockerBrowseImageNames mirrors the SQL: one row per image name, with the
+// first asset path seen for that image as its sample path.
+func (c *ComponentRepo) ListDockerBrowseImageNames(_ context.Context, names []string) ([]domain.DockerBrowseRow, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.DockerBrowseErr != nil {
+		return nil, c.DockerBrowseErr
+	}
+	var out []domain.DockerBrowseRow
+	seen := map[string]bool{}
+	for _, n := range names {
+		for _, row := range c.DockerRowsByRepo[n] {
+			if seen[row.ImageName] {
+				continue
+			}
+			seen[row.ImageName] = true
+			out = append(out, domain.DockerBrowseRow{ImageName: row.ImageName, SamplePath: row.SamplePath})
+		}
+	}
+	return out, nil
+}
+
+// ListDockerBrowseImageRows mirrors the SQL restricted to one image name.
+func (c *ComponentRepo) ListDockerBrowseImageRows(_ context.Context, names []string, image string) ([]domain.DockerBrowseRow, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.DockerBrowseErr != nil {
@@ -525,7 +548,12 @@ func (c *ComponentRepo) ListDockerBrowseRows(_ context.Context, names []string, 
 	}
 	var out []domain.DockerBrowseRow
 	for _, n := range names {
-		out = append(out, c.DockerRowsByRepo[n]...)
+		for _, row := range c.DockerRowsByRepo[n] {
+			if row.ImageName != image {
+				continue
+			}
+			out = append(out, row)
+		}
 	}
 	return out, nil
 }

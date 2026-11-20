@@ -505,6 +505,16 @@ export const nexspenceApi = {
   getDockerBrowseTree: (repository: string) =>
     apiClient.get(`/api/v1/browse/repositories/${encodeURIComponent(repository)}/docker-tree`),
 
+  // Browse — the content of ONE image of the Docker tree. The tree itself is
+  // loaded by levels: the name level answers with the image names, and the
+  // tags, manifests and blobs of an image come on request, so a repository
+  // that holds more components than one response can carry still shows every
+  // image.
+  getDockerBrowseImage: (repository: string, image: string) =>
+    apiClient.get(`/api/v1/browse/repositories/${encodeURIComponent(repository)}/docker-tree`, {
+      params: { image },
+    }),
+
   // Browse — what refers to an image manifest (signatures, SBOMs, attestations).
   // A referrer only points at its subject, never the other way round, so this is
   // the only way the UI can show them grouped under the image they describe.

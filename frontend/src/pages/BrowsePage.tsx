@@ -102,6 +102,9 @@ interface DockerTreeNode {
    *  when the server did not recognize it. Absent for components stored before
    *  the registry recorded OCI metadata. */
   artifactType?: string
+  /** An image node of the name level: it names the image, and its content is
+   *  loaded when the caller opens it. */
+  lazy?: boolean
   children?: DockerTreeNode[]
 }
 
@@ -1006,19 +1009,29 @@ function DockerTreeRows({
   onSelectLeaf,
   showDelete,
   onDelete,
+  lazyChildren,
+  loadState,
 }: {
   node: DockerTreeNode
   depth: number
   collapsed: Record<string, boolean>
-  toggle: (p: string) => void
+  toggle: (node: DockerTreeNode) => void
   selectedPath: string | null
   onSelectLeaf?: (node: DockerTreeNode) => void
   showDelete?: boolean
   onDelete?: (node: DockerTreeNode) => void
+  /** The content of the images that were opened, keyed by the image node path. */
+  lazyChildren?: Record<string, DockerTreeNode[]>
+  /** How the load of an image went: 'loading' while it is in flight. */
+  loadState?: Record<string, 'loading' | 'error'>
 }) {
-  const hasKids = !!(node.children && node.children.length > 0)
+  // An image node may also be a namespace: it holds the images below it AND
+  // its own content, which arrives when it is opened.
+  const kids = mergeDockerChildren(node.children, lazyChildren?.[node.path])
+  const hasKids = kids.length > 0
   const isFolder = node.kind === 'folder'
   const folded = collapsed[node.path] !== false
+  const loadStatus = loadState?.[node.path]
 
   if (!isFolder) {
     const icon =
@@ -1081,15 +1094,15 @@ function DockerTreeRows({
     <div key={node.path}>
       <div
         style={{ ...S.treeRow(depth), ...(hasKids ? S.treeFolder : {}) }}
-        onClick={() => hasKids && toggle(node.path)}
+        onClick={() => (hasKids || node.lazy) && toggle(node)}
         onKeyDown={(e) => {
-          if (hasKids && (e.key === 'Enter' || e.key === ' ')) {
+          if ((hasKids || node.lazy) && (e.key === 'Enter' || e.key === ' ')) {
             e.preventDefault()
-            toggle(node.path)
+            toggle(node)
           }
         }}
-        role={hasKids ? 'button' : undefined}
-        tabIndex={hasKids ? 0 : undefined}
+        role={hasKids || node.lazy ? 'button' : undefined}
+        tabIndex={hasKids || node.lazy ? 0 : undefined}
       >
         {hasKids ? (
           folded ? (
@@ -1102,13 +1115,15 @@ function DockerTreeRows({
         )}
         <FolderOpen size={14} style={{ color: 'var(--holo-c-blue-400)', flexShrink: 0 }} />
         <span style={{ fontWeight: depth === 0 ? 600 : 500 }}>{node.label}</span>
+        {node.lazy && loadStatus === 'loading' && <span style={S.muted}>— loading…</span>}
+        {node.lazy && loadStatus === 'error' && <span style={S.muted}>— could not load, click to retry</span>}
         {showDelete && onDelete && !['Tags', 'Manifests', 'Blobs'].includes(node.label) && (
           <GhostBtn danger onClick={e => { e.stopPropagation(); onDelete(node) }} title={`Delete all in ${node.label}`}>
             <Trash2 size={12} />
           </GhostBtn>
         )}
       </div>
-      {hasKids && !folded && node.children!.map((ch) => (
+      {hasKids && !folded && kids.map((ch) => (
         <DockerTreeRows
           key={ch.path}
           node={ch}
@@ -1119,10 +1134,40 @@ function DockerTreeRows({
           onSelectLeaf={onSelectLeaf}
           showDelete={showDelete}
           onDelete={onDelete}
+          lazyChildren={lazyChildren}
+          loadState={loadState}
         />
       ))}
     </div>
   )
+}
+
+// mergeDockerChildren puts the content of an opened image next to the children
+// the tree already carried, keyed by path: an image that is also a namespace
+// holds both, and opening it twice does not duplicate a row.
+function mergeDockerChildren(
+  base: DockerTreeNode[] | undefined,
+  loaded: DockerTreeNode[] | undefined,
+): DockerTreeNode[] {
+  const out = [...(base ?? [])]
+  for (const node of loaded ?? []) {
+    if (!out.some(n => n.path === node.path)) out.push(node)
+  }
+  return out
+}
+
+// findDockerNodeByComponent returns the node with the given component id, at
+// any depth of the tree.
+function findDockerNodeByComponent(
+  nodes: DockerTreeNode[] | undefined,
+  componentId: string,
+): DockerTreeNode | undefined {
+  for (const node of nodes ?? []) {
+    if (node.componentId === componentId) return node
+    const hit = findDockerNodeByComponent(node.children, componentId)
+    if (hit) return hit
+  }
+  return undefined
 }
 
 function collectLeafPaths(node: RawTreeNode): string[] {
@@ -1310,6 +1355,30 @@ export default function BrowsePage() {
   const drilledRef = useRef<string>('')
   const [page, setPage] = useState(0)
   const [treeCollapsed, setTreeCollapsed] = useState<Record<string, boolean>>({})
+
+  // The content of an image is loaded when the caller opens it. The name level
+  // of the tree holds the image names only — a repository that holds more
+  // components than one response can carry would otherwise be cut, and a
+  // caller scoped to a namespace would be left with an empty tree over the
+  // images it may read.
+  const [dockerImageChildren, setDockerImageChildren] = useState<Record<string, DockerTreeNode[]>>({})
+  const [dockerImageLoad, setDockerImageLoad] = useState<Record<string, 'loading' | 'error'>>({})
+
+  const loadDockerImage = useCallback(async (path: string, imageRef: string) => {
+    setDockerImageLoad((prev) => ({ ...prev, [path]: 'loading' }))
+    try {
+      const res = await nexspenceApi.getDockerBrowseImage(repoName, imageRef)
+      const kids = (res.data as { root?: DockerTreeNode }).root?.children ?? []
+      setDockerImageChildren((prev) => ({ ...prev, [path]: kids }))
+      setDockerImageLoad((prev) => {
+        const next = { ...prev }
+        delete next[path]
+        return next
+      })
+    } catch {
+      setDockerImageLoad((prev) => ({ ...prev, [path]: 'error' }))
+    }
+  }, [repoName])
   const [dockerSelection, setDockerSelection] = useState<DockerLeafSelection | null>(null)
   const [rawSelection, setRawSelection] = useState<RawFileSelection | null>(null)
   // Only the id is kept: the panel resolves it against the page on screen, so a
@@ -1366,6 +1435,18 @@ export default function BrowsePage() {
       void queryClient.invalidateQueries({ queryKey: ['components', repo] })
       void queryClient.invalidateQueries({ queryKey: ['dockerBrowseTree', repo] })
       void queryClient.invalidateQueries({ queryKey: ['rawBrowseTree', repo] })
+      // The content of an image is loaded on demand and kept in local state,
+      // so a deletion must drop it too — otherwise the tree keeps showing
+      // what the server no longer holds.
+      if (deleteTarget.dockerImage) {
+        const path = `/${deleteTarget.dockerImage.replace(/^\/+/, '')}`
+        setDockerImageChildren((prev) => {
+          if (!(path in prev)) return prev
+          const next = { ...prev }
+          delete next[path]
+          return next
+        })
+      }
     }
     setDeleting(true)
     setDeleteError(null)
@@ -1450,7 +1531,9 @@ export default function BrowsePage() {
   } = useQuery({
     queryKey: ['dockerBrowseTree', repoName],
     queryFn: () =>
-      nexspenceApi.getDockerBrowseTree(repoName).then((r) => r.data as { root: DockerTreeNode }),
+      nexspenceApi.getDockerBrowseTree(repoName).then(
+        (r) => r.data as { root: DockerTreeNode; truncated?: boolean },
+      ),
     enabled: !!repoName && isOciDistribution,
   })
 
@@ -1475,6 +1558,16 @@ export default function BrowsePage() {
   const toggleTree = useCallback((p: string) => {
     setTreeCollapsed((prev) => ({ ...prev, [p]: prev[p] === false }))
   }, [])
+
+  // Opening an image node loads its content; the node may also hold the
+  // images below it, so both are shown together.
+  const toggleDockerTree = useCallback((node: DockerTreeNode) => {
+    const expanding = treeCollapsed[node.path] !== false
+    setTreeCollapsed((prev) => ({ ...prev, [node.path]: prev[node.path] === false }))
+    if (expanding && node.lazy && node.imageRef) {
+      void loadDockerImage(node.path, node.imageRef)
+    }
+  }, [treeCollapsed, loadDockerImage])
 
   const onSelectDockerLeaf = useCallback((node: DockerTreeNode) => {
     if (!node.componentId) return
@@ -1505,32 +1598,48 @@ export default function BrowsePage() {
     highlightRowRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
   }, [highlightAssetPath, highlightComponentId, items])
 
-  // Auto-drill Docker tree: walk to leaf with matching componentId, expand ancestors, select it.
+  // Auto-drill Docker tree: a deep link names a COMPONENT, and the component
+  // lives inside an image whose content the name level does not carry. The
+  // component is resolved first, then the image it belongs to is opened, and
+  // the leaf is selected once its content has arrived.
   useEffect(() => {
-    if (!highlightComponentId || !isOciDistribution || !dockerTree?.root) return
+    if (!highlightComponentId || !isOciDistribution) return
     const key = `docker:${repoName}:${highlightComponentId}`
     if (drilledRef.current === key) return
-    const hit = findWithAncestors(
-      dockerTree.root,
-      (n) => n.componentId === highlightComponentId,
-    )
-    if (!hit) return
     drilledRef.current = key
-    setTreeCollapsed((prev) => {
-      const next = { ...prev }
-      for (const a of hit.ancestors) if (a.path) next[a.path] = false
-      return next
+  }, [highlightComponentId, isOciDistribution, repoName])
+
+  // The component behind the deep link: its name is the image it belongs to.
+  const { data: dockerHighlightComponent } = useQuery({
+    queryKey: ['dockerHighlightComponent', repoName, highlightComponentId],
+    queryFn: () =>
+      nexusApi.getComponent(highlightComponentId).then((r) => r.data as DockerComponentDetail),
+    enabled: !!repoName && isOciDistribution && !!highlightComponentId,
+  })
+
+  const dockerHighlightImage = dockerHighlightComponent?.name ?? ''
+  const dockerHighlightPath = dockerHighlightImage ? `/${dockerHighlightImage.replace(/^\/+/, '')}` : ''
+
+  // Open the image the deep link points at.
+  useEffect(() => {
+    if (!dockerHighlightPath || !dockerHighlightImage) return
+    setTreeCollapsed((prev) => (prev[dockerHighlightPath] === false ? prev : { ...prev, [dockerHighlightPath]: false }))
+    void loadDockerImage(dockerHighlightPath, dockerHighlightImage)
+  }, [dockerHighlightPath, dockerHighlightImage, loadDockerImage])
+
+  // Select the leaf the deep link names, once the image content is there.
+  useEffect(() => {
+    if (!highlightComponentId || !isOciDistribution || !dockerHighlightPath) return
+    const leaf = findDockerNodeByComponent(dockerImageChildren[dockerHighlightPath], highlightComponentId)
+    if (!leaf?.componentId) return
+    setDockerSelection({
+      path: leaf.path,
+      kind: leaf.kind,
+      componentId: leaf.componentId,
+      imageRef: leaf.imageRef,
+      version: leaf.version ?? leaf.label,
     })
-    if (hit.leaf.componentId) {
-      setDockerSelection({
-        path: hit.leaf.path,
-        kind: hit.leaf.kind,
-        componentId: hit.leaf.componentId,
-        imageRef: hit.leaf.imageRef,
-        version: hit.leaf.version ?? hit.leaf.label,
-      })
-    }
-  }, [highlightComponentId, isOciDistribution, dockerTree, repoName])
+  }, [highlightComponentId, isOciDistribution, dockerHighlightPath, dockerImageChildren])
 
   // Auto-drill Raw tree by componentId.
   useEffect(() => {
@@ -1631,16 +1740,23 @@ export default function BrowsePage() {
               <p style={S.treeHint}>
                 Expand folders to browse images. Click a tag, manifest, or blob for Nexus-style asset metadata.
               </p>
+              {dockerTree.truncated && (
+                <p style={S.muted}>
+                  The list is truncated — not every image of this repository is shown.
+                </p>
+              )}
               {dockerTree.root.children!.map((n) => (
                 <DockerTreeRows
                   key={n.path}
                   node={n}
                   depth={0}
                   collapsed={treeCollapsed}
-                  toggle={toggleTree}
+                  toggle={toggleDockerTree}
                   selectedPath={dockerSelection?.path ?? null}
                   onSelectLeaf={onSelectDockerLeaf}
                   showDelete={canDeleteRepo}
+                  lazyChildren={dockerImageChildren}
+                  loadState={dockerImageLoad}
                   onDelete={node => {
                     if (node.kind === 'tag') {
                       setDeleteTarget({
