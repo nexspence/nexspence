@@ -1676,7 +1676,7 @@ func TestComponentRepo_ListDockerBrowseImageRows_CarriesArtifactType(t *testing.
 		t.Fatalf("Create legacy component: %v", err)
 	}
 
-	rows, err := repo.ListDockerBrowseImageRows(ctx, []string{"oci-arttype-repo"}, "art")
+	rows, err := repo.ListDockerBrowseImageRows(ctx, []string{"oci-arttype-repo"}, "charts/nginx")
 	if err != nil {
 		t.Fatalf("ListDockerBrowseImageRows: %v", err)
 	}
@@ -1687,7 +1687,15 @@ func TestComponentRepo_ListDockerBrowseImageRows_CarriesArtifactType(t *testing.
 	if got := byName["charts/nginx"].ArtifactType; got != "application/vnd.cncf.helm.config.v1+json" {
 		t.Errorf("chart row lost its artifact type: got %q", got)
 	}
-	if got := byName["legacy/app"].ArtifactType; got != "" {
+
+	legacyRows, err := repo.ListDockerBrowseImageRows(ctx, []string{"oci-arttype-repo"}, "legacy/app")
+	if err != nil {
+		t.Fatalf("ListDockerBrowseImageRows: %v", err)
+	}
+	if len(legacyRows) != 1 {
+		t.Fatalf("expected 1 row for the image legacy/app, got %d", len(legacyRows))
+	}
+	if got := legacyRows[0].ArtifactType; got != "" {
 		t.Errorf("a component with no OCI metadata must report no artifact type, got %q", got)
 	}
 }
@@ -1744,16 +1752,39 @@ func TestComponentRepo_ListDockerBrowseImageNames_MoreComponentsThanTheOldCut(t 
 	pgtest.Truncate(t, pool, "blob_stores", "repositories")
 	ctx := context.Background()
 
-	p := makeCompParent(t, ctx, "docker_big")
+	// A Docker-format repository: the browse queries look at docker and oci
+	// repositories only.
+	bsRepo := NewBlobStoreRepo(pool)
+	bs := &domain.BlobStore{
+		Name:   "docker_big_bs",
+		Type:   "local",
+		Config: map[string]any{"path": "/data/docker_big"},
+	}
+	if err := bsRepo.Create(ctx, bs); err != nil {
+		t.Fatalf("Create blob store: %v", err)
+	}
+	rRepo := NewRepositoryRepo(pool)
+	r := &domain.Repository{
+		Name:        "docker-big-repo",
+		Format:      domain.FormatDocker,
+		Type:        domain.TypeHosted,
+		BlobStoreID: &bs.ID,
+		Online:      true,
+	}
+	if err := rRepo.Create(ctx, r); err != nil {
+		t.Fatalf("Create docker repo: %v", err)
+	}
+
 	repo := NewComponentRepo(pool)
 	assets := NewAssetRepo(pool)
 
 	const images, componentsPerImage = 330, 10
 	for i := 0; i < images; i++ {
 		name := fmt.Sprintf("a-img-%03d", i)
+		var first domain.Component
 		for j := 0; j < componentsPerImage; j++ {
 			c := &domain.Component{
-				RepositoryID: p.RepositoryID,
+				RepositoryID: r.ID,
 				Format:       "docker",
 				Name:         name,
 				Version:      fmt.Sprintf("sha256:%s-%d", name, j),
@@ -1761,17 +1792,24 @@ func TestComponentRepo_ListDockerBrowseImageNames_MoreComponentsThanTheOldCut(t 
 			if err := repo.Create(ctx, c); err != nil {
 				t.Fatalf("Create %s: %v", name, err)
 			}
+			if j == 0 {
+				first = *c
+			}
 		}
-		// One asset per image: the sample path the RBAC filter reads.
+		// One asset per image, hung on one of its components: the sample path
+		// the RBAC filter reads comes from the assets of the image.
 		if err := assets.Create(ctx, &domain.Asset{
-			Repository: p.RepoName,
-			Path:       fmt.Sprintf("/manifests/%s/latest", name),
+			ComponentID:  first.ID,
+			RepositoryID: r.ID,
+			BlobStoreID:  bs.ID,
+			BlobKey:      "sha256:" + name,
+			Path:         fmt.Sprintf("/manifests/%s/latest", name),
 		}); err != nil {
 			t.Fatalf("Create asset for %s: %v", name, err)
 		}
 	}
 
-	names, err := repo.ListDockerBrowseImageNames(ctx, []string{p.RepoName})
+	names, err := repo.ListDockerBrowseImageNames(ctx, []string{"docker-big-repo"})
 	if err != nil {
 		t.Fatalf("ListDockerBrowseImageNames: %v", err)
 	}
