@@ -1,0 +1,95 @@
+name: Announce Release
+
+# A release announces itself: the announcement is generated from the commits of
+# the release, rendered, and published to the Telegram channel by the
+# announcements repository's own workflow.
+#
+# The announcement used to be prepared by hand and committed to the private
+# announcements repository — a step nobody remembers, which is why two
+# releases (v2.13.3 and v2.13.4) shipped without an announcement at all. This
+# workflow is that step.
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to announce (e.g. v2.13.4). Empty = the tag that triggered the workflow.'
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  announce:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the release
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # the tags: the previous one says where the release starts
+          ref: ${{ github.ref }}
+
+      - name: Checkout the announcements repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: nexspence/announcements
+          path: announcements
+          token: ${{ secrets.RELEASE_PAT }}
+          fetch-depth: 1
+
+      - name: Collect the commits of the release
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          TAG="${INPUT_TAG:-${GITHUB_REF_NAME}}"
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+          # The commits since the previous release are what the release is.
+          PREV="$(git tag --sort=-v:refname | grep -v "^${TAG}$" | head -1 || true)"
+          if [ -n "$PREV" ]; then
+            RANGE="${PREV}..${TAG}"
+          else
+            RANGE="${TAG}"
+          fi
+          echo "range: $RANGE"
+          git log --format=%s "$RANGE" > announcements/subjects.txt
+          echo "commits: $(wc -l < announcements/subjects.txt)"
+
+      - name: Generate the post
+        working-directory: announcements
+        run: |
+          set -euo pipefail
+          # A post that is already there was prepared by hand: a written
+          # announcement says more than a generated one, and this workflow
+          # must not overwrite it.
+          if [ -f "posts/$TAG/telegram.txt" ]; then
+            echo "posts/$TAG is already prepared — leaving it alone"
+            exit 0
+          fi
+          node scripts/generate.mjs "$TAG" subjects.txt
+
+      - name: Render the card
+        working-directory: announcements
+        run: node scripts/render.mjs "posts/$TAG"
+
+      - name: Publish the post
+        working-directory: announcements
+        run: |
+          set -euo pipefail
+          if [ ! -f "posts/$TAG/telegram.txt" ]; then
+            echo "nothing to publish"
+            exit 0
+          fi
+          git add "posts/$TAG"
+          if git diff --cached --quiet; then
+            echo "post already published"
+            exit 0
+          fi
+          git config user.name "nexspence-release[bot]"
+          git config user.email "release@nexspence.com"
+          git commit -m "content: prepare $TAG release announcement"
+          # The push is what triggers the announcements repository's workflow:
+          # it posts to the channel and records the message id.
+          git push origin HEAD:main
