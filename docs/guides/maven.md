@@ -16,11 +16,15 @@ payloads:
 ./scripts/create-maven-repos.sh
 ```
 
-It defaults to `http://localhost:8080` — point it at your instance:
+It defaults to `http://localhost:8081` — point it at your instance with
+`BASE_URL` when it differs:
 
 ```bash
-BASE_URL=http://localhost:8081 ./scripts/create-maven-repos.sh
+BASE_URL=https://nexus.example.com ./scripts/create-maven-repos.sh
 ```
+
+That script creates `maven-hosted`, `maven-proxy` and `maven-group` — the
+three names this guide uses.
 
 Under the hood it does three `POST` calls against the v1-compatible API. This is
 the same thing by hand, and it is worth knowing because the API is what CI
@@ -37,7 +41,7 @@ curl -u admin:admin123 -X POST \
   http://localhost:8081/service/rest/v1/repositories/maven2/hosted \
   -H "Content-Type: application/json" \
   -d "{
-    \"name\": \"maven-releases\",
+    \"name\": \"maven-hosted\",
     \"online\": true,
     \"allowAnonymous\": false,
     \"description\": \"Internal releases\",
@@ -49,7 +53,7 @@ curl -u admin:admin123 -X POST \
   http://localhost:8081/service/rest/v1/repositories/maven2/proxy \
   -H "Content-Type: application/json" \
   -d "{
-    \"name\": \"maven-central\",
+    \"name\": \"maven-proxy\",
     \"online\": true,
     \"allowAnonymous\": true,
     \"description\": \"Proxy to Maven Central\",
@@ -62,11 +66,11 @@ curl -u admin:admin123 -X POST \
   http://localhost:8081/service/rest/v1/repositories/maven2/group \
   -H "Content-Type: application/json" \
   -d "{
-    \"name\": \"maven-public\",
+    \"name\": \"maven-group\",
     \"online\": true,
     \"allowAnonymous\": true,
     \"description\": \"Group of releases and central\",
-    \"formatConfig\": { \"member_names\": [\"maven-releases\", \"maven-central\"] }
+    \"formatConfig\": { \"member_names\": [\"maven-hosted\", \"maven-proxy\"] }
   }"
 ```
 
@@ -86,7 +90,7 @@ http://localhost:8081/repository/<repository-name>/
     <mirror>
       <id>nexspence</id>
       <name>Nexspence group</name>
-      <url>http://localhost:8081/repository/maven-public/</url>
+      <url>http://localhost:8081/repository/maven-group/</url>
       <mirrorOf>*</mirrorOf>
     </mirror>
   </mirrors>
@@ -111,17 +115,23 @@ explicitly — `<mirrorOf>*</mirrorOf>` also intercepts the plugin repositories.
 <distributionManagement>
   <repository>
     <id>nexspence</id>
-    <url>http://localhost:8081/repository/maven-releases/</url>
+    <url>http://localhost:8081/repository/maven-hosted/</url>
   </repository>
   <snapshotRepository>
     <id>nexspence</id>
-    <url>http://localhost:8081/repository/maven-snapshots/</url>
+    <url>http://localhost:8081/repository/maven-hosted/</url>
   </snapshotRepository>
 </distributionManagement>
 ```
 
 The `<id>` must match the `<server><id>` in `settings.xml` — that is how Maven
 knows which credentials to use for which repository.
+
+The helper script creates one hosted repository, so snapshots go to the same
+`maven-hosted` as releases here. If you want them separated, create a second
+hosted repository with the same payload under the name `maven-snapshots` and
+point `<snapshotRepository>` at it — the server does not enforce a version
+policy for you, so the separation is a convention your team keeps.
 
 ### Use an API token instead of a password
 
@@ -136,8 +146,9 @@ authentication, which is what you want in CI:
 </server>
 ```
 
-Create the token in **Admin → Security → Tokens**. It is stored hashed and can be
-revoked without changing the user's password.
+Create the token in the profile panel (the 🔑 icon in the sidebar) — a user
+manages their own tokens; there is no admin page for them. The token is stored
+hashed and can be revoked without changing the user's password.
 
 ## 3. Publish
 
@@ -149,8 +160,8 @@ Maven `PUT`s the POM and the JAR to the repository path, and Nexspence computes
 the checksums itself:
 
 ```
-PUT /repository/maven-releases/com/example/myapp/1.0.0/myapp-1.0.0.jar
-PUT /repository/maven-releases/com/example/myapp/1.0.0/myapp-1.0.0.pom
+PUT /repository/maven-hosted/com/example/myapp/1.0.0/myapp-1.0.0.jar
+PUT /repository/maven-hosted/com/example/myapp/1.0.0/myapp-1.0.0.pom
 ```
 
 You do **not** upload `.sha1`/`.md5`/`.sha256` sidecars — they are served from
@@ -167,11 +178,11 @@ mvn -B dependency:get -Dartifact=com.example:myapp:1.0.0
 
 # what does the repository actually hold?
 curl -u admin:admin123 \
-  http://localhost:8081/service/rest/v1/components?repository=maven-releases
+  http://localhost:8081/service/rest/v1/components?repository=maven-hosted
 
 # the metadata index of one artifact
 curl -u admin:admin123 \
-  http://localhost:8081/repository/maven-releases/com/example/myapp/maven-metadata.xml
+  http://localhost:8081/repository/maven-hosted/com/example/myapp/maven-metadata.xml
 ```
 
 ## 5. How group repositories resolve
@@ -200,7 +211,7 @@ authenticated. Read access is then granted per role — see
 | Symptom | Cause | Fix |
 |---|---|---|
 | `401 Unauthorized` on publish | No `<server>` entry for that `<id>`, or the credentials are wrong | Match `<server><id>` with the `<repository><id>` in `pom.xml` |
-| `403 Forbidden` on publish | The user authenticated but lacks the write privilege on that repository | Grant the role `nx-developer` (or equivalent) on the hosted repository |
+| `403 Forbidden` on publish | The user authenticated but lacks the write privilege on that repository | The role needs a privilege that allows `write` — see [RBAC and content selectors](../security-rbac.md); a bare `nx-deployer` role carries no privilege until you attach one |
 | `405 Method Not Allowed` on push | You are pushing into a **proxy** repository | Proxy repositories are read-only by design — push to the hosted one |
 | `404` for a dependency that exists upstream | The proxy is offline or the remote URL is wrong | Check `proxyConfig.remote_url`; the trailing `/maven2` matters |
 | Checksum mismatch in the client | A stale `.sha1` was uploaded by an external tool | Checksums are server-computed; delete the sidecar files |

@@ -12,7 +12,7 @@ implementation and the repository's own helper scripts
 | [Maven](maven.md) | Hosted, proxy and group repositories · `settings.xml` · `mvn deploy` · checksum and `maven-metadata.xml` handling |
 | [npm](npm.md) | `.npmrc` · `npm publish` and the raw packument API · scoped packages · registry search |
 | [PyPI](pypi.md) | `pip.conf` · `twine upload` · the simple index · PEP 503 name normalisation |
-| [Docker / OCI](docker.md) | Registry port and `insecure-registries` · `docker push` · Helm over OCI · cosign signatures and the Referrers API |
+| [Docker / OCI](docker.md) | The registry path under `/v2/` · `insecure-registries` · `docker push` · Helm over OCI · cosign signatures and the Referrers API |
 | [GitHub Actions](github-actions.md) | API tokens in CI · publishing with the `nxs` CLI, Maven, Docker and the REST API |
 
 ## Repository URL patterns
@@ -28,7 +28,7 @@ http://<host>:<port>/repository/<repository-name>/
 | Maven 2/3 | `/repository/<name>/` | the Maven 2 layout: `group/artifact/version/file` |
 | npm | `/repository/<name>/` | the package path follows, `PUT /<package>` |
 | PyPI | `/repository/<name>/simple/` | the index; uploads go to `/repository/<name>/` |
-| Docker | `:5001/<name>/` (Compose) or `:5000/<name>/` (native) | the registry has its own port |
+| Docker | `:8081/<name>/` | the registry shares the web port, under `/v2/` on the wire |
 | Helm | `/repository/<name>/` | chart repositories, `helm repo add` |
 | Go modules | `/repository/<name>/` | `GOPROXY` |
 | Cargo | `/repository/<name>/` | sparse index |

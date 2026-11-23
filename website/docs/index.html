@@ -474,7 +474,7 @@ docker compose up -d</div></div>
           <thead><tr><th data-i18n="inst.std.th.svc">Service</th><th data-i18n="inst.std.th.url">URL</th><th data-i18n="inst.std.th.creds">Default credentials</th></tr></thead>
           <tbody>
             <tr><td>Web UI &amp; REST API</td><td><code>http://localhost:8081</code></td><td><code>admin / admin123</code></td></tr>
-            <tr><td>Docker registry</td><td><code>localhost:5000</code></td><td>same</td></tr>
+            <tr><td>Docker / OCI registry</td><td><code>http://localhost:8081/v2/</code></td><td>same</td></tr>
             <tr><td>PostgreSQL</td><td><code>localhost:5437</code></td><td><code>nexspence / nexspence</code></td></tr>
             <tr><td>MinIO console</td><td><code>http://localhost:9001</code></td><td><code>minioadmin / minioadmin</code></td></tr>
           </tbody>
@@ -1023,7 +1023,7 @@ curl -sf http://localhost:8081/service/rest/v1/status/check</div></div>
       <tr><td>Maven</td><td><code>/repository/{name}/</code></td><td data-i18n="repo.urls.maven">Use as <code>&lt;url&gt;</code> in <code>pom.xml</code> or <code>settings.xml</code></td></tr>
       <tr><td>npm</td><td><code>/repository/{name}/</code></td><td data-i18n="repo.urls.npm">Use as <code>registry</code> in <code>.npmrc</code></td></tr>
       <tr><td>PyPI</td><td><code>/repository/{name}/simple/</code></td><td data-i18n="repo.urls.pypi">Use as <code>index-url</code> in <code>pip.conf</code></td></tr>
-      <tr><td>Docker</td><td><code>localhost:5000/{name}</code></td><td data-i18n="repo.urls.docker">Registry port 5000, image name includes repo</td></tr>
+      <tr><td>Docker</td><td><code>localhost:8081/{name}</code></td><td data-i18n="repo.urls.docker">Same port as the web UI, image name includes the repo</td></tr>
       <tr><td>Helm</td><td><code>/repository/{name}/</code></td><td data-i18n="repo.urls.helm">Add with <code>helm repo add</code></td></tr>
       <tr><td>Go</td><td><code>/repository/{name}/</code></td><td data-i18n="repo.urls.go">Set as <code>GOPROXY</code></td></tr>
       <tr><td>NuGet</td><td><code>/repository/{name}/index.json</code></td><td data-i18n="repo.urls.nuget">v3 flat container endpoint</td></tr>
@@ -1058,7 +1058,7 @@ curl -sf http://localhost:8081/service/rest/v1/status/check</div></div>
   &lt;mirrors&gt;
     &lt;mirror&gt;
       &lt;id&gt;nexspence&lt;/id&gt;
-      &lt;url&gt;http://localhost:8081/repository/maven-public/&lt;/url&gt;
+      &lt;url&gt;http://localhost:8081/repository/maven-group/&lt;/url&gt;
       &lt;mirrorOf&gt;*&lt;/mirrorOf&gt;
     &lt;/mirror&gt;
   &lt;/mirrors&gt;
@@ -1074,20 +1074,20 @@ curl -sf http://localhost:8081/service/rest/v1/status/check</div></div>
   <div class="cb-body">&lt;distributionManagement&gt;
   &lt;repository&gt;
     &lt;id&gt;nexspence&lt;/id&gt;
-    &lt;url&gt;http://localhost:8081/repository/maven-releases/&lt;/url&gt;
+    &lt;url&gt;http://localhost:8081/repository/maven-hosted/&lt;/url&gt;
   &lt;/repository&gt;
   &lt;snapshotRepository&gt;
     &lt;id&gt;nexspence&lt;/id&gt;
-    &lt;url&gt;http://localhost:8081/repository/maven-snapshots/&lt;/url&gt;
+    &lt;url&gt;http://localhost:8081/repository/maven-hosted/&lt;/url&gt;
   &lt;/snapshotRepository&gt;
 &lt;/distributionManagement&gt;</div></div>
 
   <!-- npm -->
   <div class="inst-sep">npm / yarn</div>
   <div class="cb"><div class="cb-bar"><span>.npmrc</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
-  <div class="cb-body">registry=http://localhost:8081/repository/npm-public/
-//localhost:8081/repository/npm-public/:_auth=YWRtaW46YWRtaW4xMjM=
-//localhost:8081/repository/npm-public/:always-auth=true</div></div>
+  <div class="cb-body">registry=http://localhost:8081/repository/npm-group/
+//localhost:8081/repository/npm-group/:_auth=YWRtaW46YWRtaW4xMjM=
+//localhost:8081/repository/npm-group/:always-auth=true</div></div>
   <div class="alert-info" data-i18n="fg.npm.auth.note"><strong>Auth token:</strong> <code>_auth</code> is base64 of <code>username:password</code>. Generate: <code>echo -n "admin:admin123" | base64</code>. To publish: <code>npm publish --registry http://localhost:8081/repository/npm-hosted/</code></div>
 
   <!-- PyPI -->
@@ -1104,24 +1104,24 @@ trusted-host = localhost</div></div>
 
   <!-- Docker -->
   <div class="inst-sep">Docker / OCI</div>
-  <div class="alert-info" data-i18n="fg.docker.insecure.note"><strong>HTTP registry:</strong> Add <code>"insecure-registries": ["localhost:5000"]</code> to Docker daemon config (<code>/etc/docker/daemon.json</code>) when using HTTP. Restart Docker after. <strong>Which port?</strong> The registry listens on <code>5000</code> — with the Docker Compose quick start it is published on host port <code>5001</code> (<code>5001:5000</code>), so clients use <code>localhost:5001</code>; a native install uses <code>localhost:5000</code> directly.</div>
+  <div class="alert-info" data-i18n="fg.docker.insecure.note"><strong>HTTP registry:</strong> The registry is served by the same HTTP port as the web UI — there is no separate registry port, so clients use <code>localhost:8081/{repo}/{image}:{tag}</code>. Docker treats loopback as insecure by default, so <code>localhost</code> needs no daemon change; for any other host, add <code>"insecure-registries": ["host:port"]</code> to the Docker daemon config (<code>/etc/docker/daemon.json</code>) and restart Docker.</div>
   <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
   <div class="cb-body"><span class="cc"># Login</span>
-docker login localhost:5000 -u admin -p admin123
+docker login localhost:8081 -u admin -p admin123
 
 <span class="cc"># Pull through proxy</span>
-docker pull localhost:5000/docker-proxy/nginx:latest
+docker pull localhost:8081/docker-proxy/nginx:latest
 
 <span class="cc"># Push to hosted</span>
-docker tag myimage:1.0 localhost:5000/docker-hosted/myimage:1.0
-docker push localhost:5000/docker-hosted/myimage:1.0</div></div>
+docker tag myimage:1.0 localhost:8081/docker-dev/myimage:1.0
+docker push localhost:8081/docker-dev/myimage:1.0</div></div>
 
   <!-- Helm -->
   <div class="inst-sep">Helm Charts</div>
   <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
   <div class="cb-body"><span class="cc"># Add repository</span>
 helm repo add nexspence \
-  http://localhost:8081/repository/helm-public/ \
+  http://localhost:8081/repository/helm-charts/ \
   --username admin --password admin123
 
 helm repo update
@@ -1161,7 +1161,7 @@ git-fetch-with-cli = true</div></div>
   <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
   <div class="cb-body"><span class="cc"># Add source</span>
 dotnet nuget add source \
-  http://localhost:8081/repository/nuget-public/index.json \
+  http://localhost:8081/repository/nuget-group/index.json \
   --name nexspence \
   --username admin \
   --password admin123 \
@@ -1178,11 +1178,11 @@ dotnet nuget push mypackage.nupkg \
   <div class="cb-body"><span class="cc"># Upload a file</span>
 curl -u admin:admin123 \
   -T myfile.tar.gz \
-  http://localhost:8081/repository/raw-hosted/releases/myfile.tar.gz
+  http://localhost:8081/repository/raw-artifacts/releases/myfile.tar.gz
 
 <span class="cc"># Download</span>
 curl -u admin:admin123 \
-  -O http://localhost:8081/repository/raw-hosted/releases/myfile.tar.gz</div></div>
+  -O http://localhost:8081/repository/raw-artifacts/releases/myfile.tar.gz</div></div>
       </section>
       <section id="sec-browse-search" class="doc-section" hidden>
   <div class="doc-section-title" data-i18n="bs.title">Browse &amp; Search</div>
@@ -1213,7 +1213,7 @@ curl -u admin:admin123 \
 
 <span class="cc"># Filter by format and repository</span>
 curl -u admin:admin123 \
-  "http://localhost:8081/service/rest/v1/search?format=maven2&repository=maven-releases&q=spring"
+  "http://localhost:8081/service/rest/v1/search?format=maven2&repository=maven-hosted&q=spring"
 
 <span class="cc"># List all components in a repository</span>
 curl -u admin:admin123 \
@@ -1256,7 +1256,7 @@ curl -H "Authorization: Bearer nxs_abc123..." \
 
 <span class="cc"># Basic auth (username + token as password)</span>
 curl -u admin:nxs_abc123... \
-  http://localhost:8081/service/rest/v1/components?repository=maven-releases</div></div>
+  http://localhost:8081/service/rest/v1/components?repository=maven-hosted</div></div>
   <div class="alert-info" data-i18n="usr.token.limit.note"><strong>Token expiry:</strong> Maximum lifetime is controlled by <code>auth.token_max_days</code> in <code>config.yaml</code> (default 180 days). Tokens are hashed (SHA-256) — the plaintext is never stored.</div>
   <div class="alert-info" data-i18n="usr.token.recommendation"><strong>Recommended for CI/CD and package managers:</strong> Use an API token for automated artifact traffic. Tokens can be revoked separately from the user password; Basic username/password remains supported.</div>
       </section>
@@ -1898,7 +1898,7 @@ const TRANSLATIONS={
     'repo.urls.maven':'Use as <code>&lt;url&gt;</code> in <code>pom.xml</code> or <code>settings.xml</code>',
     'repo.urls.npm':'Use as <code>registry</code> in <code>.npmrc</code>',
     'repo.urls.pypi':'Use as <code>index-url</code> in <code>pip.conf</code>',
-    'repo.urls.docker':'Registry port 5000, image name includes repo',
+    'repo.urls.docker':'Same port as the web UI, image name includes the repo',
     'repo.urls.helm':'Add with <code>helm repo add</code>',
     'repo.urls.go':'Set as <code>GOPROXY</code>',
     'repo.urls.nuget':'v3 flat container endpoint',
@@ -1911,7 +1911,7 @@ const TRANSLATIONS={
     'fg.sub':'How to configure your build tools and package managers to use Nexspence repositories. Replace <code>localhost:8081</code> with your server URL.',
     'fg.maven.desc':'Add Nexspence as a mirror in <code>~/.m2/settings.xml</code> to route all dependency downloads through your proxy repository.',
     'fg.npm.auth.note':'<strong>Auth token:</strong> <code>_auth</code> is base64 of <code>username:password</code>. Generate: <code>echo -n "admin:admin123" | base64</code>.',
-    'fg.docker.insecure.note':'<strong>HTTP registry:</strong> Add <code>"insecure-registries": ["localhost:5000"]</code> to <code>/etc/docker/daemon.json</code> when using HTTP. Restart Docker after.',
+    'fg.docker.insecure.note':'<strong>HTTP registry:</strong> The registry is served by the same HTTP port as the web UI — there is no separate registry port, so clients use <code>localhost:8081/{repo}/{image}:{tag}</code>. Docker treats loopback as insecure by default, so <code>localhost</code> needs no daemon change; for any other host, add <code>"insecure-registries": ["host:port"]</code> to <code>/etc/docker/daemon.json</code> and restart Docker.',
     'bs.title':'Browse & Search','bs.sub':'Find, inspect, and download artifacts stored in Nexspence repositories.',
     'bs.browse.sep':'Browse','bs.search.sep':'Search',
     'bs.browse.s1.title':'Open Browse','bs.browse.s1.desc':'Click <strong>Browse</strong> in the sidebar. Select a repository from the dropdown.',
@@ -2284,7 +2284,7 @@ const TRANSLATIONS={
     'repo.urls.maven':'Используйте как <code>&lt;url&gt;</code> в <code>pom.xml</code> или <code>settings.xml</code>',
     'repo.urls.npm':'Используйте как <code>registry</code> в <code>.npmrc</code>',
     'repo.urls.pypi':'Используйте как <code>index-url</code> в <code>pip.conf</code>',
-    'repo.urls.docker':'Порт реестра 5000, имя образа включает репозиторий',
+    'repo.urls.docker':'Тот же порт, что и веб-интерфейс; имя образа включает репозиторий',
     'repo.urls.helm':'Добавьте через <code>helm repo add</code>',
     'repo.urls.go':'Установите как <code>GOPROXY</code>',
     'repo.urls.nuget':'Endpoint v3 flat container',
@@ -2297,7 +2297,7 @@ const TRANSLATIONS={
     'fg.sub':'Как настроить сборочные инструменты и пакетные менеджеры для работы с репозиториями Nexspence. Замените <code>localhost:8081</code> на адрес вашего сервера.',
     'fg.maven.desc':'Добавьте Nexspence как зеркало в <code>~/.m2/settings.xml</code>, чтобы все зависимости загружались через proxy-репозиторий.',
     'fg.npm.auth.note':'<strong>Токен авторизации:</strong> <code>_auth</code> — это base64 от <code>username:password</code>. Сгенерировать: <code>echo -n "admin:admin123" | base64</code>.',
-    'fg.docker.insecure.note':'<strong>HTTP-реестр:</strong> добавьте <code>"insecure-registries": ["localhost:5000"]</code> в <code>/etc/docker/daemon.json</code>. Перезапустите Docker.',
+    'fg.docker.insecure.note':'<strong>HTTP-реестр:</strong> Реестр работает на том же порту, что и веб-интерфейс, — отдельного порта нет: клиенты используют <code>localhost:8081/{repo}/{image}:{tag}</code>. Docker считает loopback небезопасным по умолчанию, поэтому для <code>localhost</code> менять конфиг демона не нужно; для другого хоста добавьте <code>"insecure-registries": ["host:port"]</code> в <code>/etc/docker/daemon.json</code> и перезапустите Docker.',
     'bs.title':'Обзор и поиск','bs.sub':'Находите, просматривайте и скачивайте артефакты из репозиториев Nexspence.',
     'bs.browse.sep':'Обзор','bs.search.sep':'Поиск',
     'bs.browse.s1.title':'Откройте Browse','bs.browse.s1.desc':'Нажмите <strong>Browse</strong> в сайдбаре. Выберите репозиторий из выпадающего списка.',

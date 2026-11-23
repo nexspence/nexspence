@@ -82,7 +82,7 @@ ENV HOME=/app
 ENV TRIVY_CACHE_DIR=/app/.cache/trivy
 USER 1000
 
-EXPOSE 8081 5000
+EXPOSE 8081
 
 ENTRYPOINT ["/app/entrypoint.sh"]
 CMD ["serve", "--config", "/app/config.yaml"]
