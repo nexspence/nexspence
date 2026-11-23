@@ -29,7 +29,7 @@
 
 ---
 
-## 🚀 Start in two minutes
+## Start in two minutes
 
 One binary, one Postgres, no license key. Requires Docker 24+ and free ports 8081 and 5001.
 
@@ -182,7 +182,7 @@ View the full site with interactive architecture diagram, install guide, and com
 
 ## Quick Start — full stack
 
-> Just want to try it? The [two-minute start](#-start-in-two-minutes) above is enough. This section is the complete stack.
+> Just want to try it? The [two-minute start](#start-in-two-minutes) above is enough. This section is the complete stack.
 
 **Requirements:** [Docker](https://docs.docker.com/get-docker/) 24+ with Compose v2
 
