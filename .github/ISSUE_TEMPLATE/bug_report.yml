@@ -1,0 +1,73 @@
+name: Bug report
+description: Something does not work as documented
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this. Please fill in what you can —
+        a partial report is still useful, and you can add detail in a comment later.
+
+        **Security issues do not belong here.** Do not open a public issue for a
+        vulnerability: contact the maintainer directly (Telegram: [@skensel](https://t.me/skensel))
+        so a fix can ship before the details are public.
+
+  - type: input
+    id: version
+    attributes:
+      label: Nexspence version
+      description: Output of `nexspence --version`, or the release tag you are running
+      placeholder: "v2.13.4"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: How are you running Nexspence?
+      options:
+        - Docker Compose (bundled)
+        - Docker (single container)
+        - Helm chart / Kubernetes
+        - Native install (.deb / .rpm / archive)
+        - From source
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you expected, and what happened instead
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Minimal command sequence, API call, or UI path
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Relevant log lines, if any. Please redact tokens and passwords.
+      render: shell
+
+  - type: input
+    id: format
+    attributes:
+      label: Package format
+      description: If the issue is format-specific — maven2, npm, pypi, docker, oci, helm, nuget, cargo, apt, yum, conan, conda, cran, rubygems, gomod, terraform, alpine, raw, huggingface
+      placeholder: npm
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, PostgreSQL version, browser, proxy/load balancer in front of Nexspence

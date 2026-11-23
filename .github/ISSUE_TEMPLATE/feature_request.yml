@@ -1,0 +1,49 @@
+name: Feature request
+description: Suggest an improvement or a new capability
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before you open this: check the [roadmap in the README](https://github.com/nexspence/nexspence#roadmap)
+        and search existing issues — the feature may already be planned or rejected,
+        and that context is worth reading.
+
+        If the request is about *how* something should work rather than *what*,
+        a [Discussion](https://github.com/nexspence/nexspence/discussions) is usually
+        the faster route — it lets other users weigh in before you write a spec.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the situation, not the solution — what are you trying to do that is hard today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+
+  - type: input
+    id: format
+    attributes:
+      label: Affected package format
+      description: If the request is format-specific
+      placeholder: npm
+
+  - type: textarea
+    id: usage
+    attributes:
+      label: Example usage
+      description: A config snippet, API call, or CLI invocation showing what you would expect
+      render: shell
