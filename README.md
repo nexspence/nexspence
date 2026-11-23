@@ -88,7 +88,7 @@ The short version: Nexus Repository Community Edition is no longer open source, 
 | Licence | EULA (proprietary) since 3.77.0 — the open-source core covers only Maven, raw and APT | AGPL-3.0-or-later, one licence, no tiers |
 | Component cap | 40,000 components | none |
 | Request cap | 100,000 requests/day | none |
-| Telemetry | mandatory base telemetry since 3.97.0 — an instance that cannot report for 10 days goes read-only | none |
+| Telemetry | mandatory base telemetry since 3.97.0 (Oct 2026), acknowledged at install; an instance that cannot report for 10 days (30 on 3.98+) goes read-only — and CE has no exemption | none |
 | High availability | paid tiers | included — stateless nodes, Redis locks, `/healthz` + `/readyz` |
 | SSO | LDAP in CE; OIDC/SAML in paid tiers | OIDC/OAuth2 **and** LDAP, included |
 | Blob stores | S3 / Azure / GCS in paid tiers | S3-compatible (AWS, MinIO, Ceph) and Azure, included |
@@ -98,7 +98,7 @@ The short version: Nexus Repository Community Edition is no longer open source, 
 | Migration from Nexus | per-repository export/import | live import of a running instance — repositories, artifacts, images, users, roles, routing rules |
 | Cost | free tier + paid Pro / Pro+ / Enterprise | free forever, funded by sponsors |
 
-<sub>Sources: [Nexus Repository editions and feature availability](https://help.sonatype.com/en/nexus-repository-tiers-and-feature-availability.html), [2025 release notes](https://help.sonatype.com/en/nexus-repository-2025-release-notes.html), [Introducing the Community Edition](https://www.sonatype.com/blog/sonatype-nexus-repository-community-edition). Limits and tiers change with every Sonatype release — check the linked pages for the current state. "Sonatype" and "Nexus Repository" are trademarks of Sonatype, Inc.; Nexspence is not affiliated with or endorsed by Sonatype.</sub>
+<sub>Sources: [Nexus Repository editions and feature availability](https://help.sonatype.com/en/nexus-repository-tiers-and-feature-availability.html), [Nexus Repository telemetry](https://help.sonatype.com/en/nexus-repository-telemetry.html), [2025 release notes](https://help.sonatype.com/en/nexus-repository-2025-release-notes.html), [Introducing the Community Edition](https://www.sonatype.com/blog/sonatype-nexus-repository-community-edition). Limits and tiers change with every Sonatype release — check the linked pages for the current state. "Sonatype" and "Nexus Repository" are trademarks of Sonatype, Inc.; Nexspence is not affiliated with or endorsed by Sonatype.</sub>
 
 Honest comparison with the rest of the field: **JFrog Artifactory** (the free OSS edition covers Maven/Gradle/Ivy/SBT only; the rest is priced per user), **Pulp** (GPL, multi-format, plugin-driven, Red Hat-backed), **Harbor** (OCI registry only), **Verdaccio** (npm only), **Reposilite** (Maven only), **Gitea/Forgejo** (a registry as a side feature of a forge).
 
