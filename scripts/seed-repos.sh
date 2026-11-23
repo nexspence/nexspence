@@ -9,7 +9,7 @@
 # don't exist yet. S3 config defaults match the docker-compose.ha.yml setup.
 #
 # Environment variables:
-#   BASE_URL        — server URL                   (default: http://localhost:8080)
+#   BASE_URL        — server URL                   (default: http://localhost:8081)
 #   ADMIN_USER      — admin login                  (default: admin)
 #   ADMIN_PASS      — admin password               (default: admin123)
 #   BLOB_PRIMARY    — primary blob store name      (default: s3-primary)
@@ -20,7 +20,7 @@
 #   S3_REGION       — S3 region                    (default: us-east-1)
 set -uo pipefail
 
-BASE_URL="${BASE_URL:-http://localhost:8080}"
+BASE_URL="${BASE_URL:-http://localhost:8081}"
 ADMIN_USER="${ADMIN_USER:-admin}"
 ADMIN_PASS="${ADMIN_PASS:-admin123}"
 BLOB_PRIMARY="${BLOB_PRIMARY:-s3-primary}"

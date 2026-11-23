@@ -3,11 +3,11 @@
 #
 # Usage:
 #   ./scripts/create-docker-repos.sh
-#   BASE_URL=http://192.168.1.10:8080 HOSTED_NAME=my-docker ./scripts/create-docker-repos.sh
+#   BASE_URL=http://192.168.1.10:8081 HOSTED_NAME=my-docker ./scripts/create-docker-repos.sh
 #   BLOB_STORE=s3-primary ./scripts/create-docker-repos.sh
 #
 # Environment variables (all with defaults):
-#   BASE_URL        — server URL                      (default: http://localhost:8080)
+#   BASE_URL        — server URL                      (default: http://localhost:8081)
 #   ADMIN_USER      — admin login                     (default: admin)
 #   ADMIN_PASS      — admin password                  (default: admin123)
 #   HOSTED_NAME     — hosted repo name                (default: docker-dev)
@@ -19,7 +19,7 @@
 #                     groups have no storage, so blobStoreId is not set on them.
 set -uo pipefail
 
-BASE_URL="${BASE_URL:-http://localhost:8080}"
+BASE_URL="${BASE_URL:-http://localhost:8081}"
 ADMIN_USER="${ADMIN_USER:-admin}"
 ADMIN_PASS="${ADMIN_PASS:-admin123}"
 

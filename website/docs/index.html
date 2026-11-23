@@ -394,7 +394,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
       <section id="sec-intro" class="doc-section">
         <div class="doc-section-title">Nexspence Documentation</div>
         <div class="doc-section-sub">Guides, configuration reference, and versioned changelog for Nexspence — the free, open-source universal artifact repository manager and drop-in alternative to commercial artifact repository managers.</div>
-        <p style="color:var(--dim);line-height:1.7;margin:14px 0">Nexspence manages Maven, npm, PyPI, Docker, OCI artifacts, Go modules, NuGet, Cargo, Helm, Apt, Yum/RPM, Conan, Raw, Conda and Terraform packages from a single self-hosted registry. Repositories can be Hosted (your published artifacts), Proxy (cached remote registries) or Group (multiple repositories under one URL).</p>
+        <p style="color:var(--dim);line-height:1.7;margin:14px 0">Nexspence manages Maven, npm, PyPI, Docker, OCI artifacts, Go modules, NuGet, Cargo, Helm, Apt, Yum/RPM, Conan, Raw, Conda, Terraform, RubyGems, R/CRAN, Alpine and Hugging Face packages from a single self-hosted registry. Repositories can be Hosted (your published artifacts), Proxy (cached remote registries) or Group (multiple repositories under one URL).</p>
         <p style="color:var(--dim);line-height:1.7;margin:14px 0">This documentation covers Quick Start, Installation, Repositories, per-format guides, Browse &amp; Search, Users, Roles &amp; Privileges (RBAC), Cleanup policies, Webhooks, Migration from Nexus, Monitoring, Build Promotion, Replication, and the full REST API reference.</p>
         <p style="color:var(--dim);line-height:1.7;margin:14px 0">Get started in under two minutes with Docker Compose: download the latest release, set a strong <code>admin_password</code> and <code>jwt_secret</code> in <code>config.yaml</code>, then run <code>docker compose up -d</code> and open the UI at <code>http://localhost:8081</code>.</p>
       </section>
@@ -1040,6 +1040,16 @@ curl -sf http://localhost:8081/service/rest/v1/status/check</div></div>
   <div class="doc-section-title" data-i18n="fg.title">Format Setup Guides</div>
   <div class="doc-section-sub" data-i18n="fg.sub">How to configure your build tools and package managers to use Nexspence repositories. Replace <code>localhost:8081</code> with your server URL and <code>{repo}</code> with your repository name.</div>
 
+  <div class="inst-sep">Full guides</div>
+  <p style="font-size:.8rem;color:var(--dim);margin-bottom:10px;line-height:1.6">The snippets below are the quick version. The repository carries the complete guides — creating the repositories, publishing, verifying the upload, authentication and troubleshooting:</p>
+  <ul style="font-size:.8rem;color:var(--dim);line-height:1.9;margin:0 0 4px;padding-left:18px">
+    <li><a href="https://github.com/nexspence/nexspence/blob/main/docs/guides/maven.md">Maven guide</a> — mirrors, <code>mvn deploy</code>, checksums, group resolution</li>
+    <li><a href="https://github.com/nexspence/nexspence/blob/main/docs/guides/npm.md">npm guide</a> — <code>.npmrc</code>, publishing, scoped packages, registry search</li>
+    <li><a href="https://github.com/nexspence/nexspence/blob/main/docs/guides/pypi.md">PyPI guide</a> — <code>pip.conf</code>, <code>twine upload</code>, the simple index, PEP 503 names</li>
+    <li><a href="https://github.com/nexspence/nexspence/blob/main/docs/guides/docker.md">Docker / OCI guide</a> — registry port, <code>docker push</code>, Helm over OCI, cosign signatures</li>
+    <li><a href="https://github.com/nexspence/nexspence/blob/main/docs/guides/github-actions.md">GitHub Actions guide</a> — API tokens in CI, publishing from a workflow</li>
+  </ul>
+
   <!-- Maven -->
   <div class="inst-sep">Maven / Gradle</div>
   <p style="font-size:.8rem;color:var(--dim);margin-bottom:10px;line-height:1.6" data-i18n="fg.maven.desc">Add Nexspence as a mirror in <code>~/.m2/settings.xml</code> to route all dependency downloads through your proxy repository.</p>
@@ -1094,7 +1104,7 @@ trusted-host = localhost</div></div>
 
   <!-- Docker -->
   <div class="inst-sep">Docker / OCI</div>
-  <div class="alert-info" data-i18n="fg.docker.insecure.note"><strong>HTTP registry:</strong> Add <code>"insecure-registries": ["localhost:5000"]</code> to Docker daemon config (<code>/etc/docker/daemon.json</code>) when using HTTP. Restart Docker after.</div>
+  <div class="alert-info" data-i18n="fg.docker.insecure.note"><strong>HTTP registry:</strong> Add <code>"insecure-registries": ["localhost:5000"]</code> to Docker daemon config (<code>/etc/docker/daemon.json</code>) when using HTTP. Restart Docker after. <strong>Which port?</strong> The registry listens on <code>5000</code> — with the Docker Compose quick start it is published on host port <code>5001</code> (<code>5001:5000</code>), so clients use <code>localhost:5001</code>; a native install uses <code>localhost:5000</code> directly.</div>
   <div class="cb"><div class="cb-bar"><span>shell</span><button type="button" class="cb-copy" onclick="copyCode(this)">Copy</button></div>
   <div class="cb-body"><span class="cc"># Login</span>
 docker login localhost:5000 -u admin -p admin123

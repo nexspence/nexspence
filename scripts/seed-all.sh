@@ -7,7 +7,7 @@
 #   3. seed-rbac.sh     — creates RBAC structure for 4 environments
 #
 # Environment variables:
-#   BASE_URL       — server URL             (default: http://localhost:8080)
+#   BASE_URL       — server URL             (default: http://localhost:8081)
 #   ADMIN_USER     — admin login            (default: admin)
 #   ADMIN_PASS     — admin password         (default: admin123)
 #   BLOB_PRIMARY   — primary blob store     (default: s3-primary)
@@ -15,10 +15,10 @@
 #
 # Example:
 #   ./scripts/seed-all.sh
-#   BASE_URL=http://192.168.1.10:8080 ADMIN_PASS=secret ./scripts/seed-all.sh
+#   BASE_URL=http://192.168.1.10:8081 ADMIN_PASS=secret ./scripts/seed-all.sh
 set -uo pipefail
 
-BASE_URL="${BASE_URL:-http://localhost:8080}"
+BASE_URL="${BASE_URL:-http://localhost:8081}"
 ADMIN_USER="${ADMIN_USER:-admin}"
 ADMIN_PASS="${ADMIN_PASS:-admin123}"
 BLOB_PRIMARY="${BLOB_PRIMARY:-s3-primary}"

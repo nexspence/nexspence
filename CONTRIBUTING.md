@@ -47,6 +47,19 @@ statement, and nothing checks for a `Signed-off-by` line.
 - **Coverage gates are real.** CI enforces a per-package minimum on both the Go
   and the frontend suites.
 
+## Releasing
+
+The release notes are written once, when the tag is cut, and they are the
+source of truth for `CHANGELOG.md`:
+
+```bash
+./scripts/generate-changelog.sh     # regenerates CHANGELOG.md from the releases
+```
+
+Run it after the release is published and before the announcement goes out. The
+script only needs the GitHub CLI (`gh`); running it twice in a row produces no
+diff, so it is safe to re-run.
+
 ## Reporting bugs and asking questions
 
 - Bugs and feature requests: [GitHub issues](https://github.com/nexspence/nexspence/issues) —

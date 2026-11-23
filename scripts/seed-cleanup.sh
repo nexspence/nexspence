@@ -12,15 +12,15 @@
 #   ./scripts/seed-cleanup.sh --repos
 #   ./scripts/seed-cleanup.sh --all
 #   ./scripts/seed-cleanup.sh --rbac --repos
-#   BASE_URL=http://192.168.1.10:8080 ./scripts/seed-cleanup.sh --all
+#   BASE_URL=http://192.168.1.10:8081 ./scripts/seed-cleanup.sh --all
 #
 # Environment variables:
-#   BASE_URL   — server URL     (default: http://localhost:8080)
+#   BASE_URL   — server URL     (default: http://localhost:8081)
 #   ADMIN_USER — admin login    (default: admin)
 #   ADMIN_PASS — admin password (default: admin123)
 set -uo pipefail
 
-BASE_URL="${BASE_URL:-http://localhost:8080}"
+BASE_URL="${BASE_URL:-http://localhost:8081}"
 ADMIN_USER="${ADMIN_USER:-admin}"
 ADMIN_PASS="${ADMIN_PASS:-admin123}"
 
