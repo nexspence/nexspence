@@ -31,7 +31,7 @@
 
 ## Start in two minutes
 
-One binary, one Postgres, no license key. Requires Docker 24+ and free ports 8081 and 5001.
+One binary, one Postgres, no license key. Requires Docker 24+ and a free port 8081.
 
 ```bash
 docker network create nexspence-net 2>/dev/null
@@ -44,7 +44,7 @@ docker run -d --name nexspence-db --network nexspence-net \
 until docker exec nexspence-db pg_isready -U nexspence >/dev/null 2>&1; do sleep 1; done
 
 docker run -d --name nexspence --network nexspence-net \
-  -p 8081:8081 -p 5001:5000 \
+  -p 8081:8081 \
   -e NEXSPENCE_DATABASE_DSN="postgres://nexspence:nexspence@nexspence-db:5432/nexspence?sslmode=disable" \
   -e NEXSPENCE_AUTH_ALLOW_INSECURE_DEFAULTS=true \
   -v nexspence-blobs:/app/data/blobs \
@@ -195,7 +195,7 @@ docker compose up -d
 | Service | URL | Default credentials |
 |---------|-----|---------------------|
 | Web UI & REST API | http://localhost:8081 | `admin` / `admin123` |
-| Docker registry | localhost:5001 | same credentials |
+| Docker / OCI registry | http://localhost:8081/v2/ | same credentials |
 | PostgreSQL | localhost:5437 | `nexspence` / `nexspence` |
 
 > Change the admin password immediately after first login.

@@ -443,10 +443,10 @@ fi
 section "Docker"
 warn "Docker push requires docker CLI — skipping automated seed."
 info "Manual push example:"
-echo "  # the registry runs on its own port — 5000 native, 5001 with Docker Compose"
+echo "  # the registry is served by the same HTTP port as the web UI"
 echo "  docker pull alpine:3.19"
-echo "  docker tag alpine:3.19 localhost:5001/docker-dev/alpine:3.19"
-echo "  docker push localhost:5001/docker-dev/alpine:3.19"
+echo "  docker tag alpine:3.19 localhost:8081/docker-dev/alpine:3.19"
+echo "  docker push localhost:8081/docker-dev/alpine:3.19"
 
 # ── Conan — skip ──────────────────────────────────────────────────────────────
 section "Conan"

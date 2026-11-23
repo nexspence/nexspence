@@ -11,6 +11,9 @@ Assumes a fresh instance on `http://localhost:8081`.
 BASE_URL=http://localhost:8081 ./scripts/create-npm-repos.sh
 ```
 
+That script creates `npm-hosted`, `npm-proxy` and `npm-group` — the three names
+this guide uses.
+
 By hand, with the v1-compatible API:
 
 ```bash
@@ -48,7 +51,7 @@ curl -u admin:admin123 -X POST \
   http://localhost:8081/service/rest/v1/repositories/npm/group \
   -H "Content-Type: application/json" \
   -d "{
-    \"name\": \"npm-public\",
+    \"name\": \"npm-group\",
     \"online\": true,
     \"allowAnonymous\": true,
     \"description\": \"Group of hosted and proxy\",
@@ -67,7 +70,7 @@ http://localhost:8081/repository/<repository-name>/
 ### `~/.npmrc` — resolve through the group
 
 ```ini
-registry=http://localhost:8081/repository/npm-public/
+registry=http://localhost:8081/repository/npm-group/
 ```
 
 ### Authentication
@@ -93,7 +96,9 @@ echo -n "admin:admin123" | base64
 ```
 
 Use `_authToken` with an `nxs_*` API token in CI — the token is scoped and
-revocable, a password is not. Create it in **Admin → Security → Tokens**.
+revocable, a password is not. A user creates and revokes their own tokens in
+the profile panel (the 🔑 icon in the sidebar); there is no admin page for
+them.
 
 > The path in the `.npmrc` key must match the repository path exactly,
 > including the trailing slash behaviour of npm. `//host/repository/npm-hosted/`
@@ -154,7 +159,7 @@ published tarball.
 
 ```bash
 # install from the group
-npm install --registry http://localhost:8081/repository/npm-public/ my-package
+npm install --registry http://localhost:8081/repository/npm-group/ my-package
 
 # what does the registry hold?
 npm view my-package versions --registry http://localhost:8081/repository/npm-hosted/

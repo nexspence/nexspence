@@ -11,6 +11,9 @@ Assumes a fresh instance on `http://localhost:8081`.
 BASE_URL=http://localhost:8081 ./scripts/create-pypi-repos.sh
 ```
 
+That script creates `pypi-hosted`, `pypi-proxy` and `pypi-group` — the three
+names this guide uses.
+
 By hand, with the v1-compatible API:
 
 ```bash
@@ -48,7 +51,7 @@ curl -u admin:admin123 -X POST \
   http://localhost:8081/service/rest/v1/repositories/pypi/group \
   -H "Content-Type: application/json" \
   -d "{
-    \"name\": \"pypi-public\",
+    \"name\": \"pypi-group\",
     \"online\": true,
     \"allowAnonymous\": true,
     \"description\": \"Group of hosted and proxy\",
@@ -75,7 +78,7 @@ not. That difference is the single most common source of PyPI mistakes.
 
 ```ini
 [global]
-index-url = http://localhost:8081/repository/pypi-public/simple/
+index-url = http://localhost:8081/repository/pypi-group/simple/
 trusted-host = localhost
 ```
 
@@ -86,7 +89,7 @@ otherwise.
 
 ```ini
 [global]
-index-url = http://admin:admin123@localhost:8081/repository/pypi-public/simple/
+index-url = http://admin:admin123@localhost:8081/repository/pypi-group/simple/
 trusted-host = localhost
 ```
 
@@ -95,21 +98,22 @@ password position of a Basic authentication:
 
 ```ini
 [global]
-index-url = http://ci-bot:nxs_xxxxxxxxxxxxxxxxxxxx@localhost:8081/repository/pypi-public/simple/
+index-url = http://ci-bot:nxs_xxxxxxxxxxxxxxxxxxxx@localhost:8081/repository/pypi-group/simple/
 trusted-host = localhost
 ```
 
-Create the token in **Admin → Security → Tokens**. Prefer it over a password:
-it is scoped, revocable, and does not leak the account credentials.
+Create the token in the profile panel (the 🔑 icon in the sidebar) — a user
+manages their own tokens; there is no admin page for them. Prefer a token over
+a password: it is scoped, revocable, and does not leak the account credentials.
 
 ### `--extra-index-url` versus `--index-url`
 
 ```bash
 # only from Nexspence
-pip install --index-url http://localhost:8081/repository/pypi-public/simple/ my-package
+pip install --index-url http://localhost:8081/repository/pypi-group/simple/ my-package
 
 # PyPI as a fallback, Nexspence first
-pip install --index-url http://localhost:8081/repository/pypi-public/simple/ \
+pip install --index-url http://localhost:8081/repository/pypi-group/simple/ \
             --extra-index-url https://pypi.org/simple my-package
 ```
 
@@ -157,11 +161,18 @@ twine upload \
   dist/*
 ```
 
+> `twine` prints `HTTP 200: OK` for each uploaded file when the repository
+> answers the way PyPI does. Nexspence accepts the upload and answers `200`,
+> but `twine` prints no per-file line for it — the command exits `0` and that
+> is the whole confirmation. Check what actually landed with
+> `curl http://localhost:8081/repository/pypi-hosted/simple/<package>/` (see
+> below) rather than with the console output.
+
 ## 4. Install and verify
 
 ```bash
 # install from the group
-pip install --index-url http://localhost:8081/repository/pypi-public/simple/ my-package
+pip install --index-url http://localhost:8081/repository/pypi-group/simple/ my-package
 
 # the simple index of one package
 curl http://localhost:8081/repository/pypi-hosted/simple/my-package/

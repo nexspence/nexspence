@@ -135,7 +135,7 @@ set. A complete minimal run (adjust the database DSN to your PostgreSQL):
 
 ```bash
 docker run -d --name nexspence \
-  -p 8081:8081 -p 5001:5000 \
+  -p 8081:8081 \
   -e NEXSPENCE_DATABASE_DSN="postgres://nexspence:nexspence@your-postgres-host:5432/nexspence?sslmode=disable" \
   -e NEXSPENCE_STORAGE_LOCAL_BASE_PATH=/app/data/blobs \
   -e NEXSPENCE_SCAN_TRIVY_ENABLED=true \

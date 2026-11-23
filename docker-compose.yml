@@ -135,8 +135,9 @@ services:
       # protocol mapper on the client, no custom scope needed.
       NEXSPENCE_OIDC_SCOPES: "openid,profile,email"
     ports:
+      # One port: the web UI, the REST API and the Docker/OCI registry
+      # (/v2/…) are all served by the same HTTP server.
       - "8081:8081"
-      - "5001:5000"   # Docker registry HTTP port
     volumes:
       # Mounted at /app/data/blobs (== base_path) so blobs land at the volume
       # root, matching pre-1.x layout. NOTE: a volume created by an older

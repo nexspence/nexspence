@@ -29,65 +29,71 @@ Built-in privileges may have legacy types (`wildcard`, `repository-view`, etc.) 
 
 ## CEL Expressions for Content Selectors
 
-Content Selectors use [CEL (Common Expression Language)](https://github.com/google/cel-spec).
+A Content Selector holds a CEL (Common Expression Language) expression that
+decides which artifacts a privilege covers.
 
-### Available variables
+### Supported expressions
 
-| Variable | Type | Description |
-|----------|------|-------------|
-| `format` | string | Repository format: `"maven2"`, `"npm"`, `"docker"`, `"pypi"`, `"raw"`, `"helm"`, `"cargo"`, `"go"`, `"nuget"`, `"apt"`, `"yum"`, `"conan"`, `"conda"`, `"terraform"` |
-| `path` | string | Artifact path (starts with `/`) |
-| `repository` | string | Repository name |
+The evaluator recognises **three shapes**, and nothing else:
 
-### Expression examples
+| Shape | Matches |
+|---|---|
+| `repository == "<name>"` | every artifact of that repository |
+| `path.startsWith("/<prefix>")` | every artifact whose path begins with the prefix, in any repository |
+| `repository == "<name>" && path.startsWith("/<prefix>")` | the prefix inside that repository |
 
 ```cel
-# Maven only
-format == "maven2"
+# One repository
+repository == "maven-hosted"
 
-# npm only
-format == "npm"
+# A path prefix, in whichever repository holds it
+path.startsWith("/org/example/")
 
-# Docker only
-format == "docker"
-
-# PyPI or npm (monorepo style)
-format == "pypi" || format == "npm"
-
-# Specific repository
-repository == "releases"
-
-# Maven from a specific repository
-format == "maven2" && repository == "maven-releases"
-
-# Maven SNAPSHOT artifacts only
-format == "maven2" && path.contains("-SNAPSHOT")
-
-# Helm charts in the production repository
-format == "helm" && repository == "helm-prod"
-
-# Maven artifacts under org.example group
-format == "maven2" && path.startsWith("/org/example/")
-
-# Docker or OCI images under a specific team namespace.
-# Registry paths are normalised before matching: the /v2/ prefix is stripped and
-# the path is cut at the /manifests/, /blobs/ or /tags/ keyword, so a request for
-# /v2/myteam/app/manifests/1.0 is matched as /myteam/app/. Write the selector
-# against that shape — a selector starting with /v2/ never matches.
-format == "docker" && path.startsWith("/myteam/")
-
-# All artifacts (no restriction)
-true
-
-# Maven release artifacts only (no SNAPSHOTs, no beta)
-format == "maven2" && !path.contains("SNAPSHOT") && !path.contains("-beta")
-
-# Conda packages for a specific channel
-format == "conda" && repository == "conda-hosted"
-
-# Terraform providers only
-format == "terraform"
+# A path prefix inside one repository
+repository == "maven-hosted" && path.startsWith("/org/example/")
 ```
+
+Everything else is **denied**. An expression the evaluator does not recognise
+matches nothing, so the privilege grants no access at all — the failure mode is
+a silent deny, not a silent grant.
+
+Specifically **not** supported:
+
+| Written as | Why it does not work |
+|---|---|
+| `format == "maven2"` | `format` is not a variable the evaluator binds |
+| `true` | no wildcard form — write the repository name instead |
+| `format == "pypi" \|\| format == "npm"` | `\|\|` is not a supported operator |
+| `!path.contains("SNAPSHOT")` | neither `!` nor `contains()` is supported |
+| `path.contains("…")`, `path.endsWith("…")` | only `startsWith` is implemented |
+
+> **Name a repository, do not name a format.** A "read all Maven" rule is one
+> selector per Maven repository — `repository == "maven-hosted"`,
+> `repository == "maven-proxy"`, `repository == "maven-group"`. There is no
+> format-wide shorthand yet; the evaluator binds `repository` and `path` only.
+
+### Paths for Docker and OCI
+
+Registry paths are normalised before matching: the `/v2/` prefix is stripped and
+the path is cut at the `/manifests/`, `/blobs/` or `/tags/` keyword. A request
+for `/v2/myteam/app/manifests/1.0` is therefore matched as `/myteam/app/`.
+
+Write the selector against that shape — a selector starting with `/v2/` never
+matches:
+
+```cel
+# correct
+path.startsWith("/myteam/")
+
+# never matches
+path.startsWith("/v2/myteam/")
+```
+
+### A note on `path` in non-registry formats
+
+For Maven, npm, PyPI and the other path-based formats the path is the artifact
+path inside the repository — `/com/example/myapp/1.0.0/myapp-1.0.0.jar` for
+Maven, `/my-package` for npm, `/my_package-1.0.0-py3-none-any.whl` for PyPI.
 
 ---
 
@@ -104,8 +110,8 @@ Content-Type: application/json
 
 {
   "name": "maven-releases-only",
-  "description": "Maven release artifacts (no snapshots)",
-  "expression": "format == \"maven2\" && !path.contains(\"SNAPSHOT\")"
+  "description": "Artifacts under org/example in maven-hosted",
+  "expression": "repository == \"maven-hosted\" && path.startsWith(\"/org/example/\")"
 }
 ```
 
@@ -176,7 +182,7 @@ Content-Type: application/json
 
 ```json
 // 1. Content Selector
-{ "name": "maven-releases", "expression": "format == \"maven2\" && repository == \"maven-releases\"" }
+{ "name": "maven-releases", "expression": "repository == \"maven-hosted\"" }
 
 // 2. Privilege
 { "name": "nx-maven-releases-read", "type": "repository-content-selector",
@@ -192,7 +198,7 @@ Content-Type: application/json
 
 ```json
 // 1. Content Selector
-{ "name": "npm-all", "expression": "format == \"npm\"" }
+{ "name": "npm-all", "expression": "repository == \"npm-hosted\"" }
 
 // 2. Privilege
 { "name": "nx-npm-all-write", "type": "repository-content-selector",
@@ -208,7 +214,7 @@ Content-Type: application/json
 
 ```json
 // 1. Content Selector
-{ "name": "docker-myteam", "expression": "format == \"docker\" && path.startsWith(\"/v2/myteam/\")" }
+{ "name": "docker-myteam", "expression": "repository == \"docker-dev\" && path.startsWith(\"/myteam/\")" }
 
 // 2. Privilege
 { "name": "nx-docker-myteam-read", "type": "repository-content-selector",
@@ -224,7 +230,7 @@ Content-Type: application/json
 
 ```json
 // 1. Content Selector
-{ "name": "pypi-hosted", "expression": "format == \"pypi\" && repository == \"pypi-hosted\"" }
+{ "name": "pypi-hosted", "expression": "repository == \"pypi-hosted\"" }
 
 // 2. Privilege
 { "name": "nx-pypi-write", "type": "repository-content-selector",
@@ -240,7 +246,7 @@ Content-Type: application/json
 
 ```json
 // 1. Content Selector
-{ "name": "helm-all", "expression": "format == \"helm\"" }
+{ "name": "helm-all", "expression": "repository == \"helm-charts\"" }
 
 // 2. Privilege
 { "name": "nx-helm-read", "type": "repository-content-selector",
@@ -256,7 +262,7 @@ Content-Type: application/json
 
 ```json
 // 1. Content Selector
-{ "name": "conda-all", "expression": "format == \"conda\"" }
+{ "name": "conda-all", "expression": "repository == \"conda-hosted\"" }
 
 // 2. Privilege
 { "name": "nx-conda-read", "type": "repository-content-selector",
@@ -272,7 +278,7 @@ Content-Type: application/json
 
 ```json
 // 1. Content Selector
-{ "name": "terraform-all", "expression": "format == \"terraform\"" }
+{ "name": "terraform-all", "expression": "repository == \"terraform-hosted\"" }
 
 // 2. Privilege
 { "name": "nx-terraform-read", "type": "repository-content-selector",
@@ -288,7 +294,7 @@ Content-Type: application/json
 
 ```json
 // 1. Content Selector
-{ "name": "all-artifacts", "expression": "true" }
+{ "name": "all-artifacts", "expression": "path.startsWith(\"/\")" }
 
 // 2. Privilege
 { "name": "nx-all-read", "type": "repository-content-selector",
@@ -304,7 +310,7 @@ Content-Type: application/json
 
 ```json
 // 1. Content Selector (releases only, no SNAPSHOT)
-{ "name": "maven-releases-only", "expression": "format == \"maven2\" && !path.contains(\"SNAPSHOT\")" }
+{ "name": "maven-releases-only", "expression": "repository == \"maven-hosted\" && path.startsWith(\"/org/example/\")" }
 
 // 2. Privilege
 { "name": "nx-maven-no-snapshot", "type": "repository-content-selector",
@@ -322,9 +328,22 @@ Content-Type: application/json
 |------|-------------|
 | `nx-admin` | Full access to everything |
 | `nx-anonymous` | Anonymous user (read-only public repos) |
-| `nx-developer` | Read + publish artifacts |
+| `nx-developer` | Developer — read/write access |
+| `nx-deployer` | Deployer — upload artifacts |
+| `nx-replication` | Replication service account |
 
-Built-in roles cannot be deleted or modified.
+**A built-in role carries no privilege of its own.** The five roles exist on a
+fresh instance, but their privilege lists are empty: a user assigned
+`nx-deployer` and nothing else can read and write nothing. Grant access by
+creating a privilege and attaching it to the role (Steps 1–3 above) — that is
+the step people miss, and the symptom is a `403` on a user that authenticated
+fine.
+
+Built-in roles are ordinary rows in the API: they can be edited and deleted
+like any other role, and there is no guard against removing `nx-anonymous`.
+Treat them as templates — copy the shape you need into a role of your own
+instead of editing the shared ones, so a second team does not inherit or
+remove your permissions by accident.
 
 ---
 
@@ -359,7 +378,7 @@ When a request is made for an artifact:
 2. User roles → list of privileges
 3. For each privilege of type repository-content-selector:
    a. Fetch associated Content Selector → CEL expression
-   b. Evaluate expression against variables (format, path, repository)
+   b. Evaluate expression against variables (repository, path)
    c. If true → access granted
 4. At least one privilege grants access → 200 OK
    No matching privilege → 403 Forbidden
@@ -506,10 +525,11 @@ ldap:
 
 | Problem | Cause | Solution |
 |---------|-------|----------|
-| 403 when reading an artifact | No privilege whose Content Selector matches the request | Check CEL expression — verify `format`, `repository`, `path` values match |
+| 403 when reading an artifact | No privilege whose Content Selector matches the request | Check the expression — it must be one of the three supported shapes, with the `repository` name and `path` prefix spelled exactly as the request carries them |
 | Content Selector has no effect | Incorrect CEL expression | `GET /service/rest/v1/security/content-selectors` — verify the `expression` field |
-| Role assigned but no access | Privilege not attached to the Role | `PUT /roles/{id}/privileges` with the correct privilege IDs |
-| Docker pull denied | Docker uses `/v2/...` paths | Use Content Selector with `format == "docker"` |
+| Role assigned but no access | Privilege not attached to the Role | `PUT /roles/{id}` with the privilege IDs in `privileges` — a role with an empty privilege list grants nothing |
+| 403 on every request for a user with a role | The role carries no privilege | Built-in roles ship empty; attach a privilege to the role (Steps 1–3) |
+| Docker pull denied | Docker uses `/v2/...` paths | The `/v2/` prefix is stripped before matching — use `path.startsWith("/myteam/")`, not `/v2/myteam/` |
 | "No content selectors defined" in UI | A Content Selector must exist before creating a Privilege | Security → Content Selectors → New Selector |
-| Conda install fails with 403 | Channel path not matching CEL expression | Verify `format == "conda"` and correct `repository` or `path` in selector |
-| Terraform init fails with 403 | Provider source path not matching selector | Use `format == "terraform"` or narrow by `repository` |
+| Conda install fails with 403 | Channel path not matching CEL expression | Verify `repository` and `path` in the selector |
+| Terraform init fails with 403 | Provider source path not matching selector | Narrow by `repository == "<name>"` |
