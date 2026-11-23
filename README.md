@@ -5,32 +5,102 @@
   <p>A full-featured self-hosted alternative to Sonatype Nexus Repository</p>
   <br>
 
+  [![Latest release](https://img.shields.io/github/v/release/nexspence/nexspence?style=flat-square&color=22c55e)](https://github.com/nexspence/nexspence/releases/latest)
+  [![Stars](https://img.shields.io/github/stars/nexspence/nexspence?style=flat-square&color=f59e0b)](https://github.com/nexspence/nexspence/stargazers)
+  [![Forks](https://img.shields.io/github/forks/nexspence/nexspence?style=flat-square&color=0ea5e9)](https://github.com/nexspence/nexspence/forks)
   ![Go](https://img.shields.io/badge/Go-1.26+-00ADD8?style=flat-square&logo=go&logoColor=white)
   ![React](https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=black)
   ![TypeScript](https://img.shields.io/badge/TypeScript-6-3178C6?style=flat-square&logo=typescript&logoColor=white)
   ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16+-4169E1?style=flat-square&logo=postgresql&logoColor=white)
   ![Docker](https://img.shields.io/badge/Docker-ready-2496ED?style=flat-square&logo=docker&logoColor=white)
+  [![GHCR image](https://img.shields.io/ghcr/v/nexspence/nexspence?logo=docker&style=flat-square&color=2496ED)](https://github.com/nexspence/nexspence/pkgs/container/nexspence)
   [![License: AGPL v3 or later](https://img.shields.io/badge/License-AGPL--3.0--or--later-22c55e?style=flat-square)](LICENSE)
   ![Lint](https://img.shields.io/badge/lint-golangci--lint%20v2-22c55e?style=flat-square&logo=go&logoColor=white)
-  ![Tests](https://img.shields.io/badge/tests-2600+%20passing-22c55e?style=flat-square)
+  ![Tests](https://img.shields.io/badge/tests-2600+%20passing-22c55e?style=flat-square)](https://github.com/nexspence/nexspence/actions/workflows/ci.yml)
 
   <br>
 
+  [![Website](https://img.shields.io/badge/nexspence.com-0f172a?style=for-the-badge&logo=firefox&logoColor=white)](https://nexspence.com)
+  [![Docs](https://img.shields.io/badge/Documentation-1e293b?style=for-the-badge&logo=readthedocs&logoColor=white)](https://nexspence.com/docs/)
+  [![Discussions](https://img.shields.io/badge/Discussions-6b7280?style=for-the-badge&logo=github&logoColor=white)](https://github.com/nexspence/nexspence/discussions)
   [![Telegram community](https://img.shields.io/badge/Telegram-@nexspence__community-26A5E4?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/nexspence_community)
 
 </div>
 
 ---
 
+## Start in two minutes
+
+One binary, one Postgres, no license key. Requires Docker 24+ and free ports 8081 and 5001.
+
+```bash
+docker network create nexspence-net 2>/dev/null
+
+docker run -d --name nexspence-db --network nexspence-net \
+  -e POSTGRES_USER=nexspence -e POSTGRES_PASSWORD=nexspence -e POSTGRES_DB=nexspence \
+  postgres:16-alpine
+
+# wait until Postgres accepts connections
+until docker exec nexspence-db pg_isready -U nexspence >/dev/null 2>&1; do sleep 1; done
+
+docker run -d --name nexspence --network nexspence-net \
+  -p 8081:8081 -p 5001:5000 \
+  -e NEXSPENCE_DATABASE_DSN="postgres://nexspence:nexspence@nexspence-db:5432/nexspence?sslmode=disable" \
+  -e NEXSPENCE_AUTH_ALLOW_INSECURE_DEFAULTS=true \
+  -v nexspence-blobs:/app/data/blobs \
+  ghcr.io/nexspence/nexspence:latest
+```
+
+Open **http://localhost:8081** — sign in as `admin` / `admin123`, then change the password.
+
+> `NEXSPENCE_AUTH_ALLOW_INSECURE_DEFAULTS=true` permits the shipped development password and is for local evaluation only. In production, set `NEXSPENCE_AUTH_JWT_SECRET` (32+ characters) and `NEXSPENCE_BOOTSTRAP_ADMIN_PASSWORD` instead.
+
+Want the full stack — Prometheus, Grafana, Keycloak SSO, MinIO? `git clone https://github.com/nexspence/nexspence && cd nexspence && docker compose up -d`.
+
+**Already running Sonatype Nexus?** Nexspence imports a live Nexus instance over its REST API — repository definitions, artifacts, container images, users, roles and routing rules — while the source keeps serving traffic. The job is pausable, resumable and survives a restart: **[migration guide](docs/nexus-migration.md)**.
+
+---
+
 ## 🎬 Demo
 
-▶️ **[Watch the demo on nexspence.com](https://nexspence.com)**
+<p align="center">
+  <a href="https://nexspence.com/assets/demo.mp4">
+    <img src="website/assets/screenshots/repositories.PNG" alt="Nexspence demo: repositories dashboard" width="640">
+  </a>
+</p>
+
+▶️ **[Watch the full demo on nexspence.com](https://nexspence.com)** — repositories, RBAC, blob stores, cleanup policies, the vulnerability dashboard and live Nexus migration, in two minutes.
 
 ---
 
 ## What is Nexspence?
 
 Nexspence is a self-hosted artifact repository manager that supports **19 package formats**, three repository types (hosted, proxy, group), fine-grained RBAC, SSO via OIDC/LDAP, audit logging, S3-compatible storage, and a modern dark-theme web UI — all in a single binary backed by PostgreSQL. It exposes the full **Sonatype Nexus v1 REST API** at `/service/rest/v1/` for drop-in compatibility with existing CI/CD pipelines and package manager configs.
+
+---
+
+## Why not Sonatype Nexus Repository?
+
+The short version: Nexus Repository Community Edition is no longer open source, it is capped, it phones home, and the features people actually want (HA, SSO, replication, staging) sit in paid tiers. Nexspence has no such tiers — because it has no paid edition at all.
+
+| | Nexus Repository CE | Nexspence |
+|---|---|---|
+| Licence | EULA (proprietary) since 3.77.0 — the open-source core covers only Maven, raw and APT | AGPL-3.0-or-later, one licence, no tiers |
+| Component cap | 40,000 components | none |
+| Request cap | 100,000 requests/day | none |
+| Telemetry | mandatory base telemetry since 3.97.0 (Oct 2026), acknowledged at install; an instance that cannot report for 10 days (30 on 3.98+) goes read-only — and CE has no exemption | none |
+| High availability | paid tiers | included — stateless nodes, Redis locks, `/healthz` + `/readyz` |
+| SSO | LDAP in CE; OIDC/SAML in paid tiers | OIDC/OAuth2 **and** LDAP, included |
+| Blob stores | S3 / Azure / GCS in paid tiers | S3-compatible (AWS, MinIO, Ceph) and Azure, included |
+| Staging & promotion | paid tiers | included — CEL filters, scan gate, approval queue |
+| Runtime | JVM, ~1.5–2 GB RAM | one Go binary, ~60–80 MB RAM |
+| API compatibility | — | full Nexus v1 REST API at `/service/rest/v1/` — change the host, not your CI |
+| Migration from Nexus | per-repository export/import | live import of a running instance — repositories, artifacts, images, users, roles, routing rules |
+| Cost | free tier + paid Pro / Pro+ / Enterprise | free forever, funded by sponsors |
+
+<sub>Sources: [Nexus Repository editions and feature availability](https://help.sonatype.com/en/nexus-repository-tiers-and-feature-availability.html), [Nexus Repository telemetry](https://help.sonatype.com/en/nexus-repository-telemetry.html), [2025 release notes](https://help.sonatype.com/en/nexus-repository-2025-release-notes.html), [Introducing the Community Edition](https://www.sonatype.com/blog/sonatype-nexus-repository-community-edition). Limits and tiers change with every Sonatype release — check the linked pages for the current state. "Sonatype" and "Nexus Repository" are trademarks of Sonatype, Inc.; Nexspence is not affiliated with or endorsed by Sonatype.</sub>
+
+Honest comparison with the rest of the field: **JFrog Artifactory** (the free OSS edition covers Maven/Gradle/Ivy/SBT only; the rest is priced per user), **Pulp** (GPL, multi-format, plugin-driven, Red Hat-backed), **Harbor** (OCI registry only), **Verdaccio** (npm only), **Reposilite** (Maven only), **Gitea/Forgejo** (a registry as a side feature of a forge).
 
 ---
 
@@ -110,7 +180,9 @@ View the full site with interactive architecture diagram, install guide, and com
 
 ---
 
-## Quick Start
+## Quick Start — full stack
+
+> Just want to try it? The [two-minute start](#start-in-two-minutes) above is enough. This section is the complete stack.
 
 **Requirements:** [Docker](https://docs.docker.com/get-docker/) 24+ with Compose v2
 
@@ -345,6 +417,7 @@ The Helm chart reference ships with the chart itself: [`deploy/helm/nexspence/RE
 
 Nexspence is free and AGPLv3 — no paid tier, no license fees, nothing behind a paywall.
 Sponsorship pays for the demo instance, the docs site, CI minutes and development time.
+Where every dollar goes: **[nexspence.com/#sponsors](https://nexspence.com/#sponsors)**.
 
 <div align="center">
   <a href="https://github.com/sponsors/nexspence">
@@ -354,6 +427,7 @@ Sponsorship pays for the demo instance, the docs site, CI minutes and developmen
 
 | Tier | Price | Rewards |
 |------|-------|---------|
+| ☕ Coffee | $3 once | Thank-you in the next release notes |
 | ☕ Supporter | $5/mo | Sponsor badge · your name in [SPONSORS.md](SPONSORS.md) · newsletter |
 | 🚀 Backer | $25/mo | + your name and link in this README · a say in roadmap polls |
 | 🏢 Sponsor | $100/mo | + your logo here and on [nexspence.com](https://nexspence.com) · priority issue triage |
@@ -370,13 +444,26 @@ Full list and details: **[SPONSORS.md](SPONSORS.md)**
 
 Contributions are welcome. Please open an issue to discuss proposed changes before submitting a pull request.
 
+### Where to start
+
+New to the codebase? These are the fastest ways to land a first contribution:
+
+- **Pick a task:** issues labelled [`good first issue`](https://github.com/nexspence/nexspence/labels/good%20first%20issue) and [`help wanted`](https://github.com/nexspence/nexspence/labels/help%20wanted) are scoped small on purpose. Comment to claim one before you start.
+- **Ask first, code later:** open a [Discussion](https://github.com/nexspence/nexspence/discussions) for anything design-shaped — it is cheaper than a rejected pull request.
+- **Docs count:** a missing guide for your ecosystem (Maven, npm, PyPI, Helm, Docker) is a real contribution, and format-specific guides are listed under `good first issue`.
+- **Migrating from Nexus?** The [migration guide](docs/nexus-migration.md) is the source of truth for what is imported and what is not.
+
+### Local development
+
 ```bash
-# Run backend tests
+# Backend
 go test ./...
 
-# Run frontend linter
-cd frontend && npm run lint
+# Frontend
+cd frontend && npm run lint && npm test
 ```
+
+Full contributor rules — licensing of contributions, commit conventions, coverage gates — are in **[CONTRIBUTING.md](CONTRIBUTING.md)**.
 
 ---
 
@@ -398,9 +485,13 @@ to remember — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 | Where | What for |
 |-------|----------|
+| 💬 **[Discussions](https://github.com/nexspence/nexspence/discussions)** | Questions, ideas, "how do I…", show-and-tell — the best place to get help |
 | 💬 **[@nexspence_community](https://t.me/nexspence_community)** | Telegram channel — release announcements, setup questions, roadmap talk |
 | 🐞 **[GitHub Issues](https://github.com/nexspence/nexspence/issues)** | Bug reports and feature requests, tracked to a release |
+| ⭐ **[Star the repo](https://github.com/nexspence/nexspence/stargazers)** | The only "like" button that exists here — it is how other people find the project |
 | ✉️ **[@skensel](https://t.me/skensel)** | Direct line to the maintainer — security reports, sponsorship, anything private |
+
+Security problems: please do **not** open a public issue — contact the maintainer directly so a fix can ship before the details are public.
 
 ---
 

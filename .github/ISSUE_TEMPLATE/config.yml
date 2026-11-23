@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or idea — use Discussions
+    url: https://github.com/nexspence/nexspence/discussions
+    about: Questions, "how do I…", show-and-tell and roadmap talk belong in Discussions.
+  - name: Telegram community
+    url: https://t.me/nexspence_community
+    about: Release announcements and quick setup help.
+  - name: Security report — contact the maintainer directly
+    url: https://t.me/skensel
+    about: Please do not open a public issue for a vulnerability.

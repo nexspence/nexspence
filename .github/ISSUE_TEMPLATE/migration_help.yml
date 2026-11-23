@@ -1,0 +1,57 @@
+name: Migration help (from Sonatype Nexus)
+description: You are moving an existing Nexus instance to Nexspence and need a hand
+title: "[Migration] "
+labels: ["migrating-from-nexus"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Migrating a live Nexus instance? Start with the **[migration guide](https://github.com/nexspence/nexspence/blob/main/docs/nexus-migration.md)**
+        — it lists exactly what is imported (repositories, artifacts, container images,
+        users, roles, routing rules) and what is not (cleanup policies and task schedules).
+
+        This form is for the parts that are not in the guide. If your question is
+        "does it work?": the answer is usually yes, and the guide says how.
+
+  - type: dropdown
+    id: source
+    attributes:
+      label: Source
+      options:
+        - Nexus Repository 3 (OSS / Community Edition)
+        - Nexus Repository 3 (Pro / paid tier)
+        - JFrog Artifactory
+        - Another tool
+    validations:
+      required: true
+
+  - type: input
+    id: source-version
+    attributes:
+      label: Source version
+      placeholder: "3.87.0"
+
+  - type: dropdown
+    id: scale
+    attributes:
+      label: Scale
+      description: Rough size of the instance you are migrating
+      options:
+        - Small — a handful of repositories, a few thousand artifacts
+        - Medium — tens of repositories, tens of thousands of artifacts
+        - Large — hundreds of repositories or millions of artifacts
+        - Unknown
+
+  - type: textarea
+    id: question
+    attributes:
+      label: What do you need to know?
+      description: The concrete question — e.g. "do proxy caches come across?", "are my routing rules migrated?", "can I test against a live instance first?"
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Extra context
+      description: CI/CD that must keep working, formats in use, SSO setup, anything else that constrains the migration

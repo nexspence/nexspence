@@ -13,11 +13,13 @@ builds, and development time.
 
 | Tier | Price | What you get |
 |------|-------|--------------|
+| ☕ **Coffee** | $3 once | A thank-you in the next release notes |
 | ☕ **Supporter** | $5 / month | Sponsor badge on your GitHub profile · your name listed below · release & roadmap newsletter |
 | 🚀 **Backer** | $25 / month | Everything above · your name and link in the [README](README.md) · a say in roadmap polls · a thank-you in the next release notes |
 | 🏢 **Sponsor** | $100 / month | Everything above · your logo and link in the README and on [nexspence.com](https://nexspence.com) · priority triage on your issues · direct line to the maintainer |
 
 One-off contributions are welcome too — GitHub Sponsors accepts custom amounts.
+Where the money goes is published on **[nexspence.com/#sponsors](https://nexspence.com/#sponsors)**.
 
 ---
 
