@@ -11,14 +11,14 @@
 #   User <project>-user   — password User2026!,  role <project>-users
 #
 # Environment variables:
-#   BASE_URL        — server URL            (default: http://localhost:8080)
+#   BASE_URL        — server URL            (default: http://localhost:8081)
 #   ADMIN_USER      — admin login           (default: admin)
 #   ADMIN_PASS      — admin password        (default: admin123)
 #   ADMIN_PASS_TPL  — password for *-admin users (default: Admin2026!)
 #   USER_PASS_TPL   — password for *-user users  (default: User2026!)
 set -uo pipefail
 
-BASE_URL="${BASE_URL:-http://localhost:8080}"
+BASE_URL="${BASE_URL:-http://localhost:8081}"
 ADMIN_USER="${ADMIN_USER:-admin}"
 ADMIN_PASS="${ADMIN_PASS:-admin123}"
 ADMIN_PASS_TPL="${ADMIN_PASS_TPL:-Admin2026!}"

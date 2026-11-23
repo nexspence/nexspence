@@ -5,12 +5,12 @@
 # Docker push skipped — requires a separate docker login.
 #
 # Environment variables:
-#   BASE_URL   — server URL    (default: http://localhost:8080)
+#   BASE_URL   — server URL    (default: http://localhost:8081)
 #   ADMIN_USER — admin login   (default: admin)
 #   ADMIN_PASS — admin password (default: admin123)
 set -uo pipefail
 
-BASE_URL="${BASE_URL:-http://localhost:8080}"
+BASE_URL="${BASE_URL:-http://localhost:8081}"
 ADMIN_USER="${ADMIN_USER:-admin}"
 ADMIN_PASS="${ADMIN_PASS:-admin123}"
 AUTH=(-u "${ADMIN_USER}:${ADMIN_PASS}")
@@ -443,9 +443,10 @@ fi
 section "Docker"
 warn "Docker push requires docker CLI — skipping automated seed."
 info "Manual push example:"
+echo "  # the registry runs on its own port — 5000 native, 5001 with Docker Compose"
 echo "  docker pull alpine:3.19"
-echo "  docker tag alpine:3.19 localhost:8080/docker-dev/alpine:3.19"
-echo "  docker push localhost:8080/docker-dev/alpine:3.19"
+echo "  docker tag alpine:3.19 localhost:5001/docker-dev/alpine:3.19"
+echo "  docker push localhost:5001/docker-dev/alpine:3.19"
 
 # ── Conan — skip ──────────────────────────────────────────────────────────────
 section "Conan"

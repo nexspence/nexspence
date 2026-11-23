@@ -390,7 +390,19 @@ Full documentation — deployment variants, HA setup, OIDC SSO, webhooks, the RB
 
 📖 **[nexspence.com/docs](https://nexspence.com/docs/)**
 
+### Format guides
+
+End-to-end guides for using Nexspence as a registry — create the repositories,
+point the client at them, publish, consume, and debug what breaks:
+
+| | | |
+|---|---|---|
+| [Maven](docs/guides/maven.md) | [npm](docs/guides/npm.md) | [PyPI](docs/guides/pypi.md) |
+| [Docker / OCI](docs/guides/docker.md) | [GitHub Actions](docs/guides/github-actions.md) | [All guides](docs/guides/README.md) |
+
 The Helm chart reference ships with the chart itself: [`deploy/helm/nexspence/README.md`](deploy/helm/nexspence/README.md).
+
+Every release is listed in **[CHANGELOG.md](CHANGELOG.md)**.
 
 ---
 
