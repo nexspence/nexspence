@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"encoding/json"
+	"io"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -105,10 +107,47 @@ func (h *RepositoryHandler) Create(c *gin.Context) {
 func (h *RepositoryHandler) Update(c *gin.Context) {
 	name := c.Param("name")
 
-	var updates domain.Repository
-	if err := c.ShouldBindJSON(&updates); err != nil {
+	// The body is read once and decoded twice: into the repository and into a
+	// presence probe. "online" and "allowAnonymous" are plain bools, so a body
+	// that leaves them out decodes to false — and the service reads false as
+	// "take the repository offline" and "make it private". A partial update
+	// must not change what it does not mention: attaching a cleanup policy
+	// (or a quota) to a repository used to take it offline, and every read of
+	// it answered 503 "repository is offline" from then on.
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
+	}
+	var updates domain.Repository
+	if err := json.Unmarshal(body, &updates); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	var presence struct {
+		Online         *bool `json:"online"`
+		AllowAnonymous *bool `json:"allowAnonymous"`
+	}
+	if err := json.Unmarshal(body, &presence); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if presence.Online == nil || presence.AllowAnonymous == nil {
+		existing, err := h.svc.Get(c.Request.Context(), name)
+		if err != nil {
+			if isNotFound(err) {
+				c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if presence.Online == nil {
+			updates.Online = existing.Online
+		}
+		if presence.AllowAnonymous == nil {
+			updates.AllowAnonymous = existing.AllowAnonymous
+		}
 	}
 
 	r, err := h.svc.Update(c.Request.Context(), name, &updates)

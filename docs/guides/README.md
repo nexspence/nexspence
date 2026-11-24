@@ -16,6 +16,9 @@ implementation and the repository's own helper scripts
 | [Helm](helm.md) | Chart repositories and `index.yaml` · `helm repo add` · charts over OCI · how a group merges the index |
 | [Go modules](go.md) | `GOPROXY` · the trailing slash · `,direct` · the checksum database · publishing a module |
 | [Cargo](cargo.md) | The sparse index · source replacement · `cargo publish` and the credential provider |
+| [NuGet](nuget.md) | The v3 service index · `allowInsecureConnections` · `dotnet nuget push` and delete |
+| [Raw](raw.md) | Arbitrary paths · `curl --upload-file` · the browse tree · cleanup policies and quotas |
+| [APT](apt.md) | Suites and `dists/<suite>/` · the apt source line · signing · what a deletion does to the index |
 | [GitHub Actions](github-actions.md) | API tokens in CI · publishing with the `nxs` CLI, Maven, Docker and the REST API |
 
 ## Repository URL patterns
@@ -37,7 +40,8 @@ http://<host>:<port>/repository/<repository-name>/
 | Cargo | `/repository/<name>/index/` | the sparse index lives under `index/` |
 | NuGet | `/repository/<name>/index.json` | the v3 service index |
 | Raw | `/repository/<name>/` | any path you like |
-| APT, Yum/RPM, Conan, Conda, Terraform, Alpine, RubyGems, R/CRAN, Hugging Face | `/repository/<name>/` | format-specific paths below that prefix |
+| APT | `/repository/<name>/dists/<suite>/` | the suite index; packages live under `pool/` |
+| Yum/RPM, Conan, Conda, Terraform, Alpine, RubyGems, R/CRAN, Hugging Face | `/repository/<name>/` | format-specific paths below that prefix |
 
 ## Creating repositories
 

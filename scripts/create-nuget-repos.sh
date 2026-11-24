@@ -141,7 +141,12 @@ echo "  proxy  : ${BASE_URL}/repository/${PROXY_NAME}/index.json"
 echo "  group  : ${BASE_URL}/repository/${GROUP_NAME}/index.json"
 echo
 info "Example: add group source (dotnet CLI)"
-echo "  dotnet nuget add source ${BASE_URL}/repository/${GROUP_NAME}/index.json --name nexspence"
+echo "  dotnet nuget add source ${BASE_URL}/repository/${GROUP_NAME}/index.json --name nexspence --allow-insecure-connections"
 echo
 info "Example: push package to hosted"
-echo "  dotnet nuget push MyPkg.1.0.0.nupkg --source ${BASE_URL}/repository/${HOSTED_NAME}/index.json --api-key admin123"
+# A URL carries no credentials and the server does not read X-NuGet-ApiKey,
+# so the source has to be registered with credentials and then addressed by
+# name. See docs/guides/nuget.md.
+echo "  dotnet nuget add source ${BASE_URL}/repository/${HOSTED_NAME}/index.json --name nexspence-hosted \\"
+echo "      --username ${ADMIN_USER} --password ${ADMIN_PASS} --store-password-in-clear-text --allow-insecure-connections"
+echo "  dotnet nuget push MyPkg.1.0.0.nupkg --source nexspence-hosted"
