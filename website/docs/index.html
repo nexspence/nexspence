@@ -1030,6 +1030,7 @@ curl -sf http://localhost:8081/service/rest/v1/status/check</div></div>
       <tr><td>Cargo</td><td><code>/repository/{name}/</code></td><td data-i18n="repo.urls.cargo">Sparse index endpoint</td></tr>
       <tr><td>RubyGems</td><td><code>/repository/{name}/</code></td><td data-i18n="repo.urls.rubygems">Compact index + gem push</td></tr>
       <tr><td>Raw</td><td><code>/repository/{name}/</code></td><td data-i18n="repo.urls.raw">PUT/GET any path</td></tr>
+      <tr><td>APT</td><td><code>/repository/{name}/dists/{suite}/</code></td><td data-i18n="repo.urls.apt">Suite index, packages under <code>pool/</code></td></tr>
     </tbody>
   </table>
 
@@ -1050,6 +1051,9 @@ curl -sf http://localhost:8081/service/rest/v1/status/check</div></div>
     <li><a href="https://github.com/nexspence/nexspence/blob/main/docs/guides/helm.md">Helm guide</a> — chart repositories, <code>index.yaml</code>, charts over OCI</li>
     <li><a href="https://github.com/nexspence/nexspence/blob/main/docs/guides/go.md">Go modules guide</a> — <code>GOPROXY</code>, the checksum database, publishing a module</li>
     <li><a href="https://github.com/nexspence/nexspence/blob/main/docs/guides/cargo.md">Cargo guide</a> — the sparse index, source replacement, <code>cargo publish</code></li>
+    <li><a href="https://github.com/nexspence/nexspence/blob/main/docs/guides/nuget.md">NuGet guide</a> — the v3 service index, <code>dotnet nuget push</code>, plain-HTTP sources</li>
+    <li><a href="https://github.com/nexspence/nexspence/blob/main/docs/guides/raw.md">Raw guide</a> — arbitrary paths, <code>curl --upload-file</code>, cleanup policies, quotas</li>
+    <li><a href="https://github.com/nexspence/nexspence/blob/main/docs/guides/apt.md">APT guide</a> — suites and <code>dists/&lt;suite&gt;/</code>, the source line, signing</li>
     <li><a href="https://github.com/nexspence/nexspence/blob/main/docs/guides/github-actions.md">GitHub Actions guide</a> — API tokens in CI, publishing from a workflow</li>
   </ul>
 
@@ -1908,6 +1912,7 @@ const TRANSLATIONS={
     'repo.urls.cargo':'Sparse index endpoint',
     'repo.urls.rubygems':'Compact index + gem push',
     'repo.urls.raw':'PUT/GET any path',
+    'repo.urls.apt':'Suite index, packages under <code>pool/</code>',
     'repo.anon.sep':'Anonymous Access',
     'repo.anon.info':'Enable <strong>Allow anonymous access</strong> on a repository to let unauthenticated users download artifacts. Write operations always require authentication.',
     'fg.title':'Format Setup Guides',
@@ -2294,6 +2299,7 @@ const TRANSLATIONS={
     'repo.urls.cargo':'Sparse index endpoint',
     'repo.urls.rubygems':'Compact index + gem push',
     'repo.urls.raw':'PUT/GET любого пути',
+    'repo.urls.apt':'Индекс suite, пакеты в <code>pool/</code>',
     'repo.anon.sep':'Анонимный доступ',
     'repo.anon.info':'Включите <strong>Allow anonymous access</strong> для репозитория, чтобы неаутентифицированные пользователи могли скачивать артефакты. Операции записи всегда требуют аутентификации.',
     'fg.title':'Настройка форматов',

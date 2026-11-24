@@ -283,6 +283,42 @@ func TestRepositoryHandler_Update_OK(t *testing.T) {
 	assert.Equal(t, "updated", got.Description)
 }
 
+func TestRepositoryHandler_Update_PartialKeepsOnlineAndAnonymous(t *testing.T) {
+	// A body that does not mention "online" or "allowAnonymous" must not
+	// change them: both are plain bools, and the service reads the decoded
+	// false as "take the repository offline" / "make it private". Attaching a
+	// cleanup policy to a repository used to take it offline.
+	r, repos, _, _ := mountRepos(t)
+	seedRepo(t, repos, &domain.Repository{
+		ID: "r1", Name: "upd", Format: domain.FormatRaw, Type: domain.TypeHosted,
+		Online: true, AllowAnonymous: true,
+	})
+	rec := do(t, r, http.MethodPut, "/service/rest/v1/repositories/raw/hosted/upd",
+		map[string]any{"description": "updated"})
+	require.Equal(t, http.StatusOK, rec.Code)
+	var got domain.Repository
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	assert.True(t, got.Online, "a partial update must not take the repository offline")
+	assert.True(t, got.AllowAnonymous, "a partial update must not make the repository private")
+	assert.Equal(t, "updated", got.Description)
+}
+
+func TestRepositoryHandler_Update_ExplicitOfflineStillWorks(t *testing.T) {
+	// The fix must not make "online": false impossible to set.
+	r, repos, _, _ := mountRepos(t)
+	seedRepo(t, repos, &domain.Repository{
+		ID: "r1", Name: "upd", Format: domain.FormatRaw, Type: domain.TypeHosted,
+		Online: true, AllowAnonymous: true,
+	})
+	rec := do(t, r, http.MethodPut, "/service/rest/v1/repositories/raw/hosted/upd",
+		map[string]any{"online": false})
+	require.Equal(t, http.StatusOK, rec.Code)
+	var got domain.Repository
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	assert.False(t, got.Online)
+	assert.True(t, got.AllowAnonymous, "an explicit online change must not touch allowAnonymous")
+}
+
 func TestRepositoryHandler_Update_BadJSON_400(t *testing.T) {
 	r, _, _, _ := mountRepos(t)
 	rec := doRaw(t, r, http.MethodPut, "/service/rest/v1/repositories/raw/hosted/any", []byte(`{bad`))
