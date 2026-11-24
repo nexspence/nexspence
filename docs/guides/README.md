@@ -19,6 +19,9 @@ implementation and the repository's own helper scripts
 | [NuGet](nuget.md) | The v3 service index · `allowInsecureConnections` · `dotnet nuget push` and delete |
 | [Raw](raw.md) | Arbitrary paths · `curl --upload-file` · the browse tree · cleanup policies and quotas |
 | [APT](apt.md) | Suites and `dists/<suite>/` · the apt source line · signing · what a deletion does to the index |
+| [Conan](conan.md) | `conan remote add` and `conan remote login` · `conan upload` and `conan install` · the v2 revisions protocol and the v1 REST endpoints · group and proxy behaviour |
+| [Conda](conda.md) | Channels and platform subdirs · `repodata.json` · `.condarc` and `--override-channels` · publishing · how a group merges the index |
+| [Terraform](terraform.md) | Hosted, proxy and group repositories · the discovery document · `terraform login` and the CLI configuration · installing providers and modules |
 | [GitHub Actions](github-actions.md) | API tokens in CI · publishing with the `nxs` CLI, Maven, Docker and the REST API |
 
 ## Repository URL patterns
