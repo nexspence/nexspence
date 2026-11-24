@@ -143,6 +143,9 @@ echo
 info "Example: configure Cargo to use group (sparse index)"
 echo "  # ~/.cargo/config.toml"
 echo "  [source.nexspence]"
-echo "  registry = \"${BASE_URL}/repository/${GROUP_NAME}/\""
+echo "  registry = \"sparse+${BASE_URL}/repository/${GROUP_NAME}/index/\""
 echo "  [source.crates-io]"
 echo "  replace-with = \"nexspence\""
+echo
+echo "  The index lives under /index/ — Cargo fetches <registry-url>/config.json,"
+echo "  and the sparse protocol prefix (sparse+) is what selects it over the git index."

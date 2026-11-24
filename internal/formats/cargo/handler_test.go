@@ -118,6 +118,37 @@ func TestCargo_Search(t *testing.T) {
 	assert.Contains(t, w.Body.String(), "tokio")
 }
 
+// Cargo parses the crates.io search shape and rejects an answer whose crate
+// entry has no max_version ("missing field `max_version`"), so the field has
+// to carry that name.
+func TestCargo_Search_UsesMaxVersion(t *testing.T) {
+	repo := testutil.SimpleRepo("crates7", "cargo")
+	r := setup(repo)
+
+	body := buildPublishBody("axum", "0.7.0", "axum-crate")
+	r.ServeHTTP(httptest.NewRecorder(), func() *http.Request {
+		req := httptest.NewRequest(http.MethodPut, "/repository/crates7/api/v1/crates/new", bytes.NewReader(body))
+		req.ContentLength = int64(len(body))
+		return req
+	}())
+
+	req := httptest.NewRequest(http.MethodGet, "/repository/crates7/api/v1/crates?q=axum", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var answer struct {
+		Crates []struct {
+			Name       string `json:"name"`
+			MaxVersion string `json:"max_version"`
+		} `json:"crates"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &answer))
+	require.Len(t, answer.Crates, 1)
+	assert.Equal(t, "axum", answer.Crates[0].Name)
+	assert.Equal(t, "0.7.0", answer.Crates[0].MaxVersion)
+}
+
 func TestCargo_Download_NotFound(t *testing.T) {
 	repo := testutil.SimpleRepo("crates5", "cargo")
 	r := setup(repo)
