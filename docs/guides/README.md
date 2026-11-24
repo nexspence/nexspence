@@ -13,6 +13,9 @@ implementation and the repository's own helper scripts
 | [npm](npm.md) | `.npmrc` · `npm publish` and the raw packument API · scoped packages · registry search |
 | [PyPI](pypi.md) | `pip.conf` · `twine upload` · the simple index · PEP 503 name normalisation |
 | [Docker / OCI](docker.md) | The registry path under `/v2/` · `insecure-registries` · `docker push` · Helm over OCI · cosign signatures and the Referrers API |
+| [Helm](helm.md) | Chart repositories and `index.yaml` · `helm repo add` · charts over OCI · how a group merges the index |
+| [Go modules](go.md) | `GOPROXY` · the trailing slash · `,direct` · the checksum database · publishing a module |
+| [Cargo](cargo.md) | The sparse index · source replacement · `cargo publish` and the credential provider |
 | [GitHub Actions](github-actions.md) | API tokens in CI · publishing with the `nxs` CLI, Maven, Docker and the REST API |
 
 ## Repository URL patterns
@@ -29,9 +32,9 @@ http://<host>:<port>/repository/<repository-name>/
 | npm | `/repository/<name>/` | the package path follows, `PUT /<package>` |
 | PyPI | `/repository/<name>/simple/` | the index; uploads go to `/repository/<name>/` |
 | Docker | `:8081/<name>/` | the registry shares the web port, under `/v2/` on the wire |
-| Helm | `/repository/<name>/` | chart repositories, `helm repo add` |
-| Go modules | `/repository/<name>/` | `GOPROXY` |
-| Cargo | `/repository/<name>/` | sparse index |
+| Helm | `/repository/<name>/` | chart repositories, `helm repo add`; OCI charts live under `/v2/<name>/` |
+| Go modules | `/repository/<name>/` | `GOPROXY` — the URL needs a trailing slash |
+| Cargo | `/repository/<name>/index/` | the sparse index lives under `index/` |
 | NuGet | `/repository/<name>/index.json` | the v3 service index |
 | Raw | `/repository/<name>/` | any path you like |
 | APT, Yum/RPM, Conan, Conda, Terraform, Alpine, RubyGems, R/CRAN, Hugging Face | `/repository/<name>/` | format-specific paths below that prefix |

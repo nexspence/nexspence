@@ -248,8 +248,11 @@ func (h *Handler) handleSearch(c *gin.Context, repoName string) {
 	crates := make([]gin.H, 0, len(page.Items))
 	for _, comp := range page.Items {
 		crates = append(crates, gin.H{
-			"name":           comp.Name,
-			"newest_version": comp.Version,
+			"name": comp.Name,
+			// Cargo parses the crates.io search shape and requires the field
+			// to be called max_version: the answer was rejected with
+			// "missing field `max_version`" before this.
+			"max_version": comp.Version,
 		})
 	}
 	c.JSON(http.StatusOK, gin.H{
