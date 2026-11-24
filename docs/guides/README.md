@@ -22,6 +22,9 @@ implementation and the repository's own helper scripts
 | [Conan](conan.md) | `conan remote add` and `conan remote login` · `conan upload` and `conan install` · the v2 revisions protocol and the v1 REST endpoints · group and proxy behaviour |
 | [Conda](conda.md) | Channels and platform subdirs · `repodata.json` · `.condarc` and `--override-channels` · publishing · how a group merges the index |
 | [Terraform](terraform.md) | Hosted, proxy and group repositories · the discovery document · `terraform login` and the CLI configuration · installing providers and modules |
+| [Alpine](alpine.md) | The repositories line · one directory per architecture · `APKINDEX.tar.gz` · publishing a `.apk` · unsigned indexes |
+| [RubyGems](rubygems.md) | The compact index (`/versions`, `/info/<gem>`) and the legacy one · `gem sources` · `gem push` and how the version and the platform are stored · `gem install` and `gem list -r` |
+| [R / CRAN](cran.md) | The `PACKAGES` index next to the tarballs · `options(repos = …)` and `install.packages(repos = …)` · publishing a source tarball · how a group merges the index |
 | [GitHub Actions](github-actions.md) | API tokens in CI · publishing with the `nxs` CLI, Maven, Docker and the REST API |
 
 ## Repository URL patterns
