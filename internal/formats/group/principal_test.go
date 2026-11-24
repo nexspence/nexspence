@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -19,16 +20,22 @@ import (
 
 // seenPrincipal is what a member handler saw in its own context.
 type seenPrincipal struct {
-	repoName     string
-	hasUsername  bool
-	username     string
-	hasUserID    bool
-	userID       string
-	hasRoles     bool
-	roles        []string
-	hasClaims    bool
-	claims       *auth.Claims
-	hasGroupRepo bool
+	repoName       string
+	hasUsername    bool
+	username       string
+	hasUserID      bool
+	userID         string
+	hasRoles       bool
+	roles          []string
+	hasClaims      bool
+	claims         *auth.Claims
+	hasGroupRepo   bool
+	hasTokenScope  bool
+	tokenScopes    []string
+	hasAPITokenID  bool
+	apiTokenID     string
+	hasAPITokenExp bool
+	apiTokenExpiry *time.Time
 }
 
 // principalFmt is a fake member format handler that records the principal it
@@ -59,6 +66,18 @@ func (p *principalFmt) ServeHTTP(c *gin.Context) {
 	if v, ok := c.Get("claims"); ok {
 		p.seen.hasClaims = true
 		p.seen.claims, _ = v.(*auth.Claims)
+	}
+	if v, ok := c.Get("tokenScopes"); ok {
+		p.seen.hasTokenScope = true
+		p.seen.tokenScopes, _ = v.([]string)
+	}
+	if v, ok := c.Get("apiTokenID"); ok {
+		p.seen.hasAPITokenID = true
+		p.seen.apiTokenID, _ = v.(string)
+	}
+	if v, ok := c.Get("apiTokenExpiresAt"); ok {
+		p.seen.hasAPITokenExp = true
+		p.seen.apiTokenExpiry, _ = v.(*time.Time)
 	}
 	c.String(http.StatusOK, "served")
 }
@@ -143,6 +162,36 @@ func TestGroup_AnonymousRequest_StaysAnonymousForMember(t *testing.T) {
 	assert.False(t, seen.hasUserID, "an anonymous caller gained a user id")
 	assert.False(t, seen.hasRoles, "an anonymous caller gained roles")
 	assert.False(t, seen.hasClaims, "an anonymous caller gained claims")
+}
+
+// TestGroup_MemberSeesTheTokenBindingKeys: a caller that presented an API
+// token must reach the member with that token's binding intact — its id, its
+// expiry and its scopes. A member that lost them mints an unbound, unscoped
+// session for a caller who logged in with a scoped token (#566/#567), so this
+// pins the trio the copy has to carry.
+func TestGroup_MemberSeesTheTokenBindingKeys(t *testing.T) {
+	expiry := time.Now().Add(time.Hour)
+	seen := &seenPrincipal{}
+	r := principalEngine(t, map[string]any{
+		"username":          "alice",
+		"userID":            "u-1",
+		"roles":             []string{"nx-admin"},
+		"tokenScopes":       []string{"read"},
+		"apiTokenID":        "tok-1",
+		"apiTokenExpiresAt": &expiry,
+	}, seen)
+
+	req := httptest.NewRequest(http.MethodGet, "/repository/principal-grp/file.txt", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	assert.True(t, seen.hasTokenScope, "the member saw no token scopes")
+	assert.Equal(t, []string{"read"}, seen.tokenScopes)
+	assert.True(t, seen.hasAPITokenID, "the member saw no api token id")
+	assert.Equal(t, "tok-1", seen.apiTokenID)
+	assert.True(t, seen.hasAPITokenExp, "the member saw no api token expiry")
+	assert.Equal(t, &expiry, seen.apiTokenExpiry)
 }
 
 // TestGroup_WriteToMember_KeepsCallersPrincipal: the write path delegates to
