@@ -257,9 +257,42 @@ func (h *Handler) callMemberWithQuery(ctx context.Context, c *gin.Context, membe
 	}
 	sub.Set(formats.GroupMemberKey, true)
 	sub.Set(formats.GroupRepoKey, c.Param("repoName"))
+	copyPrincipal(c, sub)
 	handler.ServeHTTP(sub)
 	sub.Writer.WriteHeaderNow() // flush buffered status to rec.Code
 	return rec
+}
+
+// principalKeys are the gin context keys the auth middleware leaves the
+// authenticated principal in.
+var principalKeys = []string{
+	"username",
+	"userID",
+	"roles",
+	"claims",
+	"tokenScopes",
+	"apiTokenID",
+	"apiTokenExpiresAt",
+}
+
+// copyPrincipal carries the authenticated principal from the group's context
+// onto the member's. A member handler reads the principal straight out of the
+// context — Conan's credential handshake does — and the member's context starts
+// empty, so without this a member sees an anonymous caller even though the
+// client presented credentials to the group, and the member's own checks run
+// against nobody.
+//
+// The copy is verbatim: the group is a facade, not a privilege escalation, so
+// the member sees the same caller the client presented to the group — same
+// username, same roles, same claims — and nothing more. A request that reached
+// the group without a principal carries none of these keys, so it stays
+// anonymous on the way in.
+func copyPrincipal(from, to *gin.Context) {
+	for _, key := range principalKeys {
+		if v, ok := from.Get(key); ok {
+			to.Set(key, v)
+		}
+	}
 }
 
 // serveMergedIndex fans an index request out to every eligible member on the
@@ -517,6 +550,7 @@ func (h *Handler) serveWrite(c *gin.Context) {
 		{Key: "repoName", Value: targetName},
 		{Key: "path", Value: filePath},
 	}
+	copyPrincipal(c, sub)
 
 	handler.ServeHTTP(sub)
 	sub.Writer.WriteHeaderNow() // flush buffered status to rec.Code
