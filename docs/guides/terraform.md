@@ -69,7 +69,7 @@ curl -u admin:admin123 -X POST \
     \"name\": \"terraform-proxy\",
     \"online\": true,
     \"allowAnonymous\": true,
-    \"description\": \"Terraform proxy → registry.terraform.io\",
+    \"description\": \"Terraform proxy → https://registry.terraform.io\",
     \"blobStoreId\": \"${BLOB_STORE_ID}\",
     \"proxyConfig\": { \"remote_url\": \"https://registry.terraform.io\" }
   }"
@@ -145,6 +145,13 @@ curl -s -u admin:admin123 \
 {"versions":[{"version":"1.0.0","protocols":["5.0"],"platforms":null}]}
 ```
 
+`platforms` is `null` because the upload does not record the operating system
+and the architecture of the package it stores — the version list is built from
+the version and the protocol versions only. A client that speaks the registry
+protocol therefore cannot tell which platforms a version exists for, which is
+the second reason a hosted provider cannot be installed through that protocol
+(the first one is the download document below).
+
 ```bash
 curl -s -u admin:admin123 \
   http://localhost:8091/repository/terraform-hosted/v1/modules/acme/network/aws/versions
@@ -153,6 +160,12 @@ curl -s -u admin:admin123 \
 ```json
 {"modules":[{"versions":[{"version":"1.0.0"}]}]}
 ```
+
+The public registry repeats the module address in a `source` field
+(`{"modules":[{"source":"terraform-aws-modules/vpc/aws","versions":[…]}]}`);
+Nexspence leaves it out. It makes no difference to an install — the client takes
+the archive location from the `/download` endpoint, not from the version list —
+but a document comparison with `registry.terraform.io` will show the difference.
 
 The group merges the members: the first member that has a version wins, and the
 lists are concatenated rather than shadowed. The group's version document is
@@ -188,13 +201,16 @@ shasum -a 256 demo.zip
 
 One field name is not the one the protocol uses: the document carries
 `sha256_sum`, while the client reads `shasum`. A Terraform client that installs
-through the registry protocol stops with
+through the registry protocol stops with this — the transcript is the one the
+verification script produces behind the registry host of section 6, whose host
+name is `host.docker.internal:8443` there:
 
 ```
 Error: Failed to install provider
-Error while installing registry.example.com/acme/demo v1.0.0: could not query
-provider registry for registry.example.com/acme/demo: registry response
-includes invalid SHA256 hash "": %!s(<nil>)
+
+Error while installing host.docker.internal:8443/acme/demo v1.0.0: could not
+query provider registry for host.docker.internal:8443/acme/demo: registry
+response includes invalid SHA256 hash "": %!s(<nil>)
 ```
 
 The proxy repository is not affected by that: it forwards the upstream document,
@@ -265,24 +281,27 @@ response to HTTPS client.
 The client speaks HTTPS and asks at the host root; Nexspence serves the
 document under `/repository/<name>/` over plain HTTP. Put a registry host in
 front of the instance (section 6) and the same command gets one step further —
-and stops again, because the discovery document advertises no login service:
+and stops again, because the discovery document advertises no login service.
+This is the transcript of the verification script, whose registry host is
+`host.docker.internal:8443`:
 
 ```
 Error: Host does not support Terraform tokens API
 
-The given hostname "registry.example.com" does not support creating
+The given hostname "host.docker.internal:8443" does not support creating
 Terraform authorization tokens.
 ```
 
 **Where the token would end up.** When a login service exists, `terraform login`
 writes the token in plain text into the credentials file in the CLI
-configuration directory — `~/.terraform.d/credentials.tfrc.json` by default:
+configuration directory — `~/.terraform.d/credentials.tfrc.json` by default.
+This is the file the verification script produced behind its registry host:
 
 ```json
 {
   "credentials": {
-    "registry.example.com": {
-      "token": "nxs_xxxxxxxxxxxxxxxxxxxx"
+    "host.docker.internal:8443": {
+      "token": "nxs_…"
     }
   }
 }
@@ -318,24 +337,28 @@ configuration of the workspace:
 ```hcl
 provider_installation {
   direct {
-    include = ["registry.example.com/acme/demo"]
+    include = ["localhost:8091/acme/demo"]
   }
 }
 ```
 
 The `direct` method asks the provider's own host for the version list, which
-means service discovery at the host root. Against a bare instance that fails:
+means service discovery at the host root. Against a bare instance that fails —
+this is Terraform v1.9.8 against the instance of this guide, verbatim:
 
 ```
 $ terraform init
-- Finding registry.example.com/acme/demo versions matching "1.0.0"...
+Initializing the backend...
+Initializing provider plugins...
+- Finding localhost:8091/acme/demo versions matching "1.0.0"...
 
 Error: Failed to query available provider packages
 
 Could not retrieve the list of available versions for provider
-registry.example.com/acme/demo: could not connect to registry.example.com:
-failed to request discovery document: Get
-"https://registry.example.com/.well-known/terraform.json": ...
+localhost:8091/acme/demo: could not connect to localhost:8091: failed to
+request discovery document: Get
+"https://localhost:8091/.well-known/terraform.json": http: server gave HTTP
+response to HTTPS client
 ```
 
 The mirror method works against a plain instance, because it needs no network
@@ -366,6 +389,9 @@ provider_installation {
   }
 }
 ```
+
+(The verification script runs the same commands with a mirror in its own
+temporary directory, so nothing lands in `$HOME`.)
 
 The source address in the workspace names the same host as the mirror
 directory:
@@ -399,8 +425,43 @@ Terraform has been successfully initialized!
 ```
 
 The mirror holds one package per platform, so Terraform records a checksum for
-the platform it ran on and warns that another platform will need its own
-`terraform providers lock -platform=linux_amd64` run.
+the platform it ran on and warns that the lock file is incomplete (the platform
+name in the warning is the one you run on — `darwin_arm64` in the transcript
+below):
+
+```
+Warning: Incomplete lock file information for providers
+
+Due to your customized provider installation methods, Terraform was forced to
+calculate lock file checksums locally for the following providers:
+  - localhost:8091/acme/demo
+
+The current .terraform.lock.hcl file only includes checksums for
+darwin_arm64, so Terraform running on another platform will fail to install
+these providers.
+
+To calculate additional checksums for another platform, run:
+  terraform providers lock -platform=linux_amd64
+```
+
+That command always asks the origin registry for the other platform, so against
+a bare instance it fails the same way the `direct` block does — the mirror is
+not consulted for it:
+
+```
+$ terraform providers lock -platform=linux_amd64
+Error: Could not retrieve providers for locking
+
+Terraform failed to fetch the requested providers for linux_amd64 in order to
+calculate their checksums: some providers could not be installed:
+- localhost:8091/acme/demo: could not connect to localhost:8091: failed to
+request discovery document: Get
+"https://localhost:8091/.well-known/terraform.json": http: server gave HTTP
+response to HTTPS client
+```
+
+Checksums for the other platforms have to be computed where the registry can
+answer — behind the host of section 6 — and then committed with the lock file.
 
 ## 5. Installing a module from the repository
 
@@ -439,7 +500,9 @@ Two rules come out of that:
   strip a single top-level directory out of a module archive. An archive that
   contains `my-module-1.0.0/main.tf` is unpacked to
   `.terraform/modules/network/my-module-1.0.0/main.tf`, the module has no
-  configuration of its own, and every output of it is missing.
+  configuration of its own, and every output of it is missing — the
+  verification script installs such an archive and shows the directory it
+  lands in.
 - **The URL has to be readable by the client.** The group repository is created
   with `"allowAnonymous": true`, so the archive is served without credentials.
   The hosted repository is not, and the Terraform client sends no credentials
@@ -462,23 +525,30 @@ that:
 - forwards `/repository/<name>/...` to the Nexspence instance;
 - terminates TLS.
 
-A reverse proxy in front of the instance is enough. With that in place the proxy
-repository works end to end with the real client:
+A reverse proxy in front of the instance is enough. The transcript below was
+produced with the throwaway reverse proxy of the verification script
+(`.guide-test/terraform.sh`), which serves the discovery document at the host
+root and forwards everything else; the guide does not ship a proxy
+configuration — the three requirements above are the checklist a deployment has
+to meet. With that in place the proxy repository works end to end with the
+real client:
 
 ```
 $ terraform init
 Initializing the backend...
 Initializing provider plugins...
-- Finding registry.example.com/hashicorp/null versions matching "3.2.4"...
-- Installing registry.example.com/hashicorp/null v3.2.4...
-- Installed registry.example.com/hashicorp/null v3.2.4 (signed by HashiCorp)
+- Finding host.docker.internal:8443/hashicorp/null versions matching "3.2.4"...
+- Installing host.docker.internal:8443/hashicorp/null v3.2.4...
+- Installed host.docker.internal:8443/hashicorp/null v3.2.4 (signed by HashiCorp)
 
 Terraform has been successfully initialized!
 ```
 
-Two things still do not work there, and they are properties of the server, not
-of the proxy:
+Three things still do not work there, and they are properties of the server,
+not of the proxy:
 
+- **the hosted repository's version list** carries `"platforms": null`, so a
+  client cannot tell which platforms the version exists for — see section 2;
 - **the hosted repository's download document** is rejected by the client,
   because it carries `sha256_sum` where the protocol's field is `shasum`, and
   no `shasums_url` at all — see section 2;
@@ -509,7 +579,8 @@ authenticated. Read access is then granted per role — see
 | `failed to get download URL for "<module>": 204 No Content` | The proxy's module download endpoint drops the upstream `X-Terraform-Get` header | Use the hosted repository's module endpoint, or a direct archive URL |
 | `bad response code: 401` while a module is downloaded | The archive URL points into a repository that is not anonymously readable | Use the group repository, or make the archive readable |
 | A module installs but has no outputs | The archive wraps the module in a top-level directory that Terraform does not strip | Put the module's `.tf` files at the root of the archive |
-| `provider ... was not found in any of the search locations` | The provider source address has more than three segments | A source address is `<host>/<namespace>/<type>` — the repository path does not belong in it |
+| `provider ... was not found in any of the search locations` | The installation method found no package for that provider and platform — the mirror does not hold that platform, or the registry does not know the provider | Put the package for that platform in the mirror, or check the namespace and type in the version list |
+| `Invalid provider source string` | The `source` attribute is not in the format `[hostname/][namespace/]name` | A source address is `<host>/<namespace>/<type>` — the repository path does not belong in it |
 | `405 Method Not Allowed` on a publish | You are publishing into a **proxy** repository | Proxy repositories are read-only; publish into the hosted one |
 
 ## Related
