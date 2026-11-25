@@ -54,6 +54,7 @@ const EXPECTED_GUIDES = [
   'github-actions',
   'go',
   'helm',
+  'huggingface',
   'maven',
   'npm',
   'nuget',
@@ -62,6 +63,7 @@ const EXPECTED_GUIDES = [
   'reverse-proxy',
   'rubygems',
   'terraform',
+  'yum',
 ];
 
 // Used when git is unavailable (e.g. a source tarball without history).
