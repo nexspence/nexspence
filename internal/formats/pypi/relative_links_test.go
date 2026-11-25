@@ -173,3 +173,61 @@ func TestPyPI_PackagePage_CarriesNoHost_EvenWithForeignBaseURL(t *testing.T) {
 		})
 	}
 }
+
+// The served page must not depend on the request's Host header (#821). A link
+// built from the request's host would be the cache-poisoning vector this fix
+// exists to avoid — and it would be invisible: every other test sends the
+// usual host, so such a change would still pass them all. The same request
+// served under a foreign host must return the very same bytes.
+//
+// This is the other half of the "wrong.example" test above: that one pins the
+// CONFIGURED base URL out of the links, this one pins the REQUEST's host out
+// of them.
+func TestPyPI_PackagePage_DoesNotDependOnRequestHost(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		fmt.Fprint(w, `<html><body><a href="https://files.pythonhosted.org/packages/aa/bb/pkg-1.0.tar.gz#sha256=cafe">pkg</a></body></html>`)
+	}))
+	defer upstream.Close()
+
+	proxy := &domain.Repository{
+		ID: "py-hostdep", Name: "pypi-hostdep", Format: "pypi",
+		Type: domain.TypeProxy, Online: true,
+		ProxyConfig: map[string]any{"remote_url": upstream.URL},
+	}
+	hosted := testutil.SimpleRepo("pypi-hostdep-hosted", "pypi")
+
+	for _, tc := range []struct {
+		name   string
+		repo   *domain.Repository
+		target string
+	}{
+		{"proxy", proxy, "/repository/pypi-hostdep/simple/pkg/"},
+		{"hosted", hosted, "/repository/pypi-hostdep-hosted/simple/flask/"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := setupWithBaseURL(tc.repo, "http://localhost:8080")
+			if tc.name == "hosted" {
+				require.Equal(t, http.StatusOK,
+					upload(r, "pypi-hostdep-hosted", "flask", "3.0.0", "flask-3.0.0-py3-none-any.whl", "bytes"))
+			}
+
+			serve := func(host string) []byte {
+				req := httptest.NewRequest(http.MethodGet, tc.target, nil)
+				req.Host = host
+				w := httptest.NewRecorder()
+				r.ServeHTTP(w, req)
+				require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+				return w.Body.Bytes()
+			}
+
+			normal := serve("localhost")
+			foreign := serve("myrepo.ru")
+
+			assert.Contains(t, string(normal), `href="`,
+				"the comparison must not be vacuous: the page carries links")
+			assert.Equal(t, normal, foreign,
+				"the served page must not depend on the request's Host header")
+		})
+	}
+}
