@@ -514,6 +514,11 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 	// Public: token creation policy (max expiry days).
 	public.GET("/api/v1/auth/token-policy", tokenH.TokenPolicy)
 
+	// Public: product version, shown in the sidebar footer to every visitor.
+	// The admin-only /api/v1/system/info also carries the storage
+	// configuration, which names a server-side path and must stay private.
+	public.GET("/api/v1/version", systemH.Version)
+
 	// OIDC redirect flow — only registered when oidc.enabled=true.
 	// Audit events fire via the global AuditMiddleware above (callback GET
 	// whitelisted). Routes are public so the pre-auth redirect flow works.

@@ -60,6 +60,58 @@ describe('Layout', () => {
     await waitFor(() => expect(screen.getByText(/Nexspence v1\.9\.0/)).toBeInTheDocument())
   })
 
+  it('does not add a second v when the build injects the tag-shaped version', async () => {
+    // The release image injects "v2.13.4"; the footer must not prefix another.
+    server.use(
+      http.get('/api/v1/version', () => HttpResponse.json({ version: 'v2.13.4', product: 'Nexspence' }))
+    )
+    renderLayout()
+    await waitFor(() => expect(screen.getByText('Nexspence v2.13.4')).toBeInTheDocument())
+    expect(screen.queryByText(/vv2\.13\.4/)).not.toBeInTheDocument()
+  })
+
+  it('adds a v when the build injects a bare version', async () => {
+    server.use(
+      http.get('/api/v1/version', () => HttpResponse.json({ version: '2.13.4', product: 'Nexspence' }))
+    )
+    renderLayout()
+    await waitFor(() => expect(screen.getByText('Nexspence v2.13.4')).toBeInTheDocument())
+  })
+
+  it('shows the dev version as it is', async () => {
+    server.use(
+      http.get('/api/v1/version', () => HttpResponse.json({ version: 'dev', product: 'Nexspence' }))
+    )
+    renderLayout()
+    await waitFor(() => expect(screen.getByText('Nexspence dev')).toBeInTheDocument())
+  })
+
+  it('falls back to an ellipsis when the version cannot be read', async () => {
+    const versionReq = vi.fn(() => new HttpResponse(null, { status: 500 }))
+    server.use(http.get('/api/v1/version', versionReq))
+    renderLayout()
+    // The request has been made and failed, so the footer keeps the
+    // placeholder instead of showing a version.
+    await waitFor(() => expect(versionReq).toHaveBeenCalled())
+    expect(screen.getByText('Nexspence …')).toBeInTheDocument()
+    expect(screen.queryByText(/Nexspence v/)).not.toBeInTheDocument()
+  })
+
+  it('shows the version to a non-admin user', async () => {
+    useAuthStore.setState({
+      token: 'tok',
+      user: fixtures.user({ roles: ['viewer'] }) as never,
+    })
+    renderLayout()
+    await waitFor(() => expect(screen.getByText(/Nexspence v1\.9\.0/)).toBeInTheDocument())
+  })
+
+  it('shows the version to a signed-out visitor', async () => {
+    seedAuthAsGuest()
+    renderLayout()
+    await waitFor(() => expect(screen.getByText(/Nexspence v1\.9\.0/)).toBeInTheDocument())
+  })
+
   it('toggles sidebar collapse and persists to localStorage', async () => {
     renderLayout()
     const collapseBtn = screen.getByTitle('Collapse sidebar')

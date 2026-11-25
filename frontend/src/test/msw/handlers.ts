@@ -122,6 +122,10 @@ export const handlers = [
       storage: { default_type: 'local', local: { base_path: './data/blobs' } },
     })
   ),
+  // Public product version (sidebar footer)
+  http.get('/api/v1/version', () =>
+    HttpResponse.json({ version: '1.9.0', product: 'Nexspence' })
+  ),
   http.get('/service/rest/v1/status', () =>
     HttpResponse.json({ edition: 'OSS', version: '1.9.0' })
   ),

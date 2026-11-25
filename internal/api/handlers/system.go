@@ -38,6 +38,12 @@ type SystemInfo struct {
 	Storage SystemStorageInfo `json:"storage"`
 }
 
+// ProductVersion is GET /api/v1/version.
+type ProductVersion struct {
+	Version string `json:"version"`
+	Product string `json:"product"`
+}
+
 // SystemStorageInfo is the effective storage configuration the UI uses to
 // suggest a local blob-store path. Empty config values are normalized to the
 // same defaults the storage layer applies at runtime.
@@ -110,6 +116,18 @@ func (h *SystemHandler) Info(c *gin.Context) {
 			DefaultType: defaultType,
 			Local:       SystemLocalStorageInfo{BasePath: basePath},
 		},
+	})
+}
+
+// Version handles GET /api/v1/version.
+// The product version is not a secret — it is in the image tag and on the
+// admin page — and every visitor may see it, so this endpoint is public.
+// Only the version travels here: the storage configuration of
+// /api/v1/system/info names a server-side path and stays admin-only.
+func (h *SystemHandler) Version(c *gin.Context) {
+	c.JSON(http.StatusOK, ProductVersion{
+		Version: h.version,
+		Product: "Nexspence",
 	})
 }
 

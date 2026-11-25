@@ -365,6 +365,16 @@ function ProfileModal({ onClose }: { onClose: () => void }) {
   )
 }
 
+// The release image injects the tag-shaped version ("v2.13.4") while a local
+// build may inject a bare one ("2.13.4"), so the "v" is added only when the
+// value does not already carry it. "dev" is not a version number and is
+// shown as it is.
+function formatVersion(raw: string | undefined): string {
+  if (!raw) return '…'
+  if (raw === 'dev') return 'dev'
+  return raw.startsWith('v') ? raw : `v${raw}`
+}
+
 export default function Layout() {
   const { user, logout, isAdmin, isOIDC } = useAuthStore()
   const admin = isAdmin()
@@ -373,11 +383,12 @@ export default function Layout() {
     localStorage.getItem('sidebar-collapsed') === 'true'
   )
 
+  // The version is public information — the endpoint needs no credentials —
+  // so the footer shows it to every visitor, admin or not.
   const { data: systemInfo } = useQuery<{ version: string }>({
-    queryKey: ['system-info'],
-    queryFn: () => apiClient.get<{ version: string }>('/api/v1/system/info').then(r => r.data),
+    queryKey: ['system-version'],
+    queryFn: () => apiClient.get<{ version: string }>('/api/v1/version').then(r => r.data),
     staleTime: Infinity,
-    enabled: admin,
   })
 
   function toggleCollapse() {
@@ -514,7 +525,7 @@ export default function Layout() {
             </NavLink>
           </div>
         )}
-        <span className={styles.version}>Nexspence v{systemInfo?.version ?? '…'}</span>
+        <span className={styles.version}>Nexspence {formatVersion(systemInfo?.version)}</span>
         <div className={styles.footerRow}>
           <ThemeToggle className={styles.themeToggle} />
           <button
