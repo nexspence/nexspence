@@ -332,7 +332,8 @@ func TestTerraform_Proxy_RewriteDownloadURL(t *testing.T) {
 	var body map[string]any
 	require.NoError(t, json.NewDecoder(w.Body).Decode(&body))
 	dl, _ := body["download_url"].(string)
-	assert.Contains(t, dl, "localhost:8080")
+	assert.Equal(t, "/repository/tf-proxy-extra-rewrite/terraform-provider-aws/5.0.0/terraform-provider-aws_5.0.0_linux_amd64.zip", dl,
+		"the rewritten download_url is root-relative (#821): terraform resolves it against the request URL")
 	assert.NotContains(t, dl, "releases.hashicorp.com")
 }
 

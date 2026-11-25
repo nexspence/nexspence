@@ -166,6 +166,6 @@ func TestConda_Proxy_RepoData(t *testing.T) {
 	url, ok := entry["url"].(string)
 	require.True(t, ok, "url field must be a string")
 	// URL must be rewritten to point through our proxy
-	assert.True(t, strings.HasPrefix(url, "http://localhost:8080/repository/conda-proxy/linux-64/"),
-		"expected local proxy URL, got: %s", url)
+	assert.True(t, strings.HasPrefix(url, "/repository/conda-proxy/linux-64/"),
+		"expected a root-relative proxy URL, got: %s", url)
 }

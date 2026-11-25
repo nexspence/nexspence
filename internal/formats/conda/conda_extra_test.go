@@ -446,7 +446,7 @@ func TestConda_ProxyRepodata_RewritesUrlsArray(t *testing.T) {
 	urls, ok := entry["urls"].([]any)
 	require.True(t, ok)
 	require.Len(t, urls, 1)
-	assert.Contains(t, urls[0].(string), "http://localhost:8080/repository/conda-proxy/linux-64/")
+	assert.Contains(t, urls[0].(string), "/repository/conda-proxy/linux-64/")
 }
 
 // ─── proxy: bad path ─────────────────────────────────────────────

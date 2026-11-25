@@ -144,7 +144,10 @@ func (h *Handler) serveIndex(c *gin.Context, repoName string) {
 	entries := map[string][]chartEntry{}
 	for _, comp := range comps {
 		tgzName := comp.Name + "-" + comp.Version + ".tgz"
-		url := h.deps.BaseURL + "/repository/" + repoName + "/" + tgzName
+		// Root-relative (#821): helm resolves the entry as a URL reference
+		// against the repository URL, so a path without a host works on
+		// whatever host the client reached.
+		url := repoPath(repoName) + "/" + tgzName
 		entries[comp.Name] = append(entries[comp.Name], chartEntry{
 			Name:    comp.Name,
 			Version: comp.Version,
@@ -278,7 +281,9 @@ func (h *Handler) fetchAndRewriteHelmIndex(c *gin.Context, repo *domain.Reposito
 	}
 
 	// Rewrite each chart's download URLs to point through this proxy.
-	localBase := strings.TrimRight(h.deps.BaseURL, "/") + "/repository/" + repo.Name + "/"
+	// Root-relative (#821): the URL carries no host, so helm resolves it
+	// against the host it reached for index.yaml.
+	localBase := repoPath(repo.Name) + "/"
 	if entries, ok := index["entries"].(map[string]any); ok {
 		for key, v := range entries {
 			charts, ok := v.([]any)

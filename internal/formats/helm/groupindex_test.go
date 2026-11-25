@@ -35,7 +35,7 @@ entries:
     - name: widget
       version: 1.2.3
       urls:
-        - http://localhost:8080/repository/helm-hosted/widget-1.2.3.tgz
+        - /repository/helm-hosted/widget-1.2.3.tgz
 `)
 	proxy := []byte(`
 apiVersion: v1
@@ -44,12 +44,12 @@ entries:
     - name: ingress
       version: 4.0.0
       urls:
-        - http://localhost:8080/repository/helm-remote/ingress-4.0.0.tgz
+        - /repository/helm-remote/ingress-4.0.0.tgz
   widget:
     - name: widget
       version: 1.2.3
       urls:
-        - http://localhost:8080/repository/helm-remote/widget-1.2.3.tgz
+        - /repository/helm-remote/widget-1.2.3.tgz
 `)
 
 	body, ct, err := h.MergeGroupIndex("helm", "/index.yaml", []formats.GroupIndexPart{
@@ -69,12 +69,12 @@ entries:
 
 	hostedURL, _ := doc.Entries["widget"][0]["urls"].([]any)
 	require.Len(t, hostedURL, 1)
-	assert.Equal(t, "http://localhost:8080/repository/helm/widget-1.2.3.tgz", hostedURL[0],
+	assert.Equal(t, "/repository/helm/widget-1.2.3.tgz", hostedURL[0],
 		"member-minted URL re-rooted at the group")
 
 	remoteURL, _ := doc.Entries["ingress"][0]["urls"].([]any)
 	require.Len(t, remoteURL, 1)
-	assert.Equal(t, "http://localhost:8080/repository/helm/ingress-4.0.0.tgz", remoteURL[0],
+	assert.Equal(t, "/repository/helm/ingress-4.0.0.tgz", remoteURL[0],
 		"member-minted URL (including GitHub origins rewritten by the proxy) re-rooted at the group")
 }
 

@@ -203,7 +203,7 @@ func TestHelm_AgePolicy_IndexOmitsYoungVersions(t *testing.T) {
 	body := w.Body.String()
 	assert.Contains(t, body, "image: docker.io/bitnami/redis:20.0.0-debian-12-r0")
 	assert.Contains(t, body, "digest: 0123456789abcdef")
-	assert.Contains(t, body, testBaseURL+"/repository/helm-aged/redis-20.0.0.tgz")
+	assert.Contains(t, body, "/repository/helm-aged/redis-20.0.0.tgz")
 }
 
 func TestHelm_AgePolicy_YoungArchiveIsRefused(t *testing.T) {

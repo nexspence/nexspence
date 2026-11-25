@@ -86,7 +86,7 @@ func TestConda_Proxy_CurrentRepodata_RewritesURLs_RoundTrip(t *testing.T) {
 	r, _ := subpathProxy(t, "conda-current", upstream.URL)
 
 	pkgURL := indexPackageURL(t, r, "conda-current", "linux-64", "current_repodata.json")
-	assert.Equal(t, condaBaseURL+"/repository/conda-current/linux-64/pkgs/"+condaPkgFile, pkgURL,
+	assert.Equal(t, "/repository/conda-current/linux-64/pkgs/"+condaPkgFile, pkgURL,
 		"current_repodata.json must be rewritten the way repodata.json is")
 
 	w := fetchThrough(t, r, pkgURL)
@@ -105,7 +105,7 @@ func TestConda_Proxy_RepodataFromPackages_RewritesURLs_RoundTrip(t *testing.T) {
 	r, _ := subpathProxy(t, "conda-fromjson", upstream.URL)
 
 	pkgURL := indexPackageURL(t, r, "conda-fromjson", "linux-64", "repodata_from_packages.json")
-	assert.Equal(t, condaBaseURL+"/repository/conda-fromjson/linux-64/pkgs/"+condaPkgFile, pkgURL)
+	assert.Equal(t, "/repository/conda-fromjson/linux-64/pkgs/"+condaPkgFile, pkgURL)
 
 	w := fetchThrough(t, r, pkgURL)
 	require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body.String())

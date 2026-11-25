@@ -195,7 +195,7 @@ generated: "2024-01-01T00:00:00Z"
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	body := w.Body.String()
-	assert.Contains(t, body, "http://localhost:8080/repository/helm-proxy/nginx-15.0.0.tgz",
+	assert.Contains(t, body, "/repository/helm-proxy/nginx-15.0.0.tgz",
 		"chart URL should be rewritten to local proxy")
 	assert.NotContains(t, body, upstream.URL,
 		"upstream URL must not appear in rewritten index")

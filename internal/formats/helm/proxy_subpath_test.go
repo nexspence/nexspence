@@ -154,10 +154,10 @@ func TestHelm_Proxy_NestedChartURL_RoundTrip(t *testing.T) {
 	r, _ := setupProxy(t, "helm-nested", upstream.URL)
 
 	chartURL := firstChartURL(t, r, "helm-nested")
-	assert.Equal(t, testBaseURL+"/repository/helm-nested/charts/ingress-nginx-4.11.2.tgz", chartURL,
+	assert.Equal(t, "/repository/helm-nested/charts/ingress-nginx-4.11.2.tgz", chartURL,
 		"the upstream subdirectory must survive the rewrite")
 
-	req := httptest.NewRequest(http.MethodGet, strings.TrimPrefix(chartURL, testBaseURL), nil)
+	req := httptest.NewRequest(http.MethodGet, chartURL, nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body.String())
@@ -174,9 +174,9 @@ func TestHelm_Proxy_FlatChartURL_RoundTrip(t *testing.T) {
 	r, _ := setupProxy(t, "helm-flat", upstream.URL)
 
 	chartURL := firstChartURL(t, r, "helm-flat")
-	assert.Equal(t, testBaseURL+"/repository/helm-flat/ingress-nginx-4.11.2.tgz", chartURL)
+	assert.Equal(t, "/repository/helm-flat/ingress-nginx-4.11.2.tgz", chartURL)
 
-	req := httptest.NewRequest(http.MethodGet, strings.TrimPrefix(chartURL, testBaseURL), nil)
+	req := httptest.NewRequest(http.MethodGet, chartURL, nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body.String())
@@ -194,9 +194,9 @@ func TestHelm_Proxy_AbsoluteURLUnderRemote_RoundTrip(t *testing.T) {
 	r, _ := setupProxy(t, "helm-abs", upstream.URL)
 
 	chartURL := firstChartURL(t, r, "helm-abs")
-	assert.Equal(t, testBaseURL+"/repository/helm-abs/charts/ingress-nginx-4.11.2.tgz", chartURL)
+	assert.Equal(t, "/repository/helm-abs/charts/ingress-nginx-4.11.2.tgz", chartURL)
 
-	req := httptest.NewRequest(http.MethodGet, strings.TrimPrefix(chartURL, testBaseURL), nil)
+	req := httptest.NewRequest(http.MethodGet, chartURL, nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body.String())
@@ -238,9 +238,9 @@ func TestHelm_Proxy_AbsoluteURLForeignHost_RoundTrip(t *testing.T) {
 	r, comps := setupProxy(t, "helm-foreign", upstream.URL)
 
 	chartURL := firstChartURL(t, r, "helm-foreign")
-	assert.Equal(t, testBaseURL+"/repository/helm-foreign/widget-1.0.0.tgz", chartURL)
+	assert.Equal(t, "/repository/helm-foreign/widget-1.0.0.tgz", chartURL)
 
-	req := httptest.NewRequest(http.MethodGet, strings.TrimPrefix(chartURL, testBaseURL), nil)
+	req := httptest.NewRequest(http.MethodGet, chartURL, nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body.String())
@@ -294,9 +294,9 @@ func TestHelm_Proxy_ForeignHostNonCanonicalFilename_RoundTrip(t *testing.T) {
 			r, comps := setupProxy(t, "helm-noncanon", upstream.URL)
 
 			chartURL := firstChartURL(t, r, "helm-noncanon")
-			assert.Equal(t, testBaseURL+"/repository/helm-noncanon/widget-1.0.0.tgz", chartURL)
+			assert.Equal(t, "/repository/helm-noncanon/widget-1.0.0.tgz", chartURL)
 
-			req := httptest.NewRequest(http.MethodGet, strings.TrimPrefix(chartURL, testBaseURL), nil)
+			req := httptest.NewRequest(http.MethodGet, chartURL, nil)
 			w := httptest.NewRecorder()
 			r.ServeHTTP(w, req)
 			require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body.String())
@@ -348,9 +348,9 @@ func TestHelm_Proxy_SameHostNonCanonicalFilename_RoundTrip(t *testing.T) {
 			r, comps := setupProxy(t, "helm-samehost", upstream.URL)
 
 			chartURL := firstChartURL(t, r, "helm-samehost")
-			assert.Equal(t, testBaseURL+"/repository/helm-samehost"+tc.tgzPath, chartURL)
+			assert.Equal(t, "/repository/helm-samehost"+tc.tgzPath, chartURL)
 
-			req := httptest.NewRequest(http.MethodGet, strings.TrimPrefix(chartURL, testBaseURL), nil)
+			req := httptest.NewRequest(http.MethodGet, chartURL, nil)
 			w := httptest.NewRecorder()
 			r.ServeHTTP(w, req)
 			require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body.String())
@@ -427,9 +427,9 @@ func TestHelm_Proxy_SameHostHTTPEntryStaysOnHTTPSRemote(t *testing.T) {
 	r.Any("/repository/:repoName/*path", func(c *gin.Context) { h.ServeHTTP(c) })
 
 	chartURL := firstChartURL(t, r, "helm-https")
-	assert.Equal(t, testBaseURL+"/repository/helm-https/charts/w-1.0.0.tgz", chartURL)
+	assert.Equal(t, "/repository/helm-https/charts/w-1.0.0.tgz", chartURL)
 
-	req := httptest.NewRequest(http.MethodGet, strings.TrimPrefix(chartURL, testBaseURL), nil)
+	req := httptest.NewRequest(http.MethodGet, chartURL, nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body.String())
@@ -554,19 +554,19 @@ func TestHelm_Proxy_RemoteWithPathPrefix(t *testing.T) {
 	require.NoError(t, yaml.Unmarshal(w.Body.Bytes(), &index))
 
 	inside := index.Entries["inside"][0].URLs[0]
-	assert.Equal(t, testBaseURL+"/repository/helm-prefix/charts/inside-1.0.0.tgz", inside,
+	assert.Equal(t, "/repository/helm-prefix/charts/inside-1.0.0.tgz", inside,
 		"the remote's own path prefix must be stripped, the rest kept")
 	outside := index.Entries["outside"][0].URLs[0]
-	assert.Equal(t, testBaseURL+"/repository/helm-prefix/outside-1.0.0.tgz", outside,
+	assert.Equal(t, "/repository/helm-prefix/outside-1.0.0.tgz", outside,
 		"a URL outside the proxied subtree is still fetched through this proxy")
 
-	req = httptest.NewRequest(http.MethodGet, strings.TrimPrefix(inside, testBaseURL), nil)
+	req = httptest.NewRequest(http.MethodGet, inside, nil)
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body.String())
 	assert.Equal(t, "inside-chart-bytes", w.Body.String())
 
-	req = httptest.NewRequest(http.MethodGet, strings.TrimPrefix(outside, testBaseURL), nil)
+	req = httptest.NewRequest(http.MethodGet, outside, nil)
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body.String())

@@ -381,7 +381,9 @@ func (h *Handler) proxyIndex(c *gin.Context, repo *domain.Repository, repoName, 
 
 	// The proxy base is the CHANNEL root, not the subdir: an entry may name a sibling
 	// subdir, and rewritePackageURL resolves each one against the subdir it came from.
-	localBase := strings.TrimRight(h.deps.BaseURL, "/") + "/repository/" + repoName + "/"
+	// Root-relative (#821): the URL carries no host, so the client resolves it
+	// against the host it reached for the index document.
+	localBase := repoPath(repoName) + "/"
 	rewriteCondaURLs(doc, remoteBase, platform, localBase)
 
 	data, _ := json.Marshal(doc)
