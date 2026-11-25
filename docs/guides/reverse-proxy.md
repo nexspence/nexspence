@@ -9,9 +9,9 @@ works out of the box, what needs one setting, and how to check your own instance
 - **Most formats work behind a reverse proxy with no configuration at all.** Their
   links are relative, so the client resolves them against the host it already
   reached.
-- **Four formats need `http.base_url` set to your public URL**: npm, Cargo,
-  NuGet and Conan. Their client protocols require an absolute URL, and there is
-  no way around that — the link has to carry a host.
+- **Five formats need `http.base_url` set to your public URL**: npm, Cargo,
+  NuGet, Conan and Hugging Face. Their client protocols require an absolute URL,
+  and there is no way around that — the link has to carry a host.
 - **`http.trusted_proxies` is not a substitute for `http.base_url`.** It tells the
   server which peers may set `X-Forwarded-For`, so the audit log and the rate
   limiter see the real client address. It does not rewrite the links the server
@@ -49,7 +49,7 @@ and the client cannot follow it.
 | Docker / OCI | path-only `Location` and `Link` headers | works out of the box |
 | Go modules | none (`.info` carries no URLs) | works out of the box |
 | Helm | relative (`index.yaml` `urls:`) | works out of the box |
-| Hugging Face | relative (`Link` header) | works out of the box |
+| Hugging Face | absolute (`Link` header) | **needs `http.base_url`** |
 | Maven | none (`maven-metadata.xml` carries no URLs) | works out of the box |
 | npm | absolute (`dist.tarball`) | **needs `http.base_url`** |
 | NuGet | absolute (`@id`, `packageContent`) | **needs `http.base_url`** |
@@ -70,6 +70,7 @@ from. Four of them take the link literally:
 | Cargo | rejects it: `URL rejected: No host part in the URL` |
 | NuGet | the service index requires `@id` to be absolute with an HTTP/HTTPS scheme |
 | Conan | dereferences the returned URLs verbatim |
+| Hugging Face | `huggingface_hub` hands the `Link` target straight to its HTTP client, and neither `httpx` nor `fetch` resolves a relative reference against the request URL — the request fails with "Request URL is missing an 'http://' or 'https://' protocol" |
 
 The rest resolve relative references against the URL they were fetched from, so a
 relative link is not merely tolerated but correct: the client and the server are
