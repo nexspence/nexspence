@@ -1042,25 +1042,26 @@ curl -sf http://localhost:8081/service/rest/v1/status/check</div></div>
   <div class="doc-section-sub" data-i18n="fg.sub">How to configure your build tools and package managers to use Nexspence repositories. Replace <code>localhost:8081</code> with your server URL and <code>{repo}</code> with your repository name.</div>
 
   <div class="inst-sep">Full guides</div>
-  <p style="font-size:.8rem;color:var(--dim);margin-bottom:10px;line-height:1.6">The snippets below are the quick version. The repository carries the complete guides — creating the repositories, publishing, verifying the upload, authentication and troubleshooting:</p>
+  <p style="font-size:.8rem;color:var(--dim);margin-bottom:10px;line-height:1.6">The snippets below are the quick version. The complete guides are published on this site — creating the repositories, publishing, verifying the upload, authentication and troubleshooting:</p>
   <ul style="font-size:.8rem;color:var(--dim);line-height:1.9;margin:0 0 4px;padding-left:18px">
-    <li><a href="https://github.com/nexspence/nexspence/blob/main/docs/guides/maven.md">Maven guide</a> — mirrors, <code>mvn deploy</code>, checksums, group resolution</li>
-    <li><a href="https://github.com/nexspence/nexspence/blob/main/docs/guides/npm.md">npm guide</a> — <code>.npmrc</code>, publishing, scoped packages, registry search</li>
-    <li><a href="https://github.com/nexspence/nexspence/blob/main/docs/guides/pypi.md">PyPI guide</a> — <code>pip.conf</code>, <code>twine upload</code>, the simple index, PEP 503 names</li>
-    <li><a href="https://github.com/nexspence/nexspence/blob/main/docs/guides/docker.md">Docker / OCI guide</a> — registry port, <code>docker push</code>, Helm over OCI, cosign signatures</li>
-    <li><a href="https://github.com/nexspence/nexspence/blob/main/docs/guides/helm.md">Helm guide</a> — chart repositories, <code>index.yaml</code>, charts over OCI</li>
-    <li><a href="https://github.com/nexspence/nexspence/blob/main/docs/guides/go.md">Go modules guide</a> — <code>GOPROXY</code>, the checksum database, publishing a module</li>
-    <li><a href="https://github.com/nexspence/nexspence/blob/main/docs/guides/cargo.md">Cargo guide</a> — the sparse index, source replacement, <code>cargo publish</code></li>
-    <li><a href="https://github.com/nexspence/nexspence/blob/main/docs/guides/nuget.md">NuGet guide</a> — the v3 service index, <code>dotnet nuget push</code>, plain-HTTP sources</li>
-    <li><a href="https://github.com/nexspence/nexspence/blob/main/docs/guides/raw.md">Raw guide</a> — arbitrary paths, <code>curl --upload-file</code>, cleanup policies, quotas</li>
-    <li><a href="https://github.com/nexspence/nexspence/blob/main/docs/guides/apt.md">APT guide</a> — suites and <code>dists/&lt;suite&gt;/</code>, the source line, signing</li>
-    <li><a href="https://github.com/nexspence/nexspence/blob/main/docs/guides/conan.md">Conan guide</a> — <code>conan remote add</code>, <code>conan upload</code>, the v2 revisions protocol, group resolution</li>
-    <li><a href="https://github.com/nexspence/nexspence/blob/main/docs/guides/conda.md">Conda guide</a> — channels and platform subdirs, <code>repodata.json</code>, <code>.condarc</code>, publishing, group merging</li>
-    <li><a href="https://github.com/nexspence/nexspence/blob/main/docs/guides/terraform.md">Terraform guide</a> — the discovery document, <code>terraform login</code>, the <code>provider_installation</code> block, providers and modules</li>
-    <li><a href="https://github.com/nexspence/nexspence/blob/main/docs/guides/alpine.md">Alpine guide</a> — the repositories line, <code>APKINDEX.tar.gz</code>, publishing an <code>.apk</code>, unsigned indexes</li>
-    <li><a href="https://github.com/nexspence/nexspence/blob/main/docs/guides/rubygems.md">RubyGems guide</a> — the compact index, <code>gem sources</code>, <code>gem push</code>, <code>gem install</code></li>
-    <li><a href="https://github.com/nexspence/nexspence/blob/main/docs/guides/cran.md">R / CRAN guide</a> — the <code>PACKAGES</code> index, <code>options(repos = …)</code>, publishing a source tarball, group merging</li>
-    <li><a href="https://github.com/nexspence/nexspence/blob/main/docs/guides/github-actions.md">GitHub Actions guide</a> — API tokens in CI, publishing from a workflow</li>
+    <li><a href="/docs/guides/maven.html">Maven guide</a> — mirrors, <code>mvn deploy</code>, checksums, group resolution</li>
+    <li><a href="/docs/guides/npm.html">npm guide</a> — <code>.npmrc</code>, publishing, scoped packages, registry search</li>
+    <li><a href="/docs/guides/pypi.html">PyPI guide</a> — <code>pip.conf</code>, <code>twine upload</code>, the simple index, PEP 503 names</li>
+    <li><a href="/docs/guides/docker.html">Docker / OCI guide</a> — registry port, <code>docker push</code>, Helm over OCI, cosign signatures</li>
+    <li><a href="/docs/guides/helm.html">Helm guide</a> — chart repositories, <code>index.yaml</code>, charts over OCI</li>
+    <li><a href="/docs/guides/go.html">Go modules guide</a> — <code>GOPROXY</code>, the checksum database, publishing a module</li>
+    <li><a href="/docs/guides/cargo.html">Cargo guide</a> — the sparse index, source replacement, <code>cargo publish</code></li>
+    <li><a href="/docs/guides/nuget.html">NuGet guide</a> — the v3 service index, <code>dotnet nuget push</code>, plain-HTTP sources</li>
+    <li><a href="/docs/guides/raw.html">Raw guide</a> — arbitrary paths, <code>curl --upload-file</code>, cleanup policies, quotas</li>
+    <li><a href="/docs/guides/apt.html">APT guide</a> — suites and <code>dists/&lt;suite&gt;/</code>, the source line, signing</li>
+    <li><a href="/docs/guides/conan.html">Conan guide</a> — <code>conan remote add</code>, <code>conan upload</code>, the v2 revisions protocol, group resolution</li>
+    <li><a href="/docs/guides/conda.html">Conda guide</a> — channels and platform subdirs, <code>repodata.json</code>, <code>.condarc</code>, publishing, group merging</li>
+    <li><a href="/docs/guides/terraform.html">Terraform guide</a> — the discovery document, <code>terraform login</code>, the <code>provider_installation</code> block, providers and modules</li>
+    <li><a href="/docs/guides/alpine.html">Alpine guide</a> — the repositories line, <code>APKINDEX.tar.gz</code>, publishing an <code>.apk</code>, unsigned indexes</li>
+    <li><a href="/docs/guides/rubygems.html">RubyGems guide</a> — the compact index, <code>gem sources</code>, <code>gem push</code>, <code>gem install</code></li>
+    <li><a href="/docs/guides/cran.html">R / CRAN guide</a> — the <code>PACKAGES</code> index, <code>options(repos = …)</code>, publishing a source tarball, group merging</li>
+    <li><a href="/docs/guides/github-actions.html">GitHub Actions guide</a> — API tokens in CI, publishing from a workflow</li>
+    <li><a href="/docs/guides/">All format guides</a> — the index of every guide, with the repository URL patterns per format</li>
   </ul>
 
   <!-- Maven -->

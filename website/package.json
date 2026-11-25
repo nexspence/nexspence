@@ -1,0 +1,13 @@
+{
+  "name": "nexspence-website",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Static site build helpers for nexspence.com",
+  "scripts": {
+    "build:guides": "node build-guides.mjs"
+  },
+  "devDependencies": {
+    "marked": "18.3.0"
+  }
+}
