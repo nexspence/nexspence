@@ -74,8 +74,8 @@ func TestPyPI_Proxy_PackageIndex_ForcesHTMLUpstream(t *testing.T) {
 	assert.Equal(t, "text/html", capturedAccept, "upstream fetch must always ask for the PEP 503 HTML page")
 	body := w.Body.String()
 	assert.NotContains(t, body, `"files"`, "client must get HTML, not the PEP 691 JSON page")
-	assert.Contains(t, body, `href="http://localhost:8080/repository/pypi-prx-691/packages/ab/cd/requests-2.31.0-py3-none-any.whl#sha256=deadbeef"`,
-		"file links must be rewritten to the proxy")
+	assert.Contains(t, body, `href="/repository/pypi-prx-691/packages/ab/cd/requests-2.31.0-py3-none-any.whl#sha256=deadbeef"`,
+		"file links must be rewritten to the proxy, without a host (#821)")
 }
 
 // TestPyPI_Proxy_SimpleIndex_ForcesHTMLUpstream: same guarantee for the root

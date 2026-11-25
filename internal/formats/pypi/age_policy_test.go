@@ -138,7 +138,7 @@ func TestPyPI_AgePolicy_ServedPageStaysHTML(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code)
 	body := w.Body.String()
 	assert.NotContains(t, body, `"files"`, "client must get HTML, not the PEP 691 JSON page")
-	assert.Contains(t, body, `href="http://localhost:8080/repository/pypi-aged/packages/ab/cd/`+oldWhl,
+	assert.Contains(t, body, `href="/repository/pypi-aged/packages/ab/cd/`+oldWhl,
 		"file links must still be rewritten to the proxy")
 }
 

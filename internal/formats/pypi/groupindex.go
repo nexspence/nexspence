@@ -34,7 +34,9 @@ func (h *Handler) GroupIndexSourcePath(p string) (string, bool) {
 
 // MergeGroupIndex implements formats.GroupIndexMerger.
 func (h *Handler) MergeGroupIndex(groupName, p string, parts []formats.GroupIndexPart) ([]byte, string, error) {
-	groupBase := strings.TrimRight(h.deps.BaseURL, "/") + "/repository/" + groupName
+	// Root-relative (#821): the merged page must work on whatever host the
+	// client reached, so the group base carries no host of its own.
+	groupBase := "/repository/" + groupName
 
 	type anchor struct{ attrs, text string }
 	var anchors []anchor
