@@ -26,6 +26,7 @@ implementation and the repository's own helper scripts
 | [RubyGems](rubygems.md) | The compact index (`/versions`, `/info/<gem>`) and the legacy one · `gem sources` · `gem push` and how the version and the platform are stored · `gem install` and `gem list -r` |
 | [R / CRAN](cran.md) | The `PACKAGES` index next to the tarballs · `options(repos = …)` and `install.packages(repos = …)` · publishing a source tarball · how a group merges the index |
 | [GitHub Actions](github-actions.md) | API tokens in CI · publishing with the `nxs` CLI, Maven, Docker and the REST API |
+| [Reverse proxy](reverse-proxy.md) | What works behind nginx without configuration · the four formats that need `http.base_url` · how to check your own instance |
 
 ## Repository URL patterns
 

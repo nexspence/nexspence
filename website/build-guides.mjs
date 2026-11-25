@@ -59,6 +59,7 @@ const EXPECTED_GUIDES = [
   'nuget',
   'pypi',
   'raw',
+  'reverse-proxy',
   'rubygems',
   'terraform',
 ];
@@ -190,6 +191,10 @@ function rewriteHref(href, sourceFile) {
   // Another guide in the same directory -> the generated page.
   if (pathPart.endsWith('.md') && resolved.startsWith(GUIDES_DIR + path.sep)) {
     const name = path.basename(resolved, '.md');
+    // The index is served from the directory itself, not from README.html.
+    if (name === path.basename(INDEX_FILE, '.md')) {
+      return `/docs/guides/${fragment}`;
+    }
     return `/docs/guides/${name}.html${fragment}`;
   }
 

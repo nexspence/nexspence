@@ -109,6 +109,12 @@
     <priority>0.6</priority>
   </url>
   <url>
+    <loc>https://nexspence.com/docs/guides/reverse-proxy.html</loc>
+    <lastmod>2026-08-08</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
     <loc>https://nexspence.com/docs/guides/rubygems.html</loc>
     <lastmod>2026-11-24</lastmod>
     <changefreq>monthly</changefreq>
