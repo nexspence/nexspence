@@ -113,6 +113,11 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .hero-left{flex:1;min-width:300px}
 .hero-right{flex-shrink:0}
 .hero-badge{display:inline-flex;align-items:center;gap:7px;background:var(--glass);border:1px solid var(--border);border-radius:100px;padding:5px 14px 5px 8px;font-size:.76rem;font-weight:500;color:var(--blue);margin-bottom:22px;backdrop-filter:blur(10px)}
+.hero-badges{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:22px}
+.hero-badges .hero-badge{margin-bottom:0}
+.hero-badge.ver{padding:5px 13px;color:var(--purple);text-decoration:none;transition:border-color 180ms,color 180ms}
+.hero-badge.ver:hover{border-color:var(--borhi);color:#c4b5fd}
+.hero-badge.ver svg{width:12px;height:12px}
 .hdot{width:7px;height:7px;border-radius:50%;background:var(--green);animation:pulse 2s infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
 .hero-title{font-size:clamp(2.2rem,6vw,4.2rem);font-weight:900;letter-spacing:-.03em;line-height:1.06;margin-bottom:18px}
@@ -397,7 +402,13 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
   <div class="sect-wrap" style="position:relative;z-index:1">
     <div class="hero-layout">
       <div class="hero-left">
-        <div class="hero-badge rev"><span class="hdot" aria-hidden="true"></span>Free &amp; Open Source — No License Fees</div>
+        <div class="hero-badges rev">
+          <div class="hero-badge"><span class="hdot" aria-hidden="true"></span>Free &amp; Open Source — No License Fees</div>
+          <a class="hero-badge ver" id="site-version" href="https://github.com/nexspence/nexspence/releases/latest" target="_blank" rel="noopener" title="Latest release" aria-label="Latest release">
+            <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor" stroke="none"/></svg>
+            <span id="site-version-text">v2.13.5</span>
+          </a>
+        </div>
         <h1 class="hero-title rev d1">
           Universal Artifact<br>
           <span class="grad">Repository Manager</span>
@@ -1312,6 +1323,45 @@ function copyBlock(btn) {
   btn.textContent = 'Copied!';
   setTimeout(() => btn.textContent = 'Copy', 2000);
 }
+
+// ── Latest release version ───────────────────────────────────
+// The badge in the hero shows the newest published release. The value in the
+// markup is the one baked in when the website image was built (the deploy
+// workflow passes the latest tag, see website/Dockerfile); the request below
+// keeps it current between deploys. A failure is invisible to the visitor —
+// the baked value simply stays.
+(function(){
+  const text = document.getElementById('site-version-text');
+  if(!text) return;
+  const link = document.getElementById('site-version');
+  const KEY = 'nexspence.latest-release';
+  const TTL = 60 * 60 * 1000;   // one hour
+  const API = 'https://api.github.com/repos/nexspence/nexspence/releases/latest';
+
+  let cached = null;
+  try {
+    const raw = JSON.parse(localStorage.getItem(KEY) || 'null');
+    if(raw && raw.tag && typeof raw.at === 'number') cached = raw;
+  } catch(e){}
+
+  if(cached) text.textContent = cached.tag;
+  // A fresh cache is the answer — no request, no rate limit spent.
+  if(cached && Date.now() - cached.at < TTL) return;
+
+  fetch(API, {headers:{Accept:'application/vnd.github+json'}})
+    .then(r => r.ok ? r.json() : null)
+    .then(data => {
+      const tag = data && data.tag_name;
+      if(!tag) return;
+      text.textContent = tag;
+      if(link){
+        link.title = 'Latest release — ' + tag;
+        link.setAttribute('aria-label', 'Latest release — ' + tag);
+      }
+      try { localStorage.setItem(KEY, JSON.stringify({tag, at: Date.now()})); } catch(e){}
+    })
+    .catch(() => {});
+})();
 
 // ── Floating nav highlight on scroll ─────────────────────────
 (function(){

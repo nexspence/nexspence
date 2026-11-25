@@ -5,6 +5,14 @@ LABEL org.opencontainers.image.source=https://github.com/nexspence/nexspence
 
 COPY . /usr/share/nginx/html/
 
+# The version the landing page shows in the hero. The deploy workflow passes
+# the latest release tag, so the page never advertises a version that was
+# never released. Without the argument the value in the markup is kept.
+ARG VERSION=""
+RUN if [ -n "$VERSION" ]; then \
+      sed -i "s|site-version-text\">v[^<]*|site-version-text\">${VERSION}|" /usr/share/nginx/html/index.html; \
+    fi
+
 # Custom server config.
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
