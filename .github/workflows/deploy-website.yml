@@ -32,6 +32,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0   # the tags: the version shown on the page comes from them
+
+      - name: Resolve the latest release tag
+        id: version
+        # The newest stable release tag. A pre-release tag (v2.14.0-rc.1) is
+        # not what the page should advertise, so it is filtered out.
+        run: echo "tag=$(git tag --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n1)" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4.4.1
@@ -48,6 +56,7 @@ jobs:
         with:
           context: ./website
           push: true
+          build-args: VERSION=${{ steps.version.outputs.tag }}
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
