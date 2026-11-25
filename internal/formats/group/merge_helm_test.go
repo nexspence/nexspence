@@ -79,7 +79,9 @@ func TestGroupMerge_HelmEndToEnd(t *testing.T) {
 
 	urls, _ := doc.Entries["widget"][0]["urls"].([]any)
 	require.NotEmpty(t, urls)
-	assert.Equal(t, "http://localhost:8080/repository/helm/widget-1.2.3.tgz", urls[0])
+	// The group's chart URL is root-relative (#821): it carries no host, so
+	// the client resolves it against the host it reached.
+	assert.Equal(t, "/repository/helm/widget-1.2.3.tgz", urls[0])
 }
 
 func helmProxyRepo(name, remote string) *domain.Repository {

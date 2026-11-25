@@ -109,9 +109,9 @@ func indexPackageURL(t *testing.T, r *gin.Engine, repoName, platform, indexName 
 // fetchThrough requests exactly the URL the rewritten index handed the client.
 func fetchThrough(t *testing.T, r *gin.Engine, pkgURL string) *httptest.ResponseRecorder {
 	t.Helper()
-	require.True(t, strings.HasPrefix(pkgURL, condaBaseURL),
-		"expected a proxy URL, got %s", pkgURL)
-	req := httptest.NewRequest(http.MethodGet, strings.TrimPrefix(pkgURL, condaBaseURL), nil)
+	require.True(t, strings.HasPrefix(pkgURL, "/repository/"),
+		"expected a root-relative proxy URL, got %s", pkgURL)
+	req := httptest.NewRequest(http.MethodGet, pkgURL, nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	return w
@@ -130,7 +130,7 @@ func TestConda_Proxy_NestedPackageURL_RoundTrip(t *testing.T) {
 	r, _ := subpathProxy(t, "conda-nested", upstream.URL)
 
 	pkgURL := firstPackageURL(t, r, "conda-nested", "linux-64")
-	assert.Equal(t, condaBaseURL+"/repository/conda-nested/linux-64/pkgs/"+condaPkgFile, pkgURL,
+	assert.Equal(t, "/repository/conda-nested/linux-64/pkgs/"+condaPkgFile, pkgURL,
 		"the upstream subdirectory must survive the rewrite")
 
 	w := fetchThrough(t, r, pkgURL)
@@ -148,7 +148,7 @@ func TestConda_Proxy_FlatPackageURL_RoundTrip(t *testing.T) {
 	r, _ := subpathProxy(t, "conda-flat", upstream.URL)
 
 	pkgURL := firstPackageURL(t, r, "conda-flat", "linux-64")
-	assert.Equal(t, condaBaseURL+"/repository/conda-flat/linux-64/"+condaPkgFile, pkgURL)
+	assert.Equal(t, "/repository/conda-flat/linux-64/"+condaPkgFile, pkgURL)
 
 	w := fetchThrough(t, r, pkgURL)
 	require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body.String())
@@ -166,7 +166,7 @@ func TestConda_Proxy_AbsoluteURLUnderRemote_RoundTrip(t *testing.T) {
 	r, _ := subpathProxy(t, "conda-abs", upstream.URL)
 
 	pkgURL := firstPackageURL(t, r, "conda-abs", "linux-64")
-	assert.Equal(t, condaBaseURL+"/repository/conda-abs/linux-64/pkgs/"+condaPkgFile, pkgURL)
+	assert.Equal(t, "/repository/conda-abs/linux-64/pkgs/"+condaPkgFile, pkgURL)
 
 	w := fetchThrough(t, r, pkgURL)
 	require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body.String())
@@ -185,7 +185,7 @@ func TestConda_Proxy_RootRelativeURL_RoundTrip(t *testing.T) {
 	r, _ := subpathProxy(t, "conda-rootrel", upstream.URL+"/channel")
 
 	pkgURL := firstPackageURL(t, r, "conda-rootrel", "linux-64")
-	assert.Equal(t, condaBaseURL+"/repository/conda-rootrel/linux-64/pkgs/"+condaPkgFile, pkgURL)
+	assert.Equal(t, "/repository/conda-rootrel/linux-64/pkgs/"+condaPkgFile, pkgURL)
 
 	w := fetchThrough(t, r, pkgURL)
 	require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body.String())
@@ -234,7 +234,7 @@ func TestConda_Proxy_CrossSubdirURL_RoundTrip(t *testing.T) {
 	r, _ := subpathProxy(t, "conda-cross", upstream.URL)
 
 	pkgURL := firstPackageURL(t, r, "conda-cross", "linux-64")
-	assert.Equal(t, condaBaseURL+"/repository/conda-cross/noarch/"+noarchFile, pkgURL)
+	assert.Equal(t, "/repository/conda-cross/noarch/"+noarchFile, pkgURL)
 
 	w := fetchThrough(t, r, pkgURL)
 	require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body.String())

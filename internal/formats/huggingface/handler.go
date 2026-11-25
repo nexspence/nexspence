@@ -631,6 +631,19 @@ func (h *Handler) serveProxyAPI(c *gin.Context, repo *domain.Repository, repoNam
 	// huggingface.co. Relayed verbatim it would send the client straight to
 	// upstream for page two, past this repository's own credentials, rules and
 	// audit trail — so the next-page link is pointed back here.
+	//
+	// Unlike every other client-facing URL of this format, this one stays
+	// ABSOLUTE: the clients follow the target verbatim. huggingface_hub hands
+	// it straight to its HTTP client (huggingface_hub/utils/_pagination.py:
+	// _get_next_page -> response.links["next"]["url"]), and neither httpx nor
+	// Node's fetch resolves a relative reference against the request URL — a
+	// relative target fails with "Request URL is missing an 'http://' or
+	// 'https://' protocol" and breaks list_repo_tree / HfFileSystem outright.
+	// Verified against huggingface_hub 2.4.0 and Node's fetch.
+	//
+	// The absolute URL therefore comes from http.base_url, which is the
+	// server's own configuration: behind a reverse proxy it has to name the
+	// public host, or the next page is unreachable.
 	if link := resp.Header.Get("Link"); link != "" {
 		c.Header("Link", rewriteLinkHeader(link, strings.TrimRight(h.deps.BaseURL, "/")+"/repository/"+repoName))
 	}

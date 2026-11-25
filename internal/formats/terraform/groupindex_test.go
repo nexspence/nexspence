@@ -73,7 +73,9 @@ func TestTerraform_MergeGroupIndex_ModuleVersionsUnion(t *testing.T) {
 
 func TestTerraform_MergeGroupIndex_DiscoveryRewritesMemberURLs(t *testing.T) {
 	h := terraform.New(formats.Deps{BaseURL: "http://localhost:8080"})
-	m1 := []byte(`{"providers.v1":"http://localhost:8080/repository/m1/v1/providers/","modules.v1":"http://localhost:8080/repository/m1/v1/modules/"}`)
+	// The member's own discovery document carries root-relative service URLs
+	// (#821) — the group re-roots them at the group, still without a host.
+	m1 := []byte(`{"providers.v1":"/repository/m1/v1/providers/","modules.v1":"/repository/m1/v1/modules/"}`)
 
 	body, _, err := h.MergeGroupIndex("tf-group", "/.well-known/terraform.json", []formats.GroupIndexPart{
 		{Member: "m1", Body: m1},
@@ -82,6 +84,8 @@ func TestTerraform_MergeGroupIndex_DiscoveryRewritesMemberURLs(t *testing.T) {
 	out := string(body)
 	assert.Contains(t, out, "/repository/tf-group/v1/providers/")
 	assert.NotContains(t, out, "/repository/m1/")
+	assert.NotContains(t, out, "localhost:8080",
+		"the merged discovery document must not carry the configured base URL")
 }
 
 func TestTerraform_GroupIndexClaimsName(t *testing.T) {

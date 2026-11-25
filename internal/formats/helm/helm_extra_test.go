@@ -121,7 +121,7 @@ func TestHelm_IndexYaml_MultipleCharts(t *testing.T) {
 	body := w.Body.String()
 	assert.Contains(t, body, "alpha")
 	assert.Contains(t, body, "beta")
-	assert.Contains(t, body, "http://localhost:8080/repository/charts-multi/")
+	assert.Contains(t, body, "/repository/charts-multi/")
 }
 
 // TestHelm_ProxyIndexYaml_HEAD verifies HEAD on proxy index.yaml returns 200 and no body.

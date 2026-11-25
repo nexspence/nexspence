@@ -206,7 +206,10 @@ func (h *Handler) handleProviderDownload(c *gin.Context, repoName, p string) {
 	}
 	_ = rc.Close() // only need metadata
 
-	downloadURL := strings.TrimRight(h.deps.BaseURL, "/") + "/repository/" + repoName + filePath
+	// Root-relative (#821): terraform resolves the download_url against the
+	// URL of this very request, so a path without a host lands back on the
+	// host the client reached.
+	downloadURL := repoPath(repoName) + filePath
 	c.JSON(http.StatusOK, gin.H{
 		"os":           osName,
 		"arch":         arch,
@@ -303,14 +306,20 @@ func (h *Handler) handleModuleDownload(c *gin.Context, repoName, p string) {
 	}
 	ns, name, provider, ver := parts[0], parts[1], parts[2], parts[3]
 	filePath := fmt.Sprintf("/v1/modules/%s/%s/%s/%s.tar.gz", ns, name, provider, ver)
-	downloadURL := strings.TrimRight(h.deps.BaseURL, "/") + "/repository/" + repoName + filePath
+	// Root-relative (#821): terraform resolves a "/" -prefixed X-Terraform-Get
+	// against the URL of this request, so the archive is fetched from the host
+	// the client reached.
+	downloadURL := repoPath(repoName) + filePath
 	c.Header("X-Terraform-Get", downloadURL)
 	c.Status(http.StatusNoContent)
 }
 
 // serveDiscovery returns the Terraform service discovery document.
 func (h *Handler) serveDiscovery(c *gin.Context, repoName string) {
-	base := strings.TrimRight(h.deps.BaseURL, "/") + "/repository/" + repoName
+	// Root-relative (#821): terraform-svchost resolves a relative service URL
+	// against the discovery document's own URL, so the service base lands on
+	// the host the client fetched the document from.
+	base := repoPath(repoName)
 	c.JSON(http.StatusOK, gin.H{
 		"providers.v1": base + "/v1/providers/",
 		"modules.v1":   base + "/v1/modules/",
@@ -386,7 +395,9 @@ func (h *Handler) serveProxy(c *gin.Context, repo *domain.Repository, repoName, 
 		return
 	}
 
-	localBase := strings.TrimRight(h.deps.BaseURL, "/") + "/repository/" + repoName
+	// Root-relative (#821): terraform resolves the rewritten download_url
+	// against the URL of the request that carried it.
+	localBase := repoPath(repoName)
 	rewriteTerraformURLs(body, localBase)
 
 	c.JSON(http.StatusOK, body)
