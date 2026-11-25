@@ -1384,6 +1384,28 @@ paths:
 
   # ── System info ──────────────────────────────────────────────
 
+  /api/v1/version:
+    get:
+      tags: [System]
+      summary: Product version
+      description: >
+        Public endpoint: the version is not a secret — it is in the image tag
+        and on the admin page — and the sidebar footer shows it to every
+        visitor, signed in or not. Carries the version and the product name
+        only; the storage configuration of `/api/v1/system/info` is admin-only.
+      operationId: getVersion
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version: { type: string, example: v2.13.4 }
+                  product: { type: string, example: Nexspence }
+
   /api/v1/system/info:
     get:
       tags: [System]

@@ -3,7 +3,10 @@ package handlers_test
 import (
 	"context"
 	"encoding/json"
+	"maps"
 	"net/http"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -395,6 +398,33 @@ func TestSystem_Info_ReportsConfiguredBasePath(t *testing.T) {
 	assert.Equal(t, "9.9.9", got.Version)
 	assert.Equal(t, "s3", got.Storage.DefaultType)
 	assert.Equal(t, "/blobs", got.Storage.Local.BasePath)
+}
+
+// The sidebar footer shows the product version to every visitor, so the
+// endpoint must answer without credentials — and it must carry nothing but
+// the version, because the storage configuration of /api/v1/system/info
+// holds a server-side filesystem path.
+func TestSystem_Version_IsPublicAndCarriesNoStorageFields(t *testing.T) {
+	cfg := &config.Config{}
+	h := handlers.NewSystemHandler(cfg, newUnreachablePool(t), nil, nil).WithVersion("v2.13.4")
+	r := gin.New()
+	r.GET("/api/v1/version", h.Version)
+
+	rec := do(t, r, http.MethodGet, "/api/v1/version", nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	var got handlers.ProductVersion
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	assert.Equal(t, "v2.13.4", got.Version)
+	assert.Equal(t, "Nexspence", got.Product)
+	// The body carries the version and the product name — nothing else. The
+	// key set is checked rather than a substring: an untagged "Storage"
+	// field would slip past a case-sensitive search for "storage".
+	var fields map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &fields))
+	assert.ElementsMatch(t, []string{"version", "product"}, slices.Collect(maps.Keys(fields)))
+	body := strings.ToLower(rec.Body.String())
+	assert.NotContains(t, body, "base_path")
+	assert.NotContains(t, body, "default_type")
 }
 
 // assertErr is a tiny error helper to avoid importing errors in many spots.
