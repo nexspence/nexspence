@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'website/**'
+      - 'docs/guides/**'
       - '.github/workflows/deploy-website.yml'
   workflow_dispatch: {}
 
@@ -50,6 +51,32 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: website/package-lock.json
+
+      - name: Build the guide pages
+        # docs/guides/*.md -> website/docs/guides/*.html. The pages have to be
+        # inside the Docker build context (./website), so they are generated
+        # before the image is built.
+        run: |
+          npm ci --prefix website
+          node website/build-guides.mjs
+          rm -rf website/node_modules   # keep the build context small
+
+      - name: Verify the guide pages
+        run: |
+          test -f website/docs/guides/index.html
+          test -f website/docs/guides/maven.html
+          test -f website/docs/guides/npm.html
+          test -f website/docs/guides/docker.html
+          test -f website/docs/guides/github-actions.html
+          grep -q '<loc>https://nexspence.com/docs/guides/maven.html</loc>' website/sitemap.xml
+          grep -q '<loc>https://nexspence.com/docs/guides/</loc>' website/sitemap.xml
 
       - name: Build and push website image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0

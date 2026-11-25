@@ -26,6 +26,10 @@ coverage.html
 frontend/node_modules/
 frontend/dist/
 
+# Website — node modules and the generated guide pages are build output
+website/node_modules/
+website/docs/guides/
+
 # IDE
 .idea/
 .vscode/
