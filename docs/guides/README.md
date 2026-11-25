@@ -19,12 +19,14 @@ implementation and the repository's own helper scripts
 | [NuGet](nuget.md) | The v3 service index · `allowInsecureConnections` · `dotnet nuget push` and delete |
 | [Raw](raw.md) | Arbitrary paths · `curl --upload-file` · the browse tree · cleanup policies and quotas |
 | [APT](apt.md) | Suites and `dists/<suite>/` · the apt source line · signing · what a deletion does to the index |
+| [Yum / DNF](yum.md) | `repodata/` and the generated metadata · the `.repo` file · `dnf install` · publishing an RPM · the proxy and the group |
 | [Conan](conan.md) | `conan remote add` and `conan remote login` · `conan upload` and `conan install` · the v2 revisions protocol and the v1 REST endpoints · group and proxy behaviour |
 | [Conda](conda.md) | Channels and platform subdirs · `repodata.json` · `.condarc` and `--override-channels` · publishing · how a group merges the index |
 | [Terraform](terraform.md) | Hosted, proxy and group repositories · the discovery document · `terraform login` and the CLI configuration · installing providers and modules |
 | [Alpine](alpine.md) | The repositories line · one directory per architecture · `APKINDEX.tar.gz` · publishing a `.apk` · unsigned indexes |
 | [RubyGems](rubygems.md) | The compact index (`/versions`, `/info/<gem>`) and the legacy one · `gem sources` · `gem push` and how the version and the platform are stored · `gem install` and `gem list -r` |
 | [R / CRAN](cran.md) | The `PACKAGES` index next to the tarballs · `options(repos = …)` and `install.packages(repos = …)` · publishing a source tarball · how a group merges the index |
+| [Hugging Face](huggingface.md) | Models, datasets and spaces · `HF_ENDPOINT` · `snapshot_download` · publishing a file · the proxy and the merged group index |
 | [GitHub Actions](github-actions.md) | API tokens in CI · publishing with the `nxs` CLI, Maven, Docker and the REST API |
 | [Reverse proxy](reverse-proxy.md) | What works behind nginx without configuration · the four formats that need `http.base_url` · how to check your own instance |
 
