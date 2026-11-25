@@ -16,23 +16,25 @@ import (
 func TestRewriteSimplePage_Hrefs(t *testing.T) {
 	// #98: proxied simple pages carry absolute files.pythonhosted.org links,
 	// so pip downloads wheels directly from upstream, bypassing the cache.
+	// #821: the rewritten link is root-relative — no host to get wrong.
 	in := []byte(`<html><body>
 <a href="https://files.pythonhosted.org/packages/ab/cd/xyz/requests-2.31.0-py3-none-any.whl#sha256=deadbeef">requests-2.31.0-py3-none-any.whl</a>
 <a href="https://files.pythonhosted.org/packages/ef/12/abc/requests-2.31.0.tar.gz">requests-2.31.0.tar.gz</a>
 </body></html>`)
-	out := string(pypi.RewriteSimplePage(in, "http://localhost:8080/repository/pypi-proxy"))
+	out := string(pypi.RewriteSimplePage(in, "/repository/pypi-proxy"))
 
 	assert.Contains(t, out,
-		`href="http://localhost:8080/repository/pypi-proxy/packages/ab/cd/xyz/requests-2.31.0-py3-none-any.whl#sha256=deadbeef"`,
+		`href="/repository/pypi-proxy/packages/ab/cd/xyz/requests-2.31.0-py3-none-any.whl#sha256=deadbeef"`,
 		"path tail and #sha256 fragment must be preserved")
 	assert.Contains(t, out,
-		`href="http://localhost:8080/repository/pypi-proxy/packages/ef/12/abc/requests-2.31.0.tar.gz"`)
+		`href="/repository/pypi-proxy/packages/ef/12/abc/requests-2.31.0.tar.gz"`)
 	assert.NotContains(t, out, "files.pythonhosted.org")
+	assert.NotContains(t, out, "http://", "the rewritten link must carry no host")
 }
 
 func TestRewriteSimplePage_LeavesOtherHrefsAlone(t *testing.T) {
 	in := []byte(`<a href="../relative/thing">x</a> <a href="https://example.com/no-pkg/file.whl">y</a>`)
-	out := string(pypi.RewriteSimplePage(in, "http://local/repository/p"))
+	out := string(pypi.RewriteSimplePage(in, "/repository/p"))
 	assert.Equal(t, string(in), out, "relative hrefs and URLs without /packages/ stay untouched")
 }
 
@@ -56,6 +58,7 @@ func TestPyPI_Proxy_SimplePage_RewritesLinks(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, w.Code)
 	body := w.Body.String()
-	assert.Contains(t, body, "http://localhost:8080/repository/pypi-rw/packages/aa/bb/flask-3.0.0-py3-none-any.whl#sha256=cafe")
+	assert.Contains(t, body, "/repository/pypi-rw/packages/aa/bb/flask-3.0.0-py3-none-any.whl#sha256=cafe")
 	assert.NotContains(t, body, "files.pythonhosted.org")
+	assert.NotContains(t, body, "localhost:8080", "the link must not carry the configured host")
 }

@@ -91,8 +91,10 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 			// A per-package simple page is mutable metadata (new releases appear).
 			// File hrefs are rewritten on serve so pip pulls wheels/sdists through
 			// this proxy instead of upstream (#98); the cache keeps the original.
-			localBase := strings.TrimRight(h.deps.BaseURL, "/") + "/repository/" + repo.Name
-			rewrite := func(b []byte) []byte { return RewriteSimplePage(b, localBase) }
+			// The rewritten href is root-relative (#821): the client resolves it
+			// against the host it reached, so no configured base URL is involved.
+			repoPath := "/repository/" + repo.Name
+			rewrite := func(b []byte) []byte { return RewriteSimplePage(b, repoPath) }
 			if minAge := repoproxy.MinimumPackageAge(repo); minAge > 0 {
 				if dates := h.simpleUploadTimes(c.Request.Context(), repo, normalized); len(dates) > 0 {
 					cutoff := time.Now().Add(-minAge)
@@ -279,7 +281,9 @@ func (h *Handler) servePackageIndex(c *gin.Context, repoName, pkgName string) {
 		}
 		for _, a := range assets {
 			filename := path.Base(a.Path)
-			href := h.deps.BaseURL + "/repository/" + repoName + a.Path
+			// Root-relative (#821): the client resolves it against the host it
+			// reached, so the link works behind a reverse proxy.
+			href := "/repository/" + repoName + a.Path
 			sha := ""
 			if a.SHA256 != "" {
 				sha = "#sha256=" + a.SHA256

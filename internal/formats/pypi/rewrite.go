@@ -14,11 +14,16 @@ var hrefRe = regexp.MustCompile(`href="([^"]+)"`)
 // URLs (e.g. https://files.pythonhosted.org/packages/...), which make pip
 // download release files directly from upstream, bypassing the proxy cache.
 // Every absolute href containing "/packages/" is re-rooted at
-// localBase+"/packages/<tail>", preserving the path tail and any #sha256=
+// repoPath+"/packages/<tail>", preserving the path tail and any #sha256=
 // fragment. Relative hrefs and URLs without a /packages/ segment are left
 // untouched. Malformed input is returned unchanged by construction (regex
 // replacement only touches matching attributes).
-func RewriteSimplePage(body []byte, localBase string) []byte {
+//
+// The rewritten link is root-relative (#821): the client resolves it against
+// the host it already reached, so the link works behind a reverse proxy and on
+// any port or domain. A host taken from the configuration would only be right
+// when the client reached the server the very same way.
+func RewriteSimplePage(body []byte, repoPath string) []byte {
 	return hrefRe.ReplaceAllFunc(body, func(m []byte) []byte {
 		href := string(m[len(`href="`) : len(m)-1])
 		if !strings.HasPrefix(href, "http://") && !strings.HasPrefix(href, "https://") {
@@ -28,6 +33,6 @@ func RewriteSimplePage(body []byte, localBase string) []byte {
 		if idx < 0 {
 			return m
 		}
-		return []byte(`href="` + localBase + href[idx:] + `"`)
+		return []byte(`href="` + repoPath + href[idx:] + `"`)
 	})
 }
