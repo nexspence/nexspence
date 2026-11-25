@@ -8,6 +8,59 @@ when the release is cut; this file collects them.
 The full release notes — including the Docker image matrix and the
 essentials bundle — are on the [releases page](https://github.com/nexspence/nexspence/releases).
 
+## v2.13.5
+
+2026-11-25 — v2.13.5
+
+### 🐛 Bug Fixes
+* 89ddbcae2c445c9f63ab6c7e6ddb7fc922daef8b fix(api): serve the product version from a public endpoint (#825)
+* e080c3cbd1b2cce6825eb44800ee038251e39207 fix(ci): cut the announced range from the tag's own history (#781)
+* f3b68ebf27c9ed7becd48b45046f046161abd133 fix(pypi): serve relative links, so a proxy works without a configured base URL (#824)
+### 📚 Documentation
+* bc8d8985e4fc3affc30ae93f81b8387032cc586c docs: add the Alpine, RubyGems and R/CRAN guides (#820)
+* e61242f81e79f96b8cc695827884a7ce002bbe04 docs: add the Conan, Conda and Terraform guides, and fix the group authentication and the Conan group search (#819)
+* c31ef8243f850e0afa6362ac4abda054d5f19abb docs: add the Helm, Go modules and Cargo guides, and fix cargo search (#811)
+* ad751d0ae48d0c31aa47e96a33cfb06785f74ef8 docs: add the NuGet, Raw and APT guides, and fix the partial repository update (#812)
+* 0a27695f322e28ee6d36c3fb5fe9cbd58e25b66a docs: correct the format guides against the running server (#810)
+* d3839e40c5c24e09d203cf94e90bd8e117d3aae3 docs: format guides, changelog generator, and script defaults on the real port (#803)
+* 7db18342bf607c58f1195dcf60d7713f3d22fb01 docs: make the project discoverable — positioning, issue forms, sponsor tiers (#802)
+
+### 🐳 Docker
+
+| | |
+|---|---|
+| **Image** | `ghcr.io/nexspence/nexspence:v2.13.5` |
+| **Platforms** | linux/amd64, linux/arm64 |
+
+```bash
+docker pull ghcr.io/nexspence/nexspence:v2.13.5
+```
+
+#### Quick start
+
+Download **`nexspence-run-essentials-2.13.5.zip`** below (config +
+image-pinned compose + Helm chart + monitoring + Keycloak realm + seed scripts),
+extract it, rename `config.yaml.example` → `config.yaml`, and set the admin
+password and JWT secret. (The full source is the **Source code** archive / `git clone`.)
+
+| Mode | Command |
+|------|---------|
+| Single-node | `docker compose up -d` |
+| Single-node + Monitoring | `docker compose --profile monitoring up -d` |
+| Single-node + Keycloak SSO | `OIDC_ENABLED=true docker compose --profile keycloak up -d` |
+| HA (2 nodes + nginx) | `docker compose -f docker-compose.ha.yml up -d` |
+| HA + Keycloak SSO | `OIDC_ENABLED=true docker compose -f docker-compose.ha.yml --profile keycloak up -d` |
+
+**Web UI:** single-node → `http://localhost:8081` · HA → `http://localhost:8080`
+
+Native install (deb/rpm/macOS/Windows): see the
+[documentation](https://nexspence.com/docs/).
+
+
+
+---
+
+
 ## v2.13.4
 
 2026-11-20 — v2.13.4
