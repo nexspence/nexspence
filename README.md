@@ -16,7 +16,7 @@
   [![GHCR image](https://img.shields.io/ghcr/v/nexspence/nexspence?logo=docker&style=flat-square&color=2496ED)](https://github.com/nexspence/nexspence/pkgs/container/nexspence)
   [![License: AGPL v3 or later](https://img.shields.io/badge/License-AGPL--3.0--or--later-22c55e?style=flat-square)](LICENSE)
   ![Lint](https://img.shields.io/badge/lint-golangci--lint%20v2-22c55e?style=flat-square&logo=go&logoColor=white)
-  ![Tests](https://img.shields.io/badge/tests-2600+%20passing-22c55e?style=flat-square)](https://github.com/nexspence/nexspence/actions/workflows/ci.yml)
+  ![Tests](https://img.shields.io/badge/tests-4100+%20passing-22c55e?style=flat-square)](https://github.com/nexspence/nexspence/actions/workflows/ci.yml)
 
   <br>
 
