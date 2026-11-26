@@ -8,6 +8,49 @@ when the release is cut; this file collects them.
 The full release notes — including the Docker image matrix and the
 essentials bundle — are on the [releases page](https://github.com/nexspence/nexspence/releases).
 
+## v2.13.7
+
+2026-11-26 — v2.13.7
+
+### 🐛 Bug Fixes
+* e5b05809a1d9c340d7a5cf4ae4a8b8f775b18660 fix(terraform): speak the registry protocol, so a hosted provider installs (#840)
+
+### 🐳 Docker
+
+| | |
+|---|---|
+| **Image** | `ghcr.io/nexspence/nexspence:v2.13.7` |
+| **Platforms** | linux/amd64, linux/arm64 |
+
+```bash
+docker pull ghcr.io/nexspence/nexspence:v2.13.7
+```
+
+#### Quick start
+
+Download **`nexspence-run-essentials-2.13.7.zip`** below (config +
+image-pinned compose + Helm chart + monitoring + Keycloak realm + seed scripts),
+extract it, rename `config.yaml.example` → `config.yaml`, and set the admin
+password and JWT secret. (The full source is the **Source code** archive / `git clone`.)
+
+| Mode | Command |
+|------|---------|
+| Single-node | `docker compose up -d` |
+| Single-node + Monitoring | `docker compose --profile monitoring up -d` |
+| Single-node + Keycloak SSO | `OIDC_ENABLED=true docker compose --profile keycloak up -d` |
+| HA (2 nodes + nginx) | `docker compose -f docker-compose.ha.yml up -d` |
+| HA + Keycloak SSO | `OIDC_ENABLED=true docker compose -f docker-compose.ha.yml --profile keycloak up -d` |
+
+**Web UI:** single-node → `http://localhost:8081` · HA → `http://localhost:8080`
+
+Native install (deb/rpm/macOS/Windows): see the
+[documentation](https://nexspence.com/docs/).
+
+
+
+---
+
+
 ## v2.13.6
 
 2026-11-26 — v2.13.6
