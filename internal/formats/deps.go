@@ -2,6 +2,7 @@ package formats
 
 import (
 	"context"
+	"net/http"
 	"time"
 
 	"github.com/nexspence-oss/nexspence/internal/domain"
@@ -18,6 +19,15 @@ type Deps struct {
 	BlobStore  storage.BlobStore // default / fallback store
 	Registry   *storage.Registry // optional: per-blob-store routing; nil disables
 	BaseURL    string
+	// PublicURL answers the public base URL of a request — the URL the client
+	// used to reach this instance, which is what the absolute links in a
+	// metadata document have to name.
+	//
+	// It is optional — nil falls back to BaseURL, which is what an instance
+	// reachable directly wants. A resolver behind a reverse proxy takes the
+	// host from the proxy's X-Forwarded-Host when the request came from a
+	// trusted peer, and BaseURL otherwise; see internal/publicurl.
+	PublicURL PublicURLResolver
 	// Webhooks is optional — nil disables event delivery.
 	Webhooks domain.WebhookDispatcher
 	// Downloads is optional — nil disables download counting.
@@ -61,6 +71,17 @@ type Deps struct {
 	// when resolving where a chart tarball comes from (config helm.index_cache_ttl).
 	// 0 fetches the index per lookup.
 	HelmIndexCacheTTL time.Duration
+}
+
+// PublicURLResolver answers the public base URL of a request.
+//
+// It is declared here, as the narrowest view the format handlers need,
+// rather than imported: the resolver knows about proxies and forwarded
+// headers, not about formats.
+type PublicURLResolver interface {
+	// PublicBaseURL returns the base URL the client used, or "" when it
+	// cannot be determined.
+	PublicBaseURL(req *http.Request) string
 }
 
 // TokenIssuer mints a bearer token for an already-authenticated caller.

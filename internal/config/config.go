@@ -149,11 +149,14 @@ type HTTPConfig struct {
 	CORSOrigins     []string  `mapstructure:"cors_origins"`
 	TLS             TLSConfig `mapstructure:"tls"`
 	BaseURL         string    `mapstructure:"base_url"`
-	// TrustedProxies lists the peers (IPs or CIDRs) allowed to set
-	// X-Forwarded-For. Empty — the default — trusts nobody, so the audit log
-	// and the rate limiter see the real peer address. Use "*" to trust every
-	// hop, which is only safe when the server is unreachable except through a
-	// proxy you control.
+	// TrustedProxies lists the peers (IPs or CIDRs) allowed to speak for the
+	// client: they may set X-Forwarded-For, and — for a request that came
+	// from one of them — X-Forwarded-Host and X-Forwarded-Proto, which name
+	// the public host and scheme the client reached the instance on. Empty —
+	// the default — trusts nobody, so the audit log and the rate limiter see
+	// the real peer address and the public URL is http.base_url alone. Use
+	// "*" to trust every hop, which is only safe when the server is
+	// unreachable except through a proxy you control.
 	TrustedProxies []string `mapstructure:"trusted_proxies"`
 	// CSP overrides the Content-Security-Policy served with the UI. Empty uses
 	// the built-in policy; the literal "off" omits the header, for deployments

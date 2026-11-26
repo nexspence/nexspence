@@ -47,6 +47,7 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/formats/terraform"
 	"github.com/nexspence-oss/nexspence/internal/formats/yum"
 	"github.com/nexspence-oss/nexspence/internal/logger"
+	"github.com/nexspence-oss/nexspence/internal/publicurl"
 	"github.com/nexspence-oss/nexspence/internal/redisclient"
 	"github.com/nexspence-oss/nexspence/internal/repository"
 	"github.com/nexspence-oss/nexspence/internal/repository/postgres"
@@ -292,13 +293,17 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 	promotionSvc.WithAutoPromotionScanner(scanSvc, cfg.Scan.Enabled)
 
 	formatDeps := formats.Deps{
-		Repos:        repoRepo,
-		Components:   componentRepo,
-		Assets:       assetRepo,
-		Blobs:        blobRepo,
-		BlobStore:    localBlob,
-		Registry:     blobRegistry,
-		BaseURL:      cfg.HTTP.BaseURL,
+		Repos:      repoRepo,
+		Components: componentRepo,
+		Assets:     assetRepo,
+		Blobs:      blobRepo,
+		BlobStore:  localBlob,
+		Registry:   blobRegistry,
+		BaseURL:    cfg.HTTP.BaseURL,
+		// The public URL of a request: the deployment's own http.base_url,
+		// or the host a trusted reverse proxy says the client used. Only
+		// the formats that hand out absolute links ask it.
+		PublicURL:    publicurl.NewResolver(cfg.HTTP.BaseURL, cfg.HTTP.TrustedProxies),
 		Webhooks:     webhookSvc,
 		Downloads:    dlCounter,
 		RoutingRules: rrRepo,
