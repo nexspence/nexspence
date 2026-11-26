@@ -127,6 +127,13 @@ func (h *TokenHandler) Delete(c *gin.Context) {
 	}
 	tok, err := h.tokens.Get(c.Request.Context(), c.Param("id"))
 	if err != nil {
+		// A token that does not exist is a client error, not a server one:
+		// the repository answers "not found" for it, and mapping that to 500
+		// told the caller the server broke when it did not.
+		if isNotFound(err) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "token not found"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
