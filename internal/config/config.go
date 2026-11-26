@@ -35,6 +35,7 @@ type Config struct {
 	Docker    DockerConfig    `mapstructure:"docker"`
 	Helm      HelmConfig      `mapstructure:"helm"`
 	Redis     RedisConfig     `mapstructure:"redis"`
+	Terraform TerraformConfig `mapstructure:"terraform"`
 	Proxy     ProxyConfig     `mapstructure:"proxy"`
 	Outbound  OutboundConfig  `mapstructure:"outbound"`
 	Metrics   MetricsConfig   `mapstructure:"metrics"`
@@ -604,6 +605,16 @@ type HelmConfig struct {
 	IndexCacheTTL time.Duration `mapstructure:"index_cache_ttl"`
 }
 
+// TerraformConfig configures the Terraform registry format.
+type TerraformConfig struct {
+	// SigningKey is the path to an armored OpenPGP private key (the output of
+	// `gpg --export-secret-keys --armor`) that signs the checksum document of
+	// a hosted provider version. Empty — the default — means no key: the
+	// server serves the checksum document unsigned and a Terraform client
+	// cannot install a provider through the registry protocol.
+	SigningKey string `mapstructure:"signing_key"`
+}
+
 // SubdomainConnectorConfig configures per-repository Docker subdomain routing.
 //
 // Aliases decouple the client-facing hostname from the repository name (#282):
@@ -710,6 +721,10 @@ func Load(path string) (*Config, error) {
 	v.SetDefault("docker.subdomain_connector.base_domain", "")
 	v.SetDefault("docker.max_upload_bytes", int64(10<<30)) // 10 GiB
 	v.SetDefault("helm.index_cache_ttl", "5m")
+	// The same viper gap as the database.dsn block above: without a default the
+	// key is unreachable from NEXSPENCE_TERRAFORM_SIGNING_KEY when no config
+	// file is present.
+	v.SetDefault("terraform.signing_key", "")
 	v.SetDefault("oidc.enabled", false)
 	v.SetDefault("oidc.display_name", "SSO")
 	// Zero-value defaults so these stay reachable from the environment when

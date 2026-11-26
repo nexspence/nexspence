@@ -5,6 +5,7 @@ import (
 
 	"github.com/nexspence-oss/nexspence/internal/api"
 	"github.com/nexspence-oss/nexspence/internal/config"
+	"github.com/nexspence-oss/nexspence/internal/formats/terraform"
 	"github.com/nexspence-oss/nexspence/internal/logger"
 	"github.com/nexspence-oss/nexspence/internal/netguard"
 )
@@ -39,6 +40,17 @@ func checkStartupSecurity(cfg *config.Config, log logger.Logger) error {
 			"cidrs", cfg.Outbound.AllowedInternalCIDRs)
 	}
 
+	// A Terraform signing key that cannot be read or used leaves the registry
+	// unable to serve an installable provider — every provider install fails
+	// with "authentication signature from unknown issuer". Refusing to boot
+	// names the misconfiguration instead of letting it surface as a client
+	// error far away from the setting that caused it.
+	if cfg.Terraform.SigningKey != "" {
+		if err := validateTerraformSigningKey(cfg.Terraform.SigningKey); err != nil {
+			return fmt.Errorf("invalid terraform.signing_key: %w", err)
+		}
+	}
+
 	// Fail closed on shipped insecure defaults unless explicitly allowed
 	// (local dev / quick-start sets auth.allow_insecure_defaults=true).
 	insecureJWT := config.IsDevDefaultJWTSecret(cfg.Auth.JWTSecret)
@@ -63,6 +75,23 @@ func checkStartupSecurity(cfg *config.Config, log logger.Logger) error {
 		if insecureAdmin {
 			log.Warn("bootstrap.admin_password is the shipped development default (admin123) — set a unique password (NEXSPENCE_BOOTSTRAP_ADMIN_PASSWORD) before production use")
 		}
+	}
+	return nil
+}
+
+// validateTerraformSigningKey reports whether the configured Terraform
+// signing key can actually sign.
+//
+// Parsing the key is not enough: a key whose private half is passphrase
+// protected parses but cannot sign, and the registry would then serve a
+// provider no client can install. A probe signature is the only way to know.
+func validateTerraformSigningKey(keyPath string) error {
+	signer, err := terraform.LoadSigner(keyPath)
+	if err != nil {
+		return err
+	}
+	if _, err := signer.SignDetached([]byte("nexspence terraform signing key probe")); err != nil {
+		return err
 	}
 	return nil
 }

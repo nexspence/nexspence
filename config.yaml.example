@@ -192,6 +192,18 @@ docker:
 helm:
   index_cache_ttl: "5m"
 
+# The key that signs the checksum document of a hosted Terraform provider
+# version. The Terraform client verifies that signature against the key the
+# registry publishes, so a hosted provider is installable through the registry
+# protocol only when this is set. The file is the armored export of a private
+# key — `gpg --armor --export-secret-keys` — and it is a secret: keep it out
+# of the repository and readable by the account the instance runs as only.
+# A path that names a file that cannot be read or parsed stops the instance
+# from starting.
+# Env override: NEXSPENCE_TERRAFORM_SIGNING_KEY=/etc/nexspence/terraform-signing-key.asc
+terraform:
+  signing_key: ""
+
 # Proxy metadata that needs URL rewriting is buffered before serving. This cap
 # applies to both upstream downloads and cache reads (npm packuments, PyPI
 # indexes and NuGet metadata). Raise it for large packages such as vite; the

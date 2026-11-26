@@ -1,8 +1,14 @@
 package main
 
 import (
+	"bytes"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/ProtonMail/go-crypto/openpgp"
+	"github.com/ProtonMail/go-crypto/openpgp/armor"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -136,4 +142,44 @@ func TestCheckStartupSecurity_EnabledBootstrap_DefaultPasswordRefused(t *testing
 	err := checkStartupSecurity(cfg, zap.NewNop().Sugar())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "admin123=true")
+}
+
+// A Terraform signing key that cannot be read leaves the registry unable to
+// serve an installable provider — every provider install fails with
+// "authentication signature from unknown issuer". The server refuses to boot
+// instead of failing every install later.
+func TestCheckStartupSecurity_UnreadableTerraformSigningKey_Refuses(t *testing.T) {
+	cfg := secureCfg()
+	cfg.Terraform.SigningKey = filepath.Join(t.TempDir(), "absent.asc")
+
+	err := checkStartupSecurity(cfg, zap.NewNop().Sugar())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "terraform.signing_key")
+}
+
+// A key the server can actually sign with is accepted: the check must not
+// refuse a working deployment.
+func TestCheckStartupSecurity_ValidTerraformSigningKey_Passes(t *testing.T) {
+	cfg := secureCfg()
+	cfg.Terraform.SigningKey = writeTestSigningKey(t)
+
+	require.NoError(t, checkStartupSecurity(cfg, zap.NewNop().Sugar()))
+}
+
+// writeTestSigningKey writes a throwaway armored private key: a real key
+// must never reach the repository.
+func writeTestSigningKey(t *testing.T) string {
+	t.Helper()
+	entity, err := openpgp.NewEntity("Nexspence Test", "", "test@nexspence.invalid", nil)
+	require.NoError(t, err)
+
+	var buf bytes.Buffer
+	w, err := armor.Encode(&buf, openpgp.PrivateKeyType, nil)
+	require.NoError(t, err)
+	require.NoError(t, entity.SerializePrivate(w, nil))
+	require.NoError(t, w.Close())
+
+	path := filepath.Join(t.TempDir(), "terraform-signing-key.asc")
+	require.NoError(t, os.WriteFile(path, buf.Bytes(), 0o600))
+	return path
 }
