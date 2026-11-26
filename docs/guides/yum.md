@@ -743,6 +743,13 @@ new index.
   {"error":"proxy repository is read-only (use a hosted repository to publish)"}
   ```
 
+- **A proxy answers the canonical repodata names too.** An upstream names its
+  documents by the checksum of their contents, so the proxy resolves the
+  canonical names (`repodata/primary.xml`) through the upstream's own
+  `repomd.xml` and serves the document that names. A group merges its members
+  at the canonical names, so that is what makes the upstream's packages part of
+  the merged index.
+
 - **Group writes.** A group forwards an upload to its first hosted member, so
   publishing through `yum-group` stores the RPM in `yum-hosted`. The group's
   `formatConfig` can name the member that receives the upload with
@@ -813,6 +820,39 @@ metadata: they are revalidated against the upstream after ten minutes
 (`proxy_config.metadata_max_age` in seconds changes that). An RPM is immutable
 — it is addressed by name and version — so a cached RPM is served without
 contacting the upstream again.
+
+### The canonical names
+
+A mirror names its metadata documents by the checksum of their contents —
+`repodata/707889cc…-primary.xml.gz` — and the canonical names a hosted
+repository serves (`repodata/primary.xml`) are not among them. The proxy
+answers the canonical names as well: it reads the upstream's own `repomd.xml`
+and serves the document that names, decompressed, because that is what the
+canonical name asks for.
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" \
+  http://localhost:8081/repository/yum-proxy/repodata/primary.xml
+```
+
+```
+200
+```
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<metadata xmlns="http://linux.duke.edu/metadata/common" xmlns:rpm="http://linux.duke.edu/metadata/rpm" packages="1261">
+  <package type="rpm">
+    <name>ModemManager</name>
+    <arch>x86_64</arch>
+    <version epoch="0" ver="1.20.2" rel="1.el9"/>
+    <checksum type="sha256" pkgid="YES">855e8ab0d2b1ab053d679996cd8f4afa9f6dc7e5a0572e2952056071c554d88e</checksum>
+    <summary>Mobile broadband modem management service</summary>
+```
+
+The compressed name is answered with the upstream's compressed bytes, and the
+checksum-prefixed name the upstream publishes is still relayed as it came — a
+client that read the proxy's `repomd.xml` asks for that one.
 
 ### The group
 
@@ -959,80 +999,142 @@ curl -s -D- -o /dev/null http://localhost:8081/repository/yum-group2/repodata/pr
 X-Nexspence-Source: yum-hosted,yum-hosted2
 ```
 
-### What a group does with a proxy member
+### A group with a proxy member
 
-The group merges the members at the **canonical** repodata paths —
-`/repodata/primary.xml` and its compressed flavor. A proxy member relays the
-upstream path as it is, and `dl.rockylinux.org` publishes its metadata under
-checksum-prefixed names (`repodata/707889cc…-primary.xml.gz`) rather than the
-canonical one. The canonical path therefore answers `404` at the upstream, and
-the proxy member contributes nothing to the merged index:
+The group merges its members at the **canonical** repodata paths —
+`/repodata/primary.xml` and its compressed flavor — and a proxy member answers
+those paths, so the upstream's packages are part of the union.
+
+The group of the hosted repository and the proxy of §1 therefore lists both the
+published packages and the whole upstream mirror:
 
 ```bash
 curl -s -o /dev/null -w "%{http_code}\n" \
-  http://localhost:8081/repository/yum-proxy/repodata/primary.xml
+  http://localhost:8081/repository/yum-group/repodata/primary.xml
 ```
 
 ```
-404
+200
 ```
 
-A group that holds the hosted repository and this proxy therefore shows the
-hosted packages only:
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<metadata xmlns="http://linux.duke.edu/metadata/common" packages="1262">
+  <package type="rpm">
+    <name>fuse-common</name>
+    <arch>x86_64</arch>
+    <version epoch="0" ver="3.10.2" rel="1"/>
+    <checksum type="sha256" pkgid="YES">9e778d03985d8927d56daf33728ba17e67e92a697dcc71bbaf372893b646265a</checksum>
+    <size package="7447"/>
+    <location href="Packages/f/fuse-common-3.10.2-9.el9.x86_64.rpm"/>
+  </package>
+  <package type="rpm">
+    <name>ModemManager</name>
+    <arch>x86_64</arch>
+    <version epoch="0" ver="1.20.2" rel="1.el9"/>
+    <checksum type="sha256" pkgid="YES">855e8ab0d2b1ab053d679996cd8f4afa9f6dc7e5a0572e2952056071c554d88e</checksum>
+    <summary>Mobile broadband modem management service</summary>
+    <description>The ModemManager service manages WWAN modems and provides a consistent API for
+interacting with these devices to client applications.</description>
+    <url>http://www.freedesktop.org/wiki/Software/ModemManager/</url>
+    <time file="1682113661" build="1682113275"/>
+    <size package="1274689"/>
+    <location href="Packages/m/ModemManager-1.20.2-1.el9.x86_64.rpm"/>
+  </package>
+```
+
+The header `X-Nexspence-Source` names the members that answered:
 
 ```
-$ dnf --disablerepo='*' --enablerepo=nexspence list --available
+X-Nexspence-Source: yum-hosted,yum-proxy
+```
+
+The client sees the upstream's packages with the upstream's own description:
+
+```
+$ dnf --disablerepo='*' --enablerepo=nexspence info ModemManager
+Nexspence Yum group                              80 kB/s | 240 kB     00:02
 Available Packages
-fuse-common.x86_64                        3.10.2-1                     nexspence
-nexspence-demo.noarch                     1.0-1                        nexspence
+Name         : ModemManager
+Version      : 1.20.2
+Release      : 1.el9
+Architecture : x86_64
+Size         : 1.2 M
+Source       : None
+Repository   : nexspence
+Summary      : Mobile broadband modem management service
+URL          : http://www.freedesktop.org/wiki/Software/ModemManager/
+License      : 
+Description  : The ModemManager service manages WWAN modems and provides a consistent API for
+             : interacting with these devices to client applications.
 ```
 
-The upstream packages are still reachable through the proxy, and a group of
-proxy members only falls back to the member's own `repomd.xml` — which names
-the upstream's checksum-prefixed documents, and those are relayed through the
-group:
-
-```bash
-curl -u admin:admin123 -X POST \
-  http://localhost:8081/service/rest/v1/repositories/yum/group \
-  -H "Content-Type: application/json" \
-  -d "{
-    \"name\": \"yum-proxyonly\",
-    \"online\": true,
-    \"allowAnonymous\": true,
-    \"description\": \"Group of one proxy\",
-    \"formatConfig\": { \"member_names\": [\"yum-proxy\"] }
-  }"
-```
-
-```ini
-[nexspence-proxyonly]
-name=Nexspence Yum group of one proxy
-baseurl=http://localhost:8081/repository/yum-proxyonly/
-enabled=1
-gpgcheck=0
-```
+and installs from it:
 
 ```
-$ dnf --disablerepo='*' --enablerepo=nexspence-proxyonly list --available
-Available Packages
-ModemManager.x86_64                                1.20.2-1.el9                     nexspence-proxyonly
-ModemManager-glib.i686                             1.20.2-1.el9                     nexspence-proxyonly
-ModemManager-glib.x86_64                           1.20.2-1.el9                     nexspence-proxyonly
-NetworkManager.x86_64                              1:1.54.4-3.el9                   nexspence-proxyonly
+$ dnf --disablerepo='*' --enablerepo=nexspence install -y tree
+Running transaction check
+Transaction check succeeded.
+Running transaction test
+Transaction test succeeded.
+Running transaction
+  Preparing        :                                                        1/1 
+  Installing       : tree-1.8.0-10.el9.x86_64                               1/1 
+  Running scriptlet: tree-1.8.0-10.el9.x86_64                               1/1 
+  Verifying        : tree-1.8.0-10.el9.x86_64                               1/1 
+
+Installed:
+  tree-1.8.0-10.el9.x86_64                                                      
+
+Complete!
 ```
 
-The header of that group's `repomd.xml` shows the fallback:
+The group's `repomd.xml` is its own document: the checksums are computed over
+the merged documents the group serves, because a member's own `repomd.xml`
+describes that member's single-member copy and `dnf` treats the mismatch as a
+hard sync failure.
 
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<repomd xmlns="http://linux.duke.edu/metadata/repo">
+  <revision>1795659193</revision>
+  <data type="primary">
+    <location href="repodata/primary.xml.gz"/>
+    <checksum type="sha256">033d00cec4de928ec8f68a031bc75c8b58eb0319c7866c612c4984e556b08efa</checksum>
+    <open-checksum type="sha256">8c764c5a786c5dae0a38c706503bf3f762a2131ce0bf57a4fadcbdf3cb4a56fc</open-checksum>
+    <timestamp>1795659193</timestamp>
+    <size>185511</size>
+    <open-size>944676</open-size>
+  </data>
+  <data type="filelists">
+    <location href="repodata/filelists.xml.gz"/>
+    <checksum type="sha256">236ca62c750cfad725963e4017527eb986944da5ab22f16e77f6b1575b18d973</checksum>
+    <open-checksum type="sha256">a0967212e7aec396c8a2b924f2173a02657c48982f392b5b79decaa01ac1cf7f</open-checksum>
+    <timestamp>1795659193</timestamp>
+    <size>60576</size>
+    <open-size>229624</open-size>
+  </data>
+  <data type="other">
+    <location href="repodata/other.xml.gz"/>
+    <checksum type="sha256">af09e8039d8e90e3efc3607be5b0444dd4c790d0760d21bacc6e090aa209f91f</checksum>
+    <open-checksum type="sha256">85a77e637da6e10a8f984868487a287542c81e9933de4bc2231af32d8a561e58</open-checksum>
+    <timestamp>1795659193</timestamp>
+    <size>60581</size>
+    <open-size>229620</open-size>
+  </data>
+</repomd>
 ```
-X-Nexspence-Source: yum-proxy
-```
 
-In practice: point the client at the proxy when you want the upstream
-packages, and at the hosted repository (or a group of hosted repositories) when
-you want your own. A group of a hosted repository and this proxy merges the
-hosted packages only.
+### What the merge keeps
 
+A package is identified by its location, so a package both members hold is
+listed once — the first member wins, and the group serves that member's copy.
+
+The merge keeps the descriptive fields of the upstream's own index: the
+summary, the description, the URL and the build time of an upstream package
+survive the merge. A package published into a hosted repository carries the
+coordinates the server derived from its file name, and nothing else — the RPM
+header is not read.
 ## 8. Errors and edge cases
 
 The error bodies are JSON, so a script can read the reason instead of guessing:
@@ -1062,9 +1164,9 @@ The error bodies are JSON, so a script can read the reason instead of guessing:
 | `Error: GPG check FAILED` on an upstream package | The key that signed it is not in the client's keyring | Import the key, or use `gpgcheck=0` |
 | The index shows the wrong version | The version comes from the file name | Upload the RPM under its own name: `name-version-release.arch.rpm` |
 | The index shows `rel="1"` for every package | The release is always `1`; the RPM header is not parsed | Nothing to do — the installed package keeps the release from its header |
-| `dnf info` shows no summary, license or description | The server fills the coordinates only | Expected for a hosted repository |
+| `dnf info` shows no summary, license or description | The server fills the coordinates only | Expected for a package published into a hosted repository — an upstream's own package keeps its description |
 | The client offers a package that was deleted | The client has the old index cached | `dnf clean all`, then list again |
-| The group shows the hosted packages only | The proxy member publishes checksum-prefixed repodata names, which the merge does not read | Point the client at the proxy for the upstream packages |
+| The group shows the hosted packages only | The upstream mirror has no metadata under the canonical names | The proxy resolves them through the upstream's `repomd.xml`; check that the upstream serves a `repomd.xml` at all |
 | `Checksum mismatch` from `dnf` | The client read a document that the group no longer serves | `dnf clean all`; the group's `repomd.xml` is rebuilt on every read |
 | `405 Method Not Allowed` on an upload | You are publishing into the **proxy** | Publish into the hosted repository; a proxy is read-only |
 | `409 Conflict` on an upload through a group | The group's `writable_member` names a member that is not an online hosted repository of the same format | Name a hosted member, or drop the key — the group then writes to its first hosted member |

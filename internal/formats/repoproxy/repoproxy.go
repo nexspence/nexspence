@@ -368,7 +368,7 @@ func serveCachedAsset(c *gin.Context, d formats.Deps, asset *domain.Asset, rc io
 		d.Downloads.Add(asset.ID)
 	}
 	if c.Request.Method == http.MethodHead {
-		c.Header("Content-Type", asset.ContentType)
+		c.Header("Content-Type", servedContentType(asset.ContentType, opts))
 		if asset.SizeBytes > 0 && rewrite == nil {
 			c.Header("Content-Length", fmt.Sprintf("%d", asset.SizeBytes))
 		}
@@ -390,10 +390,19 @@ func serveCachedAsset(c *gin.Context, d formats.Deps, asset *domain.Asset, rc io
 			c.JSON(http.StatusBadGateway, gin.H{"error": "cached metadata exceeds the rewrite size limit"})
 			return
 		}
-		c.Data(http.StatusOK, asset.ContentType, rewrite(body))
+		c.Data(http.StatusOK, servedContentType(asset.ContentType, opts), rewrite(body))
 		return
 	}
-	c.DataFromReader(http.StatusOK, asset.SizeBytes, asset.ContentType, rc, nil)
+	c.DataFromReader(http.StatusOK, asset.SizeBytes, servedContentType(asset.ContentType, opts), rc, nil)
+}
+
+// servedContentType is the media type a response is served with: the one the
+// cached copy recorded, unless the caller overrides it.
+func servedContentType(cached string, opts ServeOptions) string {
+	if opts.ContentType != "" {
+		return opts.ContentType
+	}
+	return cached
 }
 
 // FetchUpstreamOnce performs a single upstream GET and returns the raw response
@@ -490,6 +499,18 @@ type ServeOptions struct {
 	// the caller can remember the mapping and skip the failed primary path
 	// next time.
 	OnFallbackUsed func()
+	// ContentType, when set, is the media type the response is served with,
+	// whatever the upstream answered and whatever the cached copy recorded.
+	//
+	// It is what a path needs whose upstream bytes are served in another
+	// flavor: a Yum upstream publishes its metadata documents compressed, and
+	// the canonical name a group merges at ("repodata/primary.xml") is
+	// answered with the decompressed document — the cached copy stays the
+	// upstream's own bytes, and this says how they are served.
+	//
+	// The cached copy keeps the upstream's media type; the override applies to
+	// the response only.
+	ContentType string
 }
 
 // rewriteFor returns the rewrite to apply to a body of the given content
@@ -871,6 +892,9 @@ func storeAndServeResponse(c *gin.Context, d formats.Deps, repo *domain.Reposito
 	// The rewrite may be restricted to one kind of document; a body of any
 	// other type is served as it came.
 	rewrite := opts.rewriteFor(ct)
+	// The media type the response carries. The cached copy keeps the
+	// upstream's own type; this is what the client is told.
+	serveCT := servedContentType(ct, opts)
 
 	// Rewritten metadata cannot stream: buffer the upstream body, persist the
 	// ORIGINAL to the cache (hashes over the original), and serve the client
@@ -893,17 +917,21 @@ func storeAndServeResponse(c *gin.Context, d formats.Deps, repo *domain.Reposito
 		release()
 		copyRespHeaders(c.Writer.Header(), resp.Header)
 		c.Writer.Header().Del("Content-Length") // length changes after rewrite
+		// gin's Data only sets the media type when the header is still empty,
+		// and the upstream's own Content-Type was just copied in — so the
+		// served type is set explicitly.
+		c.Writer.Header().Set("Content-Type", serveCT)
 		if c.Request.Method == http.MethodHead {
-			c.Header("Content-Type", ct)
+			c.Header("Content-Type", serveCT)
 			c.Status(resp.StatusCode)
 			return nil
 		}
-		c.Data(resp.StatusCode, ct, rewrite(body))
+		c.Data(resp.StatusCode, serveCT, rewrite(body))
 		return nil
 	}
 
 	copyRespHeaders(c.Writer.Header(), resp.Header)
-	c.Header("Content-Type", ct)
+	c.Header("Content-Type", serveCT)
 	c.Status(resp.StatusCode)
 	method := c.Request.Method
 	tee := newClientTee(effectiveClientTeeBufferBytes())
