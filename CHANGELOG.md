@@ -8,6 +8,60 @@ when the release is cut; this file collects them.
 The full release notes — including the Docker image matrix and the
 essentials bundle — are on the [releases page](https://github.com/nexspence/nexspence/releases).
 
+## v2.13.6
+
+2026-11-26 — v2.13.6
+
+### 🐛 Bug Fixes
+* b63a5ee501e985c4aa4f64bce00066a7f0a056f4 fix(api,base): refuse a misplaced formatConfig key and name a missing artifact with one slash (#837)
+* fba156085801d60c2aaa6b2c07ea332c7fd4acd7 fix(helm,terraform,conda): serve relative client links behind a proxy (#833)
+* ba93744bb3cf4030af0c9c86f8f5a1703554b48f fix(npm): name the host the client reached in dist.tarball (#838)
+* 11e18e1dcaad89c8068d602a02fec87285b6edc4 fix(yum): merge a proxy member's upstream packages into a group (#836)
+### 📚 Documentation
+* d08e6bf5af09191598029492448d06ea96a1936b docs: add the Yum and Hugging Face guides (#835)
+* 57c99e0b36e1f40c82d8cd0271627dd27bd55310 docs: document what works behind a reverse proxy (#832)
+* 7375cea3a3a524c6074b2402b373d5de8bfea26d docs: rewrite the Habr article for v2.13 (#831)
+### 🔧 Others
+* 12aede19e337f329d98d85cf23b1b8f129e854da chore(website): publish the format guides as pages of the site (#829)
+* 1e52b59d4031fb008b27263de91e9b67e8fdef60 chore(website): show the latest release version on the landing page (#828)
+* a2fe831b49160dd993d5ec4b244794e4e032fc50 chore(website): the counters on the home page were stale (#830)
+
+### 🐳 Docker
+
+| | |
+|---|---|
+| **Image** | `ghcr.io/nexspence/nexspence:v2.13.6` |
+| **Platforms** | linux/amd64, linux/arm64 |
+
+```bash
+docker pull ghcr.io/nexspence/nexspence:v2.13.6
+```
+
+#### Quick start
+
+Download **`nexspence-run-essentials-2.13.6.zip`** below (config +
+image-pinned compose + Helm chart + monitoring + Keycloak realm + seed scripts),
+extract it, rename `config.yaml.example` → `config.yaml`, and set the admin
+password and JWT secret. (The full source is the **Source code** archive / `git clone`.)
+
+| Mode | Command |
+|------|---------|
+| Single-node | `docker compose up -d` |
+| Single-node + Monitoring | `docker compose --profile monitoring up -d` |
+| Single-node + Keycloak SSO | `OIDC_ENABLED=true docker compose --profile keycloak up -d` |
+| HA (2 nodes + nginx) | `docker compose -f docker-compose.ha.yml up -d` |
+| HA + Keycloak SSO | `OIDC_ENABLED=true docker compose -f docker-compose.ha.yml --profile keycloak up -d` |
+
+**Web UI:** single-node → `http://localhost:8081` · HA → `http://localhost:8080`
+
+Native install (deb/rpm/macOS/Windows): see the
+[documentation](https://nexspence.com/docs/).
+
+
+
+---
+
+
 ## v2.13.5
 
 2026-11-25 — v2.13.5
