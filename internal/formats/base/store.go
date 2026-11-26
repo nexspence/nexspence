@@ -594,12 +594,22 @@ func StorePinnedCopy(ctx context.Context, d formats.Deps, repo *domain.Repositor
 	return asset, nil
 }
 
+// notFoundMessage names the artifact that is missing.
+//
+// The path a handler passes already starts with a slash, so joining the two
+// with one more wrote "yum-hosted//Packages/…" — a path that is not the one
+// the client asked for, and that a reader has to work out before they can
+// trust it.
+func notFoundMessage(repoName, filePath string) string {
+	return "not found: " + strings.TrimSuffix(repoName, "/") + "/" + strings.TrimPrefix(filePath, "/")
+}
+
 // FetchArtifact retrieves a blob from storage and increments download count.
 func FetchArtifact(ctx context.Context, d formats.Deps, repoName, filePath string,
 ) (io.ReadCloser, *domain.Asset, error) {
 	asset, err := d.Assets.GetByPath(ctx, repoName, filePath)
 	if errors.Is(err, repository.ErrNotFound) {
-		return nil, nil, fmt.Errorf("not found: %s/%s", repoName, filePath)
+		return nil, nil, errors.New(notFoundMessage(repoName, filePath))
 	}
 	if err != nil {
 		return nil, nil, err
