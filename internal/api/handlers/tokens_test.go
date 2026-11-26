@@ -127,6 +127,29 @@ func TestTokenAPI_DeleteScopedToOwner(t *testing.T) {
 	}
 }
 
+// A token that does not exist is a client error: the repository answers
+// "not found" for it, and the handler used to pass that on as a 500, which
+// told the caller the server broke when it did not.
+func TestTokenAPI_DeleteUnknownToken_AnswersNotFound(t *testing.T) {
+	alice := activeUser("alice", "pw")
+	userSvc, tokenSvc := newTokenStack(alice)
+	r := buildTokenAPIRouter(userSvc, tokenSvc)
+
+	jwt := bearerToken(userSvc, "alice")
+	req := httptest.NewRequest(http.MethodDelete,
+		"/api/v1/user-tokens/00000000-0000-0000-0000-000000000000", nil)
+	req.Header.Set("Authorization", "Bearer "+jwt)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("delete unknown token: want 404 got %d body=%s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "token not found") {
+		t.Fatalf("delete unknown token: body does not name the missing token: %s", w.Body.String())
+	}
+}
+
 func TestAuthMiddleware_AcceptsAPITokenViaBasic(t *testing.T) {
 	alice := activeUser("alice", "pw")
 	userSvc, tokenSvc := newTokenStack(alice)
