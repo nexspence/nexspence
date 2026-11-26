@@ -720,7 +720,16 @@ new index.
   {"error":"Repository is read-only: yum-readonly"}
   ```
 
-  The policy lives in the repository's `formatConfig`:
+  The policy lives in the repository's `formatConfig` — a payload that carries
+  `write_policy` at the top level is refused with a `400` that names the place,
+  because a key the decoder drops is a policy the caller believes is in force
+  and is not:
+
+  ```json
+  {"error":"write_policy belongs in formatConfig, not at the top level: {\"formatConfig\": {\"write_policy\": \"deny\"}}"}
+  ```
+
+  The payload that works:
 
   ```bash
   curl -u admin:admin123 -X POST \
@@ -1141,7 +1150,7 @@ The error bodies are JSON, so a script can read the reason instead of guessing:
 
 | Request | Answer |
 |---|---|
-| `GET` a path the repository does not hold | `404` — `{"error":"not found: yum-hosted//Packages/n/nosuch-1.0-1.x86_64.rpm"}` |
+| `GET` a path the repository does not hold | `404` — `{"error":"not found: yum-hosted/Packages/n/nosuch-1.0-1.x86_64.rpm"}` |
 | `POST` to an `.rpm` path | `405`, no body — only `PUT`, `GET`, `HEAD` and `DELETE` are defined for it |
 | `PUT` to a path that does not end in `.rpm` | `405`, no body |
 | `PUT`, `POST` or `DELETE` on a proxy | `405` — `{"error":"proxy repository is read-only (use a hosted repository to publish)"}` |

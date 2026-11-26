@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 
@@ -10,6 +11,51 @@ import (
 	"github.com/nexspence-oss/nexspence/internal/domain"
 	"github.com/nexspence-oss/nexspence/internal/service"
 )
+
+// formatConfigOnlyKeys are the settings that live in a repository's
+// formatConfig.
+//
+// A payload that carries one of them at the TOP level is refused with a
+// message that names the right place. The decoder drops an unknown top-level
+// key, and a setting that is silently dropped is a setting the caller
+// believes is in force and is not: a write policy that does not deny writes,
+// a pull gate that never blocks, a group that writes to a member nobody
+// named.
+var formatConfigOnlyKeys = []string{
+	domain.WritePolicyKey,
+	domain.AllowRedeployLatestKey,
+	domain.PullBlockSeverityKey,
+	"member_names",
+	"writable_member",
+}
+
+// misplacedFormatConfigKey returns the first formatConfig key the payload
+// carries at the top level, with the value as it was sent.
+func misplacedFormatConfigKey(body []byte) (string, json.RawMessage, bool) {
+	var top map[string]json.RawMessage
+	if err := json.Unmarshal(body, &top); err != nil {
+		return "", nil, false
+	}
+	for _, key := range formatConfigOnlyKeys {
+		if raw, ok := top[key]; ok {
+			return key, raw, true
+		}
+	}
+	return "", nil, false
+}
+
+// refuseMisplacedFormatConfig answers 400 when the payload carries a
+// formatConfig key at the top level, and reports whether it did.
+func refuseMisplacedFormatConfig(c *gin.Context, body []byte) bool {
+	key, raw, ok := misplacedFormatConfigKey(body)
+	if !ok {
+		return false
+	}
+	c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf(
+		"%s belongs in formatConfig, not at the top level: {\"formatConfig\": {%q: %s}}",
+		key, key, raw)})
+	return true
+}
 
 // RepositoryHandler handles repository management endpoints.
 type RepositoryHandler struct {
@@ -80,8 +126,22 @@ func (h *RepositoryHandler) Create(c *gin.Context) {
 	format := c.Param("format")
 	repoType := c.Param("type")
 
+	// The body is read once and decoded twice: into the repository and into a
+	// probe for the keys that belong in formatConfig. The decoder drops an
+	// unknown top-level key, so a write_policy sent there would be ignored —
+	// and a repository that does not deny the writes its caller asked it to
+	// deny is worse than one that refuses the payload.
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if refuseMisplacedFormatConfig(c, body) {
+		return
+	}
+
 	var r domain.Repository
-	if err := c.ShouldBindJSON(&r); err != nil {
+	if err := json.Unmarshal(body, &r); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -117,6 +177,9 @@ func (h *RepositoryHandler) Update(c *gin.Context) {
 	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if refuseMisplacedFormatConfig(c, body) {
 		return
 	}
 	var updates domain.Repository
