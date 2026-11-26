@@ -135,6 +135,12 @@ components:
               type: array
               items: { type: string }
               description: Group only.
+            writable_member:
+              type: string
+              description: >
+                Group only: the member an upload is forwarded to. It has to be an
+                online hosted member of the same format; without it the group
+                writes to its first hosted member.
             pull_block_severity:
               type: string
               enum: ["", low, medium, high, critical, malicious]
