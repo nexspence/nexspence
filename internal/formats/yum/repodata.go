@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"path"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -139,7 +140,7 @@ func (h *Handler) buildRepodata(ctx context.Context, repoName string) (*repodata
 	docs.OtherGz = gzipBytes(docs.Other)
 
 	now := time.Now().Unix()
-	docs.Repomd = renderRepomd(now, []repomdEntry{
+	docs.Repomd = renderRepomd(strconv.FormatInt(now, 10), []repomdEntry{
 		repomdEntryFor("primary", docs.PrimaryGz, docs.Primary, now),
 		repomdEntryFor("filelists", docs.FilelistsGz, docs.Filelists, now),
 		repomdEntryFor("other", docs.OtherGz, docs.Other, now),
@@ -167,7 +168,7 @@ func repomdEntryFor(typ string, gz, plain []byte, now int64) repomdEntry {
 	}
 }
 
-func renderRepomd(revision int64, entries []repomdEntry) []byte {
+func renderRepomd(revision string, entries []repomdEntry) []byte {
 	return marshalXML(repomdXML{
 		XMLNS:    "http://linux.duke.edu/metadata/repo",
 		Revision: revision,

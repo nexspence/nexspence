@@ -47,6 +47,14 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 		if repoproxy.RejectMutation(c, repo) {
 			return
 		}
+		// A canonical repodata document is resolved through upstream's own
+		// repomd.xml: upstream names its documents by their checksum, and the
+		// canonical names are what a group merges its members at. See
+		// proxyrepodata.go.
+		if docType, ok := canonicalRepodataDoc(p); ok {
+			h.serveProxyRepodataDoc(c, repo, p, docType)
+			return
+		}
 		ct := "application/octet-stream"
 		if strings.HasSuffix(p, ".xml") {
 			ct = "application/xml"
@@ -100,9 +108,12 @@ func (h *Handler) ServeHTTP(c *gin.Context) {
 
 // repomdXML is the minimal repomd.xml structure
 type repomdXML struct {
-	XMLName  xml.Name      `xml:"repomd"`
-	XMLNS    string        `xml:"xmlns,attr"`
-	Revision int64         `xml:"revision"`
+	XMLName xml.Name `xml:"repomd"`
+	XMLNS   string   `xml:"xmlns,attr"`
+	// The revision is a string, not a number: an upstream writes whatever
+	// version of its metadata it has — "9.9" on a Rocky Linux mirror — and a
+	// parser that insists on an integer refuses the whole document.
+	Revision string        `xml:"revision"`
 	Data     []repomdEntry `xml:"data"`
 }
 type repomdEntry struct {
@@ -146,6 +157,21 @@ type rpmPackage struct {
 	Checksum rpmChecksum `xml:"checksum"`
 	Size     rpmSize     `xml:"size"`
 	Location rpmLoc      `xml:"location"`
+	// The descriptive fields an upstream's own index carries. A hosted
+	// repository leaves them empty — it knows nothing but the file name and
+	// the bytes — but a proxy member's index is the upstream's, and dropping
+	// these would strip the description of every upstream package in a
+	// merged group.
+	Summary     string   `xml:"summary,omitempty"`
+	Description string   `xml:"description,omitempty"`
+	URL         string   `xml:"url,omitempty"`
+	Time        *rpmTime `xml:"time,omitempty"`
+}
+
+// rpmTime is the build time an upstream's index records for a package.
+type rpmTime struct {
+	File  string `xml:"file,attr,omitempty"`
+	Build string `xml:"build,attr,omitempty"`
 }
 type rpmVersion struct {
 	Epoch string `xml:"epoch,attr"`

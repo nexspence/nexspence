@@ -17,6 +17,7 @@ package yum
 import (
 	"encoding/xml"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -89,7 +90,7 @@ func mergeRepomd(fetch formats.GroupIndexFetcher) ([]byte, string, error) {
 	if len(entries) == 0 {
 		return nil, "", fmt.Errorf("yum group merge: no repodata document could be merged")
 	}
-	return renderRepomd(now, entries), "application/xml; charset=utf-8", nil
+	return renderRepomd(strconv.FormatInt(now, 10), entries), "application/xml; charset=utf-8", nil
 }
 
 // mergeRepodataDoc unions one document type across members. Packages are
