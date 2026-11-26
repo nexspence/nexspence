@@ -71,6 +71,9 @@ type Deps struct {
 	// when resolving where a chart tarball comes from (config helm.index_cache_ttl).
 	// 0 fetches the index per lookup.
 	HelmIndexCacheTTL time.Duration
+	// TerraformSigningKey is the path to the OpenPGP private key that signs the
+	// checksum document of a hosted provider version. Empty means unsigned.
+	TerraformSigningKey string
 }
 
 // PublicURLResolver answers the public base URL of a request.

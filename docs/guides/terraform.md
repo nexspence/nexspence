@@ -142,15 +142,14 @@ curl -s -u admin:admin123 \
 ```
 
 ```json
-{"versions":[{"version":"1.0.0","protocols":["5.0"],"platforms":null}]}
+{"versions":[{"version":"1.0.0","protocols":["5.0"],"platforms":[{"os":"darwin","arch":"arm64"},{"os":"linux","arch":"amd64"}]}]}
 ```
 
-`platforms` is `null` because the upload does not record the operating system
-and the architecture of the package it stores — the version list is built from
-the version and the protocol versions only. A client that speaks the registry
-protocol therefore cannot tell which platforms a version exists for, which is
-the second reason a hosted provider cannot be installed through that protocol
-(the first one is the download document below).
+`platforms` names the operating system and the architecture the version was
+uploaded for: the upload records them, so the client knows which package of the
+version it can take. A version uploaded for one platform only lists that one —
+a client on another platform is told the version has no package for it, which
+is the truth.
 
 ```bash
 curl -s -u admin:admin123 \
@@ -187,10 +186,10 @@ curl -s -u admin:admin123 \
 ```
 
 ```json
-{"arch":"arm64","download_url":"http://localhost:8091/repository/terraform-hosted/v1/providers/acme/demo/1.0.0/darwin_arm64.zip","filename":"terraform-provider-demo_1.0.0_darwin_arm64.zip","os":"darwin","sha256_sum":"b302b05538aebf4df973e3bc6de1a0c29b1af72ff388230bb92ecd5f7f9f7817"}
+{"arch":"arm64","download_url":"/repository/terraform-hosted/v1/providers/acme/demo/1.0.0/darwin_arm64.zip","filename":"terraform-provider-demo_1.0.0_darwin_arm64.zip","os":"darwin","shasum":"993f524dd5f524235a689fa5a7f70d9a1966d3e4c5424c65b786b72e47bee961","shasums_signature_url":"/repository/terraform-hosted/v1/providers/acme/demo/1.0.0/shasums.sig","shasums_url":"/repository/terraform-hosted/v1/providers/acme/demo/1.0.0/shasums","signing_keys":{"gpg_public_keys":[{"ascii_armor":"-----BEGIN PGP PUBLIC KEY BLOCK-----\n…"}]}}
 ```
 
-The package itself is served at that `download_url`, and the `sha256_sum` is the
+The package itself is served at that `download_url`, and the `shasum` is the
 digest of the stored blob:
 
 ```bash
@@ -199,23 +198,82 @@ curl -s -u admin:admin123 -o demo.zip \
 shasum -a 256 demo.zip
 ```
 
-One field name is not the one the protocol uses: the document carries
-`sha256_sum`, while the client reads `shasum`. A Terraform client that installs
-through the registry protocol stops with this — the transcript is the one the
-verification script produces behind the registry host of section 6, whose host
-name is `host.docker.internal:8443` there:
+The document is the protocol's document, and every field of it is there for a
+reason:
+
+- `shasum` is the digest of the package. The client refuses a document whose
+  digest is missing or malformed: `registry response includes invalid SHA256
+  hash ""`.
+- `shasums_url` names the **checksum document** of the version — one line per
+  platform, `<digest>  <filename>`. The client looks its own file up in it by
+  name and compares the digest.
+- `shasums_signature_url` names the **detached signature** over that document.
+- `signing_keys` carries the public key the signature was made with. The
+  client verifies the signature with it and installs the package only when the
+  verification succeeds.
+
+Those last three are the reason a registry that serves a provider without a
+signature cannot be installed through the registry protocol: the client ends
+the install with `authentication signature from unknown issuer`. The signature
+is binary, not armored — the client reads it with
+`openpgp.CheckDetachedSignature`, which rejects the armored form.
+
+The checksum document and the signature are served by the instance itself:
+
+```bash
+curl -s -u admin:admin123 \
+  http://localhost:8091/repository/terraform-hosted/v1/providers/acme/demo/1.0.0/shasums
+```
 
 ```
-Error: Failed to install provider
-
-Error while installing host.docker.internal:8443/acme/demo v1.0.0: could not
-query provider registry for host.docker.internal:8443/acme/demo: registry
-response includes invalid SHA256 hash "": %!s(<nil>)
+993f524dd5f524235a689fa5a7f70d9a1966d3e4c5424c65b786b72e47bee961  terraform-provider-demo_1.0.0_darwin_arm64.zip
+993f524dd5f524235a689fa5a7f70d9a1966d3e4c5424c65b786b72e47bee961  terraform-provider-demo_1.0.0_linux_amd64.zip
 ```
 
-The proxy repository is not affected by that: it forwards the upstream document,
-which already carries `shasums_url`, `shasums_signature_url` and the signing
-keys.
+#### The signing key
+
+The instance signs the checksum document with a key the deployment provides.
+It is one key for the whole instance, and it is the key the client is told
+about — the client accepts a community provider, that is, one signed by a key
+the registry publishes rather than by HashiCorp.
+
+Generate a keypair and export the private half:
+
+```bash
+gpg --batch --quick-generate-key "Nexspence registry <registry@example.com>" rsa2048 sign 0
+gpg --armor --export-secret-keys > /etc/nexspence/terraform-signing-key.asc
+```
+
+The exported file is a secret: whoever holds it can sign packages as this
+registry. Keep it out of the repository and readable by the account the
+instance runs as only.
+
+Then name it in the configuration and restart:
+
+```yaml
+terraform:
+  signing_key: /etc/nexspence/terraform-signing-key.asc
+```
+
+```bash
+NEXSPENCE_TERRAFORM_SIGNING_KEY=/etc/nexspence/terraform-signing-key.asc
+```
+
+The key is loaded at startup. A path that names a file that cannot be read or
+parsed stops the instance from starting — a registry that quietly served
+unsigned packages would look installed while every install failed.
+
+Without the setting the instance still serves the checksum document, and the
+endpoints the client follows answer `501` with the name of the setting that is
+missing:
+
+```
+{"error":"no Terraform signing key is configured — set terraform.signing_key to an armored OpenPGP private key"}
+```
+
+The proxy repository is not affected by any of this: it forwards the upstream
+document, which already carries `shasums_url`, `shasums_signature_url` and the
+signing keys.
 
 ### The module download endpoint
 
@@ -544,17 +602,37 @@ Initializing provider plugins...
 Terraform has been successfully initialized!
 ```
 
-Three things still do not work there, and they are properties of the server,
-not of the proxy:
+The hosted repository works through the same host, once the instance has a
+signing key (section 2). The transcript is the one the verification script
+produces against the stand of this guide, with Terraform v1.9.8 and v1.15.5 —
+the same result in both:
 
-- **the hosted repository's version list** carries `"platforms": null`, so a
-  client cannot tell which platforms the version exists for — see section 2;
-- **the hosted repository's download document** is rejected by the client,
-  because it carries `sha256_sum` where the protocol's field is `shasum`, and
-  no `shasums_url` at all — see section 2;
-- **the proxy's module download endpoint** answers `204` but drops the
-  `X-Terraform-Get` header of the upstream answer, so the client cannot find
-  the archive.
+```
+$ terraform init
+Initializing the backend...
+Initializing provider plugins...
+- Finding host.docker.internal:8443/acme/demo versions matching "1.0.0"...
+- Installing host.docker.internal:8443/acme/demo v1.0.0...
+- Installed host.docker.internal:8443/acme/demo v1.0.0 (self-signed, key ID 71B91B2CD5FE8395)
+
+Terraform has been successfully initialized!
+```
+
+"self-signed" is the client's word for a provider that is signed by a key the
+registry publishes itself, rather than by HashiCorp — the community provider
+the protocol allows. The key id in brackets is the fingerprint of the signing
+key, the one the deployment generated.
+
+The three server-side gaps this guide used to describe are closed: the version
+list names the platforms of a version, the download document is the protocol's
+document, and the proxy's module download endpoint forwards the
+`X-Terraform-Get` header of the upstream answer instead of dropping it.
+
+A module source is a git URL — the public registry answers
+`git::https://github.com/<owner>/<repo>?ref=<sha>` — and the client fetches
+that itself; the proxy only has to hand the header through, which it does.
+An archive the instance itself serves is re-rooted at the instance, so the
+client fetches it through the proxy.
 
 The provider binary behind the proxy is fetched from `releases.hashicorp.com`:
 the proxied download document keeps the upstream `download_url`, so the proxy
@@ -575,8 +653,10 @@ authenticated. Read access is then granted per role — see
 | `Service discovery failed for <host>` | The client asks for the discovery document at the host root over HTTPS; Nexspence serves it under `/repository/<name>/` | Put a registry host with its own `/.well-known/terraform.json` in front (section 6), or use the mirror method |
 | `http: server gave HTTP response to HTTPS client` | The client only speaks HTTPS; a plain-HTTP instance cannot be discovered | Terminate TLS in front of the instance |
 | `Host does not support Terraform tokens API` | The discovery document advertises neither `login.v1` nor `tfe.v2`, so there is no login service to hand a token to | Configure the token in the CLI configuration instead (`credentials` block) |
-| `registry response includes invalid SHA256 hash ""` | The hosted download document carries `sha256_sum`, not the protocol's `shasum`, and no `shasums_url` | Install through the mirror method, or fix the document in the server |
-| `failed to get download URL for "<module>": 204 No Content` | The proxy's module download endpoint drops the upstream `X-Terraform-Get` header | Use the hosted repository's module endpoint, or a direct archive URL |
+| `registry response includes invalid SHA256 hash ""` | The download document carries no digest, or the client read a document of a proxy that has none | Check the version of the instance — the hosted document carries `shasum`; the proxy forwards the upstream document |
+| `authentication signature from unknown issuer` | The instance serves the package without a signature: no signing key is configured, or the key is not the one the document names | Set `terraform.signing_key` to an armored OpenPGP private key and restart (section 2) |
+| `error checking signature: openpgp: invalid data: tag byte does not have MSB set` | The signature was served armored; the client reads the binary form | The instance serves a binary signature — check the version of the instance |
+| `failed to get download URL for "<module>": 204 No Content` | The upstream answered `204` without the `X-Terraform-Get` header, or the header names a source this instance does not serve | Use the hosted repository's module endpoint, or a direct archive URL |
 | `bad response code: 401` while a module is downloaded | The archive URL points into a repository that is not anonymously readable | Use the group repository, or make the archive readable |
 | A module installs but has no outputs | The archive wraps the module in a top-level directory that Terraform does not strip | Put the module's `.tf` files at the root of the archive |
 | `provider ... was not found in any of the search locations` | The installation method found no package for that provider and platform — the mirror does not hold that platform, or the registry does not know the provider | Put the package for that platform in the mirror, or check the namespace and type in the version list |

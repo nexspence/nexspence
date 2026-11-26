@@ -808,3 +808,36 @@ func TestLoad_ExampleConfigHasNoUnknownKeys(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, cfg.UnknownKeys)
 }
+
+// The Terraform signing key is empty by default: a deployment that hosts no
+// provider needs no key, and one that does configure the key names it.
+func TestLoad_TerraformSigningKey_DefaultsEmpty(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := "" +
+		"database:\n  dsn: \"postgres://u:p@localhost:5432/db?sslmode=disable\"\n" +
+		"auth:\n  jwt_secret: \"a-unique-production-secret-at-least-32b\"\n"
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.Empty(t, cfg.Terraform.SigningKey,
+		"terraform.signing_key must default to empty so no deployment looks for a key it does not have")
+}
+
+// The key is a path the operator brings, so it has to be reachable from the
+// environment like every other setting (viper drops a key that has neither a
+// default nor a config-file value).
+func TestLoad_TerraformSigningKey_FromEnv(t *testing.T) {
+	t.Setenv("NEXSPENCE_TERRAFORM_SIGNING_KEY", "/run/secrets/terraform-signing-key.asc")
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := "" +
+		"database:\n  dsn: \"postgres://u:p@localhost:5432/db?sslmode=disable\"\n" +
+		"auth:\n  jwt_secret: \"a-unique-production-secret-at-least-32b\"\n"
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.Equal(t, "/run/secrets/terraform-signing-key.asc", cfg.Terraform.SigningKey)
+}

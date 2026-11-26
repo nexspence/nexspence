@@ -303,13 +303,17 @@ func NewRouter(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, log 
 		// The public URL of a request: the deployment's own http.base_url,
 		// or the host a trusted reverse proxy says the client used. Only
 		// the formats that hand out absolute links ask it.
-		PublicURL:    publicurl.NewResolver(cfg.HTTP.BaseURL, cfg.HTTP.TrustedProxies),
-		Webhooks:     webhookSvc,
-		Downloads:    dlCounter,
-		RoutingRules: rrRepo,
-		RBAC:         rbacSvc,
-		Scanner:      scanTrigger,
-		Publishes:    promotionSvc,
+		PublicURL: publicurl.NewResolver(cfg.HTTP.BaseURL, cfg.HTTP.TrustedProxies),
+		// The key that signs the checksum document of a hosted provider
+		// version (config terraform.signing_key). The Terraform client
+		// installs a provider only when it can verify that signature.
+		TerraformSigningKey: cfg.Terraform.SigningKey,
+		Webhooks:            webhookSvc,
+		Downloads:           dlCounter,
+		RoutingRules:        rrRepo,
+		RBAC:                rbacSvc,
+		Scanner:             scanTrigger,
+		Publishes:           promotionSvc,
 		// The docker/oci pull gate (#641) judges a manifest by its latest scan
 		// and lets the scanner's own pulls through — the account scanSvc
 		// hands Trivy above.
