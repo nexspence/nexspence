@@ -36,6 +36,26 @@ func New(deps formats.Deps) *Handler { return &Handler{deps: deps} }
 // Name returns the format identifier.
 func (h *Handler) Name() string { return "npm" }
 
+// publicBase is the base URL a client used to reach this instance.
+//
+// npm is the one format that cannot do without an absolute URL: it resolves
+// dist.tarball against nothing at all, and a relative one is read as a file
+// path on the client's disk. So the tarball URL has to name the host the
+// client actually reached.
+//
+// The host comes from the deployment's own http.base_url, or from the
+// X-Forwarded-Host of a proxy this instance trusts — and only then, because a
+// header a client can write would otherwise let it point every later client
+// at a host of its choosing.
+func (h *Handler) publicBase(c *gin.Context) string {
+	if h.deps.PublicURL != nil {
+		if u := h.deps.PublicURL.PublicBaseURL(c.Request); u != "" {
+			return strings.TrimRight(u, "/")
+		}
+	}
+	return strings.TrimRight(h.deps.BaseURL, "/")
+}
+
 func (h *Handler) ServeHTTP(c *gin.Context) {
 	p := normPath(c.Param("path"))
 	repoName := c.Param("repoName")
@@ -164,7 +184,7 @@ func (h *Handler) serveMetadata(c *gin.Context, repoName, pkgPath string) {
 		// dist.tarball URLs are rewritten on serve so installs pull tarballs
 		// through this proxy instead of upstream (#98); the cache keeps the
 		// upstream original.
-		localBase := strings.TrimRight(h.deps.BaseURL, "/") + "/repository/" + repo.Name
+		localBase := h.publicBase(c) + "/repository/" + repo.Name
 		rewrite := func(b []byte) []byte { return RewritePackument(b, localBase) }
 		if minAge := repoproxy.MinimumPackageAge(repo); minAge > 0 {
 			cutoff := time.Now().Add(-minAge)
@@ -196,7 +216,7 @@ func (h *Handler) serveMetadata(c *gin.Context, repoName, pkgPath string) {
 	versions := map[string]any{}
 	for _, comp := range comps {
 		baseName := path.Base(pkgName)
-		tarball := h.deps.BaseURL + "/repository/" + repoName +
+		tarball := h.publicBase(c) + "/repository/" + repoName +
 			"/" + pkgName + "/-/" + baseName + "-" + comp.Version + ".tgz"
 		manifest := manifestOf(comp)
 		if manifest == nil {

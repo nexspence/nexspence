@@ -30,7 +30,8 @@ func (h *Handler) MergeGroupIndex(groupName, p string, parts []formats.GroupInde
 	if normPath(p) == searchPath {
 		return mergeSearch(parts)
 	}
-	groupBase := strings.TrimRight(h.deps.BaseURL, "/") + "/repository/" + groupName
+	groupPath := "/repository/" + groupName
+	groupBase := strings.TrimRight(h.deps.BaseURL, "/") + groupPath
 
 	merged := map[string]any{}
 	versions := map[string]any{}
@@ -57,7 +58,7 @@ func (h *Handler) MergeGroupIndex(groupName, p string, parts []formats.GroupInde
 				if _, seen := versions[ver]; seen {
 					continue // first member wins per version
 				}
-				rewriteVersionTarball(vdoc, part.Member, groupBase)
+				rewriteVersionTarball(vdoc, part.Member, groupBase, groupPath)
 				versions[ver] = vdoc
 			}
 		}
@@ -99,7 +100,12 @@ func (h *Handler) MergeGroupIndex(groupName, p string, parts []formats.GroupInde
 // rewriteVersionTarball re-roots a version's dist.tarball from the member
 // repo at the group: the member handler minted a /repository/<member>/ URL,
 // which would steer the client off the group (and its RBAC).
-func rewriteVersionTarball(vdoc any, member, groupBase string) {
+//
+// The host stays the one the member minted it with: that is the host the
+// client reached this instance on, which behind a reverse proxy is not the
+// host the deployment's own base URL names. Only the repository in the path
+// is swapped.
+func rewriteVersionTarball(vdoc any, member, groupBase, groupPath string) {
 	ver, ok := vdoc.(map[string]any)
 	if !ok {
 		return
@@ -117,9 +123,15 @@ func rewriteVersionTarball(vdoc any, member, groupBase string) {
 		return
 	}
 	memberPrefix := "/repository/" + member
-	if tail, found := strings.CutPrefix(u.Path, memberPrefix); found {
-		dist["tarball"] = groupBase + tail
+	tail, found := strings.CutPrefix(u.Path, memberPrefix)
+	if !found {
+		return
 	}
+	if u.Host != "" {
+		dist["tarball"] = u.Scheme + "://" + u.Host + groupPath + tail
+		return
+	}
+	dist["tarball"] = groupBase + tail
 }
 
 // GroupIndexClaimsName implements formats.GroupIndexNameClaimer: a packument
