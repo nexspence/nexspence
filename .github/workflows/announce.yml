@@ -100,11 +100,19 @@ jobs:
             echo "posts/$TAG is already prepared — leaving it alone"
             exit 0
           fi
-          node scripts/generate.mjs "$TAG" subjects.txt
-
-      - name: Render the card
-        working-directory: announcements
-        run: node scripts/render.mjs "posts/$TAG"
+          # A release of chores and documentation has nothing a reader cares
+          # about, and so nothing to announce. The release is still a release:
+          # the announcement is skipped, not failed.
+          status=0
+          node scripts/generate.mjs "$TAG" subjects.txt || status=$?
+          if [ "$status" -eq 3 ]; then
+            echo "::warning::nothing to announce in $TAG — the release goes out without an announcement"
+            exit 0
+          fi
+          if [ "$status" -ne 0 ]; then
+            exit "$status"
+          fi
+          node scripts/render.mjs "posts/$TAG"
 
       - name: Publish the post
         working-directory: announcements
