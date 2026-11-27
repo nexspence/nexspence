@@ -8,13 +8,23 @@ name: Announce Release
 # announcements repository — a step nobody remembers, which is why two
 # releases (v2.13.3 and v2.13.4) shipped without an announcement at all. This
 # workflow is that step.
+#
+# It is called by the Release workflow once the release is out, and it refuses
+# to announce a release that does not exist yet. It used to run on the tag
+# push, which is ten minutes before the release is published: the channel
+# carried an announcement for a release the reader could not open yet, and a
+# release whose build failed was announced all the same.
 on:
-  push:
-    tags: ['v*.*.*']
+  workflow_call:
+    inputs:
+      tag:
+        description: 'The tag to announce (e.g. v2.13.8).'
+        required: true
+        type: string
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Tag to announce (e.g. v2.13.4). Empty = the tag that triggered the workflow.'
+        description: 'Tag to announce (e.g. v2.13.8). The release must be published.'
         type: string
         default: ''
 
@@ -25,11 +35,33 @@ jobs:
   announce:
     runs-on: ubuntu-latest
     steps:
+      - name: Resolve the tag
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          TAG="${INPUT_TAG:-${GITHUB_REF_NAME}}"
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+          echo "tag: $TAG"
+
+      - name: Check that the release is published
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # The announcement goes out when the release exists, so it is checked
+          # here: a tag without a release behind it is not something to announce.
+          if ! gh api "repos/nexspence/nexspence/releases/tags/${TAG}" >/dev/null 2>&1; then
+            echo "::error::release ${TAG} is not published — nothing to announce yet"
+            exit 1
+          fi
+          echo "release ${TAG} is published"
+
       - name: Checkout the release
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0 # the tags: the previous one says where the release starts
-          # A manual run announces a named tag; a tag push announces itself.
+          # The Release workflow names the tag; a manual run names it too.
           ref: ${{ inputs.tag || github.ref }}
 
       - name: Checkout the announcements repository
@@ -41,12 +73,8 @@ jobs:
           fetch-depth: 1
 
       - name: Collect the commits of the release
-        env:
-          INPUT_TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
-          TAG="${INPUT_TAG:-${GITHUB_REF_NAME}}"
-          echo "TAG=$TAG" >> "$GITHUB_ENV"
           # The commits since the previous release are what the release is.
           # The previous release is the tag the release was cut from — not the
           # newest tag in the repository: that one is the release itself when it
@@ -72,11 +100,19 @@ jobs:
             echo "posts/$TAG is already prepared — leaving it alone"
             exit 0
           fi
-          node scripts/generate.mjs "$TAG" subjects.txt
-
-      - name: Render the card
-        working-directory: announcements
-        run: node scripts/render.mjs "posts/$TAG"
+          # A release of chores and documentation has nothing a reader cares
+          # about, and so nothing to announce. The release is still a release:
+          # the announcement is skipped, not failed.
+          status=0
+          node scripts/generate.mjs "$TAG" subjects.txt || status=$?
+          if [ "$status" -eq 3 ]; then
+            echo "::warning::nothing to announce in $TAG — the release goes out without an announcement"
+            exit 0
+          fi
+          if [ "$status" -ne 0 ]; then
+            exit "$status"
+          fi
+          node scripts/render.mjs "posts/$TAG"
 
       - name: Publish the post
         working-directory: announcements

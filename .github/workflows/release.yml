@@ -151,3 +151,16 @@ jobs:
           helm push "nexspence-${VERSION}.tgz" "oci://${REGISTRY}/${{ github.repository_owner }}/charts"
           echo "Pushed chart: oci://${REGISTRY}/${{ github.repository_owner }}/charts/nexspence:${VERSION}"
 
+  announce:
+    name: Announce the release
+    # The announcement goes out after the release, not after the tag: the tag
+    # exists ten minutes before the release does, and a channel message that
+    # links to a release that is not there yet is a broken promise.
+    needs: release
+    permissions:
+      contents: read
+    uses: ./.github/workflows/announce.yml
+    with:
+      tag: ${{ github.ref_name }}
+    secrets: inherit
+
