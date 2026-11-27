@@ -8,6 +8,52 @@ when the release is cut; this file collects them.
 The full release notes — including the Docker image matrix and the
 essentials bundle — are on the [releases page](https://github.com/nexspence/nexspence/releases).
 
+## v2.13.8
+
+2026-11-27 — v2.13.8
+
+### 🐛 Bug Fixes
+* c774658def7766171909efd88e4abe3420ce113a fix(api): answer 404 for a token that does not exist (#842)
+
+**`fix(api)`: answer `404` for a token that does not exist.** Deleting a token that is not there answered `500 {"error":"not found"}`: the repository reports a missing row as "not found", and the handler passed every error on as a server error. A client that asked for a token that never existed — a typo in an id, a token already deleted — was told the server broke. It answers `404` now, with the same `token not found` the handler already used for a token that belongs to somebody else.
+
+### 🐳 Docker
+
+| | |
+|---|---|
+| **Image** | `ghcr.io/nexspence/nexspence:v2.13.8` |
+| **Platforms** | linux/amd64, linux/arm64 |
+
+```bash
+docker pull ghcr.io/nexspence/nexspence:v2.13.8
+```
+
+#### Quick start
+
+Download **`nexspence-run-essentials-2.13.8.zip`** below (config +
+image-pinned compose + Helm chart + monitoring + Keycloak realm + seed scripts),
+extract it, rename `config.yaml.example` → `config.yaml`, and set the admin
+password and JWT secret. (The full source is the **Source code** archive / `git clone`.)
+
+| Mode | Command |
+|------|---------|
+| Single-node | `docker compose up -d` |
+| Single-node + Monitoring | `docker compose --profile monitoring up -d` |
+| Single-node + Keycloak SSO | `OIDC_ENABLED=true docker compose --profile keycloak up -d` |
+| HA (2 nodes + nginx) | `docker compose -f docker-compose.ha.yml up -d` |
+| HA + Keycloak SSO | `OIDC_ENABLED=true docker compose -f docker-compose.ha.yml --profile keycloak up -d` |
+
+**Web UI:** single-node → `http://localhost:8081` · HA → `http://localhost:8080`
+
+Native install (deb/rpm/macOS/Windows): see the
+[documentation](https://nexspence.com/docs/).
+
+
+
+
+---
+
+
 ## v2.13.7
 
 2026-11-26 — v2.13.7
